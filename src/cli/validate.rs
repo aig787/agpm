@@ -1644,12 +1644,24 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("ccpm.toml");
 
-        // Create manifest with source
+        // Create a local git repository to use as a mock source
+        let source_dir = temp.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+
+        // Initialize it as a git repository
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Create manifest with local file:// URL to avoid network access
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
+        let source_url = format!(
+            "file://{}",
+            source_dir.display().to_string().replace('\\', "/")
         );
+        manifest.add_source("test".to_string(), source_url);
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -1665,13 +1677,10 @@ mod tests {
             strict: false,
         };
 
-        // This will attempt to check if sources are accessible
-        // The validation should complete (sources check is optional)
+        // This will check if the local source is accessible
         let result = cmd.execute_from_path(manifest_path).await;
-        // Check sources might fail but the command should still complete
-        // The result depends on whether network checks are performed
-        // For now, just check that the command runs without panic
-        let _ = result;
+        // Local file:// URL should be accessible
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

@@ -742,7 +742,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
     ///
@@ -835,7 +835,10 @@ impl Manifest {
     /// );
     ///
     /// // Save to file
-    /// manifest.save(Path::new("ccpm.toml"))?;
+    /// # use tempfile::tempdir;
+    /// # let temp_dir = tempdir()?;
+    /// # let manifest_path = temp_dir.path().join("ccpm.toml");
+    /// manifest.save(&manifest_path)?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     ///

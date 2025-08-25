@@ -4,6 +4,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
+/// Convert a path to a file:// URL string, properly handling Windows paths
+pub fn path_to_file_url(path: &Path) -> String {
+    // Convert backslashes to forward slashes for Windows paths in URLs
+    let path_str = path.display().to_string().replace('\\', "/");
+    format!("file://{}", path_str)
+}
+
 /// Test fixture for creating sample ccpm.toml files
 pub struct ManifestFixture {
     pub content: String,
@@ -367,11 +374,14 @@ impl TestEnvironment {
         let env = Self::new()?;
 
         // Create a modified manifest that uses file:// URLs
+        let official_url = path_to_file_url(&env.sources_dir.join("official"));
+        let community_url = path_to_file_url(&env.sources_dir.join("community"));
+
         let manifest_content = format!(
             r#"
 [sources]
-official = "file://{}/official"
-community = "file://{}/community"
+official = "{}"
+community = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -380,8 +390,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#,
-            env.sources_dir.display(),
-            env.sources_dir.display()
+            official_url, community_url
         );
 
         fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
@@ -403,11 +412,14 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
         let env = Self::new()?;
 
         // Create a modified manifest that uses file:// URLs
+        let official_url = path_to_file_url(&env.sources_dir.join("official"));
+        let community_url = path_to_file_url(&env.sources_dir.join("community"));
+
         let manifest_content = format!(
             r#"
 [sources]
-official = "file://{}/official"
-community = "file://{}/community"
+official = "{}"
+community = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -416,8 +428,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#,
-            env.sources_dir.display(),
-            env.sources_dir.display()
+            official_url, community_url
         );
 
         fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
@@ -430,13 +441,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "file://{}/official"
+url = "{}"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "file://{}/community"
+url = "{}"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -467,8 +478,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#,
-            env.sources_dir.display(),
-            env.sources_dir.display()
+            official_url, community_url
         );
 
         fs::write(env.project_dir.join("ccpm.lock"), lockfile_content.trim())?;
@@ -532,6 +542,30 @@ installed_at = "snippets/utils.md"
     #[allow(dead_code)]
     pub fn get_mock_source_url(&self, name: &str) -> String {
         format!("file://{}/{}", self.sources_dir.display(), name)
+    }
+
+    /// Create a manifest with only local dependencies (no external sources)
+    /// This is useful for tests that don't need network access or git operations
+    #[allow(dead_code)]
+    pub fn create_local_only_manifest(&self) -> Result<()> {
+        let manifest_content = r#"
+[agents]
+local-agent = { path = "./agents/local.md" }
+
+[snippets]
+local-snippet = { path = "./snippets/local.md" }
+"#;
+        fs::write(self.project_dir.join("ccpm.toml"), manifest_content)?;
+
+        // Create the local files
+        let agents_dir = self.project_dir.join("agents");
+        let snippets_dir = self.project_dir.join("snippets");
+        fs::create_dir_all(&agents_dir)?;
+        fs::create_dir_all(&snippets_dir)?;
+        fs::write(agents_dir.join("local.md"), "# Local Agent")?;
+        fs::write(snippets_dir.join("local.md"), "# Local Snippet")?;
+
+        Ok(())
     }
 
     /// Get the project directory path

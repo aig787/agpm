@@ -671,12 +671,18 @@ impl MarkdownDocument {
         // Check for YAML frontmatter (starts with ---)
         if input.starts_with("---\n") || input.starts_with("---\r\n") {
             if let Some(end_idx) = find_frontmatter_end(input) {
-                let frontmatter = &input[4..end_idx];
+                let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
+                let frontmatter = &input[skip_size..end_idx];
                 let content = input[end_idx..].trim_start_matches("---").trim_start();
 
                 // Try to parse YAML frontmatter
-                let metadata: MarkdownMetadata = serde_yaml::from_str(frontmatter)
-                    .context("Failed to parse YAML frontmatter")?;
+                let metadata: MarkdownMetadata =
+                    serde_yaml::from_str(frontmatter).with_context(|| {
+                        format!(
+                            "Failed to parse YAML frontmatter. Content:\n{}",
+                            frontmatter
+                        )
+                    })?;
 
                 return Ok(Self {
                     metadata: Some(metadata),
@@ -689,7 +695,8 @@ impl MarkdownDocument {
         // Check for TOML frontmatter (starts with +++)
         if input.starts_with("+++\n") || input.starts_with("+++\r\n") {
             if let Some(end_idx) = find_toml_frontmatter_end(input) {
-                let frontmatter = &input[4..end_idx];
+                let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
+                let frontmatter = &input[skip_size..end_idx];
                 let content = input[end_idx..].trim_start_matches("+++").trim_start();
 
                 // Try to parse TOML frontmatter
@@ -974,15 +981,21 @@ impl MarkdownDocument {
 /// - Counts bytes, not characters, for proper string slicing
 /// - Accounts for newline characters in position calculation
 fn find_frontmatter_end(input: &str) -> Option<usize> {
+    // Handle both Unix (LF) and Windows (CRLF) line endings
+    let has_crlf = input.contains("\r\n");
+    let initial_skip = if has_crlf { 5 } else { 4 }; // "---\r\n" or "---\n"
+
     let mut lines = input.lines();
     lines.next()?; // Skip first ---
 
-    let mut pos = 4; // Length of "---\n"
+    let mut pos = initial_skip;
     for line in lines {
         if line == "---" {
             return Some(pos);
         }
-        pos += line.len() + 1; // +1 for newline
+        // Account for actual line ending bytes (CRLF = 2, LF = 1)
+        let line_ending_size = if has_crlf { 2 } else { 1 };
+        pos += line.len() + line_ending_size;
     }
 
     None
@@ -1009,15 +1022,21 @@ fn find_frontmatter_end(input: &str) -> Option<usize> {
 /// - Counts bytes, not characters, for proper string slicing
 /// - Accounts for newline characters in position calculation
 fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
+    // Handle both Unix (LF) and Windows (CRLF) line endings
+    let has_crlf = input.contains("\r\n");
+    let initial_skip = if has_crlf { 5 } else { 4 }; // "+++\r\n" or "+++\n"
+
     let mut lines = input.lines();
     lines.next()?; // Skip first +++
 
-    let mut pos = 4; // Length of "+++\n"
+    let mut pos = initial_skip;
     for line in lines {
         if line == "+++" {
             return Some(pos);
         }
-        pos += line.len() + 1; // +1 for newline
+        // Account for actual line ending bytes (CRLF = 2, LF = 1)
+        let line_ending_size = if has_crlf { 2 } else { 1 };
+        pos += line.len() + line_ending_size;
     }
 
     None

@@ -739,9 +739,23 @@ async fn install_resource(
 /// ```
 fn parse_dependency_spec(spec: &str, _custom_name: &Option<String>) -> Result<ResourceDependency> {
     // Handle local file paths (file:path or just path)
-    if spec.starts_with("file:") || (!spec.contains(':') && Path::new(spec).exists()) {
+    if spec.starts_with("file:") {
         let path = spec.strip_prefix("file:").unwrap_or(spec);
         return Ok(ResourceDependency::Simple(path.to_string()));
+    }
+
+    // Check if it's a local path that exists (handles Windows drive letters)
+    if Path::new(spec).exists() {
+        return Ok(ResourceDependency::Simple(spec.to_string()));
+    }
+
+    // Check if it looks like a Windows path (contains :\ or :/)
+    #[cfg(windows)]
+    if spec.len() > 2
+        && spec.chars().nth(1) == Some(':')
+        && (spec.chars().nth(2) == Some('\\') || spec.chars().nth(2) == Some('/'))
+    {
+        return Ok(ResourceDependency::Simple(spec.to_string()));
     }
 
     // Parse source:path@version format

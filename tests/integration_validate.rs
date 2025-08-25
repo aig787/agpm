@@ -385,6 +385,7 @@ fn test_validate_specific_file() {
     let env = TestEnvironment::new().unwrap();
 
     // Create a manifest that uses file:// URLs
+    let sources_path_str = env.sources_path().display().to_string().replace('\\', "/");
     let manifest_content = format!(
         r#"
 [sources]
@@ -398,8 +399,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#,
-        env.sources_path().display(),
-        env.sources_path().display()
+        sources_path_str, sources_path_str
     );
 
     let manifest_path = env.project_path().join("ccpm.toml");
