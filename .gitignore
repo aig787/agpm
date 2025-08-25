@@ -1,0 +1,39 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+/temp/
+/tmp/
+*.log
+.env
+
+# Test artifacts
+/test-repos/
+/test-output/
+
+# Coverage
+*.profraw
+*.profdata
+
+# Debug
+*.dSYM/
+
+# Examples
+examples/projects/
+
+# Claude
+.claude/settings.local.json

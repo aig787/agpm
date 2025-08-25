@@ -1,0 +1,6 @@
+[sources]
+official = "https://github.com/claude-org/resources.git"
+
+[target]
+agents = ".claude/agents"
+snippets = ".claude/snippets"
