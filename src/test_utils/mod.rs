@@ -58,7 +58,16 @@ impl WorkingDirGuard {
     /// The directory will be restored when this guard is dropped.
     /// This also acquires a lock to prevent parallel test execution.
     pub fn new() -> std::io::Result<Self> {
-        let lock = WORKING_DIR_MUTEX.lock().unwrap();
+        // Handle poisoned mutex by recovering the lock
+        // This is safe for tests because we always restore the working directory
+        let lock = match WORKING_DIR_MUTEX.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Recover from poisoned mutex - this is safe because we always
+                // restore the working directory in Drop
+                poisoned.into_inner()
+            }
+        };
         let original_dir = std::env::current_dir()?;
         Ok(WorkingDirGuard {
             original_dir,

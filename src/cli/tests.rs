@@ -86,11 +86,18 @@ mod cli_tests {
         let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        
+        // Change to temp dir FIRST before creating the manifest
+        std::env::set_current_dir(&temp_path).unwrap();
+        
+        // Now create the manifest in the current directory
+        let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
-
-        // Change to temp dir for the test
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        
+        // Verify the file exists
+        assert!(manifest_path.exists(), "Manifest file was not created");
+        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest not found in current dir");
 
         // Test that verbose flag creates correct config and executes successfully
         let cli = Cli::try_parse_from(["ccpm", "--verbose", "list"]).unwrap();
@@ -222,11 +229,18 @@ mod cli_tests {
         let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        
+        // Change to temp dir FIRST before creating the manifest
+        std::env::set_current_dir(&temp_path).unwrap();
+        
+        // Now create the manifest in the current directory
+        let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
-
-        // Change to temp dir for the test
-        std::env::set_current_dir(temp_dir.path()).unwrap();
+        
+        // Verify the file exists from our perspective
+        assert!(manifest_path.exists(), "Manifest file was not created");
+        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest not found in current dir");
 
         // Use a test config that doesn't modify environment for all commands
         let test_config = CliConfig::new();
@@ -235,6 +249,10 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
         assert!(result.is_ok(), "list command failed: {:?}", result);
+        
+        // Verify we're still in the right directory and the manifest still exists
+        assert_eq!(std::env::current_dir().unwrap().canonicalize().unwrap(), temp_path, "Current dir changed after list");
+        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest disappeared after list");
 
         let cli = Cli::try_parse_from(["ccpm", "validate"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
