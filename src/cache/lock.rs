@@ -158,6 +158,7 @@ impl Drop for CacheLock {
     fn drop(&mut self) {
         // Lock is automatically released when file is closed (on Drop)
         // But we can explicitly unlock for clarity
+        #[allow(unstable_name_collisions)]
         if let Err(e) = self._file.unlock() {
             eprintln!("Warning: Failed to unlock {}: {}", self.path.display(), e);
         }

@@ -2034,6 +2034,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn test_remove_dir_all_symlink() {
         // Test that remove_dir_all doesn't follow symlinks
         let temp = tempdir().unwrap();
@@ -2043,15 +2044,12 @@ mod tests {
         ensure_dir(&target).unwrap();
         std::fs::write(target.join("important.txt"), "data").unwrap();
 
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&target, &link).unwrap();
-            remove_dir_all(&link).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        remove_dir_all(&link).unwrap();
 
-            // Target should still exist
-            assert!(target.exists());
-            assert!(target.join("important.txt").exists());
-        }
+        // Target should still exist
+        assert!(target.exists());
+        assert!(target.join("important.txt").exists());
     }
 
     #[test]

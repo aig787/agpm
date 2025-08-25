@@ -1065,11 +1065,57 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_source_dependency() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a local mock git repository
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Create the agents directory and test file
+        let agents_dir = source_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("test.md"), "# Test Agent").unwrap();
+
+        // Add and commit the file
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create a tag for version
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
+        let source_url = format!(
+            "file://{}",
+            source_dir.display().to_string().replace('\\', "/")
         );
+        manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "remote-agent".to_string(),
             ResourceDependency::Detailed(crate::manifest::DetailedDependency {
@@ -1081,12 +1127,12 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
 
-        // This will fail because the repo doesn't exist, but it exercises the code path
+        // This should now succeed with the local repository
         let result = resolver.resolve(None).await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -1134,11 +1180,59 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_git_ref() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a local mock git repository
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create the agents directory and test file
+        let agents_dir = source_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("test.md"), "# Test Agent").unwrap();
+
+        // Add and commit the file
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create main branch (git may have created master)
+        std::process::Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
+        let source_url = format!(
+            "file://{}",
+            source_dir.display().to_string().replace('\\', "/")
         );
+        manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "git-agent".to_string(),
             ResourceDependency::Detailed(crate::manifest::DetailedDependency {
@@ -1150,12 +1244,12 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
 
-        // This will fail because the repo doesn't exist, but it exercises the git ref code path
+        // This should now succeed with the local repository
         let result = resolver.resolve(None).await;
-        assert!(result.is_err());
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

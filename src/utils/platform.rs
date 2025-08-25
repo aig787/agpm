@@ -57,6 +57,7 @@
 //! - Proper handling of special Windows filenames
 
 use anyhow::{Context, Result};
+use regex::Regex;
 use std::path::{Path, PathBuf};
 
 /// Checks if the current platform is Windows.
@@ -280,25 +281,50 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 
     // Expand environment variables
     let path_str = expanded.to_string_lossy();
-    let expanded_str = shellexpand::env(&path_str).with_context(|| {
-        let platform_vars = if is_windows() {
-            "Common Windows variables: %USERPROFILE%, %APPDATA%, %TEMP%"
-        } else {
-            "Common Unix variables: $HOME, $USER, $TMP"
-        };
 
-        format!(
-            "Failed to expand environment variables in path: {}\n\n\
-                Common issues:\n\
-                - Undefined environment variable (e.g., $UNDEFINED_VAR)\n\
-                - Invalid variable syntax (use $VAR or ${{VAR}})\n\
-                - Special characters that need escaping\n\n\
-                {}",
-            path_str, platform_vars
-        )
-    })?;
+    // Handle Windows-style %VAR% expansion differently
+    let expanded_str = if is_windows() && path_str.contains('%') {
+        // Manual Windows-style %VAR% expansion
+        let mut result = path_str.to_string();
+        let re = Regex::new(r"%([^%]+)%").unwrap();
 
-    let result = PathBuf::from(expanded_str.as_ref());
+        for cap in re.captures_iter(&path_str) {
+            if let Some(var_name) = cap.get(1) {
+                if let Ok(value) = std::env::var(var_name.as_str()) {
+                    result = result.replace(&format!("%{}%", var_name.as_str()), &value);
+                }
+            }
+        }
+
+        // Also handle Unix-style for compatibility
+        match shellexpand::env(&result) {
+            Ok(expanded) => expanded.into_owned(),
+            Err(_) => result, // Return the partially expanded result
+        }
+    } else {
+        // Unix-style $VAR expansion
+        shellexpand::env(&path_str)
+            .with_context(|| {
+                let platform_vars = if is_windows() {
+                    "Common Windows variables: %USERPROFILE%, %APPDATA%, %TEMP%"
+                } else {
+                    "Common Unix variables: $HOME, $USER, $TMP"
+                };
+
+                format!(
+                    "Failed to expand environment variables in path: {}\n\n\
+                    Common issues:\n\
+                    - Undefined environment variable (e.g., $UNDEFINED_VAR)\n\
+                    - Invalid variable syntax (use $VAR or ${{VAR}})\n\
+                    - Special characters that need escaping\n\n\
+                    {}",
+                    path_str, platform_vars
+                )
+            })?
+            .into_owned()
+    };
+
+    let result = PathBuf::from(expanded_str);
 
     // Apply Windows long path handling if needed
     Ok(windows_long_path(&result))
@@ -525,10 +551,20 @@ pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
 pub fn paths_equal(path1: &Path, path2: &Path) -> bool {
     if is_windows() {
         // Windows file system is case-insensitive
-        path1.to_string_lossy().to_lowercase() == path2.to_string_lossy().to_lowercase()
+        // Normalize paths by removing trailing slashes before comparison
+        let p1_str = path1.to_string_lossy();
+        let p2_str = path2.to_string_lossy();
+        let p1 = p1_str.trim_end_matches(['/', '\\']).to_lowercase();
+        let p2 = p2_str.trim_end_matches(['/', '\\']).to_lowercase();
+        p1 == p2
     } else {
         // Unix-like systems are case-sensitive
-        path1 == path2
+        // Also normalize trailing slashes for consistency
+        let p1_str = path1.to_string_lossy();
+        let p2_str = path2.to_string_lossy();
+        let p1 = p1_str.trim_end_matches('/');
+        let p2 = p2_str.trim_end_matches('/');
+        p1 == p2
     }
 }
 
@@ -894,9 +930,9 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
         let absolute_str = absolute_path.to_string_lossy();
         if absolute_str.len() > 260 {
             // Use UNC prefix for long paths
-            if absolute_str.starts_with(r"\\") {
+            if let Some(stripped) = absolute_str.strip_prefix(r"\\") {
                 // Network path
-                PathBuf::from(format!(r"\\?\UNC\{}", &absolute_str[2..]))
+                PathBuf::from(format!(r"\\?\UNC\{}", stripped))
             } else {
                 // Local path
                 PathBuf::from(format!(r"\\?\{}", absolute_str))
@@ -1083,22 +1119,27 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
             }
         }
 
-        // Check for reserved names
-        let filename = Path::new(path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-
+        // Check for reserved names in all path components
         const RESERVED_NAMES: &[&str] = &[
             "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
             "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         ];
 
-        if RESERVED_NAMES.contains(&filename.to_uppercase().as_str()) {
-            return Err(anyhow::anyhow!(
-                "Reserved filename '{}' in path: {}\\n\\n\\\n                Windows reserved names: {}",
-                filename, path, RESERVED_NAMES.join(", ")
-            ));
+        // Check each component of the path
+        for component in Path::new(path).components() {
+            if let Some(os_str) = component.as_os_str().to_str() {
+                // Check if the entire component (without extension) is a reserved name
+                // Reserved names are only invalid if they're the complete name (no extension)
+                let upper = os_str.to_uppercase();
+
+                // Check if it's exactly a reserved name (no extension)
+                if RESERVED_NAMES.contains(&upper.as_str()) {
+                    return Err(anyhow::anyhow!(
+                        "Reserved name '{}' in path: {}\\n\\n\\\n                    Windows reserved names: {}",
+                        os_str, path, RESERVED_NAMES.join(", ")
+                    ));
+                }
+            }
         }
     }
 

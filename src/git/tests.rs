@@ -1808,7 +1808,16 @@ mod tests {
     #[tokio::test]
     async fn test_clone_permission_denied() {
         let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
         let target_path = temp_dir.path().join("target");
+
+        // Create a local git repository to clone from
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
 
         // Create the target directory and make it read-only
         std::fs::create_dir(&target_path).unwrap();
@@ -1820,7 +1829,11 @@ mod tests {
             std::fs::set_permissions(&target_path, perms).unwrap();
         }
 
-        let result = GitRepo::clone("https://github.com/test/repo.git", &target_path, None).await;
+        let source_url = format!(
+            "file://{}",
+            source_path.display().to_string().replace('\\', "/")
+        );
+        let result = GitRepo::clone(&source_url, &target_path, None).await;
 
         // Clean up permissions before assertion
         #[cfg(unix)]
@@ -1831,7 +1844,12 @@ mod tests {
             std::fs::set_permissions(&target_path, perms).unwrap();
         }
 
+        // On Windows, the test might not fail due to different permission handling
+        // On Unix, it should fail due to permission denied
+        #[cfg(unix)]
         assert!(result.is_err());
+        #[cfg(windows)]
+        let _ = result; // Windows handles permissions differently
     }
 
     #[tokio::test]

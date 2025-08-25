@@ -452,8 +452,14 @@ async fn install_resource(
             })?;
 
             // Parse as markdown to validate
-            let _markdown = MarkdownFile::parse(&content)
-                .with_context(|| format!("Invalid markdown file: {}", entry.name))?;
+            let _markdown = MarkdownFile::parse(&content).with_context(|| {
+                format!(
+                    "Invalid markdown file '{}' at {}. File size: {} bytes",
+                    entry.name,
+                    source_path.display(),
+                    content.len()
+                )
+            })?;
 
             // Ensure destination directory exists
             if let Some(parent) = dest_path.parent() {
@@ -480,8 +486,13 @@ async fn install_resource(
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
-        let _markdown = MarkdownFile::parse(&content)
-            .with_context(|| format!("Invalid markdown file: {}", entry.name))?;
+        let _markdown = MarkdownFile::parse(&content).with_context(|| {
+            format!(
+                "Invalid markdown file '{}' at {}",
+                entry.name,
+                source_path.display()
+            )
+        })?;
 
         // Ensure destination directory exists
         if let Some(parent) = dest_path.parent() {
@@ -665,8 +676,13 @@ async fn install_resource_for_parallel(
                 })?;
 
                 // Parse as markdown to validate
-                let _markdown = MarkdownFile::parse(&content)
-                    .with_context(|| format!("Invalid markdown file: {}", entry.name))?;
+                let _markdown = MarkdownFile::parse(&content).with_context(|| {
+                    format!(
+                        "Invalid markdown file '{}' at {}",
+                        entry.name,
+                        source_path.display()
+                    )
+                })?;
 
                 // Ensure destination directory exists
                 if let Some(parent) = dest_path.parent() {
@@ -694,8 +710,13 @@ async fn install_resource_for_parallel(
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
-        let _markdown = MarkdownFile::parse(&content)
-            .with_context(|| format!("Invalid markdown file: {}", entry.name))?;
+        let _markdown = MarkdownFile::parse(&content).with_context(|| {
+            format!(
+                "Invalid markdown file '{}' at {}",
+                entry.name,
+                source_path.display()
+            )
+        })?;
 
         // Ensure destination directory exists
         if let Some(parent) = dest_path.parent() {

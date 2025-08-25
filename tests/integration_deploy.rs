@@ -33,15 +33,15 @@ async fn test_install_creates_lockfile() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
-community = "file://{}"
+official = "{}"
+community = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
 "#,
-        official_repo.display(),
-        community_repo.display()
+        fixtures::path_to_file_url(&official_repo),
+        fixtures::path_to_file_url(&community_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -94,15 +94,15 @@ async fn test_install_with_existing_lockfile() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
-community = "file://{}"
+official = "{}"
+community = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
 "#,
-        official_repo.display(),
-        community_repo.display()
+        fixtures::path_to_file_url(&official_repo),
+        fixtures::path_to_file_url(&community_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -160,9 +160,9 @@ resolved_commit = "{}"
 checksum = "sha256:38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da"
 installed_at = ".claude/agents/helper.md"
 "#,
-        official_repo.display(),
+        fixtures::path_to_file_url(&official_repo),
         official_sha,
-        community_repo.display(),
+        fixtures::path_to_file_url(&community_repo),
         community_sha,
         official_sha,
         community_sha
@@ -255,12 +255,12 @@ async fn test_install_force_flag() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 "#,
-        official_repo.display()
+        fixtures::path_to_file_url(&official_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -294,7 +294,7 @@ resolved_commit = "{}"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = ".claude/agents/my-agent.md"
 "#,
-        official_repo.display(),
+        fixtures::path_to_file_url(&official_repo),
         official_sha,
         official_sha
     );
@@ -351,15 +351,15 @@ async fn test_install_parallel_flag() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
-community = "file://{}"
+official = "{}"
+community = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
 "#,
-        official_repo.display(),
-        community_repo.display()
+        fixtures::path_to_file_url(&official_repo),
+        fixtures::path_to_file_url(&community_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -418,7 +418,7 @@ async fn test_install_local_dependencies() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -427,7 +427,7 @@ local-agent = {{ path = "../local-agents/helper.md" }}
 [snippets]
 local-utils = {{ path = "./snippets/local-utils.md" }}
 "#,
-        official_repo.display()
+        fixtures::path_to_file_url(&official_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -476,12 +476,12 @@ async fn test_install_verbose() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 "#,
-        official_repo.display()
+        fixtures::path_to_file_url(&official_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -515,12 +515,12 @@ async fn test_install_quiet() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "{}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 "#,
-        official_repo.display()
+        fixtures::path_to_file_url(&official_repo)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -536,9 +536,17 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 /// Test install with network simulation failure
 #[test]
 fn test_install_network_failure() {
-    let env = TestEnvironment::with_basic_manifest().unwrap();
+    let env = TestEnvironment::new().unwrap();
 
-    // Don't add mock sources to simulate network/source unavailability
+    // Create a manifest with non-existent local sources to simulate failure
+    let manifest_content = r#"
+[sources]
+official = "file:///non/existent/path/to/repo"
+
+[agents]
+my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
+"#;
+    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
     let mut cmd = env.ccpm_command();
     cmd.arg("install")
@@ -547,8 +555,10 @@ fn test_install_network_failure() {
         .failure()
         .stderr(
             predicate::str::contains("Failed to clone")
-                .or(predicate::str::contains("Source not found"))
-                .or(predicate::str::contains("Network error")),
+                .or(predicate::str::contains("does not exist"))
+                .or(predicate::str::contains(
+                    "Local repository path does not exist",
+                )),
         );
 }
 
