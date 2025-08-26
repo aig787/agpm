@@ -8,10 +8,12 @@ You are reviewing a pull request for the CCPM (Claude Code Package Manager) proj
 ### Step 1: Understand the Changes
 First, examine the git diff to understand what's being changed:
 ```bash
-git diff --cached  # For staged changes
-git diff HEAD      # For all changes
+git diff --cached  # For staged changes (tracked files only)
+git diff HEAD      # For all changes to tracked files
 git log --oneline -n 5  # Recent commit context
 ```
+
+**Note**: The review should focus ONLY on tracked files. Untracked files (marked with ?? in git status) should be excluded from the review process.
 
 ### Step 2: Automated Analysis
 Use specialized agents to perform thorough code analysis:
@@ -113,6 +115,23 @@ Use specialized agents to perform thorough code analysis:
   - Complex logic is explained
   - CLAUDE.md updated if architecture changes
   - README.md updated for user-facing changes
+
+- [ ] **Documentation Accuracy Check**
+  - README.md is still accurate after all changes
+    - Installation instructions remain correct
+    - Usage examples still work as documented
+    - Command descriptions match current implementation
+    - Feature list reflects actual capabilities
+    - All example code snippets are valid
+  - CLAUDE.md reflects any architectural changes
+    - Module structure documentation is current
+    - Security rules are still being followed
+    - Development guidelines remain applicable
+  - USAGE.md (if present) matches current CLI behavior
+  - CONTRIBUTING.md procedures still valid
+  - Any linked documentation files are accurate
+  - Version numbers in examples match current version
+  - All internal links and references are not broken
 
 ### Step 4: Performance & Build
 Run these checks:

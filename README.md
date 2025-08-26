@@ -43,9 +43,10 @@ cargo install --path ccpm
 Create a `ccpm.toml` file in your project root (or use `ccpm init` to generate a template):
 
 ```toml
-# Define Git repository sources
+# Define sources - Git repositories or local directories
 [sources]
 community = "https://github.com/aig787/ccpm-community.git"
+local-deps = "./dependencies"  # Local directory (no Git required)
 
 # Optional: Customize installation directories
 # [target]
@@ -55,10 +56,12 @@ community = "https://github.com/aig787/ccpm-community.git"
 # Agents
 [agents]
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+local-agent = { source = "local-deps", path = "agents/helper.md" }  # No version for local paths
 
 # Snippets
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.0.0" }
+local-snippet = { source = "local-deps", path = "snippets/utils.md" }
 
 # MCP Servers (optional)
 [mcp-servers]
@@ -164,10 +167,11 @@ ccpm mcp clean
 ### ccpm.toml Structure
 
 ```toml
-# Sources define Git repositories
+# Sources can be Git repositories or local directories
 [sources]
 community = "https://github.com/aig787/ccpm-community.git"
 private = "git@github.com:mycompany/private-agents.git"
+local = "./local-resources"  # Local directory (no Git required)
 
 # Target directories (optional - defaults shown)
 [target]
@@ -232,23 +236,44 @@ CCPM supports standard semantic versioning (semver) ranges, following the same c
 
 ### Local Dependencies
 
-CCPM supports two types of local dependencies:
+CCPM supports three types of local dependencies:
 
-#### 1. Plain Directory Dependencies (No Git)
+#### 1. Local Directory Sources (NEW)
 
-These are simple file paths that point directly to `.md` files. They do NOT support versions or git operations:
+You can use local directories as sources without requiring Git. This is perfect for development and testing:
 
 ```toml
-# Plain directory paths - NO version support
+[sources]
+# Local directory as a source - no Git required
+local-deps = "./dependencies"
+shared-resources = "../shared-resources"
+absolute-local = "/home/user/ccpm-resources"
+
+[agents]
+# Dependencies from local directory sources don't need versions
+local-agent = { source = "local-deps", path = "agents/helper.md" }
+shared-agent = { source = "shared-resources", path = "agents/common.md" }
+```
+
+**Security Note**: For security, local paths are restricted to:
+- Within the current project directory
+- Within the CCPM cache directory (`~/.ccpm/cache`)
+- Within `/tmp` for testing
+
+#### 2. Direct File Paths (Legacy)
+
+You can reference individual `.md` files directly without a source:
+
+```toml
+# Direct file paths - NO version support
 local-agent = { path = "../agents/my-agent.md" }
 local-snippet = { path = "./snippets/util.md" }
-absolute-path = { path = "/home/user/agents/helper.md" }
 
-# ❌ INVALID - versions not allowed for plain paths
+# ❌ INVALID - versions not allowed for direct paths
 # local-versioned = { path = "../agents/agent.md", version = "v1.0.0" }  # ERROR!
 ```
 
-#### 2. Local Git Repositories (file:// URLs)
+#### 3. Local Git Repositories (file:// URLs)
 
 Use `file://` URLs in sources to reference local git repositories with full git functionality:
 

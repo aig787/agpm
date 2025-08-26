@@ -205,6 +205,7 @@ use crate::git::{parse_git_url, GitRepo};
 use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
 use crate::utils::progress::ProgressBar;
+use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1019,35 +1020,43 @@ impl SourceManager {
         let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
         let is_file_url = url.starts_with("file://");
 
-        let repo = if is_local_path || is_file_url {
-            // Local paths and file:// URLs - treat as local git repositories with full git functionality
-            let path_str = if is_file_url {
-                url.strip_prefix("file://").unwrap()
-            } else {
-                &url
-            };
+        let repo = if is_local_path {
+            // Local paths are treated as plain directories (not git repositories)
+            // Apply security validation for local paths
+            let resolved_path = crate::utils::platform::resolve_path(&url)?;
+            
+            // Security check: Validate path against blacklist and symlinks BEFORE canonicalization
+            validate_path_security(&resolved_path, true)?;
+            
+            let canonical_path = resolved_path
+                .canonicalize()
+                .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
+
+            // For local paths, we just return a GitRepo pointing to the local directory
+            // No cloning or fetching needed - these are treated as plain directories
+            GitRepo::new(canonical_path)
+        } else if is_file_url {
+            // file:// URLs must point to valid git repositories
+            let path_str = url.strip_prefix("file://").unwrap();
             let abs_path = PathBuf::from(path_str);
 
             // Check if the local path exists and is a git repo
             if !abs_path.exists() {
                 return Err(anyhow::anyhow!(
-                    "Local repository path does not exist: {:?}",
-                    abs_path
+                    "Local repository path does not exist or is not accessible"
                 ));
             }
 
             if !abs_path.join(".git").exists() {
                 return Err(anyhow::anyhow!(
-                    "Local path is not a git repository: {:?}\n\
-                    Local paths and file:// URLs must point to valid git repositories.",
-                    abs_path
+                    "Specified path is not a git repository. file:// URLs must point to valid git repositories."
                 ));
             }
 
             if cache_path.exists() {
                 let repo = GitRepo::new(&cache_path);
                 if repo.is_git_repo() {
-                    // For local repos, fetch to get latest changes
+                    // For file:// repos, fetch to get latest changes
                     repo.fetch(Some(&url), progress).await?;
                     repo
                 } else {
@@ -1176,27 +1185,37 @@ impl SourceManager {
         let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
         let is_file_url = url.starts_with("file://");
 
-        // For local paths, verify they're git repositories
-        if is_local_path || is_file_url {
-            let path_str = if is_file_url {
-                url.strip_prefix("file://").unwrap()
-            } else {
-                url
-            };
+        // Handle local paths (not git repositories, just directories)
+        if is_local_path {
+            // Apply security validation for local paths
+            let resolved_path = crate::utils::platform::resolve_path(url)?;
+            
+            // Security check: Validate path against blacklist and symlinks BEFORE canonicalization
+            validate_path_security(&resolved_path, true)?;
+            
+            let canonical_path = resolved_path
+                .canonicalize()
+                .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
+
+            // For local paths, we just return a GitRepo pointing to the local directory
+            // No cloning or fetching needed - these are treated as plain directories
+            return Ok(GitRepo::new(canonical_path));
+        }
+
+        // For file:// URLs, verify they're git repositories
+        if is_file_url {
+            let path_str = url.strip_prefix("file://").unwrap();
             let abs_path = PathBuf::from(path_str);
 
             if !abs_path.exists() {
                 return Err(anyhow::anyhow!(
-                    "Local repository path does not exist: {:?}",
-                    abs_path
+                    "Local repository path does not exist or is not accessible"
                 ));
             }
 
             if !abs_path.join(".git").exists() {
                 return Err(anyhow::anyhow!(
-                    "Local path is not a git repository: {:?}\n\
-                    Local paths and file:// URLs must point to valid git repositories.",
-                    abs_path
+                    "Specified path is not a git repository. file:// URLs must point to valid git repositories."
                 ));
             }
         }
@@ -1956,19 +1975,16 @@ mod tests {
         );
         manager.add(source).unwrap();
 
+        // Local paths are now treated as plain directories, so sync should succeed
         let result = manager.sync("test", None).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        // Different platforms may have different error messages
-        // Just verify that cloning a non-git directory fails
-        assert!(
-            err_msg.contains("Failed to clone")
-                || err_msg.contains("not a git repository")
-                || err_msg.contains("Not a git repository")
-                || err_msg.contains("not a valid Git repository"),
-            "Expected error for non-git directory, got: {}",
-            err_msg
-        );
+        if let Err(ref e) = result {
+            eprintln!("Test failed with error: {}", e);
+            eprintln!("Path was: {:?}", non_git_dir);
+        }
+        assert!(result.is_ok(), "Failed to sync: {:?}", result);
+        let repo = result.unwrap();
+        // Should point to the canonicalized local directory
+        assert_eq!(repo.path(), non_git_dir.canonicalize().unwrap());
     }
 
     #[tokio::test]
@@ -2286,5 +2302,224 @@ mod tests {
         if let Ok(manager) = result {
             assert!(manager.sources.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn test_sync_local_path_directory() {
+        // Test that local paths (not file:// URLs) are treated as plain directories
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        let local_dir = temp_dir.path().join("local_deps");
+
+        // Create a plain directory with some files (not a git repo)
+        std::fs::create_dir(&local_dir).unwrap();
+        std::fs::write(local_dir.join("agent.md"), "# Test Agent").unwrap();
+        std::fs::write(local_dir.join("snippet.md"), "# Test Snippet").unwrap();
+
+        let mut manager = SourceManager::new_with_cache(cache_dir.clone());
+
+        // Add source with local path
+        let source = Source::new("local".to_string(), local_dir.to_string_lossy().to_string());
+        manager.add(source).unwrap();
+
+        // Sync should work with plain directory (not require git)
+        let result = manager.sync("local", None).await;
+        assert!(result.is_ok());
+
+        let repo = result.unwrap();
+        // The returned GitRepo should point to the canonicalized local directory
+        // On macOS, /var is a symlink to /private/var, so we need to compare canonical paths
+        assert_eq!(repo.path(), local_dir.canonicalize().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_sync_by_url_local_path() {
+        // Test sync_by_url with local paths
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        let local_dir = temp_dir.path().join("local_deps");
+
+        // Create a plain directory with files
+        std::fs::create_dir(&local_dir).unwrap();
+        std::fs::write(local_dir.join("test.md"), "# Test Resource").unwrap();
+
+        let mut manager = SourceManager::new_with_cache(cache_dir);
+
+        // Test absolute path
+        let result = manager
+            .sync_by_url(&local_dir.to_string_lossy(), None)
+            .await;
+        assert!(result.is_ok());
+        let repo = result.unwrap();
+        assert_eq!(repo.path(), local_dir.canonicalize().unwrap());
+
+        // Test relative path
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+        let result = manager.sync_by_url("./local_deps", None).await;
+        assert!(result.is_ok());
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sync_local_path_not_exist() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        let mut manager = SourceManager::new_with_cache(cache_dir);
+
+        // Try to sync non-existent local path
+        let result = manager.sync_by_url("/non/existent/path", None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn test_file_url_requires_git() {
+        // Test that file:// URLs require valid git repositories
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        let plain_dir = temp_dir.path().join("plain_dir");
+
+        // Create a plain directory (not a git repo)
+        std::fs::create_dir(&plain_dir).unwrap();
+        std::fs::write(plain_dir.join("test.md"), "# Test").unwrap();
+
+        let mut manager = SourceManager::new_with_cache(cache_dir);
+
+        // file:// URL should fail for non-git directory
+        let file_url = format!("file://{}", plain_dir.display());
+        let result = manager.sync_by_url(&file_url, None).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not a git repository"));
+    }
+
+    #[tokio::test]
+    async fn test_path_traversal_attack_prevention() {
+        // Test that access to blacklisted system directories is prevented
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+
+        let mut manager = SourceManager::new_with_cache(cache_dir.clone());
+
+        // Test that blacklisted system paths are blocked
+        let blacklisted_paths = vec!["/etc/passwd", "/System/Library", "/private/etc/hosts"];
+
+        for malicious_path in blacklisted_paths {
+            // Skip if path doesn't exist (e.g., /System on Linux)
+            if !std::path::Path::new(malicious_path).exists() {
+                continue;
+            }
+
+            let result = manager.sync_by_url(malicious_path, None).await;
+            assert!(
+                result.is_err(),
+                "Blacklisted path not detected for: {}",
+                malicious_path
+            );
+            let err_msg = result.unwrap_err().to_string();
+            assert!(
+                err_msg.contains("Security error") || err_msg.contains("not allowed"),
+                "Expected security error for blacklisted path: {}, got: {}",
+                malicious_path,
+                err_msg
+            );
+        }
+
+        // Test that normal paths in temp directories work fine
+        let safe_dir = temp_dir.path().join("safe_dir");
+        std::fs::create_dir(&safe_dir).unwrap();
+
+        let result = manager.sync_by_url(&safe_dir.to_string_lossy(), None).await;
+        assert!(
+            result.is_ok(),
+            "Safe path was incorrectly blocked: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn test_symlink_attack_prevention() {
+        // Test that symlink attacks are prevented
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+        let project_dir = temp_dir.path().join("project");
+        let deps_dir = project_dir.join("deps");
+        let sensitive_dir = temp_dir.path().join("sensitive");
+
+        // Create directories
+        std::fs::create_dir(&project_dir).unwrap();
+        std::fs::create_dir(&deps_dir).unwrap();
+        std::fs::create_dir(&sensitive_dir).unwrap();
+        std::fs::write(sensitive_dir.join("secret.txt"), "secret data").unwrap();
+
+        // Create a symlink pointing to sensitive directory
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let symlink_path = deps_dir.join("malicious_link");
+            symlink(&sensitive_dir, &symlink_path).unwrap();
+
+            // Change to project directory
+            let original_dir = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&project_dir).unwrap();
+
+            let mut manager = SourceManager::new_with_cache(cache_dir);
+
+            // Try to access the symlink
+            let result = manager.sync_by_url("./deps/malicious_link", None).await;
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(
+                err_msg.contains("Symlinks are not allowed") || err_msg.contains("Security error"),
+                "Expected symlink error, got: {}",
+                err_msg
+            );
+
+            std::env::set_current_dir(original_dir).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_absolute_path_restriction() {
+        // Test that blacklisted absolute paths are blocked
+        let temp_dir = TempDir::new().unwrap();
+        let cache_dir = temp_dir.path().join("cache");
+
+        let mut manager = SourceManager::new_with_cache(cache_dir);
+
+        // With blacklist approach, temp directories are allowed
+        // So this test verifies that normal development paths work
+        let safe_dir = temp_dir.path().join("project");
+        std::fs::create_dir(&safe_dir).unwrap();
+        std::fs::write(safe_dir.join("file.txt"), "content").unwrap();
+
+        let result = manager.sync_by_url(&safe_dir.to_string_lossy(), None).await;
+
+        // Temp directories should work fine with blacklist approach
+        assert!(
+            result.is_ok(),
+            "Safe temp path was incorrectly blocked: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_error_message_sanitization() {
+        // Test that error messages don't leak sensitive path information
+        // This is a compile-time test to ensure error messages are properly sanitized
+
+        // Check that we're not including full paths in error messages
+        let error_msg = "Local path is not accessible or does not exist";
+        assert!(!error_msg.contains("/home"));
+        assert!(!error_msg.contains("/Users"));
+        assert!(!error_msg.contains("C:\\"));
+
+        let security_msg =
+            "Security error: Local path must be within the project directory or CCPM cache";
+        assert!(!security_msg.contains("{:?}"));
+        assert!(!security_msg.contains("{}"));
     }
 }

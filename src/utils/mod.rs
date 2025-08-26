@@ -41,6 +41,7 @@
 pub mod fs;
 pub mod platform;
 pub mod progress;
+pub mod security;
 
 pub use fs::{atomic_write, copy_dir, ensure_dir, normalize_path, safe_write};
 pub use platform::{get_git_command, get_home_dir, is_windows, resolve_path};

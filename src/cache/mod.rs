@@ -179,6 +179,7 @@
 use crate::core::error::CcpmError;
 use crate::git::GitRepo;
 use crate::utils::fs;
+use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::fs as async_fs;
@@ -542,6 +543,32 @@ impl Cache {
         url: &str,
         version: Option<&str>,
     ) -> Result<PathBuf> {
+        // Check if this is a local path (not a git repository URL)
+        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
+
+        if is_local_path {
+            // For local paths (directories), validate and return the secure path
+            // No cloning or version management needed
+
+            // Resolve path securely with validation
+            let resolved_path = crate::utils::platform::resolve_path(url)?;
+
+            // Canonicalize to get the real path and prevent symlink attacks
+            let canonical_path = resolved_path
+                .canonicalize()
+                .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
+
+            // Security check: Validate path against blacklist and symlinks
+            validate_path_security(&canonical_path, true)?;
+
+            // For local paths, we ignore versions as they don't apply
+            if version.is_some() {
+                eprintln!("Warning: Version constraints are ignored for local paths");
+            }
+
+            return Ok(canonical_path);
+        }
+
         self.ensure_cache_dir().await?;
 
         // Acquire lock for this source to prevent concurrent access

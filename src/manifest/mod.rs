@@ -1164,8 +1164,17 @@ impl Manifest {
                     .into());
                 }
 
-                // Non-local dependencies should have a version
-                if dep.get_version().is_none() || dep.get_version() == Some("") {
+                // Check if the source URL is a local path
+                let source_url = self.sources.get(source).unwrap();
+                let is_local_source = source_url.starts_with('/')
+                    || source_url.starts_with("./")
+                    || source_url.starts_with("../");
+
+                // Non-local dependencies (git repositories) should have a version
+                // Local path sources don't need versions
+                if !is_local_source
+                    && (dep.get_version().is_none() || dep.get_version() == Some(""))
+                {
                     return Err(crate::core::CcpmError::ManifestValidationError {
                         reason: format!("Missing required field 'version' for dependency '{}' from source '{}'. Suggestion: Add version = \"v1.0.0\" to specify a version", name, source),
                     }
