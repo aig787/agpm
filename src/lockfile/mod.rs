@@ -1,8 +1,8 @@
 //! Lockfile management for reproducible installations across environments.
 //!
 //! This module provides comprehensive lockfile functionality for CCPM, similar to Cargo's
-//! `Cargo.lock` but designed specifically for managing Claude Code resources (agents and
-//! snippets) from Git repositories. The lockfile ensures that all team members and CI/CD
+//! `Cargo.lock` but designed specifically for managing Claude Code resources (agents,
+//! snippets, and commands) from Git repositories. The lockfile ensures that all team members and CI/CD
 //! systems install identical versions of dependencies.
 //!
 //! # Overview
@@ -55,6 +55,16 @@
 //! resolved_commit = "a1b2c3d4e5f6..."
 //! checksum = "sha256:fedcba654321..."
 //! installed_at = "snippets/example-snippet.md"
+//!
+//! # Command resources (same structure as agents)
+//! [[commands]]
+//! name = "build-command"
+//! source = "community"
+//! path = "commands/build.md"
+//! version = "v1.0.0"
+//! resolved_commit = "a1b2c3d4e5f6..."
+//! checksum = "sha256:123456abcdef..."
+//! installed_at = ".claude/commands/build-command.md"
 //! ```
 //!
 //! ## Field Details
@@ -70,7 +80,7 @@
 //! - **commit**: 40-character SHA-1 commit hash at time of resolution
 //! - **fetched_at**: ISO 8601 timestamp of last successful fetch
 //!
-//! ### Resources Arrays (agents/snippets)
+//! ### Resources Arrays (agents/snippets/commands)
 //! - **name**: Unique resource identifier within its type
 //! - **source**: Source name (omitted for local resources)
 //! - **url**: Repository URL (omitted for local resources)  
@@ -273,7 +283,7 @@
 //!
 //! # Thread Safety
 //!
-//! The [`Lockfile`] struct is not thread-safe by itself, but the module provides
+//! The [`LockFile`] struct is not thread-safe by itself, but the module provides
 //! atomic operations for concurrent access:
 //! - **File Locking**: Uses OS file locking during atomic writes
 //! - **Process Safety**: Multiple ccpm instances coordinate via lockfile
@@ -286,9 +296,38 @@ use std::path::{Path, PathBuf};
 
 use crate::utils::fs::atomic_write;
 
-// Aliases for consistency with new code
-pub type Lockfile = LockFile;
-pub type LockEntry = LockedResource;
+/// A locked MCP server configuration.
+///
+/// Represents an MCP server that has been configured in `.mcp.json`.
+/// Unlike other resources, MCP servers are not installed as files but
+/// are configured to run as processes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockedMcpServer {
+    /// Server name as used in .mcp.json
+    pub name: String,
+
+    /// Command to execute
+    pub command: String,
+
+    /// Arguments to pass to the command
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+
+    /// Source for tracking (e.g., "npm", "pypi")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+
+    /// Version or reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    /// Package name if from a package manager
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+
+    /// When the server was configured
+    pub configured_at: String,
+}
 
 /// The main lockfile structure representing a complete `ccpm.lock` file.
 ///
@@ -369,6 +408,27 @@ pub struct LockFile {
     /// This field is omitted from TOML serialization if empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub snippets: Vec<LockedResource>,
+
+    /// Locked command resources with their exact versions and checksums.
+    ///
+    /// Contains all resolved command dependencies from the manifest, with exact
+    /// commit hashes, installation paths, and SHA-256 checksums for integrity
+    /// verification.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<LockedResource>,
+
+    /// Locked MCP server configurations.
+    ///
+    /// Contains metadata about configured MCP servers. Note that MCP servers
+    /// are not installed as files like other resources - they are configured
+    /// in the `.mcp.json` file. This lockfile entry tracks what servers have
+    /// been configured for reproducibility.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "mcp-servers")]
+    pub mcp_servers: Vec<LockedMcpServer>,
 }
 
 /// A locked source repository with resolved commit information.
@@ -570,6 +630,8 @@ impl LockFile {
             sources: Vec::new(),
             agents: Vec::new(),
             snippets: Vec::new(),
+            commands: Vec::new(),
+            mcp_servers: Vec::new(),
         }
     }
 
@@ -795,6 +857,7 @@ impl LockFile {
 
         write_resources(&mut content, &self.agents, "agents");
         write_resources(&mut content, &self.snippets, "snippets");
+        write_resources(&mut content, &self.commands, "commands");
 
         atomic_write(path, content.as_bytes()).with_context(|| {
             format!(
@@ -866,6 +929,10 @@ impl LockFile {
     /// Adds a new resource entry or updates an existing one with the same name
     /// within the appropriate resource type (agents or snippets).
     ///
+    /// **Note**: This method is kept for backward compatibility but only supports
+    /// agents and snippets. Use `add_typed_resource` to support all resource types
+    /// including commands.
+    ///
     /// # Arguments
     ///
     /// * `name` - Unique resource identifier within its type
@@ -932,11 +999,65 @@ impl LockFile {
         resources.push(resource);
     }
 
-    /// Get a locked resource by name, searching across both agents and snippets.
+    /// Add or update a locked resource with specific resource type.
     ///
-    /// Searches for a resource with the given name in both the agents and snippets
-    /// collections. Since resource names must be unique within their type, this
-    /// method returns the first match found.
+    /// This is the preferred method for adding resources as it explicitly
+    /// supports all resource types including commands.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Unique resource identifier within its type
+    /// * `resource` - Complete [`LockedResource`] with all resolved information
+    /// * `resource_type` - The type of resource (Agent, Snippet, or Command)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::lockfile::{LockFile, LockedResource};
+    /// use ccpm::core::ResourceType;
+    ///
+    /// let mut lockfile = LockFile::new();
+    /// let command = LockedResource {
+    ///     name: "build-command".to_string(),
+    ///     source: Some("community".to_string()),
+    ///     url: Some("https://github.com/example/repo.git".to_string()),
+    ///     path: "commands/build.md".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     resolved_commit: Some("a1b2c3d...".to_string()),
+    ///     checksum: "sha256:abcdef...".to_string(),
+    ///     installed_at: ".claude/commands/build-command.md".to_string(),
+    /// };
+    ///
+    /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
+    /// assert_eq!(lockfile.commands.len(), 1);
+    /// ```
+    pub fn add_typed_resource(
+        &mut self,
+        name: String,
+        resource: LockedResource,
+        resource_type: crate::core::ResourceType,
+    ) {
+        let resources = match resource_type {
+            crate::core::ResourceType::Agent => &mut self.agents,
+            crate::core::ResourceType::Snippet => &mut self.snippets,
+            crate::core::ResourceType::Command => &mut self.commands,
+            crate::core::ResourceType::McpServer => {
+                // MCP servers are handled differently - they don't use LockedResource
+                // This shouldn't be called for MCP servers
+                return;
+            }
+        };
+
+        // Remove existing entry if present
+        resources.retain(|r| r.name != name);
+        resources.push(resource);
+    }
+
+    /// Get a locked resource by name, searching across all resource types.
+    ///
+    /// Searches for a resource with the given name in the agents, snippets, and
+    /// commands collections. Since resource names must be unique within their type,
+    /// this method returns the first match found.
     ///
     /// # Arguments
     ///
@@ -961,13 +1082,14 @@ impl LockFile {
     ///
     /// # Search Order
     ///
-    /// The method searches agents first, then snippets. If both an agent and
-    /// a snippet have the same name, the agent will be returned.
+    /// The method searches agents first, then snippets, then commands. If multiple
+    /// resource types have the same name, the first match in this order will be returned.
     pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
         self.agents
             .iter()
             .find(|r| r.name == name)
             .or_else(|| self.snippets.iter().find(|r| r.name == name))
+            .or_else(|| self.commands.iter().find(|r| r.name == name))
     }
 
     /// Get a locked source repository by name.
@@ -1030,8 +1152,8 @@ impl LockFile {
 
     /// Get all locked resources as a combined vector.
     ///
-    /// Returns references to all resources (both agents and snippets) in a single
-    /// vector for easy iteration. The order is agents first, then snippets.
+    /// Returns references to all resources (agents, snippets, and commands) in a single
+    /// vector for easy iteration. The order is agents first, then snippets, then commands.
     ///
     /// # Returns
     ///
@@ -1061,12 +1183,13 @@ impl LockFile {
         let mut resources = Vec::new();
         resources.extend(&self.agents);
         resources.extend(&self.snippets);
+        resources.extend(&self.commands);
         resources
     }
 
     /// Clear all locked entries from the lockfile.
     ///
-    /// Removes all sources, agents, and snippets from the lockfile, returning
+    /// Removes all sources, agents, snippets, and commands from the lockfile, returning
     /// it to an empty state. The format version remains unchanged.
     ///
     /// # Examples
@@ -1092,6 +1215,7 @@ impl LockFile {
         self.sources.clear();
         self.agents.clear();
         self.snippets.clear();
+        self.commands.clear();
     }
 
     /// Compute SHA-256 checksum for a file with integrity verification.
@@ -1479,5 +1603,170 @@ mod tests {
         // Verify checksum
         assert!(LockFile::verify_checksum(&file_path, &checksum).unwrap());
         assert!(!LockFile::verify_checksum(&file_path, "sha256:wrong").unwrap());
+    }
+
+    #[test]
+    fn test_lockfile_with_commands() {
+        let mut lockfile = LockFile::new();
+
+        // Add a command resource using add_typed_resource
+        lockfile.add_typed_resource(
+            "build".to_string(),
+            LockedResource {
+                name: "build".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "commands/build.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:cmd123".to_string(),
+                installed_at: ".claude/commands/build.md".to_string(),
+            },
+            crate::core::ResourceType::Command,
+        );
+
+        assert_eq!(lockfile.commands.len(), 1);
+        assert!(lockfile.has_resource("build"));
+
+        let resource = lockfile.get_resource("build").unwrap();
+        assert_eq!(resource.name, "build");
+        assert_eq!(resource.installed_at, ".claude/commands/build.md");
+    }
+
+    #[test]
+    fn test_lockfile_all_resources_with_commands() {
+        let mut lockfile = LockFile::new();
+
+        // Add resources of each type
+        lockfile.add_resource(
+            "agent1".to_string(),
+            LockedResource {
+                name: "agent1".to_string(),
+                source: None,
+                url: None,
+                path: "agent1.md".to_string(),
+                version: None,
+                resolved_commit: None,
+                checksum: "sha256:a1".to_string(),
+                installed_at: "agents/agent1.md".to_string(),
+            },
+            true,
+        );
+
+        lockfile.add_resource(
+            "snippet1".to_string(),
+            LockedResource {
+                name: "snippet1".to_string(),
+                source: None,
+                url: None,
+                path: "snippet1.md".to_string(),
+                version: None,
+                resolved_commit: None,
+                checksum: "sha256:s1".to_string(),
+                installed_at: "snippets/snippet1.md".to_string(),
+            },
+            false,
+        );
+
+        lockfile.add_typed_resource(
+            "command1".to_string(),
+            LockedResource {
+                name: "command1".to_string(),
+                source: None,
+                url: None,
+                path: "command1.md".to_string(),
+                version: None,
+                resolved_commit: None,
+                checksum: "sha256:c1".to_string(),
+                installed_at: ".claude/commands/command1.md".to_string(),
+            },
+            crate::core::ResourceType::Command,
+        );
+
+        let all = lockfile.all_resources();
+        assert_eq!(all.len(), 3);
+
+        // Test clear includes commands
+        lockfile.clear();
+        assert!(lockfile.agents.is_empty());
+        assert!(lockfile.snippets.is_empty());
+        assert!(lockfile.commands.is_empty());
+    }
+
+    #[test]
+    fn test_lockfile_save_load_commands() {
+        let temp = tempdir().unwrap();
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        let mut lockfile = LockFile::new();
+
+        // Add command
+        lockfile.add_typed_resource(
+            "deploy".to_string(),
+            LockedResource {
+                name: "deploy".to_string(),
+                source: Some("official".to_string()),
+                url: Some("https://github.com/example/official.git".to_string()),
+                path: "commands/deploy.md".to_string(),
+                version: Some("v2.0.0".to_string()),
+                resolved_commit: Some("def456".to_string()),
+                checksum: "sha256:deploy123".to_string(),
+                installed_at: ".claude/commands/deploy.md".to_string(),
+            },
+            crate::core::ResourceType::Command,
+        );
+
+        // Save
+        lockfile.save(&lockfile_path).unwrap();
+
+        // Load and verify
+        let loaded = LockFile::load(&lockfile_path).unwrap();
+        assert_eq!(loaded.commands.len(), 1);
+        assert!(loaded.has_resource("deploy"));
+
+        let cmd = &loaded.commands[0];
+        assert_eq!(cmd.name, "deploy");
+        assert_eq!(cmd.version, Some("v2.0.0".to_string()));
+        assert_eq!(cmd.installed_at, ".claude/commands/deploy.md");
+    }
+
+    #[test]
+    fn test_lockfile_get_resource_precedence() {
+        let mut lockfile = LockFile::new();
+
+        // Add resources with same name but different types
+        lockfile.add_resource(
+            "helper".to_string(),
+            LockedResource {
+                name: "helper".to_string(),
+                source: None,
+                url: None,
+                path: "agent_helper.md".to_string(),
+                version: None,
+                resolved_commit: None,
+                checksum: "sha256:agent".to_string(),
+                installed_at: "agents/helper.md".to_string(),
+            },
+            true,
+        );
+
+        lockfile.add_typed_resource(
+            "helper".to_string(),
+            LockedResource {
+                name: "helper".to_string(),
+                source: None,
+                url: None,
+                path: "command_helper.md".to_string(),
+                version: None,
+                resolved_commit: None,
+                checksum: "sha256:command".to_string(),
+                installed_at: ".claude/commands/helper.md".to_string(),
+            },
+            crate::core::ResourceType::Command,
+        );
+
+        // get_resource should return agent (higher precedence)
+        let resource = lockfile.get_resource("helper").unwrap();
+        assert_eq!(resource.installed_at, "agents/helper.md");
     }
 }

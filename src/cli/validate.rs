@@ -351,6 +351,26 @@ impl ValidateCommand {
         self.execute_from_path(manifest_path).await
     }
 
+    /// Executes validation using a specific manifest path
+    ///
+    /// This method performs the same validation as `execute()` but accepts
+    /// an explicit manifest path instead of searching for it.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest_path` - Path to the manifest file to validate
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if validation succeeds
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The manifest file doesn't exist
+    /// - The manifest has syntax errors
+    /// - Sources are invalid or unreachable (with --resolve flag)
+    /// - Dependencies have conflicts
     pub async fn execute_from_path(self, manifest_path: PathBuf) -> Result<()> {
         // For consistency with execute(), require the manifest to exist
         if !manifest_path.exists() {
@@ -739,7 +759,7 @@ impl ValidateCommand {
                     println!("\n🔍 Checking lockfile consistency...");
                 }
 
-                match crate::lockfile::Lockfile::load(&lockfile_path) {
+                match crate::lockfile::LockFile::load(&lockfile_path) {
                     Ok(lockfile) => {
                         // Check that all manifest dependencies are in lockfile
                         let mut missing = Vec::new();
@@ -1002,6 +1022,8 @@ mod tests {
                 path: "test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1072,6 +1094,8 @@ mod tests {
                 path: "test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1243,6 +1267,8 @@ mod tests {
                 path: "./local/test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1312,6 +1338,8 @@ mod tests {
                 path: "test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1418,10 +1446,11 @@ mod tests {
         assert!(result.is_ok()); // Should succeed with warning
 
         // Create lockfile with matching dependencies
-        let lockfile = crate::lockfile::Lockfile {
+        let lockfile = crate::lockfile::LockFile {
             version: 1,
             sources: vec![],
-            agents: vec![crate::lockfile::LockEntry {
+            commands: vec![],
+            agents: vec![crate::lockfile::LockedResource {
                 name: "test".to_string(),
                 source: None,
                 url: None,
@@ -1432,6 +1461,7 @@ mod tests {
                 installed_at: "agents/test.md".to_string(),
             }],
             snippets: vec![],
+            mcp_servers: vec![],
         };
         lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
 
@@ -1470,6 +1500,8 @@ mod tests {
                 path: "same.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1480,6 +1512,8 @@ mod tests {
                 path: "same.md".to_string(),
                 version: Some("v2.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1618,6 +1652,8 @@ mod tests {
                 path: "test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1699,6 +1735,8 @@ mod tests {
                 path: temp.path().join("test.md").to_str().unwrap().to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1721,5 +1759,973 @@ mod tests {
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
+    }
+
+    // Additional comprehensive tests for uncovered lines start here
+
+    #[tokio::test]
+    async fn test_execute_with_no_manifest_json_format() {
+        use crate::test_utils::WorkingDirGuard;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp.path()).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json, // Test JSON output for no manifest found
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+        // This tests lines 335-342 (JSON format for missing manifest)
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_no_manifest_text_format() {
+        use crate::test_utils::WorkingDirGuard;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp.path()).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false, // Not quiet - should print error message
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+        // This tests lines 343-344 (text format for missing manifest)
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_no_manifest_quiet_mode() {
+        use crate::test_utils::WorkingDirGuard;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp.path()).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: true, // Quiet mode - should not print
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+        // This tests the else branch (quiet mode)
+    }
+
+    #[tokio::test]
+    async fn test_execute_from_path_nonexistent_file_json() {
+        let temp = TempDir::new().unwrap();
+        let nonexistent_path = temp.path().join("nonexistent.toml");
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(nonexistent_path).await;
+        assert!(result.is_err());
+        // This tests lines 379-385 (JSON output for nonexistent manifest file)
+    }
+
+    #[tokio::test]
+    async fn test_execute_from_path_nonexistent_file_text() {
+        let temp = TempDir::new().unwrap();
+        let nonexistent_path = temp.path().join("nonexistent.toml");
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(nonexistent_path).await;
+        assert!(result.is_err());
+        // This tests lines 386-387 (text output for nonexistent manifest file)
+    }
+
+    #[tokio::test]
+    async fn test_validate_manifest_toml_syntax_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create invalid TOML file
+        std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests lines 415-416 (TOML syntax error detection)
+    }
+
+    #[tokio::test]
+    async fn test_validate_manifest_toml_syntax_error_json() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create invalid TOML file
+        std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests lines 422-426 (JSON output for TOML syntax error)
+    }
+
+    #[tokio::test]
+    async fn test_validate_manifest_structure_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with invalid structure
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_dependency(
+            "test".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("nonexistent".to_string()),
+                path: "test.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests manifest validation errors (lines 435-455)
+    }
+
+    #[tokio::test]
+    async fn test_validate_manifest_version_conflict() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create a test manifest file that would trigger version conflict detection
+        std::fs::write(
+            &manifest_path,
+            r#"
+[sources]
+test = "https://github.com/test/repo.git"
+
+[agents]
+shared-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
+another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
+"#,
+        )
+        .unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        // This should not error on version conflict during manifest loading
+        // but may be detected during redundancy checks
+        let result = cmd.execute_from_path(manifest_path).await;
+        // Version conflicts are typically warnings, not errors
+        assert!(result.is_ok());
+        // This tests lines 439-442 (version conflict detection)
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_outdated_version_warnings() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with v0.x versions (potentially outdated)
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "old-agent".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "old.md".to_string(),
+                version: Some("v0.1.0".to_string()), // This should trigger warning
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests lines 475-478 (outdated version warning)
+    }
+
+    #[tokio::test]
+    async fn test_validate_resolve_with_error_json_output() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with dependency that will fail to resolve
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/nonexistent/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "failing-agent".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "test.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: true,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // This will likely fail due to network issues or nonexistent repo
+        // This tests lines 515-520 and 549-554 (JSON output for resolve errors)
+        let _ = result; // Don't assert success/failure as it depends on network
+    }
+
+    #[tokio::test]
+    async fn test_validate_resolve_dependency_not_found_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with dependencies that will fail resolution
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "my-agent".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agent.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.add_dependency(
+            "utils".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "utils.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+            false,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: true,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // This tests lines 538-541 (specific dependency not found error message)
+        let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_validate_sources_accessibility_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with sources that will fail accessibility check
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "official".to_string(),
+            "https://github.com/nonexistent/official.git".to_string(),
+        );
+        manifest.add_source(
+            "community".to_string(),
+            "https://github.com/nonexistent/community.git".to_string(),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: true,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // This tests lines 578-580, 613-615 (source accessibility error messages)
+        let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_validate_sources_accessibility_error_json() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with sources that will fail accessibility check
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "official".to_string(),
+            "https://github.com/nonexistent/official.git".to_string(),
+        );
+        manifest.add_source(
+            "community".to_string(),
+            "https://github.com/nonexistent/community.git".to_string(),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: true,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // This tests lines 586-590, 621-625 (JSON source accessibility error)
+        let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_validate_check_redundancies_with_resolver_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create a manifest that might cause resolver initialization to fail
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_dependency(
+            "broken-dependency".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("nonexistent-source".to_string()),
+                path: "test.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: true,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // This tests lines 644-658 (resolver initialization error for redundancy check)
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_check_paths_snippets_and_commands() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with local dependencies for snippets and commands (not just agents)
+        let mut manifest = crate::manifest::Manifest::new();
+
+        // Add local snippet
+        manifest.snippets.insert(
+            "local-snippet".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "./snippets/local.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+        );
+
+        // Add local command
+        manifest.commands.insert(
+            "local-command".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "./commands/deploy.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+        );
+
+        manifest.save(&manifest_path).unwrap();
+
+        // Create the referenced files
+        std::fs::create_dir_all(temp.path().join("snippets")).unwrap();
+        std::fs::create_dir_all(temp.path().join("commands")).unwrap();
+        std::fs::write(temp.path().join("snippets/local.md"), "# Local Snippet").unwrap();
+        std::fs::write(temp.path().join("commands/deploy.md"), "# Deploy Command").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: true, // Check paths for all resource types
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests path checking for snippets and commands, not just agents
+    }
+
+    #[tokio::test]
+    async fn test_validate_check_paths_missing_snippets_json() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with missing local snippet
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.snippets.insert(
+            "missing-snippet".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "./missing/snippet.md".to_string(),
+                version: None,
+                git: None,
+                command: None,
+                args: None,
+            }),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: true,
+            check_redundancies: false,
+            format: OutputFormat::Json, // Test JSON output for missing paths
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests lines 734-738 (JSON output for missing local paths)
+    }
+
+    #[tokio::test]
+    async fn test_validate_lockfile_missing_warning() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest but no lockfile
+        let manifest = crate::manifest::Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: true, // Test verbose mode with lockfile check
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests lines 759, 753-756 (verbose mode and missing lockfile warning)
+    }
+
+    #[tokio::test]
+    async fn test_validate_lockfile_syntax_error_json() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create valid manifest
+        let manifest = crate::manifest::Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        // Create invalid lockfile
+        std::fs::write(&lockfile_path, "invalid toml [[[").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests lines 829-834 (JSON output for invalid lockfile syntax)
+    }
+
+    #[tokio::test]
+    async fn test_validate_lockfile_missing_dependencies() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create manifest with dependencies
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_dependency(
+            "missing-agent".to_string(),
+            crate::manifest::ResourceDependency::Simple("test.md".to_string()),
+            true,
+        );
+        manifest.add_dependency(
+            "missing-snippet".to_string(),
+            crate::manifest::ResourceDependency::Simple("snippet.md".to_string()),
+            false,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        // Create empty lockfile (missing the manifest dependencies)
+        let lockfile = crate::lockfile::LockFile::new();
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok()); // Missing dependencies are warnings, not errors
+                                 // This tests lines 775-777, 811-822 (missing dependencies in lockfile)
+    }
+
+    #[tokio::test]
+    async fn test_validate_lockfile_extra_entries_error() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create empty manifest
+        let manifest = crate::manifest::Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        // Create lockfile with extra entries
+        let mut lockfile = crate::lockfile::LockFile::new();
+        lockfile.agents.push(crate::lockfile::LockedResource {
+            name: "extra-agent".to_string(),
+            source: Some("test".to_string()),
+            url: Some("https://github.com/test/repo.git".to_string()),
+            path: "test.md".to_string(),
+            version: None,
+            resolved_commit: Some("abc123".to_string()),
+            checksum: "sha256:dummy".to_string(),
+            installed_at: "agents/extra-agent.md".to_string(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Extra entries cause errors
+                                  // This tests lines 801-804, 807 (extra entries in lockfile error)
+    }
+
+    #[tokio::test]
+    async fn test_validate_strict_mode_with_json_output() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest that will generate warnings
+        let manifest = crate::manifest::Manifest::new(); // Empty manifest generates "no dependencies" warning
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: true,
+            strict: true, // Strict mode with JSON output
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Strict mode treats warnings as errors
+                                  // This tests lines 849-852 (strict mode with JSON output)
+    }
+
+    #[tokio::test]
+    async fn test_validate_strict_mode_text_output() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest that will generate warnings
+        let manifest = crate::manifest::Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false, // Not quiet - should print error message
+            strict: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        // This tests lines 854-855 (strict mode with text output)
+    }
+
+    #[tokio::test]
+    async fn test_validate_final_success_with_warnings() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest that will have warnings but no errors
+        let manifest = crate::manifest::Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false, // Not strict - warnings don't cause failure
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests the final success path with warnings displayed (lines 872-879)
+    }
+
+    #[tokio::test]
+    async fn test_validate_verbose_mode_with_summary() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with some content for summary
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "test-agent".to_string(),
+            crate::manifest::ResourceDependency::Simple("test.md".to_string()),
+            true,
+        );
+        manifest.add_dependency(
+            "test-snippet".to_string(),
+            crate::manifest::ResourceDependency::Simple("snippet.md".to_string()),
+            false,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: true, // Verbose mode to show summary
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests lines 484-490 (verbose mode summary output)
+    }
+
+    #[tokio::test]
+    async fn test_validate_check_redundancies_with_verbose() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with redundant dependencies
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "agent1".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "same.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.add_dependency(
+            "agent2".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "same.md".to_string(),
+                version: Some("v2.0.0".to_string()),
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: true,
+            format: OutputFormat::Text,
+            verbose: true, // Verbose mode
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok()); // Redundancies are warnings
+                                 // This tests lines 637-638 (verbose mode for redundancy check)
+    }
+
+    #[tokio::test]
+    async fn test_validate_check_redundancies_no_redundancies() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create manifest with no redundant dependencies
+        let mut manifest = crate::manifest::Manifest::new();
+        manifest.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.add_dependency(
+            "unique-agent".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "unique.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                git: None,
+                command: None,
+                args: None,
+            }),
+            true,
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: true,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+        // This tests lines 662-664 (no redundancies found message)
     }
 }

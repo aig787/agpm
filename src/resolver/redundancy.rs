@@ -321,6 +321,8 @@ impl RedundancyDetector {
     ///     path: "agents/helper.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// detector.add_usage("my-helper".to_string(), &remote_dep);
     ///
@@ -801,6 +803,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -811,6 +815,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -838,6 +844,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -848,6 +856,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -871,6 +881,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -881,6 +893,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -926,6 +940,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -936,6 +952,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -963,6 +981,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -973,6 +993,8 @@ mod tests {
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 

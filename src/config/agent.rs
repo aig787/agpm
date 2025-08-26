@@ -362,6 +362,21 @@ pub struct SnippetManifest {
 }
 
 impl SnippetManifest {
+    /// Loads a snippet manifest from a TOML file
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the snippet manifest file
+    ///
+    /// # Returns
+    ///
+    /// Returns the parsed `SnippetManifest` on success
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file cannot be read
+    /// - The TOML content is invalid
     pub fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read snippet manifest: {}", path.display()))?;
@@ -400,13 +415,22 @@ pub struct SnippetMetadata {
 #[serde(untagged)]
 pub enum SnippetContent {
     /// Inline snippet content
-    Inline { content: String },
+    Inline {
+        /// The snippet content as a string
+        content: String,
+    },
 
     /// File-based snippet content
-    File { file: String },
+    File {
+        /// Path to the file containing the snippet
+        file: String,
+    },
 
     /// Multiple files
-    Files { files: Vec<String> },
+    Files {
+        /// List of file paths containing snippet parts
+        files: Vec<String>,
+    },
 }
 
 /// Requirements and dependencies

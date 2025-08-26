@@ -72,7 +72,7 @@ use clap::Args;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::lockfile::Lockfile;
+use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, Manifest};
 use crate::resolver::DependencyResolver;
 use crate::utils::progress::ProgressBar;
@@ -283,7 +283,7 @@ impl UpdateCommand {
             }
             return Ok(());
         } else {
-            Lockfile::load(&lockfile_path)?
+            LockFile::load(&lockfile_path)?
         };
 
         // Create backup if requested
@@ -462,7 +462,7 @@ impl UpdateCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lockfile::{LockedResource, LockedSource, Lockfile};
+    use crate::lockfile::{LockFile, LockedResource, LockedSource};
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency, TargetConfig};
     use std::collections::HashMap;
     use std::fs;
@@ -497,6 +497,8 @@ mod tests {
                 path: "agents/test-agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -505,13 +507,16 @@ mod tests {
             target: TargetConfig::default(),
             agents,
             snippets: HashMap::new(),
+            commands: HashMap::new(),
+            mcp_servers: HashMap::new(),
         }
     }
 
     // Helper function to create a test lockfile
-    fn create_test_lockfile() -> Lockfile {
-        Lockfile {
+    fn create_test_lockfile() -> LockFile {
+        LockFile {
             version: 1,
+            commands: vec![],
             sources: vec![LockedSource {
                 name: "test-source".to_string(),
                 url: "file:///tmp/test-repo".to_string(),
@@ -529,6 +534,7 @@ mod tests {
                 installed_at: "agents/test-agent.md".to_string(),
             }],
             snippets: vec![],
+            mcp_servers: vec![],
         }
     }
 

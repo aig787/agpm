@@ -249,6 +249,31 @@ impl CacheCommand {
         }
     }
 
+    /// Remove all cached repositories regardless of usage.
+    ///
+    /// This method performs complete cache cleanup by removing the entire cache
+    /// directory and all its contents. This is more aggressive than selective
+    /// cleanup and is useful for:
+    ///
+    /// - Freeing maximum disk space
+    /// - Resolving cache corruption issues  
+    /// - Forcing fresh downloads of all repositories
+    /// - Starting with a clean slate
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - The cache instance to operate on
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if cache cleanup completed successfully
+    /// - `Err(anyhow::Error)` if file system operations fail
+    ///
+    /// # Side Effects
+    ///
+    /// - Removes the entire cache directory tree
+    /// - All subsequent operations will need to re-clone repositories
+    /// - Performance impact on next install/update operations
     async fn clean_all(&self, cache: Cache) -> Result<()> {
         println!("🗑️  Cleaning all cache...");
 
@@ -258,6 +283,45 @@ impl CacheCommand {
         Ok(())
     }
 
+    /// Remove only cached repositories that are not referenced in the current manifest.
+    ///
+    /// This method performs intelligent cache cleanup by:
+    ///
+    /// 1. Loading the current project's manifest (`ccpm.toml`)
+    /// 2. Extracting the list of source repository names
+    /// 3. Comparing cached repositories with active sources
+    /// 4. Removing only cache entries not referenced in the manifest
+    ///
+    /// # Safety Features
+    ///
+    /// - Preserves cache entries for sources defined in the manifest
+    /// - Gracefully handles missing manifest files
+    /// - Provides clear feedback about cleanup results
+    /// - Non-destructive when no manifest is found
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - The cache instance to operate on
+    ///
+    /// # Behavior Without Manifest
+    ///
+    /// If no `ccpm.toml` file is found:
+    /// - Issues a warning message
+    /// - Performs no cleanup operations
+    /// - Suggests using `--all` flag for complete cleanup
+    /// - Returns successfully without error
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if cleanup completed successfully or no manifest found
+    /// - `Err(anyhow::Error)` if manifest loading or file operations fail
+    ///
+    /// # Examples
+    ///
+    /// Given a manifest with sources "official" and "community":
+    /// - Cache entries "official" and "community" are preserved
+    /// - Cache entry "old-unused" is removed
+    /// - Cache entry "another-project" is removed
     async fn clean_unused(&self, cache: Cache) -> Result<()> {
         println!("🔍 Scanning for unused cache entries...");
 
@@ -287,6 +351,45 @@ impl CacheCommand {
         Ok(())
     }
 
+    /// Display comprehensive information about the cache directory and contents.
+    ///
+    /// This method provides a detailed overview of the cache including:
+    ///
+    /// - **Location**: Absolute path to the cache directory
+    /// - **Size**: Total disk space used, formatted in human-readable units
+    /// - **Contents**: List of cached repository directories
+    /// - **Usage Tips**: Helpful commands for cache management
+    ///
+    /// # Information Displayed
+    ///
+    /// ## Cache Location
+    /// Shows the full path to the cache directory, typically:
+    /// - `~/.ccpm/cache/` on Unix-like systems
+    /// - `%APPDATA%/ccpm/cache/` on Windows
+    ///
+    /// ## Cache Size
+    /// Total disk space used by all cached repositories, automatically
+    /// formatted using appropriate units (B, KB, MB, GB).
+    ///
+    /// ## Repository Listing
+    /// Each cached repository is listed by name, corresponding to the
+    /// source names defined in project manifests.
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - The cache instance to analyze
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if information display completed successfully
+    /// - `Err(anyhow::Error)` if cache directory access or size calculation fails
+    ///
+    /// # Behavior
+    ///
+    /// - Handles non-existent cache directories gracefully
+    /// - Shows empty cache state when no repositories are cached
+    /// - Provides actionable tips for cache management
+    /// - Uses async I/O for efficient directory scanning
     async fn show_info(&self, cache: Cache) -> Result<()> {
         let location = cache.get_cache_location();
         let size = cache.get_cache_size().await?;
@@ -817,6 +920,8 @@ mod tests {
             ],
             agents: vec![],
             snippets: vec![],
+            commands: vec![],
+            mcp_servers: vec![],
         };
         lockfile.save(&work_dir.path().join("ccpm.lock")).unwrap();
 

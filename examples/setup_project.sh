@@ -1,41 +1,41 @@
 #!/bin/bash
+# Example setup script demonstrating CCPM with a local Git repository
+# This script sets up a complete Claude Code project with agents, snippets,
+# commands, and MCP servers from a local repository
 
-# CCPM Project Setup Script
-# Creates a new project using CCPM commands
+set -e  # Exit on error
 
-set -e
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# Check if project name was provided
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 <project-name>"
-    echo "Example: $0 my-claude-project"
-    exit 1
-fi
+echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║     CCPM Example Project Setup Script      ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+echo ""
 
-PROJECT_NAME="$1"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$SCRIPT_DIR/projects/$PROJECT_NAME"
-CCPM_ROOT="$SCRIPT_DIR/.."
+# Clean up previous example if it exists
+echo "→ Cleaning up previous example (if exists)"
+rm -rf examples/projects/test
+
+# Setup paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR/projects/test"
 DEPS_DIR="$SCRIPT_DIR/deps"
 
-# Build CCPM first
-echo "Building CCPM..."
-(cd "$CCPM_ROOT" && cargo build)
+# Ensure ccpm is built
+echo "→ Building ccpm"
+cd "$(dirname "$SCRIPT_DIR")"
+cargo build --release
 
-# Function to run CCPM commands from the current directory
-ccpm() {
-    "$CCPM_ROOT/target/debug/ccpm" "$@"
-}
+# Add to PATH for this script
+export PATH="$PWD/target/release:$PATH"
 
 echo ""
-echo "Setting up CCPM project: $PROJECT_NAME"
-echo "================================"
-
-# Remove existing project directory if it exists
-if [ -d "$PROJECT_DIR" ]; then
-    echo "→ Removing existing project directory: $PROJECT_DIR"
-    rm -rf "$PROJECT_DIR"
-fi
+echo -e "${GREEN}✓ Using ccpm from: $(which ccpm)${NC}"
+echo ""
 
 # Create project directory
 echo "→ Creating directory: $PROJECT_DIR"
@@ -56,23 +56,36 @@ echo ""
 echo "→ Adding source repository"
 ccpm add source local-deps "file://$DEPS_DIR"
 
+# IMPORTANT: This script uses only ccpm commands to manage dependencies
+# We do not manually edit the ccpm.toml file - all dependencies are added
+# via the 'ccpm add dep' subcommands to ensure proper manifest structure
+
 # Add agents
 echo ""
-echo "→ Adding agents"
-ccpm add dep --agent --name rust-haiku "local-deps:agents/rust-haiku.md@v1.1"
-ccpm add dep --agent --name javascript-haiku "local-deps:agents/javascript-haiku.md@v1.2"
+echo "→ Adding agents to manifest"
+ccpm add dep agent local-deps:agents/rust-haiku.md@v1.1 --name rust-haiku
+ccpm add dep agent local-deps:agents/javascript-haiku.md@v1.2 --name javascript-haiku
 
-# Add snippets
+# Add snippets  
 echo ""
-echo "→ Adding snippets"
-ccpm add dep --snippet --name error-analysis "local-deps:snippets/error-analysis.md@main"
-ccpm add dep --snippet --name unit-tests "local-deps:snippets/unit-test-creation.md@main"
-ccpm add dep --snippet --name security-review "local-deps:snippets/security-review.md@main"
-ccpm add dep --snippet --name rest-api "local-deps:snippets/rest-api-endpoint.md@main"
-ccpm add dep --snippet --name test-coverage "local-deps:snippets/test-coverage.md@main"
+echo "→ Adding snippets to manifest"
+ccpm add dep snippet local-deps:snippets/error-analysis.md@main --name error-analysis
+ccpm add dep snippet local-deps:snippets/unit-test-creation.md@main --name unit-tests
+ccpm add dep snippet local-deps:snippets/security-review.md@main --name security-review
+ccpm add dep snippet local-deps:snippets/rest-api-endpoint.md@main --name rest-api
+ccpm add dep snippet local-deps:snippets/test-coverage.md@main --name test-coverage
 
+# Add commands
 echo ""
-echo "→ Adding snippets"
+echo "→ Adding commands to manifest"
+ccpm add dep command local-deps:commands/git-auto-commit.md@main --name git-auto-commit
+ccpm add dep command local-deps:commands/format-json.md@main --name format-json
+
+# Add MCP servers
+echo ""
+echo "→ Adding MCP servers to manifest"
+ccpm add dep mcp-server local-deps:mcp-servers/github-mcp.json@main --name github --mcp-command npx --mcp-args=-y,@modelcontextprotocol/server-github
+ccpm add dep mcp-server local-deps:mcp-servers/sqlite-mcp.json@main --name sqlite --mcp-command uvx --mcp-args=mcp-server-sqlite,--db,./data/local.db
 
 
 # Show the generated manifest
@@ -95,17 +108,21 @@ echo ""
 echo "→ Listing installed resources"
 ccpm list
 
-# Show project structure with tree
+# Show final structure
 echo ""
-echo "→ Project structure:"
+echo "→ Final project structure:"
 tree -a -L 3
 
 echo ""
-echo "✅ Project setup complete!"
-echo "   Location: $PROJECT_DIR"
+echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║           Setup Complete! 🎉               ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
 echo ""
-echo "Next steps:"
-echo "  cd $PROJECT_DIR"
-echo "  ccpm update    # Update dependencies"
-echo "  ccpm list      # View installed resources"
-echo "  ccpm validate  # Validate configuration"
+echo "Your Claude Code project is ready with:"
+echo "  • 2 agents"
+echo "  • 5 snippets"
+echo "  • 2 commands"
+echo "  • 2 MCP servers"
+echo ""
+echo "Project location: $PROJECT_DIR"
+echo ""

@@ -183,6 +183,11 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::fs as async_fs;
 
+/// File-based locking mechanism for cache operations
+///
+/// This module provides thread-safe and process-safe locking for cache
+/// operations through OS-level file locks, ensuring data consistency
+/// when multiple CCPM processes access the same cache directory.
 pub mod lock;
 pub use lock::CacheLock;
 

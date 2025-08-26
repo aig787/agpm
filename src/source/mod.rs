@@ -87,7 +87,6 @@
 //! ## Remote Repositories
 //! - **HTTPS**: `https://github.com/owner/repo.git`
 //! - **SSH**: `git@github.com:owner/repo.git`
-//! - **Git Protocol**: `git://server/repo.git` (primarily for testing)
 //!
 //! ## Local Repositories
 //! - **Absolute paths**: `/path/to/local/repo`
@@ -913,7 +912,6 @@ impl SourceManager {
     /// ## Remote Repositories
     /// - **HTTPS**: `https://github.com/owner/repo.git`  
     /// - **SSH**: `git@github.com:owner/repo.git`
-    /// - **Git Protocol**: `git://server/repo.git`
     ///
     /// ## Local Repositories  
     /// - **Absolute paths**: `/absolute/path/to/repo`
@@ -1063,11 +1061,8 @@ impl SourceManager {
         } else if cache_path.exists() {
             let repo = GitRepo::new(&cache_path);
             if repo.is_git_repo() {
-                // Skip fetch/pull for local file:// URLs and git:// test URLs
-                // git:// is used in tests and doesn't need fetch/pull after initial clone
-                if !url.starts_with("file://") && !url.starts_with("git://") {
-                    repo.fetch(Some(&url), progress).await?;
-                }
+                // Always fetch for all URLs to get latest changes
+                repo.fetch(Some(&url), progress).await?;
                 repo
             } else {
                 std::fs::remove_dir_all(&cache_path)
@@ -1228,6 +1223,22 @@ impl SourceManager {
         Ok(repo)
     }
 
+    /// Synchronizes all enabled sources by fetching latest changes
+    ///
+    /// This method iterates through all enabled sources and synchronizes each one
+    /// by fetching the latest changes from their remote repositories.
+    ///
+    /// # Arguments
+    ///
+    /// * `progress` - Optional progress bar for displaying sync progress
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if all sources sync successfully
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any source fails to sync
     pub async fn sync_all(&mut self, progress: Option<&ProgressBar>) -> Result<()> {
         let enabled_sources: Vec<String> =
             self.list_enabled().iter().map(|s| s.name.clone()).collect();

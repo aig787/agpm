@@ -337,7 +337,7 @@ mod tests {
 
         // Try to clone with an invalid URL that will produce stderr
         let result = GitRepo::clone(
-            "git://invalid.host.that.does.not.exist/repo.git",
+            "https://invalid.host.that.does.not.exist.9999/repo.git",
             &target_path,
             None,
         )
@@ -1865,26 +1865,38 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_local_repository() {
         let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
+        let repo_path = temp_dir.path().join("repo");
+        let origin_path = temp_dir.path().join("origin");
 
+        // Create origin repository
+        std::fs::create_dir_all(&origin_path).unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        // Create repo and add the local origin
+        std::fs::create_dir_all(&repo_path).unwrap();
         Command::new("git")
             .args(["init"])
-            .current_dir(repo_path)
+            .current_dir(&repo_path)
             .output()
             .unwrap();
 
         // Add a file:// remote
+        let origin_url = format!("file://{}", origin_path.display());
         Command::new("git")
-            .args(["remote", "add", "origin", "file:///local/repo"])
-            .current_dir(repo_path)
+            .args(["remote", "add", "origin", &origin_url])
+            .current_dir(&repo_path)
             .output()
             .unwrap();
 
-        let repo = GitRepo::new(repo_path);
+        let repo = GitRepo::new(&repo_path);
         let result = repo.fetch(None, None).await;
 
-        // Should skip fetch for local repositories
-        assert!(result.is_ok());
+        // Should fetch successfully from local repositories
+        assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
     }
 
     #[tokio::test]
@@ -1898,9 +1910,22 @@ mod tests {
             .output()
             .unwrap();
 
-        // Add a git:// remote
+        // Add a file:// remote (local repository)
+        let bare_repo = temp_dir.path().join("bare");
+        std::fs::create_dir(&bare_repo).unwrap();
         Command::new("git")
-            .args(["remote", "add", "origin", "git://localhost/repo"])
+            .args(["init", "--bare"])
+            .current_dir(&bare_repo)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args([
+                "remote",
+                "add",
+                "origin",
+                &format!("file://{}", bare_repo.display()),
+            ])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -1909,7 +1934,7 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let result = repo.fetch(None, Some(&pb)).await;
 
-        // Should skip fetch for git:// repositories
+        // Should fetch for file:// repositories
         assert!(result.is_ok());
     }
 
@@ -1935,7 +1960,7 @@ mod tests {
         // Fetch with specific auth URL
         let auth_url = format!("file://{}", bare_path.display());
         let result = repo.fetch(Some(&auth_url), None).await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
     }
 
     #[tokio::test]
@@ -2124,17 +2149,6 @@ mod tests {
         let url = "https://example.com/user@domain/repo.git";
         let result = strip_auth_from_url(url).unwrap();
         assert_eq!(result, "https://example.com/user@domain/repo.git");
-    }
-
-    #[test]
-    fn test_parse_git_url_git_protocol() {
-        let result = parse_git_url("git://github.com/owner/repo.git").unwrap();
-        assert_eq!(result.0, "git");
-        assert_eq!(result.1, "repo");
-
-        let result = parse_git_url("git://example.com/project.git").unwrap();
-        assert_eq!(result.0, "git");
-        assert_eq!(result.1, "project");
     }
 
     #[test]

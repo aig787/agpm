@@ -21,6 +21,7 @@
 //! - [`lockfile`] - Lockfile generation, parsing, and validation
 //! - [`manifest`] - Manifest (ccpm.toml) parsing and validation
 //! - [`markdown`] - Markdown file operations and metadata extraction
+//! - [`models`] - Shared data models for dependency specifications
 //! - [`resolver`] - Dependency resolution and conflict detection
 //! - [`source`] - Source repository operations and management
 //! - [`utils`] - Cross-platform utilities and helpers
@@ -58,6 +59,8 @@ pub mod git;
 pub mod lockfile;
 pub mod manifest;
 pub mod markdown;
+pub mod mcp;
+pub mod models;
 pub mod resolver;
 pub mod source;
 pub mod utils;

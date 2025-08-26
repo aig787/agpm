@@ -1,4 +1,23 @@
-// Additional tests for CLI modules
+//! Additional integration tests for CLI modules.
+//!
+//! This module provides comprehensive testing for the CLI interface, including
+//! argument parsing, configuration building, and command execution paths.
+//!
+//! # Test Categories
+//!
+//! - **Argument Parsing**: Tests that CLI flags and options are parsed correctly
+//! - **Configuration Building**: Tests that CLI arguments are converted to [`CliConfig`](crate::cli::CliConfig)
+//! - **Command Execution**: Integration tests that verify commands execute successfully
+//! - **Environment Handling**: Tests for environment variable application and restoration
+//!
+//! # Test Safety
+//!
+//! Tests that modify the working directory or environment variables use:
+//! - [`WorkingDirGuard`](crate::test_utils::WorkingDirGuard) for directory isolation
+//! - Temporary directories for file operations
+//! - Explicit environment variable restoration
+//!
+//! This ensures tests don't interfere with each other or the development environment.
 
 #[cfg(test)]
 mod cli_tests {
@@ -87,17 +106,20 @@ mod cli_tests {
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
-        
+
         // Change to temp dir FIRST before creating the manifest
         std::env::set_current_dir(&temp_path).unwrap();
-        
+
         // Now create the manifest in the current directory
         let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
-        
+
         // Verify the file exists
         assert!(manifest_path.exists(), "Manifest file was not created");
-        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest not found in current dir");
+        assert!(
+            std::path::Path::new("ccpm.toml").exists(),
+            "Manifest not found in current dir"
+        );
 
         // Test that verbose flag creates correct config and executes successfully
         let cli = Cli::try_parse_from(["ccpm", "--verbose", "list"]).unwrap();
@@ -230,17 +252,20 @@ mod cli_tests {
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
-        
+
         // Change to temp dir FIRST before creating the manifest
         std::env::set_current_dir(&temp_path).unwrap();
-        
+
         // Now create the manifest in the current directory
         let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
-        
+
         // Verify the file exists from our perspective
         assert!(manifest_path.exists(), "Manifest file was not created");
-        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest not found in current dir");
+        assert!(
+            std::path::Path::new("ccpm.toml").exists(),
+            "Manifest not found in current dir"
+        );
 
         // Use a test config that doesn't modify environment for all commands
         let test_config = CliConfig::new();
@@ -249,10 +274,17 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
         assert!(result.is_ok(), "list command failed: {:?}", result);
-        
+
         // Verify we're still in the right directory and the manifest still exists
-        assert_eq!(std::env::current_dir().unwrap().canonicalize().unwrap(), temp_path, "Current dir changed after list");
-        assert!(std::path::Path::new("ccpm.toml").exists(), "Manifest disappeared after list");
+        assert_eq!(
+            std::env::current_dir().unwrap().canonicalize().unwrap(),
+            temp_path,
+            "Current dir changed after list"
+        );
+        assert!(
+            std::path::Path::new("ccpm.toml").exists(),
+            "Manifest disappeared after list"
+        );
 
         let cli = Cli::try_parse_from(["ccpm", "validate"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
@@ -288,6 +320,106 @@ mod cli_tests {
         assert!(result.is_ok(), "add source command failed: {:?}", result);
 
         // WorkingDirGuard will restore the original directory when dropped
+    }
+
+    #[tokio::test]
+    async fn test_cli_execute_method() {
+        use crate::test_utils::WorkingDirGuard;
+        use tempfile::TempDir;
+
+        // Use WorkingDirGuard to serialize tests that change working directory
+        let _guard = WorkingDirGuard::new().unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        std::env::set_current_dir(&temp_path).unwrap();
+
+        // Create a minimal manifest to prevent errors
+        let manifest_path = temp_path.join("ccpm.toml");
+        std::fs::write(&manifest_path, "[sources]\n").unwrap();
+
+        // Test that execute() method calls execute_with_config properly
+        // Parse the CLI instead of constructing it directly
+        let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
+
+        // This tests the execute method path (lines 582-584)
+        let result = cli.execute().await;
+        assert!(result.is_ok(), "execute method failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_cli_execute_init_command() {
+        use crate::test_utils::WorkingDirGuard;
+        use tempfile::TempDir;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        std::env::set_current_dir(&temp_path).unwrap();
+
+        // Test Init command execution (line 692)
+        // Parse the CLI to properly create the command
+        let cli = Cli::try_parse_from(["ccpm", "init"]).unwrap();
+
+        let result = cli.execute().await;
+        assert!(result.is_ok(), "Init command failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_cli_execute_cache_command() {
+        use crate::test_utils::WorkingDirGuard;
+        use tempfile::TempDir;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        std::env::set_current_dir(&temp_path).unwrap();
+
+        // Create a manifest for cache operations
+        std::fs::write(temp_path.join("ccpm.toml"), "[sources]\n").unwrap();
+
+        // Test Cache command execution (line 698)
+        // Parse the CLI to properly create the command with default subcommand
+        let cli = Cli::try_parse_from(["ccpm", "cache", "info"]).unwrap();
+
+        let result = cli.execute().await;
+        assert!(result.is_ok(), "Cache command failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_cli_execute_mcp_command() {
+        use crate::test_utils::WorkingDirGuard;
+        use tempfile::TempDir;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path().canonicalize().unwrap();
+        std::env::set_current_dir(&temp_path).unwrap();
+
+        // Create a manifest for MCP operations
+        std::fs::write(temp_path.join("ccpm.toml"), "[sources]\n").unwrap();
+
+        // Test MCP command execution (line 700)
+        let cli = Cli::try_parse_from(["ccpm", "mcp", "status"]).unwrap();
+
+        let result = cli.execute().await;
+        assert!(result.is_ok(), "MCP command failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_cli_execute_config_command() {
+        use crate::test_utils::WorkingDirGuard;
+        use tempfile::TempDir;
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let _temp_dir = TempDir::new().unwrap();
+
+        // Test Config command execution (line 699)
+        // Config path command doesn't need a manifest
+        let cli = Cli::try_parse_from(["ccpm", "config", "path"]).unwrap();
+
+        let result = cli.execute().await;
+        assert!(result.is_ok(), "Config command failed: {:?}", result);
     }
 
     #[test]

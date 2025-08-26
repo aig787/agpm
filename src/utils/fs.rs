@@ -2312,11 +2312,20 @@ mod tests {
 
     #[test]
     fn test_get_cache_dir_from_config() {
+        // Save original value and ensure clean test environment
+        let original = std::env::var("CCPM_CACHE_DIR").ok();
+        std::env::remove_var("CCPM_CACHE_DIR");
+
         // Test that we can get a cache directory (using the config module)
         let cache_dir = crate::config::get_cache_dir().unwrap();
-        // The cache directory should contain "ccpm" in its path
+        // The cache directory should contain "ccpm" in its path when env var is not set
         assert!(cache_dir.to_string_lossy().contains("ccpm"));
         // It should be a valid path
         assert!(!cache_dir.as_os_str().is_empty());
+
+        // Restore original value if it existed
+        if let Some(val) = original {
+            std::env::set_var("CCPM_CACHE_DIR", val);
+        }
     }
 }

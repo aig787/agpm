@@ -417,8 +417,8 @@ fn test_invalid_urls() {
     let manifest_content = r#"
 [sources]
 invalid_url = "not-a-url"
-malformed_git = "git://incomplete"
 wrong_protocol = "ftp://example.com/repo.git"
+malformed_path = "/path/without/git/repo"
 
 [agents]
 test-agent = { source = "invalid_url", path = "agents/test.md", version = "v1.0.0" }

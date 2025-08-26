@@ -253,7 +253,12 @@ pub enum CcpmError {
     /// - `operation`: The git operation that failed (e.g., "clone", "fetch", "checkout")
     /// - `stderr`: The error output from the git command
     #[error("Git operation failed: {operation}")]
-    GitCommandError { operation: String, stderr: String },
+    GitCommandError {
+        /// The git operation that failed (e.g., "clone", "fetch", "checkout")
+        operation: String,
+        /// The error output from the git command
+        stderr: String,
+    },
 
     /// Git executable not found in PATH
     ///
@@ -275,7 +280,10 @@ pub enum CcpmError {
     /// # Fields
     /// - `path`: The path that was expected to contain a git repository
     #[error("Not a valid git repository: {path}")]
-    GitRepoInvalid { path: String },
+    GitRepoInvalid {
+        /// The path that was expected to contain a git repository
+        path: String,
+    },
 
     /// Git authentication failed for repository access
     ///
@@ -285,19 +293,35 @@ pub enum CcpmError {
     /// # Fields
     /// - `url`: The repository URL that failed authentication
     #[error("Git authentication failed for repository: {url}")]
-    GitAuthenticationFailed { url: String },
+    GitAuthenticationFailed {
+        /// The repository URL that failed authentication
+        url: String,
+    },
 
     /// Git repository clone failed
     #[error("Failed to clone repository: {url}")]
-    GitCloneFailed { url: String, reason: String },
+    GitCloneFailed {
+        /// The repository URL that failed to clone
+        url: String,
+        /// The reason for the clone failure
+        reason: String,
+    },
 
     /// Git checkout failed
     #[error("Failed to checkout reference '{reference}' in repository")]
-    GitCheckoutFailed { reference: String, reason: String },
+    GitCheckoutFailed {
+        /// The git reference (branch, tag, or commit) that failed to checkout
+        reference: String,
+        /// The reason for the checkout failure
+        reason: String,
+    },
 
     /// Configuration error
     #[error("Configuration error: {message}")]
-    ConfigError { message: String },
+    ConfigError {
+        /// Description of the configuration error
+        message: String,
+    },
 
     /// Manifest file (ccpm.toml) not found
     ///
@@ -311,51 +335,99 @@ pub enum CcpmError {
 
     /// Manifest parsing error
     #[error("Invalid manifest file syntax in {file}")]
-    ManifestParseError { file: String, reason: String },
+    ManifestParseError {
+        /// Path to the manifest file that failed to parse
+        file: String,
+        /// Specific reason for the parsing failure
+        reason: String,
+    },
 
     /// Manifest validation error
     #[error("Manifest validation failed: {reason}")]
-    ManifestValidationError { reason: String },
+    ManifestValidationError {
+        /// Reason why manifest validation failed
+        reason: String,
+    },
 
     /// Lockfile parsing error
     #[error("Invalid lockfile syntax in {file}")]
-    LockfileParseError { file: String, reason: String },
+    LockfileParseError {
+        /// Path to the lockfile that failed to parse
+        file: String,
+        /// Specific reason for the parsing failure
+        reason: String,
+    },
 
     /// Resource not found
     #[error("Resource '{name}' not found")]
-    ResourceNotFound { name: String },
+    ResourceNotFound {
+        /// Name of the resource that could not be found
+        name: String,
+    },
 
     /// Resource file not found in repository
     #[error("Resource file '{path}' not found in source '{source_name}'")]
-    ResourceFileNotFound { path: String, source_name: String },
+    ResourceFileNotFound {
+        /// Path to the resource file within the source repository
+        path: String,
+        /// Name of the source repository where the file was expected
+        source_name: String,
+    },
 
     /// Source repository not found
     #[error("Source repository '{name}' not defined in manifest")]
-    SourceNotFound { name: String },
+    SourceNotFound {
+        /// Name of the source repository that is not defined
+        name: String,
+    },
 
     /// Source repository unreachable
     #[error("Cannot reach source repository '{name}' at {url}")]
-    SourceUnreachable { name: String, url: String },
+    SourceUnreachable {
+        /// Name of the source repository
+        name: String,
+        /// URL of the unreachable repository
+        url: String,
+    },
 
     /// Invalid version constraint
     #[error("Invalid version constraint: {constraint}")]
-    InvalidVersionConstraint { constraint: String },
+    InvalidVersionConstraint {
+        /// The invalid version constraint string
+        constraint: String,
+    },
 
     /// Version not found
     #[error("Version '{version}' not found for resource '{resource}'")]
-    VersionNotFound { resource: String, version: String },
+    VersionNotFound {
+        /// Name of the resource for which the version was not found
+        resource: String,
+        /// The version string that could not be found
+        version: String,
+    },
 
     /// Resource already installed
     #[error("Resource '{name}' is already installed")]
-    AlreadyInstalled { name: String },
+    AlreadyInstalled {
+        /// Name of the resource that is already installed
+        name: String,
+    },
 
     /// Invalid resource type
     #[error("Invalid resource type: {resource_type}")]
-    InvalidResourceType { resource_type: String },
+    InvalidResourceType {
+        /// The invalid resource type that was specified
+        resource_type: String,
+    },
 
     /// Invalid resource structure
     #[error("Invalid resource structure in '{file}': {reason}")]
-    InvalidResourceStructure { file: String, reason: String },
+    InvalidResourceStructure {
+        /// Path to the file with invalid resource structure
+        file: String,
+        /// Reason why the resource structure is invalid
+        reason: String,
+    },
 
     /// Circular dependency detected in dependency graph
     ///
@@ -367,59 +439,105 @@ pub enum CcpmError {
     /// # Fields
     /// - `chain`: The dependency chain showing the circular reference
     #[error("Circular dependency detected: {chain}")]
-    CircularDependency { chain: String },
+    CircularDependency {
+        /// String representation of the circular dependency chain
+        chain: String,
+    },
 
     /// Dependency resolution failed
     #[error("Cannot resolve dependencies: {reason}")]
-    DependencyResolutionFailed { reason: String },
+    DependencyResolutionFailed {
+        /// Reason why dependency resolution failed
+        reason: String,
+    },
 
     /// Network error
     #[error("Network error: {operation}")]
-    NetworkError { operation: String, reason: String },
+    NetworkError {
+        /// The network operation that failed
+        operation: String,
+        /// Reason for the network failure
+        reason: String,
+    },
 
     /// File system error
     #[error("File system error: {operation}")]
-    FileSystemError { operation: String, path: String },
+    FileSystemError {
+        /// The file system operation that failed
+        operation: String,
+        /// Path where the file system error occurred
+        path: String,
+    },
 
     /// Permission denied
     #[error("Permission denied: {operation}")]
-    PermissionDenied { operation: String, path: String },
+    PermissionDenied {
+        /// The operation that was denied due to insufficient permissions
+        operation: String,
+        /// Path where permission was denied
+        path: String,
+    },
 
     /// Directory not empty
     #[error("Directory is not empty: {path}")]
-    DirectoryNotEmpty { path: String },
+    DirectoryNotEmpty {
+        /// Path to the directory that is not empty
+        path: String,
+    },
 
     /// Invalid dependency specification
     #[error("Invalid dependency specification for '{name}': {reason}")]
-    InvalidDependency { name: String, reason: String },
+    InvalidDependency {
+        /// Name of the invalid dependency
+        name: String,
+        /// Reason why the dependency specification is invalid
+        reason: String,
+    },
 
     /// Invalid resource content
     #[error("Invalid resource content in '{name}': {reason}")]
-    InvalidResource { name: String, reason: String },
+    InvalidResource {
+        /// Name of the invalid resource
+        name: String,
+        /// Reason why the resource content is invalid
+        reason: String,
+    },
 
     /// Dependency not met
     #[error("Dependency '{name}' requires version {required}, but {found} was found")]
     DependencyNotMet {
+        /// Name of the dependency that is not satisfied
         name: String,
+        /// The required version constraint
         required: String,
+        /// The version that was actually found
         found: String,
     },
 
     /// Config file not found
     #[error("Configuration file not found: {path}")]
-    ConfigNotFound { path: String },
+    ConfigNotFound {
+        /// Path to the configuration file that was not found
+        path: String,
+    },
 
     /// Checksum mismatch
     #[error("Checksum mismatch for resource '{name}': expected {expected}, got {actual}")]
     ChecksumMismatch {
+        /// Name of the resource with checksum mismatch
         name: String,
+        /// The expected checksum value
         expected: String,
+        /// The actual checksum that was computed
         actual: String,
     },
 
     /// Platform not supported
     #[error("Operation not supported on this platform: {operation}")]
-    PlatformNotSupported { operation: String },
+    PlatformNotSupported {
+        /// The operation that is not supported on this platform
+        operation: String,
+    },
 
     /// IO error
     #[error("IO error: {0}")]
@@ -439,7 +557,10 @@ pub enum CcpmError {
 
     /// Other error
     #[error("{message}")]
-    Other { message: String },
+    Other {
+        /// Generic error message
+        message: String,
+    },
 }
 
 impl Clone for CcpmError {

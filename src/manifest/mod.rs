@@ -14,6 +14,8 @@
 //! - Local and remote dependency resolution
 //! - Version constraint specification and validation
 //! - Cross-platform path handling and installation
+//! - MCP (Model Context Protocol) server configuration management
+//! - Atomic file operations for reliability
 //!
 //! # Complete TOML Format Specification
 //!
@@ -35,6 +37,8 @@
 //! agents = ".claude/agents"
 //! # Where snippets should be installed (default: ".claude/snippets")
 //! snippets = ".claude/snippets"
+//! # Where commands should be installed (default: ".claude/commands")
+//! commands = ".claude/commands"
 //!
 //! # Agent dependencies (optional)
 //! [agents]
@@ -50,6 +54,12 @@
 //! # Same formats as agents
 //! local-snippet = "../shared/snippets/common.md"
 //! remote-snippet = { source = "community", path = "snippets/utils.md", version = "v2.1.0" }
+//!
+//! # Command dependencies (optional)
+//! [commands]
+//! # Same formats as agents and snippets
+//! local-command = "../shared/commands/helper.md"
+//! remote-command = { source = "community", path = "commands/build.md", version = "v1.0.0" }
 //! ```
 //!
 //! ## Sources Section
@@ -65,9 +75,6 @@
 //! # SSH URLs (for private repositories with key authentication)
 //! private = "git@github.com:company/private-resources.git"
 //! internal = "git@gitlab.company.com:team/internal-resources.git"
-//!
-//! # Git protocol URLs (less common)
-//! mirror = "git://git.example.com/mirror/resources.git"
 //!
 //! # Local Git repository URLs
 //! local-repo = "file:///absolute/path/to/local/repo"
@@ -86,14 +93,17 @@
 //! # Default values shown - these can be customized
 //! agents = ".claude/agents"      # Where agent .md files are copied
 //! snippets = ".claude/snippets"  # Where snippet .md files are copied
+//! commands = ".claude/commands"  # Where command .md files are copied
 //!
 //! # Alternative configurations
 //! agents = "resources/agents"
 //! snippets = "resources/snippets"
+//! commands = "resources/commands"
 //!
 //! # Absolute paths are supported
 //! agents = "/opt/claude/agents"
 //! snippets = "/opt/claude/snippets"
+//! commands = "/opt/claude/commands"
 //! ```
 //!
 //! ## Dependency Sections
@@ -230,6 +240,8 @@
 //! - Home directory expansion (~) is supported
 //! - Environment variable expansion is available
 //! - Git commands work on Windows, macOS, and Linux
+//! - Long path support on Windows (>260 characters)
+//! - Unicode filenames and paths are fully supported
 //!
 //! ## Best Practices
 //!
@@ -240,6 +252,69 @@
 //! 5. **Keep manifests simple**: Avoid overly complex dependency trees
 //! 6. **Use SSH for private repos**: More secure than HTTPS tokens
 //! 7. **Test across platforms**: Verify paths work on all target systems
+//! 8. **Version control manifests**: Always commit `ccpm.toml` to git
+//! 9. **Validate regularly**: Run `ccpm validate` before commits
+//! 10. **Use lockfiles**: Commit `ccpm.lock` for reproducible builds
+//!
+//! ## Error Handling
+//!
+//! The manifest module provides comprehensive error handling with:
+//! - **Context-rich errors**: Detailed messages with actionable suggestions
+//! - **Validation errors**: Clear explanations of manifest problems
+//! - **I/O errors**: Helpful context for file system issues
+//! - **TOML parsing errors**: Specific syntax error locations
+//! - **Security validation**: Detection of potential security issues
+//!
+//! All errors implement [`std::error::Error`] and provide both user-friendly
+//! messages and programmatic access to error details.
+//!
+//! ## Performance Characteristics
+//!
+//! - **Parsing**: O(n) where n is the manifest file size
+//! - **Validation**: O(d) where d is the number of dependencies
+//! - **Serialization**: O(n) where n is the total data size
+//! - **Memory usage**: Proportional to manifest complexity
+//! - **Thread safety**: All operations are thread-safe
+//!
+//! ## Integration with Other Modules
+//!
+//! The manifest module works closely with other CCPM modules:
+//!
+//! ### With [`crate::resolver`]
+//!
+//! ```rust,ignore
+//! use ccpm::manifest::Manifest;
+//! use ccpm::resolver::DependencyResolver;
+//!
+//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let resolver = DependencyResolver::new(&manifest);
+//! let resolved = resolver.resolve_all().await?;
+//! ```
+//!
+//! ### With [`crate::lockfile`]
+//!
+//! ```rust,ignore  
+//! use ccpm::manifest::Manifest;
+//! use ccpm::lockfile::LockFile;
+//!
+//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let lockfile = LockFile::generate_from_manifest(&manifest).await?;
+//! lockfile.save(&project_path.join("ccpm.lock"))?;
+//! ```
+//!
+//! ### With [`crate::git`] for Source Management
+//!
+//! ```rust,ignore
+//! use ccpm::manifest::Manifest;
+//! use ccpm::git::GitManager;
+//!
+//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let git = GitManager::new(&cache_dir);
+//!
+//! for (name, url) in &manifest.sources {
+//!     git.clone_or_update(name, url).await?;
+//! }
+//! ```
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -259,6 +334,7 @@ use std::path::{Path, PathBuf};
 /// - **Target**: Installation directories for different resource types
 /// - **Agents**: AI agent dependencies (`.md` files with agent definitions)
 /// - **Snippets**: Code snippet dependencies (`.md` files with reusable code)
+/// - **Commands**: Claude Code command dependencies (`.md` files with slash commands)
 ///
 /// # Serialization
 ///
@@ -341,6 +417,30 @@ pub struct Manifest {
     /// See [`ResourceDependency`] for specification format details.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub snippets: HashMap<String, ResourceDependency>,
+
+    /// Command dependencies mapping names to their specifications.
+    ///
+    /// Commands are Claude Code slash commands that provide custom functionality
+    /// and automation within the Claude Code interface. They follow the same
+    /// dependency format as agents and snippets.
+    ///
+    /// See [`ResourceDependency`] for specification format details.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub commands: HashMap<String, ResourceDependency>,
+
+    /// MCP server configurations mapping names to their specifications.
+    ///
+    /// MCP servers provide integrations with external systems and services,
+    /// allowing Claude Code to connect to databases, APIs, and other tools.
+    /// Each server configuration specifies how to launch and configure the server.
+    ///
+    /// See [`crate::mcp::McpServerDependency`] for specification format details.
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        rename = "mcp-servers"
+    )]
+    pub mcp_servers: HashMap<String, crate::mcp::McpServerDependency>,
 }
 
 /// Target directories configuration specifying where resources are installed.
@@ -353,6 +453,7 @@ pub struct Manifest {
 ///
 /// - **Agents**: `.claude/agents` - Following Claude Code conventions
 /// - **Snippets**: `.claude/snippets` - Following Claude Code conventions
+/// - **Commands**: `.claude/commands` - Following Claude Code conventions
 ///
 /// # Path Resolution
 ///
@@ -368,16 +469,19 @@ pub struct Manifest {
 /// [target]
 /// agents = ".claude/agents"
 /// snippets = ".claude/snippets"
+/// commands = ".claude/commands"
 ///
 /// # Custom configuration
 /// [target]
 /// agents = "resources/ai-agents"
 /// snippets = "templates/code-snippets"
+/// commands = "resources/commands"
 ///
 /// # Absolute paths (use with caution)
 /// [target]
 /// agents = "/opt/claude/agents"
 /// snippets = "/opt/claude/snippets"
+/// commands = "/opt/claude/commands"
 /// ```
 ///
 /// # Cross-Platform Considerations
@@ -405,6 +509,25 @@ pub struct TargetConfig {
     /// **Default**: `.claude/snippets` (following Claude Code conventions)
     #[serde(default = "default_snippets_dir")]
     pub snippets: String,
+
+    /// Directory where command `.md` files should be installed.
+    ///
+    /// Commands are Claude Code slash commands that provide custom functionality.
+    /// This directory will contain copies of command files from dependencies.
+    ///
+    /// **Default**: `.claude/commands` (following Claude Code conventions)
+    #[serde(default = "default_commands_dir")]
+    pub commands: String,
+
+    /// Directory where MCP server configurations should be tracked.
+    ///
+    /// Note: MCP servers are configured in `.mcp.json` at the project root,
+    /// not installed to this directory. This directory is used for tracking
+    /// metadata about installed servers.
+    ///
+    /// **Default**: `.claude/mcp-servers` (following Claude Code conventions)
+    #[serde(default = "default_mcp_servers_dir", rename = "mcp-servers")]
+    pub mcp_servers: String,
 }
 
 impl Default for TargetConfig {
@@ -412,6 +535,8 @@ impl Default for TargetConfig {
         Self {
             agents: default_agents_dir(),
             snippets: default_snippets_dir(),
+            commands: default_commands_dir(),
+            mcp_servers: default_mcp_servers_dir(),
         }
     }
 }
@@ -422,6 +547,14 @@ fn default_agents_dir() -> String {
 
 fn default_snippets_dir() -> String {
     ".claude/snippets".to_string()
+}
+
+fn default_commands_dir() -> String {
+    ".claude/commands".to_string()
+}
+
+fn default_mcp_servers_dir() -> String {
+    ".claude/mcp-servers".to_string()
 }
 
 /// A resource dependency specification supporting multiple formats.
@@ -475,6 +608,14 @@ fn default_snippets_dir() -> String {
 /// - Simple paths serialize directly as strings
 /// - Detailed specs serialize as TOML inline tables
 /// - Empty optional fields are omitted for cleaner output
+/// - Deserialization is automatic based on TOML structure
+///
+/// # Memory Layout
+///
+/// This enum uses `#[serde(untagged)]` for automatic variant detection,
+/// which means deserialization tries the `Detailed` variant first, then
+/// falls back to `Simple`. This is efficient for the expected usage patterns
+/// where detailed dependencies are more common in larger projects.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ResourceDependency {
@@ -681,6 +822,48 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git: Option<String>,
+
+    /// Command to execute for MCP servers.
+    ///
+    /// This field is specific to MCP server dependencies and specifies
+    /// the command that will be executed to run the MCP server.
+    /// Only used for entries in the `[mcp-servers]` section.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [mcp-servers]
+    /// github = { source = "repo", path = "mcp/github.toml", version = "v1.0.0", command = "npx" }
+    /// sqlite = { path = "./local/sqlite.toml", command = "uvx" }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+
+    /// Arguments to pass to the MCP server command.
+    ///
+    /// This field is specific to MCP server dependencies and provides
+    /// the arguments that will be passed to the command when starting
+    /// the MCP server. Only used for entries in the `[mcp-servers]` section.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [mcp-servers]
+    /// github = {
+    ///     source = "repo",
+    ///     path = "mcp/github.toml",
+    ///     version = "v1.0.0",
+    ///     command = "npx",
+    ///     args = ["-y", "@modelcontextprotocol/server-github"]
+    /// }
+    /// sqlite = {
+    ///     path = "./local/sqlite.toml",
+    ///     command = "uvx",
+    ///     args = ["mcp-server-sqlite", "--db", "./data/local.db"]
+    /// }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
 }
 
 impl Manifest {
@@ -703,6 +886,8 @@ impl Manifest {
     /// assert!(manifest.sources.is_empty());
     /// assert!(manifest.agents.is_empty());
     /// assert!(manifest.snippets.is_empty());
+    /// assert!(manifest.commands.is_empty());
+    /// assert!(manifest.mcp_servers.is_empty());
     /// assert_eq!(manifest.target.agents, ".claude/agents");
     /// ```
     pub fn new() -> Self {
@@ -711,6 +896,8 @@ impl Manifest {
             target: TargetConfig::default(),
             agents: HashMap::new(),
             snippets: HashMap::new(),
+            commands: HashMap::new(),
+            mcp_servers: HashMap::new(),
         }
     }
 
@@ -936,6 +1123,8 @@ impl Manifest {
     ///         path: "agent.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
     ///         git: None,
+    ///     command: None,
+    ///     args: None,
     ///     }),
     ///     true
     /// );
@@ -1028,7 +1217,6 @@ impl Manifest {
             if !expanded_url.starts_with("http://")
                 && !expanded_url.starts_with("https://")
                 && !expanded_url.starts_with("git@")
-                && !expanded_url.starts_with("git://")   // Allow git:// protocol
                 && !expanded_url.starts_with("file://")
             // Plain directory paths not allowed as sources
             && !expanded_url.starts_with('/')
@@ -1037,7 +1225,7 @@ impl Manifest {
             {
                 return Err(crate::core::CcpmError::ManifestValidationError {
                     reason: format!(
-                        "Source '{}' has invalid URL: '{}'. Must be HTTP(S), SSH (git@...), git://, or file:// URL",
+                        "Source '{}' has invalid URL: '{}'. Must be HTTP(S), SSH (git@...), or file:// URL",
                         name, url
                     ),
                 }
@@ -1097,7 +1285,7 @@ impl Manifest {
     /// # Order
     ///
     /// Dependencies are returned in the order they appear in the underlying
-    /// HashMaps (agents first, then snippets), which means the order is not
+    /// HashMaps (agents first, then snippets, then commands), which means the order is not
     /// guaranteed to be stable across runs.
     pub fn all_dependencies(&self) -> Vec<(&str, &ResourceDependency)> {
         let mut deps = Vec::new();
@@ -1108,13 +1296,16 @@ impl Manifest {
         for (name, dep) in &self.snippets {
             deps.push((name.as_str(), dep));
         }
+        for (name, dep) in &self.commands {
+            deps.push((name.as_str(), dep));
+        }
 
         deps
     }
 
     /// Check if a dependency with the given name exists in any section.
     ///
-    /// Searches both the `[agents]` and `[snippets]` sections for a dependency
+    /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
     /// with the specified name. This is useful for avoiding duplicate names
     /// across different resource types.
     ///
@@ -1138,7 +1329,9 @@ impl Manifest {
     ///
     /// This method performs two HashMap lookups, so it's O(1) on average.
     pub fn has_dependency(&self, name: &str) -> bool {
-        self.agents.contains_key(name) || self.snippets.contains_key(name)
+        self.agents.contains_key(name)
+            || self.snippets.contains_key(name)
+            || self.commands.contains_key(name)
     }
 
     /// Get a dependency by name from any section.
@@ -1169,10 +1362,14 @@ impl Manifest {
     /// Dependencies are searched in this order:
     /// 1. `[agents]` section
     /// 2. `[snippets]` section
+    /// 3. `[commands]` section
     ///
-    /// If the same name exists in both sections, the agent dependency is returned.
+    /// If the same name exists in multiple sections, the first match is returned.
     pub fn get_dependency(&self, name: &str) -> Option<&ResourceDependency> {
-        self.agents.get(name).or_else(|| self.snippets.get(name))
+        self.agents
+            .get(name)
+            .or_else(|| self.snippets.get(name))
+            .or_else(|| self.commands.get(name))
     }
 
     /// Add or update a source repository in the `[sources]` section.
@@ -1184,7 +1381,7 @@ impl Manifest {
     /// # Parameters
     ///
     /// - `name`: Short, convenient name for the source (e.g., "official", "community")
-    /// - `url`: Git repository URL (HTTPS, SSH, file://, or git:// protocol)
+    /// - `url`: Git repository URL (HTTPS, SSH, or file:// protocol)
     ///
     /// # URL Validation
     ///
@@ -1193,7 +1390,7 @@ impl Manifest {
     /// - `https://github.com/owner/repo.git`
     /// - `git@github.com:owner/repo.git`
     /// - `file:///absolute/path/to/repo`
-    /// - `git://git.example.com/repo.git`
+    /// - `file:///path/to/local/repo`
     ///
     /// # Examples
     ///
@@ -1231,15 +1428,19 @@ impl Manifest {
 
     /// Add or update a dependency in the appropriate section.
     ///
-    /// Adds the dependency to either the `[agents]` or `[snippets]` section
+    /// Adds the dependency to either the `[agents]`, `[snippets]`, or `[commands]` section
     /// based on the `is_agent` parameter. If a dependency with the same name
     /// already exists in the target section, it will be replaced.
+    ///
+    /// **Note**: This method is deprecated in favor of [`Self::add_typed_dependency`]
+    /// which provides explicit control over resource types.
     ///
     /// # Parameters
     ///
     /// - `name`: Unique name for the dependency within its section
     /// - `dep`: The dependency specification (Simple or Detailed)
     /// - `is_agent`: If true, adds to `[agents]`; if false, adds to `[snippets]`
+    ///   (Note: Use [`Self::add_typed_dependency`] for commands and other resource types)
     ///
     /// # Validation
     ///
@@ -1269,6 +1470,8 @@ impl Manifest {
     ///         path: "snippets/utils.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
     ///         git: None,
+    ///     command: None,
+    ///     args: None,
     ///     }),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -1286,6 +1489,79 @@ impl Manifest {
         } else {
             self.snippets.insert(name, dep);
         }
+    }
+
+    /// Add or update a dependency with specific resource type.
+    ///
+    /// This is the preferred method for adding dependencies as it explicitly
+    /// specifies the resource type using the ResourceType enum.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    /// use ccpm::core::ResourceType;
+    ///
+    /// let mut manifest = Manifest::new();
+    ///
+    /// // Add command dependency
+    /// manifest.add_typed_dependency(
+    ///     "build".to_string(),
+    ///     ResourceDependency::Simple("../commands/build.md".to_string()),
+    ///     ResourceType::Command
+    /// );
+    /// ```
+    pub fn add_typed_dependency(
+        &mut self,
+        name: String,
+        dep: ResourceDependency,
+        resource_type: crate::core::ResourceType,
+    ) {
+        match resource_type {
+            crate::core::ResourceType::Agent => {
+                self.agents.insert(name, dep);
+            }
+            crate::core::ResourceType::Snippet => {
+                self.snippets.insert(name, dep);
+            }
+            crate::core::ResourceType::Command => {
+                self.commands.insert(name, dep);
+            }
+            crate::core::ResourceType::McpServer => {
+                // MCP servers don't use ResourceDependency, they have their own type
+                // This method shouldn't be called for MCP servers
+                panic!("Use add_mcp_server() for MCP server dependencies");
+            }
+        }
+    }
+
+    /// Add or update an MCP server configuration.
+    ///
+    /// MCP servers use a different dependency format than other resources
+    /// because they specify commands to run rather than files to install.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::manifest::Manifest;
+    /// use ccpm::mcp::McpServerDependency;
+    ///
+    /// let mut manifest = Manifest::new();
+    ///
+    /// manifest.add_mcp_server(
+    ///     "filesystem".to_string(),
+    ///     McpServerDependency {
+    ///         command: "npx".to_string(),
+    ///         args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
+    ///         env: None,
+    ///         source: Some("npm".to_string()),
+    ///         version: Some("latest".to_string()),
+    ///         package: Some("@modelcontextprotocol/server-filesystem".to_string()),
+    ///     }
+    /// );
+    /// ```
+    pub fn add_mcp_server(&mut self, name: String, config: crate::mcp::McpServerDependency) {
+        self.mcp_servers.insert(name, config);
     }
 }
 
@@ -1311,6 +1587,8 @@ impl ResourceDependency {
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -1352,6 +1630,8 @@ impl ResourceDependency {
     ///     path: "agents/code-reviewer.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -1387,6 +1667,8 @@ impl ResourceDependency {
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),  // This is ignored
     ///     git: Some("develop".to_string()),     // This takes precedence
+    ///     command: None,
+    ///     args: None,
     /// });
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -1407,6 +1689,8 @@ impl ResourceDependency {
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -1416,6 +1700,8 @@ impl ResourceDependency {
     ///     path: "file.md".to_string(),
     ///     version: None,
     ///     git: Some("main".to_string()),
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert_eq!(git_ref.get_version(), Some("main"));
     /// ```
@@ -1458,6 +1744,8 @@ impl ResourceDependency {
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert!(!remote.is_local());
     ///
@@ -1467,6 +1755,8 @@ impl ResourceDependency {
     ///     path: "../shared/tool.md".to_string(),
     ///     version: None,
     ///     git: None,
+    ///     command: None,
+    ///     args: None,
     /// });
     /// assert!(local_detailed.is_local());
     /// ```
@@ -1500,7 +1790,6 @@ impl Default for Manifest {
 /// 1. **Standard Git URLs** are returned unchanged:
 ///    - `http://` and `https://` URLs
 ///    - SSH URLs starting with `git@`
-///    - Git protocol URLs starting with `git://`
 ///    - File URLs starting with `file://`
 ///
 /// 2. **Local paths** with expansion markers are processed:
@@ -1553,12 +1842,18 @@ impl Default for Manifest {
 /// - CI/CD systems can inject repository URLs via environment variables
 /// - Users can reference repositories relative to their home directory  
 /// - Docker containers can use mounted paths with consistent URLs
+/// - Development teams can share manifests without hardcoded paths
+/// - Multi-platform projects can use consistent path references
+///
+/// # Thread Safety
+///
+/// This function is thread-safe and does not modify global state.
+/// Environment variable access is read-only and atomic.
 fn expand_url(url: &str) -> Result<String> {
-    // If it looks like a standard protocol URL (http, https, git@, git://), don't expand
+    // If it looks like a standard protocol URL (http, https, git@, file://), don't expand
     if url.starts_with("http://")
         || url.starts_with("https://")
         || url.starts_with("git@")
-        || url.starts_with("git://")
         || url.starts_with("file://")
     {
         return Ok(url.to_string());
@@ -1732,6 +2027,8 @@ mod tests {
         assert!(manifest.sources.is_empty());
         assert!(manifest.agents.is_empty());
         assert!(manifest.snippets.is_empty());
+        assert!(manifest.commands.is_empty());
+        assert!(manifest.mcp_servers.is_empty());
     }
 
     #[test]
@@ -1751,6 +2048,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1783,6 +2082,8 @@ mod tests {
                 path: "agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1809,6 +2110,8 @@ mod tests {
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         });
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -1859,5 +2162,175 @@ mod tests {
         let result = manifest.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("invalid URL"));
+    }
+
+    #[test]
+    fn test_manifest_commands() {
+        let mut manifest = Manifest::new();
+
+        // Add a command dependency
+        manifest.add_typed_dependency(
+            "build-command".to_string(),
+            ResourceDependency::Simple("commands/build.md".to_string()),
+            crate::core::ResourceType::Command,
+        );
+
+        assert!(manifest.commands.contains_key("build-command"));
+        assert_eq!(manifest.commands.len(), 1);
+        assert!(manifest.has_dependency("build-command"));
+
+        // Test get_dependency returns command
+        let dep = manifest.get_dependency("build-command");
+        assert!(dep.is_some());
+        assert_eq!(dep.unwrap().get_path(), "commands/build.md");
+    }
+
+    #[test]
+    fn test_manifest_all_dependencies_with_commands() {
+        let mut manifest = Manifest::new();
+
+        manifest.add_typed_dependency(
+            "agent1".to_string(),
+            ResourceDependency::Simple("a1.md".to_string()),
+            crate::core::ResourceType::Agent,
+        );
+        manifest.add_typed_dependency(
+            "snippet1".to_string(),
+            ResourceDependency::Simple("s1.md".to_string()),
+            crate::core::ResourceType::Snippet,
+        );
+        manifest.add_typed_dependency(
+            "command1".to_string(),
+            ResourceDependency::Simple("c1.md".to_string()),
+            crate::core::ResourceType::Command,
+        );
+
+        let all_deps = manifest.all_dependencies();
+        assert_eq!(all_deps.len(), 3);
+
+        // Verify all three types are present
+        assert!(manifest.agents.contains_key("agent1"));
+        assert!(manifest.snippets.contains_key("snippet1"));
+        assert!(manifest.commands.contains_key("command1"));
+    }
+
+    #[test]
+    fn test_manifest_save_load_commands() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.add_source(
+            "community".to_string(),
+            "https://github.com/example/community.git".to_string(),
+        );
+        manifest.add_typed_dependency(
+            "deploy".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("community".to_string()),
+                path: "commands/deploy.md".to_string(),
+                version: Some("v2.0.0".to_string()),
+                git: None,
+                command: None,
+                args: None,
+            }),
+            crate::core::ResourceType::Command,
+        );
+
+        // Save and reload
+        manifest.save(&manifest_path).unwrap();
+        let loaded = Manifest::load(&manifest_path).unwrap();
+
+        assert_eq!(loaded.commands.len(), 1);
+        assert!(loaded.commands.contains_key("deploy"));
+        assert!(loaded.has_dependency("deploy"));
+
+        let dep = loaded.get_dependency("deploy").unwrap();
+        assert_eq!(dep.get_path(), "commands/deploy.md");
+        assert_eq!(dep.get_version(), Some("v2.0.0"));
+    }
+
+    #[test]
+    fn test_target_config_commands_dir() {
+        let config = TargetConfig::default();
+        assert_eq!(config.commands, ".claude/commands");
+
+        // Test custom config
+        let mut manifest = Manifest::new();
+        manifest.target.commands = "custom/commands".to_string();
+        assert_eq!(manifest.target.commands, "custom/commands");
+    }
+
+    #[test]
+    fn test_mcp_servers() {
+        let mut manifest = Manifest::new();
+
+        // Add an MCP server
+        manifest.add_mcp_server(
+            "test-server".to_string(),
+            crate::mcp::McpServerDependency {
+                command: "npx".to_string(),
+                args: vec!["-y".to_string(), "@test/server".to_string()],
+                env: Some(HashMap::from([(
+                    "LOG_LEVEL".to_string(),
+                    "debug".to_string(),
+                )])),
+                source: Some("npm".to_string()),
+                version: Some("latest".to_string()),
+                path: None,
+                git: None,
+            },
+        );
+
+        assert_eq!(manifest.mcp_servers.len(), 1);
+        assert!(manifest.mcp_servers.contains_key("test-server"));
+
+        let server = &manifest.mcp_servers["test-server"];
+        assert_eq!(server.command, "npx");
+        assert_eq!(server.args.len(), 2);
+        assert!(server.env.is_some());
+    }
+
+    #[test]
+    fn test_manifest_save_load_mcp_servers() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.add_source("npm".to_string(), "https://registry.npmjs.org".to_string());
+        manifest.add_mcp_server(
+            "postgres".to_string(),
+            crate::mcp::McpServerDependency {
+                command: "mcp-postgres".to_string(),
+                args: vec!["--port".to_string(), "5432".to_string()],
+                env: None,
+                source: None,
+                version: None,
+                path: None,
+                git: None,
+            },
+        );
+
+        // Save and reload
+        manifest.save(&manifest_path).unwrap();
+        let loaded = Manifest::load(&manifest_path).unwrap();
+
+        assert_eq!(loaded.mcp_servers.len(), 1);
+        assert!(loaded.mcp_servers.contains_key("postgres"));
+
+        let server = &loaded.mcp_servers["postgres"];
+        assert_eq!(server.command, "mcp-postgres");
+        assert_eq!(server.args, vec!["--port", "5432"]);
+    }
+
+    #[test]
+    fn test_target_config_mcp_servers_dir() {
+        let config = TargetConfig::default();
+        assert_eq!(config.mcp_servers, ".claude/mcp-servers");
+
+        // Test custom config
+        let mut manifest = Manifest::new();
+        manifest.target.mcp_servers = "custom/mcp".to_string();
+        assert_eq!(manifest.target.mcp_servers, "custom/mcp");
     }
 }

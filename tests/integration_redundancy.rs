@@ -23,6 +23,8 @@ async fn test_validate_check_redundancy_none() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -34,6 +36,8 @@ async fn test_validate_check_redundancy_none() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -82,6 +86,8 @@ async fn test_validate_check_redundancy_direct() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -93,6 +99,8 @@ async fn test_validate_check_redundancy_direct() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -142,6 +150,8 @@ async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()), // different version
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -153,6 +163,8 @@ async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -205,6 +217,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -216,6 +230,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -228,6 +244,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             path: "snippets/utils.md".to_string(),
             version: Some("v1.2.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         false,
     );
@@ -239,6 +257,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             path: "snippets/utils.md".to_string(),
             version: Some("v1.3.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         false,
     );
@@ -286,6 +306,8 @@ async fn test_validate_check_redundancy_json_output() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -297,6 +319,8 @@ async fn test_validate_check_redundancy_json_output() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -345,6 +369,8 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -356,6 +382,8 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
         true,
     );
@@ -394,6 +422,8 @@ async fn test_redundancy_detector_direct() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
     );
 
@@ -404,6 +434,8 @@ async fn test_redundancy_detector_direct() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v2.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
     );
 
@@ -434,6 +466,8 @@ async fn test_redundancy_suggestions() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: None, // latest
             git: None,
+            command: None,
+            args: None,
         }),
     );
 
@@ -444,6 +478,8 @@ async fn test_redundancy_suggestions() -> Result<()> {
             path: "agents/shared.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         }),
     );
 

@@ -1164,8 +1164,11 @@ pub mod constraints;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum VersionConstraint {
+    /// A semantic version tag (e.g., "v1.2.0", "1.0.0")
     Tag(String),
+    /// A git branch reference (e.g., "main", "develop", "feature/new")
     Branch(String),
+    /// A specific git commit hash (full or abbreviated)
     Commit(String),
 }
 

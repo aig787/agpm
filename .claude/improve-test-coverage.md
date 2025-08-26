@@ -1,9 +1,12 @@
 # Test Coverage Improvement Instructions for CCPM
 
 ## Overview
-You are tasked with improving test coverage for the CCPM (Claude Code Package Manager) project. The target is 70% minimum coverage. All existing tests must remain passing throughout this process.
+
+You are tasked with improving test coverage for the CCPM (Claude Code Package Manager) project. The target is 70%
+minimum coverage. All existing tests must remain passing throughout this process.
 
 **IMPORTANT**: This is an iterative process. You will:
+
 1. Check current coverage
 2. Identify gaps
 3. Write tests for one module/component
@@ -11,11 +14,13 @@ You are tasked with improving test coverage for the CCPM (Claude Code Package Ma
 5. Re-measure coverage
 6. Repeat until target is met
 
-Work incrementally - don't try to fix everything at once. Focus on one module at a time, ensuring stability at each step.
+Work incrementally - don't try to fix everything at once. Focus on one module at a time, ensuring stability at each
+step.
 
 ## Pre-Flight Checklist
 
 ### Step 1: Ensure Clean Starting State
+
 **CRITICAL**: All tests must pass before checking coverage. Run these commands first:
 
 ```bash
@@ -33,13 +38,14 @@ cargo test --all
 ### Step 2: Generate Baseline Coverage Report
 
 **IMPORTANT Coverage Measurement Notes:**
+
 - Use `cargo tarpaulin` WITHOUT `--lib` flag to include binary tests
 - Integration tests execute the binary and don't contribute to library coverage
 - Test utilities themselves (test_utils module) should be excluded from coverage metrics
 
 ```bash
 # Generate HTML coverage report (includes all test types)
-cargo tarpaulin --out html --output-dir target/coverage
+cargo tarpaulin --out html --exclude-files "*/test_utils/*" --output-dir target/coverage
 
 # Exclude test utilities from coverage metrics
 cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*"
@@ -58,6 +64,7 @@ open target/coverage/tarpaulin-report.html  # macOS
 ### Step 3: Identify Coverage Gaps
 
 Use the coverage report to identify:
+
 1. **Uncovered modules** - Entire modules with no tests
 2. **Low coverage files** - Files with < 50% coverage
 3. **Critical paths** - Important functionality with no tests
@@ -65,6 +72,7 @@ Use the coverage report to identify:
 5. **Edge cases** - Boundary conditions not covered
 
 Priority order for CCPM modules:
+
 1. **Core functionality** (`src/core/`)
 2. **CLI commands** (`src/cli/`)
 3. **Manifest/Lockfile** (`src/manifest/`, `src/lockfile/`)
@@ -78,36 +86,37 @@ Priority order for CCPM modules:
 #### Use Specialized Agents for Different Tasks:
 
 1. **rust-expert** - For designing test strategies:
-   - Complex test scenarios
-   - Mock implementations
-   - Test architecture decisions
-   - Integration test design
+    - Complex test scenarios
+    - Mock implementations
+    - Test architecture decisions
+    - Integration test design
 
 2. **rust-linting-expert** - For test code quality:
-   - Ensuring test code follows conventions
-   - Fixing test compilation issues
-   - Running clippy on test code
+    - Ensuring test code follows conventions
+    - Fixing test compilation issues
+    - Running clippy on test code
 
 3. **rust-test-fixer** - For fixing test issues:
-   - Assertion failures
-   - Setup/teardown problems
-   - Test isolation issues
-   - Flaky test fixes
+    - Assertion failures
+    - Setup/teardown problems
+    - Test isolation issues
+    - Flaky test fixes
 
 4. **rust-troubleshooter-opus** - For complex test problems:
-   - Race conditions in tests
-   - Memory issues in tests
-   - Performance test design
-   - Debugging mysterious failures
+    - Race conditions in tests
+    - Memory issues in tests
+    - Performance test design
+    - Debugging mysterious failures
 
 5. **general-purpose** - For research and planning:
-   - Finding similar test patterns in codebase
-   - Researching testing best practices
-   - Understanding existing test infrastructure
+    - Finding similar test patterns in codebase
+    - Researching testing best practices
+    - Understanding existing test infrastructure
 
 ### Step 5: Test Implementation Guidelines
 
 #### Unit Tests
+
 Location: In the same file as the code being tested
 
 ```rust
@@ -115,15 +124,15 @@ Location: In the same file as the code being tested
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    
+
     #[test]
     fn test_function_name() {
         // Arrange
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Act
         let result = function_under_test();
-        
+
         // Assert
         assert!(result.is_ok());
     }
@@ -131,6 +140,7 @@ mod tests {
 ```
 
 #### Integration Tests
+
 Location: `tests/` directory
 
 ```rust
@@ -147,24 +157,26 @@ fn test_install_command() {
 ### Step 6: CCPM-Specific Testing Requirements
 
 #### Critical Testing Rules
+
 1. **NEVER use `std::env::set_var`** in tests (causes race conditions)
-   - Exception: Tests explicitly testing env var functionality
-   - Must be documented with clear comments
-   - Use `.env()` on Command for subprocesses instead
+    - Exception: Tests explicitly testing env var functionality
+    - Must be documented with clear comments
+    - Use `.env()` on Command for subprocesses instead
 
 2. **Cache Directory Isolation**
-   - Each test MUST use its own temp directory
-   - Never share cache directories between tests
-   - Clean up temp directories after tests
+    - Each test MUST use its own temp directory
+    - Never share cache directories between tests
+    - Clean up temp directories after tests
 
 3. **No Global State**
-   - Tests must not modify global state
-   - Each test should be completely independent
-   - Use dependency injection for configuration
+    - Tests must not modify global state
+    - Each test should be completely independent
+    - Use dependency injection for configuration
 
 #### Testing Patterns for CCPM
 
 **Manifest Testing**
+
 ```rust
 #[test]
 fn test_manifest_parsing() {
@@ -178,24 +190,26 @@ fn test_manifest_parsing() {
 ```
 
 **Git Operation Testing**
+
 ```rust
 #[test]
 fn test_git_clone() {
     let temp_dir = TempDir::new().unwrap();
     let cache_dir = temp_dir.path().join("cache");
-    
+
     // Mock git operations or use test repositories
     // Never test against real external repositories
 }
 ```
 
 **Lockfile Testing**
+
 ```rust
 #[test]
 fn test_lockfile_generation() {
     let temp_dir = TempDir::new().unwrap();
     let project_dir = temp_dir.path();
-    
+
     // Test lockfile is deterministic
     let lock1 = generate_lockfile(project_dir).unwrap();
     let lock2 = generate_lockfile(project_dir).unwrap();
@@ -217,15 +231,15 @@ fn test_lockfile_generation() {
    ```
 
 2. **Pick ONE Module to Improve**
-   - Choose module with lowest coverage
-   - Or pick critical functionality
-   - Don't try to fix multiple modules at once
+    - Choose module with lowest coverage
+    - Or pick critical functionality
+    - Don't try to fix multiple modules at once
 
 3. **Write Tests for That Module**
-   - Start with happy path tests
-   - Add error case tests
-   - Include edge cases
-   - Test cross-platform behavior
+    - Start with happy path tests
+    - Add error case tests
+    - Include edge cases
+    - Test cross-platform behavior
 
 4. **Verify Stability**
    ```bash
@@ -255,36 +269,39 @@ fn test_lockfile_generation() {
    ```
 
 7. **Repeat Cycle**
-   - Return to step 1
-   - Pick next module
-   - Continue until 70% overall coverage reached
-   
-**Remember**: Small, incremental improvements are better than large, risky changes. Each iteration should leave the codebase in a stable, working state.
+    - Return to step 1
+    - Pick next module
+    - Continue until 70% overall coverage reached
+
+**Remember**: Small, incremental improvements are better than large, risky changes. Each iteration should leave the
+codebase in a stable, working state.
 
 ### Step 8: Common Testing Scenarios for CCPM
 
 #### Testing CLI Commands
+
 ```rust
 #[test]
 fn test_install_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();
     let manifest = create_test_manifest();
-    
+
     // Run install command
     let result = cli::install::execute(temp_dir.path()).await;
-    
+
     // Verify lockfile created
     assert!(temp_dir.path().join("ccpm.lock").exists());
 }
 ```
 
 #### Testing Error Handling
+
 ```rust
 #[test]
 fn test_invalid_manifest_error() {
     let invalid_toml = "invalid content";
     let result = Manifest::from_str(invalid_toml);
-    
+
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.to_string().contains("parsing"));
@@ -292,6 +309,7 @@ fn test_invalid_manifest_error() {
 ```
 
 #### Testing Async Code
+
 ```rust
 #[tokio::test]
 async fn test_async_operation() {
@@ -303,6 +321,7 @@ async fn test_async_operation() {
 ### Step 9: Monitoring Progress
 
 Track coverage improvements:
+
 ```bash
 # Run coverage with specific exclusions if needed
 cargo tarpaulin --lib --ignore-tests --out Stdout
@@ -326,6 +345,7 @@ cargo tarpaulin --lib --skip 'test_name_pattern'
 ## Coverage Goals by Module
 
 Based on module importance:
+
 - `src/core/`: Target 80% (critical functionality)
 - `src/cli/`: Target 75% (user-facing commands)
 - `src/manifest/`: Target 85% (parsing critical)

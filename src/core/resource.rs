@@ -181,6 +181,19 @@ pub enum ResourceType {
     /// Snippets contain reusable code fragments, configuration examples, or
     /// documentation templates that can be shared across projects.
     Snippet,
+
+    /// Claude Code commands
+    ///
+    /// Commands define custom slash commands that can be used within Claude Code
+    /// to perform specific actions or automate workflows.
+    Command,
+
+    /// MCP (Model Context Protocol) servers
+    ///
+    /// MCP servers provide integrations with external systems and services,
+    /// allowing Claude Code to access databases, APIs, and other tools.
+    #[serde(rename = "mcp-server")]
+    McpServer,
     // Future resource types can be added here
 }
 
@@ -194,6 +207,7 @@ impl ResourceType {
     ///
     /// - [`Agent`] → `"agent.toml"`
     /// - [`Snippet`] → `"snippet.toml"`
+    /// - [`Command`] → `"command.toml"`
     ///
     /// # Examples
     ///
@@ -206,10 +220,13 @@ impl ResourceType {
     ///
     /// [`Agent`]: ResourceType::Agent
     /// [`Snippet`]: ResourceType::Snippet
+    /// [`Command`]: ResourceType::Command
     pub fn manifest_filename(&self) -> &str {
         match self {
             ResourceType::Agent => "agent.toml",
             ResourceType::Snippet => "snippet.toml",
+            ResourceType::Command => "command.toml",
+            ResourceType::McpServer => "mcp.toml",
         }
     }
 
@@ -222,6 +239,7 @@ impl ResourceType {
     ///
     /// - [`Agent`] → `"agents"`
     /// - [`Snippet`] → `"snippets"`
+    /// - [`Command`] → `.claude/commands`
     ///
     /// # Examples
     ///
@@ -239,10 +257,13 @@ impl ResourceType {
     ///
     /// [`Agent`]: ResourceType::Agent
     /// [`Snippet`]: ResourceType::Snippet
+    /// [`Command`]: ResourceType::Command
     pub fn default_directory(&self) -> &str {
         match self {
             ResourceType::Agent => "agents",
             ResourceType::Snippet => "snippets",
+            ResourceType::Command => ".claude/commands",
+            ResourceType::McpServer => ".claude/mcp-servers",
         }
     }
 }
@@ -252,6 +273,8 @@ impl std::fmt::Display for ResourceType {
         match self {
             ResourceType::Agent => write!(f, "agent"),
             ResourceType::Snippet => write!(f, "snippet"),
+            ResourceType::Command => write!(f, "command"),
+            ResourceType::McpServer => write!(f, "mcp-server"),
         }
     }
 }
@@ -263,6 +286,8 @@ impl std::str::FromStr for ResourceType {
         match s.to_lowercase().as_str() {
             "agent" => Ok(ResourceType::Agent),
             "snippet" => Ok(ResourceType::Snippet),
+            "command" => Ok(ResourceType::Command),
+            "mcp-server" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
             _ => Err(crate::core::CcpmError::InvalidResourceType {
                 resource_type: s.to_string(),
             }),
@@ -280,12 +305,13 @@ impl std::str::FromStr for ResourceType {
 ///
 /// 1. Checks for `agent.toml` - if found, returns [`ResourceType::Agent`]
 /// 2. Checks for `snippet.toml` - if found, returns [`ResourceType::Snippet`]  
-/// 3. If neither file exists, returns `None`
+/// 3. Checks for `command.toml` - if found, returns [`ResourceType::Command`]
+/// 4. If no manifest files exist, returns `None`
 ///
 /// # Precedence
 ///
-/// Agent resources take precedence over snippet resources. If both `agent.toml` and
-/// `snippet.toml` exist in the same directory, the function returns [`ResourceType::Agent`].
+/// Agent resources take precedence, followed by snippets, then commands. If multiple
+/// manifest files exist in the same directory, the function returns the highest priority type.
 ///
 /// # Arguments
 ///
@@ -355,6 +381,16 @@ pub fn detect_resource_type(path: &Path) -> Option<ResourceType> {
     // Check for snippet.toml
     if path.join("snippet.toml").exists() {
         return Some(ResourceType::Snippet);
+    }
+
+    // Check for command.toml
+    if path.join("command.toml").exists() {
+        return Some(ResourceType::Command);
+    }
+
+    // Check for mcp.toml
+    if path.join("mcp.toml").exists() {
+        return Some(ResourceType::McpServer);
     }
 
     None
@@ -489,6 +525,8 @@ pub trait Resource {
     ///     match resource.resource_type() {
     ///         ResourceType::Agent => println!("This is an AI agent"),
     ///         ResourceType::Snippet => println!("This is a code snippet"),
+    ///         ResourceType::Command => println!("This is a Claude Code command"),
+    ///         ResourceType::McpServer => println!("This is an MCP server"),
     ///     }
     /// }
     /// ```
@@ -738,18 +776,30 @@ mod tests {
     fn test_resource_type_manifest_filename() {
         assert_eq!(ResourceType::Agent.manifest_filename(), "agent.toml");
         assert_eq!(ResourceType::Snippet.manifest_filename(), "snippet.toml");
+        assert_eq!(ResourceType::Command.manifest_filename(), "command.toml");
+        assert_eq!(ResourceType::McpServer.manifest_filename(), "mcp.toml");
     }
 
     #[test]
     fn test_resource_type_default_directory() {
         assert_eq!(ResourceType::Agent.default_directory(), "agents");
         assert_eq!(ResourceType::Snippet.default_directory(), "snippets");
+        assert_eq!(
+            ResourceType::Command.default_directory(),
+            ".claude/commands"
+        );
+        assert_eq!(
+            ResourceType::McpServer.default_directory(),
+            ".claude/mcp-servers"
+        );
     }
 
     #[test]
     fn test_resource_type_display() {
         assert_eq!(ResourceType::Agent.to_string(), "agent");
         assert_eq!(ResourceType::Snippet.to_string(), "snippet");
+        assert_eq!(ResourceType::Command.to_string(), "command");
+        assert_eq!(ResourceType::McpServer.to_string(), "mcp-server");
     }
 
     #[test]
@@ -772,6 +822,22 @@ mod tests {
             ResourceType::from_str("Snippet").unwrap(),
             ResourceType::Snippet
         );
+        assert_eq!(
+            ResourceType::from_str("command").unwrap(),
+            ResourceType::Command
+        );
+        assert_eq!(
+            ResourceType::from_str("COMMAND").unwrap(),
+            ResourceType::Command
+        );
+        assert_eq!(
+            ResourceType::from_str("mcp-server").unwrap(),
+            ResourceType::McpServer
+        );
+        assert_eq!(
+            ResourceType::from_str("MCP").unwrap(),
+            ResourceType::McpServer
+        );
 
         assert!(ResourceType::from_str("invalid").is_err());
     }
@@ -784,6 +850,22 @@ mod tests {
 
         let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, ResourceType::Agent);
+
+        // Test command serialization
+        let command = ResourceType::Command;
+        let json = serde_json::to_string(&command).unwrap();
+        assert_eq!(json, "\"command\"");
+
+        let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, ResourceType::Command);
+
+        // Test mcp-server serialization
+        let mcp_server = ResourceType::McpServer;
+        let json = serde_json::to_string(&mcp_server).unwrap();
+        assert_eq!(json, "\"mcp-server\"");
+
+        let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, ResourceType::McpServer);
     }
 
     #[test]
@@ -814,14 +896,71 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_resource_type_both() {
+    fn test_detect_resource_type_command() {
+        let temp = tempdir().unwrap();
+        let command_toml = temp.path().join("command.toml");
+        std::fs::write(&command_toml, "# Command manifest").unwrap();
+
+        assert_eq!(
+            detect_resource_type(temp.path()),
+            Some(ResourceType::Command)
+        );
+    }
+
+    #[test]
+    fn test_detect_resource_type_precedence() {
         let temp = tempdir().unwrap();
         let agent_toml = temp.path().join("agent.toml");
         let snippet_toml = temp.path().join("snippet.toml");
+        let command_toml = temp.path().join("command.toml");
         std::fs::write(&agent_toml, "# Agent manifest").unwrap();
         std::fs::write(&snippet_toml, "# Snippet manifest").unwrap();
+        std::fs::write(&command_toml, "# Command manifest").unwrap();
 
-        // Agent takes precedence when both exist
+        // Agent takes precedence when all exist
         assert_eq!(detect_resource_type(temp.path()), Some(ResourceType::Agent));
+    }
+
+    #[test]
+    fn test_detect_resource_type_snippet_command_only() {
+        let temp = tempdir().unwrap();
+        let snippet_toml = temp.path().join("snippet.toml");
+        let command_toml = temp.path().join("command.toml");
+        std::fs::write(&snippet_toml, "# Snippet manifest").unwrap();
+        std::fs::write(&command_toml, "# Command manifest").unwrap();
+
+        // Snippet takes precedence over command
+        assert_eq!(
+            detect_resource_type(temp.path()),
+            Some(ResourceType::Snippet)
+        );
+    }
+
+    #[test]
+    fn test_detect_resource_type_mcp() {
+        let temp = tempdir().unwrap();
+        let mcp_toml = temp.path().join("mcp.toml");
+        std::fs::write(&mcp_toml, "# MCP manifest").unwrap();
+
+        assert_eq!(
+            detect_resource_type(temp.path()),
+            Some(ResourceType::McpServer)
+        );
+    }
+
+    #[test]
+    fn test_resource_type_equality() {
+        assert_eq!(ResourceType::Command, ResourceType::Command);
+        assert_ne!(ResourceType::Command, ResourceType::Agent);
+        assert_ne!(ResourceType::Command, ResourceType::Snippet);
+        assert_eq!(ResourceType::McpServer, ResourceType::McpServer);
+        assert_ne!(ResourceType::McpServer, ResourceType::Agent);
+    }
+
+    #[test]
+    fn test_resource_type_copy() {
+        let command = ResourceType::Command;
+        let copied = command; // ResourceType implements Copy, so this creates a copy
+        assert_eq!(command, copied);
     }
 }

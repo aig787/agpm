@@ -108,6 +108,12 @@
 //!             ResourceType::Snippet => {
 //!                 println!("Found snippet resource");
 //!             }
+//!             ResourceType::Command => {
+//!                 println!("Found command resource");
+//!             }
+//!             ResourceType::McpServer => {
+//!                 println!("Found MCP server configuration");
+//!             }
 //!         }
 //!     } else {
 //!         println!("No recognized resource found");

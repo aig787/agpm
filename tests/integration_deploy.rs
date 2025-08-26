@@ -570,7 +570,9 @@ fn test_install_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Install resources from ccpm.toml"))
+        .stdout(predicate::str::contains(
+            "Install Claude Code resources from manifest",
+        ))
         .stdout(predicate::str::contains("--force"))
         .stdout(predicate::str::contains("--max-parallel"))
         .stdout(predicate::str::contains("--no-lock"))

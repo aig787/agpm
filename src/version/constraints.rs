@@ -585,6 +585,11 @@ impl Default for ConstraintSet {
 }
 
 impl ConstraintSet {
+    /// Creates a new empty constraint set
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `ConstraintSet` with no constraints
     pub fn new() -> Self {
         Self {
             constraints: Vec::new(),
@@ -966,6 +971,11 @@ impl Default for ConstraintResolver {
 }
 
 impl ConstraintResolver {
+    /// Creates a new constraint resolver
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `ConstraintResolver` with empty constraint and resolution maps
     pub fn new() -> Self {
         Self {
             constraints: HashMap::new(),

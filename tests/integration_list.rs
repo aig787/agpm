@@ -345,9 +345,10 @@ fn test_list_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("List installed resources"))
+        .stdout(predicate::str::contains(
+            "List installed Claude Code resources",
+        ))
         .stdout(predicate::str::contains("--format"))
-        .stdout(predicate::str::contains("--type"))
         .stdout(predicate::str::contains("--source"))
         .stdout(predicate::str::contains("--detailed"))
         .stdout(predicate::str::contains("--manifest"))

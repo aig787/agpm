@@ -59,6 +59,11 @@ example-agent = { source = "community", path = "agents/example.md", version = "v
 # Snippets
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.0.0" }
+
+# MCP Servers (optional)
+[mcp-servers]
+filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
+postgres = { command = "mcp-postgres", args = ["--connection", "${DATABASE_URL}"] }
 ```
 
 ### 2. Install Dependencies
@@ -111,6 +116,7 @@ CCPM provides 8 commands for managing dependencies:
 | `validate` | Validate ccpm.toml syntax and check dependencies              | `--resolve`, `--check-lock`                           |
 | `cache`    | Manage the global git cache                                   | `clean`, `clean --all`, `info`                        |
 | `config`   | Manage global configuration                                   | `init`, `show`, `edit`, `add-source`, `list-sources`  |
+| `mcp`      | Manage MCP (Model Context Protocol) servers                   | `list`, `clean`, `status`                              |
 
 ### Command Examples
 
@@ -138,6 +144,19 @@ ccpm add dep agents example-agent --source community --path agents/example.md --
 
 # Add a snippet dependency
 ccpm add dep snippets util-snippet --source community --path snippets/util.md --version v1.0.0
+```
+
+#### Manage MCP servers
+
+```bash
+# List all MCP servers (shows which are CCPM-managed)
+ccpm mcp list
+
+# Check MCP configuration status
+ccpm mcp status
+
+# Remove CCPM-managed servers from .mcp.json
+ccpm mcp clean
 ```
 
 ## Manifest Format
@@ -272,6 +291,80 @@ version = "v1.0.0"
 resolved_commit = "abc123def..."
 checksum = "sha256:abcdef..."
 installed_at = "agents/example-agent.md"
+```
+
+## MCP Server Support
+
+CCPM can manage MCP (Model Context Protocol) server configurations for Claude Code. MCP servers provide integrations with external systems like databases, APIs, and development tools.
+
+### Configuring MCP Servers
+
+Define MCP servers in your `ccpm.toml`:
+
+```toml
+[mcp-servers]
+# NPX-based server
+filesystem = {
+    command = "npx",
+    args = ["-y", "@modelcontextprotocol/server-filesystem", "--root", "./data"]
+}
+
+# Python package via uvx
+github = {
+    command = "uvx",
+    args = ["run", "mcp-server-github@v0.1.0"],
+    env = { "GITHUB_TOKEN" = "${GITHUB_TOKEN}" }
+}
+
+# Direct binary command
+postgres = {
+    command = "mcp-postgres",
+    args = ["--connection", "${DATABASE_URL}"]
+}
+
+# Python script
+custom = {
+    command = "python",
+    args = ["./scripts/mcp_server.py"]
+}
+```
+
+### How It Works
+
+1. **Configuration Management**: CCPM updates the `.mcp.json` file that Claude Code reads
+2. **Non-destructive**: CCPM only manages servers it installs, preserving user-added servers
+3. **Environment Variables**: Supports `${VAR}` expansion in arguments
+4. **Tracking**: Lockfile tracks configured servers for reproducibility
+
+### Important Notes
+
+- MCP servers are **configured**, not installed as files
+- The `.mcp.json` file may contain both CCPM-managed and user-managed servers
+- CCPM adds metadata (`_ccpm`) to track which servers it manages
+- Servers require their runtimes to be installed (Node.js for `npx`, Python for `uvx`, etc.)
+
+### Example .mcp.json
+
+After running `ccpm install`, your `.mcp.json` might look like:
+
+```json
+{
+  "mcpServers": {
+    "my-manual-server": {
+      "command": "node",
+      "args": ["./custom.js"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "--root", "./data"],
+      "_ccpm": {
+        "managed": true,
+        "version": "latest",
+        "installed_at": "2024-01-15T10:30:00Z"
+      }
+    }
+  }
+}
 ```
 
 ## Advanced Usage

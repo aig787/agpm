@@ -463,38 +463,36 @@ impl GitRepo {
         auth_url: Option<&str>,
         progress: Option<&ProgressBar>,
     ) -> Result<()> {
-        // Skip fetch for local repositories
-        if let Some(url) = auth_url {
-            if url.starts_with("file://") || url.starts_with("git://") {
-                if let Some(pb) = progress {
-                    pb.finish_with_message("Skipped fetch for local repository");
-                }
-                return Ok(());
-            }
-        } else {
-            // Check current remote URL
-            let remote = self.get_remote_url().await?;
-            if remote.starts_with("file://") || remote.starts_with("git://") {
-                if let Some(pb) = progress {
-                    pb.finish_with_message("Skipped fetch for local repository");
-                }
-                return Ok(());
-            }
-        }
+        // No special cases - always fetch to get latest changes
+        // This ensures both remote and local (file://) repositories stay up to date
 
         if let Some(pb) = progress {
             pb.set_message("Fetching updates");
         }
 
         // Use git fetch with authentication from global config URL if provided
-        let mut cmd = Command::new(crate::utils::platform::get_git_command());
         if let Some(url) = auth_url {
-            // Fetch from specific URL (with potential auth)
-            cmd.args(["fetch", url, "--tags"]);
-        } else {
-            // Standard fetch from origin
-            cmd.args(["fetch", "--all", "--tags"]);
+            // Temporarily update the remote URL with auth for this fetch
+            let cmd = Command::new(crate::utils::platform::get_git_command())
+                .args(["remote", "set-url", "origin", url])
+                .current_dir(&self.path)
+                .output()
+                .await
+                .context("Failed to set remote URL")?;
+
+            if !cmd.status.success() {
+                let stderr = String::from_utf8_lossy(&cmd.stderr);
+                return Err(CcpmError::GitCommandError {
+                    operation: "remote set-url".to_string(),
+                    stderr: stderr.to_string(),
+                }
+                .into());
+            }
         }
+
+        // Now fetch with the potentially updated URL
+        let mut cmd = Command::new(crate::utils::platform::get_git_command());
+        cmd.args(["fetch", "--all", "--tags"]);
         cmd.current_dir(&self.path);
 
         let output = cmd.output().await.context("Failed to execute git fetch")?;
@@ -1107,6 +1105,53 @@ impl GitRepo {
         }
     }
 
+    /// Get the current commit SHA of the repository.
+    ///
+    /// Returns the full 40-character SHA-1 hash of the current HEAD commit.
+    /// This is useful for recording exact versions in lockfiles.
+    ///
+    /// # Returns
+    ///
+    /// The full commit hash as a string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The repository is not valid
+    /// - HEAD is not pointing to a valid commit
+    /// - Git command fails
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ccpm::git::GitRepo;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let repo = GitRepo::new("/path/to/repo");
+    /// let commit = repo.get_current_commit().await?;
+    /// println!("Current commit: {}", commit);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_current_commit(&self) -> Result<String> {
+        let output = Command::new(crate::utils::platform::get_git_command())
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&self.path)
+            .output()
+            .await
+            .context("Failed to execute git rev-parse")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(CcpmError::GitCommandError {
+                operation: "rev-parse".to_string(),
+                stderr: stderr.to_string(),
+            }
+            .into());
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
     // Test-only methods (kept for compatibility but marked as such)
     #[cfg(test)]
     pub async fn commit(&self, message: &str) -> Result<String> {
@@ -1126,14 +1171,8 @@ impl GitRepo {
             .into());
         }
 
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to get commit hash")?;
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        // Use the proper get_current_commit method
+        self.get_current_commit().await
     }
 
     #[cfg(test)]
@@ -1588,8 +1627,6 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// - `/absolute/path/to/repo` → `("local", "repo")`
 /// - `./relative/path/repo.git` → `("local", "repo")`
 ///
-/// ## Git Protocol URLs
-/// - `git://example.com/repo.git` → `("git", "repo")`
 ///
 /// # Examples
 ///
@@ -1707,14 +1744,6 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
                     path[slash_pos + 1..].to_string(),
                 ));
             }
-        }
-    }
-
-    // Handle git:// URLs
-    if url.starts_with("git://") {
-        if let Some(path_start) = url.rfind('/') {
-            let repo_name = url[path_start + 1..].trim_end_matches(".git");
-            return Ok(("git".to_string(), repo_name.to_string()));
         }
     }
 

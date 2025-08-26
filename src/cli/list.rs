@@ -91,7 +91,7 @@ use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::lockfile::Lockfile;
+use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, Manifest};
 
 /// Internal representation for list items used in various output formats.
@@ -174,9 +174,16 @@ pub struct ListCommand {
     /// Show only snippets
     ///
     /// When specified, filters the output to show only snippet resources,
-    /// excluding agents. Mutually exclusive with `--agents`.
+    /// excluding agents and commands. Mutually exclusive with `--agents` and `--commands`.
     #[arg(long)]
     snippets: bool,
+
+    /// Show only commands
+    ///
+    /// When specified, filters the output to show only command resources,
+    /// excluding agents and snippets. Mutually exclusive with `--agents` and `--snippets`.
+    #[arg(long)]
+    commands: bool,
 
     /// Output format (table, json, yaml, compact, simple)
     ///
@@ -402,6 +409,7 @@ impl ListCommand {
         // Determine what to show based on filters
         let show_agents = self.should_show_agents();
         let show_snippets = self.should_show_snippets();
+        let show_commands = self.should_show_commands();
 
         // Collect and filter dependencies
         let mut items = Vec::new();
@@ -440,6 +448,23 @@ impl ListCommand {
             }
         }
 
+        if show_commands {
+            for (name, dep) in &manifest.commands {
+                if self.matches_filters(name, Some(dep), "command") {
+                    items.push(ListItem {
+                        name: name.clone(),
+                        source: dep.get_source().map(|s| s.to_string()),
+                        version: dep.get_version().map(|v| v.to_string()),
+                        path: Some(dep.get_path().to_string()),
+                        resource_type: "command".to_string(),
+                        installed_at: None,
+                        checksum: None,
+                        resolved_commit: None,
+                    });
+                }
+            }
+        }
+
         // Sort items
         self.sort_items(&mut items);
 
@@ -462,11 +487,12 @@ impl ListCommand {
             return Ok(());
         }
 
-        let lockfile = Lockfile::load(&lockfile_path)?;
+        let lockfile = LockFile::load(&lockfile_path)?;
 
         // Determine what to show based on filters
         let show_agents = self.should_show_agents();
         let show_snippets = self.should_show_snippets();
+        let show_commands = self.should_show_commands();
 
         // Collect and filter entries
         let mut items = Vec::new();
@@ -483,6 +509,14 @@ impl ListCommand {
             for entry in &lockfile.snippets {
                 if self.matches_lockfile_filters(&entry.name, entry, "snippet") {
                     items.push(self.lockentry_to_listitem(entry, "snippet"));
+                }
+            }
+        }
+
+        if show_commands {
+            for entry in &lockfile.commands {
+                if self.matches_lockfile_filters(&entry.name, entry, "command") {
+                    items.push(self.lockentry_to_listitem(entry, "command"));
                 }
             }
         }
@@ -511,18 +545,27 @@ impl ListCommand {
     /// Determine if agents should be shown
     fn should_show_agents(&self) -> bool {
         if let Some(ref t) = self.r#type {
-            t == "agents"
+            t == "agents" || t == "agent"
         } else {
-            !self.snippets
+            !self.snippets && !self.commands
         }
     }
 
     /// Determine if snippets should be shown
     fn should_show_snippets(&self) -> bool {
         if let Some(ref t) = self.r#type {
-            t == "snippets"
+            t == "snippets" || t == "snippet"
         } else {
-            !self.agents
+            !self.agents && !self.commands
+        }
+    }
+
+    /// Determine if commands should be shown
+    fn should_show_commands(&self) -> bool {
+        if let Some(ref t) = self.r#type {
+            t == "commands" || t == "command"
+        } else {
+            !self.agents && !self.snippets
         }
     }
 
@@ -813,7 +856,7 @@ impl ListCommand {
     fn matches_lockfile_filters(
         &self,
         name: &str,
-        entry: &crate::lockfile::LockEntry,
+        entry: &crate::lockfile::LockedResource,
         _resource_type: &str,
     ) -> bool {
         // Source filter
@@ -840,7 +883,7 @@ impl ListCommand {
     /// Convert a lockfile entry to a ListItem
     fn lockentry_to_listitem(
         &self,
-        entry: &crate::lockfile::LockEntry,
+        entry: &crate::lockfile::LockedResource,
         resource_type: &str,
     ) -> ListItem {
         ListItem {
@@ -867,6 +910,7 @@ mod tests {
         ListCommand {
             agents: false,
             snippets: false,
+            commands: false,
             format: "table".to_string(),
             manifest: false,
             r#type: None,
@@ -901,6 +945,8 @@ mod tests {
                 path: "agents/reviewer.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -917,6 +963,8 @@ mod tests {
                 path: "snippets/utils.md".to_string(),
                 version: Some("v1.2.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
         );
 
@@ -1216,6 +1264,79 @@ mod tests {
     }
 
     #[test]
+    fn test_should_show_commands() {
+        // Show commands when no specific type filter
+        let cmd = create_default_command();
+        assert!(cmd.should_show_commands());
+
+        // Don't show commands when agents flag is set
+        let cmd = ListCommand {
+            agents: true,
+            ..create_default_command()
+        };
+        assert!(!cmd.should_show_commands());
+
+        // Don't show commands when snippets flag is set
+        let cmd = ListCommand {
+            snippets: true,
+            ..create_default_command()
+        };
+        assert!(!cmd.should_show_commands());
+
+        // Show only commands when commands flag is set
+        let cmd = ListCommand {
+            commands: true,
+            ..create_default_command()
+        };
+        assert!(cmd.should_show_commands());
+
+        // Don't show other types when commands flag is set
+        assert!(!cmd.should_show_agents());
+        assert!(!cmd.should_show_snippets());
+
+        // Show commands when type is "commands" or "command"
+        let cmd = ListCommand {
+            r#type: Some("commands".to_string()),
+            ..create_default_command()
+        };
+        assert!(cmd.should_show_commands());
+
+        let cmd = ListCommand {
+            r#type: Some("command".to_string()),
+            ..create_default_command()
+        };
+        assert!(cmd.should_show_commands());
+    }
+
+    #[test]
+    fn test_mutually_exclusive_type_filters() {
+        // Test that only one type shows when flags are set individually
+        let cmd = ListCommand {
+            agents: true,
+            ..create_default_command()
+        };
+        assert!(cmd.should_show_agents());
+        assert!(!cmd.should_show_snippets());
+        assert!(!cmd.should_show_commands());
+
+        let cmd = ListCommand {
+            snippets: true,
+            ..create_default_command()
+        };
+        assert!(!cmd.should_show_agents());
+        assert!(cmd.should_show_snippets());
+        assert!(!cmd.should_show_commands());
+
+        let cmd = ListCommand {
+            commands: true,
+            ..create_default_command()
+        };
+        assert!(!cmd.should_show_agents());
+        assert!(!cmd.should_show_snippets());
+        assert!(cmd.should_show_commands());
+    }
+
+    #[test]
     fn test_matches_filters_source() {
         let cmd = ListCommand {
             source: Some("official".to_string()),
@@ -1227,6 +1348,8 @@ mod tests {
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         });
 
         let dep_with_different_source = ResourceDependency::Detailed(DetailedDependency {
@@ -1234,6 +1357,8 @@ mod tests {
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
             git: None,
+            command: None,
+            args: None,
         });
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());

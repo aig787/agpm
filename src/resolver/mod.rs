@@ -156,10 +156,10 @@
 //! ## Incremental Updates
 //! ```rust,no_run
 //! use ccpm::resolver::DependencyResolver;
-//! use ccpm::lockfile::Lockfile;
+//! use ccpm::lockfile::LockFile;
 //!
 //! # async fn update_example() -> anyhow::Result<()> {
-//! let existing = Lockfile::load("ccpm.lock".as_ref())?;
+//! let existing = LockFile::load("ccpm.lock".as_ref())?;
 //! let manifest = ccpm::manifest::Manifest::load("ccpm.toml".as_ref())?;
 //! let mut resolver = DependencyResolver::new(manifest)?;
 //!
@@ -177,7 +177,7 @@ pub mod redundancy;
 
 use crate::core::CcpmError;
 use crate::git::GitRepo;
-use crate::lockfile::{LockEntry, Lockfile};
+use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::source::SourceManager;
 use crate::utils::progress::ProgressBar;
@@ -334,7 +334,7 @@ impl DependencyResolver {
     ///
     /// # Returns
     ///
-    /// A [`Lockfile`] containing all resolved dependencies with:
+    /// A [`LockFile`] containing all resolved dependencies with:
     /// - Exact commit hashes for reproducible installations
     /// - Source URLs for traceability
     /// - Installation paths for each resource
@@ -355,9 +355,9 @@ impl DependencyResolver {
     /// - **Cache Utilization**: Previously cloned sources are reused
     /// - **Progress Reporting**: Non-blocking UI updates during resolution
     ///
-    /// [`Lockfile`]: crate::lockfile::Lockfile
-    pub async fn resolve(&mut self, progress: Option<&ProgressBar>) -> Result<Lockfile> {
-        let mut lockfile = Lockfile::new();
+    /// [`LockFile`]: crate::lockfile::LockFile
+    pub async fn resolve(&mut self, progress: Option<&ProgressBar>) -> Result<LockFile> {
+        let mut lockfile = LockFile::new();
         let mut resolved = HashMap::new();
 
         // Add sources to lockfile
@@ -386,11 +386,14 @@ impl DependencyResolver {
         // Add resolved entries to lockfile
         for (name, entry) in resolved {
             let resource_type = self.get_resource_type(&name);
-            // Add entry based on resource type and whether it's a dev dependency
-            if resource_type == "agent" {
-                lockfile.agents.push(entry);
-            } else {
-                lockfile.snippets.push(entry);
+            // Add entry based on resource type
+            match resource_type.as_str() {
+                "agent" => lockfile.agents.push(entry),
+                "snippet" => lockfile.snippets.push(entry),
+                "command" => lockfile.commands.push(entry),
+                // MCP servers are handled separately, not added to lockfile here
+                "mcp-server" => {}
+                _ => lockfile.snippets.push(entry), // Default fallback
             }
         }
 
@@ -426,7 +429,7 @@ impl DependencyResolver {
     ///
     /// # Returns
     ///
-    /// A [`LockEntry`] with:
+    /// A [`LockedResource`] with:
     /// - Resolved commit hash (for remote dependencies)
     /// - Source and URL information
     /// - Installation path in the project
@@ -440,12 +443,12 @@ impl DependencyResolver {
     /// - Version constraint cannot be resolved (tag/branch not found)
     /// - Git operations fail due to network or authentication issues
     ///
-    /// [`LockEntry`]: crate::lockfile::LockEntry
+    /// [`LockedResource`]: crate::lockfile::LockedResource
     async fn resolve_dependency(
         &mut self,
         name: &str,
         dep: &ResourceDependency,
-    ) -> Result<LockEntry> {
+    ) -> Result<LockedResource> {
         if dep.is_local() {
             // Local dependency - just create entry with path
             // Determine the installed location based on resource type
@@ -456,7 +459,7 @@ impl DependencyResolver {
                 format!("{}/{}.md", self.manifest.target.snippets, name)
             };
 
-            Ok(LockEntry {
+            Ok(LockedResource {
                 name: name.to_string(),
                 source: None,
                 url: None,
@@ -498,7 +501,7 @@ impl DependencyResolver {
                 format!("{}/{}.md", self.manifest.target.snippets, name)
             };
 
-            Ok(LockEntry {
+            Ok(LockedResource {
                 name: name.to_string(),
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
@@ -642,8 +645,14 @@ impl DependencyResolver {
     fn get_resource_type(&self, name: &str) -> String {
         if self.manifest.agents.contains_key(name) {
             "agent".to_string()
-        } else {
+        } else if self.manifest.snippets.contains_key(name) {
             "snippet".to_string()
+        } else if self.manifest.commands.contains_key(name) {
+            "command".to_string()
+        } else if self.manifest.mcp_servers.contains_key(name) {
+            "mcp-server".to_string()
+        } else {
+            "snippet".to_string() // Default fallback
         }
     }
 
@@ -677,7 +686,7 @@ impl DependencyResolver {
     ///
     /// # Returns
     ///
-    /// A new [`Lockfile`] with updated dependencies. The original lockfile
+    /// A new [`LockFile`] with updated dependencies. The original lockfile
     /// structure is preserved, with only specified entries modified.
     ///
     /// # Algorithm Complexity
@@ -699,13 +708,13 @@ impl DependencyResolver {
     /// - Authentication failures for private sources
     /// - Corrupted or inaccessible cache directories
     ///
-    /// [`Lockfile`]: crate::lockfile::Lockfile
+    /// [`LockFile`]: crate::lockfile::LockFile
     pub async fn update(
         &mut self,
-        existing: &Lockfile,
+        existing: &LockFile,
         deps_to_update: Option<Vec<String>>,
         progress: Option<&ProgressBar>,
-    ) -> Result<Lockfile> {
+    ) -> Result<LockFile> {
         let mut lockfile = existing.clone();
 
         // Determine which dependencies to update
@@ -740,17 +749,39 @@ impl DependencyResolver {
             let entry = self.resolve_dependency(&name, &dep).await?;
             let resource_type = self.get_resource_type(&name);
 
-            // Update or add entry in lockfile
-            if resource_type == "agent" {
-                if let Some(existing) = lockfile.agents.iter_mut().find(|e| e.name == name) {
-                    *existing = entry;
-                } else {
-                    lockfile.agents.push(entry);
+            // Update or add entry in lockfile based on resource type
+            match resource_type.as_str() {
+                "agent" => {
+                    if let Some(existing) = lockfile.agents.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.agents.push(entry);
+                    }
                 }
-            } else if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
-                *existing = entry;
-            } else {
-                lockfile.snippets.push(entry);
+                "snippet" => {
+                    if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.snippets.push(entry);
+                    }
+                }
+                "command" => {
+                    if let Some(existing) = lockfile.commands.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.commands.push(entry);
+                    }
+                }
+                // MCP servers are handled separately
+                "mcp-server" => {}
+                _ => {
+                    // Default to snippet
+                    if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.snippets.push(entry);
+                    }
+                }
             }
         }
 
@@ -993,6 +1024,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1004,6 +1037,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: Some("v2.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1028,6 +1063,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1123,6 +1160,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1166,6 +1205,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: None,
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1240,6 +1281,8 @@ mod tests {
                 path: "agents/test.md".to_string(),
                 version: None,
                 git: Some("main".to_string()),
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1307,6 +1350,8 @@ mod tests {
                 path: "agents/test1.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );
@@ -1317,6 +1362,8 @@ mod tests {
                 path: "agents/test2.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 git: None,
+                command: None,
+                args: None,
             }),
             true,
         );

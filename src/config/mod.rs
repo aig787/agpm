@@ -216,7 +216,9 @@ pub use global::{GlobalConfig, GlobalConfigManager};
 pub use parser::parse_config;
 
 // Type aliases for cleaner code
+/// Type alias for agent configuration using the AgentManifest structure
 pub type AgentConfig = AgentManifest;
+/// Type alias for snippet configuration using the SnippetManifest structure  
 pub type SnippetConfig = SnippetManifest;
 
 use anyhow::Result;
