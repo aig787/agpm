@@ -48,6 +48,7 @@ pub static BLACKLISTED_PATHS: &[&str] = &[
 /// assert!(is_path_blacklisted(Path::new("/System/Library")));
 /// assert!(!is_path_blacklisted(Path::new("/home/user/project")));
 /// ```
+#[must_use]
 pub fn is_path_blacklisted(path: &Path) -> bool {
     for blacklisted in BLACKLISTED_PATHS {
         if path.starts_with(blacklisted) {
@@ -61,7 +62,7 @@ pub fn is_path_blacklisted(path: &Path) -> bool {
 ///
 /// Checks if the path:
 /// - Is not blacklisted
-/// - Does not contain symlinks (if check_symlinks is true)
+/// - Does not contain symlinks (if `check_symlinks` is true)
 ///
 /// # Arguments
 /// * `path` - The path to validate (should be the original path before canonicalization)

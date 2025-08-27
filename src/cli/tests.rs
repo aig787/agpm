@@ -88,41 +88,31 @@ mod cli_tests {
 
         for cmd in commands {
             let result = Cli::try_parse_from(cmd.clone());
-            assert!(result.is_ok(), "Failed to parse: {:?}", cmd);
+            assert!(result.is_ok(), "Failed to parse: {cmd:?}");
         }
     }
 
     #[tokio::test]
     async fn test_cli_execute_with_flags() {
         use crate::cli::CliConfig;
-        use crate::test_utils::WorkingDirGuard;
         use tempfile::TempDir;
 
         // This test verifies that CLI commands execute successfully with various flags
         // We test using config injection to avoid modifying global environment variables
 
-        // Use WorkingDirGuard to serialize tests that change working directory
-        let _guard = WorkingDirGuard::new().unwrap();
-
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
-        // Change to temp dir FIRST before creating the manifest
-        std::env::set_current_dir(&temp_path).unwrap();
-
-        // Now create the manifest in the current directory
+        // Create the manifest
         let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 
         // Verify the file exists
         assert!(manifest_path.exists(), "Manifest file was not created");
-        assert!(
-            std::path::Path::new("ccpm.toml").exists(),
-            "Manifest not found in current dir"
-        );
 
         // Test that verbose flag creates correct config and executes successfully
-        let cli = Cli::try_parse_from(["ccpm", "--verbose", "list"]).unwrap();
+        // Use config path command which doesn't need a manifest in current dir
+        let cli = Cli::try_parse_from(["ccpm", "--verbose", "config", "path"]).unwrap();
         assert!(cli.verbose);
         let config = cli.build_config();
         assert_eq!(config.log_level, Some("debug".to_string()));
@@ -134,7 +124,7 @@ mod cli_tests {
         assert!(result.is_ok(), "Failed to execute with verbose flag");
 
         // Test that quiet flag creates correct config
-        let cli = Cli::try_parse_from(["ccpm", "--quiet", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["ccpm", "--quiet", "config", "path"]).unwrap();
         assert!(cli.quiet);
         let config = cli.build_config();
         assert_eq!(config.log_level, None);
@@ -144,7 +134,7 @@ mod cli_tests {
         assert!(result.is_ok(), "Failed to execute with quiet flag");
 
         // Test that no-progress flag creates correct config
-        let cli = Cli::try_parse_from(["ccpm", "--no-progress", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["ccpm", "--no-progress", "config", "path"]).unwrap();
         assert!(cli.no_progress);
         let config = cli.build_config();
         assert!(config.no_progress);
@@ -155,7 +145,8 @@ mod cli_tests {
         assert!(result.is_ok(), "Failed to execute with no-progress flag");
 
         // Test combined flags
-        let cli = Cli::try_parse_from(["ccpm", "--verbose", "--no-progress", "list"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["ccpm", "--verbose", "--no-progress", "config", "path"]).unwrap();
         assert!(cli.verbose);
         assert!(cli.no_progress);
         let config = cli.build_config();
@@ -273,7 +264,7 @@ mod cli_tests {
         // Test each command execution path
         let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "list command failed: {:?}", result);
+        assert!(result.is_ok(), "list command failed: {result:?}");
 
         // Verify we're still in the right directory and the manifest still exists
         assert_eq!(
@@ -288,11 +279,11 @@ mod cli_tests {
 
         let cli = Cli::try_parse_from(["ccpm", "validate"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "validate command failed: {:?}", result);
+        assert!(result.is_ok(), "validate command failed: {result:?}");
 
         let cli = Cli::try_parse_from(["ccpm", "cache", "info"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "cache info command failed: {:?}", result);
+        assert!(result.is_ok(), "cache info command failed: {result:?}");
 
         // Skip config commands that modify global state
         // These would create side effects that affect other tests
@@ -300,12 +291,12 @@ mod cli_tests {
         // Test install
         let cli = Cli::try_parse_from(["ccpm", "install"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "install command failed: {:?}", result);
+        assert!(result.is_ok(), "install command failed: {result:?}");
 
         // Test update
         let cli = Cli::try_parse_from(["ccpm", "update"]).unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "update command failed: {:?}", result);
+        assert!(result.is_ok(), "update command failed: {result:?}");
 
         // Test add source
         let cli = Cli::try_parse_from([
@@ -317,34 +308,19 @@ mod cli_tests {
         ])
         .unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
-        assert!(result.is_ok(), "add source command failed: {:?}", result);
+        assert!(result.is_ok(), "add source command failed: {result:?}");
 
         // WorkingDirGuard will restore the original directory when dropped
     }
 
     #[tokio::test]
     async fn test_cli_execute_method() {
-        use crate::test_utils::WorkingDirGuard;
-        use tempfile::TempDir;
-
-        // Use WorkingDirGuard to serialize tests that change working directory
-        let _guard = WorkingDirGuard::new().unwrap();
-
-        let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path().canonicalize().unwrap();
-        std::env::set_current_dir(&temp_path).unwrap();
-
-        // Create a minimal manifest to prevent errors
-        let manifest_path = temp_path.join("ccpm.toml");
-        std::fs::write(&manifest_path, "[sources]\n").unwrap();
-
-        // Test that execute() method calls execute_with_config properly
-        // Parse the CLI instead of constructing it directly
-        let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
+        // Test with config path command which doesn't require a manifest
+        let cli = Cli::try_parse_from(["ccpm", "config", "path"]).unwrap();
 
         // This tests the execute method path (lines 582-584)
         let result = cli.execute().await;
-        assert!(result.is_ok(), "execute method failed: {:?}", result);
+        assert!(result.is_ok(), "execute method failed: {result:?}");
     }
 
     #[tokio::test]
@@ -362,7 +338,7 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "init"]).unwrap();
 
         let result = cli.execute().await;
-        assert!(result.is_ok(), "Init command failed: {:?}", result);
+        assert!(result.is_ok(), "Init command failed: {result:?}");
     }
 
     #[tokio::test]
@@ -383,17 +359,18 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "cache", "info"]).unwrap();
 
         let result = cli.execute().await;
-        assert!(result.is_ok(), "Cache command failed: {:?}", result);
+        assert!(result.is_ok(), "Cache command failed: {result:?}");
     }
 
     #[tokio::test]
     async fn test_cli_execute_mcp_command() {
-        use crate::test_utils::WorkingDirGuard;
         use tempfile::TempDir;
 
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path().canonicalize().unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
+
+        // Save current dir to restore later
+        let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(&temp_path).unwrap();
 
         // Create a manifest for MCP operations
@@ -403,7 +380,11 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "mcp", "status"]).unwrap();
 
         let result = cli.execute().await;
-        assert!(result.is_ok(), "MCP command failed: {:?}", result);
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_ok(), "MCP command failed: {result:?}");
     }
 
     #[tokio::test]
@@ -419,7 +400,7 @@ mod cli_tests {
         let cli = Cli::try_parse_from(["ccpm", "config", "path"]).unwrap();
 
         let result = cli.execute().await;
-        assert!(result.is_ok(), "Config command failed: {:?}", result);
+        assert!(result.is_ok(), "Config command failed: {result:?}");
     }
 
     #[test]
@@ -430,7 +411,7 @@ mod cli_tests {
         for cmd in &commands {
             for flag in &flags {
                 let result = Cli::try_parse_from(["ccpm", flag, cmd]);
-                assert!(result.is_ok(), "Failed with {} {}", flag, cmd);
+                assert!(result.is_ok(), "Failed with {flag} {cmd}");
             }
         }
     }

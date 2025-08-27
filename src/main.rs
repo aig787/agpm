@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
 
     // Execute the command
     match cli.execute().await {
-        Ok(_) => Ok(()),
+        Ok(()) => Ok(()),
         Err(e) => {
             // Convert to user-friendly error with context and suggestions
             let error_ctx = user_friendly_error(e);

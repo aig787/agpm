@@ -162,14 +162,14 @@ broken-agent = { path = "./agents/broken.md" }
     fs::create_dir_all(&agents_dir).unwrap();
 
     // Create malformed markdown with invalid frontmatter
-    let malformed_content = r#"---
+    let malformed_content = r"---
 type: agent
 name: broken-agent
 invalid yaml: [ unclosed
 ---
 
 # Broken Agent
-"#;
+";
     fs::write(agents_dir.join("broken.md"), malformed_content).unwrap();
 
     let mut cmd = env.ccpm_command();
@@ -288,6 +288,18 @@ fn test_invalid_version_specs() {
         .output()
         .unwrap();
 
+    // Add some valid tags so version constraint parsing can be tested
+    std::process::Command::new("git")
+        .args(["tag", "v0.1.0"])
+        .current_dir(&source_dir)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["tag", "v1.0.0"])
+        .current_dir(&source_dir)
+        .output()
+        .unwrap();
+
     let manifest_content = format!(
         r#"
 [sources]
@@ -361,8 +373,7 @@ official = "https://github.com/example-org/ccpm-official.git"
     // Add many agents to test system limits
     for i in 0..1000 {
         manifest_content.push_str(&format!(
-            "agent_{} = {{ source = \"official\", path = \"agents/agent_{}.md\", version = \"v1.0.0\" }}\n",
-            i, i
+            "agent_{i} = {{ source = \"official\", path = \"agents/agent_{i}.md\", version = \"v1.0.0\" }}\n"
         ));
     }
 

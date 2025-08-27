@@ -276,7 +276,7 @@ impl Cache {
     /// # }
     /// ```
     pub fn new() -> Result<Self> {
-        let cache_dir = Self::get_cache_dir()?;
+        let cache_dir = crate::config::get_cache_dir()?;
         Ok(Self { cache_dir })
     }
 
@@ -317,64 +317,6 @@ impl Cache {
     /// ```
     pub fn with_dir(cache_dir: PathBuf) -> Result<Self> {
         Ok(Self { cache_dir })
-    }
-
-    /// Determines the default platform-specific cache directory location.
-    ///
-    /// This internal method implements the platform-specific logic for cache
-    /// directory resolution, with environment variable override support.
-    ///
-    /// # Resolution Order
-    ///
-    /// 1. **Environment variable**: `CCPM_CACHE_DIR` (highest priority)
-    /// 2. **Platform default**: OS-specific standard location
-    ///
-    /// # Platform Defaults
-    ///
-    /// - **Windows**: `%LOCALAPPDATA%\ccpm\cache\`
-    ///   - Typically: `C:\Users\{username}\AppData\Local\ccpm\cache\`
-    /// - **Linux/macOS**: `~/.ccpm/cache/`
-    ///   - Typically: `/home/{username}/.ccpm/cache/` or `/Users/{username}/.ccpm/cache/`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Cannot determine home directory (Unix-like systems)
-    /// - Cannot determine local data directory (Windows)
-    /// - Environment variable points to invalid path
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use ccpm::cache::Cache;
-    /// use std::env;
-    ///
-    /// # fn example() -> anyhow::Result<()> {
-    /// // Test environment variable override
-    /// env::set_var("CCPM_CACHE_DIR", "/tmp/custom-cache");
-    /// let cache = Cache::new()?;
-    /// assert_eq!(cache.get_cache_location().to_str().unwrap(), "/tmp/custom-cache");
-    /// # Ok(())
-    /// # }
-    /// ```
-    fn get_cache_dir() -> Result<PathBuf> {
-        // Check for environment variable first (useful for testing)
-        if let Ok(dir) = std::env::var("CCPM_CACHE_DIR") {
-            return Ok(PathBuf::from(dir));
-        }
-
-        let cache_dir = if cfg!(target_os = "windows") {
-            dirs::data_local_dir()
-                .ok_or_else(|| anyhow::anyhow!("Unable to determine local data directory"))?
-                .join("ccpm")
-                .join("cache")
-        } else {
-            dirs::home_dir()
-                .ok_or_else(|| anyhow::anyhow!("Unable to determine home directory"))?
-                .join(".ccpm")
-                .join("cache")
-        };
-        Ok(cache_dir)
     }
 
     /// Ensures the cache directory exists, creating it if necessary.
@@ -554,8 +496,7 @@ impl Cache {
             let resolved_path = crate::utils::platform::resolve_path(url)?;
 
             // Canonicalize to get the real path and prevent symlink attacks
-            let canonical_path = resolved_path
-                .canonicalize()
+            let canonical_path = crate::utils::safe_canonicalize(&resolved_path)
                 .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
 
             // Security check: Validate path against blacklist and symlinks
@@ -573,9 +514,23 @@ impl Cache {
 
         // Acquire lock for this source to prevent concurrent access
         let _lock = CacheLock::acquire(&self.cache_dir, name)
-            .with_context(|| format!("Failed to acquire lock for source: {}", name))?;
+            .with_context(|| format!("Failed to acquire lock for source: {name}"))?;
 
-        let source_dir = self.cache_dir.join(name);
+        // Use the same cache directory structure as SourceManager for consistency
+        // Parse the URL to get owner and repo for the cache path
+        let (owner, repo) =
+            crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
+        let source_dir = self
+            .cache_dir
+            .join("sources")
+            .join(format!("{owner}_{repo}"));
+
+        // Ensure parent directory exists
+        if let Some(parent) = source_dir.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
+        }
 
         if source_dir.exists() {
             self.update_source(&source_dir, version).await?;
@@ -618,11 +573,11 @@ impl Cache {
     ///
     /// See [`GitRepo::clone`] for detailed error information.
     async fn clone_source(&self, url: &str, target: &Path) -> Result<()> {
-        println!("📦 Cloning {} to cache...", url);
+        println!("📦 Cloning {url} to cache...");
 
         GitRepo::clone(url, target, None)
             .await
-            .with_context(|| format!("Failed to clone repository from {}", url))?;
+            .with_context(|| format!("Failed to clone repository from {url}"))?;
 
         Ok(())
     }
@@ -719,8 +674,7 @@ impl Cache {
         let git_repo = GitRepo::new(source_dir);
         git_repo.checkout(version).await.with_context(|| {
             format!(
-                "Failed to checkout version '{}'. Ensure it exists as a tag, branch, or commit",
-                version
+                "Failed to checkout version '{version}'. Ensure it exists as a tag, branch, or commit"
             )
         })?;
 
@@ -1051,7 +1005,7 @@ impl Cache {
                 let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                 if !active_sources.contains(&dir_name.to_string()) {
-                    println!("🗑️  Removing unused cache: {}", dir_name);
+                    println!("🗑️  Removing unused cache: {dir_name}");
                     async_fs::remove_dir_all(&path).await.with_context(|| {
                         format!("Failed to remove cache directory: {}", path.display())
                     })?;
@@ -1192,6 +1146,7 @@ impl Cache {
     /// ```
     ///
     /// [`ensure_cache_dir`]: Cache::ensure_cache_dir
+    #[must_use]
     pub fn get_cache_location(&self) -> &Path {
         &self.cache_dir
     }
@@ -1310,35 +1265,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_location() {
-        let cache = Cache::new().unwrap();
-        let location = cache.get_cache_location();
-
-        #[cfg(target_os = "windows")]
-        assert!(location.to_str().unwrap().contains("ccpm"));
-
-        #[cfg(not(target_os = "windows"))]
-        assert!(location.to_str().unwrap().contains(".ccpm"));
-    }
-
-    // This test specifically tests CCPM_CACHE_DIR environment variable handling
-    // It uses std::env::set_var which can cause race conditions in parallel tests
-    // Run with: cargo test -- --test-threads=1 if flakiness occurs
-    #[tokio::test]
-    async fn test_cache_with_env_var() {
-        // Save original value
-        let original = std::env::var("CCPM_CACHE_DIR").ok();
-
         let temp_dir = TempDir::new().unwrap();
-        std::env::set_var("CCPM_CACHE_DIR", temp_dir.path());
-
-        let cache = Cache::new().unwrap();
-        assert_eq!(cache.get_cache_location(), temp_dir.path());
-
-        // Restore original value
-        match original {
-            Some(val) => std::env::set_var("CCPM_CACHE_DIR", val),
-            None => std::env::remove_var("CCPM_CACHE_DIR"),
-        }
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let location = cache.get_cache_location();
+        assert_eq!(location, temp_dir.path());
     }
 
     #[tokio::test]
@@ -1705,29 +1635,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_new_with_default_dir() {
-        // Test that Cache::new() works and picks appropriate default directory
-        let cache = Cache::new().unwrap();
-        let location = cache.get_cache_location();
-
-        // Just verify it returns some path
-        assert!(!location.as_os_str().is_empty());
-
-        // Platform-specific checks
-        #[cfg(target_os = "windows")]
-        {
-            let path_str = location.to_string_lossy();
-            assert!(path_str.contains("ccpm") || path_str.contains("CCPM"));
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let path_str = location.to_string_lossy();
-            assert!(path_str.contains(".ccpm") || path_str.contains("ccpm"));
-        }
-    }
-
-    #[tokio::test]
     async fn test_cache_size_with_subdirectories() {
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
@@ -1745,27 +1652,5 @@ mod tests {
 
         let size = cache.get_cache_size().await.unwrap();
         assert_eq!(size, 18); // 5 + 10 + 3
-    }
-
-    #[test]
-    fn test_get_cache_dir_platforms() {
-        // Test the static method behavior
-        let cache_dir = Cache::get_cache_dir().unwrap();
-
-        #[cfg(target_os = "windows")]
-        {
-            // On Windows, should use local app data
-            let path_str = cache_dir.to_string_lossy();
-            assert!(path_str.contains("ccpm"));
-            assert!(path_str.contains("cache"));
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            // On Unix-like systems, should use home directory
-            let path_str = cache_dir.to_string_lossy();
-            assert!(path_str.contains(".ccpm"));
-            assert!(path_str.contains("cache"));
-        }
     }
 }

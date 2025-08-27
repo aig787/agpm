@@ -1,9 +1,23 @@
-# Documentation Improvement Instructions for CCPM
+u Documentation Improvement Instructions for CCPM
 
 ## Overview
-You are tasked with adding comprehensive documentation to the CCPM (Claude Code Package Manager) project. Every public API should have proper docstrings, all modules should have high-level documentation, and the codebase should be fully documented following Rust's documentation standards.
+
+You are tasked with adding comprehensive documentation to the CCPM (Claude Code Package Manager) project. Every public
+API should have proper docstrings, all modules should have high-level documentation, and the codebase should be fully
+documented following Rust's documentation standards.
+
+**CRITICAL ACCURACY REQUIREMENTS**:
+- **DO NOT modify documentation if it is already accurate** - Only fix actual inaccuracies or add missing critical information
+- **Verify documentation matches implementation** - Read the actual code before changing any documentation
+- **Preserve existing accurate documentation** - Don't rewrite docs just to rewrite them
+- **Focus on gaps and errors** - Only change what needs changing:
+  - Fix factual errors or outdated information
+  - Add missing critical information (e.g., undocumented error cases, safety requirements)
+  - Add examples where completely missing
+  - DO NOT change accurate documentation just to make it "better"
 
 **IMPORTANT**: This is an iterative process. You will:
+
 1. Check current documentation coverage
 2. Identify undocumented or poorly documented areas
 3. Document one module/component thoroughly
@@ -16,6 +30,7 @@ Work incrementally - focus on one module at a time, ensuring quality and accurac
 ## Pre-Flight Checklist
 
 ### Step 1: Ensure Clean Starting State
+
 **CRITICAL**: All code must compile and tests must pass before adding documentation:
 
 ```bash
@@ -31,6 +46,7 @@ cargo doc --no-deps --open
 ```
 
 ### Step 2: Generate Documentation Coverage Report
+
 ```bash
 # Build docs with private items to see everything
 cargo doc --no-deps --document-private-items
@@ -47,14 +63,22 @@ cargo test --doc
 ### Step 3: Identify Documentation Gaps
 
 Use the rust-doc-expert agent to analyze and identify:
+
 1. **Undocumented modules** - Modules lacking `//!` documentation
 2. **Public APIs without docs** - Functions, structs, enums missing `///` comments
-3. **Missing examples** - APIs without usage examples
-4. **Incomplete documentation** - Partial or unclear descriptions
-5. **Missing error documentation** - Error types and conditions not explained
+3. **Missing examples** - APIs without usage examples (but only add if truly missing)
+4. **Inaccurate documentation** - Documentation that contradicts the actual implementation
+5. **Missing critical information** - Error conditions, safety requirements, or security implications not documented
 6. **Unsafe code** - Unsafe blocks without safety documentation
 
+**BEFORE making any changes:**
+- Read the existing documentation carefully
+- Check if it accurately describes the current implementation
+- Only modify if there's a genuine inaccuracy or critical missing information
+- Preserve all accurate existing documentation
+
 Priority order for CCPM modules:
+
 1. **Public CLI interface** (`src/cli/`) - User-facing commands
 2. **Core types** (`src/core/`) - Fundamental structures and errors
 3. **Manifest/Lockfile** (`src/manifest/`, `src/lockfile/`) - File formats
@@ -71,26 +95,28 @@ Priority order for CCPM modules:
 ```
 /agent rust-doc-expert
 
-Task: Add comprehensive documentation to the [module_name] module in CCPM.
+Task: Review and improve documentation for the [module_name] module in CCPM.
 
 Requirements:
-1. Add module-level documentation with `//!` comments explaining the module's purpose
-2. Document all public functions, structs, enums, and traits with `///` comments
-3. Include at least one runnable example for each public function
-4. Document error conditions and when they occur
-5. Add safety documentation for any unsafe code
-6. Ensure all documentation tests compile and pass
-7. Follow Rust API documentation guidelines
-8. Include cross-references to related modules/types using `[Type]` links
+1. FIRST, check if documentation already exists and is accurate - DO NOT change accurate docs
+2. Only add module-level documentation (`//!`) if missing or inaccurate
+3. Only document public items that lack documentation or have inaccurate docs
+4. Only add examples where they are completely missing AND would provide value
+5. Document error conditions and safety requirements if missing
+6. Fix any factual errors or outdated information in existing docs
+7. Ensure all documentation tests compile and pass
+8. Follow Rust API documentation guidelines
+9. Include cross-references to related modules/types using `[Type]` links where missing
 
-Module to document: src/[module_name]/mod.rs
+Module to review: src/[module_name]/mod.rs
 
-Please ensure documentation is accurate, comprehensive, and helpful for both users and contributors.
+CRITICAL: Only modify documentation that is inaccurate or missing critical information. Preserve all existing accurate documentation.
 ```
 
 ### Step 5: Documentation Standards for CCPM
 
 #### Module Documentation Template
+
 ```rust
 //! # Module Name
 //!
@@ -117,6 +143,7 @@ Please ensure documentation is accurate, comprehensive, and helpful for both use
 ```
 
 #### Function Documentation Template
+
 ```rust
 /// Brief one-line summary of what the function does.
 ///
@@ -160,6 +187,7 @@ pub fn function(param1: &str, param2: usize) -> Result<String, Error> {
 #### Document Key Concepts
 
 **Manifest Format (ccpm.toml)**
+
 ```rust
 /// Represents the project manifest file (ccpm.toml).
 ///
@@ -195,6 +223,7 @@ pub struct Manifest {
 ```
 
 **Lockfile Format (ccpm.lock)**
+
 ```rust
 /// Represents the lockfile that ensures reproducible installations.
 ///
@@ -214,6 +243,7 @@ pub struct Manifest {
 ```
 
 #### Document CLI Commands
+
 ```rust
 /// Installs dependencies defined in the project manifest.
 ///
@@ -260,17 +290,21 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
    
    # View current documentation
    cargo doc --no-deps --open
+   
+   # Read the actual implementation to verify accuracy
+   # Check if existing docs match the code behavior
    ```
 
-2. **Pick ONE Module to Document**
-   - Start with most important public APIs
-   - Or pick module with zero documentation
-   - Complete one module before moving to next
+2. **Pick ONE Module to Review**
+    - Start with modules that have missing documentation
+    - Or modules where you suspect inaccuracies
+    - Complete review and fixes for one module before moving to next
+    - DO NOT change modules with complete, accurate documentation
 
 3. **Use rust-doc-expert Agent**
-   - Invoke agent with specific module
-   - Review generated documentation
-   - Ensure accuracy and completeness
+    - Invoke agent to REVIEW (not rewrite) documentation
+    - Agent should identify actual gaps and inaccuracies
+    - Only change what needs changing
 
 4. **Verify Documentation Quality**
    ```bash
@@ -294,10 +328,10 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
    ```
 
 6. **Review and Refine**
-   - Read generated HTML docs
-   - Check examples are helpful
-   - Ensure cross-references work
-   - Verify error documentation is complete
+    - Read generated HTML docs
+    - Check examples are helpful
+    - Ensure cross-references work
+    - Verify error documentation is complete
 
 7. **Commit Progress**
    ```bash
@@ -307,13 +341,14 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
    ```
 
 8. **Repeat for Next Module**
-   - Return to step 1
-   - Pick next module
-   - Continue until all modules documented
+    - Return to step 1
+    - Pick next module
+    - Continue until all modules documented
 
 ### Step 8: Documentation Testing Patterns
 
 #### Testing Documentation Examples
+
 ```rust
 /// Parses a manifest from a string.
 ///
@@ -326,7 +361,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ///     [sources]
 ///     local = "https://github.com/user/repo.git"
 /// "#;
-/// 
+///
 /// let manifest = Manifest::from_str(toml)?;
 /// assert_eq!(manifest.sources.len(), 1);
 /// # Ok(())
@@ -335,6 +370,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ```
 
 #### Documenting Error Conditions
+
 ```rust
 /// Resolves dependencies for the project.
 ///
@@ -354,6 +390,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ```
 
 #### Documenting Async Functions
+
 ```rust
 /// Fetches the latest changes from a remote repository.
 ///
@@ -376,6 +413,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ### Step 9: Special Documentation Areas for CCPM
 
 #### Security Considerations
+
 ```rust
 /// Validates source URLs for security.
 ///
@@ -391,6 +429,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ```
 
 #### Cross-Platform Behavior
+
 ```rust
 /// Creates the cache directory for storing cloned repositories.
 ///
@@ -404,6 +443,7 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 ```
 
 #### Configuration Documentation
+
 ```rust
 /// Global configuration file (~/.ccpm/config.toml).
 ///
@@ -434,13 +474,21 @@ pub async fn execute(args: InstallArgs) -> Result<()> {
 
 ## Common Documentation Improvements
 
-1. **Add Missing Examples**: Every public function needs at least one example
-2. **Document "Why" Not Just "What"**: Explain design decisions and use cases
-3. **Cross-Reference Related Items**: Use `[Type]` links to connect related docs
-4. **Document Error Recovery**: Show how to handle each error type
-5. **Include Performance Notes**: Document O(n) complexity where relevant
-6. **Add Migration Guides**: Help users upgrade between versions
-7. **Document Invariants**: State assumptions and preconditions clearly
+**Only apply these improvements where genuinely needed:**
+
+1. **Add Missing Examples**: Only if no examples exist and they would add value
+2. **Fix Inaccuracies**: Correct documentation that doesn't match implementation
+3. **Add Critical Missing Info**: Error conditions, safety requirements, security notes
+4. **Fix Broken Cross-References**: Update `[Type]` links that don't resolve
+5. **Document Undocumented Public APIs**: Add docs only where completely missing
+6. **Update Outdated Information**: Fix docs referencing old behavior or APIs
+7. **Clarify Ambiguous Descriptions**: Only if genuinely unclear or misleading
+
+**DO NOT:**
+- Rewrite accurate documentation for style
+- Add unnecessary examples to well-documented functions
+- Change terminology that's already correct
+- Add verbose explanations where concise docs suffice
 
 ## Quick Commands Reference
 
@@ -469,11 +517,16 @@ python3 -m http.server --directory target/doc 8000
 
 ## When to Use the rust-doc-expert Agent
 
-- **For each module**: Use agent to add comprehensive documentation
-- **For complex APIs**: Let agent create detailed examples
-- **For error types**: Have agent document all error conditions
-- **For public interfaces**: Ensure all user-facing APIs are documented
-- **For unsafe code**: Agent adds safety requirements and invariants
+- **For modules with missing documentation**: Agent adds docs where none exist
+- **For inaccurate documentation**: Agent fixes docs that don't match implementation  
+- **For incomplete error documentation**: Agent adds missing error conditions
+- **For undocumented public APIs**: Agent documents items that lack any docs
+- **For unsafe code without safety docs**: Agent adds required safety documentation
+
+**DO NOT use the agent to:**
+- Rewrite existing accurate documentation
+- Add examples where adequate examples already exist
+- "Improve" documentation that's already clear and complete
 
 ## Success Criteria
 
@@ -489,19 +542,26 @@ python3 -m http.server --directory target/doc 8000
 ✅ Platform-specific behavior is explained
 ✅ Each module documented and committed separately
 
-## Red Flags to Avoid
+## Red Flags to Fix (But Only If They Exist)
 
-1. **Outdated Documentation**: Docs that don't match implementation
+1. **Inaccurate Documentation**: Docs that contradict actual implementation
 2. **Broken Examples**: Code examples that don't compile
-3. **Missing Error Cases**: Not documenting when errors occur
-4. **Unclear Descriptions**: Vague or unhelpful documentation
-5. **No Examples**: APIs without usage demonstrations
+3. **Missing Critical Error Cases**: Undocumented error conditions that users need to know
+4. **Genuinely Unclear Descriptions**: Documentation that is ambiguous or misleading
+5. **Complete Absence of Examples**: Public APIs with zero usage examples
 6. **Broken Links**: Cross-references that don't resolve
-7. **Copy-Paste Docs**: Generic documentation not specific to the function
+7. **Incorrect Information**: Documentation with factual errors
+
+**NOT Red Flags (Leave These Alone):**
+- Documentation that's accurate but could be "better written"
+- Functions with one good example (don't need more)
+- Concise but clear descriptions
+- Documentation using different but correct terminology
 
 ## Module-Specific Documentation Goals
 
 Based on user impact and API complexity:
+
 - `src/cli/`: Complete command documentation with examples
 - `src/manifest/`: Full format specification and validation rules
 - `src/lockfile/`: Lockfile format and generation algorithm
@@ -512,4 +572,5 @@ Based on user impact and API complexity:
 - `src/config/`: Configuration format and security notes
 - `src/utils/`: Helper function documentation with examples
 
-Remember: Good documentation is an investment in the project's future. It helps users adopt CCPM and makes it easier for contributors to improve the codebase.
+Remember: Good documentation is an investment in the project's future. It helps users adopt CCPM and makes it easier for
+contributors to improve the codebase.

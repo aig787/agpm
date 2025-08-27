@@ -132,7 +132,7 @@ use std::fmt;
 /// my-helper = { source = "community", path = "agents/helper.md", version = "v1.2.3" }
 /// ```
 ///
-/// The corresponding ResourceUsage would be:
+/// The corresponding `ResourceUsage` would be:
 /// ```rust,no_run
 /// # use ccpm::resolver::redundancy::ResourceUsage;
 /// ResourceUsage {
@@ -210,7 +210,7 @@ impl fmt::Display for Redundancy {
             self.source_file
         )?;
         for usage in &self.usages {
-            writeln!(f, "  - {}", usage)?;
+            writeln!(f, "  - {usage}")?;
         }
         Ok(())
     }
@@ -239,7 +239,7 @@ impl fmt::Display for Redundancy {
 /// The detector maintains an in-memory map of all resource usages. For large
 /// manifests with hundreds of dependencies, memory usage scales linearly:
 /// - Each resource usage: ~100 bytes (strings + metadata)
-/// - HashMap overhead: ~25% of total usage data
+/// - `HashMap` overhead: ~25% of total usage data
 ///
 /// [`add_usage()`]: RedundancyDetector::add_usage
 /// [`analyze_manifest()`]: RedundancyDetector::analyze_manifest
@@ -274,6 +274,7 @@ impl RedundancyDetector {
     ///
     /// [`add_usage()`]: RedundancyDetector::add_usage
     /// [`analyze_manifest()`]: RedundancyDetector::analyze_manifest
+    #[must_use]
     pub fn new() -> Self {
         Self {
             usages: HashMap::new(),
@@ -320,7 +321,8 @@ impl RedundancyDetector {
     ///     source: Some("community".to_string()),
     ///     path: "agents/helper.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
-    ///     git: None,
+    ///     branch: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -342,7 +344,7 @@ impl RedundancyDetector {
             let usage = ResourceUsage {
                 resource_name,
                 source_file: source_file.clone(),
-                version: dep.get_version().map(|s| s.to_string()),
+                version: dep.get_version().map(std::string::ToString::to_string),
             };
 
             self.usages.entry(source_file).or_default().push(usage);
@@ -455,6 +457,7 @@ impl RedundancyDetector {
     /// ```
     ///
     /// [`Redundancy`]: Redundancy
+    #[must_use]
     pub fn detect_redundancies(&self) -> Vec<Redundancy> {
         let mut redundancies = Vec::new();
 
@@ -539,6 +542,7 @@ impl RedundancyDetector {
     /// };
     /// assert!(!detector.can_consolidate(&hard_redundancy));
     /// ```
+    #[must_use]
     pub fn can_consolidate(&self, redundancy: &Redundancy) -> bool {
         // If all usages want the same version or latest, they could be consolidated
         let versions: HashSet<_> = redundancy.usages.iter().map(|u| &u.version).collect();
@@ -599,6 +603,7 @@ impl RedundancyDetector {
     ///   • Each will work independently
     ///   • Consider aligning versions for 'community:agents/helper.md' across all resources
     /// ```
+    #[must_use]
     pub fn generate_redundancy_warning(&self, redundancies: &[Redundancy]) -> String {
         if redundancies.is_empty() {
             return String::new();
@@ -610,7 +615,7 @@ impl RedundancyDetector {
         );
 
         for redundancy in redundancies {
-            message.push_str(&format!("{}\n", redundancy));
+            message.push_str(&format!("{redundancy}\n"));
         }
 
         message.push_str(&format!(
@@ -672,6 +677,7 @@ impl RedundancyDetector {
     ///
     /// Currently returns an empty vector. Future implementation will return
     /// detected transitive redundancies.
+    #[must_use]
     pub fn check_transitive_redundancies(&self) -> Vec<Redundancy> {
         // TODO: When we add support for dependencies having their own dependencies,
         // we'll need to check for redundancies across the entire dependency tree
@@ -735,6 +741,7 @@ impl RedundancyDetector {
     /// - **IDE Extensions**: Provide quick-fix suggestions
     /// - **Automated Tools**: Implement dependency optimization utilities
     /// - **Documentation**: Generate project-specific optimization guides
+    #[must_use]
     pub fn suggest_consolidation(&self, redundancy: &Redundancy) -> Vec<String> {
         let mut suggestions = Vec::new();
 
@@ -802,7 +809,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -814,7 +822,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -843,7 +852,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -855,7 +865,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -880,7 +891,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -892,7 +904,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -939,7 +952,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -951,7 +965,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -980,7 +995,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -992,7 +1008,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),

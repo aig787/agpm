@@ -17,6 +17,7 @@ pub struct ManifestFixture {
 
 impl ManifestFixture {
     /// Basic manifest with simple dependencies
+    #[must_use]
     pub fn basic() -> Self {
         Self {
             name: "basic".to_string(),
@@ -38,6 +39,7 @@ utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     }
 
     /// Manifest with local dependencies
+    #[must_use]
     pub fn with_local() -> Self {
         Self {
             name: "with_local".to_string(),
@@ -58,6 +60,7 @@ local-utils = { path = "./snippets/local-utils.md" }
     }
 
     /// Manifest with invalid syntax
+    #[must_use]
     pub fn invalid_syntax() -> Self {
         Self {
             name: "invalid_syntax".to_string(),
@@ -74,6 +77,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     }
 
     /// Manifest with missing required fields
+    #[must_use]
     pub fn missing_fields() -> Self {
         Self {
             name: "missing_fields".to_string(),
@@ -90,6 +94,7 @@ incomplete-agent = { source = "official", path = "agents/test.md" }  # Missing v
     }
 
     /// Manifest with version conflicts
+    #[must_use]
     pub fn version_conflicts() -> Self {
         Self {
             name: "version_conflicts".to_string(),
@@ -108,13 +113,14 @@ agent2 = { source = "source2", path = "shared/lib.md", version = "v2.0.0" }
     }
 
     /// Empty manifest (only comments)
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             name: "empty".to_string(),
-            content: r#"
+            content: r"
 # Empty ccpm.toml file
 # No sources or dependencies defined
-"#
+"
             .trim()
             .to_string(),
         }
@@ -137,6 +143,7 @@ pub struct LockfileFixture {
 
 impl LockfileFixture {
     /// Basic lockfile matching the basic manifest
+    #[must_use]
     pub fn basic() -> Self {
         Self {
             name: "basic".to_string(),
@@ -188,24 +195,25 @@ pub struct MarkdownFixture {
 
 impl MarkdownFixture {
     /// Agent markdown file with frontmatter
+    #[must_use]
     pub fn agent(name: &str) -> Self {
         let mut frontmatter = HashMap::new();
         frontmatter.insert("type".to_string(), "agent".to_string());
         frontmatter.insert("name".to_string(), name.to_string());
         frontmatter.insert("version".to_string(), "1.0.0".to_string());
-        frontmatter.insert("description".to_string(), format!("Test agent: {}", name));
+        frontmatter.insert("description".to_string(), format!("Test agent: {name}"));
 
         Self {
-            path: format!("agents/{}.md", name),
+            path: format!("agents/{name}.md"),
             content: format!(
                 r#"---
 type: agent
-name: {}
+name: {name}
 version: 1.0.0
-description: "Test agent: {}"
+description: "Test agent: {name}"
 ---
 
-# {} Agent
+# {name} Agent
 
 This is a test agent that demonstrates the basic structure of a Claude Code agent.
 
@@ -216,17 +224,17 @@ You can use this agent by importing it into your Claude Code project.
 ## Examples
 
 ```javascript
-// Example usage of {} agent
-const {} = require('{}');
+// Example usage of {name} agent
+const {name} = require('{name}');
 ```
-"#,
-                name, name, name, name, name, name
+"#
             ),
             frontmatter: Some(frontmatter),
         }
     }
 
     /// Snippet markdown file with frontmatter
+    #[must_use]
     pub fn snippet(name: &str) -> Self {
         let mut frontmatter = HashMap::new();
         frontmatter.insert("type".to_string(), "snippet".to_string());
@@ -234,37 +242,37 @@ const {} = require('{}');
         frontmatter.insert("version".to_string(), "1.0.0".to_string());
 
         Self {
-            path: format!("snippets/{}.md", name),
+            path: format!("snippets/{name}.md"),
             content: format!(
                 r#"---
 type: snippet
-name: {}
+name: {name}
 version: 1.0.0
 ---
 
-# {} Snippet
+# {name} Snippet
 
 This is a test snippet.
 
 ## Code
 
 ```javascript
-// {} snippet code
-function {}() {{
+// {name} snippet code
+function {name}() {{
     return "test";
 }}
 ```
-"#,
-                name, name, name, name
+"#
             ),
             frontmatter: Some(frontmatter),
         }
     }
 
     /// Markdown file without frontmatter
+    #[must_use]
     pub fn simple(name: &str, content: &str) -> Self {
         Self {
-            path: format!("{}.md", name),
+            path: format!("{name}.md"),
             content: content.to_string(),
             frontmatter: None,
         }
@@ -290,6 +298,7 @@ pub struct GitRepoFixture {
 
 impl GitRepoFixture {
     /// Create a new git repository fixture
+    #[must_use]
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
@@ -298,6 +307,7 @@ impl GitRepoFixture {
     }
 
     /// Add a file to the repository
+    #[must_use]
     pub fn with_file(mut self, file: MarkdownFixture) -> Self {
         self.files.push(file);
         self

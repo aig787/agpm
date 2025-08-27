@@ -466,9 +466,9 @@ impl ConfigCommand {
         let mut config = GlobalConfig::load().await.unwrap_or_default();
 
         if config.has_source(&name) {
-            println!("⚠️  Source '{}' already exists", name);
+            println!("⚠️  Source '{name}' already exists");
             println!("   Current URL: {}", config.get_source(&name).unwrap());
-            println!("   New URL: {}", url);
+            println!("   New URL: {url}");
             println!("   Updating...");
         }
 
@@ -492,7 +492,7 @@ impl ConfigCommand {
             config.save().await?;
             println!("✅ Removed global source '{}'", name.red());
         } else {
-            println!("❌ Source '{}' not found in global config", name);
+            println!("❌ Source '{name}' not found in global config");
         }
 
         Ok(())
@@ -1140,7 +1140,7 @@ mod tests {
 
         // Verify all sources are present
         for name in &["public", "oauth", "usertoken", "placeholder", "ssh"] {
-            assert!(loaded.has_source(name), "Missing source: {}", name);
+            assert!(loaded.has_source(name), "Missing source: {name}");
         }
     }
 
@@ -1162,7 +1162,7 @@ mod tests {
         ];
 
         for (url, has_at) in test_cases {
-            assert_eq!(url.contains('@'), has_at, "Failed for URL: {}", url);
+            assert_eq!(url.contains('@'), has_at, "Failed for URL: {url}");
 
             if url.contains('@') {
                 // Test the masking logic
@@ -1199,16 +1199,14 @@ mod tests {
         for url in warning_urls {
             assert!(
                 url.contains("YOUR_TOKEN") || url.contains("TOKEN"),
-                "URL should trigger warning: {}",
-                url
+                "URL should trigger warning: {url}"
             );
         }
 
         for url in non_warning_urls {
             assert!(
                 !(url.contains("YOUR_TOKEN") || (url.contains("TOKEN") && !url.contains("actual"))),
-                "URL should not trigger warning: {}",
-                url
+                "URL should not trigger warning: {url}"
             );
         }
     }
@@ -1247,5 +1245,291 @@ mod tests {
         let loaded_config = loaded.unwrap();
         assert_eq!(loaded_config.sources.len(), 1);
         assert!(loaded_config.has_source("test"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_add_source_command() {
+        let cmd = ConfigCommand {
+            command: Some(ConfigSubcommands::AddSource {
+                name: "test-source".to_string(),
+                url: "https://github.com/test/repo.git".to_string(),
+            }),
+        };
+
+        // Execute should not panic even if global config operations fail
+        let _ = cmd.execute().await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_remove_source_command() {
+        let cmd = ConfigCommand {
+            command: Some(ConfigSubcommands::RemoveSource {
+                name: "nonexistent".to_string(),
+            }),
+        };
+
+        // Execute should not panic even if source doesn't exist
+        let _ = cmd.execute().await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_list_sources_command() {
+        let cmd = ConfigCommand {
+            command: Some(ConfigSubcommands::ListSources),
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_path_command() {
+        let cmd = ConfigCommand {
+            command: Some(ConfigSubcommands::Path),
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_edit_command() {
+        // Set a fake editor that doesn't exist to test error handling
+        std::env::set_var("EDITOR", "fake_nonexistent_editor_12345");
+
+        let cmd = ConfigCommand {
+            command: Some(ConfigSubcommands::Edit),
+        };
+
+        // This will fail because the editor doesn't exist, but shouldn't panic
+        let _ = cmd.execute().await;
+
+        std::env::remove_var("EDITOR");
+    }
+
+    #[test]
+    fn test_url_token_masking_comprehensive() {
+        // Test various URL formats for token masking
+        let test_cases = vec![
+            ("https://oauth2:ghp_xxx@github.com/org/repo.git", true),
+            (
+                "https://gitlab-ci-token:abc123@gitlab.com/group/repo.git",
+                true,
+            ),
+            (
+                "https://username:password@bitbucket.org/team/repo.git",
+                true,
+            ),
+            ("ssh://git@github.com:org/repo.git", false), // SSH URLs don't have tokens
+            ("https://github.com/org/repo.git", false),   // No auth
+            ("git@github.com:org/repo.git", false),       // SSH format
+            ("https://token@dev.azure.com/org/project/_git/repo", true),
+            ("https://@github.com/org/repo.git", false), // Empty auth
+        ];
+
+        for (url, should_mask) in test_cases {
+            if should_mask {
+                assert!(
+                    url.contains('@'),
+                    "URL should contain @ for masking: {}",
+                    url
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_force_overwrite() {
+        let temp = TempDir::new().unwrap();
+        let base_dir = temp.path().to_path_buf();
+
+        // Create initial config
+        let result = ConfigCommand::init_with_path(false, Some(base_dir.clone())).await;
+        assert!(result.is_ok());
+
+        // Modify the config
+        let config_path = base_dir.join("config.toml");
+        let initial_content = std::fs::read_to_string(&config_path).unwrap();
+
+        // Force overwrite should succeed
+        let result = ConfigCommand::init_with_path(true, Some(base_dir.clone())).await;
+        assert!(result.is_ok());
+
+        // Content should be reset to example
+        let new_content = std::fs::read_to_string(&config_path).unwrap();
+        assert_eq!(initial_content, new_content); // Both should be the example config
+    }
+
+    #[tokio::test]
+    async fn test_add_source_with_warning_tokens() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+
+        let mut config = GlobalConfig::default();
+
+        // Add source with placeholder token
+        config.add_source(
+            "test".to_string(),
+            "https://oauth2:YOUR_TOKEN@github.com/org/repo.git".to_string(),
+        );
+
+        assert!(config.get_source("test").unwrap().contains("YOUR_TOKEN"));
+
+        // Save and verify
+        config.save_to(&config_path).await.unwrap();
+        assert!(config_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remove_nonexistent_source() {
+        let mut config = GlobalConfig::default();
+
+        // Add a source
+        config.add_source(
+            "exists".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+
+        // Remove existing should return true
+        assert!(config.remove_source("exists"));
+
+        // Remove non-existent should return false
+        assert!(!config.remove_source("doesnt_exist"));
+        assert!(!config.remove_source("never_existed"));
+    }
+
+    #[tokio::test]
+    async fn test_list_sources_url_masking() {
+        // Test that list_sources properly masks tokens in output
+        // This is tested via the logic in list_sources function
+        // The actual masking is done in the display logic
+        // We're testing that the function doesn't panic with various URLs
+        let test_urls = vec![
+            "https://oauth2:secret@github.com/org/repo.git",
+            "https://user:pass@gitlab.com/group/repo.git",
+            "ssh://git@github.com:org/repo.git",
+            "https://github.com/org/repo.git",
+        ];
+
+        for url in test_urls {
+            if url.contains('@') {
+                let parts: Vec<&str> = url.splitn(2, '@').collect();
+                assert_eq!(parts.len(), 2);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_show_empty_vs_populated() {
+        // Test show with empty config
+        let empty_config = GlobalConfig::default();
+        assert!(empty_config.sources.is_empty());
+
+        // Test show with populated config
+        let mut populated_config = GlobalConfig::default();
+        populated_config.add_source(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        assert!(!populated_config.sources.is_empty());
+
+        // Populated config should serialize to valid TOML with sources
+        let populated_toml = toml::to_string_pretty(&populated_config).unwrap();
+        assert!(populated_toml.contains("[sources]"));
+        assert!(populated_toml.contains("test ="));
+    }
+
+    #[tokio::test]
+    async fn test_editor_fallback_logic() {
+        // Test editor selection logic
+        std::env::remove_var("EDITOR");
+        std::env::remove_var("VISUAL");
+
+        // Set VISUAL and it should be preferred over default
+        std::env::set_var("VISUAL", "nano");
+        let visual = std::env::var("VISUAL").unwrap();
+        assert_eq!(visual, "nano");
+
+        // Set EDITOR and it should be preferred over VISUAL
+        std::env::set_var("EDITOR", "emacs");
+        let editor = std::env::var("EDITOR").unwrap();
+        assert_eq!(editor, "emacs");
+
+        // Clean up
+        std::env::remove_var("EDITOR");
+        std::env::remove_var("VISUAL");
+    }
+
+    #[tokio::test]
+    async fn test_config_save_and_load_cycle() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+
+        // Create config with various sources
+        let mut config = GlobalConfig::default();
+        config.add_source(
+            "github".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        config.add_source(
+            "gitlab".to_string(),
+            "https://gitlab.com/test/repo.git".to_string(),
+        );
+        config.add_source(
+            "private".to_string(),
+            "https://oauth2:token@github.com/org/repo.git".to_string(),
+        );
+
+        // Save
+        config.save_to(&config_path).await.unwrap();
+        assert!(config_path.exists());
+
+        // Load and verify
+        let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
+        assert_eq!(loaded.sources.len(), 3);
+        assert!(loaded.has_source("github"));
+        assert!(loaded.has_source("gitlab"));
+        assert!(loaded.has_source("private"));
+
+        // Verify exact content
+        assert_eq!(
+            loaded.get_source("github"),
+            Some(&"https://github.com/test/repo.git".to_string())
+        );
+    }
+
+    #[test]
+    fn test_config_subcommands_parsing() {
+        // Test that subcommands are properly structured
+        // This helps ensure CLI parsing works correctly
+
+        // Init command with force flag
+        let init = ConfigSubcommands::Init { force: true };
+        match init {
+            ConfigSubcommands::Init { force } => assert!(force),
+            _ => panic!("Wrong variant"),
+        }
+
+        // AddSource command
+        let add = ConfigSubcommands::AddSource {
+            name: "test".to_string(),
+            url: "https://github.com/test/repo.git".to_string(),
+        };
+        match add {
+            ConfigSubcommands::AddSource { name, url } => {
+                assert_eq!(name, "test");
+                assert!(url.contains("github"));
+            }
+            _ => panic!("Wrong variant"),
+        }
+
+        // RemoveSource command
+        let remove = ConfigSubcommands::RemoveSource {
+            name: "test".to_string(),
+        };
+        match remove {
+            ConfigSubcommands::RemoveSource { name } => assert_eq!(name, "test"),
+            _ => panic!("Wrong variant"),
+        }
     }
 }

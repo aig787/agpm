@@ -4,7 +4,7 @@ use std::fs;
 mod fixtures;
 use fixtures::{MarkdownFixture, TestEnvironment};
 
-/// Helper to add mock sources for tests using with_manifest_and_lockfile_file_urls
+/// Helper to add mock sources for tests using `with_manifest_and_lockfile_file_urls`
 fn add_standard_mock_sources(env: &TestEnvironment) -> anyhow::Result<()> {
     // Add official source with my-agent and utils
     let official_files = vec![

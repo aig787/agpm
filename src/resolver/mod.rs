@@ -174,6 +174,7 @@
 //! ```
 
 pub mod redundancy;
+pub mod version_resolution;
 
 use crate::core::CcpmError;
 use crate::git::GitRepo;
@@ -186,6 +187,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use self::redundancy::RedundancyDetector;
+use self::version_resolution::{find_best_matching_tag, is_version_constraint};
 
 /// Core dependency resolver that transforms manifest dependencies into lockfile entries.
 ///
@@ -299,6 +301,7 @@ impl DependencyResolver {
     /// with [`new_with_global()`] and manually configure the source manager.
     ///
     /// [`new_with_global()`]: DependencyResolver::new_with_global
+    #[must_use]
     pub fn with_cache(manifest: Manifest, cache_dir: PathBuf) -> Self {
         let source_manager = SourceManager::from_manifest_with_cache(&manifest, cache_dir.clone());
 
@@ -376,7 +379,7 @@ impl DependencyResolver {
         // Resolve each dependency
         for (name, dep) in deps {
             if let Some(pb) = progress {
-                pb.set_message(format!("Resolving {}", name));
+                pb.set_message(format!("Resolving {name}"));
             }
 
             let entry = self.resolve_dependency(&name, &dep).await?;
@@ -472,7 +475,7 @@ impl DependencyResolver {
         } else {
             // Remote dependency - need to sync and resolve
             let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
-                message: format!("Dependency '{}' has no source specified", name),
+                message: format!("Dependency '{name}' has no source specified"),
             })?;
 
             // Get source URL
@@ -486,11 +489,14 @@ impl DependencyResolver {
             // Sync the source repository (auth comes from global config if needed)
             let repo = self.source_manager.sync(source_name, None).await?;
 
-            // Checkout specific version if specified
-            let resolved_commit = if let Some(version) = dep.get_version() {
-                self.checkout_version(&repo, version).await?
+            // Checkout specific version if specified and get both resolved version and commit
+            let (resolved_version, resolved_commit) = if let Some(version) = dep.get_version() {
+                // Use checkout_version_with_resolved to get both the resolved version and commit
+                self.checkout_version_with_resolved(&repo, version).await?
             } else {
-                self.get_current_commit(&repo).await?
+                // No version specified, use current HEAD
+                let commit = self.get_current_commit(&repo).await?;
+                (None, commit)
             };
 
             // Determine the installed location based on resource type
@@ -506,7 +512,8 @@ impl DependencyResolver {
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
                 path: dep.get_path().to_string(),
-                version: dep.get_version().map(|s| s.to_string()),
+                version: resolved_version
+                    .or_else(|| dep.get_version().map(std::string::ToString::to_string)),
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
@@ -555,7 +562,104 @@ impl DependencyResolver {
     /// - Version string doesn't match any tag, branch, or valid commit
     /// - Git checkout fails due to conflicts or permissions
     /// - Repository is corrupted or inaccessible
+    ///
+    /// Checks out a version and returns both the resolved version string and commit hash.
+    ///
+    /// This is similar to `checkout_version` but also returns the actual resolved version
+    /// string when a version constraint is resolved. This is needed to store the correct
+    /// version in the lockfile instead of the constraint.
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (Option<`resolved_version`>, `commit_hash`) where:
+    /// - `resolved_version` is Some(tag) when a constraint was resolved to a specific tag
+    /// - `resolved_version` is None when the version was already exact (branch/tag/commit)
+    /// - `commit_hash` is always the resulting HEAD commit after checkout
+    async fn checkout_version_with_resolved(
+        &self,
+        repo: &GitRepo,
+        version: &str,
+    ) -> Result<(Option<String>, String)> {
+        // Check if it's a version constraint that needs resolution
+        if is_version_constraint(version) {
+            // Get all available tags from the repository
+            let mut tags = repo.list_tags().await?;
+
+            // Debug: Check if we have any tags at all
+            if tags.is_empty() {
+                // If no tags found, try fetching them first
+                repo.fetch(None, None)
+                    .await
+                    .context("Failed to fetch tags from repository")?;
+
+                // Try again after fetch
+                tags = repo.list_tags().await?;
+                if tags.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "No tags found in repository. Version constraint '{}' requires tags to resolve.",
+                        version
+                    ));
+                }
+            }
+
+            // Find the best matching tag for the constraint
+            let best_tag = find_best_matching_tag(version, tags)
+                .context(format!("Failed to resolve version constraint: {version}"))?;
+
+            // Checkout the resolved tag
+            repo.checkout(&best_tag)
+                .await
+                .context(format!("Failed to checkout resolved version: {best_tag}"))?;
+
+            let commit = self.get_current_commit(repo).await?;
+            // Return the resolved tag as the version to store in lockfile
+            Ok((Some(best_tag), commit))
+        } else {
+            // Not a constraint, checkout directly and return the original version
+            let commit = self.checkout_version(repo, version).await?;
+            Ok((None, commit))
+        }
+    }
+
     async fn checkout_version(&self, repo: &GitRepo, version: &str) -> Result<String> {
+        // Check if it's a version constraint that needs resolution
+        if is_version_constraint(version) {
+            // Get all available tags from the repository
+            let mut tags = repo.list_tags().await?;
+
+            // Debug: Check if we have any tags at all
+            if tags.is_empty() {
+                // If no tags found, try fetching them first
+                repo.fetch(None, None)
+                    .await
+                    .context("Failed to fetch tags from repository")?;
+
+                // Try again after fetch
+                tags = repo.list_tags().await?;
+                if tags.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "No tags found in repository. Version constraint '{}' requires tags to resolve.",
+                        version
+                    ));
+                }
+            }
+
+            // Special handling for "latest" and "*" - they should resolve to the highest stable version
+            // This is handled inside find_best_matching_tag via VersionConstraint::parse
+
+            // Find the best matching tag for the constraint
+            let best_tag = find_best_matching_tag(version, tags)
+                .context(format!("Failed to resolve version constraint: {version}"))?;
+
+            // Checkout the resolved tag
+            repo.checkout(&best_tag)
+                .await
+                .context(format!("Failed to checkout resolved version: {best_tag}"))?;
+
+            return self.get_current_commit(repo).await;
+        }
+
+        // Not a constraint, try as exact tag/branch/commit
         // Try as tag first
         let tags = repo.list_tags().await?;
         if tags.contains(&version.to_string()) {
@@ -563,13 +667,45 @@ impl DependencyResolver {
             return self.get_current_commit(repo).await;
         }
 
-        // Try as branch or commit hash
-        if repo.checkout(version).await.is_err() {
-            // Try as commit hash if branch checkout failed
-            repo.checkout(version)
-                .await
-                .context(format!("Failed to checkout version: {}", version))?;
+        // Check if it looks like a semantic version tag that doesn't exist
+        // Pattern: starts with 'v' followed by a digit, or looks like a semver (e.g., "1.0.0")
+        // But exclude commit hashes (which are 40 hex chars or shorter prefixes)
+        let looks_like_version = if version.starts_with('v')
+            && version.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+        {
+            true
+        } else if version.contains('.')
+            && version.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
+            // Looks like semver (has dots and starts with digit)
+            true
+        } else {
+            false
+        };
+
+        if looks_like_version {
+            // This looks like a version tag but wasn't found
+            return Err(anyhow::anyhow!(
+                "No matching version found for '{}'. Available versions: {}",
+                version,
+                tags.join(", ")
+            ));
         }
+
+        // Try as branch or commit hash
+        repo.checkout(version)
+            .await
+            .or_else(|e| {
+                // If checkout failed and this looks like a commit hash, provide better error
+                if version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit()) {
+                    Err(anyhow::anyhow!(
+                        "Failed to checkout commit hash '{}'. The commit may not exist in the repository or may not be reachable from the cloned branches. Original error: {}",
+                        version, e
+                    ))
+                } else {
+                    Err(e).context(format!("Failed to checkout reference '{version}'"))
+                }
+            })?;
 
         self.get_current_commit(repo).await
     }
@@ -725,7 +861,7 @@ impl DependencyResolver {
             self.manifest
                 .all_dependencies()
                 .iter()
-                .map(|(name, _)| name.to_string())
+                .map(|(name, _)| (*name).to_string())
                 .collect()
         };
 
@@ -743,7 +879,7 @@ impl DependencyResolver {
             }
 
             if let Some(pb) = progress {
-                pb.set_message(format!("Updating {}", name));
+                pb.set_message(format!("Updating {name}"));
             }
 
             let entry = self.resolve_dependency(&name, &dep).await?;
@@ -821,6 +957,7 @@ impl DependencyResolver {
     /// - List of redundant resource usages
     /// - Suggested consolidation strategies
     /// - Explanation that redundancy is not an error
+    #[must_use]
     pub fn check_redundancies(&self) -> Option<String> {
         let mut detector = RedundancyDetector::new();
         detector.analyze_manifest(&self.manifest);
@@ -867,6 +1004,7 @@ impl DependencyResolver {
     /// ```
     ///
     /// [`Redundancy`]: redundancy::Redundancy
+    #[must_use]
     pub fn check_redundancies_with_details(&self) -> Vec<redundancy::Redundancy> {
         let mut detector = RedundancyDetector::new();
         detector.analyze_manifest(&self.manifest);
@@ -923,7 +1061,7 @@ impl DependencyResolver {
     pub fn verify(&mut self, progress: Option<&ProgressBar>) -> Result<()> {
         // Check for redundancies and warn (but don't fail)
         if let Some(warning) = self.check_redundancies() {
-            eprintln!("{}", warning);
+            eprintln!("{warning}");
         }
 
         // Then try to resolve all dependencies (clone to avoid borrow checker issues)
@@ -935,7 +1073,7 @@ impl DependencyResolver {
             .collect();
         for (name, dep) in deps {
             if let Some(pb) = progress {
-                pb.set_message(format!("Verifying {}", name));
+                pb.set_message(format!("Verifying {name}"));
             }
 
             if dep.is_local() {
@@ -951,7 +1089,7 @@ impl DependencyResolver {
             } else {
                 // Verify source exists
                 let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
-                    message: format!("Dependency '{}' has no source specified", name),
+                    message: format!("Dependency '{name}' has no source specified"),
                 })?;
 
                 if !self.manifest.sources.contains_key(source_name) {
@@ -1023,7 +1161,8 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1036,7 +1175,8 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1062,7 +1202,8 @@ mod tests {
                 source: Some("nonexistent".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1148,10 +1289,8 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = format!(
-            "file://{}",
-            source_dir.display().to_string().replace('\\', "/")
-        );
+        // Use the absolute path directly for better compatibility with tarpaulin
+        let source_url = source_dir.display().to_string();
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "remote-agent".to_string(),
@@ -1159,7 +1298,8 @@ mod tests {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1204,7 +1344,8 @@ mod tests {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1269,10 +1410,8 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = format!(
-            "file://{}",
-            source_dir.display().to_string().replace('\\', "/")
-        );
+        // Use the absolute path directly for better compatibility with tarpaulin
+        let source_url = source_dir.display().to_string();
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "git-agent".to_string(),
@@ -1280,7 +1419,8 @@ mod tests {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
-                git: Some("main".to_string()),
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1349,7 +1489,8 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/test1.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -1361,7 +1502,8 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/test2.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),

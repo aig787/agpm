@@ -209,16 +209,19 @@ installed_at = "snippets/utils.md"
     }
 
     /// Get the project directory path
+    #[must_use]
     pub fn project_path(&self) -> &Path {
         &self.project_dir
     }
 
     /// Get the sources directory path
+    #[must_use]
     pub fn sources_path(&self) -> &Path {
         &self.sources_dir
     }
 
     /// Get the cache directory path
+    #[must_use]
     pub fn cache_path(&self) -> &Path {
         &self.cache_dir
     }

@@ -234,9 +234,202 @@ CCPM supports standard semantic versioning (semver) ranges, following the same c
 | `*`                 | `version = "*"`               | Any version          | Wildcard              |
 | `latest`            | `version = "latest"`          | Latest stable        | Excludes pre-releases |
 
-### Local Dependencies
+## Versioning in CCPM
 
-CCPM supports three types of local dependencies:
+CCPM uses Git-based versioning, which means version constraints apply at the repository level, not individual files. Understanding how versioning works is crucial for effectively managing dependencies.
+
+### How Versioning Works
+
+1. **Repository-Level Versioning**: When you specify a version (e.g., `version = "v1.0.0"`), you're referencing a Git tag on the entire repository, not individual files. All resources from that repository at that tag share the same version.
+
+2. **Git References**: CCPM supports multiple ways to reference specific points in a repository's history:
+   - **Git Tags** (recommended): Semantic versions like `v1.0.0`, `v2.1.3`
+   - **Git Branches**: Branch names like `main`, `develop`, `feature/xyz`
+   - **Git Commits**: Specific commit hashes like `abc123def`
+   - **Special Keywords**: `latest` (newest tag), `*` (any version)
+
+3. **No Versioning for Local Directories**: Local directory sources and direct file paths don't support versioning because they're not Git repositories. They always use the current state of the files.
+
+### Version Reference Types
+
+#### Git Tags (Recommended)
+
+Git tags are the primary versioning mechanism in CCPM. They provide stable, semantic version numbers:
+
+```toml
+[agents]
+# Exact version using a git tag
+stable-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+
+# Version ranges using semantic versioning
+compatible-agent = { source = "community", path = "agents/helper.md", version = "^1.2.0" }  # 1.2.0 to <2.0.0
+patch-only-agent = { source = "community", path = "agents/util.md", version = "~1.2.3" }    # 1.2.3 to <1.3.0
+```
+
+**How it works**: When CCPM resolves `version = "v1.0.0"`, it:
+1. Looks for a Git tag named `v1.0.0` in the repository
+2. Checks out the repository at that tag
+3. Retrieves the specified file from that tagged state
+
+#### Git Branches
+
+Branches reference the latest commit on a specific branch:
+
+```toml
+[agents]
+# Track the main branch (updates with each install/update)
+dev-agent = { source = "community", path = "agents/dev.md", branch = "main" }
+
+# Track a feature branch
+feature-agent = { source = "community", path = "agents/new.md", branch = "feature/new-capability" }
+```
+
+**Important**: Branch references are mutable - they update to the latest commit each time you run `ccpm update`. Use tags for stable, reproducible builds.
+
+#### Git Commit Hashes
+
+For absolute reproducibility, reference specific commits:
+
+```toml
+[agents]
+# Pin to exact commit (immutable)
+fixed-agent = { source = "community", path = "agents/stable.md", rev = "abc123def456" }
+```
+
+**Use cases**:
+- Debugging specific versions
+- Pinning to commits between releases
+- Maximum reproducibility when tags aren't available
+
+#### Local Resources (No Versioning)
+
+Local resources don't support versioning because they're not in Git:
+
+```toml
+[sources]
+# Local directory source - no Git, no versions
+local-deps = "./dependencies"
+
+[agents]
+# ✅ VALID - Local source without version
+local-agent = { source = "local-deps", path = "agents/helper.md" }
+
+# ❌ INVALID - Can't use version with local directory source
+# bad-agent = { source = "local-deps", path = "agents/helper.md", version = "v1.0.0" }  # ERROR!
+
+# Direct file path - also no version support
+direct-agent = { path = "../agents/my-agent.md" }
+
+# ❌ INVALID - Can't use version with direct path
+# bad-direct = { path = "../agents/my-agent.md", version = "v1.0.0" }  # ERROR!
+```
+
+### Version Resolution Process
+
+When CCPM installs dependencies, it follows this resolution process:
+
+1. **Parse Version Constraint**: Interpret the version specification (tag, range, branch, etc.)
+2. **Fetch Repository Metadata**: Get list of tags/branches from the Git repository
+3. **Match Versions**: Find all versions that satisfy the constraint
+4. **Select Best Match**: Choose the highest version that satisfies constraints
+5. **Lock Version**: Record the exact commit hash in `ccpm.lock`
+
+### Version Constraints and Ranges
+
+CCPM supports sophisticated version constraints using semantic versioning:
+
+| Constraint | Example | Resolves To | Use Case |
+|------------|---------|-------------|----------|
+| Exact | `"1.2.3"` or `"v1.2.3"` | Exactly version 1.2.3 | Pinning to specific release |
+| Caret | `"^1.2.3"` | >=1.2.3, <2.0.0 | Allow compatible updates |
+| Tilde | `"~1.2.3"` | >=1.2.3, <1.3.0 | Allow patch updates only |
+| Greater | `">1.2.3"` | Any version >1.2.3 | Minimum version requirement |
+| Range | `">=1.0.0, <2.0.0"` | 1.x.x versions | Complex constraints |
+| Latest | `"latest"` | Newest stable tag | Always use newest stable |
+| Wildcard | `"*"` | Any version | No constraints |
+
+### Lockfile and Reproducibility
+
+The `ccpm.lock` file ensures reproducible installations by recording:
+
+```toml
+[[agents]]
+name = "example-agent"
+source = "community"
+path = "agents/example.md"
+version = "v1.0.0"                    # Original constraint
+resolved_commit = "abc123def..."      # Exact commit hash
+resolved_version = "v1.0.0"           # Actual tag/version used
+```
+
+Key points:
+- **Original constraint** (`version`): What was requested in `ccpm.toml`
+- **Resolved commit** (`resolved_commit`): Exact Git commit hash
+- **Resolved version** (`resolved_version`): The tag/branch that was resolved
+
+### Version Selection Examples
+
+Given available tags: `v1.0.0`, `v1.1.0`, `v1.2.0`, `v2.0.0`
+
+| Constraint | Selected Version | Explanation |
+|------------|------------------|-------------|
+| `"^1.0.0"` | `v1.2.0` | Highest 1.x.x version |
+| `"~1.0.0"` | `v1.0.0` | Only 1.0.x allowed |
+| `">=1.1.0, <2.0.0"` | `v1.2.0` | Highest within range |
+| `"latest"` | `v2.0.0` | Newest stable tag |
+| `">1.0.0"` | `v2.0.0` | Highest available |
+
+### Best Practices for Versioning
+
+1. **Use Semantic Version Tags**: Tag releases with semantic versions (`v1.0.0`, `v2.1.3`)
+2. **Prefer Tags Over Branches**: Tags are immutable; branches change over time
+3. **Use Caret Ranges**: `^1.0.0` allows compatible updates while preventing breaking changes
+4. **Lock for Production**: Commit `ccpm.lock` and use `--frozen` flag in CI/CD
+5. **Document Breaking Changes**: Use major version bumps (v1.x.x → v2.x.x) for breaking changes
+6. **Test Before Updating**: Use `ccpm update --dry-run` to preview changes
+
+### Common Versioning Scenarios
+
+#### Scenario 1: Development vs Production
+
+```toml
+# Development - track latest changes
+[agents.dev]
+cutting-edge = { source = "community", path = "agents/new.md", branch = "main" }
+
+# Production - stable versions only
+[agents]
+stable = { source = "community", path = "agents/proven.md", version = "^1.0.0" }
+```
+
+#### Scenario 2: Gradual Updates
+
+```toml
+# Start conservative
+agent = { source = "community", path = "agents/example.md", version = "~1.2.0" }  # Patches only
+
+# After testing, allow minor updates
+agent = { source = "community", path = "agents/example.md", version = "^1.2.0" }  # Compatible updates
+
+# Eventually, allow any 1.x version
+agent = { source = "community", path = "agents/example.md", version = ">=1.2.0, <2.0.0" }
+```
+
+#### Scenario 3: Mixed Sources
+
+```toml
+[sources]
+stable-repo = "https://github.com/org/stable-resources.git"     # Tagged releases
+dev-repo = "https://github.com/org/dev-resources.git"           # Active development
+local = "./local-resources"                                     # Local directory
+
+[agents]
+production = { source = "stable-repo", path = "agents/prod.md", version = "v2.1.0" }  # Specific tag
+experimental = { source = "dev-repo", path = "agents/exp.md", branch = "develop" }    # Branch tracking
+workspace = { source = "local", path = "agents/wip.md" }                             # No version (local)
+```
+
+### Local Dependencies
 
 #### 1. Local Directory Sources (NEW)
 

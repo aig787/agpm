@@ -29,7 +29,7 @@ fn test_path_separators() {
         format!(
             r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 windows-agent = {{ source = "official", path = "agents\\windows-agent.md", version = "v1.0.0" }}
@@ -37,14 +37,13 @@ unix-agent = {{ source = "official", path = "agents/unix-agent.md", version = "v
 
 [snippets]
 local-snippet = {{ path = ".\\snippets\\local.md" }}
-"#,
-            source_path_str
+"#
         )
     } else {
         format!(
             r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 unix-agent = {{ source = "official", path = "agents/unix-agent.md", version = "v1.0.0" }}
@@ -52,8 +51,7 @@ windows-agent = {{ source = "official", path = "agents\\windows-agent.md", versi
 
 [snippets]
 local-snippet = {{ path = "./snippets/local.md" }}
-"#,
-            source_path_str
+"#
         )
     };
 
@@ -151,25 +149,23 @@ fn test_case_sensitivity() {
         format!(
             r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 myagent = {{ source = "official", path = "agents/myagent.md", version = "v1.0.0" }}
-"#,
-            source_path_str
+"#
         )
     } else {
         // Case-sensitive filesystem - can reference both
         format!(
             r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 MyAgent = {{ source = "official", path = "agents/MyAgent.md", version = "v1.0.0" }}
 myagent = {{ source = "official", path = "agents/myagent.md", version = "v1.0.0" }}
-"#,
-            source_path_str
+"#
         )
     };
 
@@ -330,12 +326,11 @@ fn test_git_command_platform() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 test-agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_path_str
+"#
     );
 
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
@@ -373,12 +368,11 @@ fn test_unix_permissions() {
     let manifest_content = format!(
         r#"
 [sources]
-test = "file://{}"
+test = "file://{source_path_str}"
 
 [snippets]
 remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1.0.0" }}
-"#,
-        source_path_str
+"#
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
@@ -475,12 +469,11 @@ fn test_concurrent_operations() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", version = "v1.0.0" }}
-"#,
-        source_path_str
+"#
     );
 
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
@@ -618,12 +611,11 @@ fn test_temp_directory_platform() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}"
+official = "file://{source_path_str}"
 
 [agents]
 temp-test-agent = {{ source = "official", path = "agents/temp-test-agent.md", version = "v1.0.0" }}
-"#,
-        source_path_str
+"#
     );
 
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();

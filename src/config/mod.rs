@@ -216,9 +216,9 @@ pub use global::{GlobalConfig, GlobalConfigManager};
 pub use parser::parse_config;
 
 // Type aliases for cleaner code
-/// Type alias for agent configuration using the AgentManifest structure
+/// Type alias for agent configuration using the `AgentManifest` structure
 pub type AgentConfig = AgentManifest;
-/// Type alias for snippet configuration using the SnippetManifest structure  
+/// Type alias for snippet configuration using the `SnippetManifest` structure  
 pub type SnippetConfig = SnippetManifest;
 
 use anyhow::Result;
@@ -234,8 +234,7 @@ use std::path::PathBuf;
 /// 1. `CCPM_CACHE_DIR` environment variable (if set)
 /// 2. Platform-specific cache directory:
 ///    - Windows: `%LOCALAPPDATA%\ccpm\cache`
-///    - macOS: `~/Library/Caches/ccpm`
-///    - Linux: `~/.cache/ccpm`
+///    - macOS/Linux: `~/.ccpm/cache`
 ///
 /// # Directory Creation
 ///
@@ -260,13 +259,23 @@ use std::path::PathBuf;
 /// - The cache directory cannot be created
 /// - Insufficient permissions for directory creation
 pub fn get_cache_dir() -> Result<PathBuf> {
+    // Check for environment variable override first (essential for testing)
     if let Ok(dir) = std::env::var("CCPM_CACHE_DIR") {
         return Ok(PathBuf::from(dir));
     }
 
-    let cache_dir = dirs::cache_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine cache directory"))?
-        .join("ccpm");
+    // Use consistent directory structure with rest of CCPM
+    let cache_dir = if cfg!(target_os = "windows") {
+        dirs::data_local_dir()
+            .ok_or_else(|| anyhow::anyhow!("Unable to determine local data directory"))?
+            .join("ccpm")
+            .join("cache")
+    } else {
+        dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Unable to determine home directory"))?
+            .join(".ccpm")
+            .join("cache")
+    };
 
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir)?;

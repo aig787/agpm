@@ -340,7 +340,7 @@ impl CacheCommand {
         if removed > 0 {
             println!(
                 "{}",
-                format!("✅ Removed {} unused cache entries", removed)
+                format!("✅ Removed {removed} unused cache entries")
                     .green()
                     .bold()
             );
@@ -414,7 +414,7 @@ impl CacheCommand {
             if !repos.is_empty() {
                 println!("\n{}", "Cached repositories:".bold());
                 for repo in repos {
-                    println!("  • {}", repo);
+                    println!("  • {repo}");
                 }
             }
         }

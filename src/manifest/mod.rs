@@ -744,7 +744,7 @@ pub struct DetailedDependency {
 
     /// Path to the resource file.
     ///
-    /// For **remote dependencies**: Path within the Git repository  
+    /// For **remote dependencies**: Path within the Git repository\
     /// For **local dependencies**: Filesystem path relative to manifest directory
     ///
     /// The path must end with `.md` and point to a valid Markdown file.
@@ -786,42 +786,43 @@ pub struct DetailedDependency {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 
-    /// Git reference (branch, tag, or commit SHA).
+    /// Git branch to track.
     ///
-    /// Provides direct control over which Git reference to use when resolving
-    /// the dependency. Takes precedence over the `version` field if both are specified.
+    /// Specifies a Git branch to use when resolving the dependency.
+    /// Branch references are mutable and will update to the latest commit on each update.
     /// This field is ignored for local dependencies.
-    ///
-    /// # Supported Formats
-    ///
-    /// - **Branch names**: `"main"`, `"develop"`, `"feature/new-agent"`
-    /// - **Tag names**: `"v1.0.0"`, `"release-2023-12"`, `"stable"`  
-    /// - **Commit SHAs**: `"a1b2c3d4e5f6..."` (full or abbreviated)
     ///
     /// # Examples
     ///
     /// ```toml
     /// [agents]
-    /// # Use specific branch
-    /// experimental = { source = "repo", path = "agent.md", git = "develop" }
+    /// # Track the main branch
+    /// dev = { source = "repo", path = "agent.md", branch = "main" }
     ///
-    /// # Use specific tag
-    /// tagged = { source = "repo", path = "agent.md", git = "v2.0-beta" }
-    ///
-    /// # Use specific commit (maximum reproducibility)
-    /// pinned = { source = "repo", path = "agent.md", git = "a1b2c3d4e5f67890" }
-    /// ```
-    ///
-    /// # Precedence Rules
-    ///
-    /// If both `version` and `git` are specified, `git` takes precedence:
-    ///
-    /// ```toml
-    /// # This uses "develop" branch, not "v1.0.0"
-    /// mixed = { source = "repo", path = "file.md", version = "v1.0.0", git = "develop" }
+    /// # Track a feature branch
+    /// experimental = { source = "repo", path = "agent.md", branch = "feature/new-capability" }
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub git: Option<String>,
+    pub branch: Option<String>,
+
+    /// Git commit hash (revision).
+    ///
+    /// Specifies an exact Git commit to use when resolving the dependency.
+    /// Provides maximum reproducibility as commits are immutable.
+    /// This field is ignored for local dependencies.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [agents]
+    /// # Pin to exact commit (full hash)
+    /// pinned = { source = "repo", path = "agent.md", rev = "a1b2c3d4e5f67890abcdef1234567890abcdef12" }
+    ///
+    /// # Pin to exact commit (abbreviated)
+    /// stable = { source = "repo", path = "agent.md", rev = "abc123def" }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
 
     /// Command to execute for MCP servers.
     ///
@@ -890,6 +891,7 @@ impl Manifest {
     /// assert!(manifest.mcp_servers.is_empty());
     /// assert_eq!(manifest.target.agents, ".claude/agents");
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self {
             sources: HashMap::new(),
@@ -1122,9 +1124,10 @@ impl Manifest {
     ///         source: Some("missing".to_string()),
     ///         path: "agent.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
-    ///         git: None,
-    ///     command: None,
-    ///     args: None,
+    ///         branch: None,
+    ///         rev: None,
+    ///         command: None,
+    ///         args: None,
     ///     }),
     ///     true
     /// );
@@ -1150,7 +1153,7 @@ impl Manifest {
             // Check for empty path
             if dep.get_path().is_empty() {
                 return Err(crate::core::CcpmError::ManifestValidationError {
-                    reason: format!("Missing required field 'path' for dependency '{}'", name),
+                    reason: format!("Missing required field 'path' for dependency '{name}'"),
                 }
                 .into());
             }
@@ -1176,7 +1179,7 @@ impl Manifest {
                     && (dep.get_version().is_none() || dep.get_version() == Some(""))
                 {
                     return Err(crate::core::CcpmError::ManifestValidationError {
-                        reason: format!("Missing required field 'version' for dependency '{}' from source '{}'. Suggestion: Add version = \"v1.0.0\" to specify a version", name, source),
+                        reason: format!("Missing required field 'version' for dependency '{name}' from source '{source}'. Suggestion: Add version = \"v1.0.0\" to specify a version"),
                     }
                     .into());
                 }
@@ -1189,10 +1192,9 @@ impl Manifest {
                 if is_plain_dir && dep.get_version().is_some() {
                     return Err(crate::core::CcpmError::ManifestValidationError {
                         reason: format!(
-                            "Version specified for plain directory dependency '{}' with path '{}'. \n\
+                            "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
                             Plain directory dependencies do not support versions. \n\
-                            Remove the 'version' field or use a git source instead.",
-                            name, path
+                            Remove the 'version' field or use a git source instead."
                         ),
                     }
                     .into());
@@ -1208,7 +1210,7 @@ impl Manifest {
                 if let Some(existing_version) = seen_deps.get(name) {
                     if existing_version != version {
                         return Err(crate::core::CcpmError::ManifestValidationError {
-                            reason: format!("Version conflict for dependency '{}': found versions '{}' and '{}'", name, existing_version, version),
+                            reason: format!("Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"),
                         }
                         .into());
                     }
@@ -1234,8 +1236,7 @@ impl Manifest {
             {
                 return Err(crate::core::CcpmError::ManifestValidationError {
                     reason: format!(
-                        "Source '{}' has invalid URL: '{}'. Must be HTTP(S), SSH (git@...), or file:// URL",
-                        name, url
+                        "Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"
                     ),
                 }
                 .into());
@@ -1248,12 +1249,11 @@ impl Manifest {
             {
                 return Err(crate::core::CcpmError::ManifestValidationError {
                     reason: format!(
-                        "Plain directory path '{}' cannot be used as source '{}'. \n\
+                        "Plain directory path '{url}' cannot be used as source '{name}'. \n\
                         Sources must be git repositories. Use one of:\n\
                         - Remote URL: https://github.com/owner/repo.git\n\
                         - Local git repo: file:///absolute/path/to/repo\n\
-                        - Or use direct path dependencies without a source",
-                        url, name
+                        - Or use direct path dependencies without a source"
                     ),
                 }
                 .into());
@@ -1294,8 +1294,9 @@ impl Manifest {
     /// # Order
     ///
     /// Dependencies are returned in the order they appear in the underlying
-    /// HashMaps (agents first, then snippets, then commands), which means the order is not
+    /// `HashMaps` (agents first, then snippets, then commands), which means the order is not
     /// guaranteed to be stable across runs.
+    #[must_use]
     pub fn all_dependencies(&self) -> Vec<(&str, &ResourceDependency)> {
         let mut deps = Vec::new();
 
@@ -1336,7 +1337,8 @@ impl Manifest {
     ///
     /// # Performance
     ///
-    /// This method performs two HashMap lookups, so it's O(1) on average.
+    /// This method performs two `HashMap` lookups, so it's O(1) on average.
+    #[must_use]
     pub fn has_dependency(&self, name: &str) -> bool {
         self.agents.contains_key(name)
             || self.snippets.contains_key(name)
@@ -1374,6 +1376,7 @@ impl Manifest {
     /// 3. `[commands]` section
     ///
     /// If the same name exists in multiple sections, the first match is returned.
+    #[must_use]
     pub fn get_dependency(&self, name: &str) -> Option<&ResourceDependency> {
         self.agents
             .get(name)
@@ -1478,7 +1481,8 @@ impl Manifest {
     ///         source: Some("community".to_string()),
     ///         path: "snippets/utils.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
-    ///         git: None,
+    ///         branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     ///     }),
@@ -1503,7 +1507,7 @@ impl Manifest {
     /// Add or update a dependency with specific resource type.
     ///
     /// This is the preferred method for adding dependencies as it explicitly
-    /// specifies the resource type using the ResourceType enum.
+    /// specifies the resource type using the `ResourceType` enum.
     ///
     /// # Examples
     ///
@@ -1595,7 +1599,8 @@ impl ResourceDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
-    ///     git: None,
+    ///     branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -1609,6 +1614,7 @@ impl ResourceDependency {
     /// - Validate that referenced sources exist in the manifest
     /// - Filter dependencies by type (local vs remote)
     /// - Generate dependency graphs and reports
+    #[must_use]
     pub fn get_source(&self) -> Option<&str> {
         match self {
             ResourceDependency::Simple(_) => None,
@@ -1638,7 +1644,8 @@ impl ResourceDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/code-reviewer.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
-    ///     git: None,
+    ///     branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -1651,6 +1658,7 @@ impl ResourceDependency {
     /// - Local paths may need resolution against the manifest directory
     /// - Remote paths are used directly within the cloned repository
     /// - All paths should use forward slashes (/) for cross-platform compatibility
+    #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
             ResourceDependency::Simple(path) => path,
@@ -1675,7 +1683,8 @@ impl ResourceDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),  // This is ignored
-    ///     git: Some("develop".to_string()),     // This takes precedence
+    ///     branch: Some("develop".to_string()),   // This takes precedence over version
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -1697,22 +1706,24 @@ impl ResourceDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
-    ///     git: None,
+    ///     branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     /// });
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
-    /// // Remote dependency with git reference
-    /// let git_ref = ResourceDependency::Detailed(DetailedDependency {
+    /// // Remote dependency with branch reference
+    /// let branch_ref = ResourceDependency::Detailed(DetailedDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: None,
-    ///     git: Some("main".to_string()),
+    ///     branch: Some("main".to_string()),
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
     /// });
-    /// assert_eq!(git_ref.get_version(), Some("main"));
+    /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
     ///
     /// # Version Formats
@@ -1723,10 +1734,17 @@ impl ResourceDependency {
     /// - Git tags: `"release-2023"`, `"stable"`
     /// - Commit SHAs: `"a1b2c3d4e5f6..."`
     /// - Special values: `"latest"` (resolve to latest tag)
+    #[must_use]
     pub fn get_version(&self) -> Option<&str> {
         match self {
             ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.version.as_deref().or(d.git.as_deref()),
+            ResourceDependency::Detailed(d) => {
+                // Precedence: rev > branch > version
+                d.rev
+                    .as_deref()
+                    .or(d.branch.as_deref())
+                    .or(d.version.as_deref())
+            }
         }
     }
 
@@ -1752,7 +1770,8 @@ impl ResourceDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
-    ///     git: None,
+    ///     branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -1763,7 +1782,8 @@ impl ResourceDependency {
     ///     source: None,
     ///     path: "../shared/tool.md".to_string(),
     ///     version: None,
-    ///     git: None,
+    ///     branch: None,
+    ///         rev: None,
     ///     command: None,
     ///     args: None,
     /// });
@@ -1777,6 +1797,7 @@ impl ResourceDependency {
     /// - Validation logic (local deps can't have versions)
     /// - Installation planning (local deps don't need caching)
     /// - Progress reporting (different steps for local vs remote)
+    #[must_use]
     pub fn is_local(&self) -> bool {
         self.get_source().is_none()
     }
@@ -1876,7 +1897,7 @@ fn expand_url(url: &str) -> Result<String> {
                 // Convert to file:// URL
                 let path_str = expanded_path.to_string_lossy();
                 if expanded_path.is_absolute() {
-                    Ok(format!("file://{}", path_str))
+                    Ok(format!("file://{path_str}"))
                 } else {
                     Ok(format!(
                         "file://{}",
@@ -2056,7 +2077,8 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -2090,7 +2112,8 @@ mod tests {
                 source: Some("undefined".to_string()),
                 path: "agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -2118,7 +2141,8 @@ mod tests {
             source: Some("official".to_string()),
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
-            git: None,
+            branch: None,
+            rev: None,
             command: None,
             args: None,
         });
@@ -2239,7 +2263,8 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "commands/deploy.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -2287,7 +2312,8 @@ mod tests {
                 source: Some("npm".to_string()),
                 version: Some("latest".to_string()),
                 path: None,
-                git: None,
+                branch: None,
+                rev: None,
             },
         );
 
@@ -2316,7 +2342,8 @@ mod tests {
                 source: None,
                 version: None,
                 path: None,
-                git: None,
+                branch: None,
+                rev: None,
             },
         );
 

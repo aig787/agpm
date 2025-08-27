@@ -42,18 +42,25 @@ cargo test --all
 - Use `cargo tarpaulin` WITHOUT `--lib` flag to include binary tests
 - Integration tests execute the binary and don't contribute to library coverage
 - Test utilities themselves (test_utils module) should be excluded from coverage metrics
+- **CRITICAL: `cargo tarpaulin` is expensive to run** - save outputs to tmp files and refer back to them
 
 ```bash
+# Save coverage output to a tmp file for reference (avoid re-running)
+cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_$(date +%Y%m%d_%H%M%S).txt
+
 # Generate HTML coverage report (includes all test types)
 cargo tarpaulin --out html --exclude-files "*/test_utils/*" --output-dir target/coverage
 
-# Exclude test utilities from coverage metrics
-cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*"
+# View saved coverage reports
+ls -la /tmp/ccpm_coverage_*.txt
+
+# View most recent coverage report
+cat /tmp/ccpm_coverage_*.txt | tail -1
 
 # Or use the Makefile
 make coverage
 
-# View the report
+# View the HTML report
 open target/coverage/tarpaulin-report.html  # macOS
 # xdg-open target/coverage/tarpaulin-report.html  # Linux
 # start target/coverage/tarpaulin-report.html  # Windows
@@ -223,11 +230,14 @@ fn test_lockfile_generation() {
 
 1. **Measure Current State**
    ```bash
-   # Get baseline coverage
-   cargo tarpaulin --lib --out Stdout
+   # IMPORTANT: Save coverage output to avoid expensive re-runs
+   cargo tarpaulin --lib --out Stdout | tee /tmp/ccpm_coverage_current.txt
    
-   # Check specific module coverage
-   cargo tarpaulin --lib --out Stdout | grep "src/module_name"
+   # Check specific module coverage from saved output
+   grep "src/module_name" /tmp/ccpm_coverage_current.txt
+   
+   # Or reference previous runs
+   cat /tmp/ccpm_coverage_*.txt | tail -1 | grep "src/module_name"
    ```
 
 2. **Pick ONE Module to Improve**
@@ -254,11 +264,15 @@ fn test_lockfile_generation() {
 
 5. **Measure Improvement**
    ```bash
-   # Generate new coverage report
-   cargo tarpaulin --out html --output-dir target/coverage
+   # Save new coverage measurement
+   cargo tarpaulin --lib --out Stdout | tee /tmp/ccpm_coverage_after_$(date +%Y%m%d_%H%M%S).txt
    
-   # Check if module coverage improved
-   cargo tarpaulin --lib --out Stdout | grep "src/module_name"
+   # Compare with previous baseline
+   echo "=== Before ===" && grep "src/module_name" /tmp/ccpm_coverage_current.txt
+   echo "=== After ===" && grep "src/module_name" /tmp/ccpm_coverage_after_*.txt | tail -1
+   
+   # Generate HTML report only when needed for detailed analysis
+   # cargo tarpaulin --out html --output-dir target/coverage
    ```
 
 6. **Commit Progress**
@@ -320,17 +334,24 @@ async fn test_async_operation() {
 
 ### Step 9: Monitoring Progress
 
-Track coverage improvements:
+Track coverage improvements efficiently:
 
 ```bash
-# Run coverage with specific exclusions if needed
-cargo tarpaulin --lib --ignore-tests --out Stdout
+# Save coverage runs with descriptive names
+cargo tarpaulin --lib --ignore-tests --out Stdout | tee /tmp/ccpm_coverage_no_tests.txt
 
-# Focus on specific modules
-cargo tarpaulin --lib --out Stdout -- module_name::
+# Focus on specific modules (save output)
+cargo tarpaulin --lib --out Stdout -- module_name:: | tee /tmp/ccpm_coverage_module_$(date +%Y%m%d).txt
 
-# Skip problematic tests temporarily
-cargo tarpaulin --lib --skip 'test_name_pattern'
+# Skip problematic tests temporarily (save output)
+cargo tarpaulin --lib --skip 'test_name_pattern' | tee /tmp/ccpm_coverage_skip_problematic.txt
+
+# Compare coverage over time
+ls -la /tmp/ccpm_coverage_*.txt
+diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
+
+# Quick coverage check from saved results
+tail -20 /tmp/ccpm_coverage_current.txt
 ```
 
 ## Red Flags to Avoid
@@ -360,11 +381,18 @@ Based on module importance:
 # Check if all tests pass
 cargo test --all
 
-# Generate coverage report
+# Generate and save coverage report (EXPENSIVE - save output!)
+cargo tarpaulin --out Stdout | tee /tmp/ccpm_coverage_$(date +%Y%m%d_%H%M%S).txt
+
+# Generate HTML report only when needed for detailed analysis
 cargo tarpaulin --out html --output-dir target/coverage
 
-# Run coverage for specific module
-cargo tarpaulin --lib --out Stdout -- module_name::
+# Run coverage for specific module (save output)
+cargo tarpaulin --lib --out Stdout -- module_name:: | tee /tmp/ccpm_coverage_module.txt
+
+# View saved coverage reports
+ls -la /tmp/ccpm_coverage_*.txt
+cat /tmp/ccpm_coverage_current.txt
 
 # Run tests with single thread (for debugging)
 cargo test -- --test-threads=1
@@ -375,8 +403,11 @@ cargo test -- --nocapture
 # Run specific test
 cargo test test_name -- --exact
 
-# Check coverage without running tests
-cargo tarpaulin --lib --ignore-tests --out Stdout
+# Check coverage without running tests (save output)
+cargo tarpaulin --lib --ignore-tests --out Stdout | tee /tmp/ccpm_coverage_no_tests.txt
+
+# Compare coverage between runs
+diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
 ```
 
 ## When to Use Each Agent

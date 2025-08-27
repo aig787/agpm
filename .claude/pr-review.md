@@ -52,6 +52,20 @@ Use specialized agents to perform thorough code analysis:
   - Follows Rust naming conventions
   - Appropriate use of ownership and borrowing
   - No unnecessary clones or allocations
+  - Unused variables are removed (not just prefixed with `_`)
+  - If unused variables must be kept, they have comments explaining why
+
+- [ ] **DRY Principles & Code Clarity**
+  - No duplicated code blocks (extract to functions/modules)
+  - Common patterns extracted to reusable utilities
+  - Test helpers and fixtures avoid repetition
+  - Constants used for repeated values
+  - Function names clearly express intent
+  - Variables have descriptive names
+  - Complex logic has explanatory comments
+  - Avoid clever code in favor of readable code
+  - Functions do one thing well (Single Responsibility)
+  - Consistent naming patterns across similar operations
 
 - [ ] **Error Handling**
   - Comprehensive error messages with context

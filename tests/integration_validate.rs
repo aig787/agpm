@@ -151,7 +151,7 @@ fn test_validate_dependencies() {
         .stdout(predicate::str::contains("Dependencies resolvable"));
 }
 
-/// Test validating dependencies that don't exist in sources  
+/// Test validating dependencies that don't exist in sources\
 /// Note: Current implementation validates source accessibility but not individual file existence
 #[test]
 fn test_validate_missing_dependencies() {
@@ -389,8 +389,8 @@ fn test_validate_specific_file() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "file://{}/official"
-community = "file://{}/community"
+official = "file://{sources_path_str}/official"
+community = "file://{sources_path_str}/community"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -398,8 +398,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#,
-        sources_path_str, sources_path_str
+"#
     );
 
     let manifest_path = env.project_path().join("ccpm.toml");
@@ -483,9 +482,9 @@ fn test_validate_empty_manifest() {
     let env = TestEnvironment::new().unwrap();
 
     // Create minimal/empty manifest
-    let empty_manifest = r#"
+    let empty_manifest = r"
 # Empty manifest
-"#;
+";
     fs::write(env.project_path().join("ccpm.toml"), empty_manifest).unwrap();
 
     let mut cmd = env.ccpm_command();

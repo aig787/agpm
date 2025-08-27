@@ -193,6 +193,7 @@ impl ProgressBar {
     ///
     /// progress.finish_with_message("All files processed");
     /// ```
+    #[must_use]
     pub fn new(len: u64) -> Self {
         let bar = if is_progress_disabled() {
             IndicatifBar::hidden()
@@ -234,6 +235,7 @@ impl ProgressBar {
     /// `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`
     ///
     /// The animation updates every 100ms automatically.
+    #[must_use]
     pub fn new_spinner() -> Self {
         let bar = if is_progress_disabled() {
             IndicatifBar::hidden()
@@ -489,6 +491,7 @@ impl ProgressStyle {
     /// ```text
     /// 📦 [████████████████████████████████████████] 50/50 (00:00)
     /// ```
+    #[must_use]
     pub fn default_style() -> IndicatifStyle {
         default_style()
     }
@@ -518,6 +521,7 @@ impl ProgressStyle {
     /// ```text
     /// 🔄 ⠋ Cloning repository...
     /// ```
+    #[must_use]
     pub fn spinner() -> IndicatifStyle {
         spinner_style()
     }
@@ -549,6 +553,7 @@ impl ProgressStyle {
     /// - Large file downloads
     /// - Archive extraction progress
     /// - Network transfer operations
+    #[must_use]
     pub fn download() -> IndicatifStyle {
         IndicatifStyle::default_bar()
             .template("{prefix:.bold.cyan} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
@@ -637,6 +642,7 @@ impl MultiProgress {
     /// let pb1 = multi.add_bar(100);
     /// let pb2 = multi.add_spinner();
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self {
             inner: indicatif::MultiProgress::new(),
@@ -671,6 +677,7 @@ impl MultiProgress {
     /// let managed_pb = multi.add(pb);
     /// managed_pb.inc(10);
     /// ```
+    #[must_use]
     pub fn add(&self, pb: ProgressBar) -> ProgressBar {
         ProgressBar {
             inner: self.inner.add(pb.inner),
@@ -704,6 +711,7 @@ impl MultiProgress {
     /// agents.set_message("Installing agents");
     /// snippets.set_message("Installing snippets");
     /// ```
+    #[must_use]
     pub fn add_bar(&self, len: u64) -> ProgressBar {
         let pb = ProgressBar::new(len);
         self.add(pb)
@@ -731,6 +739,7 @@ impl MultiProgress {
     /// file_progress.set_message("Processing files");
     /// network_spinner.set_message("Fetching metadata");
     /// ```
+    #[must_use]
     pub fn add_spinner(&self) -> ProgressBar {
         let pb = ProgressBar::new_spinner();
         self.add(pb)
@@ -817,6 +826,7 @@ pub fn spinner_with_message(msg: impl Into<String>) -> ProgressBar {
 /// - Configuration-driven progress indicators
 /// - APIs that handle both determinate and indeterminate progress
 /// - Dynamic progress bar creation based on runtime conditions
+#[must_use]
 pub fn create_progress_bar(len: Option<u64>) -> ProgressBar {
     if let Some(len) = len {
         ProgressBar::new(len)
@@ -955,6 +965,7 @@ impl ThreadSafeProgressBar {
     /// let progress = ThreadSafeProgressBar::new(100);
     /// progress.set_message("Parallel processing");
     /// ```
+    #[must_use]
     pub fn new(len: u64) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ProgressBar::new(len))),
@@ -975,6 +986,7 @@ impl ThreadSafeProgressBar {
     /// let spinner = ThreadSafeProgressBar::new_spinner();
     /// spinner.set_message("Processing in background...");
     /// ```
+    #[must_use]
     pub fn new_spinner() -> Self {
         Self {
             inner: Arc::new(Mutex::new(ProgressBar::new_spinner())),
@@ -1050,6 +1062,7 @@ impl ThreadSafeProgressBar {
     ///
     /// In most cases, using the [`Clone`] implementation is preferred over
     /// this method, as it provides a cleaner interface.
+    #[must_use]
     pub fn clone_inner(&self) -> Arc<Mutex<ProgressBar>> {
         Arc::clone(&self.inner)
     }
@@ -1061,6 +1074,81 @@ impl Clone for ThreadSafeProgressBar {
             inner: Arc::clone(&self.inner),
         }
     }
+}
+
+/// Creates a standard CCPM spinner with consistent styling.
+///
+/// This function creates a spinner with CCPM's standard animation and styling,
+/// automatically enabling steady tick for smooth animation.
+///
+/// # Returns
+///
+/// A configured [`ProgressBar`] as a spinner
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::utils::progress::create_spinner;
+///
+/// let spinner = create_spinner();
+/// spinner.set_message("Cloning repository...");
+/// // ... do work ...
+/// spinner.finish_with_message("✅ Repository cloned");
+/// ```
+pub fn create_spinner() -> ProgressBar {
+    ProgressBar::new_spinner()
+}
+
+/// Creates a standard CCPM progress bar with consistent styling.
+///
+/// This function creates a progress bar with CCPM's standard styling.
+/// It's a convenience function that ensures consistent appearance.
+///
+/// # Arguments
+///
+/// * `len` - The total number of work units
+///
+/// # Returns
+///
+/// A configured [`ProgressBar`] with standard styling
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::utils::progress::create_standard_progress_bar;
+///
+/// let pb = create_standard_progress_bar(100);
+/// pb.set_message("Installing packages");
+/// for _ in 0..100 {
+///     // ... do work ...
+///     pb.inc(1);
+/// }
+/// pb.finish_with_message("✅ All packages installed");
+/// ```
+pub fn create_standard_progress_bar(len: u64) -> ProgressBar {
+    ProgressBar::new(len)
+}
+
+/// Creates a multi-progress container for parallel operations.
+///
+/// This is a convenience function for creating a [`MultiProgress`] container
+/// for managing multiple progress indicators in parallel operations.
+///
+/// # Returns
+///
+/// A new [`MultiProgress`] container
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::utils::progress::create_multi_progress;
+///
+/// let multi = create_multi_progress();
+/// let pb1 = multi.add_bar(50);
+/// let pb2 = multi.add_spinner();
+/// ```
+pub fn create_multi_progress() -> MultiProgress {
+    MultiProgress::new()
 }
 
 /// Creates a thread-safe progress indicator based on optional length.
@@ -1096,6 +1184,7 @@ impl Clone for ThreadSafeProgressBar {
 /// - Parallel processing with configurable progress types
 /// - APIs that need to handle both determinate and indeterminate parallel work
 /// - Dynamic progress creation in multi-threaded environments
+#[must_use]
 pub fn create_thread_safe_progress(len: Option<u64>) -> ThreadSafeProgressBar {
     if let Some(len) = len {
         ThreadSafeProgressBar::new(len)
@@ -1187,6 +1276,7 @@ impl ParallelProgressCounter {
     /// When `with_progress_bar` is `true` and progress bars are not disabled
     /// via environment variables, a progress bar will be displayed and updated
     /// as tasks complete.
+    #[must_use]
     pub fn new(total: usize, with_progress_bar: bool) -> Self {
         let progress_bar = if with_progress_bar && !is_progress_disabled() {
             Some(ThreadSafeProgressBar::new(total as u64))
@@ -1227,6 +1317,7 @@ impl ParallelProgressCounter {
     /// This method is safe to call from multiple threads simultaneously.
     /// The internal counter is protected by a mutex, and if the mutex
     /// lock fails, the method returns 0 to prevent panics.
+    #[must_use]
     pub fn increment(&self) -> usize {
         let current = {
             if let Ok(mut completed) = self.completed.lock() {
@@ -1271,6 +1362,7 @@ impl ParallelProgressCounter {
     ///
     /// This method is safe to call from multiple threads. If the mutex
     /// lock fails, it returns 0.
+    #[must_use]
     pub fn current(&self) -> usize {
         self.completed.lock().map(|guard| *guard).unwrap_or(0)
     }
@@ -1305,6 +1397,7 @@ impl ParallelProgressCounter {
     /// - Checking completion status in monitoring loops
     /// - Determining when to proceed to the next phase
     /// - Validation in tests and assertions
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.current() >= self.total
     }
@@ -1378,6 +1471,7 @@ impl ParallelProgressCounter {
     /// - Custom increment amounts
     /// - Integration with external counting mechanisms
     /// - Advanced synchronization patterns
+    #[must_use]
     pub fn clone_counter(&self) -> Arc<Mutex<usize>> {
         Arc::clone(&self.completed)
     }
@@ -1486,10 +1580,10 @@ mod tests {
         assert_eq!(counter.current(), 1);
 
         // Increment until complete
-        counter.increment();
-        counter.increment();
-        counter.increment();
-        counter.increment();
+        let _ = counter.increment();
+        let _ = counter.increment();
+        let _ = counter.increment();
+        let _ = counter.increment();
 
         assert_eq!(counter.current(), 5);
         assert!(counter.is_complete());
@@ -1501,9 +1595,9 @@ mod tests {
     fn test_parallel_progress_counter_no_progress_bar() {
         let counter = ParallelProgressCounter::new(3, false);
 
-        counter.increment();
-        counter.increment();
-        counter.increment();
+        let _ = counter.increment();
+        let _ = counter.increment();
+        let _ = counter.increment();
 
         assert!(counter.is_complete());
         counter.finish(); // Should not panic even without progress bar

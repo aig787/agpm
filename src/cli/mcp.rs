@@ -343,7 +343,7 @@ fn show_mcp_status(project_dir: &Path) -> Result<()> {
     let user_servers = total_servers - managed_servers;
 
     println!();
-    println!("  Total servers: {}", total_servers);
+    println!("  Total servers: {total_servers}");
     println!("    {} CCPM-managed: {}", "•".cyan(), managed_servers);
     println!("    {} User-managed: {}", "•".yellow(), user_servers);
 
@@ -355,7 +355,7 @@ fn show_mcp_status(project_dir: &Path) -> Result<()> {
 
         if manifest_servers > 0 {
             println!();
-            println!("  Manifest defines {} server(s)", manifest_servers);
+            println!("  Manifest defines {manifest_servers} server(s)");
 
             // Check for sync issues
             let mut out_of_sync = Vec::new();
@@ -372,7 +372,7 @@ fn show_mcp_status(project_dir: &Path) -> Result<()> {
                     "⚠".yellow()
                 );
                 for name in out_of_sync {
-                    println!("    - {}", name);
+                    println!("    - {name}");
                 }
                 println!("  Run 'ccpm install' to configure these servers");
             }

@@ -8,7 +8,7 @@ use tempfile::TempDir;
 pub fn path_to_file_url(path: &Path) -> String {
     // Convert backslashes to forward slashes for Windows paths in URLs
     let path_str = path.display().to_string().replace('\\', "/");
-    format!("file://{}", path_str)
+    format!("file://{path_str}")
 }
 
 /// Test fixture for creating sample ccpm.toml files
@@ -235,19 +235,19 @@ impl MarkdownFixture {
         frontmatter.insert("type".to_string(), "agent".to_string());
         frontmatter.insert("name".to_string(), name.to_string());
         frontmatter.insert("version".to_string(), "1.0.0".to_string());
-        frontmatter.insert("description".to_string(), format!("Test agent: {}", name));
+        frontmatter.insert("description".to_string(), format!("Test agent: {name}"));
 
         Self {
-            path: format!("agents/{}.md", name),
+            path: format!("agents/{name}.md"),
             content: format!(
                 r#"---
 type: agent
-name: {}
+name: {name}
 version: 1.0.0
-description: "Test agent: {}"
+description: "Test agent: {name}"
 ---
 
-# {} Agent
+# {name} Agent
 
 This is a test agent that demonstrates the basic structure of a Claude Code agent.
 
@@ -264,10 +264,9 @@ You can use this agent by importing it into your Claude Code project.
 ## Example
 
 ```
-Example usage of the {} agent.
+Example usage of the {name} agent.
 ```
-"#,
-                name, name, name, name
+"#
             ),
             frontmatter: Some(frontmatter),
         }
@@ -282,29 +281,28 @@ Example usage of the {} agent.
         frontmatter.insert("language".to_string(), "python".to_string());
 
         Self {
-            path: format!("snippets/{}.md", name),
+            path: format!("snippets/{name}.md"),
             content: format!(
                 r#"---
 type: snippet
-name: {}
+name: {name}
 version: 1.0.0
 language: python
 ---
 
-# {} Snippet
+# {name} Snippet
 
 This is a test code snippet.
 
 ```python
-def {}():
-    """Test function for {} snippet."""
-    return "Hello from {} snippet!"
+def {name}():
+    """Test function for {name} snippet."""
+    return "Hello from {name} snippet!"
 
 if __name__ == "__main__":
-    print({}())
+    print({name}())
 ```
-"#,
-                name, name, name, name, name, name
+"#
             ),
             frontmatter: Some(frontmatter),
         }
@@ -314,7 +312,7 @@ if __name__ == "__main__":
     #[allow(dead_code)]
     pub fn simple(name: &str, content: &str) -> Self {
         Self {
-            path: format!("{}.md", name),
+            path: format!("{name}.md"),
             content: content.to_string(),
             frontmatter: None,
         }
@@ -380,8 +378,8 @@ impl TestEnvironment {
         let manifest_content = format!(
             r#"
 [sources]
-official = "{}"
-community = "{}"
+official = "{official_url}"
+community = "{community_url}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -389,8 +387,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#,
-            official_url, community_url
+"#
         );
 
         fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
@@ -418,8 +415,8 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
         let manifest_content = format!(
             r#"
 [sources]
-official = "{}"
-community = "{}"
+official = "{official_url}"
+community = "{community_url}"
 
 [agents]
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
@@ -427,8 +424,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#,
-            official_url, community_url
+"#
         );
 
         fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
@@ -441,13 +437,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "{}"
+url = "{official_url}"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "{}"
+url = "{community_url}"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -477,8 +473,7 @@ version = "v1.0.0"
 resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
-"#,
-            official_url, community_url
+"#
         );
 
         fs::write(env.project_dir.join("ccpm.lock"), lockfile_content.trim())?;
@@ -605,7 +600,7 @@ local-snippet = { path = "./snippets/local.md" }
         // Create a basic manifest with the server URLs
         let mut content = String::from("[sources]\n");
         for (name, url) in &urls {
-            content.push_str(&format!("{} = \"{}\"\n", name, url));
+            content.push_str(&format!("{name} = \"{url}\"\n"));
         }
 
         // Add some basic dependencies

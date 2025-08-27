@@ -444,6 +444,7 @@ impl GlobalConfig {
     ///
     /// The merged result may contain authentication credentials from global sources.
     /// Handle with care and never log or expose in version control.
+    #[must_use]
     pub fn merge_sources(
         &self,
         local_sources: &HashMap<String, String>,
@@ -547,6 +548,7 @@ impl GlobalConfig {
     /// config.add_source("test".to_string(), "https://example.com/repo.git".to_string());
     /// assert!(config.has_source("test"));
     /// ```
+    #[must_use]
     pub fn has_source(&self, name: &str) -> bool {
         self.sources.contains_key(name)
     }
@@ -585,6 +587,7 @@ impl GlobalConfig {
     /// # Security Note
     ///
     /// The returned URL may contain authentication credentials. Handle with care.
+    #[must_use]
     pub fn get_source(&self, name: &str) -> Option<&String> {
         self.sources.get(name)
     }
@@ -615,6 +618,7 @@ impl GlobalConfig {
     ///
     /// The example configuration contains placeholder values that must be
     /// replaced with actual authentication credentials before use.
+    #[must_use]
     pub fn init_example() -> Self {
         let mut sources = HashMap::new();
         sources.insert(
@@ -729,6 +733,7 @@ impl GlobalConfigManager {
     ///
     /// let manager = GlobalConfigManager::with_path(PathBuf::from("/tmp/test.toml"));
     /// ```
+    #[must_use]
     pub fn with_path(path: PathBuf) -> Self {
         Self { config: None, path }
     }

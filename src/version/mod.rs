@@ -285,6 +285,7 @@ impl VersionResolver {
     /// assert_eq!(resolver.list_all().len(), 0);
     /// assert!(resolver.get_latest().is_none());
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self {
             versions: Vec::new(),
@@ -401,8 +402,7 @@ impl VersionResolver {
         // Remove common version prefixes
         let cleaned = tag.trim_start_matches('v').trim_start_matches('V');
 
-        Version::parse(cleaned)
-            .with_context(|| format!("Failed to parse version from tag: {}", tag))
+        Version::parse(cleaned).with_context(|| format!("Failed to parse version from tag: {tag}"))
     }
 
     /// Resolve a version requirement string to a specific version from available tags.
@@ -557,6 +557,7 @@ impl VersionResolver {
     /// - You want the cutting-edge version regardless of stability
     /// - Implementing `latest-prerelease` constraint resolution
     /// - Analyzing the most recent development activity
+    #[must_use]
     pub fn get_latest(&self) -> Option<VersionInfo> {
         self.versions.first().cloned()
     }
@@ -601,7 +602,7 @@ impl VersionResolver {
     /// # }
     /// ```
     ///
-    /// # Comparison with get_latest()
+    /// # Comparison with `get_latest()`
     ///
     /// ```rust,no_run
     /// # use ccpm::version::VersionResolver;
@@ -635,6 +636,7 @@ impl VersionResolver {
     /// - Implementing `"latest"` constraint resolution
     /// - Default version selection in package managers
     /// - Stable release identification
+    #[must_use]
     pub fn get_latest_stable(&self) -> Option<VersionInfo> {
         self.versions.iter().find(|v| !v.prerelease).cloned()
     }
@@ -715,6 +717,7 @@ impl VersionResolver {
     /// - Building version selection interfaces
     /// - Debugging version resolution issues
     /// - Implementing custom constraint logic
+    #[must_use]
     pub fn list_all(&self) -> Vec<VersionInfo> {
         self.versions.clone()
     }
@@ -791,6 +794,7 @@ impl VersionResolver {
     /// - Conservative update strategies
     /// - Compliance requirements that exclude prereleases
     /// - User interfaces that hide development versions by default
+    #[must_use]
     pub fn list_stable(&self) -> Vec<VersionInfo> {
         self.versions
             .iter()
@@ -893,6 +897,7 @@ impl VersionResolver {
     /// - Pre-flight checks in dependency resolution
     /// - Conditional logic based on version availability
     /// - User interface validation and feedback
+    #[must_use]
     pub fn has_version(&self, version: &str) -> bool {
         self.resolve(version).unwrap_or(None).is_some()
     }
@@ -1097,6 +1102,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 /// - Routing version resolution to appropriate handlers
 /// - Validating constraint syntax in configuration files
 /// - Building version constraint objects from strings
+#[must_use]
 pub fn parse_version_constraint(constraint: &str) -> VersionConstraint {
     // Check if it looks like a commit hash (40 hex chars or abbreviated)
     if constraint.len() >= 7 && constraint.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -1205,6 +1211,7 @@ impl VersionConstraint {
     /// - Logging and debugging version resolution
     /// - Passing constraint strings to external tools
     /// - Serializing constraints to text formats
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             VersionConstraint::Tag(s) => s,

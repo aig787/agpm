@@ -286,4 +286,80 @@ mod tests {
         assert!(result.is_ok());
         assert!(temp_dir.path().join("ccpm.toml").exists());
     }
+
+    #[tokio::test]
+    async fn test_init_template_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let content = fs::read_to_string(&manifest_path).unwrap();
+
+        // Verify template content
+        assert!(content.contains("# CCPM Manifest"));
+        assert!(content.contains("# This file defines your Claude Code resource dependencies"));
+        assert!(content.contains("# Add your Git repository sources here"));
+        assert!(content.contains("# Example: official ="));
+        assert!(content.contains("# Add your agent dependencies here"));
+        assert!(content.contains("# Example: my-agent ="));
+        assert!(content.contains("# Add your snippet dependencies here"));
+        assert!(content.contains("# Example: utils ="));
+    }
+
+    #[tokio::test]
+    async fn test_init_nested_directory_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested_path = temp_dir.path().join("a").join("b").join("c");
+
+        let cmd = InitCommand {
+            path: Some(nested_path.clone()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+        assert!(nested_path.exists());
+        assert!(nested_path.join("ccpm.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn test_init_force_flag_behavior() {
+        let temp_dir = TempDir::new().unwrap();
+        let manifest_path = temp_dir.path().join("ccpm.toml");
+
+        // Write initial content
+        let initial_content = "# Old manifest\n[sources]\n";
+        fs::write(&manifest_path, initial_content).unwrap();
+
+        // Try without force - should fail
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+
+        // Verify old content still exists
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        assert_eq!(content, initial_content);
+
+        // Try with force - should succeed
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: true,
+        };
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        // Verify new template content
+        let new_content = fs::read_to_string(&manifest_path).unwrap();
+        assert!(new_content.contains("# CCPM Manifest"));
+        assert!(!new_content.contains("# Old manifest"));
+    }
 }

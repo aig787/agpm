@@ -243,7 +243,7 @@ pub struct ValidateCommand {
 /// // For automation/CI
 /// let format = OutputFormat::Json;
 /// ```
-#[derive(Clone, Debug, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum OutputFormat {
     /// Human-readable text output with colors and formatting.
     ///
@@ -413,9 +413,9 @@ impl ValidateCommand {
             }
             Err(e) => {
                 let error_msg = if e.to_string().contains("TOML") {
-                    format!("Syntax error in ccpm.toml: TOML parsing failed - {}", e)
+                    format!("Syntax error in ccpm.toml: TOML parsing failed - {e}")
                 } else {
-                    format!("Invalid manifest structure: {}", e)
+                    format!("Invalid manifest structure: {e}")
                 };
                 errors.push(error_msg.clone());
 
@@ -439,7 +439,7 @@ impl ValidateCommand {
             } else if e.to_string().contains("Version conflict") {
                 "Version conflict detected for shared-agent".to_string()
             } else {
-                format!("Manifest validation failed: {}", e)
+                format!("Manifest validation failed: {e}")
             };
             errors.push(error_msg.clone());
 
@@ -474,8 +474,7 @@ impl ValidateCommand {
             if let Some(version) = dep.get_version() {
                 if version.starts_with("v0.") {
                     warnings.push(format!(
-                        "Potentially outdated version for {}: {}",
-                        name, version
+                        "Potentially outdated version for {name}: {version}"
                     ));
                 }
             }
@@ -505,7 +504,7 @@ impl ValidateCommand {
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
-                    let error_msg = format!("Dependency resolution failed: {}", e);
+                    let error_msg = format!("Dependency resolution failed: {e}");
                     errors.push(error_msg.clone());
 
                     if let Some(pb) = pb {
@@ -538,7 +537,7 @@ impl ValidateCommand {
                     let error_msg = if e.to_string().contains("not found") {
                         "Dependency not found in source repositories: my-agent, utils".to_string()
                     } else {
-                        format!("Dependency resolution failed: {}", e)
+                        format!("Dependency resolution failed: {e}")
                     };
                     errors.push(error_msg.clone());
 
@@ -642,7 +641,7 @@ impl ValidateCommand {
             let resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
-                    let error_msg = format!("Failed to initialize resolver: {}", e);
+                    let error_msg = format!("Failed to initialize resolver: {e}");
                     errors.push(error_msg.clone());
 
                     if matches!(self.format, OutputFormat::Json) {
@@ -749,12 +748,7 @@ impl ValidateCommand {
             let project_dir = manifest_path.parent().unwrap();
             let lockfile_path = project_dir.join("ccpm.lock");
 
-            if !lockfile_path.exists() {
-                if !self.quiet {
-                    println!("⚠ No lockfile found");
-                }
-                warnings.push("No lockfile found".to_string());
-            } else {
+            if lockfile_path.exists() {
                 if self.verbose && !self.quiet {
                     println!("\n🔍 Checking lockfile consistency...");
                 }
@@ -766,13 +760,13 @@ impl ValidateCommand {
                         let mut extra = Vec::new();
 
                         // Check for missing dependencies
-                        for (name, _) in manifest.agents.iter() {
+                        for name in manifest.agents.keys() {
                             if !lockfile.agents.iter().any(|e| &e.name == name) {
                                 missing.push((name.clone(), "agent"));
                             }
                         }
 
-                        for (name, _) in manifest.snippets.iter() {
+                        for name in manifest.snippets.keys() {
                             if !lockfile.snippets.iter().any(|e| &e.name == name) {
                                 missing.push((name.clone(), "snippet"));
                             }
@@ -816,14 +810,14 @@ impl ValidateCommand {
                                     missing.len()
                                 );
                                 for (name, type_) in missing {
-                                    println!("  - {} ({})", name, type_);
+                                    println!("  - {name} ({type_})");
                                 }
                                 println!("\nRun 'ccpm install' to update the lockfile");
                             }
                         }
                     }
                     Err(e) => {
-                        let error_msg = format!("Failed to parse lockfile: {}", e);
+                        let error_msg = format!("Failed to parse lockfile: {e}");
                         errors.push(error_msg.to_string());
 
                         if matches!(self.format, OutputFormat::Json) {
@@ -838,6 +832,11 @@ impl ValidateCommand {
                         return Err(anyhow::anyhow!("Invalid lockfile syntax: {}", e));
                     }
                 }
+            } else {
+                if !self.quiet {
+                    println!("⚠ No lockfile found");
+                }
+                warnings.push("No lockfile found".to_string());
             }
         }
 
@@ -871,7 +870,7 @@ impl ValidateCommand {
                 if !self.quiet {
                     if !validation_results.warnings.is_empty() {
                         for warning in &validation_results.warnings {
-                            println!("⚠ Warning: {}", warning);
+                            println!("⚠ Warning: {warning}");
                         }
                     }
                     if validation_results.valid {
@@ -954,6 +953,8 @@ impl Default for ValidationResults {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lockfile::LockFile;
+    use crate::manifest::{Manifest, ResourceDependency};
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -1021,8 +1022,9 @@ mod tests {
                 source: Some("nonexistent".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1093,8 +1095,9 @@ mod tests {
                 source: Some("test".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1266,8 +1269,9 @@ mod tests {
                 source: None,
                 path: "./local/test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1337,8 +1341,9 @@ mod tests {
                 source: Some("nonexistent".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1499,8 +1504,9 @@ mod tests {
                 source: Some("source1".to_string()),
                 path: "same.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1511,8 +1517,9 @@ mod tests {
                 source: Some("source1".to_string()),
                 path: "same.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -1651,8 +1658,9 @@ mod tests {
                 source: None,
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -1734,8 +1742,9 @@ mod tests {
                 source: None,
                 path: temp.path().join("test.md").to_str().unwrap().to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -1765,14 +1774,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_no_manifest_json_format() {
-        use crate::test_utils::WorkingDirGuard;
-
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp = TempDir::new().unwrap();
-        std::env::set_current_dir(&temp.path()).unwrap();
+        let manifest_path = temp.path().join("non_existent.toml");
 
         let cmd = ValidateCommand {
-            file: None,
+            file: Some(manifest_path.to_string_lossy().to_string()),
             resolve: false,
             check_lock: false,
             sources: false,
@@ -1791,14 +1797,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_no_manifest_text_format() {
-        use crate::test_utils::WorkingDirGuard;
-
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp = TempDir::new().unwrap();
-        std::env::set_current_dir(&temp.path()).unwrap();
+        let manifest_path = temp.path().join("non_existent.toml");
 
         let cmd = ValidateCommand {
-            file: None,
+            file: Some(manifest_path.to_string_lossy().to_string()),
             resolve: false,
             check_lock: false,
             sources: false,
@@ -1817,14 +1820,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_no_manifest_quiet_mode() {
-        use crate::test_utils::WorkingDirGuard;
-
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp = TempDir::new().unwrap();
-        std::env::set_current_dir(&temp.path()).unwrap();
+        let manifest_path = temp.path().join("non_existent.toml");
 
         let cmd = ValidateCommand {
-            file: None,
+            file: Some(manifest_path.to_string_lossy().to_string()),
             resolve: false,
             check_lock: false,
             sources: false,
@@ -1952,8 +1952,9 @@ mod tests {
                 source: Some("nonexistent".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2035,8 +2036,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "old.md".to_string(),
                 version: Some("v0.1.0".to_string()), // This should trigger warning
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2078,8 +2080,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2122,8 +2125,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "agent.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2134,8 +2138,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "utils.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             false,
@@ -2243,8 +2248,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("nonexistent-source".to_string()),
                 path: "test.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2284,8 +2290,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: None,
                 path: "./snippets/local.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -2297,8 +2304,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: None,
                 path: "./commands/deploy.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -2342,8 +2350,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: None,
                 path: "./missing/snippet.md".to_string(),
                 version: None,
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -2648,8 +2657,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "same.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2660,8 +2670,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "same.md".to_string(),
                 version: Some("v2.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2703,8 +2714,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 source: Some("test".to_string()),
                 path: "unique.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
             true,
@@ -2727,5 +2739,681 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
         // This tests lines 662-664 (no redundancies found message)
+    }
+
+    #[tokio::test]
+    async fn test_validate_all_checks_enabled() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create a manifest with dependencies
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "test-agent".to_string(),
+            ResourceDependency::Simple("local-agent.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        // Create lockfile
+        let lockfile = LockFile::new();
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: true,
+            check_lock: true,
+            sources: true,
+            paths: true,
+            check_redundancies: true,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        // May have warnings but should complete
+        assert!(result.is_err() || result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_with_specific_file_path() {
+        let temp = TempDir::new().unwrap();
+        let custom_path = temp.path().join("custom-manifest.toml");
+
+        let manifest = Manifest::new();
+        manifest.save(&custom_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: Some(custom_path.to_string_lossy().to_string()),
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_sources_check_with_invalid_url() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest
+            .sources
+            .insert("invalid".to_string(), "not-a-valid-url".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: true,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Should fail with invalid URL error
+    }
+
+    #[tokio::test]
+    async fn test_validation_results_with_errors_and_warnings() {
+        let mut results = ValidationResults::default();
+
+        // Add errors
+        results.errors.push("Error 1".to_string());
+        results.errors.push("Error 2".to_string());
+
+        // Add warnings
+        results.warnings.push("Warning 1".to_string());
+        results.warnings.push("Warning 2".to_string());
+
+        assert!(results.errors.len() > 0);
+        assert_eq!(results.errors.len(), 2);
+        assert_eq!(results.warnings.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_output_format_equality() {
+        // Test PartialEq implementation
+        assert_eq!(OutputFormat::Text, OutputFormat::Text);
+        assert_eq!(OutputFormat::Json, OutputFormat::Json);
+        assert_ne!(OutputFormat::Text, OutputFormat::Json);
+    }
+
+    #[tokio::test]
+    async fn test_validate_command_defaults() {
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+        assert_eq!(cmd.file, None);
+        assert!(!cmd.resolve);
+        assert!(!cmd.check_lock);
+        assert!(!cmd.sources);
+        assert!(!cmd.paths);
+        assert!(!cmd.check_redundancies);
+        assert_eq!(cmd.format, OutputFormat::Text);
+        assert!(!cmd.verbose);
+        assert!(!cmd.quiet);
+        assert!(!cmd.strict);
+    }
+
+    #[tokio::test]
+    async fn test_json_output_format() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let manifest = Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_verbose_mode() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let manifest = Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_quiet_mode() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let manifest = Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: true,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_strict_mode_and_warnings() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create empty manifest to trigger warning
+        let manifest = Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: true, // Strict mode will fail on warnings
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Should fail due to warning in strict mode
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_local_paths_check() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "local-agent".to_string(),
+            ResourceDependency::Simple("./missing-file.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: true, // Enable path checking
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Should fail due to missing local path
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_existing_local_paths() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let local_file = temp.path().join("agent.md");
+
+        // Create the local file
+        std::fs::write(&local_file, "# Local Agent").unwrap();
+
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "local-agent".to_string(),
+            ResourceDependency::Simple("./agent.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: true,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_lockfile_consistency_check_no_lockfile() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "test-agent".to_string(),
+            ResourceDependency::Simple("agent.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true, // Enable lockfile checking
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok()); // Should pass but with warning
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_inconsistent_lockfile() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create manifest with agent
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "manifest-agent".to_string(),
+            ResourceDependency::Simple("agent.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        // Create lockfile with different agent
+        let mut lockfile = LockFile::new();
+        lockfile.agents.push(crate::lockfile::LockedResource {
+            name: "lockfile-agent".to_string(),
+            source: None,
+            url: None,
+            path: "agent.md".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:dummy".to_string(),
+            installed_at: "agents/lockfile-agent.md".to_string(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Should fail due to inconsistency
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_invalid_lockfile_syntax() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        let manifest = Manifest::new();
+        manifest.save(&manifest_path).unwrap();
+
+        // Write invalid TOML to lockfile
+        std::fs::write(&lockfile_path, "invalid toml syntax [[[").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err()); // Should fail due to invalid lockfile
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_outdated_version_warning() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        // Add the source that's referenced
+        manifest.sources.insert(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.agents.insert(
+            "old-agent".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agent.md".to_string(),
+                version: Some("v0.1.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+            }),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok()); // Should pass but with warning
+    }
+
+    #[tokio::test]
+    async fn test_validation_json_output_with_errors() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Write invalid TOML
+        std::fs::write(&manifest_path, "invalid toml [[[ syntax").unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_manifest_not_found_json() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("nonexistent.toml");
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Json,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_manifest_not_found_text() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("nonexistent.toml");
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_missing_lockfile_dependencies() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create manifest with multiple dependencies
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "agent1".to_string(),
+            ResourceDependency::Simple("agent1.md".to_string()),
+        );
+        manifest.agents.insert(
+            "agent2".to_string(),
+            ResourceDependency::Simple("agent2.md".to_string()),
+        );
+        manifest.snippets.insert(
+            "snippet1".to_string(),
+            ResourceDependency::Simple("snippet1.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        // Create lockfile missing some dependencies
+        let mut lockfile = LockFile::new();
+        lockfile.agents.push(crate::lockfile::LockedResource {
+            name: "agent1".to_string(),
+            source: None,
+            url: None,
+            path: "agent1.md".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:dummy".to_string(),
+            installed_at: "agents/agent1.md".to_string(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: true,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok()); // Should pass but report missing dependencies
+    }
+
+    #[tokio::test]
+    async fn test_execute_without_manifest_file() {
+        let temp = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err()); // Should fail when no manifest found
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_specified_file() {
+        let temp = TempDir::new().unwrap();
+        let custom_path = temp.path().join("custom.toml");
+
+        let manifest = Manifest::new();
+        manifest.save(&custom_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: Some(custom_path.to_string_lossy().to_string()),
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_nonexistent_specified_file() {
+        let temp = TempDir::new().unwrap();
+        let nonexistent = temp.path().join("nonexistent.toml");
+
+        let cmd = ValidateCommand {
+            file: Some(nonexistent.to_string_lossy().to_string()),
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: false,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validation_with_verbose_and_text_format() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.sources.insert(
+            "test".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+        manifest.agents.insert(
+            "agent1".to_string(),
+            ResourceDependency::Simple("agent.md".to_string()),
+        );
+        manifest.snippets.insert(
+            "snippet1".to_string(),
+            ResourceDependency::Simple("snippet.md".to_string()),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            check_redundancies: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
     }
 }

@@ -47,7 +47,7 @@ pub static WORKING_DIR_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// A guard that automatically restores the current working directory when dropped.
 /// This ensures test isolation when tests need to change the working directory.
-/// This guard also holds a lock on the WORKING_DIR_MUTEX to prevent parallel execution.
+/// This guard also holds a lock on the `WORKING_DIR_MUTEX` to prevent parallel execution.
 pub struct WorkingDirGuard {
     original_dir: std::path::PathBuf,
     _lock: std::sync::MutexGuard<'static, ()>,

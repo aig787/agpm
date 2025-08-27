@@ -96,6 +96,7 @@ pub enum DependencyType {
 
 impl DependencyType {
     /// Get the common dependency specification
+    #[must_use]
     pub fn common(&self) -> &DependencySpec {
         match self {
             DependencyType::Agent(dep) => &dep.common,
@@ -106,6 +107,7 @@ impl DependencyType {
     }
 
     /// Get the resource type as a string
+    #[must_use]
     pub fn resource_type(&self) -> &'static str {
         match self {
             DependencyType::Agent(_) => "agent",

@@ -419,8 +419,8 @@ impl ListCommand {
                 if self.matches_filters(name, Some(dep), "agent") {
                     items.push(ListItem {
                         name: name.clone(),
-                        source: dep.get_source().map(|s| s.to_string()),
-                        version: dep.get_version().map(|v| v.to_string()),
+                        source: dep.get_source().map(std::string::ToString::to_string),
+                        version: dep.get_version().map(std::string::ToString::to_string),
                         path: Some(dep.get_path().to_string()),
                         resource_type: "agent".to_string(),
                         installed_at: None,
@@ -436,8 +436,8 @@ impl ListCommand {
                 if self.matches_filters(name, Some(dep), "snippet") {
                     items.push(ListItem {
                         name: name.clone(),
-                        source: dep.get_source().map(|s| s.to_string()),
-                        version: dep.get_version().map(|v| v.to_string()),
+                        source: dep.get_source().map(std::string::ToString::to_string),
+                        version: dep.get_version().map(std::string::ToString::to_string),
                         path: Some(dep.get_path().to_string()),
                         resource_type: "snippet".to_string(),
                         installed_at: None,
@@ -453,8 +453,8 @@ impl ListCommand {
                 if self.matches_filters(name, Some(dep), "command") {
                     items.push(ListItem {
                         name: name.clone(),
-                        source: dep.get_source().map(|s| s.to_string()),
-                        version: dep.get_version().map(|v| v.to_string()),
+                        source: dep.get_source().map(std::string::ToString::to_string),
+                        version: dep.get_version().map(std::string::ToString::to_string),
                         path: Some(dep.get_path().to_string()),
                         resource_type: "command".to_string(),
                         installed_at: None,
@@ -841,7 +841,7 @@ impl ListCommand {
             println!(
                 "    {} {} {} {}",
                 item.name.bright_white(),
-                format!("({})", source).bright_black(),
+                format!("({source})").bright_black(),
                 version.yellow(),
                 commit_info.bright_black()
             );
@@ -880,7 +880,7 @@ impl ListCommand {
         true
     }
 
-    /// Convert a lockfile entry to a ListItem
+    /// Convert a lockfile entry to a `ListItem`
     fn lockentry_to_listitem(
         &self,
         entry: &crate::lockfile::LockedResource,
@@ -944,8 +944,9 @@ mod tests {
                 source: Some("official".to_string()),
                 path: "agents/reviewer.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -962,8 +963,9 @@ mod tests {
                 source: Some("community".to_string()),
                 path: "snippets/utils.md".to_string(),
                 version: Some("v1.2.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -1347,8 +1349,9 @@ mod tests {
             source: Some("official".to_string()),
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
-            git: None,
             command: None,
+            branch: None,
+            rev: None,
             args: None,
         });
 
@@ -1356,8 +1359,9 @@ mod tests {
             source: Some("community".to_string()),
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
-            git: None,
             command: None,
+            branch: None,
+            rev: None,
             args: None,
         });
 

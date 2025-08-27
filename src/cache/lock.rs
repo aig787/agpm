@@ -75,8 +75,8 @@ impl CacheLock {
     ///
     /// # Platform Considerations
     ///
-    /// - **Windows**: Uses Win32 LockFile API via [`fs4`]
-    /// - **Unix**: Uses POSIX fcntl() locking via [`fs4`]
+    /// - **Windows**: Uses Win32 `LockFile` API via [`fs4`]
+    /// - **Unix**: Uses POSIX `fcntl()` locking via [`fs4`]
     /// - **NFS/Network**: Behavior depends on file system support
     /// - **Docker**: Works within containers with proper volume mounts
     ///
@@ -133,7 +133,7 @@ impl CacheLock {
             format!("Failed to create locks directory: {}", locks_dir.display())
         })?;
 
-        let lock_path = locks_dir.join(format!("{}.lock", source_name));
+        let lock_path = locks_dir.join(format!("{source_name}.lock"));
 
         // Open or create the lock file
         let file = OpenOptions::new()
@@ -145,7 +145,7 @@ impl CacheLock {
 
         // Try to acquire exclusive lock (blocking)
         file.lock_exclusive()
-            .with_context(|| format!("Failed to acquire lock for: {}", source_name))?;
+            .with_context(|| format!("Failed to acquire lock for: {source_name}"))?;
 
         Ok(CacheLock {
             _file: file,
@@ -296,7 +296,7 @@ mod tests {
 
         for name in special_names {
             let lock = CacheLock::acquire(cache_dir, name).unwrap();
-            let expected_path = cache_dir.join(".locks").join(format!("{}.lock", name));
+            let expected_path = cache_dir.join(".locks").join(format!("{name}.lock"));
             assert!(expected_path.exists());
             drop(lock);
         }

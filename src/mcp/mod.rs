@@ -97,11 +97,7 @@ impl ClaudeSettings {
     /// This method preserves all existing configurations.
     pub fn load_or_default(path: &Path) -> Result<Self> {
         if path.exists() {
-            let content = std::fs::read_to_string(path)
-                .with_context(|| format!("Failed to read settings file: {}", path.display()))?;
-
-            // Parse with lenient error handling to preserve user configurations
-            serde_json::from_str(&content).with_context(|| {
+            crate::utils::read_json_file(path).with_context(|| {
                 format!(
                     "Failed to parse settings file: {}\n\
                      The file may be malformed or contain invalid JSON.",
@@ -129,10 +125,7 @@ impl ClaudeSettings {
         }
 
         // Write with pretty formatting for readability
-        let json = serde_json::to_string_pretty(self).context("Failed to serialize settings")?;
-
-        // Use atomic write through temp file
-        crate::utils::fs::atomic_write(path, json.as_bytes())
+        crate::utils::write_json_file(path, self, true)
             .with_context(|| format!("Failed to write settings to: {}", path.display()))?;
 
         Ok(())
@@ -160,12 +153,8 @@ impl ClaudeSettings {
             let path = entry.path();
 
             if path.extension().is_some_and(|ext| ext == "json") {
-                let content = std::fs::read_to_string(&path).with_context(|| {
-                    format!("Failed to read MCP server file: {}", path.display())
-                })?;
-
-                let server_config: McpServerConfig =
-                    serde_json::from_str(&content).with_context(|| {
+                let server_config: McpServerConfig = crate::utils::read_json_file(&path)
+                    .with_context(|| {
                         format!("Failed to parse MCP server file: {}", path.display())
                     })?;
 
@@ -206,12 +195,8 @@ impl McpConfig {
     /// user-managed ones.
     pub fn load_or_default(path: &Path) -> Result<Self> {
         if path.exists() {
-            let content = std::fs::read_to_string(path).with_context(|| {
-                format!("Failed to read MCP configuration file: {}", path.display())
-            })?;
-
             // Parse with lenient error handling to preserve user configurations
-            serde_json::from_str(&content).with_context(|| {
+            crate::utils::read_json_file(path).with_context(|| {
                 format!(
                     "Failed to parse MCP configuration file: {}\n\
                      The file may be malformed or contain invalid JSON.",
@@ -239,11 +224,7 @@ impl McpConfig {
         }
 
         // Write with pretty formatting for readability
-        let json =
-            serde_json::to_string_pretty(self).context("Failed to serialize MCP configuration")?;
-
-        // Use atomic write through temp file
-        crate::utils::fs::atomic_write(path, json.as_bytes())
+        crate::utils::write_json_file(path, self, true)
             .with_context(|| format!("Failed to write MCP configuration to: {}", path.display()))?;
 
         Ok(())
@@ -285,6 +266,7 @@ impl McpConfig {
     ///
     /// Returns a list of server names that would conflict with existing
     /// user-managed servers.
+    #[must_use]
     pub fn check_conflicts(&self, new_servers: &HashMap<String, McpServerConfig>) -> Vec<String> {
         let mut conflicts = Vec::new();
 
@@ -315,6 +297,7 @@ impl McpConfig {
     }
 
     /// Get all CCPM-managed servers.
+    #[must_use]
     pub fn get_managed_servers(&self) -> HashMap<String, &McpServerConfig> {
         self.mcp_servers
             .iter()
@@ -347,9 +330,13 @@ pub struct McpServerDependency {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
 
-    /// Git reference (branch, tag, or commit) - overrides version
+    /// Git branch name (e.g., "main", "develop")
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub git: Option<String>,
+    pub branch: Option<String>,
+
+    /// Git commit hash (revision)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
 
     /// The command to execute (required for MCP servers)
     pub command: String,
@@ -365,6 +352,7 @@ pub struct McpServerDependency {
 
 impl McpServerDependency {
     /// Convert to an MCP server configuration for the `.mcp.json` file.
+    #[must_use]
     pub fn to_mcp_config(&self, name: &str) -> McpServerConfig {
         McpServerConfig {
             command: self.resolve_command(),
@@ -440,7 +428,7 @@ pub async fn install_mcp_servers(
     // Validate commands exist
     for (name, dep) in &manifest.mcp_servers {
         validate_command(&dep.command)
-            .with_context(|| format!("Invalid command for MCP server '{}'", name))?;
+            .with_context(|| format!("Invalid command for MCP server '{name}'"))?;
     }
 
     // Clean up old MCP server files that are no longer in the manifest
@@ -463,12 +451,9 @@ pub async fn install_mcp_servers(
     // Save each MCP server configuration to its own file
     for (name, dep) in &manifest.mcp_servers {
         let server_config = dep.to_mcp_config(name);
-        let server_path = mcp_servers_dir.join(format!("{}.json", name));
+        let server_path = mcp_servers_dir.join(format!("{name}.json"));
 
-        let json = serde_json::to_string_pretty(&server_config)
-            .context("Failed to serialize MCP server configuration")?;
-
-        crate::utils::fs::atomic_write(&server_path, json.as_bytes()).with_context(|| {
+        crate::utils::write_json_file(&server_path, &server_config, true).with_context(|| {
             format!(
                 "Failed to write MCP server config: {}",
                 server_path.display()
@@ -594,7 +579,7 @@ pub fn clean_mcp_servers(project_root: &Path) -> Result<()> {
     if removed_count == 0 {
         println!("No CCPM-managed MCP servers found");
     } else {
-        println!("✓ Removed {} CCPM-managed MCP server(s)", removed_count);
+        println!("✓ Removed {removed_count} CCPM-managed MCP server(s)");
     }
 
     Ok(())
@@ -634,7 +619,7 @@ pub fn list_mcp_servers(project_root: &Path) -> Result<()> {
             ("✗", "-")
         };
 
-        println!("│ {:<19} │ {:<8} │ {:<9} │", name, managed, version);
+        println!("│ {name:<19} │ {managed:<8} │ {version:<9} │");
     }
 
     println!("╰─────────────────────┴──────────┴───────────╯");
@@ -1344,7 +1329,8 @@ mod tests {
             source: Some("test-source".to_string()),
             path: Some("servers/test.js".to_string()),
             version: Some("v1.0.0".to_string()),
-            git: None,
+            branch: None,
+            rev: None,
             command: "node".to_string(),
             args: vec![
                 "test.js".to_string(),
@@ -1383,7 +1369,8 @@ mod tests {
             source: None,
             path: None,
             version: None,
-            git: None,
+            branch: None,
+            rev: None,
             command: "simple-command".to_string(),
             args: vec![],
             env: None,
@@ -1561,7 +1548,7 @@ mod tests {
         let json = serde_json::to_string(&metadata).unwrap();
         let deserialized: CcpmMetadata = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.managed, true);
+        assert!(deserialized.managed);
         assert_eq!(deserialized.source, Some("test-source".to_string()));
         assert_eq!(deserialized.version, None);
         assert_eq!(deserialized.installed_at, "2024-01-01T00:00:00Z");
@@ -1577,7 +1564,8 @@ mod tests {
             source: Some("test-source".to_string()),
             path: None,
             version: Some("v1.0.0".to_string()),
-            git: None,
+            branch: None,
+            rev: None,
             command: "test-command".to_string(),
             args: vec!["arg1".to_string()],
             env: Some({

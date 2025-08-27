@@ -74,7 +74,7 @@ fn test_no_progress_with_parallel_counter() {
 
     // Create with progress bar, no flag
     let counter1 = ParallelProgressCounter::new(5, true);
-    counter1.increment();
+    let _ = counter1.increment();
     counter1.finish();
 
     // Set the flag
@@ -82,8 +82,8 @@ fn test_no_progress_with_parallel_counter() {
 
     // Create with progress bar, but flag is set
     let counter2 = ParallelProgressCounter::new(5, true);
-    counter2.increment();
-    counter2.increment();
+    let _ = counter2.increment();
+    let _ = counter2.increment();
     counter2.finish();
 
     // Clean up

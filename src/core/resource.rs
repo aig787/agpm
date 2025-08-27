@@ -221,6 +221,7 @@ impl ResourceType {
     /// [`Agent`]: ResourceType::Agent
     /// [`Snippet`]: ResourceType::Snippet
     /// [`Command`]: ResourceType::Command
+    #[must_use]
     pub fn manifest_filename(&self) -> &str {
         match self {
             ResourceType::Agent => "agent.toml",
@@ -258,6 +259,7 @@ impl ResourceType {
     /// [`Agent`]: ResourceType::Agent
     /// [`Snippet`]: ResourceType::Snippet
     /// [`Command`]: ResourceType::Command
+    #[must_use]
     pub fn default_directory(&self) -> &str {
         match self {
             ResourceType::Agent => "agents",

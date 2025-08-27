@@ -287,8 +287,8 @@ impl VersionConstraint {
     /// - **Exact**: Version must match exactly
     /// - **Requirement**: Version must satisfy the semver range
     /// - **Latest**: Version must be stable (no prerelease components)
-    /// - **LatestPrerelease**: Any version matches (selection happens during resolution)
-    /// - **GitRef**: Never matches semantic versions (Git refs are matched separately)
+    /// - **`LatestPrerelease`**: Any version matches (selection happens during resolution)
+    /// - **`GitRef`**: Never matches semantic versions (Git refs are matched separately)
     ///
     /// # Arguments
     ///
@@ -320,6 +320,7 @@ impl VersionConstraint {
     /// Git reference constraints always return `false` for this method since they
     /// operate on Git refs rather than semantic versions. Use [`matches_ref`](Self::matches_ref)
     /// to test Git reference matching.
+    #[must_use]
     pub fn matches(&self, version: &Version) -> bool {
         match self {
             Self::Exact(v) => v == version,
@@ -364,6 +365,7 @@ impl VersionConstraint {
     /// This method is primarily used during dependency resolution to match
     /// dependencies that specify Git branches, tags, or commit hashes rather
     /// than semantic versions.
+    #[must_use]
     pub fn matches_ref(&self, git_ref: &str) -> bool {
         match self {
             Self::GitRef(ref_name) => ref_name == git_ref,
@@ -387,7 +389,7 @@ impl VersionConstraint {
     /// - **Exact**: Converted to `=1.0.0` requirement
     /// - **Requirement**: Returns the inner `VersionReq` directly
     /// - **Latest/LatestPrerelease**: Converted to `*` (any version) requirement
-    /// - **GitRef**: Returns `None` (cannot be converted)
+    /// - **`GitRef`**: Returns `None` (cannot be converted)
     ///
     /// # Examples
     ///
@@ -412,6 +414,7 @@ impl VersionConstraint {
     ///
     /// This method is useful for integrating with existing semver-based tooling
     /// or for performing version calculations that require `VersionReq` objects.
+    #[must_use]
     pub fn to_version_req(&self) -> Option<VersionReq> {
         if matches!(
             self,
@@ -420,7 +423,7 @@ impl VersionConstraint {
             match self {
                 Self::Exact(v) => {
                     // Create an exact version requirement
-                    VersionReq::parse(&format!("={}", v)).ok()
+                    VersionReq::parse(&format!("={v}")).ok()
                 }
                 Self::Requirement(req) => Some(req.clone()),
                 Self::Latest | Self::LatestPrerelease => {
@@ -443,8 +446,8 @@ impl VersionConstraint {
     /// # Prerelease Policy
     ///
     /// - **Latest**: Excludes prereleases (stable versions only)
-    /// - **LatestPrerelease**: Explicitly allows prereleases
-    /// - **GitRef**: Allows prereleases (Git refs may point to any commit)
+    /// - **`LatestPrerelease`**: Explicitly allows prereleases
+    /// - **`GitRef`**: Allows prereleases (Git refs may point to any commit)
     /// - **Exact/Requirement**: Excludes prereleases unless explicitly specified
     ///
     /// # Returns
@@ -475,6 +478,7 @@ impl VersionConstraint {
     ///
     /// During version resolution, if any constraint in a set allows prereleases,
     /// the entire constraint set will consider prerelease versions as candidates.
+    #[must_use]
     pub fn allows_prerelease(&self) -> bool {
         matches!(self, Self::LatestPrerelease | Self::GitRef(_))
     }
@@ -483,11 +487,11 @@ impl VersionConstraint {
 impl fmt::Display for VersionConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Exact(v) => write!(f, "{}", v),
-            Self::Requirement(req) => write!(f, "{}", req),
+            Self::Exact(v) => write!(f, "{v}"),
+            Self::Requirement(req) => write!(f, "{req}"),
             Self::Latest => write!(f, "latest"),
             Self::LatestPrerelease => write!(f, "latest-prerelease"),
-            Self::GitRef(ref_name) => write!(f, "{}", ref_name),
+            Self::GitRef(ref_name) => write!(f, "{ref_name}"),
         }
     }
 }
@@ -590,6 +594,7 @@ impl ConstraintSet {
     /// # Returns
     ///
     /// Returns a new `ConstraintSet` with no constraints
+    #[must_use]
     pub fn new() -> Self {
         Self {
             constraints: Vec::new(),
@@ -641,10 +646,7 @@ impl ConstraintSet {
         // Check for conflicting constraints
         if self.has_conflict(&constraint) {
             return Err(CcpmError::Other {
-                message: format!(
-                    "Constraint {} conflicts with existing constraints",
-                    constraint
-                ),
+                message: format!("Constraint {constraint} conflicts with existing constraints"),
             }
             .into());
         }
@@ -689,6 +691,7 @@ impl ConstraintSet {
     ///
     /// This method short-circuits on the first constraint that fails, making it
     /// efficient even with many constraints.
+    #[must_use]
     pub fn satisfies(&self, version: &Version) -> bool {
         self.constraints.iter().all(|c| c.matches(version))
     }
@@ -757,6 +760,7 @@ impl ConstraintSet {
     /// assert_eq!(best, &Version::parse("1.1.0")?); // Stable version preferred
     /// # Ok::<(), anyhow::Error>(())
     /// ```
+    #[must_use]
     pub fn find_best_match<'a>(&self, versions: &'a [Version]) -> Option<&'a Version> {
         let mut candidates: Vec<&Version> = versions.iter().filter(|v| self.satisfies(v)).collect();
 
@@ -805,8 +809,11 @@ impl ConstraintSet {
     /// This setting affects [`find_best_match`](Self::find_best_match) behavior:
     /// - If `false`: Prerelease versions are filtered out before selection
     /// - If `true`: Prerelease versions are included in selection
+    #[must_use]
     pub fn allows_prerelease(&self) -> bool {
-        self.constraints.iter().any(|c| c.allows_prerelease())
+        self.constraints
+            .iter()
+            .any(VersionConstraint::allows_prerelease)
     }
 
     /// Check if a new constraint would conflict with existing constraints.
@@ -976,6 +983,7 @@ impl ConstraintResolver {
     /// # Returns
     ///
     /// Returns a new `ConstraintResolver` with empty constraint and resolution maps
+    #[must_use]
     pub fn new() -> Self {
         Self {
             constraints: HashMap::new(),
@@ -1137,17 +1145,14 @@ impl ConstraintResolver {
             let versions = available_versions
                 .get(dep)
                 .ok_or_else(|| CcpmError::Other {
-                    message: format!("No versions available for dependency: {}", dep),
+                    message: format!("No versions available for dependency: {dep}"),
                 })?;
 
             let best_match =
                 constraint_set
                     .find_best_match(versions)
                     .ok_or_else(|| CcpmError::Other {
-                        message: format!(
-                            "No version satisfies constraints for dependency: {}",
-                            dep
-                        ),
+                        message: format!("No version satisfies constraints for dependency: {dep}"),
                     })?;
 
             resolved.insert(dep.clone(), best_match.clone());
@@ -1347,19 +1352,19 @@ mod tests {
     #[test]
     fn test_version_constraint_display() {
         let exact = VersionConstraint::Exact(Version::parse("1.0.0").unwrap());
-        assert_eq!(format!("{}", exact), "1.0.0");
+        assert_eq!(format!("{exact}"), "1.0.0");
 
         let req = VersionConstraint::parse("^1.0.0").unwrap();
-        assert_eq!(format!("{}", req), "^1.0.0");
+        assert_eq!(format!("{req}"), "^1.0.0");
 
         let latest = VersionConstraint::Latest;
-        assert_eq!(format!("{}", latest), "latest");
+        assert_eq!(format!("{latest}"), "latest");
 
         let latest_pre = VersionConstraint::LatestPrerelease;
-        assert_eq!(format!("{}", latest_pre), "latest-prerelease");
+        assert_eq!(format!("{latest_pre}"), "latest-prerelease");
 
         let git_ref = VersionConstraint::GitRef("main".to_string());
-        assert_eq!(format!("{}", git_ref), "main");
+        assert_eq!(format!("{git_ref}"), "main");
     }
 
     #[test]

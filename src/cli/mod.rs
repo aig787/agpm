@@ -74,7 +74,7 @@
 //! # Cross-Platform Support
 //!
 //! The CLI is designed to work consistently across:
-//! - Windows (Command Prompt, PowerShell)
+//! - Windows (Command Prompt, `PowerShell`)
 //! - macOS (Terminal, various shells)
 //! - Linux (bash, zsh, fish, etc.)
 //!
@@ -198,6 +198,7 @@ impl CliConfig {
     /// assert_eq!(config.no_progress, false);
     /// assert_eq!(config.config_path, None);
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -616,6 +617,7 @@ impl Cli {
     /// let config = cli.build_config();
     /// assert_eq!(config.log_level, Some("debug".to_string()));
     /// ```
+    #[must_use]
     pub fn build_config(&self) -> CliConfig {
         let log_level = if self.verbose {
             Some("debug".to_string())

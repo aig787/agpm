@@ -56,6 +56,7 @@ pub mod cli;
 pub mod config;
 pub mod core;
 pub mod git;
+pub mod installer;
 pub mod lockfile;
 pub mod manifest;
 pub mod markdown;

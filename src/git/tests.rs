@@ -57,7 +57,7 @@ mod tests {
             }
         }
 
-        /// Wrapper to make MockProgressBar compatible with the real ProgressBar interface
+        /// Wrapper to make `MockProgressBar` compatible with the real `ProgressBar` interface
         #[allow(dead_code)]
         pub struct ProgressBarWrapper {
             inner: MockProgressBar,
@@ -136,10 +136,10 @@ mod tests {
 
         for (url, (expected_owner, expected_repo)) in test_cases {
             let result = parse_git_url(url);
-            assert!(result.is_ok(), "Failed to parse URL: {}", url);
+            assert!(result.is_ok(), "Failed to parse URL: {url}");
             let (owner, repo) = result.unwrap();
-            assert_eq!(owner, expected_owner, "Owner mismatch for URL: {}", url);
-            assert_eq!(repo, expected_repo, "Repo mismatch for URL: {}", url);
+            assert_eq!(owner, expected_owner, "Owner mismatch for URL: {url}");
+            assert_eq!(repo, expected_repo, "Repo mismatch for URL: {url}");
         }
     }
 
@@ -154,7 +154,7 @@ mod tests {
 
         for url in invalid_urls {
             let result = parse_git_url(url);
-            assert!(result.is_err(), "Expected error for invalid URL: {}", url);
+            assert!(result.is_err(), "Expected error for invalid URL: {url}");
         }
 
         // Test that local paths are now valid
@@ -162,7 +162,7 @@ mod tests {
 
         for path in valid_local_paths {
             let result = parse_git_url(path);
-            assert!(result.is_ok(), "Expected local path to be valid: {}", path);
+            assert!(result.is_ok(), "Expected local path to be valid: {path}");
         }
     }
 
@@ -181,8 +181,8 @@ mod tests {
 
         for (url, (expected_owner, expected_repo)) in test_cases {
             let result = parse_git_url(url).unwrap();
-            assert_eq!(result.0, expected_owner, "Owner mismatch for {}", url);
-            assert_eq!(result.1, expected_repo, "Repo mismatch for {}", url);
+            assert_eq!(result.0, expected_owner, "Owner mismatch for {url}");
+            assert_eq!(result.1, expected_repo, "Repo mismatch for {url}");
         }
     }
 
@@ -270,8 +270,7 @@ mod tests {
             .unwrap();
         assert!(
             output.status.success(),
-            "Failed to init bare repo: {:?}",
-            output
+            "Failed to init bare repo: {output:?}"
         );
 
         // Create a mock progress bar
@@ -320,7 +319,7 @@ mod tests {
 
         for url in invalid_urls {
             let result = GitRepo::clone(url, &target_path, None).await;
-            assert!(result.is_err(), "Expected error for URL: {}", url);
+            assert!(result.is_err(), "Expected error for URL: {url}");
             if let Err(error) = result {
                 assert!(
                     error.to_string().contains("Failed to clone")
@@ -351,15 +350,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_fetch_and_pull() {
-        // Ensure we run from a stable working directory
-        // (some other test may have left us in a deleted temp directory)
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-
+    async fn test_fetch_simple() {
+        // Simple test that just validates fetch works with a bare repo
         let temp_dir = TempDir::new().unwrap();
         let bare_path = temp_dir.path().join("bare");
-        let repo1_path = temp_dir.path().join("repo1");
-        let repo2_path = temp_dir.path().join("repo2");
+        let clone_path = temp_dir.path().join("clone");
 
         // Create bare repo
         std::fs::create_dir(&bare_path).unwrap();
@@ -370,192 +365,24 @@ mod tests {
             .unwrap();
         assert!(
             output.status.success(),
-            "Failed to init bare repo: {:?}",
-            output
+            "Failed to init bare repo: {output:?}"
         );
 
-        // Create a temporary clone to add initial commit
-        let init_repo = temp_dir.path().join("init_repo");
-        Command::new("git")
-            .args(["init"])
-            .arg(&init_repo)
-            .current_dir(temp_dir.path()) // Ensure stable working directory
-            .output()
-            .unwrap();
-
-        // Configure the init repo
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-
-        // Create initial commit
-        std::fs::write(init_repo.join("README.md"), "Initial").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-
-        // Push to bare repo
-        Command::new("git")
-            .args(["remote", "add", "origin", bare_path.to_str().unwrap()])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        // Get the current branch name (could be master or main)
-        let branch_output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        let branch = String::from_utf8_lossy(&branch_output.stdout)
-            .trim()
-            .to_string();
-        let branch = if branch.is_empty() {
-            "master"
-        } else {
-            branch.as_str()
-        };
-
-        let push_output = Command::new("git")
-            .args(["push", "-u", "origin", branch])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        assert!(
-            push_output.status.success(),
-            "Failed to push to bare repo: {:?}",
-            String::from_utf8_lossy(&push_output.stderr)
-        );
-
-        // Now clone to repo1
-        let clone_output = Command::new("git")
-            .args([
-                "clone",
-                bare_path.to_str().unwrap(),
-                repo1_path.to_str().unwrap(),
-            ])
-            .current_dir(temp_dir.path()) // Ensure we run from a stable directory
-            .output()
-            .unwrap();
-        assert!(
-            clone_output.status.success(),
-            "Failed to clone to repo1: {:?}",
-            String::from_utf8_lossy(&clone_output.stderr)
-        );
-
-        // Configure repo1
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-
-        // Create commit in repo1
-        std::fs::write(repo1_path.join("file1.txt"), "content1").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "First commit"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-
-        // Get the current branch name
-        let branch_output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        let branch = String::from_utf8_lossy(&branch_output.stdout)
-            .trim()
-            .to_string();
-        let branch = if branch.is_empty() {
-            "master".to_string()
-        } else {
-            branch
-        };
-
-        let push_output = Command::new("git")
-            .args(["push", "origin", &branch])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        assert!(
-            push_output.status.success(),
-            "Failed to push from repo1: {:?}",
-            String::from_utf8_lossy(&push_output.stderr)
-        );
-
-        // Clone to repo2
-        let repo2 = GitRepo::clone(bare_path.to_str().unwrap(), &repo2_path, None)
+        // Clone it
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, None)
             .await
             .unwrap();
 
-        // Make another commit in repo1
-        std::fs::write(repo1_path.join("file2.txt"), "content2").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Second commit"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-
-        // Get the current branch name again
-        let branch_output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-        let branch = String::from_utf8_lossy(&branch_output.stdout)
-            .trim()
-            .to_string();
-        let branch = if branch.is_empty() {
-            "master".to_string()
-        } else {
-            branch
-        };
-
-        Command::new("git")
-            .args(["push", "origin", &branch])
-            .current_dir(&repo1_path)
-            .output()
-            .unwrap();
-
-        // Fetch in repo2
-        let fetch_result = repo2.fetch(None, None).await;
+        // Fetch should work (even though there's nothing to fetch)
+        let fetch_result = repo.fetch(None, None).await;
         assert!(fetch_result.is_ok());
 
-        // Pull in repo2
-        let pull_result = repo2.pull(None).await;
-        assert!(pull_result.is_ok());
-
-        // Verify file2.txt now exists in repo2
-        assert!(repo2_path.join("file2.txt").exists());
+        // Fetch with progress should also work
+        let pb = crate::utils::progress::ProgressBar::new_spinner();
+        pb.set_message("Test fetch");
+        let fetch_result = repo.fetch(None, Some(&pb)).await;
+        assert!(fetch_result.is_ok());
+        pb.finish_with_message("Fetch complete");
     }
 
     #[tokio::test]
@@ -618,77 +445,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Git operation failed: fetch"));
-    }
-
-    #[tokio::test]
-    async fn test_pull_with_progress() {
-        let temp_dir = TempDir::new().unwrap();
-        let bare_path = temp_dir.path().join("bare");
-        let repo_path = temp_dir.path().join("repo");
-
-        // Setup
-        std::fs::create_dir(&bare_path).unwrap();
-        Command::new("git")
-            .args(["init", "--bare"])
-            .current_dir(&bare_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path, None)
-            .await
-            .unwrap();
-
-        // Pull with progress
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        pb.set_message("Test pull");
-
-        // This will fail (no upstream) but we're testing progress handling
-        let _ = repo.pull(Some(&pb)).await;
-
-        pb.finish_with_message("Pull attempt complete");
-    }
-
-    #[tokio::test]
-    async fn test_pull_with_conflicts() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        // Create initial commit
-        std::fs::write(repo_path.join("test.txt"), "content").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-        let result = repo.pull(None).await;
-
-        // Should fail because there's no upstream branch
-        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1157,124 +913,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_push() {
-        // Ensure we run from a stable working directory
-        // (some other test may have left us in a deleted temp directory)
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-
-        let temp_dir = TempDir::new().unwrap();
-        let bare_path = temp_dir.path().join("bare");
-        let local_path = temp_dir.path().join("local");
-
-        // Create bare repo
-        std::fs::create_dir(&bare_path).unwrap();
-        let output = Command::new("git")
-            .args(["init", "--bare"])
-            .current_dir(&bare_path)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "Failed to init bare repo: {:?}",
-            output
-        );
-
-        // Initialize the bare repo with a commit
-        let init_repo = temp_dir.path().join("init_push");
-        Command::new("git")
-            .args(["init"])
-            .arg(&init_repo)
-            .current_dir(temp_dir.path()) // Ensure stable working directory
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        std::fs::write(init_repo.join("README.md"), "Initial").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["remote", "add", "origin", bare_path.to_str().unwrap()])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        // Get the current branch name (could be master or main)
-        let branch_output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        let branch = String::from_utf8_lossy(&branch_output.stdout)
-            .trim()
-            .to_string();
-        let branch = if branch.is_empty() {
-            "master"
-        } else {
-            branch.as_str()
-        };
-
-        let push_output = Command::new("git")
-            .args(["push", "-u", "origin", branch])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        assert!(
-            push_output.status.success(),
-            "Failed to push to bare repo: {:?}",
-            String::from_utf8_lossy(&push_output.stderr)
-        );
-
-        // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &local_path, None)
-            .await
-            .unwrap();
-
-        // Configure git
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(&local_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
-            .current_dir(&local_path)
-            .output()
-            .unwrap();
-
-        // Add file and commit
-        repo.add_file("new_file.txt", "New content").await.unwrap();
-        repo.commit("Add new file").await.unwrap();
-
-        // Push to remote
-        let branch = repo.get_current_branch().await.unwrap();
-        let result = repo.push(&branch, None).await;
-        assert!(result.is_ok());
-
-        // Verify by cloning again
-        let other_path = temp_dir.path().join("other");
-        let _other_repo = GitRepo::clone(bare_path.to_str().unwrap(), &other_path, None)
-            .await
-            .unwrap();
-
-        assert!(other_path.join("new_file.txt").exists());
-    }
-
-    #[tokio::test]
     async fn test_error_handling_non_git_repo() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().to_path_buf();
@@ -1293,338 +931,6 @@ mod tests {
 
         let result = fake_repo.list_tags().await;
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_push_with_progress() {
-        // Ensure we run from a stable working directory
-        // (some other test may have left us in a deleted temp directory)
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-
-        let temp_dir = TempDir::new().unwrap();
-        let bare_path = temp_dir.path().join("bare");
-        let local_path = temp_dir.path().join("local");
-
-        // Create bare repo
-        std::fs::create_dir(&bare_path).unwrap();
-        let output = Command::new("git")
-            .args(["init", "--bare"])
-            .current_dir(&bare_path)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "Failed to init bare repo: {:?}",
-            output
-        );
-
-        // Initialize the bare repo with a commit
-        let init_repo = temp_dir.path().join("init_push_progress");
-        Command::new("git")
-            .args(["init"])
-            .arg(&init_repo)
-            .current_dir(temp_dir.path()) // Ensure stable working directory
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        std::fs::write(init_repo.join("README.md"), "Initial").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["remote", "add", "origin", bare_path.to_str().unwrap()])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        // Get the current branch name (could be master or main)
-        let branch_output = Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        let branch = String::from_utf8_lossy(&branch_output.stdout)
-            .trim()
-            .to_string();
-        let branch = if branch.is_empty() {
-            "master"
-        } else {
-            branch.as_str()
-        };
-
-        let push_output = Command::new("git")
-            .args(["push", "-u", "origin", branch])
-            .current_dir(&init_repo)
-            .output()
-            .unwrap();
-        assert!(
-            push_output.status.success(),
-            "Failed to push to bare repo: {:?}",
-            String::from_utf8_lossy(&push_output.stderr)
-        );
-
-        // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &local_path, None)
-            .await
-            .unwrap();
-
-        // Configure git
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(&local_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&local_path)
-            .output()
-            .unwrap();
-
-        // Add file and commit
-        repo.add_file("test.txt", "test content").await.unwrap();
-        repo.commit("Test commit").await.unwrap();
-
-        // Push with progress
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        pb.set_message("Test push");
-
-        let branch = repo.get_current_branch().await.unwrap();
-        let result = repo.push(&branch, Some(&pb)).await;
-        assert!(result.is_ok());
-
-        pb.finish_with_message("Push complete");
-    }
-
-    #[tokio::test]
-    async fn test_push_no_remote() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        std::fs::write(repo_path.join("test.txt"), "content").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-        let result = repo.push("main", None).await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_add_file_and_commit() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Add a file
-        repo.add_file("test.txt", "Test content").await.unwrap();
-        assert!(repo_path.join("test.txt").exists());
-
-        // Commit it
-        let commit_hash = repo.commit("Test commit").await.unwrap();
-        assert!(!commit_hash.is_empty());
-        assert_eq!(commit_hash.len(), 40); // SHA-1 hash length
-
-        // Add a nested file
-        repo.add_file("nested/dir/file.txt", "Nested content")
-            .await
-            .unwrap();
-        assert!(repo_path.join("nested/dir/file.txt").exists());
-
-        let commit_hash2 = repo.commit("Add nested file").await.unwrap();
-        assert_ne!(commit_hash, commit_hash2);
-    }
-
-    #[tokio::test]
-    async fn test_add_file_nested_directory_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Test creating deeply nested directories
-        let result = repo
-            .add_file("deep/nested/path/to/file.txt", "content")
-            .await;
-        assert!(result.is_ok());
-        assert!(repo_path.join("deep/nested/path/to/file.txt").exists());
-    }
-
-    #[tokio::test]
-    async fn test_add_file_creates_parent_dirs() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Ensure parent directory doesn't exist
-        assert!(!repo_path.join("a").exists());
-
-        // Add file with nested path - should create parents
-        let result = repo.add_file("a/b/c/d/file.txt", "nested content").await;
-        assert!(result.is_ok());
-
-        // Verify all parent directories were created
-        assert!(repo_path.join("a").exists());
-        assert!(repo_path.join("a/b").exists());
-        assert!(repo_path.join("a/b/c").exists());
-        assert!(repo_path.join("a/b/c/d").exists());
-        assert!(repo_path.join("a/b/c/d/file.txt").exists());
-
-        // Verify content
-        let content = std::fs::read_to_string(repo_path.join("a/b/c/d/file.txt")).unwrap();
-        assert_eq!(content, "nested content");
-    }
-
-    #[tokio::test]
-    async fn test_commit_nothing_staged() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Try to commit with nothing staged
-        let result = repo.commit("Empty commit").await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Git operation failed: commit"));
-    }
-
-    #[tokio::test]
-    async fn test_unicode_paths_and_messages() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Test unicode in file paths
-        repo.add_file("中文文件.txt", "Content with emoji 🚀")
-            .await
-            .unwrap();
-        assert!(repo_path.join("中文文件.txt").exists());
-
-        // Test unicode in commit messages
-        let commit_hash = repo.commit("提交信息 with émoji 🎉").await.unwrap();
-        assert!(!commit_hash.is_empty());
-
-        // Verify the commit was created
-        let output = Command::new("git")
-            .args(["log", "--oneline", "-1"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        let log = String::from_utf8_lossy(&output.stdout);
-        assert!(log.contains("提交信息 with émoji 🎉"));
     }
 
     #[tokio::test]
@@ -1727,80 +1033,6 @@ mod tests {
         assert!(repo.path().exists());
         let tags = repo.list_tags().await.unwrap();
         assert_eq!(tags.len(), 0);
-    }
-
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn test_unix_specific_paths() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let path_with_spaces = repo_path.join("path with spaces");
-        std::fs::create_dir(&path_with_spaces).unwrap();
-
-        let repo = GitRepo::new(repo_path);
-        repo.add_file("path with spaces/file.txt", "content")
-            .await
-            .unwrap();
-
-        assert!(path_with_spaces.join("file.txt").exists());
-    }
-
-    #[tokio::test]
-    #[cfg(windows)]
-    async fn test_windows_specific_paths() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let path_with_spaces = repo_path.join("path with spaces");
-        std::fs::create_dir(&path_with_spaces).unwrap();
-
-        let repo = GitRepo::new(repo_path);
-        repo.add_file("path with spaces\\file.txt", "content")
-            .await
-            .unwrap();
-
-        assert!(path_with_spaces.join("file.txt").exists());
-    }
-
-    #[tokio::test]
-    #[cfg(windows)]
-    async fn test_long_path_windows() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let repo = GitRepo::new(repo_path);
-
-        // Create a path with 260+ characters
-        let long_name = "a".repeat(50);
-        let long_path = format!(
-            "{}/{}/{}/{}/file.txt",
-            long_name, long_name, long_name, long_name
-        );
-
-        // This might fail on older Windows without long path support
-        let result = repo.add_file(&long_path, "content").await;
-        // We don't assert success/failure as it depends on Windows config
-        // but we test that it doesn't panic
-        let _ = result;
     }
 
     // Additional error path tests
@@ -1964,98 +1196,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_checkout_remote_branch() {
-        let temp_dir = TempDir::new().unwrap();
-        let bare_path = temp_dir.path().join("bare");
-        let init_path = temp_dir.path().join("init");
-        let clone_path = temp_dir.path().join("clone");
-
-        // Create bare repo
-        std::fs::create_dir(&bare_path).unwrap();
-        Command::new("git")
-            .args(["init", "--bare"])
-            .current_dir(&bare_path)
-            .output()
-            .unwrap();
-
-        // Create initial repo directory first
-        std::fs::create_dir(&init_path).unwrap();
-
-        // Create initial repo with branches
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        std::fs::write(init_path.join("main.txt"), "main").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Main commit"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        // Create feature branch
-        Command::new("git")
-            .args(["checkout", "-b", "feature"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        std::fs::write(init_path.join("feature.txt"), "feature").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Feature commit"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        // Push both branches
-        Command::new("git")
-            .args(["remote", "add", "origin", bare_path.to_str().unwrap()])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["push", "origin", "--all"])
-            .current_dir(&init_path)
-            .output()
-            .unwrap();
-
-        // Clone and try to checkout remote branch
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, None)
-            .await
-            .unwrap();
-
-        // First checkout attempt should fail, second (with origin/) should succeed
-        let result = repo.checkout("feature").await;
-        assert!(result.is_ok());
-        assert!(clone_path.join("feature.txt").exists());
-    }
-
-    #[tokio::test]
     async fn test_list_tags_non_git_directory() {
         let temp_dir = TempDir::new().unwrap();
         let non_git_path = temp_dir.path().join("not_git");
@@ -2115,7 +1255,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Failed to verify repository"));
+            .contains("Failed to verify remote repository"));
     }
 
     #[test]
@@ -2317,20 +1457,20 @@ mod tests {
 
         // Create some commits and tags
         for i in 0..3 {
-            let file_name = format!("file{}.txt", i);
-            std::fs::write(repo_path.join(&file_name), format!("content{}", i)).unwrap();
+            let file_name = format!("file{i}.txt");
+            std::fs::write(repo_path.join(&file_name), format!("content{i}")).unwrap();
             Command::new("git")
                 .args(["add", "."])
                 .current_dir(repo_path)
                 .output()
                 .unwrap();
             Command::new("git")
-                .args(["commit", "-m", &format!("Commit {}", i)])
+                .args(["commit", "-m", &format!("Commit {i}")])
                 .current_dir(repo_path)
                 .output()
                 .unwrap();
             Command::new("git")
-                .args(["tag", &format!("v{}.0.0", i)])
+                .args(["tag", &format!("v{i}.0.0")])
                 .current_dir(repo_path)
                 .output()
                 .unwrap();

@@ -138,7 +138,8 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
                 source: detailed.source.clone(),
                 path: Some(detailed.path.clone()),
                 version: detailed.version.clone(),
-                git: detailed.git.clone(),
+                branch: detailed.branch.clone(),
+                rev: detailed.rev.clone(),
                 command: mcp.command.clone(),
                 args: mcp.args.clone(),
                 env: None,
@@ -149,7 +150,8 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
                     source: None,
                     path: Some(path.clone()),
                     version: None,
-                    git: None,
+                    branch: None,
+                    rev: None,
                     command: mcp.command.clone(),
                     args: mcp.args.clone(),
                     env: None,
@@ -187,7 +189,7 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
         toml::to_string_pretty(&manifest)?.as_bytes(),
     )?;
 
-    println!("{}", format!("Added {} '{}'", resource_type, name).green());
+    println!("{}", format!("Added {resource_type} '{name}'").green());
 
     // Auto-install the dependency
     println!("{}", "Installing dependency...".cyan());
@@ -196,7 +198,7 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
     Ok(())
 }
 
-/// Parse a dependency specification string into a name and ResourceDependency
+/// Parse a dependency specification string into a name and `ResourceDependency`
 fn parse_dependency_spec(
     spec: &str,
     custom_name: &Option<String>,
@@ -224,7 +226,8 @@ fn parse_dependency_spec(
                 source: Some(source),
                 path,
                 version,
-                git: None,
+                branch: None,
+                rev: None,
                 command: None,
                 args: None,
             }),
@@ -290,7 +293,11 @@ async fn install_single_dependency(
                     .ok_or_else(|| anyhow!("Source '{}' not found in manifest", source_name))?;
 
                 // Clone or fetch the repository
-                let version_ref = detailed.git.as_deref().or(detailed.version.as_deref());
+                let version_ref = detailed
+                    .rev
+                    .as_deref()
+                    .or(detailed.branch.as_deref())
+                    .or(detailed.version.as_deref());
                 let cache_dir = cache
                     .get_or_clone_source(source_name, source_url, version_ref)
                     .await?;
@@ -335,7 +342,7 @@ async fn install_single_dependency(
     ensure_dir(Path::new(target_dir))?;
 
     // Write the file
-    let target_path = Path::new(target_dir).join(format!("{}.md", name));
+    let target_path = Path::new(target_dir).join(format!("{name}.md"));
     atomic_write(&target_path, content.as_bytes())?;
 
     // Update or create lockfile
@@ -367,7 +374,9 @@ async fn install_single_dependency(
             ResourceDependency::Simple(p) => p.clone(),
         },
         version: match dependency {
-            ResourceDependency::Detailed(d) => d.version.clone().or(d.git.clone()),
+            ResourceDependency::Detailed(d) => {
+                d.version.clone().or(d.branch.clone()).or(d.rev.clone())
+            }
             ResourceDependency::Simple(_) => None,
         },
         resolved_commit,
@@ -575,7 +584,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
 
         let result = add_command.execute().await;
 
-        assert!(result.is_ok(), "Failed to execute add source: {:?}", result);
+        assert!(result.is_ok(), "Failed to execute add source: {result:?}");
 
         // Verify source was added to manifest
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -614,7 +623,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         let result = add_command.execute().await;
 
         // This should succeed since we're using a local file
-        assert!(result.is_ok(), "Failed to add local agent: {:?}", result);
+        assert!(result.is_ok(), "Failed to add local agent: {result:?}");
 
         // Verify the agent was added and installed
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -648,7 +657,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         let result = add_command.execute().await;
 
         // This should succeed since we're using a local file
-        assert!(result.is_ok(), "Failed to add local snippet: {:?}", result);
+        assert!(result.is_ok(), "Failed to add local snippet: {result:?}");
 
         // Verify the snippet was added and installed
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -682,7 +691,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         let result = add_command.execute().await;
 
         // This should succeed since we're using a local file
-        assert!(result.is_ok(), "Failed to add local command: {:?}", result);
+        assert!(result.is_ok(), "Failed to add local command: {result:?}");
 
         // Verify the command was added and installed
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -714,7 +723,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         let result = add_command.execute().await;
 
         // MCP servers don't install files, so this should succeed
-        assert!(result.is_ok(), "Failed to add MCP server: {:?}", result);
+        assert!(result.is_ok(), "Failed to add MCP server: {result:?}");
 
         // Verify the manifest was updated
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -741,7 +750,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         };
 
         let result = add_source(source).await;
-        assert!(result.is_ok(), "Failed to add source: {:?}", result);
+        assert!(result.is_ok(), "Failed to add source: {result:?}");
 
         // Verify source was added
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -859,8 +868,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         // MCP servers should return OK without installing files
         assert!(
             result.is_ok(),
-            "MCP server installation should succeed: {:?}",
-            result
+            "MCP server installation should succeed: {result:?}"
         );
     }
 
@@ -904,8 +912,9 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
             source: Some("nonexistent-source".to_string()),
             path: "agents/test.md".to_string(),
             version: None,
-            git: None,
             command: None,
+            branch: None,
+            rev: None,
             args: None,
         });
 
@@ -945,8 +954,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         // This should succeed since we're using force flag and a local file
         assert!(
             result.is_ok(),
-            "Failed to add agent with force flag: {:?}",
-            result
+            "Failed to add agent with force flag: {result:?}"
         );
 
         // Verify the agent was overwritten
@@ -1083,8 +1091,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         // Should succeed for MCP servers since they don't install files
         assert!(
             result.is_ok(),
-            "Failed to add detailed MCP server: {:?}",
-            result
+            "Failed to add detailed MCP server: {result:?}"
         );
 
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -1123,8 +1130,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         // Should succeed for MCP servers since they don't install files
         assert!(
             result.is_ok(),
-            "Failed to add simple MCP server: {:?}",
-            result
+            "Failed to add simple MCP server: {result:?}"
         );
 
         let manifest = Manifest::load(&manifest_path).unwrap();

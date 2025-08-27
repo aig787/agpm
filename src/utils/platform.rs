@@ -89,6 +89,7 @@ use std::path::{Path, PathBuf};
 /// - Different path handling logic
 /// - Platform-specific error messages
 /// - Command execution differences
+#[must_use]
 pub fn is_windows() -> bool {
     cfg!(windows)
 }
@@ -188,6 +189,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 ///
 /// - [`command_exists`] to check if Git is available
 /// - System PATH configuration for Git availability
+#[must_use]
 pub fn get_git_command() -> &'static str {
     if is_windows() {
         "git.exe"
@@ -312,13 +314,12 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
                 };
 
                 format!(
-                    "Failed to expand environment variables in path: {}\n\n\
+                    "Failed to expand environment variables in path: {path_str}\n\n\
                     Common issues:\n\
                     - Undefined environment variable (e.g., $UNDEFINED_VAR)\n\
                     - Invalid variable syntax (use $VAR or ${{VAR}})\n\
                     - Special characters that need escaping\n\n\
-                    {}",
-                    path_str, platform_vars
+                    {platform_vars}"
                 )
             })?
             .into_owned()
@@ -380,6 +381,7 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 /// Rust's [`Path`] and [`PathBuf`] types handle separators transparently
 /// in most cases, so this function is primarily needed for display and
 /// external interface purposes.
+#[must_use]
 pub fn normalize_path_separator(path: &Path) -> String {
     if is_windows() {
         path.to_string_lossy().replace('/', "\\")
@@ -435,6 +437,7 @@ pub fn normalize_path_separator(path: &Path) -> String {
 ///
 /// - [`path_to_os_str`] for preserving all path information
 /// - [`Path::to_string_lossy`] for the underlying conversion method
+#[must_use]
 pub fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
@@ -490,6 +493,7 @@ pub fn path_to_string(path: &Path) -> String {
 ///
 /// - [`path_to_string`] for display purposes (lossy conversion)
 /// - [`std::ffi::OsStr`] for the underlying type documentation
+#[must_use]
 pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
     path.as_os_str()
 }
@@ -548,6 +552,7 @@ pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
 /// Some filesystems have configurable case sensitivity (like APFS on macOS).
 /// This function uses platform defaults and may not match filesystem behavior
 /// in all cases.
+#[must_use]
 pub fn paths_equal(path1: &Path, path2: &Path) -> bool {
     if is_windows() {
         // Windows file system is case-insensitive
@@ -710,6 +715,7 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
 /// # See Also
 ///
 /// - [`get_git_command`] for getting the platform-appropriate Git command name
+#[must_use]
 pub fn command_exists(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
@@ -963,6 +969,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 ///
 /// - The Windows implementation for details on long path handling
 #[cfg(not(windows))]
+#[must_use]
 pub fn windows_long_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
@@ -975,7 +982,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 ///
 /// # Returns
 ///
-/// A tuple of (shell_command, execute_flag):
+/// A tuple of (`shell_command`, `execute_flag)`:
 /// - Windows: `("cmd", "/C")`
 /// - Unix-like: `("sh", "-c")`
 ///
@@ -1018,13 +1025,14 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 /// # Alternative Shells
 ///
 /// This function returns the most compatible shell for each platform.
-/// For specific shell requirements (bash, PowerShell, etc.), use direct
+/// For specific shell requirements (bash, `PowerShell`, etc.), use direct
 /// command execution instead.
 ///
 /// # See Also
 ///
 /// - [`command_exists`] for checking shell availability
 /// - [`std::process::Command`] for safe command execution
+#[must_use]
 pub fn get_shell_command() -> (&'static str, &'static str) {
     if is_windows() {
         ("cmd", "/C")
@@ -1527,13 +1535,10 @@ mod tests {
         // Test with undefined environment variable
         let result = resolve_path("$UNDEFINED_VAR_123/path");
         // This should either fail or expand to empty/current path
-        match result {
-            Ok(_) => {
-                // Some systems might expand undefined vars to empty string
-            }
-            Err(_) => {
-                // This is also acceptable behavior
-            }
+        if let Ok(_) = result {
+            // Some systems might expand undefined vars to empty string
+        } else {
+            // This is also acceptable behavior
         }
     }
 
@@ -1593,9 +1598,9 @@ mod tests {
 
         #[cfg(not(windows))]
         {
-            assert!(!normalized_lf.contains("\r"));
-            assert!(!normalized_crlf.contains("\r"));
-            assert!(!normalized_mixed.contains("\r"));
+            assert!(!normalized_lf.contains('\r'));
+            assert!(!normalized_crlf.contains('\r'));
+            assert!(!normalized_mixed.contains('\r'));
         }
     }
 
@@ -1746,7 +1751,7 @@ mod tests {
         let result = resolve_path("~/path/~file.txt");
         assert!(result.is_ok());
         let resolved = result.unwrap();
-        assert!(!resolved.to_string_lossy().starts_with("~"));
+        assert!(!resolved.to_string_lossy().starts_with('~'));
 
         // Test empty path
         let result = resolve_path("");
@@ -1763,7 +1768,7 @@ mod tests {
             Ok(home) => {
                 assert!(home.is_absolute());
                 // Home directory should exist
-                assert!(home.exists() || home.parent().map(|p| p.exists()).unwrap_or(false));
+                assert!(home.exists() || home.parent().is_some_and(std::path::Path::exists));
             }
             Err(e) => {
                 // If it fails, it should have a meaningful error message

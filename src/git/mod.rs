@@ -44,7 +44,7 @@
 //!
 //! ## Cross-Platform Compatibility
 //! Tested and optimized for:
-//! - **Windows**: Handles path length limits, PowerShell vs CMD differences
+//! - **Windows**: Handles path length limits, `PowerShell` vs CMD differences
 //! - **macOS**: Integrates with Keychain and Xcode command line tools
 //! - **Linux**: Works with various distributions and Git installations
 //!
@@ -163,7 +163,7 @@
 //! - Uses `git.exe` or `git.cmd` detection via PATH
 //! - Handles long path names (>260 characters)
 //! - Works with Windows Credential Manager
-//! - Supports both CMD and PowerShell environments
+//! - Supports both CMD and `PowerShell` environments
 //!
 //! ## macOS
 //! - Integrates with Xcode Command Line Tools Git
@@ -187,14 +187,15 @@
 //! [`ProgressBar`]: crate::utils::progress::ProgressBar
 //! [`CcpmError`]: crate::core::CcpmError
 
+pub mod command_builder;
+#[cfg(test)]
+mod tests;
+
 use crate::core::CcpmError;
+use crate::git::command_builder::GitCommand;
 use crate::utils::progress::ProgressBar;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
-
-#[cfg(test)]
-mod tests;
 
 /// A Git repository handle providing async operations via CLI commands.
 ///
@@ -360,36 +361,21 @@ impl GitRepo {
         let target_path = target.as_ref();
 
         if let Some(pb) = &progress {
-            pb.set_message(format!("Cloning {}", url));
+            pb.set_message(format!("Cloning {url}"));
         }
 
-        let mut cmd = Command::new(crate::utils::platform::get_git_command());
-        cmd.args(["clone", "--progress", url]).arg(target_path);
+        // Use command builder for consistent clone operations
+        let mut cmd = GitCommand::clone(url, target_path);
 
-        let output = cmd.output().await.context("Failed to execute git clone")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-
-            // Include both stderr and stdout for better debugging
-            let reason = if !stderr.is_empty() {
-                stderr.to_string()
-            } else if !stdout.is_empty() {
-                stdout.to_string()
-            } else {
-                format!(
-                    "Git clone failed with exit code: {:?}",
-                    output.status.code()
-                )
-            };
-
-            return Err(CcpmError::GitCloneFailed {
-                url: url.to_string(),
-                reason,
-            }
-            .into());
+        // For file:// URLs, clone with all branches to ensure commit availability
+        if url.starts_with("file://") {
+            cmd = GitCommand::new()
+                .args(["clone", "--progress", "--no-single-branch", url])
+                .arg(target_path.display().to_string());
         }
+
+        // Execute will handle error context properly
+        cmd.execute().await?;
 
         if let Some(pb) = progress {
             pb.finish_with_message("Clone complete");
@@ -463,8 +449,8 @@ impl GitRepo {
         auth_url: Option<&str>,
         progress: Option<&ProgressBar>,
     ) -> Result<()> {
-        // No special cases - always fetch to get latest changes
-        // This ensures both remote and local (file://) repositories stay up to date
+        // Note: file:// URLs are local repositories, but we still need to fetch
+        // from them to get updates from the source repository
 
         if let Some(pb) = progress {
             pb.set_message("Fetching updates");
@@ -473,38 +459,17 @@ impl GitRepo {
         // Use git fetch with authentication from global config URL if provided
         if let Some(url) = auth_url {
             // Temporarily update the remote URL with auth for this fetch
-            let cmd = Command::new(crate::utils::platform::get_git_command())
-                .args(["remote", "set-url", "origin", url])
+            GitCommand::set_remote_url(url)
                 .current_dir(&self.path)
-                .output()
-                .await
-                .context("Failed to set remote URL")?;
-
-            if !cmd.status.success() {
-                let stderr = String::from_utf8_lossy(&cmd.stderr);
-                return Err(CcpmError::GitCommandError {
-                    operation: "remote set-url".to_string(),
-                    stderr: stderr.to_string(),
-                }
-                .into());
-            }
+                .execute_success()
+                .await?;
         }
 
         // Now fetch with the potentially updated URL
-        let mut cmd = Command::new(crate::utils::platform::get_git_command());
-        cmd.args(["fetch", "--all", "--tags"]);
-        cmd.current_dir(&self.path);
-
-        let output = cmd.output().await.context("Failed to execute git fetch")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "fetch".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
+        GitCommand::fetch()
+            .current_dir(&self.path)
+            .execute_success()
+            .await?;
 
         if let Some(pb) = progress {
             pb.finish_with_message("Fetch complete");
@@ -592,53 +557,58 @@ impl GitRepo {
     /// [`CcpmError::GitCheckoutFailed`]: crate::core::CcpmError::GitCheckoutFailed
     pub async fn checkout(&self, ref_name: &str) -> Result<()> {
         // Reset to clean state before checkout
-        let reset_output = Command::new(crate::utils::platform::get_git_command())
-            .args(["reset", "--hard", "HEAD"])
+        let reset_result = GitCommand::reset_hard()
             .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git reset")?;
+            .execute()
+            .await;
 
-        if !reset_output.status.success() {
-            let stderr = String::from_utf8_lossy(&reset_output.stderr);
+        if let Err(e) = reset_result {
             // Only warn if it's not a detached HEAD situation (which is normal)
-            if !stderr.contains("HEAD detached") {
-                eprintln!("Warning: git reset failed: {}", stderr);
+            let error_str = e.to_string();
+            if !error_str.contains("HEAD detached") {
+                eprintln!("Warning: git reset failed: {error_str}");
             }
         }
 
-        // First try to checkout directly (works for tags and commits)
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["checkout", ref_name])
+        // Check if this ref exists as a remote branch
+        // If it does, always use -B to ensure we get the latest
+        let remote_ref = format!("origin/{ref_name}");
+        let check_remote = GitCommand::verify_ref(&remote_ref)
             .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git checkout")?;
+            .execute()
+            .await;
 
-        if output.status.success() {
-            return Ok(());
+        if check_remote.is_ok() {
+            // Remote branch exists, use -B to force update to latest
+            if GitCommand::checkout_branch(ref_name, &remote_ref)
+                .current_dir(&self.path)
+                .execute_success()
+                .await
+                .is_ok()
+            {
+                return Ok(());
+            }
         }
 
-        // If direct checkout failed, try as remote branch (origin/branch_name)
-        let remote_ref = format!("origin/{}", ref_name);
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["checkout", &remote_ref])
+        // Not a remote branch, try direct checkout (works for tags and commits)
+        GitCommand::checkout(ref_name)
             .current_dir(&self.path)
-            .output()
+            .execute_success()
             .await
-            .context("Failed to execute git checkout")?;
-
-        if output.status.success() {
-            return Ok(());
-        }
-
-        // Both attempts failed, return error from first attempt
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(CcpmError::GitCheckoutFailed {
-            reference: ref_name.to_string(),
-            reason: stderr.to_string(),
-        }
-        .into())
+            .map_err(|e| {
+                // If it's already a GitCheckoutFailed error, return as-is
+                // Otherwise wrap it
+                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>() {
+                    if matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. }) {
+                        return e;
+                    }
+                }
+                CcpmError::GitCheckoutFailed {
+                    reference: ref_name.to_string(),
+                    reason: e.to_string(),
+                }
+                .into()
+            })
     }
 
     /// Lists all tags in the repository, sorted by Git's default ordering.
@@ -734,27 +704,16 @@ impl GitRepo {
             return Err(anyhow::anyhow!("Not a git repository: {:?}", self.path));
         }
 
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["tag", "-l"])
+        let stdout = GitCommand::list_tags()
             .current_dir(&self.path)
-            .output()
+            .execute_stdout()
             .await
             .context(format!("Failed to list git tags in {:?}", self.path))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "list tags".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(stdout
             .lines()
             .filter(|line| !line.is_empty())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect())
     }
 
@@ -833,23 +792,10 @@ impl GitRepo {
     /// [`parse_git_url`]: fn.parse_git_url.html
     /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
     pub async fn get_remote_url(&self) -> Result<String> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["remote", "get-url", "origin"])
+        GitCommand::remote_url()
             .current_dir(&self.path)
-            .output()
+            .execute_stdout()
             .await
-            .context("Failed to get remote URL")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "get remote URL".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     /// Checks if the directory contains a valid Git repository.
@@ -920,6 +866,7 @@ impl GitRepo {
     /// ```
     ///
     /// [`ensure_valid_git_repo`]: fn.ensure_valid_git_repo.html
+    #[must_use]
     pub fn is_git_repo(&self) -> bool {
         self.path.join(".git").exists()
     }
@@ -986,6 +933,7 @@ impl GitRepo {
     /// to validate the repository state.
     ///
     /// [`is_git_repo`]: #method.is_git_repo
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -1091,18 +1039,10 @@ impl GitRepo {
         }
 
         // For all other URLs, use ls-remote to verify
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["ls-remote", "--heads", url])
-            .output()
+        GitCommand::ls_remote(url)
+            .execute_success()
             .await
-            .context("Failed to verify remote repository")?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(anyhow::anyhow!("Failed to verify repository: {}", stderr))
-        }
+            .context("Failed to verify remote repository")
     }
 
     /// Get the current commit SHA of the repository.
@@ -1133,136 +1073,21 @@ impl GitRepo {
     /// # }
     /// ```
     pub async fn get_current_commit(&self) -> Result<String> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["rev-parse", "HEAD"])
+        GitCommand::current_commit()
             .current_dir(&self.path)
-            .output()
+            .execute_stdout()
             .await
-            .context("Failed to execute git rev-parse")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "rev-parse".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }
-
-    // Test-only methods (kept for compatibility but marked as such)
-    #[cfg(test)]
-    pub async fn commit(&self, message: &str) -> Result<String> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["commit", "-m", message])
-            .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git commit")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "commit".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        // Use the proper get_current_commit method
-        self.get_current_commit().await
-    }
-
-    #[cfg(test)]
-    pub async fn add_file(&self, path: &str, content: &str) -> Result<()> {
-        let file_path = self.path.join(path);
-        if let Some(parent) = file_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::write(&file_path, content).await?;
-
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["add", path])
-            .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git add")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "add file".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub async fn push(&self, branch: &str, _progress: Option<&ProgressBar>) -> Result<()> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["push", "origin", branch])
-            .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git push")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "push".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub async fn pull(&self, _progress: Option<&ProgressBar>) -> Result<()> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["pull"])
-            .current_dir(&self.path)
-            .output()
-            .await
-            .context("Failed to execute git pull")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "pull".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        Ok(())
+            .context("Failed to get current commit")
     }
 
     #[cfg(test)]
     pub async fn get_current_branch(&self) -> Result<String> {
-        let output = Command::new(crate::utils::platform::get_git_command())
-            .args(["branch", "--show-current"])
+        let branch = GitCommand::current_branch()
             .current_dir(&self.path)
-            .output()
+            .execute_stdout()
             .await
             .context("Failed to get current branch")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(CcpmError::GitCommandError {
-                operation: "get current branch".to_string(),
-                stderr: stderr.to_string(),
-            }
-            .into());
-        }
-
-        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if branch.is_empty() {
             // Fallback for very old Git or repos without commits
             Ok("master".to_string())
@@ -1331,7 +1156,9 @@ impl GitRepo {
 ///
 /// [`get_git_command()`]: crate::utils::platform::get_git_command
 /// [`ensure_git_available()`]: fn.ensure_git_available.html
+#[must_use]
 pub fn is_git_installed() -> bool {
+    // For synchronous checking, we still use std::process::Command directly
     std::process::Command::new(crate::utils::platform::get_git_command())
         .arg("--version")
         .output()
@@ -1491,6 +1318,7 @@ pub fn ensure_git_available() -> Result<()> {
 /// filesystem check. It's suitable for bulk validation scenarios.
 ///
 /// [`GitRepo::is_git_repo()`]: struct.GitRepo.html#method.is_git_repo
+#[must_use]
 pub fn is_valid_git_repo(path: &Path) -> bool {
     path.join(".git").exists()
 }
@@ -1555,7 +1383,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// }
 /// ```
 ///
-/// # Integration with GitRepo
+/// # Integration with `GitRepo`
 ///
 /// This function provides validation before creating `GitRepo` instances:
 ///
@@ -1889,7 +1717,7 @@ pub fn strip_auth_from_url(url: &str) -> Result<String> {
                 // Extract protocol and the part after @
                 let protocol = &url[..protocol_end];
                 let after_auth = &url[at_pos + 1..];
-                return Ok(format!("{}{}", protocol, after_auth));
+                return Ok(format!("{protocol}{after_auth}"));
             }
         }
     }

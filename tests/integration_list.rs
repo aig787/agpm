@@ -369,10 +369,10 @@ official = "https://github.com/example-org/ccpm-official.git"
     fs::write(env.project_path().join("ccpm.toml"), minimal_manifest).unwrap();
 
     // Create empty lockfile
-    let empty_lockfile = r#"
+    let empty_lockfile = r"
 # Auto-generated lockfile - DO NOT EDIT
 version = 1
-"#;
+";
     fs::write(env.project_path().join("ccpm.lock"), empty_lockfile).unwrap();
 
     let mut cmd = env.ccpm_command();

@@ -78,7 +78,7 @@
 //! - **name**: Unique identifier for the source repository
 //! - **url**: Full Git repository URL (HTTP/HTTPS/SSH)
 //! - **commit**: 40-character SHA-1 commit hash at time of resolution
-//! - **fetched_at**: ISO 8601 timestamp of last successful fetch
+//! - **`fetched_at`**: ISO 8601 timestamp of last successful fetch
 //!
 //! ### Resources Arrays (agents/snippets/commands)
 //! - **name**: Unique resource identifier within its type
@@ -86,9 +86,9 @@
 //! - **url**: Repository URL (omitted for local resources)  
 //! - **path**: Relative path within source repository or filesystem
 //! - **version**: Original version constraint from manifest (omitted for local)
-//! - **resolved_commit**: Exact commit containing this resource (omitted for local)
+//! - **`resolved_commit`**: Exact commit containing this resource (omitted for local)
 //! - **checksum**: SHA-256 hash prefixed with "sha256:" for integrity verification
-//! - **installed_at**: Relative path where resource is installed in project
+//! - **`installed_at`**: Relative path where resource is installed in project
 //!
 //! # Relationship to Manifest
 //!
@@ -442,7 +442,7 @@ pub struct LockFile {
 /// - **name**: Unique identifier used in the manifest to reference this source
 /// - **url**: Full Git repository URL (HTTP/HTTPS/SSH)
 /// - **commit**: 40-character SHA-1 commit hash resolved at time of lock
-/// - **fetched_at**: RFC 3339 timestamp of when the repository was last fetched
+/// - **`fetched_at`**: RFC 3339 timestamp of when the repository was last fetched
 ///
 /// # Examples
 ///
@@ -624,6 +624,7 @@ impl LockFile {
     /// assert!(lockfile.agents.is_empty());
     /// assert!(lockfile.snippets.is_empty());
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self {
             version: Self::CURRENT_VERSION,
@@ -835,20 +836,20 @@ impl LockFile {
         let write_resources =
             |content: &mut String, resources: &[LockedResource], section: &str| {
                 for resource in resources {
-                    content.push_str(&format!("[[{}]]\n", section));
+                    content.push_str(&format!("[[{section}]]\n"));
                     content.push_str(&format!("name = {:?}\n", resource.name));
                     if let Some(source) = &resource.source {
-                        content.push_str(&format!("source = {:?}\n", source));
+                        content.push_str(&format!("source = {source:?}\n"));
                     }
                     if let Some(url) = &resource.url {
-                        content.push_str(&format!("url = {:?}\n", url));
+                        content.push_str(&format!("url = {url:?}\n"));
                     }
                     content.push_str(&format!("path = {:?}\n", resource.path));
                     if let Some(version) = &resource.version {
-                        content.push_str(&format!("version = {:?}\n", version));
+                        content.push_str(&format!("version = {version:?}\n"));
                     }
                     if let Some(commit) = &resource.resolved_commit {
-                        content.push_str(&format!("resolved_commit = {:?}\n", commit));
+                        content.push_str(&format!("resolved_commit = {commit:?}\n"));
                     }
                     content.push_str(&format!("checksum = {:?}\n", resource.checksum));
                     content.push_str(&format!("installed_at = {:?}\n\n", resource.installed_at));
@@ -1084,6 +1085,7 @@ impl LockFile {
     ///
     /// The method searches agents first, then snippets, then commands. If multiple
     /// resource types have the same name, the first match in this order will be returned.
+    #[must_use]
     pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
         self.agents
             .iter()
@@ -1115,6 +1117,7 @@ impl LockFile {
     ///     println!("Last commit: {}", source.commit);
     /// }
     /// ```
+    #[must_use]
     pub fn get_source(&self, name: &str) -> Option<&LockedSource> {
         self.sources.iter().find(|s| s.name == name)
     }
@@ -1146,6 +1149,7 @@ impl LockFile {
     /// ```
     ///
     /// This is equivalent to calling `lockfile.get_resource(name).is_some()`.
+    #[must_use]
     pub fn has_resource(&self, name: &str) -> bool {
         self.get_resource(name).is_some()
     }
@@ -1179,6 +1183,7 @@ impl LockFile {
     /// - Validating checksums across all resources
     /// - Listing resources for user display
     /// - Bulk operations on all resources
+    #[must_use]
     pub fn all_resources(&self) -> Vec<&LockedResource> {
         let mut resources = Vec::new();
         resources.extend(&self.agents);
@@ -1230,7 +1235,7 @@ impl LockFile {
     ///
     /// # Returns
     ///
-    /// * `Ok(String)` - Checksum in format "sha256:hexadecimal_hash"
+    /// * `Ok(String)` - Checksum in format "`sha256:hexadecimal_hash`"
     /// * `Err(anyhow::Error)` - File read error with detailed context
     ///
     /// # Checksum Format
@@ -1420,6 +1425,7 @@ impl Default for LockFile {
 ///
 /// For more robust error handling, consider using [`LockFile::load`] directly
 /// with a known path.
+#[must_use]
 pub fn find_lockfile() -> Option<PathBuf> {
     let mut current = std::env::current_dir().ok()?;
 

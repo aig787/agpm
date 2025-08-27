@@ -498,7 +498,7 @@ pub fn create_agent_manifest(name: String, author: String) -> AgentManifest {
     AgentManifest {
         metadata: AgentMetadata {
             name: name.clone(),
-            description: format!("{} agent for Claude Code", name),
+            description: format!("{name} agent for Claude Code"),
             author,
             license: "MIT".to_string(),
             homepage: None,
@@ -517,7 +517,7 @@ pub fn create_snippet_manifest(name: String, author: String, language: String) -
     SnippetManifest {
         metadata: SnippetMetadata {
             name: name.clone(),
-            description: format!("{} snippet", name),
+            description: format!("{name} snippet"),
             author,
             language,
             tags: vec![],

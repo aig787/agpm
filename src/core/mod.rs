@@ -194,9 +194,13 @@
 //! [`Clone`]: std::clone::Clone
 
 pub mod error;
+pub mod error_builders;
 mod resource;
 
 pub use error::{user_friendly_error, CcpmError, ErrorContext, IntoAnyhowWithContext};
+pub use error_builders::{
+    file_error_context, git_error_context, manifest_error_context, ErrorContextExt,
+};
 pub use resource::{Resource, ResourceType};
 
 use std::path::Path;
@@ -232,6 +236,7 @@ use std::path::Path;
 /// fs::write(path.join("agent.toml"), "# Agent config").unwrap();
 /// assert_eq!(detect_resource_type(path), Some(ResourceType::Agent));
 /// ```
+#[must_use]
 pub fn detect_resource_type(path: &Path) -> Option<ResourceType> {
     if path.join("agent.toml").exists() {
         Some(ResourceType::Agent)

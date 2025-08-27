@@ -72,6 +72,8 @@ use clap::Args;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::cache::Cache;
+use crate::installer::install_updated_resources;
 use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, Manifest};
 use crate::resolver::DependencyResolver;
@@ -268,22 +270,26 @@ impl UpdateCommand {
 
         // Load existing lockfile or perform fresh install if missing
         let lockfile_path = project_dir.join("ccpm.lock");
-        let existing_lockfile = if !lockfile_path.exists() {
+        let existing_lockfile = if lockfile_path.exists() {
+            LockFile::load(&lockfile_path)?
+        } else {
             if !self.quiet {
                 println!("⚠️  No lockfile found.");
                 println!("📦 Performing fresh install");
             }
-            // Perform a fresh install by creating an empty lockfile and resolving all dependencies
-            let mut resolver = DependencyResolver::new_with_global(manifest.clone()).await?;
-            resolver.source_manager.sync_all(None).await?;
-            let fresh_lockfile = resolver.resolve(None).await?;
-            fresh_lockfile.save(&lockfile_path)?;
+            // Perform a fresh install using the install command
             if !self.quiet {
-                println!("✅ Fresh install completed!");
+                println!("Running fresh install...");
             }
-            return Ok(());
-        } else {
-            LockFile::load(&lockfile_path)?
+
+            // Use the install command to do the actual installation
+            let install_cmd = if self.quiet {
+                crate::cli::install::InstallCommand::new_quiet()
+            } else {
+                crate::cli::install::InstallCommand::new()
+            };
+
+            return install_cmd.execute_from_path(manifest_path).await;
         };
 
         // Create backup if requested
@@ -427,10 +433,32 @@ impl UpdateCommand {
             } else {
                 // Save updated lockfile with error handling and rollback
                 match new_lockfile.save(&lockfile_path) {
-                    Ok(_) => {
+                    Ok(()) => {
                         if !self.quiet {
                             println!("\n✅ Updated lockfile");
-                            println!("Run 'ccpm install' to apply the updates.");
+                        }
+
+                        // Install the updated resources
+                        if !self.quiet {
+                            println!("📦 Installing updated resources...");
+                        }
+
+                        // Initialize cache
+                        let cache = Cache::new()?;
+
+                        // Install all updated resources
+                        let install_count = install_updated_resources(
+                            &updates,
+                            &new_lockfile,
+                            &manifest,
+                            project_dir,
+                            &cache,
+                            self.quiet,
+                        )
+                        .await?;
+
+                        if !self.quiet && install_count > 0 {
+                            println!("✅ Updated {install_count} resources");
                         }
                     }
                     Err(e) => {
@@ -441,10 +469,10 @@ impl UpdateCommand {
                                 if let Err(restore_err) =
                                     std::fs::copy(&backup_path, &lockfile_path)
                                 {
-                                    eprintln!("❌ Update failed: {}", e);
-                                    eprintln!("❌ Failed to restore backup: {}", restore_err);
+                                    eprintln!("❌ Update failed: {e}");
+                                    eprintln!("❌ Failed to restore backup: {restore_err}");
                                 } else if !self.quiet {
-                                    eprintln!("❌ Update failed: {}", e);
+                                    eprintln!("❌ Update failed: {e}");
                                     eprintln!("🔄 Rolling back to previous lockfile");
                                 }
                             }
@@ -496,8 +524,9 @@ mod tests {
                 source: Some("test-source".to_string()),
                 path: "agents/test-agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
-                git: None,
                 command: None,
+                branch: None,
+                rev: None,
                 args: None,
             }),
         );
@@ -594,7 +623,7 @@ mod tests {
 
         // Create a minimal manifest with explicit empty sources
         // This ensures no sources from global config are used
-        let manifest_content = r#"
+        let manifest_content = r"
 [sources]
 # No sources defined - this overrides any global sources
 
@@ -603,7 +632,7 @@ mod tests {
 
 [snippets]
 # No snippets
-"#;
+";
         std::fs::write(&manifest_path, manifest_content).unwrap();
 
         // Ensure no lockfile exists
@@ -615,7 +644,7 @@ mod tests {
         let result = cmd.execute_from_path(manifest_path).await;
 
         // Should succeed and perform fresh install
-        assert!(result.is_ok(), "Fresh install failed: {:?}", result);
+        assert!(result.is_ok(), "Fresh install failed: {result:?}");
 
         // Lockfile should be created
         assert!(lockfile_path.exists());
@@ -951,7 +980,7 @@ mod tests {
 
         // Create a minimal manifest with explicit empty sources
         // This ensures no sources from global config are used
-        let manifest_content = r#"
+        let manifest_content = r"
 [sources]
 # No sources defined - this overrides any global sources
 
@@ -960,7 +989,7 @@ mod tests {
 
 [snippets]
 # No snippets
-"#;
+";
         std::fs::write(&manifest_path, manifest_content).unwrap();
 
         // Test the main execute workflow
@@ -971,7 +1000,7 @@ mod tests {
         let result = cmd.execute_from_path(manifest_path).await;
 
         // Should complete successfully with empty manifest
-        assert!(result.is_ok(), "Update failed: {:?}", result);
+        assert!(result.is_ok(), "Update failed: {result:?}");
         assert!(lockfile_path.exists());
     }
 

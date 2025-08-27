@@ -301,6 +301,7 @@ impl Source {
     /// assert!(source.enabled);
     /// assert!(source.description.is_none());
     /// ```
+    #[must_use]
     pub fn new(name: String, url: String) -> Self {
         Self {
             name,
@@ -333,6 +334,7 @@ impl Source {
     ///
     /// assert_eq!(source.description, Some("Community-contributed agents and snippets".to_string()));
     /// ```
+    #[must_use]
     pub fn with_description(mut self, desc: String) -> Self {
         self.description = Some(desc);
         self
@@ -376,10 +378,11 @@ impl Source {
     ///     Path::new("/home/user/.ccpm/cache/sources/example_ccpm-community")
     /// );
     /// ```
+    #[must_use]
     pub fn cache_dir(&self, base_dir: &Path) -> PathBuf {
         let (owner, repo) =
             parse_git_url(&self.url).unwrap_or(("unknown".to_string(), self.name.clone()));
-        base_dir.join("sources").join(format!("{}_{}", owner, repo))
+        base_dir.join("sources").join(format!("{owner}_{repo}"))
     }
 }
 
@@ -511,6 +514,7 @@ impl SourceManager {
     /// let custom_cache = PathBuf::from("/custom/cache/location");
     /// let manager = SourceManager::new_with_cache(custom_cache);
     /// ```
+    #[must_use]
     pub fn new_with_cache(cache_dir: PathBuf) -> Self {
         Self {
             sources: HashMap::new(),
@@ -648,6 +652,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn from_manifest_with_cache(manifest: &Manifest, cache_dir: PathBuf) -> Self {
         let mut manager = Self::new_with_cache(cache_dir);
 
@@ -778,6 +783,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&Source> {
         self.sources.get(name)
     }
@@ -834,6 +840,7 @@ impl SourceManager {
     /// ```
     ///
     /// [`list_enabled()`]: SourceManager::list_enabled
+    #[must_use]
     pub fn list(&self) -> Vec<&Source> {
         self.sources.values().collect()
     }
@@ -858,6 +865,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn list_enabled(&self) -> Vec<&Source> {
         self.sources.values().filter(|s| s.enabled).collect()
     }
@@ -887,6 +895,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn get_source_url(&self, name: &str) -> Option<String> {
         self.sources.get(name).map(|s| s.url.clone())
     }
@@ -906,7 +915,7 @@ impl SourceManager {
     ///    - **First time**: Clone the repository to cache
     ///    - **Subsequent**: Fetch updates from remote
     ///    - **Invalid cache**: Remove corrupted cache and re-clone
-    /// 5. **Cache Update**: Update source's local_path with cache location
+    /// 5. **Cache Update**: Update source's `local_path` with cache location
     ///
     /// # Repository Types Supported
     ///
@@ -1005,7 +1014,7 @@ impl SourceManager {
 
         if !source.enabled {
             return Err(CcpmError::ConfigError {
-                message: format!("Source '{}' is disabled", name),
+                message: format!("Source '{name}' is disabled"),
             }
             .into());
         }
@@ -1024,12 +1033,11 @@ impl SourceManager {
             // Local paths are treated as plain directories (not git repositories)
             // Apply security validation for local paths
             let resolved_path = crate::utils::platform::resolve_path(&url)?;
-            
+
             // Security check: Validate path against blacklist and symlinks BEFORE canonicalization
             validate_path_security(&resolved_path, true)?;
-            
-            let canonical_path = resolved_path
-                .canonicalize()
+
+            let canonical_path = crate::utils::safe_canonicalize(&resolved_path)
                 .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
 
             // For local paths, we just return a GitRepo pointing to the local directory
@@ -1178,7 +1186,7 @@ impl SourceManager {
         let cache_path = self
             .cache_dir
             .join("sources")
-            .join(format!("{}_{}", owner, repo_name));
+            .join(format!("{owner}_{repo_name}"));
         ensure_dir(cache_path.parent().unwrap())?;
 
         // Check URL type
@@ -1189,12 +1197,11 @@ impl SourceManager {
         if is_local_path {
             // Apply security validation for local paths
             let resolved_path = crate::utils::platform::resolve_path(url)?;
-            
+
             // Security check: Validate path against blacklist and symlinks BEFORE canonicalization
             validate_path_security(&resolved_path, true)?;
-            
-            let canonical_path = resolved_path
-                .canonicalize()
+
+            let canonical_path = crate::utils::safe_canonicalize(&resolved_path)
                 .map_err(|_| anyhow::anyhow!("Local path is not accessible or does not exist"))?;
 
             // For local paths, we just return a GitRepo pointing to the local directory
@@ -1264,7 +1271,7 @@ impl SourceManager {
 
         for name in enabled_sources {
             if let Some(pb) = &progress {
-                pb.set_message(format!("Syncing {}", name));
+                pb.set_message(format!("Syncing {name}"));
             }
             self.sync(&name, progress).await?;
         }
@@ -1599,15 +1606,14 @@ impl SourceManager {
             let path = url.strip_prefix("file://").unwrap();
             if std::path::Path::new(path).exists() {
                 return Ok(());
-            } else {
-                return Err(anyhow::anyhow!("Local path does not exist: {}", path));
             }
+            return Err(anyhow::anyhow!("Local path does not exist: {}", path));
         }
 
         // For other URLs, try to create a GitRepo object and verify it's accessible
         // This is a lightweight check - we don't actually clone the repo
         match crate::git::GitRepo::verify_url(url).await {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => Err(anyhow::anyhow!("Source not accessible: {}", e)),
         }
     }
@@ -1978,13 +1984,16 @@ mod tests {
         // Local paths are now treated as plain directories, so sync should succeed
         let result = manager.sync("test", None).await;
         if let Err(ref e) = result {
-            eprintln!("Test failed with error: {}", e);
-            eprintln!("Path was: {:?}", non_git_dir);
+            eprintln!("Test failed with error: {e}");
+            eprintln!("Path was: {non_git_dir:?}");
         }
-        assert!(result.is_ok(), "Failed to sync: {:?}", result);
+        assert!(result.is_ok(), "Failed to sync: {result:?}");
         let repo = result.unwrap();
         // Should point to the canonicalized local directory
-        assert_eq!(repo.path(), non_git_dir.canonicalize().unwrap());
+        assert_eq!(
+            repo.path(),
+            crate::utils::safe_canonicalize(&non_git_dir).unwrap()
+        );
     }
 
     #[tokio::test]
@@ -2329,7 +2338,10 @@ mod tests {
         let repo = result.unwrap();
         // The returned GitRepo should point to the canonicalized local directory
         // On macOS, /var is a symlink to /private/var, so we need to compare canonical paths
-        assert_eq!(repo.path(), local_dir.canonicalize().unwrap());
+        assert_eq!(
+            repo.path(),
+            crate::utils::safe_canonicalize(&local_dir).unwrap()
+        );
     }
 
     #[tokio::test]
@@ -2351,7 +2363,10 @@ mod tests {
             .await;
         assert!(result.is_ok());
         let repo = result.unwrap();
-        assert_eq!(repo.path(), local_dir.canonicalize().unwrap());
+        assert_eq!(
+            repo.path(),
+            crate::utils::safe_canonicalize(&local_dir).unwrap()
+        );
 
         // Test relative path
         let original_dir = std::env::current_dir().unwrap();
@@ -2416,15 +2431,12 @@ mod tests {
             let result = manager.sync_by_url(malicious_path, None).await;
             assert!(
                 result.is_err(),
-                "Blacklisted path not detected for: {}",
-                malicious_path
+                "Blacklisted path not detected for: {malicious_path}"
             );
             let err_msg = result.unwrap_err().to_string();
             assert!(
                 err_msg.contains("Security error") || err_msg.contains("not allowed"),
-                "Expected security error for blacklisted path: {}, got: {}",
-                malicious_path,
-                err_msg
+                "Expected security error for blacklisted path: {malicious_path}, got: {err_msg}"
             );
         }
 
@@ -2435,8 +2447,7 @@ mod tests {
         let result = manager.sync_by_url(&safe_dir.to_string_lossy(), None).await;
         assert!(
             result.is_ok(),
-            "Safe path was incorrectly blocked: {:?}",
-            result
+            "Safe path was incorrectly blocked: {result:?}"
         );
     }
 
@@ -2474,8 +2485,7 @@ mod tests {
             let err_msg = result.unwrap_err().to_string();
             assert!(
                 err_msg.contains("Symlinks are not allowed") || err_msg.contains("Security error"),
-                "Expected symlink error, got: {}",
-                err_msg
+                "Expected symlink error, got: {err_msg}"
             );
 
             std::env::set_current_dir(original_dir).unwrap();
@@ -2501,8 +2511,7 @@ mod tests {
         // Temp directories should work fine with blacklist approach
         assert!(
             result.is_ok(),
-            "Safe temp path was incorrectly blocked: {:?}",
-            result
+            "Safe temp path was incorrectly blocked: {result:?}"
         );
     }
 

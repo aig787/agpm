@@ -92,7 +92,7 @@
 //! }
 //! ```
 
-use colored::*;
+use colored::Colorize;
 use std::fmt;
 use thiserror::Error;
 
@@ -688,16 +688,16 @@ impl Clone for CcpmError {
             },
             // For errors that don't implement Clone, convert to Other
             CcpmError::IoError(e) => CcpmError::Other {
-                message: format!("IO error: {}", e),
+                message: format!("IO error: {e}"),
             },
             CcpmError::TomlError(e) => CcpmError::Other {
-                message: format!("TOML parsing error: {}", e),
+                message: format!("TOML parsing error: {e}"),
             },
             CcpmError::TomlSerError(e) => CcpmError::Other {
-                message: format!("TOML serialization error: {}", e),
+                message: format!("TOML serialization error: {e}"),
             },
             CcpmError::SemverError(e) => CcpmError::Other {
-                message: format!("Semver parsing error: {}", e),
+                message: format!("Semver parsing error: {e}"),
             },
             CcpmError::Other { message } => CcpmError::Other {
                 message: message.clone(),
@@ -793,6 +793,7 @@ impl ErrorContext {
     ///
     /// [`with_suggestion`]: ErrorContext::with_suggestion
     /// [`with_details`]: ErrorContext::with_details
+    #[must_use]
     pub fn new(error: CcpmError) -> Self {
         Self {
             error,
@@ -877,11 +878,11 @@ impl fmt::Display for ErrorContext {
         write!(f, "{}", self.error)?;
 
         if let Some(details) = &self.details {
-            write!(f, "\nDetails: {}", details)?;
+            write!(f, "\nDetails: {details}")?;
         }
 
         if let Some(suggestion) = &self.suggestion {
-            write!(f, "\nSuggestion: {}", suggestion)?;
+            write!(f, "\nSuggestion: {suggestion}")?;
         }
 
         Ok(())
@@ -938,7 +939,7 @@ impl ErrorContext {
     pub fn suggestion(suggestion: impl Into<String>) -> Self {
         Self {
             error: CcpmError::Other {
-                message: "".to_string(),
+                message: String::new(),
             },
             suggestion: Some(suggestion.into()),
             details: None,
@@ -997,6 +998,7 @@ impl ErrorContext {
 ///
 /// context.display(); // Shows the error with generic formatting
 /// ```
+#[must_use]
 pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     // Check for specific error types and provide helpful suggestions
     if let Some(ccmp_error) = error.downcast_ref::<CcpmError>() {
@@ -1103,8 +1105,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             reason: reason.clone(),
         })
             .with_suggestion(format!(
-                "Verify the repository URL is correct: {}. Check your internet connection and repository access",
-                url
+                "Verify the repository URL is correct: {url}. Check your internet connection and repository access"
             ))
             .with_details("Clone operations can fail due to invalid URLs, network issues, or access restrictions"),
 
@@ -1117,8 +1118,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             reason: reason.clone(),
         })
             .with_suggestion(format!(
-                "Check the TOML syntax in {}. Common issues: missing quotes, unmatched brackets, invalid characters",
-                file
+                "Check the TOML syntax in {file}. Common issues: missing quotes, unmatched brackets, invalid characters"
             ))
             .with_details("Use a TOML validator or check the ccpm documentation for correct manifest format"),
 
@@ -1126,8 +1126,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             name: name.clone(),
         })
             .with_suggestion(format!(
-                "Add source '{}' to the [sources] section in ccpm.toml with the repository URL",
-                name
+                "Add source '{name}' to the [sources] section in ccpm.toml with the repository URL"
             ))
             .with_details("All dependencies must reference a source defined in the [sources] section"),
 
@@ -1136,8 +1135,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             source_name: source_name.clone(),
         })
             .with_suggestion(format!(
-                "Verify the file '{}' exists in the '{}' repository at the specified version/commit",
-                path, source_name
+                "Verify the file '{path}' exists in the '{source_name}' repository at the specified version/commit"
             ))
             .with_details("The resource file may have been moved, renamed, or deleted in the repository"),
 
@@ -1146,12 +1144,10 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             version: version.clone(),
         })
             .with_suggestion(format!(
-                "Check available versions for '{}' using 'git tag -l' in the repository, or use 'main' or 'master' branch",
-                resource
+                "Check available versions for '{resource}' using 'git tag -l' in the repository, or use 'main' or 'master' branch"
             ))
             .with_details(format!(
-                "The version '{}' doesn't exist as a git tag, branch, or commit in the repository",
-                version
+                "The version '{version}' doesn't exist as a git tag, branch, or commit in the repository"
             )),
 
         CcpmError::CircularDependency { chain } => ErrorContext::new(CcpmError::CircularDependency {
@@ -1159,8 +1155,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
         })
             .with_suggestion("Review your dependency graph and remove circular references")
             .with_details(format!(
-                "Circular dependency chain detected: {}. Dependencies cannot depend on themselves directly or indirectly",
-                chain
+                "Circular dependency chain detected: {chain}. Dependencies cannot depend on themselves directly or indirectly"
             )),
 
         CcpmError::PermissionDenied { operation, path } => ErrorContext::new(CcpmError::PermissionDenied {
@@ -1172,8 +1167,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 false => "Use 'sudo' or check file permissions with 'ls -la'",
             })
             .with_details(format!(
-                "Cannot {} due to insufficient permissions on {}",
-                operation, path
+                "Cannot {operation} due to insufficient permissions on {path}"
             )),
 
         CcpmError::ChecksumMismatch { name, expected, actual } => ErrorContext::new(CcpmError::ChecksumMismatch {
@@ -1183,8 +1177,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
         })
             .with_suggestion("The file may have been corrupted or modified. Try reinstalling with --force")
             .with_details(format!(
-                "Resource '{}' has checksum {} but expected {}. This indicates file corruption or tampering",
-                name, actual, expected
+                "Resource '{name}' has checksum {actual} but expected {expected}. This indicates file corruption or tampering"
             )),
 
         _ => ErrorContext::new(error.clone()),
@@ -1240,7 +1233,7 @@ mod tests {
     fn test_error_context_display() {
         let ctx = ErrorContext::new(CcpmError::GitNotFound).with_suggestion("Install git");
 
-        let display = format!("{}", ctx);
+        let display = format!("{ctx}");
         assert!(display.contains("Git is not installed or not found in PATH"));
         assert!(display.contains("Install git"));
     }
@@ -1431,7 +1424,7 @@ mod tests {
         .with_details("Test details");
 
         let anyhow_error = error.into_anyhow_with_context(context);
-        let display = format!("{}", anyhow_error);
+        let display = format!("{anyhow_error}");
         assert!(display.contains("Git is not installed"));
     }
 
@@ -1569,7 +1562,7 @@ mod tests {
         ];
 
         for error in errors {
-            let display = format!("{}", error);
+            let display = format!("{error}");
             assert!(!display.is_empty());
         }
     }

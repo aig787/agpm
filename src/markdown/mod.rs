@@ -469,6 +469,7 @@ impl MarkdownDocument {
     /// assert_eq!(doc.content, "# Hello\n\nWorld!");
     /// assert_eq!(doc.raw, doc.content);
     /// ```
+    #[must_use]
     pub fn new(content: String) -> Self {
         Self {
             metadata: None,
@@ -507,6 +508,7 @@ impl MarkdownDocument {
     /// assert!(doc.raw.starts_with("---\n"));
     /// assert!(doc.raw.contains("title: Example"));
     /// ```
+    #[must_use]
     pub fn with_metadata(metadata: MarkdownMetadata, content: String) -> Self {
         let raw = Self::format_with_frontmatter(&metadata, &content);
         Self {
@@ -678,10 +680,7 @@ impl MarkdownDocument {
                 // Try to parse YAML frontmatter
                 let metadata: MarkdownMetadata =
                     serde_yaml::from_str(frontmatter).with_context(|| {
-                        format!(
-                            "Failed to parse YAML frontmatter. Content:\n{}",
-                            frontmatter
-                        )
+                        format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
                     })?;
 
                 return Ok(Self {
@@ -722,7 +721,7 @@ impl MarkdownDocument {
     /// Format a document with YAML frontmatter
     fn format_with_frontmatter(metadata: &MarkdownMetadata, content: &str) -> String {
         let yaml = serde_yaml::to_string(metadata).unwrap_or_default();
-        format!("---\n{}---\n\n{}", yaml, content)
+        format!("---\n{yaml}---\n\n{content}")
     }
 
     /// Update the document's metadata and regenerate the raw content.
@@ -855,6 +854,7 @@ impl MarkdownDocument {
     /// let doc = MarkdownDocument::new("Just some content without headings".to_string());
     /// assert_eq!(doc.get_title(), None);
     /// ```
+    #[must_use]
     pub fn get_title(&self) -> Option<String> {
         // First check metadata
         if let Some(ref metadata) = self.metadata {
@@ -919,6 +919,7 @@ impl MarkdownDocument {
     /// let doc = MarkdownDocument::new("# Just a title".to_string());
     /// assert_eq!(doc.get_description(), None);
     /// ```
+    #[must_use]
     pub fn get_description(&self) -> Option<String> {
         // First check metadata
         if let Some(ref metadata) = self.metadata {
@@ -952,10 +953,10 @@ impl MarkdownDocument {
             }
         }
 
-        if !paragraph.is_empty() {
-            Some(paragraph)
-        } else {
+        if paragraph.is_empty() {
             None
+        } else {
+            Some(paragraph)
         }
     }
 }
@@ -1075,11 +1076,11 @@ fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
 /// assert!(!is_markdown_file(Path::new("script.sh")));
 /// assert!(!is_markdown_file(Path::new("no-extension")));
 /// ```
+#[must_use]
 pub fn is_markdown_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-        .unwrap_or(false)
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
 }
 
 /// Recursively find all Markdown files in a directory.
@@ -1144,7 +1145,7 @@ pub fn list_markdown_files(dir: &Path) -> Result<Vec<std::path::PathBuf>> {
     for entry in walkdir::WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
         if path.is_file() && is_markdown_file(path) {
@@ -1170,7 +1171,7 @@ mod tests {
 
     #[test]
     fn test_markdown_with_yaml_frontmatter() {
-        let input = r#"---
+        let input = r"---
 title: Test Document
 description: A test document
 tags:
@@ -1180,7 +1181,7 @@ tags:
 
 # Hello World
 
-This is the content."#;
+This is the content.";
 
         let doc = MarkdownDocument::parse(input).unwrap();
         assert!(doc.metadata.is_some());
