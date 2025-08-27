@@ -535,7 +535,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test git_context
-        let result: Result<(), io::Error> = Err(io::Error::new(io::ErrorKind::Other, "test"));
+        let result: Result<(), io::Error> = Err(io::Error::other("test"));
         let result = result.git_context("clone", Some("repo"));
         assert!(result.is_err());
 
@@ -545,7 +545,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test dependency_context
-        let result: Result<(), io::Error> = Err(io::Error::new(io::ErrorKind::Other, "test"));
+        let result: Result<(), io::Error> = Err(io::Error::other("test"));
         let result = result.dependency_context("dep", "reason");
         assert!(result.is_err());
 

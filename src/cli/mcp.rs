@@ -441,6 +441,5 @@ mod tests {
         let _status_cmd = McpSubcommand::Status;
 
         // Just ensure they can be created - compilation is the test
-        assert!(true);
     }
 }

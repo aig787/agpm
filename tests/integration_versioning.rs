@@ -5,29 +5,18 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+mod common;
 mod fixtures;
 mod test_config;
+use common::TestGit;
 use fixtures::TestEnvironment;
 
 /// Helper to initialize a git repository with tags, branches, and commits
 fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
-    // Initialize repository
-    std::process::Command::new("git")
-        .arg("init")
-        .arg("--initial-branch=main")
-        .current_dir(repo_path)
-        .output()?;
-
-    // Configure git
-    std::process::Command::new("git")
-        .args(["config", "user.email", "test@example.com"])
-        .current_dir(repo_path)
-        .output()?;
-
-    std::process::Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(repo_path)
-        .output()?;
+    // Use TestGit helper for cleaner git operations
+    let git = TestGit::new(repo_path);
+    git.init()?;
+    git.config_user()?;
 
     // Create directory structure
     fs::create_dir_all(repo_path.join("agents"))?;
@@ -44,29 +33,12 @@ fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
     )?;
 
     // Commit and tag v1.0.0
-    std::process::Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_path)
-        .output()?;
-
-    std::process::Command::new("git")
-        .args(["commit", "-m", "Initial commit v1.0.0"])
-        .current_dir(repo_path)
-        .output()?;
-
-    std::process::Command::new("git")
-        .args(["tag", "v1.0.0"])
-        .current_dir(repo_path)
-        .output()?;
+    git.add_all()?;
+    git.commit("Initial commit v1.0.0")?;
+    git.tag("v1.0.0")?;
 
     // Get commit hash for v1.0.0
-    let v1_commit_output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(repo_path)
-        .output()?;
-    let v1_commit = String::from_utf8(v1_commit_output.stdout)?
-        .trim()
-        .to_string();
+    let v1_commit = git.get_commit_hash()?;
 
     // Create v1.1.0 content
     fs::write(
@@ -132,10 +104,7 @@ fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
         .output()?;
 
     // Create develop branch with different content
-    std::process::Command::new("git")
-        .args(["checkout", "-b", "develop"])
-        .current_dir(repo_path)
-        .output()?;
+    git.create_branch("develop")?;
 
     fs::write(
         repo_path.join("agents/example.md"),
@@ -167,15 +136,8 @@ fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
         "# Feature Agent\nNew feature in progress",
     )?;
 
-    std::process::Command::new("git")
-        .args(["add", "."])
-        .current_dir(repo_path)
-        .output()?;
-
-    std::process::Command::new("git")
-        .args(["commit", "-m", "Add feature agent"])
-        .current_dir(repo_path)
-        .output()?;
+    git.add_all()?;
+    git.commit("Add feature agent")?;
 
     // Go back to main branch
     std::process::Command::new("git")
@@ -219,7 +181,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0
 
     // Check installed file contains v1.0.0 content
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(!installed.contains("v1.1.0"));
     assert!(!installed.contains("v2.0.0"));
@@ -256,7 +218,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
 
     // Should get v1.2.0 (highest compatible version)
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -292,7 +254,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "~1.1.0
 
     // Should get v1.1.0 (only patch updates allowed)
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v1.1.0"));
     assert!(!installed.contains("v1.2.0"));
 }
@@ -328,15 +290,18 @@ experimental = {{ source = "versioned", path = "agents/experimental.md", branch 
         .success();
 
     // Check we got develop branch content
-    let example_content =
-        fs::read_to_string(env.project_path().join(".claude/agents/dev-example.md")).unwrap();
+    let example_content = fs::read_to_string(
+        env.project_path()
+            .join(".claude/agents/ccpm/dev-example.md"),
+    )
+    .unwrap();
     assert!(example_content.contains("Development"));
     assert!(example_content.contains("Unstable"));
 
     // Check experimental agent exists (only in develop branch)
     assert!(env
         .project_path()
-        .join(".claude/agents/experimental.md")
+        .join(".claude/agents/ccpm/experimental.md")
         .exists());
 }
 
@@ -371,7 +336,7 @@ feature = {{ source = "versioned", path = "agents/feature.md", branch = "feature
 
     // Check feature agent was installed
     let feature_content =
-        fs::read_to_string(env.project_path().join(".claude/agents/feature.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/feature.md")).unwrap();
     assert!(feature_content.contains("Feature Agent"));
     assert!(feature_content.contains("New feature in progress"));
 }
@@ -409,7 +374,7 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 
     // Should get exact v1.0.0 content
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/pinned.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/pinned.md")).unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(installed.contains("Initial version"));
 }
@@ -445,7 +410,7 @@ latest = {{ source = "versioned", path = "agents/example.md", version = "latest"
 
     // Should get v2.0.0 (latest tag)
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/latest.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/latest.md")).unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -479,7 +444,8 @@ any = {{ source = "versioned", path = "agents/example.md", version = "*" }}
         .success();
 
     // Should get v2.0.0 (highest available)
-    let installed = fs::read_to_string(env.project_path().join(".claude/agents/any.md")).unwrap();
+    let installed =
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/any.md")).unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -518,20 +484,24 @@ latest = {{ source = "versioned", path = "agents/example.md", version = "latest"
         .success();
 
     // Check each installed file has the expected content
-    let stable = fs::read_to_string(env.project_path().join(".claude/agents/stable.md")).unwrap();
+    let stable =
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/stable.md")).unwrap();
     assert!(stable.contains("v1.1.0"));
 
     let compatible =
-        fs::read_to_string(env.project_path().join(".claude/agents/compatible.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/compatible.md")).unwrap();
     assert!(compatible.contains("v1.2.0")); // Should get highest 1.x
 
-    let develop = fs::read_to_string(env.project_path().join(".claude/agents/develop.md")).unwrap();
+    let develop =
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/develop.md")).unwrap();
     assert!(develop.contains("Development"));
 
-    let pinned = fs::read_to_string(env.project_path().join(".claude/agents/pinned.md")).unwrap();
+    let pinned =
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/pinned.md")).unwrap();
     assert!(pinned.contains("v1.0.0"));
 
-    let latest = fs::read_to_string(env.project_path().join(".claude/agents/latest.md")).unwrap();
+    let latest =
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/latest.md")).unwrap();
     assert!(latest.contains("v2.0.0"));
 }
 
@@ -566,7 +536,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
 
     // Should get v2.0.0 (highest that satisfies >=1.1.0)
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -601,7 +571,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
 
     // Should get v1.2.0 (highest that satisfies the range)
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -671,7 +641,7 @@ dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
         .success();
 
     // Check we got the updated content
-    let file_path = env.project_path().join(".claude/agents/dev.md");
+    let file_path = env.project_path().join(".claude/agents/ccpm/dev.md");
     let updated = fs::read_to_string(&file_path).unwrap_or_else(|e| {
         panic!("Failed to read file {file_path:?}: {e}");
     });
@@ -838,7 +808,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
         .success();
 
     let installed =
-        fs::read_to_string(env.project_path().join(".claude/agents/example.md")).unwrap();
+        fs::read_to_string(env.project_path().join(".claude/agents/ccpm/example.md")).unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }

@@ -440,12 +440,14 @@ mod tests {
         assert_eq!(count, 3, "Should install 3 resources");
 
         // Verify all files were installed (using default directories)
-        assert!(project_dir.join(".claude/agents/test-agent.md").exists());
         assert!(project_dir
-            .join(".claude/snippets/test-snippet.md")
+            .join(".claude/agents/ccpm/test-agent.md")
             .exists());
         assert!(project_dir
-            .join(".claude/commands/test-command.md")
+            .join(".claude/ccpm/snippets/test-snippet.md")
+            .exists());
+        assert!(project_dir
+            .join(".claude/commands/ccpm/test-command.md")
             .exists());
     }
 
@@ -492,7 +494,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(count, 1, "Should install 1 updated resource");
-        assert!(project_dir.join(".claude/agents/test-agent.md").exists());
+        assert!(project_dir
+            .join(".claude/agents/ccpm/test-agent.md")
+            .exists());
         assert!(!project_dir
             .join(".claude/snippets/test-snippet.md")
             .exists()); // Not updated
@@ -535,7 +539,7 @@ mod tests {
 
         assert_eq!(count, 1);
         assert!(project_dir
-            .join(".claude/commands/test-command.md")
+            .join(".claude/commands/ccpm/test-command.md")
             .exists());
     }
 

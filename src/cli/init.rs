@@ -142,6 +142,7 @@ impl InitCommand {
     pub async fn execute(self) -> Result<()> {
         let target_dir = self.path.unwrap_or_else(|| PathBuf::from("."));
         let manifest_path = target_dir.join("ccpm.toml");
+        let gitignore_path = target_dir.join(".gitignore");
 
         // Check if manifest already exists
         if manifest_path.exists() && !self.force {
@@ -173,6 +174,38 @@ impl InitCommand {
 # Example: utils = { source = "official", path = "snippets/utils.md", version = "v1.2.0" }
 "#;
         fs::write(&manifest_path, template)?;
+
+        // Update or create .gitignore with CCPM entries
+        let gitignore_entries = vec![".claude/**/ccpm/", ".claude/ccpm/"];
+
+        let mut gitignore_content = if gitignore_path.exists() {
+            fs::read_to_string(&gitignore_path)?
+        } else {
+            String::new()
+        };
+
+        // Check if CCPM section exists
+        if !gitignore_content.contains("# CCPM managed directories") {
+            // Add CCPM entries
+            if !gitignore_content.is_empty() && !gitignore_content.ends_with('\n') {
+                gitignore_content.push('\n');
+            }
+            if !gitignore_content.is_empty() {
+                gitignore_content.push('\n');
+            }
+            gitignore_content.push_str("# CCPM managed directories\n");
+
+            for entry in gitignore_entries {
+                // Check if entry doesn't already exist
+                if !gitignore_content.lines().any(|line| line.trim() == entry) {
+                    gitignore_content.push_str(entry);
+                    gitignore_content.push('\n');
+                }
+            }
+
+            fs::write(&gitignore_path, gitignore_content)?;
+            println!("{} Updated .gitignore with CCPM entries", "✓".green());
+        }
 
         println!(
             "{} Initialized ccpm.toml at {}",
@@ -361,5 +394,87 @@ mod tests {
         let new_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(new_content.contains("# CCPM Manifest"));
         assert!(!new_content.contains("# Old manifest"));
+    }
+
+    #[tokio::test]
+    async fn test_init_creates_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        assert!(gitignore_path.exists());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains("# CCPM managed directories"));
+        assert!(content.contains(".claude/**/ccpm/"));
+        assert!(content.contains(".claude/ccpm/"));
+    }
+
+    #[tokio::test]
+    async fn test_init_updates_existing_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let gitignore_path = temp_dir.path().join(".gitignore");
+
+        // Create existing .gitignore with some content
+        fs::write(&gitignore_path, "node_modules/\n*.log\n").unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        // Should preserve existing content
+        assert!(content.contains("node_modules/"));
+        assert!(content.contains("*.log"));
+        // Should add CCPM entries
+        assert!(content.contains("# CCPM managed directories"));
+        assert!(content.contains(".claude/**/ccpm/"));
+        assert!(content.contains(".claude/ccpm/"));
+    }
+
+    #[tokio::test]
+    async fn test_init_does_not_duplicate_gitignore_entries() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // First init
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        let first_content = fs::read_to_string(&gitignore_path).unwrap();
+
+        // Second init with force
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: true,
+        };
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let second_content = fs::read_to_string(&gitignore_path).unwrap();
+
+        // Should not have duplicated the CCPM section
+        assert_eq!(
+            first_content.matches("# CCPM managed directories").count(),
+            second_content.matches("# CCPM managed directories").count()
+        );
+        assert_eq!(
+            first_content.matches(".claude/**/ccpm/").count(),
+            second_content.matches(".claude/**/ccpm/").count()
+        );
     }
 }

@@ -182,8 +182,12 @@ myagent = {{ source = "official", path = "agents/myagent.md", version = "v1.0.0"
         .success()
         .stdout(predicate::str::contains("Installing"));
 
-    // Verify files were installed with correct names (in default location)
-    let agents_dir = env.project_path().join(".claude").join("agents");
+    // Verify files were installed with correct names (in default location with ccpm subdirectory)
+    let agents_dir = env
+        .project_path()
+        .join(".claude")
+        .join("agents")
+        .join("ccpm");
     if cfg!(target_os = "macos") || cfg!(windows) {
         // Case-insensitive filesystem - only one file should exist
         assert!(agents_dir.join("myagent.md").exists());

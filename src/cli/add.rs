@@ -433,9 +433,9 @@ mod tests {
         let manifest_content = r#"[sources]
 
 [target]
-agents = ".claude/agents"
-snippets = ".claude/snippets"
-commands = ".claude/commands"
+agents = ".claude/agents/ccpm"
+snippets = ".claude/ccpm/snippets"
+commands = ".claude/commands/ccpm"
 
 [agents]
 
@@ -458,9 +458,9 @@ commands = ".claude/commands"
 existing = "https://github.com/existing/repo.git"
 
 [target]
-agents = ".claude/agents"
-snippets = ".claude/snippets"
-commands = ".claude/commands"
+agents = ".claude/agents/ccpm"
+snippets = ".claude/ccpm/snippets"
+commands = ".claude/commands/ccpm"
 
 [agents]
 existing-agent = "../local/agent.md"

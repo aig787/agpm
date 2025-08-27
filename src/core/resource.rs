@@ -44,8 +44,8 @@
 //! assert_eq!(snippet_type.manifest_filename(), "snippet.toml");
 //!
 //! // Get default directory names
-//! assert_eq!(agent_type.default_directory(), "agents");
-//! assert_eq!(snippet_type.default_directory(), "snippets");
+//! assert_eq!(agent_type.default_directory(), ".claude/agents/ccpm");
+//! assert_eq!(snippet_type.default_directory(), ".claude/ccpm/snippets");
 //! ```
 //!
 //! ## Detecting Resource Types
@@ -147,11 +147,11 @@ use std::path::Path;
 ///
 /// let agent = ResourceType::Agent;
 /// assert_eq!(agent.manifest_filename(), "agent.toml");
-/// assert_eq!(agent.default_directory(), "agents");
+/// assert_eq!(agent.default_directory(), ".claude/agents/ccpm");
 ///
 /// let snippet = ResourceType::Snippet;  
 /// assert_eq!(snippet.manifest_filename(), "snippet.toml");
-/// assert_eq!(snippet.default_directory(), "snippets");
+/// assert_eq!(snippet.default_directory(), ".claude/ccpm/snippets");
 /// ```
 ///
 /// ## JSON Serialization
@@ -238,17 +238,20 @@ impl ResourceType {
     ///
     /// # Returns
     ///
-    /// - [`Agent`] → `"agents"`
-    /// - [`Snippet`] → `"snippets"`
-    /// - [`Command`] → `.claude/commands`
+    /// - [`Agent`] → `".claude/agents/ccpm"`
+    /// - [`Snippet`] → `".claude/ccpm/snippets"`
+    /// - [`Command`] → `.claude/commands/ccpm`
+    /// - [`McpServer`] → `.claude/ccpm/mcp-servers`
     ///
     /// # Examples
     ///
     /// ```rust
     /// use ccpm::core::ResourceType;
     ///
-    /// assert_eq!(ResourceType::Agent.default_directory(), "agents");
-    /// assert_eq!(ResourceType::Snippet.default_directory(), "snippets");
+    /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents/ccpm");
+    /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/ccpm/snippets");
+    /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands/ccpm");
+    /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/ccpm/mcp-servers");
     /// ```
     ///
     /// # Note
@@ -259,13 +262,14 @@ impl ResourceType {
     /// [`Agent`]: ResourceType::Agent
     /// [`Snippet`]: ResourceType::Snippet
     /// [`Command`]: ResourceType::Command
+    /// [`McpServer`]: ResourceType::McpServer
     #[must_use]
     pub fn default_directory(&self) -> &str {
         match self {
-            ResourceType::Agent => "agents",
-            ResourceType::Snippet => "snippets",
-            ResourceType::Command => ".claude/commands",
-            ResourceType::McpServer => ".claude/mcp-servers",
+            ResourceType::Agent => ".claude/agents/ccpm",
+            ResourceType::Snippet => ".claude/ccpm/snippets",
+            ResourceType::Command => ".claude/commands/ccpm",
+            ResourceType::McpServer => ".claude/ccpm/mcp-servers",
         }
     }
 }
@@ -784,15 +788,21 @@ mod tests {
 
     #[test]
     fn test_resource_type_default_directory() {
-        assert_eq!(ResourceType::Agent.default_directory(), "agents");
-        assert_eq!(ResourceType::Snippet.default_directory(), "snippets");
+        assert_eq!(
+            ResourceType::Agent.default_directory(),
+            ".claude/agents/ccpm"
+        );
+        assert_eq!(
+            ResourceType::Snippet.default_directory(),
+            ".claude/ccpm/snippets"
+        );
         assert_eq!(
             ResourceType::Command.default_directory(),
-            ".claude/commands"
+            ".claude/commands/ccpm"
         );
         assert_eq!(
             ResourceType::McpServer.default_directory(),
-            ".claude/mcp-servers"
+            ".claude/ccpm/mcp-servers"
         );
     }
 

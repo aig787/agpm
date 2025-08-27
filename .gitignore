@@ -37,3 +37,7 @@ examples/projects/
 
 # Claude
 .claude/settings.local.json
+
+# CCPM managed directories
+.claude/**/ccpm/
+.claude/ccpm/

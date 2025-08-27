@@ -86,8 +86,8 @@ ccpm install
 This creates:
 
 - `ccpm.lock` - Lockfile with exact resolved versions
-- `.claude/agents/` - Directory with installed agent files (default location)
-- `.claude/snippets/` - Directory with installed snippet files (default location)
+- `.claude/agents/ccpm/` - Directory with installed agent files (default location)
+- `.claude/ccpm/snippets/` - Directory with installed snippet files (default location)
 
 ### 3. Basic Workflows
 
@@ -175,8 +175,8 @@ local = "./local-resources"  # Local directory (no Git required)
 
 # Target directories (optional - defaults shown)
 [target]
-agents = ".claude/agents"    # Where to install agents
-snippets = ".claude/snippets" # Where to install snippets
+agents = ".claude/agents/ccpm"    # Where to install agents
+snippets = ".claude/ccpm/snippets" # Where to install snippets
 
 # Agents
 [agents]
@@ -718,10 +718,12 @@ my-project/
 ├── ccpm.toml           # Dependency manifest
 ├── ccpm.lock           # Resolved versions (commit this!)
 ├── .claude/
-│   ├── agents/         # Installed agents (default)
-│   │   └── example-agent.md
-│   └── snippets/       # Installed snippets (default)
-│       └── example-snippet.md
+│   ├── agents/
+│   │   └── ccpm/       # CCPM-installed agents (default)
+│   │       └── example-agent.md
+│   └── ccpm/
+│       └── snippets/   # CCPM-installed snippets (default)
+│           └── example-snippet.md
 ```
 
 Cache location: `~/.ccpm/cache/` (Unix/macOS) or `%LOCALAPPDATA%\ccpm\cache\` (Windows)

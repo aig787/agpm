@@ -1535,7 +1535,7 @@ mod tests {
         // Test with undefined environment variable
         let result = resolve_path("$UNDEFINED_VAR_123/path");
         // This should either fail or expand to empty/current path
-        if let Ok(_) = result {
+        if result.is_ok() {
             // Some systems might expand undefined vars to empty string
         } else {
             // This is also acceptable behavior

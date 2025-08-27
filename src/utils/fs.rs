@@ -1526,6 +1526,258 @@ pub async fn read_files_parallel(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Stri
     Ok(ordered_results)
 }
 
+// ============================================================================
+// Unified File I/O Operations
+// ============================================================================
+
+/// Reads a text file with proper error handling and context.
+///
+/// # Arguments
+/// * `path` - The path to the file to read
+///
+/// # Returns
+/// The contents of the file as a String
+///
+/// # Errors
+/// Returns an error with context if the file cannot be read
+pub fn read_text_file(path: &Path) -> Result<String> {
+    fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
+}
+
+/// Writes a text file atomically with proper error handling.
+///
+/// # Arguments
+/// * `path` - The path to write to
+/// * `content` - The text content to write
+///
+/// # Returns
+/// Ok(()) on success
+///
+/// # Errors
+/// Returns an error with context if the file cannot be written
+pub fn write_text_file(path: &Path, content: &str) -> Result<()> {
+    safe_write(path, content).with_context(|| format!("Failed to write file: {}", path.display()))
+}
+
+/// Reads and parses a JSON file.
+///
+/// # Arguments
+/// * `path` - The path to the JSON file
+///
+/// # Type Parameters
+/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+///
+/// # Returns
+/// The parsed JSON data
+///
+/// # Errors
+/// Returns an error if the file cannot be read or parsed
+pub fn read_json_file<T>(path: &Path) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let content = read_text_file(path)?;
+    serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse JSON from file: {}", path.display()))
+}
+
+/// Writes data as JSON to a file atomically.
+///
+/// # Arguments
+/// * `path` - The path to write to
+/// * `data` - The data to serialize
+/// * `pretty` - Whether to use pretty formatting
+///
+/// # Type Parameters
+/// * `T` - The type to serialize (must implement Serialize)
+///
+/// # Returns
+/// Ok(()) on success
+///
+/// # Errors
+/// Returns an error if serialization fails or the file cannot be written
+pub fn write_json_file<T>(path: &Path, data: &T, pretty: bool) -> Result<()>
+where
+    T: serde::Serialize,
+{
+    let json = if pretty {
+        serde_json::to_string_pretty(data)?
+    } else {
+        serde_json::to_string(data)?
+    };
+
+    write_text_file(path, &json)
+        .with_context(|| format!("Failed to write JSON file: {}", path.display()))
+}
+
+/// Reads and parses a TOML file.
+///
+/// # Arguments
+/// * `path` - The path to the TOML file
+///
+/// # Type Parameters
+/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+///
+/// # Returns
+/// The parsed TOML data
+///
+/// # Errors
+/// Returns an error if the file cannot be read or parsed
+pub fn read_toml_file<T>(path: &Path) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let content = read_text_file(path)?;
+    toml::from_str(&content)
+        .with_context(|| format!("Failed to parse TOML from file: {}", path.display()))
+}
+
+/// Writes data as TOML to a file atomically.
+///
+/// # Arguments
+/// * `path` - The path to write to
+/// * `data` - The data to serialize
+/// * `pretty` - Whether to use pretty formatting (always true for TOML)
+///
+/// # Type Parameters
+/// * `T` - The type to serialize (must implement Serialize)
+///
+/// # Returns
+/// Ok(()) on success
+///
+/// # Errors
+/// Returns an error if serialization fails or the file cannot be written
+pub fn write_toml_file<T>(path: &Path, data: &T) -> Result<()>
+where
+    T: serde::Serialize,
+{
+    let toml = toml::to_string_pretty(data)
+        .with_context(|| format!("Failed to serialize data to TOML for: {}", path.display()))?;
+
+    write_text_file(path, &toml)
+        .with_context(|| format!("Failed to write TOML file: {}", path.display()))
+}
+
+/// Reads and parses a YAML file.
+///
+/// # Arguments
+/// * `path` - The path to the YAML file
+///
+/// # Type Parameters
+/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+///
+/// # Returns
+/// The parsed YAML data
+///
+/// # Errors
+/// Returns an error if the file cannot be read or parsed
+pub fn read_yaml_file<T>(path: &Path) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let content = read_text_file(path)?;
+    serde_yaml::from_str(&content)
+        .with_context(|| format!("Failed to parse YAML from file: {}", path.display()))
+}
+
+/// Writes data as YAML to a file atomically.
+///
+/// # Arguments
+/// * `path` - The path to write to
+/// * `data` - The data to serialize
+///
+/// # Type Parameters
+/// * `T` - The type to serialize (must implement Serialize)
+///
+/// # Returns
+/// Ok(()) on success
+///
+/// # Errors
+/// Returns an error if serialization fails or the file cannot be written
+pub fn write_yaml_file<T>(path: &Path, data: &T) -> Result<()>
+where
+    T: serde::Serialize,
+{
+    let yaml = serde_yaml::to_string(data)
+        .with_context(|| format!("Failed to serialize data to YAML for: {}", path.display()))?;
+
+    write_text_file(path, &yaml)
+        .with_context(|| format!("Failed to write YAML file: {}", path.display()))
+}
+
+/// Creates a temporary file with content for testing.
+///
+/// # Arguments
+/// * `prefix` - The prefix for the temp file name
+/// * `content` - The content to write to the file
+///
+/// # Returns
+/// A TempPath that will delete the file when dropped
+///
+/// # Errors
+/// Returns an error if the temp file cannot be created
+pub fn create_temp_file(prefix: &str, content: &str) -> Result<tempfile::TempPath> {
+    let temp_file = tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(".tmp")
+        .tempfile()?;
+
+    let path = temp_file.into_temp_path();
+    write_text_file(&path, content)?;
+
+    Ok(path)
+}
+
+/// Checks if a file exists and is readable.
+///
+/// # Arguments
+/// * `path` - The path to check
+///
+/// # Returns
+/// true if the file exists and is readable, false otherwise
+pub fn file_exists_and_readable(path: &Path) -> bool {
+    path.exists() && path.is_file() && fs::metadata(path).is_ok()
+}
+
+/// Gets the modification time of a file.
+///
+/// # Arguments
+/// * `path` - The path to the file
+///
+/// # Returns
+/// The modification time as a SystemTime
+///
+/// # Errors
+/// Returns an error if the file metadata cannot be read
+pub fn get_modified_time(path: &Path) -> Result<std::time::SystemTime> {
+    let metadata = fs::metadata(path)
+        .with_context(|| format!("Failed to get metadata for: {}", path.display()))?;
+
+    metadata
+        .modified()
+        .with_context(|| format!("Failed to get modification time for: {}", path.display()))
+}
+
+/// Compares the modification times of two files.
+///
+/// # Arguments
+/// * `path1` - The first file path
+/// * `path2` - The second file path
+///
+/// # Returns
+/// - `Ok(Ordering::Less)` if path1 is older than path2
+/// - `Ok(Ordering::Greater)` if path1 is newer than path2
+/// - `Ok(Ordering::Equal)` if they have the same modification time
+///
+/// # Errors
+/// Returns an error if either file's metadata cannot be read
+pub fn compare_file_times(path1: &Path, path2: &Path) -> Result<std::cmp::Ordering> {
+    let time1 = get_modified_time(path1)?;
+    let time2 = get_modified_time(path2)?;
+
+    Ok(time1.cmp(&time2))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2332,256 +2584,4 @@ mod tests {
             std::env::set_var("CCPM_CACHE_DIR", val);
         }
     }
-}
-
-// ============================================================================
-// Unified File I/O Operations
-// ============================================================================
-
-/// Reads a text file with proper error handling and context.
-///
-/// # Arguments
-/// * `path` - The path to the file to read
-///
-/// # Returns
-/// The contents of the file as a String
-///
-/// # Errors
-/// Returns an error with context if the file cannot be read
-pub fn read_text_file(path: &Path) -> Result<String> {
-    fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
-}
-
-/// Writes a text file atomically with proper error handling.
-///
-/// # Arguments
-/// * `path` - The path to write to
-/// * `content` - The text content to write
-///
-/// # Returns
-/// Ok(()) on success
-///
-/// # Errors
-/// Returns an error with context if the file cannot be written
-pub fn write_text_file(path: &Path, content: &str) -> Result<()> {
-    safe_write(path, content).with_context(|| format!("Failed to write file: {}", path.display()))
-}
-
-/// Reads and parses a JSON file.
-///
-/// # Arguments
-/// * `path` - The path to the JSON file
-///
-/// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
-///
-/// # Returns
-/// The parsed JSON data
-///
-/// # Errors
-/// Returns an error if the file cannot be read or parsed
-pub fn read_json_file<T>(path: &Path) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let content = read_text_file(path)?;
-    serde_json::from_str(&content)
-        .with_context(|| format!("Failed to parse JSON from file: {}", path.display()))
-}
-
-/// Writes data as JSON to a file atomically.
-///
-/// # Arguments
-/// * `path` - The path to write to
-/// * `data` - The data to serialize
-/// * `pretty` - Whether to use pretty formatting
-///
-/// # Type Parameters
-/// * `T` - The type to serialize (must implement Serialize)
-///
-/// # Returns
-/// Ok(()) on success
-///
-/// # Errors
-/// Returns an error if serialization fails or the file cannot be written
-pub fn write_json_file<T>(path: &Path, data: &T, pretty: bool) -> Result<()>
-where
-    T: serde::Serialize,
-{
-    let json = if pretty {
-        serde_json::to_string_pretty(data)?
-    } else {
-        serde_json::to_string(data)?
-    };
-
-    write_text_file(path, &json)
-        .with_context(|| format!("Failed to write JSON file: {}", path.display()))
-}
-
-/// Reads and parses a TOML file.
-///
-/// # Arguments
-/// * `path` - The path to the TOML file
-///
-/// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
-///
-/// # Returns
-/// The parsed TOML data
-///
-/// # Errors
-/// Returns an error if the file cannot be read or parsed
-pub fn read_toml_file<T>(path: &Path) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let content = read_text_file(path)?;
-    toml::from_str(&content)
-        .with_context(|| format!("Failed to parse TOML from file: {}", path.display()))
-}
-
-/// Writes data as TOML to a file atomically.
-///
-/// # Arguments
-/// * `path` - The path to write to
-/// * `data` - The data to serialize
-/// * `pretty` - Whether to use pretty formatting (always true for TOML)
-///
-/// # Type Parameters
-/// * `T` - The type to serialize (must implement Serialize)
-///
-/// # Returns
-/// Ok(()) on success
-///
-/// # Errors
-/// Returns an error if serialization fails or the file cannot be written
-pub fn write_toml_file<T>(path: &Path, data: &T) -> Result<()>
-where
-    T: serde::Serialize,
-{
-    let toml = toml::to_string_pretty(data)
-        .with_context(|| format!("Failed to serialize data to TOML for: {}", path.display()))?;
-
-    write_text_file(path, &toml)
-        .with_context(|| format!("Failed to write TOML file: {}", path.display()))
-}
-
-/// Reads and parses a YAML file.
-///
-/// # Arguments
-/// * `path` - The path to the YAML file
-///
-/// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
-///
-/// # Returns
-/// The parsed YAML data
-///
-/// # Errors
-/// Returns an error if the file cannot be read or parsed
-pub fn read_yaml_file<T>(path: &Path) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let content = read_text_file(path)?;
-    serde_yaml::from_str(&content)
-        .with_context(|| format!("Failed to parse YAML from file: {}", path.display()))
-}
-
-/// Writes data as YAML to a file atomically.
-///
-/// # Arguments
-/// * `path` - The path to write to
-/// * `data` - The data to serialize
-///
-/// # Type Parameters
-/// * `T` - The type to serialize (must implement Serialize)
-///
-/// # Returns
-/// Ok(()) on success
-///
-/// # Errors
-/// Returns an error if serialization fails or the file cannot be written
-pub fn write_yaml_file<T>(path: &Path, data: &T) -> Result<()>
-where
-    T: serde::Serialize,
-{
-    let yaml = serde_yaml::to_string(data)
-        .with_context(|| format!("Failed to serialize data to YAML for: {}", path.display()))?;
-
-    write_text_file(path, &yaml)
-        .with_context(|| format!("Failed to write YAML file: {}", path.display()))
-}
-
-/// Creates a temporary file with content for testing.
-///
-/// # Arguments
-/// * `prefix` - The prefix for the temp file name
-/// * `content` - The content to write to the file
-///
-/// # Returns
-/// A TempPath that will delete the file when dropped
-///
-/// # Errors
-/// Returns an error if the temp file cannot be created
-pub fn create_temp_file(prefix: &str, content: &str) -> Result<tempfile::TempPath> {
-    let temp_file = tempfile::Builder::new()
-        .prefix(prefix)
-        .suffix(".tmp")
-        .tempfile()?;
-
-    let path = temp_file.into_temp_path();
-    write_text_file(&path, content)?;
-
-    Ok(path)
-}
-
-/// Checks if a file exists and is readable.
-///
-/// # Arguments
-/// * `path` - The path to check
-///
-/// # Returns
-/// true if the file exists and is readable, false otherwise
-pub fn file_exists_and_readable(path: &Path) -> bool {
-    path.exists() && path.is_file() && fs::metadata(path).is_ok()
-}
-
-/// Gets the modification time of a file.
-///
-/// # Arguments
-/// * `path` - The path to the file
-///
-/// # Returns
-/// The modification time as a SystemTime
-///
-/// # Errors
-/// Returns an error if the file metadata cannot be read
-pub fn get_modified_time(path: &Path) -> Result<std::time::SystemTime> {
-    let metadata = fs::metadata(path)
-        .with_context(|| format!("Failed to get metadata for: {}", path.display()))?;
-
-    metadata
-        .modified()
-        .with_context(|| format!("Failed to get modification time for: {}", path.display()))
-}
-
-/// Compares the modification times of two files.
-///
-/// # Arguments
-/// * `path1` - The first file path
-/// * `path2` - The second file path
-///
-/// # Returns
-/// - `Ok(Ordering::Less)` if path1 is older than path2
-/// - `Ok(Ordering::Greater)` if path1 is newer than path2
-/// - `Ok(Ordering::Equal)` if they have the same modification time
-///
-/// # Errors
-/// Returns an error if either file's metadata cannot be read
-pub fn compare_file_times(path1: &Path, path2: &Path) -> Result<std::cmp::Ordering> {
-    let time1 = get_modified_time(path1)?;
-    let time2 = get_modified_time(path2)?;
-
-    Ok(time1.cmp(&time2))
 }

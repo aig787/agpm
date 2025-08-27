@@ -1,7 +1,7 @@
 //! MCP (Model Context Protocol) server configuration management for CCPM.
 //!
 //! This module handles the integration of MCP servers with CCPM, including:
-//! - Storing raw MCP server configurations in `.claude/mcp-servers/`
+//! - Storing raw MCP server configurations in `.claude/ccpm/mcp-servers/`
 //! - Merging configurations into `.claude/settings.local.json`
 //! - Managing CCPM-controlled MCP server configurations
 //! - Preserving user-managed server configurations
@@ -133,7 +133,7 @@ impl ClaudeSettings {
 
     /// Update MCP servers from stored configurations.
     ///
-    /// This method loads all MCP server configurations from `.claude/mcp-servers/`
+    /// This method loads all MCP server configurations from `.claude/ccpm/mcp-servers/`
     /// and merges them into the settings, preserving user-managed servers.
     pub fn update_mcp_servers(&mut self, mcp_servers_dir: &Path) -> Result<()> {
         if !mcp_servers_dir.exists() {
@@ -404,10 +404,10 @@ fn expand_env_vars(s: &str) -> String {
     s.to_string()
 }
 
-/// Install MCP servers from the manifest into `.claude/mcp-servers/` and update settings.
+/// Install MCP servers from the manifest into `.claude/ccpm/mcp-servers/` and update settings.
 ///
 /// This function:
-/// 1. Saves individual MCP server configs to `.claude/mcp-servers/<name>.json`
+/// 1. Saves individual MCP server configs to `.claude/ccpm/mcp-servers/<name>.json`
 /// 2. Updates `.claude/settings.local.json` with merged MCP configurations
 /// 3. Returns locked MCP server entries for the lockfile
 pub async fn install_mcp_servers(
@@ -1432,10 +1432,11 @@ mod tests {
     // Serialization tests
     #[test]
     fn test_claude_settings_serialization() {
-        let mut settings = ClaudeSettings::default();
-
         // Add various fields
-        settings.permissions = Some(json!({"allow": ["test"], "deny": []}));
+        let mut settings = ClaudeSettings {
+            permissions: Some(json!({"allow": ["test"], "deny": []})),
+            ..Default::default()
+        };
 
         let mut servers = HashMap::new();
         servers.insert(

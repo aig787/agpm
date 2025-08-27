@@ -3,8 +3,11 @@
 //! This module consolidates frequently used test patterns to reduce duplication
 //! and improve test maintainability.
 
+// Allow dead code because these utilities are used across different test files
+// and not all utilities are used in every test file
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
-use ccpm::manifest::Manifest;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -103,11 +106,10 @@ impl TestGit {
 
 /// Test project builder for creating test environments
 pub struct TestProject {
-    temp_dir: TempDir,
+    _temp_dir: TempDir,  // Keep alive for RAII cleanup
     project_dir: PathBuf,
     cache_dir: PathBuf,
     sources_dir: PathBuf,
-    manifest: Option<Manifest>,
 }
 
 impl TestProject {
@@ -123,22 +125,13 @@ impl TestProject {
         fs::create_dir_all(&sources_dir)?;
 
         Ok(Self {
-            temp_dir,
+            _temp_dir: temp_dir,
             project_dir,
             cache_dir,
             sources_dir,
-            manifest: None,
         })
     }
 
-    /// Set up test environment variables
-    pub fn setup_env(&self) -> Result<()> {
-        // Note: This should be used with care in tests to avoid race conditions
-        // Consider passing env vars to Command instances instead
-        std::env::set_var("CCPM_CACHE_DIR", &self.cache_dir);
-        std::env::set_var("CCPM_TEST_MODE", "true");
-        Ok(())
-    }
 
     /// Get the project directory path
     pub fn project_path(&self) -> &Path {
@@ -155,24 +148,11 @@ impl TestProject {
         &self.sources_dir
     }
 
-    /// Get the temp directory path
-    pub fn temp_path(&self) -> &Path {
-        self.temp_dir.path()
-    }
-
     /// Write a manifest file to the project directory
     pub fn write_manifest(&self, content: &str) -> Result<()> {
         let manifest_path = self.project_dir.join("ccpm.toml");
         fs::write(&manifest_path, content)
             .with_context(|| format!("Failed to write manifest to {:?}", manifest_path))?;
-        Ok(())
-    }
-
-    /// Write a lockfile to the project directory
-    pub fn write_lockfile(&self, content: &str) -> Result<()> {
-        let lockfile_path = self.project_dir.join("ccpm.lock");
-        fs::write(&lockfile_path, content)
-            .with_context(|| format!("Failed to write lockfile to {:?}", lockfile_path))?;
         Ok(())
     }
 
@@ -196,7 +176,6 @@ impl TestProject {
         git.config_user()?;
 
         Ok(TestSourceRepo {
-            name: name.to_string(),
             path: source_dir,
             git,
         })
@@ -225,7 +204,6 @@ impl TestProject {
 
 /// Test source repository helper
 pub struct TestSourceRepo {
-    pub name: String,
     pub path: PathBuf,
     pub git: TestGit,
 }
@@ -296,16 +274,6 @@ impl CommandOutput {
         self
     }
 
-    /// Assert the command failed
-    pub fn assert_failure(&self) -> &Self {
-        assert!(
-            !self.success,
-            "Command unexpectedly succeeded\nStdout: {}",
-            self.stdout
-        );
-        self
-    }
-
     /// Assert stdout contains the given text
     pub fn assert_stdout_contains(&self, text: &str) -> &Self {
         assert!(
@@ -313,17 +281,6 @@ impl CommandOutput {
             "Expected stdout to contain '{}'\nActual stdout: {}",
             text,
             self.stdout
-        );
-        self
-    }
-
-    /// Assert stderr contains the given text
-    pub fn assert_stderr_contains(&self, text: &str) -> &Self {
-        assert!(
-            self.stderr.contains(text),
-            "Expected stderr to contain '{}'\nActual stderr: {}",
-            text,
-            self.stderr
         );
         self
     }
@@ -418,133 +375,4 @@ impl DirAssert {
     }
 }
 
-/// Common test manifest templates
-pub mod manifests {
-    /// Basic manifest with standard dependencies
-    pub const BASIC: &str = r#"
-[sources]
-official = "https://github.com/example/official.git"
-community = "https://github.com/example/community.git"
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-helper = { source = "community", path = "agents/helper.md", version = "^1.2.0" }
-
-[snippets]
-utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
-"#;
-
-    /// Manifest with local dependencies
-    pub const WITH_LOCAL: &str = r#"
-[sources]
-official = "https://github.com/example/official.git"
-
-[agents]
-remote-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" }
-local-agent = { path = "./agents/local.md" }
-
-[snippets]
-local-snippet = { path = "./snippets/local.md" }
-"#;
-
-    /// Manifest with MCP servers
-    pub const WITH_MCP: &str = r#"
-[sources]
-official = "https://github.com/example/official.git"
-
-[agents]
-my-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" }
-
-[mcp-servers]
-filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
-postgres = { command = "mcp-postgres", args = ["--connection", "${DATABASE_URL}"] }
-"#;
-
-    /// Empty but valid manifest
-    pub const EMPTY: &str = "";
-
-    /// Invalid TOML syntax
-    pub const INVALID_SYNTAX: &str = r#"
-[sources
-official = "https://github.com/example/official.git"
-"#;
-}
-
-/// Common lockfile templates
-pub mod lockfiles {
-    /// Basic lockfile matching BASIC manifest
-    pub const BASIC: &str = r#"
-version = 1
-
-[[sources]]
-name = "official"
-url = "https://github.com/example/official.git"
-commit = "abc123def456"
-
-[[sources]]
-name = "community"
-url = "https://github.com/example/community.git"
-commit = "789xyz012345"
-
-[[agents]]
-name = "my-agent"
-source = "official"
-path = "agents/my-agent.md"
-version = "v1.0.0"
-resolved_commit = "abc123def456"
-installed_at = ".claude/agents/my-agent.md"
-
-[[agents]]
-name = "helper"
-source = "community"
-path = "agents/helper.md"
-version = "^1.2.0"
-resolved_version = "v1.2.5"
-resolved_commit = "789xyz012345"
-installed_at = ".claude/agents/helper.md"
-
-[[snippets]]
-name = "utils"
-source = "official"
-path = "snippets/utils.md"
-version = "v1.0.0"
-resolved_commit = "abc123def456"
-installed_at = "snippets/utils.md"
-"#;
-
-    /// Empty lockfile
-    pub const EMPTY: &str = "version = 1\n";
-}
-
-/// Test-specific environment variable guard
-/// Automatically restores original value when dropped
-pub struct EnvGuard {
-    key: String,
-    original: Option<String>,
-}
-
-impl EnvGuard {
-    /// Set an environment variable and return a guard
-    pub fn set(key: impl Into<String>, value: impl Into<String>) -> Self {
-        let key = key.into();
-        let original = std::env::var(&key).ok();
-        std::env::set_var(&key, value.into());
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(value) => std::env::set_var(&self.key, value),
-            None => std::env::remove_var(&self.key),
-        }
-    }
-}
-
-/// Initialize test logging
-pub fn init_test_logging() {
-    // Simple test logging initialization
-    // You can enhance this with env_logger if needed
-    std::env::set_var("RUST_LOG", "debug");
-}

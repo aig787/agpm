@@ -2842,7 +2842,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         results.warnings.push("Warning 1".to_string());
         results.warnings.push("Warning 2".to_string());
 
-        assert!(results.errors.len() > 0);
+        assert!(!results.errors.is_empty());
         assert_eq!(results.errors.len(), 2);
         assert_eq!(results.warnings.len(), 2);
     }

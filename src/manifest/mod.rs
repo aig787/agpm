@@ -33,12 +33,12 @@
 //!
 //! # Installation target directories (optional)
 //! [target]
-//! # Where agents should be installed (default: ".claude/agents")
-//! agents = ".claude/agents"
-//! # Where snippets should be installed (default: ".claude/snippets")
-//! snippets = ".claude/snippets"
-//! # Where commands should be installed (default: ".claude/commands")
-//! commands = ".claude/commands"
+//! # Where agents should be installed (default: ".claude/agents/ccpm")
+//! agents = ".claude/agents/ccpm"
+//! # Where snippets should be installed (default: ".claude/ccpm/snippets")
+//! snippets = ".claude/ccpm/snippets"
+//! # Where commands should be installed (default: ".claude/commands/ccpm")
+//! commands = ".claude/commands/ccpm"
 //!
 //! # Agent dependencies (optional)
 //! [agents]
@@ -91,9 +91,9 @@
 //! ```toml
 //! [target]
 //! # Default values shown - these can be customized
-//! agents = ".claude/agents"      # Where agent .md files are copied
-//! snippets = ".claude/snippets"  # Where snippet .md files are copied
-//! commands = ".claude/commands"  # Where command .md files are copied
+//! agents = ".claude/agents/ccpm"      # Where agent .md files are copied
+//! snippets = ".claude/ccpm/snippets"  # Where snippet .md files are copied
+//! commands = ".claude/commands/ccpm"  # Where command .md files are copied
 //!
 //! # Alternative configurations
 //! agents = "resources/agents"
@@ -451,9 +451,9 @@ pub struct Manifest {
 ///
 /// # Default Values
 ///
-/// - **Agents**: `.claude/agents` - Following Claude Code conventions
-/// - **Snippets**: `.claude/snippets` - Following Claude Code conventions
-/// - **Commands**: `.claude/commands` - Following Claude Code conventions
+/// - **Agents**: `.claude/agents/ccpm` - Following Claude Code conventions
+/// - **Snippets**: `.claude/ccpm/snippets` - Following Claude Code conventions
+/// - **Commands**: `.claude/commands/ccpm` - Following Claude Code conventions
 ///
 /// # Path Resolution
 ///
@@ -467,9 +467,9 @@ pub struct Manifest {
 /// ```toml
 /// # Default configuration (can be omitted)
 /// [target]
-/// agents = ".claude/agents"
-/// snippets = ".claude/snippets"
-/// commands = ".claude/commands"
+/// agents = ".claude/agents/ccpm"
+/// snippets = ".claude/ccpm/snippets"
+/// commands = ".claude/commands/ccpm"
 ///
 /// # Custom configuration
 /// [target]
@@ -497,7 +497,7 @@ pub struct TargetConfig {
     /// Agents are AI model definitions, prompts, or behavioral specifications.
     /// This directory will contain copies of agent files from dependencies.
     ///
-    /// **Default**: `.claude/agents` (following Claude Code conventions)
+    /// **Default**: `.claude/agents/ccpm` (following Claude Code conventions)
     #[serde(default = "default_agents_dir")]
     pub agents: String,
 
@@ -506,7 +506,7 @@ pub struct TargetConfig {
     /// Snippets are reusable code templates, examples, or documentation.
     /// This directory will contain copies of snippet files from dependencies.
     ///
-    /// **Default**: `.claude/snippets` (following Claude Code conventions)
+    /// **Default**: `.claude/ccpm/snippets` (following Claude Code conventions)
     #[serde(default = "default_snippets_dir")]
     pub snippets: String,
 
@@ -515,7 +515,7 @@ pub struct TargetConfig {
     /// Commands are Claude Code slash commands that provide custom functionality.
     /// This directory will contain copies of command files from dependencies.
     ///
-    /// **Default**: `.claude/commands` (following Claude Code conventions)
+    /// **Default**: `.claude/commands/ccpm` (following Claude Code conventions)
     #[serde(default = "default_commands_dir")]
     pub commands: String,
 
@@ -525,7 +525,7 @@ pub struct TargetConfig {
     /// not installed to this directory. This directory is used for tracking
     /// metadata about installed servers.
     ///
-    /// **Default**: `.claude/mcp-servers` (following Claude Code conventions)
+    /// **Default**: `.claude/ccpm/mcp-servers` (following Claude Code conventions)
     #[serde(default = "default_mcp_servers_dir", rename = "mcp-servers")]
     pub mcp_servers: String,
 }
@@ -542,19 +542,19 @@ impl Default for TargetConfig {
 }
 
 fn default_agents_dir() -> String {
-    ".claude/agents".to_string()
+    ".claude/agents/ccpm".to_string()
 }
 
 fn default_snippets_dir() -> String {
-    ".claude/snippets".to_string()
+    ".claude/ccpm/snippets".to_string()
 }
 
 fn default_commands_dir() -> String {
-    ".claude/commands".to_string()
+    ".claude/commands/ccpm".to_string()
 }
 
 fn default_mcp_servers_dir() -> String {
-    ".claude/mcp-servers".to_string()
+    ".claude/ccpm/mcp-servers".to_string()
 }
 
 /// A resource dependency specification supporting multiple formats.
@@ -872,7 +872,7 @@ impl Manifest {
     ///
     /// The new manifest will have:
     /// - No sources defined
-    /// - Default target directories (`.claude/agents` and `.claude/snippets`)
+    /// - Default target directories (`.claude/agents/ccpm` and `.claude/ccpm/snippets`)
     /// - No dependencies
     ///
     /// This is typically used when programmatically building a manifest or
@@ -889,7 +889,7 @@ impl Manifest {
     /// assert!(manifest.snippets.is_empty());
     /// assert!(manifest.commands.is_empty());
     /// assert!(manifest.mcp_servers.is_empty());
-    /// assert_eq!(manifest.target.agents, ".claude/agents");
+    /// assert_eq!(manifest.target.agents, ".claude/agents/ccpm");
     /// ```
     #[must_use]
     pub fn new() -> Self {
@@ -1040,8 +1040,8 @@ impl Manifest {
     /// official = "https://github.com/claude-org/resources.git"
     ///
     /// [target]
-    /// agents = ".claude/agents"
-    /// snippets = ".claude/snippets"
+    /// agents = ".claude/agents/ccpm"
+    /// snippets = ".claude/ccpm/snippets"
     ///
     /// [agents]
     /// helper = { source = "official", path = "agents/helper.md", version = "v1.0.0" }
@@ -2287,7 +2287,7 @@ mod tests {
     #[test]
     fn test_target_config_commands_dir() {
         let config = TargetConfig::default();
-        assert_eq!(config.commands, ".claude/commands");
+        assert_eq!(config.commands, ".claude/commands/ccpm");
 
         // Test custom config
         let mut manifest = Manifest::new();
@@ -2362,7 +2362,7 @@ mod tests {
     #[test]
     fn test_target_config_mcp_servers_dir() {
         let config = TargetConfig::default();
-        assert_eq!(config.mcp_servers, ".claude/mcp-servers");
+        assert_eq!(config.mcp_servers, ".claude/ccpm/mcp-servers");
 
         // Test custom config
         let mut manifest = Manifest::new();

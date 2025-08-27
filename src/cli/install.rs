@@ -912,7 +912,7 @@ mod tests {
         assert!(lockfile.agents[0].source.is_none()); // Local dependency has no source
 
         // Check that the agent was installed
-        let installed_path = temp.path().join(".claude/agents/local-agent.md");
+        let installed_path = temp.path().join(".claude/agents/ccpm/local-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# Local Agent"));
@@ -974,7 +974,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:test".to_string(),
-                installed_at: ".claude/agents/test-agent.md".to_string(),
+                installed_at: ".claude/agents/ccpm/test-agent.md".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -994,7 +994,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify agent was installed based on lockfile
-        let installed_path = temp.path().join(".claude/agents/test-agent.md");
+        let installed_path = temp.path().join(".claude/agents/ccpm/test-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1046,15 +1046,15 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/test-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/test-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
         assert!(result.is_ok());
 
         // Check that resource was installed
-        let installed_path = project_dir.join(".claude/agents/test-agent.md");
+        let installed_path = project_dir.join(".claude/agents/ccpm/test-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# Source Agent"));
@@ -1075,11 +1075,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/missing-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/missing-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Local file") && error_msg.contains("not found"));
@@ -1107,16 +1107,16 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/invalid-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/invalid-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
         // Should succeed - markdown parsing is lenient
         assert!(result.is_ok());
 
         // Check that resource was still installed
-        let installed_path = project_dir.join(".claude/agents/invalid-agent.md");
+        let installed_path = project_dir.join(".claude/agents/ccpm/invalid-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1142,7 +1142,7 @@ mod tests {
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
         assert!(result.is_ok());
 
         // Check that resource was installed at custom path
@@ -1152,7 +1152,7 @@ mod tests {
         assert!(content.contains("# Custom Agent"));
 
         // Check that it was NOT installed at the default location
-        let default_path = project_dir.join(".claude/agents/custom-agent.md");
+        let default_path = project_dir.join(".claude/agents/ccpm/custom-agent.md");
         assert!(!default_path.exists());
     }
 
@@ -1199,7 +1199,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/single-agent.md".to_string(),
+                installed_at: ".claude/agents/ccpm/single-agent.md".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1213,7 +1213,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1); // One resource installed
 
         // Check that resource was installed
-        let installed_path = project_dir.join(".claude/agents/single-agent.md");
+        let installed_path = project_dir.join(".claude/agents/ccpm/single-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1241,7 +1241,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/multi-agent.md".to_string(),
+                installed_at: ".claude/agents/ccpm/multi-agent.md".to_string(),
             }],
             snippets: vec![LockedResource {
                 name: "multi-snippet".to_string(),
@@ -1251,7 +1251,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/snippets/multi-snippet.md".to_string(),
+                installed_at: ".claude/ccpm/snippets/multi-snippet.md".to_string(),
             }],
             mcp_servers: vec![],
         };
@@ -1264,8 +1264,8 @@ mod tests {
         assert_eq!(result.unwrap(), 2); // Two resources installed
 
         // Check that both resources were installed
-        let installed_agent = project_dir.join(".claude/agents/multi-agent.md");
-        let installed_snippet = project_dir.join(".claude/snippets/multi-snippet.md");
+        let installed_agent = project_dir.join(".claude/agents/ccpm/multi-agent.md");
+        let installed_snippet = project_dir.join(".claude/ccpm/snippets/multi-snippet.md");
         assert!(installed_agent.exists());
         assert!(installed_snippet.exists());
     }
@@ -1293,7 +1293,7 @@ mod tests {
                     version: None,
                     resolved_commit: None,
                     checksum: "sha256:dummy".to_string(),
-                    installed_at: ".claude/agents/valid-agent.md".to_string(),
+                    installed_at: ".claude/agents/ccpm/valid-agent.md".to_string(),
                 },
                 LockedResource {
                     name: "missing-agent".to_string(),
@@ -1303,7 +1303,7 @@ mod tests {
                     version: None,
                     resolved_commit: None,
                     checksum: "sha256:dummy".to_string(),
-                    installed_at: ".claude/agents/missing-agent.md".to_string(),
+                    installed_at: ".claude/agents/ccpm/missing-agent.md".to_string(),
                 },
             ],
             snippets: vec![],
@@ -1342,15 +1342,16 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/test-resource.md".to_string(),
+                installed_at: ".claude/agents/ccpm/test-resource.md".to_string(),
             };
 
             let result =
-                install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+                install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None)
+                    .await;
             assert!(result.is_ok());
 
             // Verify file was installed
-            let installed_path = project_dir.join(".claude/agents/test-resource.md");
+            let installed_path = project_dir.join(".claude/agents/ccpm/test-resource.md");
             assert!(installed_path.exists());
         });
     }
@@ -1475,7 +1476,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify agent was installed
-        let installed_path = temp.path().join(".claude/agents/no-cache-agent.md");
+        let installed_path = temp.path().join(".claude/agents/ccpm/no-cache-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# No Cache Agent"));
@@ -1507,11 +1508,11 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:remote".to_string(),
-            installed_at: ".claude/agents/remote-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/remote-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
 
         // This should fail because we can't actually sync the source (no real git repo)
         assert!(result.is_err());
@@ -1533,13 +1534,19 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: None,
             checksum: "sha256:nourl".to_string(),
-            installed_at: ".claude/agents/no-url-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/no-url-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result =
-            install_resource(&entry, project_dir, ".claude/agents", &pb, Some(&cache)).await;
+        let result = install_resource(
+            &entry,
+            project_dir,
+            ".claude/agents/ccpm",
+            &pb,
+            Some(&cache),
+        )
+        .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -1629,7 +1636,7 @@ mod tests {
 
         // Verify all agents were installed
         for i in 1..=3 {
-            let installed_path = temp.path().join(format!(".claude/agents/agent{i}.md"));
+            let installed_path = temp.path().join(format!(".claude/agents/ccpm/agent{i}.md"));
             assert!(installed_path.exists());
         }
     }
@@ -1649,11 +1656,11 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: None,
             checksum: "sha256:remote".to_string(),
-            installed_at: ".claude/agents/remote-agent.md".to_string(),
+            installed_at: ".claude/agents/ccpm/remote-agent.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
 
         // Should handle gracefully when manifest doesn't exist (lines 682-684)
         // The specific behavior depends on implementation, but we exercise the code path
@@ -1685,11 +1692,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:missing".to_string(),
-            installed_at: ".claude/agents/missing-file.md".to_string(),
+            installed_at: ".claude/agents/ccpm/missing-file.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
 
         // Should fail when resource file not found - exercises lines 699-704
         assert!(result.is_err());
@@ -1713,11 +1720,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:invalid".to_string(),
-            installed_at: ".claude/agents/invalid-resource.md".to_string(),
+            installed_at: ".claude/agents/ccpm/invalid-resource.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
 
         // Markdown parsing is generally lenient, so this might succeed
         // But we exercise the validation code path (lines 713-715, 717)
@@ -1746,7 +1753,7 @@ mod tests {
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
         assert!(result.is_ok());
 
         // Verify file was installed in the deep path
@@ -1789,18 +1796,20 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:cachetest".to_string(),
-            installed_at: ".claude/agents/cache-test.md".to_string(),
+            installed_at: ".claude/agents/ccpm/cache-test.md".to_string(),
         };
 
         // Test without cache (local file copy path)
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
 
         // This should succeed for local file
         assert!(result.is_ok());
 
         // Verify the file was installed
-        assert!(project_dir.join(".claude/agents/cache-test.md").exists());
+        assert!(project_dir
+            .join(".claude/agents/ccpm/cache-test.md")
+            .exists());
     }
 
     /// Test single resource installation path (lines 342, 344-348, 350-351, 355, 357-361, 363-364)
@@ -1836,7 +1845,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify snippet was installed (tests lines for snippet installation)
-        let installed_path = temp.path().join(".claude/snippets/single-snippet.md");
+        let installed_path = temp.path().join(".claude/ccpm/snippets/single-snippet.md");
         assert!(installed_path.exists());
     }
 

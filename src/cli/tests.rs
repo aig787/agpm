@@ -267,11 +267,9 @@ mod cli_tests {
         assert!(result.is_ok(), "list command failed: {result:?}");
 
         // Verify we're still in the right directory and the manifest still exists
-        assert_eq!(
-            std::env::current_dir().unwrap().canonicalize().unwrap(),
-            temp_path,
-            "Current dir changed after list"
-        );
+        // Both should already be canonical since temp_path was canonicalized on line 245
+        let current = std::env::current_dir().unwrap().canonicalize().unwrap();
+        assert_eq!(current, temp_path, "Current dir changed after list");
         assert!(
             std::path::Path::new("ccpm.toml").exists(),
             "Manifest disappeared after list"
@@ -364,13 +362,16 @@ mod cli_tests {
 
     #[tokio::test]
     async fn test_cli_execute_mcp_command() {
+        use crate::test_utils::WorkingDirGuard;
         use tempfile::TempDir;
+
+        // Use WorkingDirGuard to properly manage directory changes
+        let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
 
-        // Save current dir to restore later
-        let original_dir = std::env::current_dir().unwrap();
+        // Change to temp directory
         std::env::set_current_dir(&temp_path).unwrap();
 
         // Create a manifest for MCP operations
@@ -381,10 +382,9 @@ mod cli_tests {
 
         let result = cli.execute().await;
 
-        // Restore original directory
-        std::env::set_current_dir(original_dir).unwrap();
-
         assert!(result.is_ok(), "MCP command failed: {result:?}");
+
+        // WorkingDirGuard will automatically restore the directory
     }
 
     #[tokio::test]
