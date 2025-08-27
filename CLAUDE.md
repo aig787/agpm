@@ -27,34 +27,57 @@ ccpm/
 ├── src/
 │   ├── main.rs           # CLI entry point
 │   ├── cli/              # Command implementations
-│   ├── core/             # Core functionality
+│   ├── cache/            # Cache management and locking
+│   ├── config/           # Global and project configuration
+│   ├── core/             # Core functionality and error handling
 │   ├── git/              # Git CLI wrapper
-│   ├── manifest/         # Manifest (ccpm.toml) parsing
+│   ├── hooks/            # Git hooks and merge strategies
 │   ├── lockfile/         # Lockfile (ccpm.lock) management
+│   ├── manifest/         # Manifest (ccpm.toml) parsing
 │   ├── markdown/         # Markdown file operations
+│   ├── mcp/              # MCP server management
+│   ├── models/           # Data models and structures
 │   ├── resolver/         # Dependency resolution
 │   ├── source/           # Source repository operations
-│   ├── version/          # Version constraint handling
-│   ├── config/           # Project configuration
-│   └── utils/            # Cross-platform utilities
+│   ├── test_utils/       # Testing utilities and fixtures
+│   ├── utils/            # Cross-platform utilities
+│   └── version/          # Version constraint handling
 ├── tests/                # Integration tests
 ├── Cargo.toml           # Project manifest
 ├── README.md            # User-facing documentation
-├── IMPLEMENTATION_PLAN.md # Paradigm shift implementation plan
-└── CLAUDE.md            # This file
+├── USAGE.md             # Usage guide and examples
+├── CONTRIBUTING.md      # Contribution guidelines
+├── LICENSE.md           # MIT License
+└── CLAUDE.md            # This file (AI context)
 ```
 
 ## Core Commands
 
 1. `install` - Install dependencies from ccpm.toml, generate/update ccpm.lock
+   - `--frozen` - Use existing lockfile without updates (for CI/production)
+   - `--no-cache` - Bypass cache and fetch directly from sources
 2. `update` - Update dependencies within version constraints
+   - Updates specific or all dependencies to latest compatible versions
 3. `list` - List installed resources from ccpm.lock
+   - Shows all installed agents, snippets, commands, and MCP servers
 4. `validate` - Validate ccpm.toml syntax and source availability
+   - `--check-lock` - Also validate lockfile consistency
+   - `--resolve` - Perform full dependency resolution check
 5. `cache` - Manage global git cache (~/.ccpm/cache/)
+   - `clean` - Remove unused cache entries
+   - `list` - Show cached repositories
 6. `config` - Manage global configuration (~/.ccpm/config.toml)
+   - `get` - Retrieve configuration values
+   - `set` - Set configuration values
 7. `mcp` - Manage MCP server configurations (list, clean, status)
+   - `list` - List installed MCP servers
+   - `clean` - Remove CCPM-managed MCP servers
+   - `status` - Check MCP server status
 8. `add` - Add sources and dependencies to ccpm.toml manifest
+   - `source` - Add a new source repository
+   - `dep` - Add a new dependency
 9. `init` - Initialize new CCPM project with ccpm.toml
+   - `--path` - Specify custom project directory
 
 ## Development Guidelines
 
@@ -140,42 +163,65 @@ RUST_LOG=debug cargo run
 cargo fmt && cargo clippy -- -D warnings && cargo test
 ```
 
-## Target Module Structure
+## Current Module Structure
 
 ```
 src/
 ├── main.rs              # Async entry point with error handling
-├── cli/                 # Simplified command set
+├── cli/                 # Command implementations
+│   ├── add.rs          # Add sources and dependencies to manifest
+│   ├── cache.rs        # Cache management commands
+│   ├── config.rs       # Global configuration management
+│   ├── init.rs         # Initialize new ccpm.toml
 │   ├── install.rs      # Install from ccpm.toml
-│   ├── update.rs       # Update within constraints
 │   ├── list.rs         # List from ccpm.lock
-│   ├── validate.rs     # Validate ccpm.toml
-│   └── mcp.rs          # MCP server management commands (NEW)
-├── manifest/           # Manifest management (NEW)
-│   └── mod.rs          # Parse ccpm.toml, handle dependencies
-├── lockfile/           # Lockfile management (UPDATED)
-│   └── mod.rs          # Generate/parse ccpm.lock, track MCP servers
-├── markdown/           # Markdown operations (NEW)
-│   └── mod.rs          # Read/write .md files, extract metadata
-├── mcp/                # MCP server management (NEW)
-│   └── mod.rs          # Manage .mcp.json configurations
-├── resolver/           # Dependency resolution (NEW)
-│   └── mod.rs          # Resolve versions, detect conflicts
-├── config/             # Project configuration (SIMPLIFIED)
-│   └── project.rs      # Project-specific settings only
+│   ├── mcp.rs          # MCP server management commands
+│   ├── update.rs       # Update within constraints
+│   └── validate.rs     # Validate ccpm.toml
+├── cache/              # Cache management
+│   ├── mod.rs          # Cache operations and paths
+│   └── lock.rs         # File locking for concurrent access
+├── config/             # Configuration management
+│   ├── global.rs       # Global configuration (~/.ccpm/config.toml)
+│   ├── agent.rs        # Agent-specific configurations
+│   └── parser.rs       # Configuration parsing utilities
 ├── core/               # Core types and error handling
-│   ├── error.rs        # Error types (updated)
-│   └── resource.rs     # Resource traits and types (includes McpServer)
-├── git/                # Git integration (SIMPLIFIED)
-│   └── mod.rs          # Git CLI wrapper using auth from global config
-├── source/             # Source operations (REFACTORED)
+│   ├── error.rs        # Error types with context
+│   ├── error_builders.rs # Error construction helpers
+│   └── resource.rs     # Resource traits and types
+├── git/                # Git integration
+│   └── mod.rs          # Git CLI wrapper using system git
+├── hooks/              # Git hooks support
+│   ├── merge.rs        # Merge strategy for lockfiles
+│   └── mod.rs          # Hook registration and management
+├── installer/          # Installation utilities
+│   └── mod.rs          # Shared resource installation logic
+├── lockfile/           # Lockfile management
+│   └── mod.rs          # Generate/parse ccpm.lock
+├── manifest/           # Manifest management
+│   └── mod.rs          # Parse ccpm.toml, handle dependencies
+├── markdown/           # Markdown operations
+│   └── mod.rs          # Read/write .md files, extract metadata
+├── mcp/                # MCP server management
+│   └── mod.rs          # Manage .mcp.json configurations
+├── models/             # Data models
+│   └── mod.rs          # Dependency specs and structures
+├── resolver/           # Dependency resolution
+│   ├── mod.rs          # Resolve versions, detect conflicts
+│   ├── redundancy.rs   # Redundancy detection
+│   └── version_resolution.rs # Version constraint resolution
+├── source/             # Source operations
 │   └── mod.rs          # Clone/cache sources from manifest
-├── version/            # Version handling (SIMPLIFIED)
-│   └── mod.rs          # Version constraint matching
-└── utils/              # Cross-platform utilities
-    ├── fs.rs           # File operations, atomic writes
-    ├── platform.rs     # Platform-specific helpers
-    └── progress.rs     # Progress bars and spinners
+├── test_utils/         # Testing utilities
+│   ├── fixtures.rs     # Test fixtures and helpers
+│   └── environment.rs  # Test environment setup
+├── utils/              # Cross-platform utilities
+│   ├── fs.rs           # File operations, atomic writes
+│   ├── platform.rs     # Platform-specific helpers
+│   ├── progress.rs     # Progress bars and spinners
+│   └── security.rs     # Security validations
+└── version/            # Version handling
+    └── mod.rs          # Version constraint matching
 ```
 
 ## Implementation Lessons Learned
@@ -218,6 +264,18 @@ CCPM copies files from the cache to project directories rather than using symlin
 3. **Platform-specific tests** - Use cfg(test) with platform conditions
 4. **Test infrastructure** - Git daemon for realistic repository testing
 
+### Integration Test Coverage
+
+The `tests/` directory contains comprehensive integration tests:
+- `integration_cross_platform.rs` - Cross-platform path and behavior testing
+- `integration_deploy.rs` - Deployment and installation scenarios
+- `integration_error_scenarios.rs` - Error handling and recovery
+- `integration_list.rs` - List command functionality
+- `integration_redundancy.rs` - Redundancy detection and handling
+- `integration_update.rs` - Update command and version constraint handling
+- `integration_validate.rs` - Manifest and lockfile validation
+- `integration_versioning.rs` - Version resolution and Git reference handling
+
 ## Notes for Claude
 
 - Focus on idiomatic Rust code
@@ -226,7 +284,9 @@ CCPM copies files from the cache to project directories rather than using symlin
 - CRITICAL: Ensure cross-platform compatibility (Windows, macOS, Linux)
 - Use async/await for potentially long-running operations (Git clones, etc.)
 - Implement progress indicators for long operations
-- Support multiple resource types (agents, snippets, commands, MCP servers)
+- Support multiple resource types (agents, snippets, commands, scripts, hooks, MCP servers)
+- Scripts are executable files (.sh, .js, .py) that can be referenced by hooks
+- Hooks are Claude Code automation scripts that respond to events
 - MCP servers are configured, not installed as files
 - Preserve user-managed entries in .mcp.json (non-destructive updates)
 - Handle Windows-specific issues (paths, permissions, shell differences)
@@ -269,16 +329,24 @@ CCPM copies files from the cache to project directories rather than using symlin
 ```toml
 [sources]
 community = "https://github.com/aig787/ccpm-community.git"
+local = "../my-local-resources"  # Local directory support
 
 [agents]
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-local-agent = { path = "../local-agents/helper.md" }
+local-agent = { path = "../local-agents/helper.md" }  # Direct local path
 
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 
 [commands]
 deployment = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
+
+[scripts]
+build-script = { source = "community", path = "scripts/build.sh", version = "v1.0.0" }
+test-runner = { source = "local", path = "scripts/test.js" }
+
+[hooks]
+pre-commit = { source = "community", path = "hooks/pre-commit.md", version = "v1.0.0" }
 
 [mcp-servers]
 filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
