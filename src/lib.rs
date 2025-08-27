@@ -18,6 +18,7 @@
 //! - [`config`] - Global and project configuration
 //! - [`core`] - Core types, error handling, and resource traits
 //! - [`git`] - Git operations wrapper using system git command
+//! - [`hooks`] - Hook configuration management for Claude Code automation
 //! - [`lockfile`] - Lockfile generation, parsing, and validation
 //! - [`manifest`] - Manifest (ccpm.toml) parsing and validation
 //! - [`markdown`] - Markdown file operations and metadata extraction
@@ -56,6 +57,7 @@ pub mod cli;
 pub mod config;
 pub mod core;
 pub mod git;
+pub mod hooks;
 pub mod installer;
 pub mod lockfile;
 pub mod manifest;

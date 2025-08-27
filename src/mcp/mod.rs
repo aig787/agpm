@@ -22,6 +22,10 @@ pub struct ClaudeSettings {
     #[serde(rename = "mcpServers", skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
 
+    /// Hook configurations for event-based automation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hooks: Option<Value>,
+
     /// Permissions configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permissions: Option<Value>,

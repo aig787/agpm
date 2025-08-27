@@ -429,6 +429,25 @@ pub struct LockFile {
     /// This field is omitted from TOML serialization if empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "mcp-servers")]
     pub mcp_servers: Vec<LockedMcpServer>,
+
+    /// Locked script resources with their exact versions and checksums.
+    ///
+    /// Contains all resolved script dependencies from the manifest, with exact
+    /// commit hashes, installation paths, and SHA-256 checksums for integrity
+    /// verification. Scripts are executable files that can be referenced by hooks.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<LockedResource>,
+
+    /// Locked hook configurations with their exact versions and checksums.
+    ///
+    /// Contains all resolved hook dependencies from the manifest. Hooks are
+    /// JSON configuration files that define event-based automation in Claude Code.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hooks: Vec<LockedResource>,
 }
 
 /// A locked source repository with resolved commit information.
@@ -633,6 +652,8 @@ impl LockFile {
             snippets: Vec::new(),
             commands: Vec::new(),
             mcp_servers: Vec::new(),
+            scripts: Vec::new(),
+            hooks: Vec::new(),
         }
     }
 
@@ -1047,6 +1068,8 @@ impl LockFile {
                 // This shouldn't be called for MCP servers
                 return;
             }
+            crate::core::ResourceType::Script => &mut self.scripts,
+            crate::core::ResourceType::Hook => &mut self.hooks,
         };
 
         // Remove existing entry if present

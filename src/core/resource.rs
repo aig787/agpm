@@ -17,53 +17,32 @@
 //!
 //! - [`ResourceType`] - Enumeration of supported resource types
 //! - [`Resource`] - Trait defining the interface for all resource types
-//! - [`detect_resource_type`] - Function to identify resource types from filesystem
 //!
-//! # Resource Detection
+//! # Resource Management
 //!
-//! CCPM identifies resource types by looking for specific manifest files in directories:
-//! - `agent.toml` → [`ResourceType::Agent`]
-//! - `snippet.toml` → [`ResourceType::Snippet`]
-//!
-//! Agent resources take precedence when both manifest files are present.
+//! Resources are defined in the project's `ccpm.toml` file and installed to specific
+//! directories based on their type. Scripts and hooks have special handling for
+//! Claude Code integration.
 //!
 //! # Examples
 //!
 //! ## Working with Resource Types
 //!
 //! ```rust
-//! use ccpm::core::{ResourceType, detect_resource_type};
+//! use ccpm::core::ResourceType;
 //! use std::path::Path;
 //!
 //! // Convert strings to resource types
 //! let agent_type: ResourceType = "agent".parse().unwrap();
 //! let snippet_type: ResourceType = "snippet".parse().unwrap();
-//!
-//! // Get manifest filenames
-//! assert_eq!(agent_type.manifest_filename(), "agent.toml");
-//! assert_eq!(snippet_type.manifest_filename(), "snippet.toml");
+//! let script_type: ResourceType = "script".parse().unwrap();
+//! let hook_type: ResourceType = "hook".parse().unwrap();
 //!
 //! // Get default directory names
 //! assert_eq!(agent_type.default_directory(), ".claude/agents/ccpm");
 //! assert_eq!(snippet_type.default_directory(), ".claude/ccpm/snippets");
-//! ```
-//!
-//! ## Detecting Resource Types
-//!
-//! ```rust
-//! use ccpm::core::{ResourceType, detect_resource_type};
-//! use std::path::Path;
-//! use tempfile::tempdir;
-//!
-//! let temp_dir = tempdir().unwrap();
-//! let path = temp_dir.path();
-//!
-//! // Initially no resource type detected
-//! assert_eq!(detect_resource_type(path), None);
-//!
-//! // Create agent manifest
-//! std::fs::write(path.join("agent.toml"), "# Agent configuration").unwrap();
-//! assert_eq!(detect_resource_type(path), Some(ResourceType::Agent));
+//! assert_eq!(script_type.default_directory(), ".claude/ccpm/scripts");
+//! assert_eq!(hook_type.default_directory(), ".claude/ccpm/hooks");
 //! ```
 //!
 //! ## Serialization Support
@@ -100,15 +79,23 @@ use std::path::Path;
 ///
 /// ## Agent
 /// - **Purpose**: AI assistant configurations, prompts, and behavioral definitions
-/// - **Manifest**: `agent.toml` file containing configuration
-/// - **Default Directory**: `agents/` in project root
+/// - **Default Directory**: `.claude/agents/ccpm`
 /// - **Common Use Cases**: Claude Code agents, custom AI assistants, specialized prompts
 ///
 /// ## Snippet  
 /// - **Purpose**: Reusable code templates, examples, and documentation fragments
-/// - **Manifest**: `snippet.toml` file containing metadata
-/// - **Default Directory**: `snippets/` in project root
+/// - **Default Directory**: `.claude/ccpm/snippets`
 /// - **Common Use Cases**: Code templates, configuration examples, documentation
+///
+/// ## Script
+/// - **Purpose**: Executable files that can be run by hooks or independently
+/// - **Default Directory**: `.claude/ccpm/scripts`
+/// - **Common Use Cases**: Validation scripts, automation tools, hook executables
+///
+/// ## Hook
+/// - **Purpose**: Event-based automation configurations for Claude Code
+/// - **Default Directory**: `.claude/ccpm/hooks`
+/// - **Common Use Cases**: Pre/Post tool use validation, custom event handlers
 ///
 /// # Examples
 ///
@@ -140,18 +127,19 @@ use std::path::Path;
 /// assert!("invalid".parse::<ResourceType>().is_err());
 /// ```
 ///
-/// ## Manifest and Directory Names
+/// ## Directory Names
 ///
 /// ```rust
 /// use ccpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
-/// assert_eq!(agent.manifest_filename(), "agent.toml");
 /// assert_eq!(agent.default_directory(), ".claude/agents/ccpm");
 ///
 /// let snippet = ResourceType::Snippet;  
-/// assert_eq!(snippet.manifest_filename(), "snippet.toml");
 /// assert_eq!(snippet.default_directory(), ".claude/ccpm/snippets");
+///
+/// let script = ResourceType::Script;
+/// assert_eq!(script.default_directory(), ".claude/ccpm/scripts");
 /// ```
 ///
 /// ## JSON Serialization
@@ -194,43 +182,23 @@ pub enum ResourceType {
     /// allowing Claude Code to access databases, APIs, and other tools.
     #[serde(rename = "mcp-server")]
     McpServer,
+
+    /// Executable script files
+    ///
+    /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
+    /// by hooks or run independently. They are installed to .claude/ccpm/scripts/
+    Script,
+
+    /// Hook configuration files
+    ///
+    /// Hooks define event-based automation in Claude Code. They are JSON files
+    /// that configure scripts to run at specific events (PreToolUse, PostToolUse, etc.)
+    /// and are merged into settings.local.json
+    Hook,
     // Future resource types can be added here
 }
 
 impl ResourceType {
-    /// Get the manifest filename for this resource type
-    ///
-    /// Each resource type has a specific manifest file that CCPM looks for
-    /// when detecting and validating resources.
-    ///
-    /// # Returns
-    ///
-    /// - [`Agent`] → `"agent.toml"`
-    /// - [`Snippet`] → `"snippet.toml"`
-    /// - [`Command`] → `"command.toml"`
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use ccpm::core::ResourceType;
-    ///
-    /// assert_eq!(ResourceType::Agent.manifest_filename(), "agent.toml");
-    /// assert_eq!(ResourceType::Snippet.manifest_filename(), "snippet.toml");
-    /// ```
-    ///
-    /// [`Agent`]: ResourceType::Agent
-    /// [`Snippet`]: ResourceType::Snippet
-    /// [`Command`]: ResourceType::Command
-    #[must_use]
-    pub fn manifest_filename(&self) -> &str {
-        match self {
-            ResourceType::Agent => "agent.toml",
-            ResourceType::Snippet => "snippet.toml",
-            ResourceType::Command => "command.toml",
-            ResourceType::McpServer => "mcp.toml",
-        }
-    }
-
     /// Get the default installation directory name for this resource type
     ///
     /// Returns the conventional directory name where resources of this type
@@ -242,6 +210,8 @@ impl ResourceType {
     /// - [`Snippet`] → `".claude/ccpm/snippets"`
     /// - [`Command`] → `.claude/commands/ccpm`
     /// - [`McpServer`] → `.claude/ccpm/mcp-servers`
+    /// - [`Script`] → `.claude/ccpm/scripts`
+    /// - [`Hook`] → `.claude/ccpm/hooks`
     ///
     /// # Examples
     ///
@@ -252,6 +222,8 @@ impl ResourceType {
     /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/ccpm/snippets");
     /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands/ccpm");
     /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/ccpm/mcp-servers");
+    /// assert_eq!(ResourceType::Script.default_directory(), ".claude/ccpm/scripts");
+    /// assert_eq!(ResourceType::Hook.default_directory(), ".claude/ccpm/hooks");
     /// ```
     ///
     /// # Note
@@ -263,6 +235,8 @@ impl ResourceType {
     /// [`Snippet`]: ResourceType::Snippet
     /// [`Command`]: ResourceType::Command
     /// [`McpServer`]: ResourceType::McpServer
+    /// [`Script`]: ResourceType::Script
+    /// [`Hook`]: ResourceType::Hook
     #[must_use]
     pub fn default_directory(&self) -> &str {
         match self {
@@ -270,6 +244,8 @@ impl ResourceType {
             ResourceType::Snippet => ".claude/ccpm/snippets",
             ResourceType::Command => ".claude/commands/ccpm",
             ResourceType::McpServer => ".claude/ccpm/mcp-servers",
+            ResourceType::Script => ".claude/ccpm/scripts",
+            ResourceType::Hook => ".claude/ccpm/hooks",
         }
     }
 }
@@ -281,6 +257,8 @@ impl std::fmt::Display for ResourceType {
             ResourceType::Snippet => write!(f, "snippet"),
             ResourceType::Command => write!(f, "command"),
             ResourceType::McpServer => write!(f, "mcp-server"),
+            ResourceType::Script => write!(f, "script"),
+            ResourceType::Hook => write!(f, "hook"),
         }
     }
 }
@@ -294,112 +272,13 @@ impl std::str::FromStr for ResourceType {
             "snippet" => Ok(ResourceType::Snippet),
             "command" => Ok(ResourceType::Command),
             "mcp-server" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
+            "script" => Ok(ResourceType::Script),
+            "hook" => Ok(ResourceType::Hook),
             _ => Err(crate::core::CcpmError::InvalidResourceType {
                 resource_type: s.to_string(),
             }),
         }
     }
-}
-
-/// Detect the resource type in a directory by examining manifest files
-///
-/// This function examines a directory and determines what type of resource it contains
-/// based on the presence of specific manifest files. It's used during resource discovery
-/// and validation to automatically classify resources.
-///
-/// # Detection Logic
-///
-/// 1. Checks for `agent.toml` - if found, returns [`ResourceType::Agent`]
-/// 2. Checks for `snippet.toml` - if found, returns [`ResourceType::Snippet`]  
-/// 3. Checks for `command.toml` - if found, returns [`ResourceType::Command`]
-/// 4. If no manifest files exist, returns `None`
-///
-/// # Precedence
-///
-/// Agent resources take precedence, followed by snippets, then commands. If multiple
-/// manifest files exist in the same directory, the function returns the highest priority type.
-///
-/// # Arguments
-///
-/// * `path` - The directory path to examine
-///
-/// # Returns
-///
-/// - `Some(ResourceType::Agent)` if `agent.toml` exists
-/// - `Some(ResourceType::Snippet)` if `snippet.toml` exists (and no `agent.toml`)
-/// - `None` if no recognized manifest files are found
-///
-/// # Examples
-///
-/// ## Basic Detection
-///
-/// ```rust
-/// use ccpm::core::{ResourceType, detect_resource_type};
-/// use tempfile::tempdir;
-/// use std::fs;
-///
-/// let temp = tempdir().unwrap();
-/// let path = temp.path();
-///
-/// // No manifest files - no resource type detected
-/// assert_eq!(detect_resource_type(path), None);
-///
-/// // Create agent manifest
-/// fs::write(path.join("agent.toml"), "# Agent configuration").unwrap();
-/// assert_eq!(detect_resource_type(path), Some(ResourceType::Agent));
-/// ```
-///
-/// ## Precedence Example  
-///
-/// ```rust
-/// use ccpm::core::{ResourceType, detect_resource_type};
-/// use tempfile::tempdir;
-/// use std::fs;
-///
-/// let temp = tempdir().unwrap();
-/// let path = temp.path();
-///
-/// // Create both manifest files
-/// fs::write(path.join("agent.toml"), "# Agent").unwrap();
-/// fs::write(path.join("snippet.toml"), "# Snippet").unwrap();
-///
-/// // Agent takes precedence
-/// assert_eq!(detect_resource_type(path), Some(ResourceType::Agent));
-/// ```
-///
-/// # File System Requirements
-///
-/// The function only checks for file existence using [`Path::exists`]. It does not:
-/// - Validate manifest file syntax or content
-/// - Check file permissions or readability
-/// - Examine the actual resource files (*.md)
-///
-/// For full resource validation, use the [`Resource::validate`] method on loaded resources.
-///
-/// [`Resource::validate`]: crate::core::Resource::validate
-#[allow(dead_code)]
-pub fn detect_resource_type(path: &Path) -> Option<ResourceType> {
-    // Check for agent.toml first (takes precedence)
-    if path.join("agent.toml").exists() {
-        return Some(ResourceType::Agent);
-    }
-
-    // Check for snippet.toml
-    if path.join("snippet.toml").exists() {
-        return Some(ResourceType::Snippet);
-    }
-
-    // Check for command.toml
-    if path.join("command.toml").exists() {
-        return Some(ResourceType::Command);
-    }
-
-    // Check for mcp.toml
-    if path.join("mcp.toml").exists() {
-        return Some(ResourceType::McpServer);
-    }
-
-    None
 }
 
 /// Base trait defining the interface for all CCPM resources
@@ -533,6 +412,8 @@ pub trait Resource {
     ///         ResourceType::Snippet => println!("This is a code snippet"),
     ///         ResourceType::Command => println!("This is a Claude Code command"),
     ///         ResourceType::McpServer => println!("This is an MCP server"),
+    ///         ResourceType::Script => println!("This is an executable script"),
+    ///         ResourceType::Hook => println!("This is a hook configuration"),
     ///     }
     /// }
     /// ```
@@ -776,15 +657,6 @@ pub trait Resource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_resource_type_manifest_filename() {
-        assert_eq!(ResourceType::Agent.manifest_filename(), "agent.toml");
-        assert_eq!(ResourceType::Snippet.manifest_filename(), "snippet.toml");
-        assert_eq!(ResourceType::Command.manifest_filename(), "command.toml");
-        assert_eq!(ResourceType::McpServer.manifest_filename(), "mcp.toml");
-    }
 
     #[test]
     fn test_resource_type_default_directory() {
@@ -804,6 +676,11 @@ mod tests {
             ResourceType::McpServer.default_directory(),
             ".claude/ccpm/mcp-servers"
         );
+        assert_eq!(
+            ResourceType::Script.default_directory(),
+            ".claude/ccpm/scripts"
+        );
+        assert_eq!(ResourceType::Hook.default_directory(), ".claude/ccpm/hooks");
     }
 
     #[test]
@@ -812,6 +689,8 @@ mod tests {
         assert_eq!(ResourceType::Snippet.to_string(), "snippet");
         assert_eq!(ResourceType::Command.to_string(), "command");
         assert_eq!(ResourceType::McpServer.to_string(), "mcp-server");
+        assert_eq!(ResourceType::Script.to_string(), "script");
+        assert_eq!(ResourceType::Hook.to_string(), "hook");
     }
 
     #[test]
@@ -850,6 +729,16 @@ mod tests {
             ResourceType::from_str("MCP").unwrap(),
             ResourceType::McpServer
         );
+        assert_eq!(
+            ResourceType::from_str("script").unwrap(),
+            ResourceType::Script
+        );
+        assert_eq!(
+            ResourceType::from_str("SCRIPT").unwrap(),
+            ResourceType::Script
+        );
+        assert_eq!(ResourceType::from_str("hook").unwrap(), ResourceType::Hook);
+        assert_eq!(ResourceType::from_str("HOOK").unwrap(), ResourceType::Hook);
 
         assert!(ResourceType::from_str("invalid").is_err());
     }
@@ -878,86 +767,22 @@ mod tests {
 
         let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, ResourceType::McpServer);
-    }
 
-    #[test]
-    fn test_detect_resource_type_agent() {
-        let temp = tempdir().unwrap();
-        let agent_toml = temp.path().join("agent.toml");
-        std::fs::write(&agent_toml, "# Agent manifest").unwrap();
+        // Test script serialization
+        let script = ResourceType::Script;
+        let json = serde_json::to_string(&script).unwrap();
+        assert_eq!(json, "\"script\"");
 
-        assert_eq!(detect_resource_type(temp.path()), Some(ResourceType::Agent));
-    }
+        let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, ResourceType::Script);
 
-    #[test]
-    fn test_detect_resource_type_snippet() {
-        let temp = tempdir().unwrap();
-        let snippet_toml = temp.path().join("snippet.toml");
-        std::fs::write(&snippet_toml, "# Snippet manifest").unwrap();
+        // Test hook serialization
+        let hook = ResourceType::Hook;
+        let json = serde_json::to_string(&hook).unwrap();
+        assert_eq!(json, "\"hook\"");
 
-        assert_eq!(
-            detect_resource_type(temp.path()),
-            Some(ResourceType::Snippet)
-        );
-    }
-
-    #[test]
-    fn test_detect_resource_type_none() {
-        let temp = tempdir().unwrap();
-        assert_eq!(detect_resource_type(temp.path()), None);
-    }
-
-    #[test]
-    fn test_detect_resource_type_command() {
-        let temp = tempdir().unwrap();
-        let command_toml = temp.path().join("command.toml");
-        std::fs::write(&command_toml, "# Command manifest").unwrap();
-
-        assert_eq!(
-            detect_resource_type(temp.path()),
-            Some(ResourceType::Command)
-        );
-    }
-
-    #[test]
-    fn test_detect_resource_type_precedence() {
-        let temp = tempdir().unwrap();
-        let agent_toml = temp.path().join("agent.toml");
-        let snippet_toml = temp.path().join("snippet.toml");
-        let command_toml = temp.path().join("command.toml");
-        std::fs::write(&agent_toml, "# Agent manifest").unwrap();
-        std::fs::write(&snippet_toml, "# Snippet manifest").unwrap();
-        std::fs::write(&command_toml, "# Command manifest").unwrap();
-
-        // Agent takes precedence when all exist
-        assert_eq!(detect_resource_type(temp.path()), Some(ResourceType::Agent));
-    }
-
-    #[test]
-    fn test_detect_resource_type_snippet_command_only() {
-        let temp = tempdir().unwrap();
-        let snippet_toml = temp.path().join("snippet.toml");
-        let command_toml = temp.path().join("command.toml");
-        std::fs::write(&snippet_toml, "# Snippet manifest").unwrap();
-        std::fs::write(&command_toml, "# Command manifest").unwrap();
-
-        // Snippet takes precedence over command
-        assert_eq!(
-            detect_resource_type(temp.path()),
-            Some(ResourceType::Snippet)
-        );
-    }
-
-    #[test]
-    fn test_detect_resource_type_mcp() {
-        let temp = tempdir().unwrap();
-        let mcp_toml = temp.path().join("mcp.toml");
-        std::fs::write(&mcp_toml, "# MCP manifest").unwrap();
-
-        assert_eq!(
-            detect_resource_type(temp.path()),
-            Some(ResourceType::McpServer)
-        );
+        let deserialized: ResourceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, ResourceType::Hook);
     }
 
     #[test]
@@ -967,6 +792,10 @@ mod tests {
         assert_ne!(ResourceType::Command, ResourceType::Snippet);
         assert_eq!(ResourceType::McpServer, ResourceType::McpServer);
         assert_ne!(ResourceType::McpServer, ResourceType::Agent);
+        assert_eq!(ResourceType::Script, ResourceType::Script);
+        assert_ne!(ResourceType::Script, ResourceType::Hook);
+        assert_eq!(ResourceType::Hook, ResourceType::Hook);
+        assert_ne!(ResourceType::Hook, ResourceType::Agent);
     }
 
     #[test]

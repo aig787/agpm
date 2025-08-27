@@ -106,7 +106,7 @@ impl TestGit {
 
 /// Test project builder for creating test environments
 pub struct TestProject {
-    _temp_dir: TempDir,  // Keep alive for RAII cleanup
+    _temp_dir: TempDir, // Keep alive for RAII cleanup
     project_dir: PathBuf,
     cache_dir: PathBuf,
     sources_dir: PathBuf,
@@ -131,7 +131,6 @@ impl TestProject {
             sources_dir,
         })
     }
-
 
     /// Get the project directory path
     pub fn project_path(&self) -> &Path {
@@ -374,5 +373,3 @@ impl DirAssert {
         );
     }
 }
-
-

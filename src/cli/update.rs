@@ -538,6 +538,8 @@ mod tests {
             snippets: HashMap::new(),
             commands: HashMap::new(),
             mcp_servers: HashMap::new(),
+            scripts: HashMap::new(),
+            hooks: HashMap::new(),
         }
     }
 
@@ -564,6 +566,8 @@ mod tests {
             }],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         }
     }
 

@@ -1467,6 +1467,8 @@ mod tests {
             }],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
         lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
 

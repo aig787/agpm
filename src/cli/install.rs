@@ -978,6 +978,8 @@ mod tests {
             }],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
         lockfile.save(&lockfile_path).unwrap();
 
@@ -1168,6 +1170,8 @@ mod tests {
             snippets: vec![],
             mcp_servers: vec![],
             commands: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
 
         let manifest = Manifest::new();
@@ -1203,6 +1207,8 @@ mod tests {
             }],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
 
         let manifest = Manifest::new();
@@ -1254,6 +1260,8 @@ mod tests {
                 installed_at: ".claude/ccpm/snippets/multi-snippet.md".to_string(),
             }],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
 
         let manifest = Manifest::new();
@@ -1308,6 +1316,8 @@ mod tests {
             ],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
 
         let manifest = Manifest::new();
@@ -1414,6 +1424,8 @@ mod tests {
             agents: vec![],
             snippets: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
         existing_lockfile.save(&lockfile_path).unwrap();
 

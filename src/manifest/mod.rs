@@ -441,6 +441,27 @@ pub struct Manifest {
         rename = "mcp-servers"
     )]
     pub mcp_servers: HashMap<String, crate::mcp::McpServerDependency>,
+
+    /// Script dependencies mapping names to their specifications.
+    ///
+    /// Scripts are executable files (.sh, .js, .py, etc.) that can be run by hooks
+    /// or independently. They are installed to `.claude/ccpm/scripts/` and can be
+    /// referenced by hook configurations.
+    ///
+    /// See [`ResourceDependency`] for specification format details.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<String, ResourceDependency>,
+
+    /// Hook dependencies mapping names to their specifications.
+    ///
+    /// Hooks are JSON configuration files that define event-based automation
+    /// in Claude Code. They specify when to run scripts based on tool usage,
+    /// prompts, and other events. Hook configurations are merged into
+    /// `settings.local.json`.
+    ///
+    /// See [`ResourceDependency`] for specification format details.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub hooks: HashMap<String, ResourceDependency>,
 }
 
 /// Target directories configuration specifying where resources are installed.
@@ -900,6 +921,8 @@ impl Manifest {
             snippets: HashMap::new(),
             commands: HashMap::new(),
             mcp_servers: HashMap::new(),
+            scripts: HashMap::new(),
+            hooks: HashMap::new(),
         }
     }
 
@@ -1544,6 +1567,12 @@ impl Manifest {
                 // MCP servers don't use ResourceDependency, they have their own type
                 // This method shouldn't be called for MCP servers
                 panic!("Use add_mcp_server() for MCP server dependencies");
+            }
+            crate::core::ResourceType::Script => {
+                self.scripts.insert(name, dep);
+            }
+            crate::core::ResourceType::Hook => {
+                self.hooks.insert(name, dep);
             }
         }
     }

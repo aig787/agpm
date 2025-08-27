@@ -922,6 +922,8 @@ mod tests {
             snippets: vec![],
             commands: vec![],
             mcp_servers: vec![],
+            scripts: vec![],
+            hooks: vec![],
         };
         lockfile.save(&work_dir.path().join("ccpm.lock")).unwrap();
 

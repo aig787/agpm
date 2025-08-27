@@ -20,6 +20,25 @@ provides reproducible, version-controlled installations of AI resources directly
 - **Parallel Operations**: Automatic parallel processing for faster installation and updates
 - **Comprehensive CLI**: Full-featured command-line interface with 8 commands
 
+## Resource Types
+
+CCPM supports multiple types of Claude Code resources:
+
+### Agents
+AI assistant configurations with prompts and behavioral definitions. Installed to `.claude/agents/ccpm/` by default.
+
+### Snippets
+Reusable code templates and documentation fragments. Installed to `.claude/ccpm/snippets/` by default.
+
+### Scripts
+Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently for automation tasks. Installed to `.claude/ccpm/scripts/` by default.
+
+### Hooks
+Event-based automation configurations for Claude Code. JSON files that define when to run scripts based on tool usage or other events (PreToolUse, PostToolUse, UserPromptSubmit, etc.). Installed to `.claude/ccpm/hooks/` and automatically merged into Claude Code settings.
+
+### MCP Servers
+Model Context Protocol servers that extend Claude Code's capabilities with external tools and APIs. Configured in `.mcp.json`.
+
 ## Installation
 
 ```bash
@@ -63,7 +82,17 @@ local-agent = { source = "local-deps", path = "agents/helper.md" }  # No version
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.0.0" }
 local-snippet = { source = "local-deps", path = "snippets/utils.md" }
 
-# MCP Servers (optional)
+# Scripts - Executable files for automation
+[scripts]
+security-check = { source = "community", path = "scripts/security.sh", version = "v1.0.0" }
+validation = { source = "community", path = "scripts/validate.py", version = "v1.0.0" }
+
+# Hooks - Event-based automation for Claude Code
+[hooks]
+pre-bash = { source = "community", path = "hooks/pre-bash.json", version = "v1.0.0" }
+post-tool = { source = "community", path = "hooks/post-tool.json", version = "v1.0.0" }
+
+# MCP Servers
 [mcp-servers]
 filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
 postgres = { command = "mcp-postgres", args = ["--connection", "${DATABASE_URL}"] }
@@ -175,8 +204,10 @@ local = "./local-resources"  # Local directory (no Git required)
 
 # Target directories (optional - defaults shown)
 [target]
-agents = ".claude/agents/ccpm"    # Where to install agents
-snippets = ".claude/ccpm/snippets" # Where to install snippets
+agents = ".claude/agents/ccpm"      # Where to install agents
+snippets = ".claude/ccpm/snippets"   # Where to install snippets
+scripts = ".claude/ccpm/scripts"     # Where to install scripts
+hooks = ".claude/ccpm/hooks"         # Where to install hooks
 
 # Agents
 [agents]
@@ -187,6 +218,16 @@ custom-agent = { source = "private", path = "agents/custom.md", version = "v2.1.
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 helper = { source = "community", path = "snippets/helper.md", version = "v1.0.0" }
+
+# Scripts - Executable files for automation
+[scripts]
+security = { source = "community", path = "scripts/security.sh", version = "v1.0.0" }
+validator = { source = "private", path = "scripts/validate.py", version = "v2.0.0" }
+
+# Hooks - Event-based automation configurations
+[hooks]
+pre-bash = { source = "community", path = "hooks/pre-bash.json", version = "v1.0.0" }
+validation = { source = "private", path = "hooks/validation.json", version = "v1.1.0" }
 ```
 
 ### Dependency Specification
@@ -584,6 +625,61 @@ After running `ccpm install`, your `.mcp.json` might look like:
   }
 }
 ```
+
+## Scripts and Hooks Examples
+
+### Script Example
+Scripts are executable files that can perform various automation tasks:
+
+```bash
+# scripts/security-check.sh
+#!/bin/bash
+echo "Checking for sensitive data..."
+grep -r "API_KEY\|SECRET\|PASSWORD" --exclude-dir=.git .
+if [ $? -eq 0 ]; then
+    echo "Warning: Potential sensitive data found!"
+    exit 1
+fi
+echo "Security check passed!"
+```
+
+### Hook Configuration Example
+Hooks are JSON files that configure when scripts should run:
+
+```json
+{
+  "events": ["PreToolUse"],
+  "matcher": "Bash|Write|Edit",
+  "type": "command",
+  "command": ".claude/ccpm/scripts/security-check.sh",
+  "timeout": 5000,
+  "description": "Security validation before file operations"
+}
+```
+
+This hook will run the security check script before Claude Code uses the Bash, Write, or Edit tools.
+
+### Hook Events
+Available hook events in Claude Code:
+- `PreToolUse` - Before a tool is executed
+- `PostToolUse` - After a tool completes
+- `UserPromptSubmit` - When user submits a prompt
+- `UserPromptReceive` - When prompt is received
+- `AssistantResponseReceive` - When assistant responds
+
+### Installing Scripts and Hooks
+```toml
+# ccpm.toml
+[scripts]
+security = { source = "security-tools", path = "scripts/security-check.sh", version = "v1.0.0" }
+validator = { source = "security-tools", path = "scripts/validate.py", version = "v1.0.0" }
+
+[hooks]
+pre-bash = { source = "security-tools", path = "hooks/pre-bash.json", version = "v1.0.0" }
+file-guard = { source = "security-tools", path = "hooks/file-guard.json", version = "v1.0.0" }
+```
+
+After running `ccpm install`, hooks are automatically merged into Claude Code's settings, preserving any existing user-configured hooks.
 
 ## Advanced Usage
 
