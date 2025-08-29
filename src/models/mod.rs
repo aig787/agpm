@@ -71,14 +71,6 @@ pub struct McpServerDependency {
     /// Common dependency specification fields
     #[command(flatten)]
     pub common: DependencySpec,
-
-    /// MCP server command to execute
-    #[arg(long = "mcp-command", value_name = "COMMAND")]
-    pub command: String,
-
-    /// MCP server command arguments
-    #[arg(long = "mcp-args", value_delimiter = ',', value_name = "ARGS")]
-    pub args: Vec<String>,
 }
 
 /// Enum representing all possible dependency types
@@ -90,6 +82,10 @@ pub enum DependencyType {
     Snippet(SnippetDependency),
     /// A command dependency
     Command(CommandDependency),
+    /// A script dependency
+    Script(ScriptDependency),
+    /// A hook dependency
+    Hook(HookDependency),
     /// An MCP server dependency
     McpServer(McpServerDependency),
 }
@@ -102,6 +98,8 @@ impl DependencyType {
             DependencyType::Agent(dep) => &dep.common,
             DependencyType::Snippet(dep) => &dep.common,
             DependencyType::Command(dep) => &dep.common,
+            DependencyType::Script(dep) => &dep.common,
+            DependencyType::Hook(dep) => &dep.common,
             DependencyType::McpServer(dep) => &dep.common,
         }
     }
@@ -113,6 +111,8 @@ impl DependencyType {
             DependencyType::Agent(_) => "agent",
             DependencyType::Snippet(_) => "snippet",
             DependencyType::Command(_) => "command",
+            DependencyType::Script(_) => "script",
+            DependencyType::Hook(_) => "hook",
             DependencyType::McpServer(_) => "mcp-server",
         }
     }
@@ -186,11 +186,6 @@ mod tests {
                 name: Some("test-server".to_string()),
                 force: true,
             },
-            command: "npx".to_string(),
-            args: vec![
-                "-y".to_string(),
-                "@modelcontextprotocol/server-github".to_string(),
-            ],
         });
 
         assert_eq!(mcp.common().spec, "test:mcp.toml");
@@ -198,4 +193,20 @@ mod tests {
         assert!(mcp.common().force);
         assert_eq!(mcp.resource_type(), "mcp-server");
     }
+}
+
+/// Arguments for adding a script dependency
+#[derive(Debug, Clone, Args)]
+pub struct ScriptDependency {
+    /// Common dependency specification fields
+    #[command(flatten)]
+    pub common: DependencySpec,
+}
+
+/// Arguments for adding a hook dependency
+#[derive(Debug, Clone, Args)]
+pub struct HookDependency {
+    /// Common dependency specification fields
+    #[command(flatten)]
+    pub common: DependencySpec,
 }

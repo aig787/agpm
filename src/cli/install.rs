@@ -69,10 +69,12 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use colored::Colorize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 
 use crate::cache::Cache;
+use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, Manifest};
 use crate::markdown::MarkdownFile;
@@ -317,7 +319,7 @@ impl InstallCommand {
         // Resolve dependencies (with global config support)
         let mut resolver = DependencyResolver::new_with_global(manifest.clone()).await?;
 
-        let mut lockfile = if let Some(existing) = existing_lockfile {
+        let lockfile = if let Some(existing) = existing_lockfile {
             if self.frozen {
                 // Use existing lockfile as-is
                 pb.set_message("Using frozen lockfile");
@@ -333,7 +335,12 @@ impl InstallCommand {
             resolver.resolve(Some(&pb)).await?
         };
 
-        let total = lockfile.agents.len() + lockfile.snippets.len() + lockfile.commands.len();
+        let total = lockfile.agents.len()
+            + lockfile.snippets.len()
+            + lockfile.commands.len()
+            + lockfile.scripts.len()
+            + lockfile.hooks.len()
+            + lockfile.mcp_servers.len();
 
         // Initialize cache
         let cache = if self.no_cache {
@@ -387,6 +394,45 @@ impl InstallCommand {
                 count += 1;
             }
 
+            for entry in &lockfile.scripts {
+                pb.set_message(format!("Installing 1/1 {}", entry.name));
+                install_resource(
+                    entry,
+                    project_dir,
+                    &manifest.target.scripts,
+                    &pb,
+                    cache.as_ref(),
+                )
+                .await?;
+                count += 1;
+            }
+
+            for entry in &lockfile.hooks {
+                pb.set_message(format!("Installing 1/1 {}", entry.name));
+                install_resource(
+                    entry,
+                    project_dir,
+                    &manifest.target.hooks,
+                    &pb,
+                    cache.as_ref(),
+                )
+                .await?;
+                count += 1;
+            }
+
+            for entry in &lockfile.mcp_servers {
+                pb.set_message(format!("Installing 1/1 {}", entry.name));
+                install_resource(
+                    entry,
+                    project_dir,
+                    &manifest.target.mcp_servers,
+                    &pb,
+                    cache.as_ref(),
+                )
+                .await?;
+                count += 1;
+            }
+
             count
         } else {
             // Install multiple resources
@@ -396,15 +442,109 @@ impl InstallCommand {
 
         pb.finish_with_message(format!("✅ Installed {installed_count} resources"));
 
-        // Install MCP servers (configuration only, not files)
-        if !manifest.mcp_servers.is_empty() {
-            pb.set_message("Configuring MCP servers");
-            let locked_mcp_servers = crate::mcp::install_mcp_servers(&manifest, project_dir)
-                .await
-                .with_context(|| "Failed to configure MCP servers")?;
+        // Update hooks configuration in settings.local.json
+        if !lockfile.hooks.is_empty() {
+            pb.set_message("Updating hooks in settings.local.json");
 
-            // Add to lockfile
-            lockfile.mcp_servers = locked_mcp_servers;
+            let claude_dir = project_dir.join(".claude");
+            let settings_path = claude_dir.join("settings.local.json");
+            crate::utils::fs::ensure_dir(&claude_dir)?;
+
+            let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
+
+            // Load hook configurations from disk
+            let mut ccpm_hooks = HashMap::new();
+            let mut source_info = HashMap::new();
+
+            for hook_entry in &lockfile.hooks {
+                let hook_path = project_dir.join(&hook_entry.installed_at);
+                if hook_path.exists() {
+                    let hook_content = std::fs::read_to_string(&hook_path)?;
+                    let hook_config: crate::hooks::HookConfig =
+                        serde_json::from_str(&hook_content)?;
+
+                    ccpm_hooks.insert(hook_entry.name.clone(), hook_config);
+                    source_info.insert(
+                        hook_entry.name.clone(),
+                        (
+                            hook_entry
+                                .source
+                                .as_ref()
+                                .unwrap_or(&"local".to_string())
+                                .clone(),
+                            hook_entry
+                                .version
+                                .as_ref()
+                                .unwrap_or(&"latest".to_string())
+                                .clone(),
+                        ),
+                    );
+                }
+            }
+
+            // Merge hooks using the advanced merge logic
+            let merge_result = crate::hooks::merge_hooks_advanced(
+                settings.hooks.as_ref(),
+                ccpm_hooks,
+                &source_info,
+            )?;
+
+            // Apply merged hooks to settings
+            crate::hooks::apply_hooks_to_settings(&mut settings, merge_result.hooks)?;
+
+            settings.save(&settings_path)?;
+
+            if !self.quiet {
+                if merge_result.ccpm_hooks_added > 0 {
+                    println!(
+                        "  Added {} new hooks to settings.local.json",
+                        merge_result.ccpm_hooks_added
+                    );
+                }
+                if merge_result.ccpm_hooks_updated > 0 {
+                    println!(
+                        "  Updated {} existing hooks in settings.local.json",
+                        merge_result.ccpm_hooks_updated
+                    );
+                }
+                if merge_result.user_hooks_preserved > 0 {
+                    println!(
+                        "  Preserved {} user-managed hooks",
+                        merge_result.user_hooks_preserved
+                    );
+                }
+            }
+        }
+
+        // Update MCP servers configuration in .mcp.json
+        if !lockfile.mcp_servers.is_empty() {
+            pb.set_message("Updating MCP servers in .mcp.json");
+
+            let mcp_config_path = project_dir.join(".mcp.json");
+            let mut mcp_config = crate::mcp::McpConfig::load_or_default(&mcp_config_path)?;
+
+            // Build map of CCPM-managed servers from lockfile
+            let mut ccpm_servers = HashMap::new();
+            for mcp_entry in &lockfile.mcp_servers {
+                let mcp_path = project_dir.join(&mcp_entry.installed_at);
+                if mcp_path.exists() {
+                    let mcp_content = std::fs::read_to_string(&mcp_path)?;
+                    let mcp_server_config: crate::mcp::McpServerConfig =
+                        serde_json::from_str(&mcp_content)?;
+                    ccpm_servers.insert(mcp_entry.name.clone(), mcp_server_config);
+                }
+            }
+
+            // Update MCP configuration with CCPM-managed servers
+            mcp_config.update_managed_servers(ccpm_servers)?;
+            mcp_config.save(&mcp_config_path)?;
+
+            if !self.quiet {
+                println!(
+                    "  Configured {} MCP servers in .mcp.json",
+                    lockfile.mcp_servers.len()
+                );
+            }
         }
 
         // Save lockfile unless --no-lock
@@ -412,16 +552,36 @@ impl InstallCommand {
             lockfile.save(&lockfile_path)?;
         }
 
+        // Update .claude/.gitignore if enabled
+        let gitignore_enabled = manifest.target.gitignore;
+
+        update_gitignore(&lockfile, project_dir, gitignore_enabled)?;
+
         // Print summary
         if !self.quiet {
             println!("\n{}", "Installation complete!".green().bold());
-            println!("  {} agents", lockfile.agents.len());
-            println!("  {} snippets", lockfile.snippets.len());
-            println!("  {} commands", lockfile.commands.len());
-            if !manifest.mcp_servers.is_empty() {
+            if !lockfile.agents.is_empty() {
+                println!("  {} agents", lockfile.agents.len());
+            }
+            if !lockfile.snippets.is_empty() {
+                println!("  {} snippets", lockfile.snippets.len());
+            }
+            if !lockfile.commands.is_empty() {
+                println!("  {} commands", lockfile.commands.len());
+            }
+            if !lockfile.scripts.is_empty() {
+                println!("  {} scripts", lockfile.scripts.len());
+            }
+            if !lockfile.hooks.is_empty() {
                 println!(
-                    "  {} MCP servers configured in .claude/settings.local.json",
-                    manifest.mcp_servers.len()
+                    "  {} hooks (configured in .claude/settings.local.json)",
+                    lockfile.hooks.len()
+                );
+            }
+            if !lockfile.mcp_servers.is_empty() {
+                println!(
+                    "  {} MCP servers (configured in .mcp.json)",
+                    lockfile.mcp_servers.len()
                 );
             }
         }
@@ -582,6 +742,15 @@ async fn install_resources_parallel(
     }
     for entry in &lockfile.commands {
         all_entries.push((entry, manifest.target.commands.as_str()));
+    }
+    for entry in &lockfile.scripts {
+        all_entries.push((entry, manifest.target.scripts.as_str()));
+    }
+    for entry in &lockfile.hooks {
+        all_entries.push((entry, manifest.target.hooks.as_str()));
+    }
+    for entry in &lockfile.mcp_servers {
+        all_entries.push((entry, manifest.target.mcp_servers.as_str()));
     }
 
     if all_entries.is_empty() {
@@ -893,6 +1062,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
@@ -912,7 +1083,7 @@ mod tests {
         assert!(lockfile.agents[0].source.is_none()); // Local dependency has no source
 
         // Check that the agent was installed
-        let installed_path = temp.path().join(".claude/agents/ccpm/local-agent.md");
+        let installed_path = temp.path().join(".claude/agents/local-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# Local Agent"));
@@ -956,6 +1127,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
@@ -974,7 +1147,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:test".to_string(),
-                installed_at: ".claude/agents/ccpm/test-agent.md".to_string(),
+                installed_at: ".claude/agents/test-agent.md".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -996,7 +1169,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify agent was installed based on lockfile
-        let installed_path = temp.path().join(".claude/agents/ccpm/test-agent.md");
+        let installed_path = temp.path().join(".claude/agents/test-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1018,6 +1191,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
@@ -1048,15 +1223,15 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/ccpm/test-agent.md".to_string(),
+            installed_at: ".claude/agents/test-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
         assert!(result.is_ok());
 
         // Check that resource was installed
-        let installed_path = project_dir.join(".claude/agents/ccpm/test-agent.md");
+        let installed_path = project_dir.join(".claude/agents/test-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# Source Agent"));
@@ -1077,11 +1252,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/ccpm/missing-agent.md".to_string(),
+            installed_at: ".claude/agents/missing-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Local file") && error_msg.contains("not found"));
@@ -1109,16 +1284,16 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
-            installed_at: ".claude/agents/ccpm/invalid-agent.md".to_string(),
+            installed_at: ".claude/agents/invalid-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
         // Should succeed - markdown parsing is lenient
         assert!(result.is_ok());
 
         // Check that resource was still installed
-        let installed_path = project_dir.join(".claude/agents/ccpm/invalid-agent.md");
+        let installed_path = project_dir.join(".claude/agents/invalid-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1144,7 +1319,7 @@ mod tests {
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
         assert!(result.is_ok());
 
         // Check that resource was installed at custom path
@@ -1154,7 +1329,7 @@ mod tests {
         assert!(content.contains("# Custom Agent"));
 
         // Check that it was NOT installed at the default location
-        let default_path = project_dir.join(".claude/agents/ccpm/custom-agent.md");
+        let default_path = project_dir.join(".claude/agents/custom-agent.md");
         assert!(!default_path.exists());
     }
 
@@ -1203,7 +1378,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/ccpm/single-agent.md".to_string(),
+                installed_at: ".claude/agents/single-agent.md".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1219,7 +1394,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1); // One resource installed
 
         // Check that resource was installed
-        let installed_path = project_dir.join(".claude/agents/ccpm/single-agent.md");
+        let installed_path = project_dir.join(".claude/agents/single-agent.md");
         assert!(installed_path.exists());
     }
 
@@ -1247,7 +1422,7 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/ccpm/multi-agent.md".to_string(),
+                installed_at: ".claude/agents/multi-agent.md".to_string(),
             }],
             snippets: vec![LockedResource {
                 name: "multi-snippet".to_string(),
@@ -1272,7 +1447,7 @@ mod tests {
         assert_eq!(result.unwrap(), 2); // Two resources installed
 
         // Check that both resources were installed
-        let installed_agent = project_dir.join(".claude/agents/ccpm/multi-agent.md");
+        let installed_agent = project_dir.join(".claude/agents/multi-agent.md");
         let installed_snippet = project_dir.join(".claude/ccpm/snippets/multi-snippet.md");
         assert!(installed_agent.exists());
         assert!(installed_snippet.exists());
@@ -1301,7 +1476,7 @@ mod tests {
                     version: None,
                     resolved_commit: None,
                     checksum: "sha256:dummy".to_string(),
-                    installed_at: ".claude/agents/ccpm/valid-agent.md".to_string(),
+                    installed_at: ".claude/agents/valid-agent.md".to_string(),
                 },
                 LockedResource {
                     name: "missing-agent".to_string(),
@@ -1311,7 +1486,7 @@ mod tests {
                     version: None,
                     resolved_commit: None,
                     checksum: "sha256:dummy".to_string(),
-                    installed_at: ".claude/agents/ccpm/missing-agent.md".to_string(),
+                    installed_at: ".claude/agents/missing-agent.md".to_string(),
                 },
             ],
             snippets: vec![],
@@ -1352,16 +1527,15 @@ mod tests {
                 version: None,
                 resolved_commit: None,
                 checksum: "sha256:dummy".to_string(),
-                installed_at: ".claude/agents/ccpm/test-resource.md".to_string(),
+                installed_at: ".claude/agents/test-resource.md".to_string(),
             };
 
             let result =
-                install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None)
-                    .await;
+                install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
             assert!(result.is_ok());
 
             // Verify file was installed
-            let installed_path = project_dir.join(".claude/agents/ccpm/test-resource.md");
+            let installed_path = project_dir.join(".claude/agents/test-resource.md");
             assert!(installed_path.exists());
         });
     }
@@ -1411,6 +1585,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
@@ -1470,6 +1646,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
@@ -1488,7 +1666,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify agent was installed
-        let installed_path = temp.path().join(".claude/agents/ccpm/no-cache-agent.md");
+        let installed_path = temp.path().join(".claude/agents/no-cache-agent.md");
         assert!(installed_path.exists());
         let content = fs::read_to_string(&installed_path).unwrap();
         assert!(content.contains("# No Cache Agent"));
@@ -1520,11 +1698,11 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:remote".to_string(),
-            installed_at: ".claude/agents/ccpm/remote-agent.md".to_string(),
+            installed_at: ".claude/agents/remote-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = install_resource(&entry, project_dir, ".claude/agents/ccpm", &pb, None).await;
+        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
 
         // This should fail because we can't actually sync the source (no real git repo)
         assert!(result.is_err());
@@ -1546,19 +1724,13 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: None,
             checksum: "sha256:nourl".to_string(),
-            installed_at: ".claude/agents/ccpm/no-url-agent.md".to_string(),
+            installed_at: ".claude/agents/no-url-agent.md".to_string(),
         };
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resource(
-            &entry,
-            project_dir,
-            ".claude/agents/ccpm",
-            &pb,
-            Some(&cache),
-        )
-        .await;
+        let result =
+            install_resource(&entry, project_dir, ".claude/agents", &pb, Some(&cache)).await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -1571,23 +1743,14 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("ccpm.toml");
 
-        // Create manifest with MCP servers
+        // Create manifest with MCP servers (now using standard ResourceDependency)
         let mut manifest = Manifest::new();
-        let mut mcp_servers = HashMap::new();
-        mcp_servers.insert(
+        manifest.add_mcp_server(
             "test-server".to_string(),
-            crate::mcp::McpServerDependency {
-                source: None,
-                path: None,
-                version: None,
-                branch: None,
-                rev: None,
-                command: "test-command".to_string(),
-                args: vec!["arg1".to_string(), "arg2".to_string()],
-                env: None,
-            },
+            crate::manifest::ResourceDependency::Simple(
+                "../local/mcp-servers/test-server.json".to_string(),
+            ),
         );
-        manifest.mcp_servers = mcp_servers;
         manifest.save(&manifest_path).unwrap();
 
         let cmd = InstallCommand::new();
@@ -1628,6 +1791,8 @@ mod tests {
                     rev: None,
                     command: None,
                     args: None,
+                    target: None,
+                    filename: None,
                 }),
             );
         }
@@ -1648,7 +1813,7 @@ mod tests {
 
         // Verify all agents were installed
         for i in 1..=3 {
-            let installed_path = temp.path().join(format!(".claude/agents/ccpm/agent{i}.md"));
+            let installed_path = temp.path().join(format!(".claude/agents/agent{i}.md"));
             assert!(installed_path.exists());
         }
     }
@@ -1668,11 +1833,11 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: None,
             checksum: "sha256:remote".to_string(),
-            installed_at: ".claude/agents/ccpm/remote-agent.md".to_string(),
+            installed_at: ".claude/agents/remote-agent.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
 
         // Should handle gracefully when manifest doesn't exist (lines 682-684)
         // The specific behavior depends on implementation, but we exercise the code path
@@ -1704,11 +1869,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:missing".to_string(),
-            installed_at: ".claude/agents/ccpm/missing-file.md".to_string(),
+            installed_at: ".claude/agents/missing-file.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
 
         // Should fail when resource file not found - exercises lines 699-704
         assert!(result.is_err());
@@ -1732,11 +1897,11 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:invalid".to_string(),
-            installed_at: ".claude/agents/ccpm/invalid-resource.md".to_string(),
+            installed_at: ".claude/agents/invalid-resource.md".to_string(),
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
 
         // Markdown parsing is generally lenient, so this might succeed
         // But we exercise the validation code path (lines 713-715, 717)
@@ -1765,7 +1930,7 @@ mod tests {
         };
 
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
         assert!(result.is_ok());
 
         // Verify file was installed in the deep path
@@ -1808,20 +1973,18 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:cachetest".to_string(),
-            installed_at: ".claude/agents/ccpm/cache-test.md".to_string(),
+            installed_at: ".claude/agents/cache-test.md".to_string(),
         };
 
         // Test without cache (local file copy path)
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents/ccpm", None).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", None).await;
 
         // This should succeed for local file
         assert!(result.is_ok());
 
         // Verify the file was installed
-        assert!(project_dir
-            .join(".claude/agents/ccpm/cache-test.md")
-            .exists());
+        assert!(project_dir.join(".claude/agents/cache-test.md").exists());
     }
 
     /// Test single resource installation path (lines 342, 344-348, 350-351, 355, 357-361, 363-364)
@@ -1847,6 +2010,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.snippets = snippets;
@@ -1884,6 +2049,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.commands = commands;
@@ -1928,25 +2095,18 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.agents = agents;
 
-        let mut mcp_servers = HashMap::new();
-        mcp_servers.insert(
+        manifest.add_mcp_server(
             "test-mcp".to_string(),
-            crate::mcp::McpServerDependency {
-                source: None,
-                path: None,
-                version: None,
-                branch: None,
-                rev: None,
-                command: "test-cmd".to_string(),
-                args: vec!["test-arg".to_string()],
-                env: None,
-            },
+            crate::manifest::ResourceDependency::Simple(
+                "../local/mcp-servers/test-mcp.json".to_string(),
+            ),
         );
-        manifest.mcp_servers = mcp_servers;
 
         manifest.save(&manifest_path).unwrap();
 

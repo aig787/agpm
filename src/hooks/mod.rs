@@ -115,6 +115,113 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
 // Re-export commonly used merge functions
 pub use merge::{apply_hooks_to_settings, merge_hooks_advanced, MergeResult};
 
+/// Install hooks from manifest to .claude/settings.local.json
+///
+/// This function:
+/// 1. Loads hook JSON files from .claude/ccpm/hooks/
+/// 2. Merges them into .claude/settings.local.json
+/// 3. Preserves user-managed hooks
+pub async fn install_hooks(
+    manifest: &crate::manifest::Manifest,
+    project_root: &Path,
+) -> Result<Vec<crate::lockfile::LockedResource>> {
+    if manifest.hooks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let claude_dir = project_root.join(".claude");
+    let hooks_dir = project_root.join(&manifest.target.hooks);
+    let settings_path = claude_dir.join("settings.local.json");
+
+    // Ensure directories exist
+    crate::utils::fs::ensure_dir(&hooks_dir)?;
+    crate::utils::fs::ensure_dir(&claude_dir)?;
+
+    // Load hook configurations from JSON files
+    let hook_configs = load_hook_configs(&hooks_dir)?;
+
+    // Build source info for hooks
+    let mut source_info = HashMap::new();
+    for (name, dep) in &manifest.hooks {
+        match dep {
+            crate::manifest::ResourceDependency::Detailed(detailed) => {
+                if let Some(source) = &detailed.source {
+                    let version = detailed
+                        .version
+                        .as_ref()
+                        .or(detailed.branch.as_ref())
+                        .or(detailed.rev.as_ref())
+                        .cloned()
+                        .unwrap_or_else(|| "latest".to_string());
+                    source_info.insert(name.clone(), (source.clone(), version));
+                }
+            }
+            crate::manifest::ResourceDependency::Simple(_) => {
+                // Local dependencies don't have source info
+                source_info.insert(name.clone(), ("local".to_string(), "latest".to_string()));
+            }
+        }
+    }
+
+    // Load existing settings
+    let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
+
+    // Merge hooks
+    let merge_result = merge_hooks_advanced(settings.hooks.as_ref(), hook_configs, &source_info)?;
+
+    // Apply merged hooks to settings
+    apply_hooks_to_settings(&mut settings, merge_result.hooks)?;
+
+    // Save updated settings
+    settings.save(&settings_path)?;
+
+    println!(
+        "✓ Configured {} hook(s) in .claude/settings.local.json",
+        manifest.hooks.len()
+    );
+
+    // Build locked entries for the lockfile
+    let locked_hooks: Vec<crate::lockfile::LockedResource> = manifest
+        .hooks
+        .iter()
+        .map(|(name, dep)| {
+            let installed_path = manifest.target.hooks.clone() + "/" + name + ".json";
+            match dep {
+                crate::manifest::ResourceDependency::Detailed(detailed) => {
+                    crate::lockfile::LockedResource {
+                        name: name.clone(),
+                        source: detailed.source.clone(),
+                        url: None,
+                        path: detailed.path.clone(),
+                        version: detailed
+                            .version
+                            .clone()
+                            .or(detailed.branch.clone())
+                            .or(detailed.rev.clone()),
+                        resolved_commit: None,
+                        checksum: String::new(),
+                        installed_at: installed_path,
+                    }
+                }
+                crate::manifest::ResourceDependency::Simple(path) => {
+                    crate::lockfile::LockedResource {
+                        name: name.clone(),
+                        source: None,
+                        url: None,
+                        path: path.clone(),
+                        version: None,
+                        resolved_commit: None,
+                        checksum: String::new(),
+                        installed_at: installed_path,
+                    }
+                }
+            }
+        })
+        .collect();
+
+    Ok(locked_hooks)
+}
+
 /// Validate a hook configuration
 pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<()> {
     // Validate events

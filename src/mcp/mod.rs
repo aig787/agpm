@@ -2,12 +2,14 @@
 //!
 //! This module handles the integration of MCP servers with CCPM, including:
 //! - Storing raw MCP server configurations in `.claude/ccpm/mcp-servers/`
-//! - Merging configurations into `.claude/settings.local.json`
+//! - Writing MCP server configurations to `.mcp.json` for Claude Code
 //! - Managing CCPM-controlled MCP server configurations
 //! - Preserving user-managed server configurations
-//! - Safe atomic updates to shared configuration files
+//! - Safe atomic updates to MCP configuration files
+//!
+//! Note: Hooks and permissions are handled separately and stored in `.claude/settings.local.json`
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -50,20 +52,32 @@ pub struct McpConfig {
 /// Individual MCP server configuration.
 ///
 /// This structure represents a single MCP server entry in the `.mcp.json` file.
-/// It includes the command to run, arguments, environment variables, and
-/// optional CCPM management metadata.
+/// It supports both command-based and HTTP transport configurations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerConfig {
-    /// The command to execute to start the server
-    pub command: String,
+    /// The command to execute to start the server (command-based servers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 
-    /// Arguments to pass to the command
+    /// Arguments to pass to the command (command-based servers)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 
-    /// Environment variables to set when running the server
+    /// Environment variables to set when running the server (command-based servers)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, Value>>,
+
+    /// Transport type (HTTP-based servers) - Claude Code uses "type" field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+
+    /// Server URL (HTTP-based servers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// HTTP headers (HTTP-based servers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, Value>>,
 
     /// CCPM management metadata (only present for CCPM-managed servers)
     #[serde(rename = "_ccpm", skip_serializing_if = "Option::is_none")]
@@ -119,7 +133,20 @@ impl ClaudeSettings {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            let backup_path = path.with_extension("json.backup");
+            // Put backup in .claude/ccpm directory
+            let ccpm_dir = path
+                .parent()
+                .ok_or_else(|| anyhow!("Invalid settings path"))?
+                .join("ccpm");
+
+            // Ensure .claude/ccpm directory exists
+            if !ccpm_dir.exists() {
+                std::fs::create_dir_all(&ccpm_dir).with_context(|| {
+                    format!("Failed to create directory: {}", ccpm_dir.display())
+                })?;
+            }
+
+            let backup_path = ccpm_dir.join("settings.local.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of settings at: {}",
@@ -218,7 +245,21 @@ impl McpConfig {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            let backup_path = path.with_extension("json.backup");
+            // Put backup in .claude/ccpm directory
+            let ccpm_dir = path
+                .parent()
+                .ok_or_else(|| anyhow!("Invalid MCP config path"))?
+                .join(".claude")
+                .join("ccpm");
+
+            // Ensure .claude/ccpm directory exists
+            if !ccpm_dir.exists() {
+                std::fs::create_dir_all(&ccpm_dir).with_context(|| {
+                    format!("Failed to create directory: {}", ccpm_dir.display())
+                })?;
+            }
+
+            let backup_path = ccpm_dir.join(".mcp.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of MCP configuration at: {}",
@@ -316,231 +357,72 @@ impl McpConfig {
     }
 }
 
-/// MCP server dependency specification from the manifest.
-///
-/// This represents an MCP server dependency as specified in `ccpm.toml`.
-/// It includes the same fields as regular dependencies plus MCP-specific fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpServerDependency {
-    /// Source repository name (for remote dependencies)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-
-    /// Path to the resource file in the source repository
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-
-    /// Version constraint (e.g., "v1.0.0", "^2.0", "latest")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-
-    /// Git branch name (e.g., "main", "develop")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-
-    /// Git commit hash (revision)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rev: Option<String>,
-
-    /// The command to execute (required for MCP servers)
-    pub command: String,
-
-    /// Arguments to pass to the command
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
-
-    /// Environment variables (supports ${VAR} expansion)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<HashMap<String, String>>,
-}
-
-impl McpServerDependency {
-    /// Convert to an MCP server configuration for the `.mcp.json` file.
-    #[must_use]
-    pub fn to_mcp_config(&self, name: &str) -> McpServerConfig {
-        McpServerConfig {
-            command: self.resolve_command(),
-            args: self.expand_args(),
-            env: self.expand_env(),
-            ccpm_metadata: Some(CcpmMetadata {
-                managed: true,
-                source: self.source.clone(),
-                version: self.version.clone(),
-                installed_at: Utc::now().to_rfc3339(),
-                dependency_name: Some(name.to_string()),
-            }),
-        }
-    }
-
-    /// Resolve the command path.
-    ///
-    /// If the command is a relative or absolute path, it's returned as-is.
-    /// Otherwise, it's assumed to be in PATH.
-    fn resolve_command(&self) -> String {
-        // TODO: Could use `which` crate to validate PATH commands
-        self.command.clone()
-    }
-
-    /// Expand arguments with environment variable substitution.
-    fn expand_args(&self) -> Vec<String> {
-        self.args.iter().map(|arg| expand_env_vars(arg)).collect()
-    }
-
-    /// Expand environment variables in the env map.
-    fn expand_env(&self) -> Option<HashMap<String, Value>> {
-        self.env.as_ref().map(|env| {
-            env.iter()
-                .map(|(key, value)| {
-                    let expanded = expand_env_vars(value);
-                    (key.clone(), Value::String(expanded))
-                })
-                .collect()
-        })
-    }
-}
-
-/// Expand environment variables in a string.
-///
-/// Supports ${VAR} and $VAR syntax.
-fn expand_env_vars(s: &str) -> String {
-    // For now, return as-is and let the shell handle expansion
-    // TODO: Implement proper environment variable expansion
-    s.to_string()
-}
-
-/// Install MCP servers from the manifest into `.claude/ccpm/mcp-servers/` and update settings.
+/// Configure MCP servers from installed JSON files into `.mcp.json`.
 ///
 /// This function:
-/// 1. Saves individual MCP server configs to `.claude/ccpm/mcp-servers/<name>.json`
-/// 2. Updates `.claude/settings.local.json` with merged MCP configurations
-/// 3. Returns locked MCP server entries for the lockfile
-pub async fn install_mcp_servers(
-    manifest: &crate::manifest::Manifest,
-    project_root: &Path,
-) -> Result<Vec<crate::lockfile::LockedMcpServer>> {
-    if manifest.mcp_servers.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let claude_dir = project_root.join(".claude");
-    let mcp_servers_dir = claude_dir.join("mcp-servers");
-    let settings_path = claude_dir.join("settings.local.json");
-
-    // Ensure directories exist
-    crate::utils::fs::ensure_dir(&mcp_servers_dir)?;
-
-    // Validate commands exist
-    for (name, dep) in &manifest.mcp_servers {
-        validate_command(&dep.command)
-            .with_context(|| format!("Invalid command for MCP server '{name}'"))?;
-    }
-
-    // Clean up old MCP server files that are no longer in the manifest
-    if mcp_servers_dir.exists() {
-        for entry in std::fs::read_dir(&mcp_servers_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "json") {
-                if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-                    if !manifest.mcp_servers.contains_key(name) {
-                        std::fs::remove_file(&path).with_context(|| {
-                            format!("Failed to remove old MCP server file: {}", path.display())
-                        })?;
-                    }
-                }
-            }
-        }
-    }
-
-    // Save each MCP server configuration to its own file
-    for (name, dep) in &manifest.mcp_servers {
-        let server_config = dep.to_mcp_config(name);
-        let server_path = mcp_servers_dir.join(format!("{name}.json"));
-
-        crate::utils::write_json_file(&server_path, &server_config, true).with_context(|| {
-            format!(
-                "Failed to write MCP server config: {}",
-                server_path.display()
-            )
-        })?;
-    }
-
-    // Load existing settings
-    let mut settings = ClaudeSettings::load_or_default(&settings_path)?;
-
-    // Update MCP servers from the stored configurations
-    settings.update_mcp_servers(&mcp_servers_dir)?;
-
-    // Check for conflicts with user-managed servers in existing settings
-    if let Some(servers) = &settings.mcp_servers {
-        let mut conflicts = Vec::new();
-        for name in manifest.mcp_servers.keys() {
-            if let Some(existing) = servers.get(name) {
-                // Conflict if the existing server is not managed by CCPM
-                if existing.ccpm_metadata.is_none()
-                    || !existing.ccpm_metadata.as_ref().unwrap().managed
-                {
-                    conflicts.push(name.clone());
-                }
-            }
-        }
-
-        if !conflicts.is_empty() {
-            return Err(anyhow::anyhow!(
-                "The following MCP servers already exist and are not managed by CCPM: {}\n\
-                 Please rename your servers or remove the existing ones from .claude/settings.local.json",
-                conflicts.join(", ")
-            ));
-        }
-    }
-
-    // Save the updated settings
-    settings.save(&settings_path)?;
-
-    println!(
-        "✓ Configured {} MCP server(s) in .claude/settings.local.json",
-        manifest.mcp_servers.len()
-    );
-
-    // Build locked entries for the lockfile
-    let locked_servers: Vec<crate::lockfile::LockedMcpServer> = manifest
-        .mcp_servers
-        .iter()
-        .map(|(name, dep)| crate::lockfile::LockedMcpServer {
-            name: name.clone(),
-            command: dep.command.clone(),
-            args: dep.args.clone(),
-            source: dep.source.clone(),
-            version: dep.version.clone(),
-            package: None, // Not using package managers, only git sources
-            configured_at: Utc::now().to_rfc3339(),
-        })
-        .collect();
-
-    Ok(locked_servers)
-}
-
-/// Validate that a command exists and is executable.
-fn validate_command(command: &str) -> Result<()> {
-    // Skip validation for common package runners that might not be installed yet
-    let skip_validation = ["npx", "uvx", "bunx", "deno"];
-    if skip_validation.contains(&command) {
+/// 1. Reads MCP server configurations from `.claude/ccpm/mcp-servers/` JSON files
+/// 2. Updates `.mcp.json` in project root with MCP configurations
+/// 3. Preserves user-managed servers
+pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) -> Result<()> {
+    if !mcp_servers_dir.exists() {
         return Ok(());
     }
 
-    // If it's an absolute path, check it exists
-    if command.starts_with('/') || command.starts_with("./") {
-        let path = Path::new(command);
-        if !path.exists() {
-            return Err(anyhow::anyhow!(
-                "Command '{}' does not exist.\n\
-                 Please ensure the file exists and has execute permissions.",
-                command
-            ));
+    let mcp_config_path = project_root.join(".mcp.json");
+
+    // Read all MCP server JSON files
+    let mut ccpm_servers = HashMap::new();
+    for entry in std::fs::read_dir(mcp_servers_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().is_some_and(|ext| ext == "json") {
+            if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                // Read and parse the MCP server configuration
+                let config: McpServerConfig =
+                    crate::utils::read_json_file(&path).with_context(|| {
+                        format!("Failed to parse MCP server file: {}", path.display())
+                    })?;
+
+                // Add CCPM metadata
+                let mut config_with_metadata = config;
+                if config_with_metadata.ccpm_metadata.is_none() {
+                    config_with_metadata.ccpm_metadata = Some(CcpmMetadata {
+                        managed: true,
+                        source: Some("ccpm".to_string()),
+                        version: None,
+                        installed_at: Utc::now().to_rfc3339(),
+                        dependency_name: Some(name.to_string()),
+                    });
+                }
+
+                ccpm_servers.insert(name.to_string(), config_with_metadata);
+            }
         }
     }
-    // For commands in PATH, we'll let the system handle it at runtime
-    // TODO: Could use `which` crate for better validation
+
+    if ccpm_servers.is_empty() {
+        return Ok(());
+    }
+
+    // Load existing MCP configuration
+    let mut mcp_config = McpConfig::load_or_default(&mcp_config_path)?;
+
+    // Check for conflicts with user-managed servers
+    let conflicts = mcp_config.check_conflicts(&ccpm_servers);
+    if !conflicts.is_empty() {
+        return Err(anyhow::anyhow!(
+            "The following MCP servers already exist and are not managed by CCPM: {}\n\
+             Please rename your servers or remove the existing ones from .mcp.json",
+            conflicts.join(", ")
+        ));
+    }
+
+    // Update MCP configuration with CCPM-managed servers
+    mcp_config.update_managed_servers(ccpm_servers)?;
+
+    // Save the updated MCP configuration
+    mcp_config.save(&mcp_config_path)?;
 
     Ok(())
 }
@@ -548,8 +430,9 @@ fn validate_command(command: &str) -> Result<()> {
 /// Remove all CCPM-managed MCP servers from the configuration.
 pub fn clean_mcp_servers(project_root: &Path) -> Result<()> {
     let claude_dir = project_root.join(".claude");
-    let mcp_servers_dir = claude_dir.join("mcp-servers");
-    let settings_path = claude_dir.join("settings.local.json");
+    let ccpm_dir = claude_dir.join("ccpm");
+    let mcp_servers_dir = ccpm_dir.join("mcp-servers");
+    let mcp_config_path = project_root.join(".mcp.json");
 
     // Remove all files from mcp-servers directory
     let mut removed_count = 0;
@@ -566,18 +449,11 @@ pub fn clean_mcp_servers(project_root: &Path) -> Result<()> {
         }
     }
 
-    // Update settings to remove CCPM-managed servers
-    if settings_path.exists() {
-        let mut settings = ClaudeSettings::load_or_default(&settings_path)?;
-        if let Some(servers) = &mut settings.mcp_servers {
-            servers.retain(|_, config| {
-                config
-                    .ccpm_metadata
-                    .as_ref()
-                    .is_none_or(|meta| !meta.managed)
-            });
-        }
-        settings.save(&settings_path)?;
+    // Update MCP config to remove CCPM-managed servers
+    if mcp_config_path.exists() {
+        let mut mcp_config = McpConfig::load_or_default(&mcp_config_path)?;
+        mcp_config.remove_all_managed();
+        mcp_config.save(&mcp_config_path)?;
     }
 
     if removed_count == 0 {
@@ -591,22 +467,21 @@ pub fn clean_mcp_servers(project_root: &Path) -> Result<()> {
 
 /// List all MCP servers, indicating which are CCPM-managed.
 pub fn list_mcp_servers(project_root: &Path) -> Result<()> {
-    let settings_path = project_root.join(".claude/settings.local.json");
+    let mcp_config_path = project_root.join(".mcp.json");
 
-    if !settings_path.exists() {
-        println!("No .claude/settings.local.json file found");
+    if !mcp_config_path.exists() {
+        println!("No .mcp.json file found");
         return Ok(());
     }
 
-    let settings = ClaudeSettings::load_or_default(&settings_path)?;
+    let mcp_config = McpConfig::load_or_default(&mcp_config_path)?;
 
-    let servers = settings.mcp_servers.as_ref();
-    if servers.is_none() || servers.as_ref().unwrap().is_empty() {
+    if mcp_config.mcp_servers.is_empty() {
         println!("No MCP servers configured");
         return Ok(());
     }
 
-    let servers = servers.unwrap();
+    let servers = &mcp_config.mcp_servers;
     println!("MCP Servers:");
     println!("╭─────────────────────┬──────────┬───────────╮");
     println!("│ Name                │ Managed  │ Version   │");
@@ -648,9 +523,12 @@ mod tests {
         servers.insert(
             "test-server".to_string(),
             McpServerConfig {
-                command: "node".to_string(),
+                command: Some("node".to_string()),
                 args: vec!["server.js".to_string()],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -691,7 +569,7 @@ mod tests {
     fn test_claude_settings_save_creates_backup() {
         let temp = tempdir().unwrap();
         let settings_path = temp.path().join("settings.local.json");
-        let backup_path = temp.path().join("settings.local.json.backup");
+        let backup_path = temp.path().join("ccpm").join("settings.local.json.backup");
 
         // Create initial file
         fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
@@ -699,7 +577,7 @@ mod tests {
         let settings = ClaudeSettings::default();
         settings.save(&settings_path).unwrap();
 
-        // Backup should be created
+        // Backup should be created in ccpm directory
         assert!(backup_path.exists());
         let backup_content = fs::read_to_string(backup_path).unwrap();
         assert_eq!(backup_content, r#"{"test": "value"}"#);
@@ -723,9 +601,12 @@ mod tests {
 
         // Create a server config file
         let server_config = McpServerConfig {
-            command: "managed".to_string(),
+            command: Some("managed".to_string()),
             args: vec![],
             env: None,
+            r#type: None,
+            url: None,
+            headers: None,
             ccpm_metadata: Some(CcpmMetadata {
                 managed: true,
                 source: Some("test".to_string()),
@@ -744,9 +625,12 @@ mod tests {
         servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "custom".to_string(),
+                command: Some("custom".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -777,9 +661,12 @@ mod tests {
         servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -788,9 +675,12 @@ mod tests {
         servers.insert(
             "old-managed".to_string(),
             McpServerConfig {
-                command: "old-command".to_string(),
+                command: Some("old-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: Some("old-source".to_string()),
@@ -805,9 +695,12 @@ mod tests {
 
         // Create new managed server config file
         let server_config = McpServerConfig {
-            command: "new-managed".to_string(),
+            command: Some("new-managed".to_string()),
             args: vec![],
             env: None,
+            r#type: None,
+            url: None,
+            headers: None,
             ccpm_metadata: Some(CcpmMetadata {
                 managed: true,
                 source: Some("new-source".to_string()),
@@ -858,9 +751,12 @@ mod tests {
 
         // Create valid JSON file
         let server_config = McpServerConfig {
-            command: "test".to_string(),
+            command: Some("test".to_string()),
             args: vec![],
             env: None,
+            r#type: None,
+            url: None,
+            headers: None,
             ccpm_metadata: None,
         };
         let json_path = mcp_servers_dir.join("valid.json");
@@ -921,13 +817,16 @@ mod tests {
         config.mcp_servers.insert(
             "test-server".to_string(),
             McpServerConfig {
-                command: "node".to_string(),
+                command: Some("node".to_string()),
                 args: vec!["server.js".to_string()],
                 env: Some({
                     let mut env = HashMap::new();
                     env.insert("NODE_ENV".to_string(), json!("production"));
                     env
                 }),
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -937,7 +836,7 @@ mod tests {
         let loaded = McpConfig::load_or_default(&config_path).unwrap();
         assert!(loaded.mcp_servers.contains_key("test-server"));
         let server = &loaded.mcp_servers["test-server"];
-        assert_eq!(server.command, "node");
+        assert_eq!(server.command, Some("node".to_string()));
         assert_eq!(server.args, vec!["server.js"]);
         assert!(server.env.is_some());
     }
@@ -965,7 +864,11 @@ mod tests {
     fn test_mcp_config_save_creates_backup() {
         let temp = tempdir().unwrap();
         let config_path = temp.path().join("mcp.json");
-        let backup_path = temp.path().join("mcp.json.backup");
+        let backup_path = temp
+            .path()
+            .join(".claude")
+            .join("ccpm")
+            .join(".mcp.json.backup");
 
         // Create initial file
         fs::write(
@@ -977,7 +880,7 @@ mod tests {
         let config = McpConfig::default();
         config.save(&config_path).unwrap();
 
-        // Backup should be created
+        // Backup should be created in .claude/ccpm directory
         assert!(backup_path.exists());
         let backup_content = fs::read_to_string(backup_path).unwrap();
         assert!(backup_content.contains("old"));
@@ -991,9 +894,12 @@ mod tests {
         config.mcp_servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -1002,9 +908,12 @@ mod tests {
         config.mcp_servers.insert(
             "old-managed".to_string(),
             McpServerConfig {
-                command: "old-command".to_string(),
+                command: Some("old-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1020,9 +929,12 @@ mod tests {
         updates.insert(
             "new-managed".to_string(),
             McpServerConfig {
-                command: "new-command".to_string(),
+                command: Some("new-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1050,9 +962,12 @@ mod tests {
         config.mcp_servers.insert(
             "updating-server".to_string(),
             McpServerConfig {
-                command: "old-command".to_string(),
+                command: Some("old-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1068,9 +983,12 @@ mod tests {
         updates.insert(
             "updating-server".to_string(),
             McpServerConfig {
-                command: "new-command".to_string(),
+                command: Some("new-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1085,7 +1003,7 @@ mod tests {
 
         assert!(config.mcp_servers.contains_key("updating-server"));
         let server = &config.mcp_servers["updating-server"];
-        assert_eq!(server.command, "new-command");
+        assert_eq!(server.command, Some("new-command".to_string()));
         assert_eq!(
             server.ccpm_metadata.as_ref().unwrap().version,
             Some("v2.0.0".to_string())
@@ -1100,9 +1018,12 @@ mod tests {
         config.mcp_servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -1111,9 +1032,12 @@ mod tests {
         config.mcp_servers.insert(
             "managed-server".to_string(),
             McpServerConfig {
-                command: "managed-command".to_string(),
+                command: Some("managed-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1128,9 +1052,12 @@ mod tests {
         new_servers.insert(
             "user-server".to_string(), // This conflicts
             McpServerConfig {
-                command: "new-command".to_string(),
+                command: Some("new-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1143,9 +1070,12 @@ mod tests {
         new_servers.insert(
             "managed-server".to_string(), // This doesn't conflict (already managed)
             McpServerConfig {
-                command: "updated-command".to_string(),
+                command: Some("updated-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1158,9 +1088,12 @@ mod tests {
         new_servers.insert(
             "new-server".to_string(), // This doesn't conflict (new)
             McpServerConfig {
-                command: "new-command".to_string(),
+                command: Some("new-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1183,9 +1116,12 @@ mod tests {
         config.mcp_servers.insert(
             "unmanaged-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: false,
                     source: None,
@@ -1200,9 +1136,12 @@ mod tests {
         new_servers.insert(
             "unmanaged-server".to_string(),
             McpServerConfig {
-                command: "new-command".to_string(),
+                command: Some("new-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1225,9 +1164,12 @@ mod tests {
         config.mcp_servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -1235,9 +1177,12 @@ mod tests {
         config.mcp_servers.insert(
             "managed-server".to_string(),
             McpServerConfig {
-                command: "managed-command".to_string(),
+                command: Some("managed-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1251,9 +1196,12 @@ mod tests {
         config.mcp_servers.insert(
             "unmanaged-with-metadata".to_string(),
             McpServerConfig {
-                command: "unmanaged-command".to_string(),
+                command: Some("unmanaged-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: false,
                     source: None,
@@ -1280,9 +1228,12 @@ mod tests {
         config.mcp_servers.insert(
             "user-server".to_string(),
             McpServerConfig {
-                command: "user-command".to_string(),
+                command: Some("user-command".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: None,
             },
         );
@@ -1290,9 +1241,12 @@ mod tests {
         config.mcp_servers.insert(
             "managed-server1".to_string(),
             McpServerConfig {
-                command: "managed-command1".to_string(),
+                command: Some("managed-command1".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: None,
@@ -1306,9 +1260,12 @@ mod tests {
         config.mcp_servers.insert(
             "managed-server2".to_string(),
             McpServerConfig {
-                command: "managed-command2".to_string(),
+                command: Some("managed-command2".to_string()),
                 args: vec![],
                 env: None,
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: Some("source".to_string()),
@@ -1326,112 +1283,9 @@ mod tests {
         assert!(!managed.contains_key("user-server"));
     }
 
-    // McpServerDependency tests
-    #[test]
-    fn test_mcp_server_dependency_to_config() {
-        let dep = McpServerDependency {
-            source: Some("test-source".to_string()),
-            path: Some("servers/test.js".to_string()),
-            version: Some("v1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: "node".to_string(),
-            args: vec![
-                "test.js".to_string(),
-                "--port".to_string(),
-                "3000".to_string(),
-            ],
-            env: Some({
-                let mut env = HashMap::new();
-                env.insert("NODE_ENV".to_string(), "production".to_string());
-                env.insert("DATABASE_URL".to_string(), "${DATABASE_URL}".to_string());
-                env
-            }),
-        };
-
-        let config = dep.to_mcp_config("test-server");
-
-        assert_eq!(config.command, "node");
-        assert_eq!(config.args, vec!["test.js", "--port", "3000"]);
-        assert!(config.env.is_some());
-
-        let env = config.env.as_ref().unwrap();
-        assert_eq!(env.get("NODE_ENV"), Some(&json!("production")));
-        assert_eq!(env.get("DATABASE_URL"), Some(&json!("${DATABASE_URL}")));
-
-        let metadata = config.ccpm_metadata.as_ref().unwrap();
-        assert!(metadata.managed);
-        assert_eq!(metadata.source, Some("test-source".to_string()));
-        assert_eq!(metadata.version, Some("v1.0.0".to_string()));
-        assert_eq!(metadata.dependency_name, Some("test-server".to_string()));
-        assert!(!metadata.installed_at.is_empty());
-    }
-
-    #[test]
-    fn test_mcp_server_dependency_minimal() {
-        let dep = McpServerDependency {
-            source: None,
-            path: None,
-            version: None,
-            branch: None,
-            rev: None,
-            command: "simple-command".to_string(),
-            args: vec![],
-            env: None,
-        };
-
-        let config = dep.to_mcp_config("simple");
-
-        assert_eq!(config.command, "simple-command");
-        assert!(config.args.is_empty());
-        assert!(config.env.is_none());
-
-        let metadata = config.ccpm_metadata.as_ref().unwrap();
-        assert!(metadata.managed);
-        assert!(metadata.source.is_none());
-        assert!(metadata.version.is_none());
-        assert_eq!(metadata.dependency_name, Some("simple".to_string()));
-    }
-
-    #[test]
-    fn test_expand_env_vars() {
-        // Currently a placeholder implementation
-        assert_eq!(expand_env_vars("${HOME}"), "${HOME}");
-        assert_eq!(expand_env_vars("$USER"), "$USER");
-        assert_eq!(expand_env_vars("literal"), "literal");
-        assert_eq!(expand_env_vars(""), "");
-    }
-
-    #[test]
-    fn test_validate_command_skip_validation() {
-        // These should pass without validation
-        assert!(validate_command("npx").is_ok());
-        assert!(validate_command("uvx").is_ok());
-        assert!(validate_command("bunx").is_ok());
-        assert!(validate_command("deno").is_ok());
-    }
-
-    #[test]
-    fn test_validate_command_absolute_path_nonexistent() {
-        let result = validate_command("/nonexistent/path/to/command");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("does not exist"));
-    }
-
-    #[test]
-    fn test_validate_command_relative_path_nonexistent() {
-        let result = validate_command("./nonexistent_command");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("does not exist"));
-    }
-
-    #[test]
-    fn test_validate_command_regular_command() {
-        // Regular commands in PATH should pass (we don't validate them)
-        assert!(validate_command("node").is_ok());
-        assert!(validate_command("python").is_ok());
-        assert!(validate_command("custom-command").is_ok());
-    }
+    // Tests for configure_mcp_servers function would go here
+    // Since MCP servers now use standard ResourceDependency and file-based approach,
+    // the old McpServerDependency tests are no longer applicable
 
     // Serialization tests
     #[test]
@@ -1446,13 +1300,16 @@ mod tests {
         servers.insert(
             "test".to_string(),
             McpServerConfig {
-                command: "test-cmd".to_string(),
+                command: Some("test-cmd".to_string()),
                 args: vec!["arg1".to_string()],
                 env: Some({
                     let mut env = HashMap::new();
                     env.insert("VAR".to_string(), json!("value"));
                     env
                 }),
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: Some("test-source".to_string()),
@@ -1485,13 +1342,16 @@ mod tests {
         config.mcp_servers.insert(
             "test".to_string(),
             McpServerConfig {
-                command: "test-cmd".to_string(),
+                command: Some("test-cmd".to_string()),
                 args: vec!["arg1".to_string(), "arg2".to_string()],
                 env: Some({
                     let mut env = HashMap::new();
                     env.insert("TEST_VAR".to_string(), json!("test_value"));
                     env
                 }),
+                r#type: None,
+                url: None,
+                headers: None,
                 ccpm_metadata: Some(CcpmMetadata {
                     managed: true,
                     source: Some("github.com/test/repo".to_string()),
@@ -1508,7 +1368,7 @@ mod tests {
 
         assert_eq!(deserialized.mcp_servers.len(), 1);
         let server = &deserialized.mcp_servers["test"];
-        assert_eq!(server.command, "test-cmd");
+        assert_eq!(server.command, Some("test-cmd".to_string()));
         assert_eq!(server.args.len(), 2);
         assert!(server.env.is_some());
         assert!(server.ccpm_metadata.is_some());
@@ -1522,16 +1382,19 @@ mod tests {
     #[test]
     fn test_mcp_server_config_minimal_serialization() {
         let config = McpServerConfig {
-            command: "minimal".to_string(),
+            command: Some("minimal".to_string()),
             args: vec![],
             env: None,
+            r#type: None,
+            url: None,
+            headers: None,
             ccpm_metadata: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: McpServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.command, "minimal");
+        assert_eq!(deserialized.command, Some("minimal".to_string()));
         assert!(deserialized.args.is_empty());
         assert!(deserialized.env.is_none());
         assert!(deserialized.ccpm_metadata.is_none());
@@ -1564,34 +1427,385 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_server_dependency_serialization() {
-        let dep = McpServerDependency {
-            source: Some("test-source".to_string()),
-            path: None,
-            version: Some("v1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: "test-command".to_string(),
-            args: vec!["arg1".to_string()],
-            env: Some({
-                let mut env = HashMap::new();
-                env.insert("VAR".to_string(), "value".to_string());
-                env
+    fn test_clean_mcp_servers() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_root = temp.path();
+        let claude_dir = project_root.join(".claude");
+        let ccpm_dir = claude_dir.join("ccpm");
+        let mcp_servers_dir = ccpm_dir.join("mcp-servers");
+        let settings_path = claude_dir.join("settings.local.json");
+        let mcp_config_path = project_root.join(".mcp.json");
+
+        // Create directory structure
+        std::fs::create_dir_all(&mcp_servers_dir).unwrap();
+
+        // Create MCP server files
+        let server1_path = mcp_servers_dir.join("server1.json");
+        let server2_path = mcp_servers_dir.join("server2.json");
+        let server_config = McpServerConfig {
+            command: Some("test".to_string()),
+            args: vec![],
+            env: None,
+            r#type: None,
+            url: None,
+            headers: None,
+            ccpm_metadata: Some(CcpmMetadata {
+                managed: true,
+                source: Some("test-source".to_string()),
+                version: Some("v1.0.0".to_string()),
+                installed_at: "2024-01-01T00:00:00Z".to_string(),
+                dependency_name: Some("test-server".to_string()),
             }),
         };
+        crate::utils::write_json_file(&server1_path, &server_config, true).unwrap();
+        crate::utils::write_json_file(&server2_path, &server_config, true).unwrap();
 
-        let json = serde_json::to_string(&dep).unwrap();
-        let deserialized: McpServerDependency = serde_json::from_str(&json).unwrap();
+        // Create settings with both CCPM-managed and user-managed servers
+        let mut settings = ClaudeSettings::default();
+        let mut servers = HashMap::new();
 
-        assert_eq!(deserialized.source, Some("test-source".to_string()));
-        assert_eq!(deserialized.path, None);
-        assert_eq!(deserialized.version, Some("v1.0.0".to_string()));
-        assert_eq!(deserialized.command, "test-command");
-        assert_eq!(deserialized.args, vec!["arg1"]);
-        assert!(deserialized.env.is_some());
+        // CCPM-managed server
+        servers.insert(
+            "ccpm-server".to_string(),
+            McpServerConfig {
+                command: Some("ccpm-cmd".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: Some(CcpmMetadata {
+                    managed: true,
+                    source: Some("test".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
 
-        // Check that None fields are skipped in serialization
-        assert!(!json.contains(r#""path""#));
-        assert!(!json.contains(r#""git""#));
+        // User-managed server
+        servers.insert(
+            "user-server".to_string(),
+            McpServerConfig {
+                command: Some("user-cmd".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: None,
+            },
+        );
+
+        settings.mcp_servers = Some(servers);
+        settings.save(&settings_path).unwrap();
+
+        // Create .mcp.json file with the same servers
+        let mut mcp_config = McpConfig::default();
+        mcp_config.mcp_servers.insert(
+            "ccpm-server".to_string(),
+            McpServerConfig {
+                command: Some("ccpm-cmd".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: Some(CcpmMetadata {
+                    managed: true,
+                    source: Some("test".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+        mcp_config.mcp_servers.insert(
+            "user-server".to_string(),
+            McpServerConfig {
+                command: Some("user-cmd".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: None,
+            },
+        );
+        mcp_config.save(&mcp_config_path).unwrap();
+
+        // Run clean_mcp_servers
+        clean_mcp_servers(project_root).unwrap();
+
+        // Verify MCP server files are deleted
+        assert!(!server1_path.exists());
+        assert!(!server2_path.exists());
+
+        // Verify .mcp.json only contains user-managed servers
+        let updated_mcp_config = McpConfig::load_or_default(&mcp_config_path).unwrap();
+        assert_eq!(updated_mcp_config.mcp_servers.len(), 1);
+        assert!(updated_mcp_config.mcp_servers.contains_key("user-server"));
+        assert!(!updated_mcp_config.mcp_servers.contains_key("ccpm-server"));
+    }
+
+    #[test]
+    fn test_clean_mcp_servers_no_servers() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        // Run clean_mcp_servers on empty project
+        let result = clean_mcp_servers(project_root);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_mcp_servers() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_root = temp.path();
+        let claude_dir = project_root.join(".claude");
+        let settings_path = claude_dir.join("settings.local.json");
+
+        std::fs::create_dir_all(&claude_dir).unwrap();
+
+        // Create settings with mixed servers
+        let mut settings = ClaudeSettings::default();
+        let mut servers = HashMap::new();
+
+        servers.insert(
+            "managed-server".to_string(),
+            McpServerConfig {
+                command: Some("managed".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: Some(CcpmMetadata {
+                    managed: true,
+                    source: Some("test".to_string()),
+                    version: Some("v2.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        servers.insert(
+            "user-server".to_string(),
+            McpServerConfig {
+                command: Some("user".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: None,
+            },
+        );
+
+        settings.mcp_servers = Some(servers);
+        settings.save(&settings_path).unwrap();
+
+        // Run list_mcp_servers - just verify it doesn't error
+        let result = list_mcp_servers(project_root);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_mcp_servers_no_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_root = temp.path();
+
+        // Run list_mcp_servers with no settings file
+        let result = list_mcp_servers(project_root);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_mcp_servers_empty() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_root = temp.path();
+        let claude_dir = project_root.join(".claude");
+        let settings_path = claude_dir.join("settings.local.json");
+
+        std::fs::create_dir_all(&claude_dir).unwrap();
+
+        // Create settings with no servers
+        let settings = ClaudeSettings::default();
+        settings.save(&settings_path).unwrap();
+
+        // Run list_mcp_servers
+        let result = list_mcp_servers(project_root);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_claude_settings_save_backup() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let settings_path = temp.path().join("settings.local.json");
+        let backup_path = temp.path().join("ccpm").join("settings.local.json.backup");
+
+        // Create initial settings
+        let settings1 = ClaudeSettings::default();
+        settings1.save(&settings_path).unwrap();
+        assert!(settings_path.exists());
+        assert!(!backup_path.exists());
+
+        // Save again to trigger backup
+        let settings2 = ClaudeSettings {
+            hooks: Some(serde_json::json!({"test": "hook"})),
+            ..Default::default()
+        };
+        settings2.save(&settings_path).unwrap();
+
+        // Verify backup was created in ccpm directory
+        assert!(backup_path.exists());
+
+        // Verify backup contains original content
+        let backup_content: ClaudeSettings = crate::utils::read_json_file(&backup_path).unwrap();
+        assert!(backup_content.hooks.is_none());
+
+        // Verify main file has new content
+        let main_content: ClaudeSettings = crate::utils::read_json_file(&settings_path).unwrap();
+        assert!(main_content.hooks.is_some());
+    }
+
+    #[test]
+    fn test_mcp_config_save_backup() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let config_path = temp.path().join(".mcp.json");
+        let backup_path = temp
+            .path()
+            .join(".claude")
+            .join("ccpm")
+            .join(".mcp.json.backup");
+
+        // Create initial config
+        let config1 = McpConfig::default();
+        config1.save(&config_path).unwrap();
+        assert!(config_path.exists());
+        assert!(!backup_path.exists());
+
+        // Save again with changes to trigger backup
+        let mut config2 = McpConfig::default();
+        config2.mcp_servers.insert(
+            "test".to_string(),
+            McpServerConfig {
+                command: Some("test-cmd".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: None,
+            },
+        );
+        config2.save(&config_path).unwrap();
+
+        // Verify backup was created in .claude/ccpm directory
+        assert!(backup_path.exists());
+
+        // Verify backup contains original content
+        let backup_content: McpConfig = crate::utils::read_json_file(&backup_path).unwrap();
+        assert!(backup_content.mcp_servers.is_empty());
+
+        // Verify main file has new content
+        let main_content: McpConfig = crate::utils::read_json_file(&config_path).unwrap();
+        assert_eq!(main_content.mcp_servers.len(), 1);
+    }
+
+    #[test]
+    fn test_update_mcp_servers_preserves_user_servers() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let ccpm_dir = temp.path().join(".claude").join("ccpm");
+        let mcp_servers_dir = ccpm_dir.join("mcp-servers");
+        std::fs::create_dir_all(&mcp_servers_dir).unwrap();
+
+        // Create server config files
+        let server1 = McpServerConfig {
+            command: Some("server1".to_string()),
+            args: vec!["arg1".to_string()],
+            env: None,
+            r#type: None,
+            url: None,
+            headers: None,
+            ccpm_metadata: Some(CcpmMetadata {
+                managed: true,
+                source: Some("source1".to_string()),
+                version: Some("v1.0.0".to_string()),
+                installed_at: "2024-01-01T00:00:00Z".to_string(),
+                dependency_name: None,
+            }),
+        };
+        crate::utils::write_json_file(&mcp_servers_dir.join("server1.json"), &server1, true)
+            .unwrap();
+
+        // Create settings with existing user server
+        let mut settings = ClaudeSettings::default();
+        let mut servers = HashMap::new();
+        servers.insert(
+            "user-server".to_string(),
+            McpServerConfig {
+                command: Some("user".to_string()),
+                args: vec![],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                ccpm_metadata: None,
+            },
+        );
+        settings.mcp_servers = Some(servers);
+
+        // Update from directory
+        settings.update_mcp_servers(&mcp_servers_dir).unwrap();
+
+        // Verify both servers are present
+        let servers = settings.mcp_servers.as_ref().unwrap();
+        assert_eq!(servers.len(), 2);
+        assert!(servers.contains_key("user-server"));
+        assert!(servers.contains_key("server1"));
+
+        // Verify server1 config matches
+        let server1_config = servers.get("server1").unwrap();
+        assert_eq!(server1_config.command, Some("server1".to_string()));
+        assert_eq!(server1_config.args, vec!["arg1"]);
+    }
+
+    #[test]
+    fn test_update_mcp_servers_nonexistent_dir() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let nonexistent_dir = temp.path().join("nonexistent");
+
+        let mut settings = ClaudeSettings::default();
+        let result = settings.update_mcp_servers(&nonexistent_dir);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_mcp_config_handles_extra_fields() {
+        // McpConfig doesn't preserve other fields, but it should parse files with extra fields
+        let json_str = r#"{
+            "mcpServers": {
+                "test": {
+                    "command": "test",
+                    "args": []
+                }
+            },
+            "customField": "value",
+            "anotherField": {
+                "nested": true
+            }
+        }"#;
+
+        let temp = tempdir().unwrap();
+        let config_path = temp.path().join(".mcp.json");
+        std::fs::write(&config_path, json_str).unwrap();
+
+        // Should parse successfully ignoring extra fields
+        let config = McpConfig::load_or_default(&config_path).unwrap();
+        assert!(config.mcp_servers.contains_key("test"));
+        assert_eq!(config.mcp_servers.len(), 1);
     }
 }

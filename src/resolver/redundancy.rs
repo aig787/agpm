@@ -325,6 +325,8 @@ impl RedundancyDetector {
     ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// detector.add_usage("my-helper".to_string(), &remote_dep);
     ///
@@ -813,6 +815,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -826,6 +830,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -856,6 +862,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -869,6 +877,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -895,6 +905,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -908,6 +920,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -956,6 +970,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -969,6 +985,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -999,6 +1017,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -1012,6 +1032,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 

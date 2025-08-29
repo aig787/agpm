@@ -17,7 +17,7 @@ test:
 
 # Run tests with verbose output
 test-verbose:
-	cargo test -- --nocapture
+	RUST_LOG=debug cargo test -- --nocapture
 
 # Clean build artifacts
 clean:

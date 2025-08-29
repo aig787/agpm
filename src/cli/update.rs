@@ -73,7 +73,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::cache::Cache;
-use crate::installer::install_updated_resources;
+use crate::installer::{install_updated_resources, update_gitignore};
 use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, Manifest};
 use crate::resolver::DependencyResolver;
@@ -460,6 +460,11 @@ impl UpdateCommand {
                         if !self.quiet && install_count > 0 {
                             println!("✅ Updated {install_count} resources");
                         }
+
+                        // Update .claude/.gitignore if enabled
+                        let gitignore_enabled = manifest.target.gitignore;
+
+                        update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
                     }
                     Err(e) => {
                         if self.backup {
@@ -528,6 +533,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 

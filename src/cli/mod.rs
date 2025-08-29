@@ -17,7 +17,8 @@
 //!
 //! ## Project Management
 //! - `init` - Initialize a new CCPM project with a manifest file
-//! - `add` - Add sources and dependencies to the project manifest  
+//! - `add` - Add sources and dependencies to the project manifest
+//! - `remove` - Remove sources and dependencies from the project manifest  
 //! - `install` - Install dependencies from the manifest
 //! - `update` - Update dependencies within version constraints
 //!
@@ -105,11 +106,13 @@
 
 mod add;
 mod cache;
+pub mod common;
 mod config;
 mod init;
 mod install;
 mod list;
-mod mcp;
+mod remove;
+mod resource_ops;
 mod update;
 pub mod validate;
 
@@ -240,10 +243,6 @@ impl CliConfig {
     /// // Now RUST_LOG=debug and CCPM_NO_PROGRESS=1 are set
     /// ```
     pub fn apply_to_env(&self) {
-        if let Some(ref level) = self.log_level {
-            std::env::set_var("RUST_LOG", level);
-        }
-
         if self.no_progress {
             std::env::set_var("CCPM_NO_PROGRESS", "1");
         }
@@ -428,6 +427,7 @@ pub struct Cli {
 /// ## Project Management
 /// - [`Init`](Commands::Init): Initialize new CCPM projects
 /// - [`Add`](Commands::Add): Add sources and dependencies
+/// - [`Remove`](Commands::Remove): Remove sources and dependencies
 /// - [`Install`](Commands::Install): Install dependencies from manifest
 /// - [`Update`](Commands::Update): Update dependencies within constraints
 ///
@@ -486,6 +486,15 @@ enum Commands {
     /// See [`add::AddCommand`] for detailed options and behavior.
     Add(add::AddCommand),
 
+    /// Remove sources and dependencies from the project manifest.
+    ///
+    /// Provides subcommands to remove Git repository sources and resource
+    /// dependencies (agents, snippets, commands, MCP servers) from the
+    /// `ccpm.toml` manifest file.
+    ///
+    /// See [`remove::RemoveCommand`] for detailed options and behavior.
+    Remove(remove::RemoveCommand),
+
     /// Install Claude Code resources from manifest dependencies.
     ///
     /// Reads the `ccpm.toml` manifest, resolves all dependencies, downloads
@@ -539,15 +548,6 @@ enum Commands {
     ///
     /// See [`config::ConfigCommand`] for detailed options and behavior.
     Config(config::ConfigCommand),
-
-    /// Manage MCP (Model Context Protocol) server configurations.
-    ///
-    /// Provides operations for managing MCP server configurations that
-    /// enable Claude Code to connect to external systems and services.
-    /// Handles both CCPM-managed and user-managed server configurations.
-    ///
-    /// See [`mcp::McpCommand`] for detailed options and behavior.
-    Mcp(mcp::McpCommand),
 }
 
 impl Cli {
@@ -693,13 +693,13 @@ impl Cli {
         match self.command {
             Commands::Init(cmd) => cmd.execute().await,
             Commands::Add(cmd) => cmd.execute().await,
+            Commands::Remove(cmd) => cmd.execute().await,
             Commands::Install(cmd) => cmd.execute().await,
             Commands::Update(cmd) => cmd.execute().await,
             Commands::List(cmd) => cmd.execute().await,
             Commands::Validate(cmd) => cmd.execute().await,
             Commands::Cache(cmd) => cmd.execute().await,
             Commands::Config(cmd) => cmd.execute().await,
-            Commands::Mcp(cmd) => cmd.execute().await,
         }
     }
 }

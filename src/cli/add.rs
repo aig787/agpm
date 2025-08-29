@@ -4,20 +4,24 @@
 //! to a CCPM project manifest. It supports both Git repository sources
 //! and various types of resource dependencies (agents, snippets, commands, MCP servers).
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use regex::Regex;
 use std::path::Path;
 
 use crate::cache::Cache;
-use crate::lockfile::{LockFile, LockedResource};
+use crate::cli::resource_ops::{
+    create_lock_entry, fetch_resource_content, get_resource_target_path, install_resource_file,
+    update_settings_for_hook, update_settings_for_mcp_server, validate_resource_content,
+};
+use crate::lockfile::LockFile;
 use crate::manifest::{find_manifest, DetailedDependency, Manifest, ResourceDependency};
 use crate::models::{
-    AgentDependency, CommandDependency, DependencyType, McpServerDependency, SnippetDependency,
-    SourceSpec,
+    AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
+    ScriptDependency, SnippetDependency, SourceSpec,
 };
-use crate::utils::fs::{atomic_write, ensure_dir};
+use crate::utils::fs::atomic_write;
 
 /// Command to add sources and dependencies to a CCPM project.
 #[derive(Args)]
@@ -55,6 +59,12 @@ enum DependencySubcommand {
     /// Add a command dependency
     Command(CommandDependency),
 
+    /// Add a script dependency
+    Script(ScriptDependency),
+
+    /// Add a hook dependency
+    Hook(HookDependency),
+
     /// Add an MCP server dependency
     McpServer(McpServerDependency),
 }
@@ -69,6 +79,8 @@ impl AddCommand {
                     DependencySubcommand::Agent(agent) => DependencyType::Agent(agent),
                     DependencySubcommand::Snippet(snippet) => DependencyType::Snippet(snippet),
                     DependencySubcommand::Command(command) => DependencyType::Command(command),
+                    DependencySubcommand::Script(script) => DependencyType::Script(script),
+                    DependencySubcommand::Hook(hook) => DependencyType::Hook(hook),
                     DependencySubcommand::McpServer(mcp) => DependencyType::McpServer(mcp),
                 };
                 add_dependency(dep_type).await
@@ -122,8 +134,8 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
     // Determine the resource type
     let resource_type = dep_type.resource_type();
 
-    // Handle MCP servers separately since they have a different type
-    if let DependencyType::McpServer(mcp) = &dep_type {
+    // Handle MCP servers (now using standard ResourceDependency)
+    if let DependencyType::McpServer(_) = &dep_type {
         // Check if dependency already exists
         if manifest.mcp_servers.contains_key(&name) && !common.force {
             return Err(anyhow!(
@@ -132,41 +144,18 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
             ));
         }
 
-        // Create MCP server dependency with command and args
-        let mcp_dep = match &dependency {
-            ResourceDependency::Detailed(detailed) => crate::mcp::McpServerDependency {
-                source: detailed.source.clone(),
-                path: Some(detailed.path.clone()),
-                version: detailed.version.clone(),
-                branch: detailed.branch.clone(),
-                rev: detailed.rev.clone(),
-                command: mcp.command.clone(),
-                args: mcp.args.clone(),
-                env: None,
-            },
-            ResourceDependency::Simple(path) => {
-                // Local MCP servers - path but no source/version
-                crate::mcp::McpServerDependency {
-                    source: None,
-                    path: Some(path.clone()),
-                    version: None,
-                    branch: None,
-                    rev: None,
-                    command: mcp.command.clone(),
-                    args: mcp.args.clone(),
-                    env: None,
-                }
-            }
-        };
-
-        // Add to manifest
-        manifest.mcp_servers.insert(name.clone(), mcp_dep);
+        // Add to manifest (MCP servers now use standard ResourceDependency)
+        manifest
+            .mcp_servers
+            .insert(name.clone(), dependency.clone());
     } else {
-        // Handle regular resources (agents, snippets, commands)
+        // Handle regular resources (agents, snippets, commands, scripts, hooks)
         let section = match &dep_type {
             DependencyType::Agent(_) => &mut manifest.agents,
             DependencyType::Snippet(_) => &mut manifest.snippets,
             DependencyType::Command(_) => &mut manifest.commands,
+            DependencyType::Script(_) => &mut manifest.scripts,
+            DependencyType::Hook(_) => &mut manifest.hooks,
             DependencyType::McpServer(_) => unreachable!(), // Handled above
         };
 
@@ -230,6 +219,8 @@ fn parse_dependency_spec(
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         ))
     } else if spec.starts_with("file:") || Path::new(spec).exists() {
@@ -270,82 +261,32 @@ async fn install_single_dependency(
     resource_type: &str,
     manifest: &Manifest,
 ) -> Result<()> {
-    // For MCP servers, we don't install files
-    if resource_type == "mcp-server" {
-        println!(
-            "{}",
-            "MCP server configuration added (no files to install)".yellow()
-        );
-        return Ok(());
-    }
-
-    // Get cache instance
+    let project_root = std::env::current_dir()?;
     let cache = Cache::new()?;
 
-    // Determine source path
-    let (source_path, source_name, resolved_commit) = match dependency {
-        ResourceDependency::Detailed(detailed) => {
-            if let Some(ref source_name) = detailed.source {
-                // Remote dependency - get from cache
-                let source_url = manifest
-                    .sources
-                    .get(source_name)
-                    .ok_or_else(|| anyhow!("Source '{}' not found in manifest", source_name))?;
+    // Step 1: Get the source file content
+    let (source_path, content) = fetch_resource_content(dependency, manifest, &cache).await?;
 
-                // Clone or fetch the repository
-                let version_ref = detailed
-                    .rev
-                    .as_deref()
-                    .or(detailed.branch.as_deref())
-                    .or(detailed.version.as_deref());
-                let cache_dir = cache
-                    .get_or_clone_source(source_name, source_url, version_ref)
-                    .await?;
+    // Step 2: Validate content based on resource type
+    validate_resource_content(&content, resource_type, name)?;
 
-                // Get the resolved commit hash
-                let git_repo = crate::git::GitRepo::new(&cache_dir);
-                let resolved_commit = git_repo.get_current_commit().await?;
-
-                (
-                    cache_dir.join(&detailed.path),
-                    Some(source_name.clone()),
-                    Some(resolved_commit),
-                )
-            } else {
-                // Local dependency with detailed path
-                (Path::new(&detailed.path).to_path_buf(), None, None)
-            }
-        }
-        ResourceDependency::Simple(path) => {
-            // Simple local dependency
-            (Path::new(path).to_path_buf(), None, None)
-        }
+    // Step 3: Determine target path and install the file
+    let target_path = if resource_type == "script" {
+        // For scripts, preserve the original extension
+        let extension = source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("sh");
+        project_root
+            .join(&manifest.target.scripts)
+            .join(format!("{}.{}", name, extension))
+    } else {
+        get_resource_target_path(name, resource_type, manifest, &project_root)?
     };
 
-    // Check if source file exists
-    if !source_path.exists() {
-        return Err(anyhow!("Source file not found: {}", source_path.display()));
-    }
+    install_resource_file(&target_path, &content)?;
 
-    // Read the source file
-    let content = std::fs::read_to_string(&source_path).context("Failed to read source file")?;
-
-    // Determine target directory based on resource type using manifest configuration
-    let target_dir = match resource_type {
-        "agent" => &manifest.target.agents,
-        "snippet" => &manifest.target.snippets,
-        "command" => &manifest.target.commands,
-        _ => return Err(anyhow!("Unknown resource type: {}", resource_type)),
-    };
-
-    // Create target directory if it doesn't exist
-    ensure_dir(Path::new(target_dir))?;
-
-    // Write the file
-    let target_path = Path::new(target_dir).join(format!("{name}.md"));
-    atomic_write(&target_path, content.as_bytes())?;
-
-    // Update or create lockfile
+    // Step 4: Update lockfile
     let lockfile_path = manifest_path_to_lockfile(&find_manifest()?);
     let mut lockfile = if lockfile_path.exists() {
         LockFile::load(&lockfile_path)?
@@ -353,56 +294,39 @@ async fn install_single_dependency(
         LockFile::new()
     };
 
-    // Calculate checksum of the installed file
-    let checksum = {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(&content);
-        format!("sha256:{:x}", hasher.finalize())
-    };
-
-    // Add lock entry
-    let lock_entry = LockedResource {
-        name: name.to_string(),
-        source: source_name.clone(),
-        url: source_name
-            .as_ref()
-            .and_then(|s| manifest.sources.get(s))
-            .cloned(),
-        path: match dependency {
-            ResourceDependency::Detailed(d) => d.path.clone(),
-            ResourceDependency::Simple(p) => p.clone(),
-        },
-        version: match dependency {
-            ResourceDependency::Detailed(d) => {
-                d.version.clone().or(d.branch.clone()).or(d.rev.clone())
-            }
-            ResourceDependency::Simple(_) => None,
-        },
-        resolved_commit,
-        checksum,
-        installed_at: target_path
-            .strip_prefix(std::env::current_dir()?)
-            .unwrap_or(&target_path)
-            .to_string_lossy()
-            .to_string(),
-    };
+    let lock_entry = create_lock_entry(
+        name,
+        dependency,
+        manifest,
+        &target_path,
+        &content,
+        None, // Not needed for direct installations
+    )?;
 
     // Add to appropriate section
     match resource_type {
         "agent" => lockfile.agents.push(lock_entry),
         "snippet" => lockfile.snippets.push(lock_entry),
         "command" => lockfile.commands.push(lock_entry),
+        "script" => lockfile.scripts.push(lock_entry),
+        "hook" => lockfile.hooks.push(lock_entry),
+        "mcp-server" => lockfile.mcp_servers.push(lock_entry),
         _ => {}
     }
 
-    // Save lockfile
     lockfile.save(&lockfile_path)?;
+
+    // Step 5: Update settings.local.json if needed (hooks and MCP servers)
+    if resource_type == "hook" {
+        update_settings_for_hook(name, &content, &project_root)?;
+    } else if resource_type == "mcp-server" {
+        update_settings_for_mcp_server(name, &content, &project_root)?;
+    }
 
     println!(
         "{}",
         format!(
-            "Installed {} '{}' to {}",
+            "✓ Installed {} '{}' to {}",
             resource_type,
             name,
             target_path.display()
@@ -433,9 +357,9 @@ mod tests {
         let manifest_content = r#"[sources]
 
 [target]
-agents = ".claude/agents/ccpm"
+agents = ".claude/agents"
 snippets = ".claude/ccpm/snippets"
-commands = ".claude/commands/ccpm"
+commands = ".claude/commands"
 
 [agents]
 
@@ -458,9 +382,9 @@ commands = ".claude/commands/ccpm"
 existing = "https://github.com/existing/repo.git"
 
 [target]
-agents = ".claude/agents/ccpm"
+agents = ".claude/agents"
 snippets = ".claude/ccpm/snippets"
-commands = ".claude/commands/ccpm"
+commands = ".claude/commands"
 
 [agents]
 existing-agent = "../local/agent.md"
@@ -472,7 +396,7 @@ existing-snippet = { source = "existing", path = "snippets/utils.md", version = 
 existing-command = { source = "existing", path = "commands/deploy.md", version = "v1.0.0" }
 
 [mcp-servers]
-existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
+existing-mcp = "../local/mcp-servers/existing.json"
 "#;
         // Ensure parent directory exists
         if let Some(parent) = manifest_path.parent() {
@@ -705,33 +629,48 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
 
+        // Create a test MCP server JSON file
+        let mcp_config = serde_json::json!({
+            "command": "npx",
+            "args": ["-y", "@test/mcp-server"],
+            "env": {}
+        });
+        let mcp_file_path = temp_dir.path().join("test-mcp.json");
+        std::fs::write(&mcp_file_path, mcp_config.to_string()).unwrap();
+
         // Change to temp directory
         _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Dep(DependencySubcommand::McpServer(McpServerDependency {
                 common: DependencySpec {
-                    spec: "local-config.toml".to_string(),
+                    spec: mcp_file_path.to_string_lossy().to_string(),
                     name: Some("test-mcp".to_string()),
                     force: false,
                 },
-                command: "npx".to_string(),
-                args: vec!["-y".to_string(), "@test/mcp-server".to_string()],
             })),
         };
 
         let result = add_command.execute().await;
 
-        // MCP servers don't install files, so this should succeed
         assert!(result.is_ok(), "Failed to add MCP server: {result:?}");
 
         // Verify the manifest was updated
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(manifest.mcp_servers.contains_key("test-mcp"));
 
-        let mcp_server = manifest.mcp_servers.get("test-mcp").unwrap();
-        assert_eq!(mcp_server.command, "npx");
-        assert_eq!(mcp_server.args, vec!["-y", "@test/mcp-server"]);
+        // Check that the file was installed
+        let installed_path = temp_dir
+            .path()
+            .join(".claude/ccpm/mcp-servers/test-mcp.json");
+        assert!(
+            installed_path.exists(),
+            "MCP server config should be installed"
+        );
+
+        // Check that settings.local.json was updated
+        let settings_path = temp_dir.path().join(".claude/settings.local.json");
+        assert!(settings_path.exists(), "Settings file should be created");
     }
 
     #[tokio::test]
@@ -850,26 +789,58 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
     // we'll test the error cases and the MCP server special case
     #[tokio::test]
     async fn test_install_single_dependency_mcp_server() {
+        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
 
+        // Create a test MCP server JSON file
+        let mcp_config = serde_json::json!({
+            "command": "node",
+            "args": ["server.js", "--port=3000"],
+            "env": {
+                "NODE_ENV": "production"
+            }
+        });
+        let mcp_file_path = temp_dir.path().join("test-mcp.json");
+        std::fs::write(&mcp_file_path, mcp_config.to_string()).unwrap();
+
+        // Change to temp directory
+        _guard.change_to(temp_dir.path()).unwrap();
+
+        // Load manifest and create dependency
         let manifest = Manifest::load(&manifest_path).unwrap();
-        let dependency = ResourceDependency::Simple("config.toml".to_string());
+        let dependency = ResourceDependency::Simple(mcp_file_path.to_string_lossy().to_string());
 
-        let result = install_single_dependency(
-            "test-mcp",
-            &dependency,
-            "mcp-server", // This should trigger the early return
-            &manifest,
-        )
-        .await;
+        let result =
+            install_single_dependency("test-mcp", &dependency, "mcp-server", &manifest).await;
 
-        // MCP servers should return OK without installing files
+        // MCP servers should install both the file and update settings
         assert!(
             result.is_ok(),
             "MCP server installation should succeed: {result:?}"
         );
+
+        // Check that the MCP server config was created
+        let mcp_config_path = temp_dir
+            .path()
+            .join(".claude/ccpm/mcp-servers/test-mcp.json");
+        assert!(
+            mcp_config_path.exists(),
+            "MCP server config file should be created"
+        );
+
+        // Check that settings.local.json was updated
+        let settings_path = temp_dir.path().join(".claude/settings.local.json");
+        assert!(settings_path.exists(), "Settings file should be created");
+
+        let settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path).unwrap();
+        assert!(settings.mcp_servers.is_some());
+        assert!(settings
+            .mcp_servers
+            .as_ref()
+            .unwrap()
+            .contains_key("test-mcp"));
     }
 
     #[tokio::test]
@@ -916,6 +887,8 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
             branch: None,
             rev: None,
             args: None,
+            target: None,
+            filename: None,
         });
 
         let result = install_single_dependency("test-agent", &dependency, "agent", &manifest).await;
@@ -974,12 +947,10 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
 
         let dep_type = DependencyType::McpServer(McpServerDependency {
             common: DependencySpec {
-                spec: "config.toml".to_string(),
+                spec: "different-command different args".to_string(),
                 name: Some("existing-mcp".to_string()), // Same name as existing
                 force: false,                           // Don't force overwrite
             },
-            command: "different-command".to_string(),
-            args: vec!["different".to_string(), "args".to_string()],
         });
 
         let result = add_dependency(dep_type).await;
@@ -1060,7 +1031,7 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
     }
 
     #[tokio::test]
-    async fn test_add_dependency_detailed_mcp_server() {
+    async fn test_add_dependency_mcp_server_with_file() {
         let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
@@ -1069,78 +1040,46 @@ existing-mcp = { command = "npx", args = ["-y", "@test/server"] }
         // Change to temp directory
         _guard.change_to(temp_dir.path()).unwrap();
 
-        // First add a source for testing detailed dependencies
-        let source = SourceSpec {
-            name: "test-source".to_string(),
-            url: "https://github.com/test/mcp-configs.git".to_string(),
-        };
-        add_source(source).await.unwrap();
+        // Create a test MCP server JSON file
+        let mcp_config = serde_json::json!({
+            "command": "node",
+            "args": ["server.js", "--port=3000"],
+            "env": {
+                "NODE_ENV": "production"
+            }
+        });
+        let mcp_file_path = temp_dir.path().join("test-mcp.json");
+        std::fs::write(&mcp_file_path, mcp_config.to_string()).unwrap();
 
         let dep_type = DependencyType::McpServer(McpServerDependency {
             common: DependencySpec {
-                spec: "test-source:configs/server.toml@v1.0.0".to_string(),
-                name: Some("detailed-mcp".to_string()),
+                spec: mcp_file_path.to_string_lossy().to_string(),
+                name: Some("file-mcp".to_string()),
                 force: false,
             },
-            command: "node".to_string(),
-            args: vec!["server.js".to_string(), "--port=3000".to_string()],
         });
 
         let result = add_dependency(dep_type).await;
 
-        // Should succeed for MCP servers since they don't install files
         assert!(
             result.is_ok(),
-            "Failed to add detailed MCP server: {result:?}"
+            "Failed to add MCP server with file: {result:?}"
         );
 
         let manifest = Manifest::load(&manifest_path).unwrap();
-        assert!(manifest.mcp_servers.contains_key("detailed-mcp"));
+        assert!(manifest.mcp_servers.contains_key("file-mcp"));
 
-        let mcp_server = manifest.mcp_servers.get("detailed-mcp").unwrap();
-        assert_eq!(mcp_server.command, "node");
-        assert_eq!(mcp_server.args, vec!["server.js", "--port=3000"]);
-        assert_eq!(mcp_server.source, Some("test-source".to_string()));
-        assert_eq!(mcp_server.path, Some("configs/server.toml".to_string()));
-        assert_eq!(mcp_server.version, Some("v1.0.0".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_add_dependency_simple_mcp_server() {
-        let _guard = WorkingDirGuard::new().unwrap();
-        let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
-        create_test_manifest(&manifest_path);
-
-        // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
-
-        let dep_type = DependencyType::McpServer(McpServerDependency {
-            common: DependencySpec {
-                spec: "local-config.toml".to_string(), // Simple path spec
-                name: Some("simple-mcp".to_string()),
-                force: false,
-            },
-            command: "python".to_string(),
-            args: vec!["mcp_server.py".to_string()],
-        });
-
-        let result = add_dependency(dep_type).await;
-
-        // Should succeed for MCP servers since they don't install files
+        // Check that the file was installed
+        let installed_path = temp_dir
+            .path()
+            .join(".claude/ccpm/mcp-servers/file-mcp.json");
         assert!(
-            result.is_ok(),
-            "Failed to add simple MCP server: {result:?}"
+            installed_path.exists(),
+            "MCP server config should be installed"
         );
 
-        let manifest = Manifest::load(&manifest_path).unwrap();
-        assert!(manifest.mcp_servers.contains_key("simple-mcp"));
-
-        let mcp_server = manifest.mcp_servers.get("simple-mcp").unwrap();
-        assert_eq!(mcp_server.command, "python");
-        assert_eq!(mcp_server.args, vec!["mcp_server.py"]);
-        assert_eq!(mcp_server.source, None); // Simple path has no source
-        assert_eq!(mcp_server.path, Some("local-config.toml".to_string()));
-        assert_eq!(mcp_server.version, None);
+        // Check that settings.local.json was updated
+        let settings_path = temp_dir.path().join(".claude/settings.local.json");
+        assert!(settings_path.exists(), "Settings file should be created");
     }
 }

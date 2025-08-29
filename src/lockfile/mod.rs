@@ -296,39 +296,6 @@ use std::path::{Path, PathBuf};
 
 use crate::utils::fs::atomic_write;
 
-/// A locked MCP server configuration.
-///
-/// Represents an MCP server that has been configured in `.mcp.json`.
-/// Unlike other resources, MCP servers are not installed as files but
-/// are configured to run as processes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockedMcpServer {
-    /// Server name as used in .mcp.json
-    pub name: String,
-
-    /// Command to execute
-    pub command: String,
-
-    /// Arguments to pass to the command
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
-
-    /// Source for tracking (e.g., "npm", "pypi")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-
-    /// Version or reference
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-
-    /// Package name if from a package manager
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub package: Option<String>,
-
-    /// When the server was configured
-    pub configured_at: String,
-}
-
 /// The main lockfile structure representing a complete `ccpm.lock` file.
 ///
 /// This structure contains all resolved dependencies, source repositories, and their
@@ -419,16 +386,16 @@ pub struct LockFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<LockedResource>,
 
-    /// Locked MCP server configurations.
+    /// Locked MCP server resources with their exact versions and checksums.
     ///
-    /// Contains metadata about configured MCP servers. Note that MCP servers
-    /// are not installed as files like other resources - they are configured
-    /// in the `.mcp.json` file. This lockfile entry tracks what servers have
-    /// been configured for reproducibility.
+    /// Contains all resolved MCP server dependencies from the manifest, with exact
+    /// commit hashes, installation paths, and SHA-256 checksums for integrity
+    /// verification. MCP servers are installed as JSON files and also configured
+    /// in `.claude/settings.local.json`.
     ///
     /// This field is omitted from TOML serialization if empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "mcp-servers")]
-    pub mcp_servers: Vec<LockedMcpServer>,
+    pub mcp_servers: Vec<LockedResource>,
 
     /// Locked script resources with their exact versions and checksums.
     ///
@@ -880,6 +847,9 @@ impl LockFile {
         write_resources(&mut content, &self.agents, "agents");
         write_resources(&mut content, &self.snippets, "snippets");
         write_resources(&mut content, &self.commands, "commands");
+        write_resources(&mut content, &self.scripts, "scripts");
+        write_resources(&mut content, &self.hooks, "hooks");
+        write_resources(&mut content, &self.mcp_servers, "mcp-servers");
 
         atomic_write(path, content.as_bytes()).with_context(|| {
             format!(
@@ -1206,12 +1176,49 @@ impl LockFile {
     /// - Validating checksums across all resources
     /// - Listing resources for user display
     /// - Bulk operations on all resources
+    ///   Get locked resources for a specific resource type
+    ///
+    ///
+    /// Returns a slice of locked resources for the specified type.
+    pub fn get_resources(&self, resource_type: crate::core::ResourceType) -> &[LockedResource] {
+        use crate::core::ResourceType;
+        match resource_type {
+            ResourceType::Agent => &self.agents,
+            ResourceType::Snippet => &self.snippets,
+            ResourceType::Command => &self.commands,
+            ResourceType::Script => &self.scripts,
+            ResourceType::Hook => &self.hooks,
+            ResourceType::McpServer => &self.mcp_servers,
+        }
+    }
+
+    /// Get mutable locked resources for a specific resource type
+    ///
+    /// Returns a mutable slice of locked resources for the specified type.
+    pub fn get_resources_mut(
+        &mut self,
+        resource_type: crate::core::ResourceType,
+    ) -> &mut Vec<LockedResource> {
+        use crate::core::ResourceType;
+        match resource_type {
+            ResourceType::Agent => &mut self.agents,
+            ResourceType::Snippet => &mut self.snippets,
+            ResourceType::Command => &mut self.commands,
+            ResourceType::Script => &mut self.scripts,
+            ResourceType::Hook => &mut self.hooks,
+            ResourceType::McpServer => &mut self.mcp_servers,
+        }
+    }
+
     #[must_use]
     pub fn all_resources(&self) -> Vec<&LockedResource> {
         let mut resources = Vec::new();
-        resources.extend(&self.agents);
-        resources.extend(&self.snippets);
-        resources.extend(&self.commands);
+
+        // Use ResourceType::all() to iterate through all resource types
+        for resource_type in crate::core::ResourceType::all() {
+            resources.extend(self.get_resources(*resource_type));
+        }
+
         resources
     }
 
@@ -1241,9 +1248,11 @@ impl LockFile {
     /// - Handling lockfile corruption recovery
     pub fn clear(&mut self) {
         self.sources.clear();
-        self.agents.clear();
-        self.snippets.clear();
-        self.commands.clear();
+
+        // Use ResourceType::all() to clear all resource types
+        for resource_type in crate::core::ResourceType::all() {
+            self.get_resources_mut(*resource_type).clear();
+        }
     }
 
     /// Compute SHA-256 checksum for a file with integrity verification.

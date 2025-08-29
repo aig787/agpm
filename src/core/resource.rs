@@ -39,7 +39,7 @@
 //! let hook_type: ResourceType = "hook".parse().unwrap();
 //!
 //! // Get default directory names
-//! assert_eq!(agent_type.default_directory(), ".claude/agents/ccpm");
+//! assert_eq!(agent_type.default_directory(), ".claude/agents");
 //! assert_eq!(snippet_type.default_directory(), ".claude/ccpm/snippets");
 //! assert_eq!(script_type.default_directory(), ".claude/ccpm/scripts");
 //! assert_eq!(hook_type.default_directory(), ".claude/ccpm/hooks");
@@ -79,7 +79,7 @@ use std::path::Path;
 ///
 /// ## Agent
 /// - **Purpose**: AI assistant configurations, prompts, and behavioral definitions
-/// - **Default Directory**: `.claude/agents/ccpm`
+/// - **Default Directory**: `.claude/agents`
 /// - **Common Use Cases**: Claude Code agents, custom AI assistants, specialized prompts
 ///
 /// ## Snippet  
@@ -133,7 +133,7 @@ use std::path::Path;
 /// use ccpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
-/// assert_eq!(agent.default_directory(), ".claude/agents/ccpm");
+/// assert_eq!(agent.default_directory(), ".claude/agents");
 ///
 /// let snippet = ResourceType::Snippet;  
 /// assert_eq!(snippet.default_directory(), ".claude/ccpm/snippets");
@@ -199,6 +199,38 @@ pub enum ResourceType {
 }
 
 impl ResourceType {
+    /// Get all resource types in a consistent order
+    ///
+    /// Returns an array containing all `ResourceType` variants. This is useful
+    /// for iterating over all resource types when processing manifests, lockfiles,
+    /// or performing batch operations.
+    ///
+    /// The order is guaranteed to be stable: Agent, Snippet, Command, McpServer, Script, Hook
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::core::ResourceType;
+    ///
+    /// // Iterate over all resource types
+    /// for resource_type in ResourceType::all() {
+    ///     println!("Processing {}", resource_type);
+    /// }
+    ///
+    /// // Count total resource types
+    /// assert_eq!(ResourceType::all().len(), 6);
+    /// ```
+    pub const fn all() -> &'static [ResourceType] {
+        &[
+            ResourceType::Agent,
+            ResourceType::Snippet,
+            ResourceType::Command,
+            ResourceType::McpServer,
+            ResourceType::Script,
+            ResourceType::Hook,
+        ]
+    }
+
     /// Get the default installation directory name for this resource type
     ///
     /// Returns the conventional directory name where resources of this type
@@ -206,9 +238,9 @@ impl ResourceType {
     ///
     /// # Returns
     ///
-    /// - [`Agent`] → `".claude/agents/ccpm"`
+    /// - [`Agent`] → `".claude/agents"`
     /// - [`Snippet`] → `".claude/ccpm/snippets"`
-    /// - [`Command`] → `.claude/commands/ccpm`
+    /// - [`Command`] → `.claude/commands`
     /// - [`McpServer`] → `.claude/ccpm/mcp-servers`
     /// - [`Script`] → `.claude/ccpm/scripts`
     /// - [`Hook`] → `.claude/ccpm/hooks`
@@ -218,9 +250,9 @@ impl ResourceType {
     /// ```rust
     /// use ccpm::core::ResourceType;
     ///
-    /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents/ccpm");
+    /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
     /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/ccpm/snippets");
-    /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands/ccpm");
+    /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands");
     /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/ccpm/mcp-servers");
     /// assert_eq!(ResourceType::Script.default_directory(), ".claude/ccpm/scripts");
     /// assert_eq!(ResourceType::Hook.default_directory(), ".claude/ccpm/hooks");
@@ -240,9 +272,9 @@ impl ResourceType {
     #[must_use]
     pub fn default_directory(&self) -> &str {
         match self {
-            ResourceType::Agent => ".claude/agents/ccpm",
+            ResourceType::Agent => ".claude/agents",
             ResourceType::Snippet => ".claude/ccpm/snippets",
-            ResourceType::Command => ".claude/commands/ccpm",
+            ResourceType::Command => ".claude/commands",
             ResourceType::McpServer => ".claude/ccpm/mcp-servers",
             ResourceType::Script => ".claude/ccpm/scripts",
             ResourceType::Hook => ".claude/ccpm/hooks",
@@ -660,17 +692,14 @@ mod tests {
 
     #[test]
     fn test_resource_type_default_directory() {
-        assert_eq!(
-            ResourceType::Agent.default_directory(),
-            ".claude/agents/ccpm"
-        );
+        assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
         assert_eq!(
             ResourceType::Snippet.default_directory(),
             ".claude/ccpm/snippets"
         );
         assert_eq!(
             ResourceType::Command.default_directory(),
-            ".claude/commands/ccpm"
+            ".claude/commands"
         );
         assert_eq!(
             ResourceType::McpServer.default_directory(),
@@ -803,5 +832,24 @@ mod tests {
         let command = ResourceType::Command;
         let copied = command; // ResourceType implements Copy, so this creates a copy
         assert_eq!(command, copied);
+    }
+
+    #[test]
+    fn test_resource_type_all() {
+        let all_types = ResourceType::all();
+        assert_eq!(all_types.len(), 6);
+        assert_eq!(all_types[0], ResourceType::Agent);
+        assert_eq!(all_types[1], ResourceType::Snippet);
+        assert_eq!(all_types[2], ResourceType::Command);
+        assert_eq!(all_types[3], ResourceType::McpServer);
+        assert_eq!(all_types[4], ResourceType::Script);
+        assert_eq!(all_types[5], ResourceType::Hook);
+
+        // Test that we can iterate
+        let mut count = 0;
+        for _ in ResourceType::all() {
+            count += 1;
+        }
+        assert_eq!(count, 6);
     }
 }

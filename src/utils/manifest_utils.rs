@@ -319,7 +319,7 @@ test-command = { source = "test", path = "command.md", version = "v1.0.0" }
 test = "https://github.com/test/repo.git"
 
 [mcp-servers]
-test-server = { command = "test-mcp", args = ["--arg"] }
+test-server = "../local/mcp-servers/test-server.json"
 "#;
         fs::write(&manifest_path, content).unwrap();
 

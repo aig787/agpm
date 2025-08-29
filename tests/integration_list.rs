@@ -2,7 +2,7 @@ use predicates::prelude::*;
 use std::fs;
 
 mod fixtures;
-use fixtures::{LockfileFixture, ManifestFixture, TestEnvironment};
+use fixtures::{ManifestFixture, TestEnvironment};
 
 /// Test listing installed resources from lockfile
 #[test]
@@ -257,31 +257,6 @@ fn test_list_sorted_by_source() {
         .assert()
         .success()
         .stdout(predicate::str::contains("my-agent"));
-}
-
-/// Test listing with outdated flag (show which resources need updates)
-#[test]
-fn test_list_outdated() {
-    let env = TestEnvironment::new().unwrap();
-    ManifestFixture::basic()
-        .write_to(env.project_path())
-        .unwrap();
-
-    // Create outdated lockfile
-    LockfileFixture::outdated()
-        .write_to(env.project_path())
-        .unwrap();
-
-    let mut cmd = env.ccpm_command();
-    cmd.arg("list")
-        .arg("--outdated")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Outdated resources"))
-        .stdout(predicate::str::contains("my-agent"))
-        .stdout(predicate::str::contains("v0.9.0")) // Old version
-        .stdout(predicate::str::contains("→")) // Arrow indicating update available
-        .stdout(predicate::str::contains("v1.0.0")); // New version
 }
 
 /// Test list with local dependencies

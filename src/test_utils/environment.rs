@@ -20,6 +20,9 @@ pub struct TestEnvironment {
 impl TestEnvironment {
     /// Create a new test environment
     pub fn new() -> Result<Self> {
+        // Initialize test logging if RUST_LOG is set
+        super::init_test_logging();
+
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("project");
         let sources_dir = temp_dir.path().join("sources");

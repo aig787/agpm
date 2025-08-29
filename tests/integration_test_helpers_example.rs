@@ -9,6 +9,7 @@ use common::{DirAssert, FileAssert, TestProject};
 /// Example test showing TestProject usage
 #[test]
 fn test_using_test_project_helper() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     // Create a test project with all necessary directories
     let project = TestProject::new()?;
 
@@ -53,6 +54,7 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
 /// Example test showing TestSourceRepo usage
 #[test]
 fn test_using_test_source_repo_helper() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let project = TestProject::new()?;
 
     // Create a source repository with standard resources
@@ -89,7 +91,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
     output.assert_success();
 
     // Verify resources were installed
-    let agents_dir = project.project_path().join(".claude/agents/ccpm");
+    let agents_dir = project.project_path().join(".claude/agents");
     DirAssert::exists(&agents_dir);
     DirAssert::contains_file(&agents_dir, "standard.md");
     DirAssert::contains_file(&agents_dir, "custom.md");
@@ -103,6 +105,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
 /// Example test showing FileAssert and DirAssert usage
 #[test]
 fn test_assertion_helpers() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let project = TestProject::new()?;
 
     // Create some test files and directories

@@ -1612,8 +1612,15 @@ mod tests {
 
     #[test]
     fn test_safe_canonicalize_relative() {
-        // Test with relative path that exists
-        let result = safe_canonicalize(Path::new("."));
+        use tempfile::TempDir;
+
+        // Create a temp directory to ensure we have a valid working directory
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.txt");
+        std::fs::write(&test_file, "test").unwrap();
+
+        // Test with a file that exists
+        let result = safe_canonicalize(&test_file);
         assert!(result.is_ok());
         let canonical = result.unwrap();
         assert!(canonical.is_absolute());

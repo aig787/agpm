@@ -1026,6 +1026,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1099,6 +1101,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1273,6 +1277,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1345,6 +1351,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1510,6 +1518,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1523,6 +1533,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1664,6 +1676,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1748,6 +1762,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1958,6 +1974,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2042,6 +2060,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2086,6 +2106,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2131,6 +2153,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2144,6 +2168,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             false,
         );
@@ -2254,6 +2280,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2296,6 +2324,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -2310,6 +2340,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -2356,6 +2388,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2663,6 +2697,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2676,6 +2712,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2720,6 +2758,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -3170,6 +3210,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
         manifest.save(&manifest_path).unwrap();

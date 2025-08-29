@@ -9,6 +9,67 @@ CCPM (Claude Code Package Manager) is a command-line tool written in Rust that s
 of Claude agents and snippets across different projects. Using a manifest-based approach with lockfile support, CCPM
 provides reproducible, version-controlled installations of AI resources directly from Git repositories.
 
+## Quick Links
+
+- **[FAQ](FAQ.md)** - Frequently asked questions and quick answers
+- **[Installation](#installation)** - Get started with CCPM
+- **[Quick Start](#quick-start)** - Basic usage examples
+- **[Documentation](#documentation)** - Full documentation links
+
+## Table of Contents
+
+- [Features](#features)
+- [Resource Types](#resource-types)
+    - [Direct Installation Resources](#direct-installation-resources)
+    - [Configuration-Merged Resources](#configuration-merged-resources)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+    - [1. Create a Project Manifest](#1-create-a-project-manifest)
+    - [2. Install Dependencies](#2-install-dependencies)
+    - [3. Basic Workflows](#3-basic-workflows)
+- [Core Commands](#core-commands)
+    - [Command Examples](#command-examples)
+- [Manifest Format](#manifest-format)
+    - [ccpm.toml Structure](#ccpmtoml-structure)
+    - [Dependency Specification](#dependency-specification)
+    - [Version Range Syntax](#version-range-syntax)
+- [Versioning in CCPM](#versioning-in-ccpm)
+    - [How Versioning Works](#how-versioning-works)
+    - [Version Reference Types](#version-reference-types)
+    - [Version Resolution Process](#version-resolution-process)
+    - [Version Constraints and Ranges](#version-constraints-and-ranges)
+    - [Lockfile and Reproducibility](#lockfile-and-reproducibility)
+    - [Best Practices for Versioning](#best-practices-for-versioning)
+    - [Local Dependencies](#local-dependencies)
+- [Lockfile Format](#lockfile-format)
+- [Configuration-Merged Resources in Detail](#configuration-merged-resources-in-detail)
+- [Scripts and Hooks Examples](#scripts-and-hooks-examples)
+    - [Working with Hooks](#working-with-hooks)
+    - [Working with MCP Servers](#working-with-mcp-servers)
+- [Advanced Usage](#advanced-usage)
+    - [Global Configuration](#global-configuration)
+    - [Security Best Practices](#security-best-practices)
+    - [Private Repositories](#private-repositories)
+    - [Reproducible Builds](#reproducible-builds)
+    - [Performance Optimization](#performance-optimization)
+    - [Development Workflow](#development-workflow)
+- [Project Structure](#project-structure)
+- [Design Decisions](#design-decisions)
+    - [Installation Model](#installation-model)
+    - [Cache Management](#cache-management)
+- [Documentation](#documentation)
+- [Building from Source](#building-from-source)
+- [Architecture](#architecture)
+    - [Concurrent Operations & File Locking](#concurrent-operations--file-locking)
+- [Versioning](#versioning)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+    - [Common Issues](#common-issues)
+- [Contributing](#contributing)
+- [License](#license)
+- [Inspiration](#inspiration)
+- [Support](#support)
+
 ## Features
 
 - **Lockfile-Based Management**: Reproducible installations using `ccpm.toml` + `ccpm.lock` (similar to Cargo)
@@ -16,28 +77,55 @@ provides reproducible, version-controlled installations of AI resources directly
 - **No Central Registry**: Fully decentralized - add any Git repository as a source
 - **Dependency Resolution**: Automatic version constraint resolution with conflict detection
 - **Cross-Platform Support**: Works reliably on Windows, macOS, and Linux
-- **Fast & Reliable**: Written in Rust for performance and safety
-- **Parallel Operations**: Automatic parallel processing for faster installation and updates
 - **Comprehensive CLI**: Full-featured command-line interface with 8 commands
 
 ## Resource Types
 
-CCPM supports multiple types of Claude Code resources:
+CCPM manages two categories of resources based on how they're integrated into Claude Code:
 
-### Agents
-AI assistant configurations with prompts and behavioral definitions. Installed to `.claude/agents/ccpm/` by default.
+### Direct Installation Resources
 
-### Snippets
+These resources are copied directly to their target directories and used as standalone files:
+
+#### Agents
+
+AI assistant configurations with prompts and behavioral definitions. Installed to `.claude/agents/` by default.
+
+#### Snippets
+
 Reusable code templates and documentation fragments. Installed to `.claude/ccpm/snippets/` by default.
 
-### Scripts
-Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently for automation tasks. Installed to `.claude/ccpm/scripts/` by default.
+#### Commands
 
-### Hooks
-Event-based automation configurations for Claude Code. JSON files that define when to run scripts based on tool usage or other events (PreToolUse, PostToolUse, UserPromptSubmit, etc.). Installed to `.claude/ccpm/hooks/` and automatically merged into Claude Code settings.
+Claude Code slash commands that extend Claude Code functionality. Installed to `.claude/commands/` by default.
 
-### MCP Servers
-Model Context Protocol servers that extend Claude Code's capabilities with external tools and APIs. Configured in `.mcp.json`.
+#### Scripts
+
+Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently for automation tasks. Installed to
+`.claude/ccpm/scripts/` by default.
+
+### Configuration-Merged Resources
+
+These resources are installed to `.claude/ccpm/` and then their configurations are merged into Claude Code's settings
+files:
+
+#### Hooks
+
+Event-based automation configurations for Claude Code. JSON files that define when to run scripts based on tool usage or
+other events (PreToolUse, PostToolUse, UserPromptSubmit, etc.).
+
+- **Installation**: Files copied to `.claude/ccpm/hooks/`
+- **Configuration**: Automatically merged into `.claude/settings.local.json`
+- **Behavior**: CCPM preserves user-configured hooks while managing its own
+
+#### MCP Servers
+
+Model Context Protocol servers that extend Claude Code's capabilities with external tools and APIs. JSON configuration
+files defining how to run external servers.
+
+- **Installation**: Files copied to `.claude/ccpm/mcp-servers/`
+- **Configuration**: Automatically merged into `.mcp.json`
+- **Behavior**: CCPM only manages servers it installs, preserving user-added servers
 
 ## Installation
 
@@ -94,8 +182,8 @@ post-tool = { source = "community", path = "hooks/post-tool.json", version = "v1
 
 # MCP Servers
 [mcp-servers]
-filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
-postgres = { command = "mcp-postgres", args = ["--connection", "${DATABASE_URL}"] }
+filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
+postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 ```
 
 ### 2. Install Dependencies
@@ -115,8 +203,33 @@ ccpm install
 This creates:
 
 - `ccpm.lock` - Lockfile with exact resolved versions
-- `.claude/agents/ccpm/` - Directory with installed agent files (default location)
+- `.claude/agents/` - Directory with installed agent files (default location)
 - `.claude/ccpm/snippets/` - Directory with installed snippet files (default location)
+
+#### Important: File Naming During Installation
+
+**Installed files are named based on the dependency name in `ccpm.toml`, not their original filename in the source
+repository.**
+
+For example:
+
+```toml
+[scripts]
+# Source file: scripts/build.sh
+# Installed as: .claude/ccpm/scripts/my-builder.sh (uses the key "my-builder")
+my-builder = { source = "tools", path = "scripts/build.sh" }
+
+[agents]
+# Source file: agents/code-reviewer.md
+# Installed as: .claude/agents/reviewer.md (uses the key "reviewer")
+reviewer = { source = "community", path = "agents/code-reviewer.md" }
+```
+
+This naming convention allows you to:
+
+- Give resources meaningful names in your project context
+- Avoid naming conflicts when using resources from multiple sources
+- Rename resources without modifying the source repository
 
 ### 3. Basic Workflows
 
@@ -136,33 +249,33 @@ ccpm install --frozen
 
 ## Core Commands
 
-CCPM provides 8 commands for managing dependencies:
+CCPM provides 9 commands for managing dependencies:
 
 | Command    | Purpose                                                       | Key Options                                           |
 |------------|---------------------------------------------------------------|-------------------------------------------------------|
-| `init`     | Initialize a new ccpm.toml manifest file                      | `--name`, `--empty`                                   |
+| `init`     | Initialize a new ccpm.toml manifest file                      | `--path`, `--force`                                   |
 | `add`      | Add sources or dependencies to ccpm.toml                      | `source`, `dep`                                       |
+| `remove`   | Remove sources or dependencies from ccpm.toml                 | `source`, `dep`                                       |
 | `install`  | Install dependencies from ccpm.toml, generate/update lockfile | `--frozen`, `--no-cache`, `--force`, `--max-parallel` |
 | `update`   | Update dependencies within version constraints                | `--dry-run`, `--max-parallel`                         |
 | `list`     | Show installed resources from lockfile or manifest            | `--manifest`, `--format json`                         |
 | `validate` | Validate ccpm.toml syntax and check dependencies              | `--resolve`, `--check-lock`                           |
 | `cache`    | Manage the global git cache                                   | `clean`, `clean --all`, `info`                        |
 | `config`   | Manage global configuration                                   | `init`, `show`, `edit`, `add-source`, `list-sources`  |
-| `mcp`      | Manage MCP (Model Context Protocol) servers                   | `list`, `clean`, `status`                              |
 
 ### Command Examples
 
 #### Initialize a new project
 
 ```bash
-# Create a manifest with example content
+# Create a new manifest in current directory
 ccpm init
 
-# Create an empty manifest
-ccpm init --empty
+# Create in a specific directory
+ccpm init --path ./my-project
 
-# Specify project name
-ccpm init --name "my-project"
+# Force overwrite existing manifest
+ccpm init --force
 ```
 
 #### Add dependencies dynamically
@@ -171,24 +284,18 @@ ccpm init --name "my-project"
 # Add a source repository
 ccpm add source community https://github.com/aig787/ccpm-community.git
 
-# Add an agent dependency
-ccpm add dep agents example-agent --source community --path agents/example.md --version v1.0.0
+# Add dependencies
+ccpm add dep agent community:agents/example.md --name example-agent
+ccpm add dep snippet community:snippets/util.md --name util-snippet  
+ccpm add dep command community:commands/deploy.md --name deploy
+ccpm add dep script community:scripts/build.sh --name build
+ccpm add dep hook community:hooks/pre-bash.json --name pre-bash
+ccpm add dep mcp-server community:mcp/filesystem.json --name filesystem
 
-# Add a snippet dependency
-ccpm add dep snippets util-snippet --source community --path snippets/util.md --version v1.0.0
-```
-
-#### Manage MCP servers
-
-```bash
-# List all MCP servers (shows which are CCPM-managed)
-ccpm mcp list
-
-# Check MCP configuration status
-ccpm mcp status
-
-# Remove CCPM-managed servers from .mcp.json
-ccpm mcp clean
+# Remove dependencies
+ccpm remove dep agent example-agent
+ccpm remove dep snippet util-snippet
+ccpm remove source community  # Only if no dependencies use it
 ```
 
 ## Manifest Format
@@ -204,7 +311,7 @@ local = "./local-resources"  # Local directory (no Git required)
 
 # Target directories (optional - defaults shown)
 [target]
-agents = ".claude/agents/ccpm"      # Where to install agents
+agents = ".claude/agents"      # Where to install agents
 snippets = ".claude/ccpm/snippets"   # Where to install snippets
 scripts = ".claude/ccpm/scripts"     # Where to install scripts
 hooks = ".claude/ccpm/hooks"         # Where to install hooks
@@ -228,6 +335,11 @@ validator = { source = "private", path = "scripts/validate.py", version = "v2.0.
 [hooks]
 pre-bash = { source = "community", path = "hooks/pre-bash.json", version = "v1.0.0" }
 validation = { source = "private", path = "hooks/validation.json", version = "v1.1.0" }
+
+# MCP Servers - Model Context Protocol servers
+[mcp-servers]
+filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
+postgres = { source = "private", path = "mcp-servers/postgres.json", version = "v1.0.0" }
 ```
 
 ### Dependency Specification
@@ -277,19 +389,23 @@ CCPM supports standard semantic versioning (semver) ranges, following the same c
 
 ## Versioning in CCPM
 
-CCPM uses Git-based versioning, which means version constraints apply at the repository level, not individual files. Understanding how versioning works is crucial for effectively managing dependencies.
+CCPM uses Git-based versioning, which means version constraints apply at the repository level, not individual files.
+Understanding how versioning works is crucial for effectively managing dependencies.
 
 ### How Versioning Works
 
-1. **Repository-Level Versioning**: When you specify a version (e.g., `version = "v1.0.0"`), you're referencing a Git tag on the entire repository, not individual files. All resources from that repository at that tag share the same version.
+1. **Repository-Level Versioning**: When you specify a version (e.g., `version = "v1.0.0"`), you're referencing a Git
+   tag on the entire repository, not individual files. All resources from that repository at that tag share the same
+   version.
 
 2. **Git References**: CCPM supports multiple ways to reference specific points in a repository's history:
-   - **Git Tags** (recommended): Semantic versions like `v1.0.0`, `v2.1.3`
-   - **Git Branches**: Branch names like `main`, `develop`, `feature/xyz`
-   - **Git Commits**: Specific commit hashes like `abc123def`
-   - **Special Keywords**: `latest` (newest tag), `*` (any version)
+    - **Git Tags** (recommended): Semantic versions like `v1.0.0`, `v2.1.3`
+    - **Git Branches**: Branch names like `main`, `develop`, `feature/xyz`
+    - **Git Commits**: Specific commit hashes like `abc123def`
+    - **Special Keywords**: `latest` (newest tag), `*` (any version)
 
-3. **No Versioning for Local Directories**: Local directory sources and direct file paths don't support versioning because they're not Git repositories. They always use the current state of the files.
+3. **No Versioning for Local Directories**: Local directory sources and direct file paths don't support versioning
+   because they're not Git repositories. They always use the current state of the files.
 
 ### Version Reference Types
 
@@ -308,6 +424,7 @@ patch-only-agent = { source = "community", path = "agents/util.md", version = "~
 ```
 
 **How it works**: When CCPM resolves `version = "v1.0.0"`, it:
+
 1. Looks for a Git tag named `v1.0.0` in the repository
 2. Checks out the repository at that tag
 3. Retrieves the specified file from that tagged state
@@ -325,7 +442,8 @@ dev-agent = { source = "community", path = "agents/dev.md", branch = "main" }
 feature-agent = { source = "community", path = "agents/new.md", branch = "feature/new-capability" }
 ```
 
-**Important**: Branch references are mutable - they update to the latest commit each time you run `ccpm update`. Use tags for stable, reproducible builds.
+**Important**: Branch references are mutable - they update to the latest commit each time you run `ccpm update`. Use
+tags for stable, reproducible builds.
 
 #### Git Commit Hashes
 
@@ -338,6 +456,7 @@ fixed-agent = { source = "community", path = "agents/stable.md", rev = "abc123de
 ```
 
 **Use cases**:
+
 - Debugging specific versions
 - Pinning to commits between releases
 - Maximum reproducibility when tags aren't available
@@ -379,15 +498,15 @@ When CCPM installs dependencies, it follows this resolution process:
 
 CCPM supports sophisticated version constraints using semantic versioning:
 
-| Constraint | Example | Resolves To | Use Case |
-|------------|---------|-------------|----------|
-| Exact | `"1.2.3"` or `"v1.2.3"` | Exactly version 1.2.3 | Pinning to specific release |
-| Caret | `"^1.2.3"` | >=1.2.3, <2.0.0 | Allow compatible updates |
-| Tilde | `"~1.2.3"` | >=1.2.3, <1.3.0 | Allow patch updates only |
-| Greater | `">1.2.3"` | Any version >1.2.3 | Minimum version requirement |
-| Range | `">=1.0.0, <2.0.0"` | 1.x.x versions | Complex constraints |
-| Latest | `"latest"` | Newest stable tag | Always use newest stable |
-| Wildcard | `"*"` | Any version | No constraints |
+| Constraint | Example                 | Resolves To           | Use Case                    |
+|------------|-------------------------|-----------------------|-----------------------------|
+| Exact      | `"1.2.3"` or `"v1.2.3"` | Exactly version 1.2.3 | Pinning to specific release |
+| Caret      | `"^1.2.3"`              | >=1.2.3, <2.0.0       | Allow compatible updates    |
+| Tilde      | `"~1.2.3"`              | >=1.2.3, <1.3.0       | Allow patch updates only    |
+| Greater    | `">1.2.3"`              | Any version >1.2.3    | Minimum version requirement |
+| Range      | `">=1.0.0, <2.0.0"`     | 1.x.x versions        | Complex constraints         |
+| Latest     | `"latest"`              | Newest stable tag     | Always use newest stable    |
+| Wildcard   | `"*"`                   | Any version           | No constraints              |
 
 ### Lockfile and Reproducibility
 
@@ -404,6 +523,7 @@ resolved_version = "v1.0.0"           # Actual tag/version used
 ```
 
 Key points:
+
 - **Original constraint** (`version`): What was requested in `ccpm.toml`
 - **Resolved commit** (`resolved_commit`): Exact Git commit hash
 - **Resolved version** (`resolved_version`): The tag/branch that was resolved
@@ -412,13 +532,13 @@ Key points:
 
 Given available tags: `v1.0.0`, `v1.1.0`, `v1.2.0`, `v2.0.0`
 
-| Constraint | Selected Version | Explanation |
-|------------|------------------|-------------|
-| `"^1.0.0"` | `v1.2.0` | Highest 1.x.x version |
-| `"~1.0.0"` | `v1.0.0` | Only 1.0.x allowed |
-| `">=1.1.0, <2.0.0"` | `v1.2.0` | Highest within range |
-| `"latest"` | `v2.0.0` | Newest stable tag |
-| `">1.0.0"` | `v2.0.0` | Highest available |
+| Constraint          | Selected Version | Explanation           |
+|---------------------|------------------|-----------------------|
+| `"^1.0.0"`          | `v1.2.0`         | Highest 1.x.x version |
+| `"~1.0.0"`          | `v1.0.0`         | Only 1.0.x allowed    |
+| `">=1.1.0, <2.0.0"` | `v1.2.0`         | Highest within range  |
+| `"latest"`          | `v2.0.0`         | Newest stable tag     |
+| `">1.0.0"`          | `v2.0.0`         | Highest available     |
 
 ### Best Practices for Versioning
 
@@ -472,7 +592,7 @@ workspace = { source = "local", path = "agents/wip.md" }                        
 
 ### Local Dependencies
 
-#### 1. Local Directory Sources (NEW)
+#### 1. Local Directory Sources
 
 You can use local directories as sources without requiring Git. This is perfect for development and testing:
 
@@ -490,13 +610,14 @@ shared-agent = { source = "shared-resources", path = "agents/common.md" }
 ```
 
 **Security Note**: For security, local paths are restricted to:
+
 - Within the current project directory
 - Within the CCPM cache directory (`~/.ccpm/cache`)
 - Within `/tmp` for testing
 
-#### 2. Direct File Paths (Legacy)
+#### 2. Direct File Paths
 
-You can reference individual `.md` files directly without a source:
+You can reference individual files directly without a source:
 
 ```toml
 # Direct file paths - NO version support
@@ -552,84 +673,35 @@ checksum = "sha256:abcdef..."
 installed_at = "agents/example-agent.md"
 ```
 
-## MCP Server Support
+## Configuration-Merged Resources in Detail
 
-CCPM can manage MCP (Model Context Protocol) server configurations for Claude Code. MCP servers provide integrations with external systems like databases, APIs, and development tools.
+### How Configuration Merging Works
 
-### Configuring MCP Servers
+Unlike direct installation resources that are simply copied to their target directories, configuration-merged
+resources (Hooks and MCP Servers) follow a two-step process:
 
-Define MCP servers in your `ccpm.toml`:
-
-```toml
-[mcp-servers]
-# NPX-based server
-filesystem = {
-    command = "npx",
-    args = ["-y", "@modelcontextprotocol/server-filesystem", "--root", "./data"]
-}
-
-# Python package via uvx
-github = {
-    command = "uvx",
-    args = ["run", "mcp-server-github@v0.1.0"],
-    env = { "GITHUB_TOKEN" = "${GITHUB_TOKEN}" }
-}
-
-# Direct binary command
-postgres = {
-    command = "mcp-postgres",
-    args = ["--connection", "${DATABASE_URL}"]
-}
-
-# Python script
-custom = {
-    command = "python",
-    args = ["./scripts/mcp_server.py"]
-}
-```
-
-### How It Works
-
-1. **Configuration Management**: CCPM updates the `.mcp.json` file that Claude Code reads
-2. **Non-destructive**: CCPM only manages servers it installs, preserving user-added servers
-3. **Environment Variables**: Supports `${VAR}` expansion in arguments
-4. **Tracking**: Lockfile tracks configured servers for reproducibility
-
-### Important Notes
-
-- MCP servers are **configured**, not installed as files
-- The `.mcp.json` file may contain both CCPM-managed and user-managed servers
-- CCPM adds metadata (`_ccpm`) to track which servers it manages
-- Servers require their runtimes to be installed (Node.js for `npx`, Python for `uvx`, etc.)
-
-### Example .mcp.json
-
-After running `ccpm install`, your `.mcp.json` might look like:
-
-```json
-{
-  "mcpServers": {
-    "my-manual-server": {
-      "command": "node",
-      "args": ["./custom.js"]
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "--root", "./data"],
-      "_ccpm": {
-        "managed": true,
-        "version": "latest",
-        "installed_at": "2024-01-15T10:30:00Z"
-      }
-    }
-  }
-}
-```
+1. **File Installation**: JSON configuration files are installed to `.claude/ccpm/`
+2. **Configuration Merging**: Settings are automatically merged into Claude Code's configuration files
+3. **Non-destructive Updates**: CCPM preserves user-configured entries while managing its own
+4. **Version Control Strategy**: By default, CCPM creates `.claude/.gitignore` to exclude installed files from Git. This
+   means:
+    - The `ccpm.toml` manifest and `ccpm.lock` lockfile are committed to version control
+    - Installed resource files (agents, snippets, scripts, etc.) are automatically gitignored
+    - Team members run `ccpm install` to get their own copies of resources
+    - To commit resources to Git instead, set `gitignore = false` in the `[target]` section of `ccpm.toml`
 
 ## Scripts and Hooks Examples
 
-### Script Example
-Scripts are executable files that can perform various automation tasks:
+### Working with Hooks
+
+Hooks enable event-based automation in Claude Code. They consist of:
+
+1. **Scripts**: Executable files that perform the actual work
+2. **Hook configurations**: JSON files that define when scripts should run
+
+#### Script Example
+
+First, create executable scripts that perform automation tasks:
 
 ```bash
 # scripts/security-check.sh
@@ -643,12 +715,15 @@ fi
 echo "Security check passed!"
 ```
 
-### Hook Configuration Example
-Hooks are JSON files that configure when scripts should run:
+#### Hook Configuration Example
+
+Then, create hook JSON files that configure when scripts should run:
 
 ```json
 {
-  "events": ["PreToolUse"],
+  "events": [
+    "PreToolUse"
+  ],
   "matcher": "Bash|Write|Edit",
   "type": "command",
   "command": ".claude/ccpm/scripts/security-check.sh",
@@ -660,7 +735,9 @@ Hooks are JSON files that configure when scripts should run:
 This hook will run the security check script before Claude Code uses the Bash, Write, or Edit tools.
 
 ### Hook Events
+
 Available hook events in Claude Code:
+
 - `PreToolUse` - Before a tool is executed
 - `PostToolUse` - After a tool completes
 - `UserPromptSubmit` - When user submits a prompt
@@ -668,6 +745,7 @@ Available hook events in Claude Code:
 - `AssistantResponseReceive` - When assistant responds
 
 ### Installing Scripts and Hooks
+
 ```toml
 # ccpm.toml
 [scripts]
@@ -679,7 +757,88 @@ pre-bash = { source = "security-tools", path = "hooks/pre-bash.json", version = 
 file-guard = { source = "security-tools", path = "hooks/file-guard.json", version = "v1.0.0" }
 ```
 
-After running `ccpm install`, hooks are automatically merged into Claude Code's settings, preserving any existing user-configured hooks.
+After running `ccpm install`:
+
+- Hooks are automatically merged into `.claude/settings.local.json`, preserving any existing user-configured hooks
+
+### Working with MCP Servers
+
+MCP (Model Context Protocol) servers extend Claude Code's capabilities with external tools and APIs. They provide
+integrations with databases, file systems, and other services.
+
+#### MCP Server Configuration Format
+
+MCP server JSON files define how to run the server:
+
+```json
+{
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "--root",
+    "./data"
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
+```
+
+#### Installing MCP Servers
+
+```toml
+# ccpm.toml
+[mcp-servers]
+# MCP server from a repository
+filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
+github = { source = "community", path = "mcp-servers/github.json", version = "v1.2.0" }
+
+# Local MCP server configuration
+custom = { source = "local-deps", path = "mcp-servers/custom.json" }
+```
+
+After running `ccpm install`:
+
+- MCP server JSON files are installed to `.claude/ccpm/mcp-servers/`
+- Configurations are automatically merged into `.mcp.json`
+- CCPM adds metadata (`_ccpm`) to track which servers it manages
+- User-configured servers in `.mcp.json` are preserved
+
+#### Example .mcp.json After Installation
+
+```json
+{
+  "mcpServers": {
+    "my-manual-server": {
+      "command": "node",
+      "args": [
+        "./custom.js"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "--root",
+        "./data"
+      ],
+      "_ccpm": {
+        "managed": true,
+        "config_file": ".claude/ccpm/mcp-servers/filesystem.json",
+        "installed_at": "2024-01-15T10:30:00Z"
+      }
+    }
+  }
+}
+```
+
+**Important Notes:**
+
+- MCP servers require their runtimes to be installed (Node.js for `npx`, Python for `uvx`, etc.)
+- Environment variables in configurations support `${VAR}` expansion
+- The `.mcp.json` file contains both CCPM-managed and user-managed servers
 
 ## Advanced Usage
 
@@ -814,12 +973,21 @@ my-project/
 ├── ccpm.toml           # Dependency manifest
 ├── ccpm.lock           # Resolved versions (commit this!)
 ├── .claude/
-│   ├── agents/
-│   │   └── ccpm/       # CCPM-installed agents (default)
-│   │       └── example-agent.md
+│   ├── agents/         # CCPM-installed agents
+│   │   └── example-agent.md
+│   ├── commands/       # CCPM-installed commands
+│   │   └── deploy.md
+│   ├── settings.local.json  # Hook configurations
 │   └── ccpm/
-│       └── snippets/   # CCPM-installed snippets (default)
-│           └── example-snippet.md
+│       ├── snippets/   # CCPM-installed snippets
+│       │   └── example-snippet.md
+│       ├── scripts/    # CCPM-installed scripts
+│       │   └── build.sh
+│       ├── hooks/      # Hook JSON files
+│       │   └── pre-bash.json
+│       └── mcp-servers/ # MCP server configurations
+│           └── filesystem.json
+└── .mcp.json           # MCP server runtime configuration
 ```
 
 Cache location: `~/.ccpm/cache/` (Unix/macOS) or `%LOCALAPPDATA%\ccpm\cache\` (Windows)
@@ -834,6 +1002,7 @@ CCPM copies files from cache to project directories rather than using symlinks:
 - **Git-Friendly**: Real files can be tracked and committed
 - **Editor-Friendly**: No symlink confusion in IDEs
 - **User-Friendly**: Edit installed files without affecting the cache
+- **Name Control**: Files are installed with the dependency name from `ccpm.toml`, not the source filename
 
 ### Cache Management
 

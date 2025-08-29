@@ -13,8 +13,9 @@ macOS, and Linux.
 - **Distribution Model**: Git-based, no central registry - fully decentralized
 - **Dependency Management**: Lockfile-based (ccpm.toml + ccpm.lock) like Cargo
 - **Configuration Format**: TOML for manifest and lockfile
-- **Resource Format**: Markdown files (.md) for agents, snippets, and commands
-- **MCP Servers**: Configuration management via .mcp.json (shared with user configs)
+- **Resource Format**: Markdown files (.md) for agents, snippets, and commands; JSON files (.json) for hooks and MCP servers; executable files (.sh, .js, .py) for scripts
+- **MCP Servers**: JSON configuration files installed to `.mcp.json` for Claude Code
+- **Hooks**: JSON configuration files configured in `.claude/settings.local.json`
 - **CLI Framework**: Using Clap for command-line parsing
 - **Async Runtime**: Tokio for concurrent operations
 - **Git Operations**: System `git` command via CLI (like cargo with `git-fetch-with-cli`)
@@ -56,10 +57,12 @@ ccpm/
 1. `install` - Install dependencies from ccpm.toml, generate/update ccpm.lock
    - `--frozen` - Use existing lockfile without updates (for CI/production)
    - `--no-cache` - Bypass cache and fetch directly from sources
+   - Installs MCP servers to `.mcp.json` for Claude Code
+   - Installs hooks to `.claude/settings.local.json`
 2. `update` - Update dependencies within version constraints
    - Updates specific or all dependencies to latest compatible versions
 3. `list` - List installed resources from ccpm.lock
-   - Shows all installed agents, snippets, commands, and MCP servers
+   - Shows all installed agents, snippets, commands, scripts, hooks, and MCP servers
 4. `validate` - Validate ccpm.toml syntax and source availability
    - `--check-lock` - Also validate lockfile consistency
    - `--resolve` - Perform full dependency resolution check
@@ -69,13 +72,12 @@ ccpm/
 6. `config` - Manage global configuration (~/.ccpm/config.toml)
    - `get` - Retrieve configuration values
    - `set` - Set configuration values
-7. `mcp` - Manage MCP server configurations (list, clean, status)
-   - `list` - List installed MCP servers
-   - `clean` - Remove CCPM-managed MCP servers
-   - `status` - Check MCP server status
-8. `add` - Add sources and dependencies to ccpm.toml manifest
+7. `add` - Add sources and dependencies to ccpm.toml manifest
    - `source` - Add a new source repository
    - `dep` - Add a new dependency
+8. `remove` - Remove sources and dependencies from ccpm.toml manifest
+   - `source` - Remove a source repository
+   - `dep` - Remove a dependency
 9. `init` - Initialize new CCPM project with ccpm.toml
    - `--path` - Specify custom project directory
 
@@ -100,16 +102,28 @@ ccpm/
 - `toml` (0.8) - TOML parsing and serialization
 - `serde` (1.0) - Serialization framework with derive
 - `serde_json` (1.0) - JSON support for metadata
+- `serde_yaml` (0.9) - YAML parsing for configuration files
 - `semver` (1.0) - Semantic version parsing for git tags
 - `anyhow` (1.0) - Error handling with context
 - `thiserror` (1.0) - Custom error types with derive
 - `colored` (2.1) - Terminal colors for CLI output
 - `dirs` (5.0) - Platform-specific directory paths
+- `tracing` (0.1) - Structured, event-based diagnostics
+- `tracing-subscriber` (0.3) - Utilities for tracing subscribers
 - `indicatif` (0.17) - Progress bars and spinners
 - `tempfile` (3.10) - Temporary file/directory management
 - `shellexpand` (3.1) - Shell-like path expansion (~, env vars)
 - `which` (6.0) - Command detection in PATH
 - `uuid` (1.10) - Unique identifier generation
+- `chrono` (0.4) - Date and time handling
+- `once_cell` (1.19) - Single initialization of global data
+- `walkdir` (2.5) - Recursive directory traversal
+- `sha2` (0.10) - SHA-256 hashing for checksums
+- `hex` (0.4) - Hexadecimal encoding/decoding
+- `regex` (1.11) - Regular expression matching
+- `rayon` (1.10) - Data parallelism library
+- `futures` (0.3) - Async programming primitives
+- `fs4` (0.13) - Extended file system operations with locking
 
 ## Testing Strategy
 
@@ -163,66 +177,27 @@ RUST_LOG=debug cargo run
 cargo fmt && cargo clippy -- -D warnings && cargo test
 ```
 
-## Current Module Structure
+## Module Organization
 
-```
-src/
-├── main.rs              # Async entry point with error handling
-├── cli/                 # Command implementations
-│   ├── add.rs          # Add sources and dependencies to manifest
-│   ├── cache.rs        # Cache management commands
-│   ├── config.rs       # Global configuration management
-│   ├── init.rs         # Initialize new ccpm.toml
-│   ├── install.rs      # Install from ccpm.toml
-│   ├── list.rs         # List from ccpm.lock
-│   ├── mcp.rs          # MCP server management commands
-│   ├── update.rs       # Update within constraints
-│   └── validate.rs     # Validate ccpm.toml
-├── cache/              # Cache management
-│   ├── mod.rs          # Cache operations and paths
-│   └── lock.rs         # File locking for concurrent access
-├── config/             # Configuration management
-│   ├── global.rs       # Global configuration (~/.ccpm/config.toml)
-│   ├── agent.rs        # Agent-specific configurations
-│   └── parser.rs       # Configuration parsing utilities
-├── core/               # Core types and error handling
-│   ├── error.rs        # Error types with context
-│   ├── error_builders.rs # Error construction helpers
-│   └── resource.rs     # Resource traits and types
-├── git/                # Git integration
-│   └── mod.rs          # Git CLI wrapper using system git
-├── hooks/              # Git hooks support
-│   ├── merge.rs        # Merge strategy for lockfiles
-│   └── mod.rs          # Hook registration and management
-├── installer/          # Installation utilities
-│   └── mod.rs          # Shared resource installation logic
-├── lockfile/           # Lockfile management
-│   └── mod.rs          # Generate/parse ccpm.lock
-├── manifest/           # Manifest management
-│   └── mod.rs          # Parse ccpm.toml, handle dependencies
-├── markdown/           # Markdown operations
-│   └── mod.rs          # Read/write .md files, extract metadata
-├── mcp/                # MCP server management
-│   └── mod.rs          # Manage .mcp.json configurations
-├── models/             # Data models
-│   └── mod.rs          # Dependency specs and structures
-├── resolver/           # Dependency resolution
-│   ├── mod.rs          # Resolve versions, detect conflicts
-│   ├── redundancy.rs   # Redundancy detection
-│   └── version_resolution.rs # Version constraint resolution
-├── source/             # Source operations
-│   └── mod.rs          # Clone/cache sources from manifest
-├── test_utils/         # Testing utilities
-│   ├── fixtures.rs     # Test fixtures and helpers
-│   └── environment.rs  # Test environment setup
-├── utils/              # Cross-platform utilities
-│   ├── fs.rs           # File operations, atomic writes
-│   ├── platform.rs     # Platform-specific helpers
-│   ├── progress.rs     # Progress bars and spinners
-│   └── security.rs     # Security validations
-└── version/            # Version handling
-    └── mod.rs          # Version constraint matching
-```
+The codebase is organized into logical modules:
+
+- **cli/** - Command-line interface implementations for all CCPM commands
+- **cache/** - Global cache management and file locking for concurrent access
+- **config/** - Configuration handling for both global and project settings
+- **core/** - Core types, error handling, and resource abstractions
+- **git/** - Git command wrapper and repository operations
+- **hooks/** - Claude Code hooks support and settings.local.json management
+- **installer/** - Resource installation logic and file operations
+- **lockfile/** - Lockfile generation and parsing (ccpm.lock)
+- **manifest/** - Manifest parsing and validation (ccpm.toml)
+- **markdown/** - Markdown file operations and frontmatter extraction
+- **mcp/** - MCP server configuration and .mcp.json management
+- **models/** - Data models for dependencies and resources
+- **resolver/** - Dependency resolution, version matching, and conflict detection
+- **source/** - Source repository management and caching
+- **test_utils/** - Testing utilities, fixtures, and environment setup
+- **utils/** - Cross-platform utilities, security validation, and file operations
+- **version/** - Version constraint parsing and matching
 
 ## Implementation Lessons Learned
 
@@ -246,16 +221,21 @@ CCPM copies files from the cache to project directories rather than using symlin
 ### Key Implementation Details
 
 1. **Dependency Management**: Manifest (ccpm.toml) + Lockfile (ccpm.lock)
-2. **Resource Format**: Markdown files with optional frontmatter metadata
+2. **Resource Formats**: 
+   - Agents, snippets, commands: Markdown files (.md) with optional frontmatter metadata
+   - Scripts: Executable files (.sh, .js, .py)
+   - Hooks: JSON configuration files defining Claude Code event handlers
+   - MCP servers: JSON configuration files defining Model Context Protocol servers
 3. **Source Resolution**: Named sources in manifest, cloned/cached locally
 4. **Version Constraints**: Support tags, branches, and specific commits
-5. **Installation**: Copy .md files from cache to project locations
-6. **MCP Servers**: Configure in .mcp.json, preserve user-managed entries
+5. **Installation**: Copy resource files from cache to project locations
+6. **MCP Servers**: Install JSON files to disk and configure in .mcp.json
 7. **Path handling**: Always use absolute paths internally, normalize separators
 8. **Windows considerations**: Handle long paths (>260 chars), different git command
 9. **Global Config**: ~/.ccpm/config.toml for auth tokens and private sources
 10. **Cache Architecture**: ~/.ccpm/cache/ for cloned repositories
-11. **MCP Metadata**: Track CCPM-managed servers with _ccpm field in .mcp.json
+11. **Hooks Configuration**: Installed as files and configured in .claude/settings.local.json
+12. **MCP Configuration**: Installed as files and configured in .mcp.json
 
 ### Testing Insights
 
@@ -270,8 +250,11 @@ The `tests/` directory contains comprehensive integration tests:
 - `integration_cross_platform.rs` - Cross-platform path and behavior testing
 - `integration_deploy.rs` - Deployment and installation scenarios
 - `integration_error_scenarios.rs` - Error handling and recovery
+- `integration_gitignore.rs` - Gitignore generation and management
 - `integration_list.rs` - List command functionality
+- `integration_multi_resource.rs` - Multi-resource installation and management
 - `integration_redundancy.rs` - Redundancy detection and handling
+- `integration_test_helpers_example.rs` - Test helper utility examples
 - `integration_update.rs` - Update command and version constraint handling
 - `integration_validate.rs` - Manifest and lockfile validation
 - `integration_versioning.rs` - Version resolution and Git reference handling
@@ -286,9 +269,10 @@ The `tests/` directory contains comprehensive integration tests:
 - Implement progress indicators for long operations
 - Support multiple resource types (agents, snippets, commands, scripts, hooks, MCP servers)
 - Scripts are executable files (.sh, .js, .py) that can be referenced by hooks
-- Hooks are Claude Code automation scripts that respond to events
-- MCP servers are configured, not installed as files
-- Preserve user-managed entries in .mcp.json (non-destructive updates)
+- Hooks are JSON configuration files that define Claude Code automation event handlers
+- MCP servers are JSON configuration files that get configured in `.mcp.json`
+- Hooks are JSON configuration files that get configured in `.claude/settings.local.json`
+- Preserve user-managed entries in settings.local.json (non-destructive updates)
 - Handle Windows-specific issues (paths, permissions, shell differences)
 - Test thoroughly on all three major platforms
 - Remember: NO git2 library - use system git command via process execution
@@ -346,11 +330,12 @@ build-script = { source = "community", path = "scripts/build.sh", version = "v1.
 test-runner = { source = "local", path = "scripts/test.js" }
 
 [hooks]
-pre-commit = { source = "community", path = "hooks/pre-commit.md", version = "v1.0.0" }
+pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
+user-prompt-submit = { source = "local", path = "hooks/user-prompt-submit.json" }
 
 [mcp-servers]
-filesystem = { command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem"] }
-postgres = { command = "mcp-postgres", args = ["--connection", "${DATABASE_URL}"] }
+filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
+postgres = { source = "local", path = "mcp-servers/postgres.json" }
 ```
 
 ## Example ccpm.lock Format
@@ -363,15 +348,67 @@ version = 1
 name = "community"
 url = "https://github.com/aig787/ccpm-community.git"
 commit = "def456..."
+fetched_at = "2024-01-01T00:00:00Z"
 
 [[agents]]
 name = "example-agent"
 source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
 path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = "agents/example-agent.md"
+installed_at = ".claude/agents/example-agent.md"
+
+[[snippets]]
+name = "example-snippet"
+source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
+path = "snippets/example.md"
+version = "v1.2.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/ccpm/snippets/example-snippet.md"
+
+[[commands]]
+name = "deployment"
+source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
+path = "commands/deploy.md"
+version = "v2.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/commands/deployment.md"
+
+[[scripts]]
+name = "build-script"
+source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
+path = "scripts/build.sh"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/ccpm/scripts/build-script.sh"
+
+[[hooks]]
+name = "pre-commit"
+source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
+path = "hooks/pre-commit.json"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/ccpm/hooks/pre-commit.json"
+
+[[mcp-servers]]
+name = "filesystem"
+source = "community"
+url = "https://github.com/aig787/ccpm-community.git"
+path = "mcp-servers/filesystem.json"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/ccpm/mcp-servers/filesystem.json"
 ```
 
 ## Global Configuration (~/.ccpm/config.toml)

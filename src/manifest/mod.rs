@@ -33,12 +33,12 @@
 //!
 //! # Installation target directories (optional)
 //! [target]
-//! # Where agents should be installed (default: ".claude/agents/ccpm")
-//! agents = ".claude/agents/ccpm"
+//! # Where agents should be installed (default: ".claude/agents")
+//! agents = ".claude/agents"
 //! # Where snippets should be installed (default: ".claude/ccpm/snippets")
 //! snippets = ".claude/ccpm/snippets"
-//! # Where commands should be installed (default: ".claude/commands/ccpm")
-//! commands = ".claude/commands/ccpm"
+//! # Where commands should be installed (default: ".claude/commands")
+//! commands = ".claude/commands"
 //!
 //! # Agent dependencies (optional)
 //! [agents]
@@ -48,12 +48,16 @@
 //! latest-agent = { source = "community", path = "agents/utils.md", version = "latest" }
 //! branch-agent = { source = "private", path = "agents/internal.md", git = "develop" }
 //! commit-agent = { source = "official", path = "agents/stable.md", git = "abc123..." }
+//! # Custom target installation directory (relative to .claude)
+//! custom-agent = { source = "official", path = "agents/special.md", version = "v1.0.0", target = "integrations/ai" }
 //!
 //! # Snippet dependencies (optional)
 //! [snippets]
 //! # Same formats as agents
 //! local-snippet = "../shared/snippets/common.md"
 //! remote-snippet = { source = "community", path = "snippets/utils.md", version = "v2.1.0" }
+//! # Custom target for special snippets
+//! integration-snippet = { source = "community", path = "snippets/api.md", version = "v1.0.0", target = "tools/snippets" }
 //!
 //! # Command dependencies (optional)
 //! [commands]
@@ -91,9 +95,9 @@
 //! ```toml
 //! [target]
 //! # Default values shown - these can be customized
-//! agents = ".claude/agents/ccpm"      # Where agent .md files are copied
+//! agents = ".claude/agents"      # Where agent .md files are copied
 //! snippets = ".claude/ccpm/snippets"  # Where snippet .md files are copied
-//! commands = ".claude/commands/ccpm"  # Where command .md files are copied
+//! commands = ".claude/commands"  # Where command .md files are copied
 //!
 //! # Alternative configurations
 //! agents = "resources/agents"
@@ -151,6 +155,91 @@
 //! # Git tag (alternative to version field)
 //! tagged = { source = "community", path = "agents/tagged.md", git = "release-2.0" }
 //! ```
+//!
+//! ### 3. Custom Target Installation
+//!
+//! Dependencies can specify a custom installation directory using the `target` field:
+//!
+//! ```toml
+//! [agents]
+//! # Install to .claude/integrations/ai/ instead of .claude/agents/
+//! integration-agent = {
+//!     source = "official",
+//!     path = "agents/integration.md",
+//!     version = "v1.0.0",
+//!     target = "integrations/ai"
+//! }
+//!
+//! # Organize tools in a custom structure
+//! debug-tool = {
+//!     source = "community",
+//!     path = "agents/debugger.md",
+//!     version = "v2.0.0",
+//!     target = "development/tools"
+//! }
+//!
+//! [snippets]
+//! # Custom location for API snippets
+//! api-helper = {
+//!     source = "community",
+//!     path = "snippets/api.md",
+//!     version = "v1.0.0",
+//!     target = "api/snippets"
+//! }
+//! ```
+//!
+//! Custom targets:
+//! - Are always relative to the `.claude` directory
+//! - Leading `.claude/` or `/` are automatically stripped
+//! - Directories are created if they don't exist
+//! - Help organize resources in complex projects
+//!
+//! ### 4. Custom Filenames
+//!
+//! Dependencies can specify a custom filename using the `filename` field:
+//!
+//! ```toml
+//! [agents]
+//! # Install as "ai-assistant.md" instead of "my-ai.md"
+//! my-ai = {
+//!     source = "official",
+//!     path = "agents/complex-long-name-v2.md",
+//!     version = "v1.0.0",
+//!     filename = "ai-assistant.md"
+//! }
+//!
+//! # Change both filename and extension
+//! doc-helper = {
+//!     source = "community",
+//!     path = "agents/documentation.md",
+//!     version = "v2.0.0",
+//!     filename = "docs.txt"
+//! }
+//!
+//! # Combine custom target and filename
+//! special-tool = {
+//!     source = "official",
+//!     path = "agents/debug-analyzer-enhanced.md",
+//!     version = "v1.0.0",
+//!     target = "tools/debugging",
+//!     filename = "analyzer.markdown"
+//! }
+//!
+//! [scripts]
+//! # Rename script during installation
+//! data-processor = {
+//!     source = "community",
+//!     path = "scripts/data-processor-v3.py",
+//!     version = "v1.0.0",
+//!     filename = "process.py"
+//! }
+//! ```
+//!
+//! Custom filenames:
+//! - Include the full filename with extension
+//! - Override the default name (based on dependency key)
+//! - Work with any resource type
+//! - Can be combined with custom targets
 //!
 //! ## Version Constraint Syntax
 //!
@@ -432,15 +521,16 @@ pub struct Manifest {
     ///
     /// MCP servers provide integrations with external systems and services,
     /// allowing Claude Code to connect to databases, APIs, and other tools.
-    /// Each server configuration specifies how to launch and configure the server.
+    /// MCP servers are JSON configuration files that get installed to
+    /// `.claude/ccpm/mcp-servers/` and configured in `.mcp.json`.
     ///
-    /// See [`crate::mcp::McpServerDependency`] for specification format details.
+    /// See [`ResourceDependency`] for specification format details.
     #[serde(
         default,
         skip_serializing_if = "HashMap::is_empty",
         rename = "mcp-servers"
     )]
-    pub mcp_servers: HashMap<String, crate::mcp::McpServerDependency>,
+    pub mcp_servers: HashMap<String, ResourceDependency>,
 
     /// Script dependencies mapping names to their specifications.
     ///
@@ -472,9 +562,9 @@ pub struct Manifest {
 ///
 /// # Default Values
 ///
-/// - **Agents**: `.claude/agents/ccpm` - Following Claude Code conventions
+/// - **Agents**: `.claude/agents` - Following Claude Code conventions
 /// - **Snippets**: `.claude/ccpm/snippets` - Following Claude Code conventions
-/// - **Commands**: `.claude/commands/ccpm` - Following Claude Code conventions
+/// - **Commands**: `.claude/commands` - Following Claude Code conventions
 ///
 /// # Path Resolution
 ///
@@ -488,9 +578,9 @@ pub struct Manifest {
 /// ```toml
 /// # Default configuration (can be omitted)
 /// [target]
-/// agents = ".claude/agents/ccpm"
+/// agents = ".claude/agents"
 /// snippets = ".claude/ccpm/snippets"
-/// commands = ".claude/commands/ccpm"
+/// commands = ".claude/commands"
 ///
 /// # Custom configuration
 /// [target]
@@ -518,7 +608,7 @@ pub struct TargetConfig {
     /// Agents are AI model definitions, prompts, or behavioral specifications.
     /// This directory will contain copies of agent files from dependencies.
     ///
-    /// **Default**: `.claude/agents/ccpm` (following Claude Code conventions)
+    /// **Default**: `.claude/agents` (following Claude Code conventions)
     #[serde(default = "default_agents_dir")]
     pub agents: String,
 
@@ -536,7 +626,7 @@ pub struct TargetConfig {
     /// Commands are Claude Code slash commands that provide custom functionality.
     /// This directory will contain copies of command files from dependencies.
     ///
-    /// **Default**: `.claude/commands/ccpm` (following Claude Code conventions)
+    /// **Default**: `.claude/commands` (following Claude Code conventions)
     #[serde(default = "default_commands_dir")]
     pub commands: String,
 
@@ -549,6 +639,36 @@ pub struct TargetConfig {
     /// **Default**: `.claude/ccpm/mcp-servers` (following Claude Code conventions)
     #[serde(default = "default_mcp_servers_dir", rename = "mcp-servers")]
     pub mcp_servers: String,
+
+    /// Directory where script files should be installed.
+    ///
+    /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
+    /// by hooks or run independently.
+    ///
+    /// **Default**: `.claude/ccpm/scripts` (following Claude Code conventions)
+    #[serde(default = "default_scripts_dir")]
+    pub scripts: String,
+
+    /// Directory where hook configuration files should be installed.
+    ///
+    /// Hooks are JSON configuration files that define event-based automation
+    /// in Claude Code.
+    ///
+    /// **Default**: `.claude/ccpm/hooks` (following Claude Code conventions)
+    #[serde(default = "default_hooks_dir")]
+    pub hooks: String,
+
+    /// Whether to automatically add installed files to `.claude/.gitignore`.
+    ///
+    /// When enabled (default), CCPM will create or update `.claude/.gitignore`
+    /// to exclude all installed files from version control. This prevents
+    /// installed dependencies from being committed to your repository.
+    ///
+    /// Set to `false` if you want to commit installed resources to version control.
+    ///
+    /// **Default**: `true`
+    #[serde(default = "default_gitignore")]
+    pub gitignore: bool,
 }
 
 impl Default for TargetConfig {
@@ -558,12 +678,15 @@ impl Default for TargetConfig {
             snippets: default_snippets_dir(),
             commands: default_commands_dir(),
             mcp_servers: default_mcp_servers_dir(),
+            scripts: default_scripts_dir(),
+            hooks: default_hooks_dir(),
+            gitignore: default_gitignore(),
         }
     }
 }
 
 fn default_agents_dir() -> String {
-    ".claude/agents/ccpm".to_string()
+    ".claude/agents".to_string()
 }
 
 fn default_snippets_dir() -> String {
@@ -571,11 +694,23 @@ fn default_snippets_dir() -> String {
 }
 
 fn default_commands_dir() -> String {
-    ".claude/commands/ccpm".to_string()
+    ".claude/commands".to_string()
 }
 
 fn default_mcp_servers_dir() -> String {
     ".claude/ccpm/mcp-servers".to_string()
+}
+
+fn default_scripts_dir() -> String {
+    ".claude/ccpm/scripts".to_string()
+}
+
+fn default_hooks_dir() -> String {
+    ".claude/ccpm/hooks".to_string()
+}
+
+fn default_gitignore() -> bool {
+    true
 }
 
 /// A resource dependency specification supporting multiple formats.
@@ -886,6 +1021,73 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
+    /// Custom target directory for this dependency.
+    ///
+    /// Overrides the default installation directory for this specific dependency.
+    /// The path is relative to the `.claude` directory for consistency and security.
+    /// If not specified, the dependency will be installed to the default location
+    /// based on its resource type.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [agents]
+    /// # Install to .claude/custom/tools/ instead of default .claude/agents/
+    /// special-agent = {
+    ///     source = "repo",
+    ///     path = "agent.md",
+    ///     version = "v1.0.0",
+    ///     target = "custom/tools"
+    /// }
+    ///
+    /// # Install to .claude/integrations/ai/
+    /// integration = {
+    ///     source = "repo",
+    ///     path = "integration.md",
+    ///     version = "v2.0.0",
+    ///     target = "integrations/ai"
+    /// }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Custom filename for this dependency.
+    ///
+    /// Overrides the default filename (which is based on the dependency key).
+    /// The filename should include the desired file extension. If not specified,
+    /// the dependency will be installed using the key name with an automatically
+    /// determined extension based on the resource type.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [agents]
+    /// # Install as "ai-assistant.md" instead of "my-ai.md"
+    /// my-ai = {
+    ///     source = "repo",
+    ///     path = "agent.md",
+    ///     version = "v1.0.0",
+    ///     filename = "ai-assistant.md"
+    /// }
+    ///
+    /// # Install with a different extension
+    /// doc-agent = {
+    ///     source = "repo",
+    ///     path = "documentation.md",
+    ///     version = "v2.0.0",
+    ///     filename = "docs-helper.txt"
+    /// }
+    ///
+    /// [scripts]
+    /// # Rename a script during installation
+    /// analyzer = {
+    ///     source = "repo",
+    ///     path = "scripts/data-analyzer-v3.py",
+    ///     version = "v1.0.0",
+    ///     filename = "analyze.py"
+    /// }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
 }
 
 impl Manifest {
@@ -893,7 +1095,7 @@ impl Manifest {
     ///
     /// The new manifest will have:
     /// - No sources defined
-    /// - Default target directories (`.claude/agents/ccpm` and `.claude/ccpm/snippets`)
+    /// - Default target directories (`.claude/agents` and `.claude/ccpm/snippets`)
     /// - No dependencies
     ///
     /// This is typically used when programmatically building a manifest or
@@ -910,7 +1112,7 @@ impl Manifest {
     /// assert!(manifest.snippets.is_empty());
     /// assert!(manifest.commands.is_empty());
     /// assert!(manifest.mcp_servers.is_empty());
-    /// assert_eq!(manifest.target.agents, ".claude/agents/ccpm");
+    /// assert_eq!(manifest.target.agents, ".claude/agents");
     /// ```
     #[must_use]
     pub fn new() -> Self {
@@ -1063,7 +1265,7 @@ impl Manifest {
     /// official = "https://github.com/claude-org/resources.git"
     ///
     /// [target]
-    /// agents = ".claude/agents/ccpm"
+    /// agents = ".claude/agents"
     /// snippets = ".claude/ccpm/snippets"
     ///
     /// [agents]
@@ -1151,6 +1353,8 @@ impl Manifest {
     ///         rev: None,
     ///         command: None,
     ///         args: None,
+    ///         target: None,
+    ///         filename: None,
     ///     }),
     ///     true
     /// );
@@ -1319,18 +1523,70 @@ impl Manifest {
     /// Dependencies are returned in the order they appear in the underlying
     /// `HashMaps` (agents first, then snippets, then commands), which means the order is not
     /// guaranteed to be stable across runs.
+    /// Get dependencies for a specific resource type
+    ///
+    /// Returns the HashMap of dependencies for the specified resource type.
+    /// Note: MCP servers return None as they use a different dependency type.
+    pub fn get_dependencies(
+        &self,
+        resource_type: crate::core::ResourceType,
+    ) -> Option<&HashMap<String, ResourceDependency>> {
+        use crate::core::ResourceType;
+        match resource_type {
+            ResourceType::Agent => Some(&self.agents),
+            ResourceType::Snippet => Some(&self.snippets),
+            ResourceType::Command => Some(&self.commands),
+            ResourceType::Script => Some(&self.scripts),
+            ResourceType::Hook => Some(&self.hooks),
+            ResourceType::McpServer => None, // MCP servers use McpServerDependency
+        }
+    }
+
+    /// Get the target directory for a specific resource type
+    pub fn get_target_dir(&self, resource_type: crate::core::ResourceType) -> &str {
+        use crate::core::ResourceType;
+        match resource_type {
+            ResourceType::Agent => &self.target.agents,
+            ResourceType::Snippet => &self.target.snippets,
+            ResourceType::Command => &self.target.commands,
+            ResourceType::Script => &self.target.scripts,
+            ResourceType::Hook => &self.target.hooks,
+            ResourceType::McpServer => &self.target.mcp_servers,
+        }
+    }
+
     #[must_use]
     pub fn all_dependencies(&self) -> Vec<(&str, &ResourceDependency)> {
         let mut deps = Vec::new();
 
-        for (name, dep) in &self.agents {
-            deps.push((name.as_str(), dep));
+        // Use ResourceType::all() to iterate through all resource types
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(type_deps) = self.get_dependencies(*resource_type) {
+                for (name, dep) in type_deps {
+                    deps.push((name.as_str(), dep));
+                }
+            }
         }
-        for (name, dep) in &self.snippets {
-            deps.push((name.as_str(), dep));
-        }
-        for (name, dep) in &self.commands {
-            deps.push((name.as_str(), dep));
+
+        deps
+    }
+
+    /// Get all dependencies including MCP servers.
+    ///
+    /// All resource types now use standard ResourceDependency, so no conversion needed.
+    #[must_use]
+    pub fn all_dependencies_with_mcp(
+        &self,
+    ) -> Vec<(&str, std::borrow::Cow<'_, ResourceDependency>)> {
+        let mut deps = Vec::new();
+
+        // Use ResourceType::all() to iterate through all resource types
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(type_deps) = self.get_dependencies(*resource_type) {
+                for (name, dep) in type_deps {
+                    deps.push((name.as_str(), std::borrow::Cow::Borrowed(dep)));
+                }
+            }
         }
 
         deps
@@ -1506,8 +1762,10 @@ impl Manifest {
     ///         version: Some("v1.0.0".to_string()),
     ///         branch: None,
     ///         rev: None,
-    ///     command: None,
-    ///     args: None,
+    ///         command: None,
+    ///         args: None,
+    ///         target: None,
+    ///         filename: None,
     ///     }),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -1579,31 +1837,24 @@ impl Manifest {
 
     /// Add or update an MCP server configuration.
     ///
-    /// MCP servers use a different dependency format than other resources
-    /// because they specify commands to run rather than files to install.
+    /// MCP servers now use standard ResourceDependency format,
+    /// pointing to JSON configuration files in source repositories.
     ///
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::manifest::Manifest;
-    /// use ccpm::mcp::McpServerDependency;
+    /// use ccpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
+    /// // Add MCP server from source repository
     /// manifest.add_mcp_server(
     ///     "filesystem".to_string(),
-    ///     McpServerDependency {
-    ///         command: "npx".to_string(),
-    ///         args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
-    ///         env: None,
-    ///         source: Some("npm".to_string()),
-    ///         version: Some("latest".to_string()),
-    ///         package: Some("@modelcontextprotocol/server-filesystem".to_string()),
-    ///     }
+    ///     ResourceDependency::Simple("../local/mcp-servers/filesystem.json".to_string())
     /// );
     /// ```
-    pub fn add_mcp_server(&mut self, name: String, config: crate::mcp::McpServerDependency) {
-        self.mcp_servers.insert(name, config);
+    pub fn add_mcp_server(&mut self, name: String, dependency: ResourceDependency) {
+        self.mcp_servers.insert(name, dependency);
     }
 }
 
@@ -1629,9 +1880,11 @@ impl ResourceDependency {
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     branch: None,
-    ///         rev: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -1648,6 +1901,78 @@ impl ResourceDependency {
         match self {
             ResourceDependency::Simple(_) => None,
             ResourceDependency::Detailed(d) => d.source.as_deref(),
+        }
+    }
+
+    /// Get the custom target directory for this dependency.
+    ///
+    /// Returns the custom target directory if specified, or `None` if the
+    /// dependency should use the default installation location for its resource type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    ///
+    /// // Dependency with custom target
+    /// let custom = ResourceDependency::Detailed(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     target: Some("custom/tools".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     filename: None,
+    /// });
+    /// assert_eq!(custom.get_target(), Some("custom/tools"));
+    ///
+    /// // Dependency without custom target
+    /// let default = ResourceDependency::Simple("../local/file.md".to_string());
+    /// assert!(default.get_target().is_none());
+    /// ```
+    #[must_use]
+    pub fn get_target(&self) -> Option<&str> {
+        match self {
+            ResourceDependency::Simple(_) => None,
+            ResourceDependency::Detailed(d) => d.target.as_deref(),
+        }
+    }
+
+    /// Get the custom filename for this dependency.
+    ///
+    /// Returns the custom filename if specified, or `None` if the
+    /// dependency should use the default filename based on the dependency key.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    ///
+    /// // Dependency with custom filename
+    /// let custom = ResourceDependency::Detailed(DetailedDependency {
+    ///     source: Some("official".to_string()),
+    ///     path: "agents/tool.md".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     filename: Some("ai-assistant.md".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    /// });
+    /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
+    ///
+    /// // Dependency without custom filename
+    /// let default = ResourceDependency::Simple("../local/file.md".to_string());
+    /// assert!(default.get_filename().is_none());
+    /// ```
+    #[must_use]
+    pub fn get_filename(&self) -> Option<&str> {
+        match self {
+            ResourceDependency::Simple(_) => None,
+            ResourceDependency::Detailed(d) => d.filename.as_deref(),
         }
     }
 
@@ -1674,9 +1999,11 @@ impl ResourceDependency {
     ///     path: "agents/code-reviewer.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     branch: None,
-    ///         rev: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -1716,6 +2043,8 @@ impl ResourceDependency {
     ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -1736,9 +2065,11 @@ impl ResourceDependency {
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     branch: None,
-    ///         rev: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -1751,6 +2082,8 @@ impl ResourceDependency {
     ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -1800,9 +2133,11 @@ impl ResourceDependency {
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
     ///     branch: None,
-    ///         rev: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert!(!remote.is_local());
     ///
@@ -1812,9 +2147,11 @@ impl ResourceDependency {
     ///     path: "../shared/tool.md".to_string(),
     ///     version: None,
     ///     branch: None,
-    ///         rev: None,
+    ///     rev: None,
     ///     command: None,
     ///     args: None,
+    ///     target: None,
+    ///     filename: None,
     /// });
     /// assert!(local_detailed.is_local());
     /// ```
@@ -2110,6 +2447,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2145,6 +2484,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -2174,6 +2515,8 @@ mod tests {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         });
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -2296,6 +2639,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             crate::core::ResourceType::Command,
         );
@@ -2316,7 +2661,7 @@ mod tests {
     #[test]
     fn test_target_config_commands_dir() {
         let config = TargetConfig::default();
-        assert_eq!(config.commands, ".claude/commands/ccpm");
+        assert_eq!(config.commands, ".claude/commands");
 
         // Test custom config
         let mut manifest = Manifest::new();
@@ -2328,31 +2673,29 @@ mod tests {
     fn test_mcp_servers() {
         let mut manifest = Manifest::new();
 
-        // Add an MCP server
+        // Add an MCP server (now using standard ResourceDependency)
         manifest.add_mcp_server(
             "test-server".to_string(),
-            crate::mcp::McpServerDependency {
-                command: "npx".to_string(),
-                args: vec!["-y".to_string(), "@test/server".to_string()],
-                env: Some(HashMap::from([(
-                    "LOG_LEVEL".to_string(),
-                    "debug".to_string(),
-                )])),
+            ResourceDependency::Detailed(DetailedDependency {
                 source: Some("npm".to_string()),
+                path: "mcp-servers/test-server.json".to_string(),
                 version: Some("latest".to_string()),
-                path: None,
                 branch: None,
                 rev: None,
-            },
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
         );
 
         assert_eq!(manifest.mcp_servers.len(), 1);
         assert!(manifest.mcp_servers.contains_key("test-server"));
 
         let server = &manifest.mcp_servers["test-server"];
-        assert_eq!(server.command, "npx");
-        assert_eq!(server.args.len(), 2);
-        assert!(server.env.is_some());
+        assert_eq!(server.get_source(), Some("npm"));
+        assert_eq!(server.get_path(), "mcp-servers/test-server.json");
+        assert_eq!(server.get_version(), Some("latest"));
     }
 
     #[test]
@@ -2364,16 +2707,7 @@ mod tests {
         manifest.add_source("npm".to_string(), "https://registry.npmjs.org".to_string());
         manifest.add_mcp_server(
             "postgres".to_string(),
-            crate::mcp::McpServerDependency {
-                command: "mcp-postgres".to_string(),
-                args: vec!["--port".to_string(), "5432".to_string()],
-                env: None,
-                source: None,
-                version: None,
-                path: None,
-                branch: None,
-                rev: None,
-            },
+            ResourceDependency::Simple("../local/mcp-servers/postgres.json".to_string()),
         );
 
         // Save and reload
@@ -2384,8 +2718,7 @@ mod tests {
         assert!(loaded.mcp_servers.contains_key("postgres"));
 
         let server = &loaded.mcp_servers["postgres"];
-        assert_eq!(server.command, "mcp-postgres");
-        assert_eq!(server.args, vec!["--port", "5432"]);
+        assert_eq!(server.get_path(), "../local/mcp-servers/postgres.json");
     }
 
     #[test]
@@ -2397,5 +2730,187 @@ mod tests {
         let mut manifest = Manifest::new();
         manifest.target.mcp_servers = "custom/mcp".to_string();
         assert_eq!(manifest.target.mcp_servers, "custom/mcp");
+    }
+
+    #[test]
+    fn test_dependency_with_custom_target() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("official".to_string()),
+            path: "agents/tool.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: Some("custom/tools".to_string()),
+            filename: None,
+        });
+
+        assert_eq!(dep.get_target(), Some("custom/tools"));
+        assert_eq!(dep.get_source(), Some("official"));
+        assert_eq!(dep.get_path(), "agents/tool.md");
+    }
+
+    #[test]
+    fn test_dependency_without_custom_target() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("official".to_string()),
+            path: "agents/tool.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: None,
+            filename: None,
+        });
+
+        assert!(dep.get_target().is_none());
+    }
+
+    #[test]
+    fn test_simple_dependency_no_custom_target() {
+        let dep = ResourceDependency::Simple("../local/file.md".to_string());
+        assert!(dep.get_target().is_none());
+    }
+
+    #[test]
+    fn test_save_load_dependency_with_custom_target() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.add_source(
+            "official".to_string(),
+            "https://github.com/example/official.git".to_string(),
+        );
+
+        // Add dependency with custom target
+        manifest.add_typed_dependency(
+            "special-agent".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("official".to_string()),
+                path: "agents/special.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                target: Some("integrations/ai".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                filename: None,
+            }),
+            crate::core::ResourceType::Agent,
+        );
+
+        // Save and reload
+        manifest.save(&manifest_path).unwrap();
+        let loaded = Manifest::load(&manifest_path).unwrap();
+
+        assert_eq!(loaded.agents.len(), 1);
+        assert!(loaded.agents.contains_key("special-agent"));
+
+        let dep = loaded.get_dependency("special-agent").unwrap();
+        assert_eq!(dep.get_target(), Some("integrations/ai"));
+        assert_eq!(dep.get_path(), "agents/special.md");
+    }
+
+    #[test]
+    fn test_dependency_with_custom_filename() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("official".to_string()),
+            path: "agents/tool.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: None,
+            filename: Some("ai-assistant.md".to_string()),
+        });
+
+        assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
+        assert_eq!(dep.get_source(), Some("official"));
+        assert_eq!(dep.get_path(), "agents/tool.md");
+    }
+
+    #[test]
+    fn test_dependency_without_custom_filename() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("official".to_string()),
+            path: "agents/tool.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: None,
+            filename: None,
+        });
+
+        assert!(dep.get_filename().is_none());
+    }
+
+    #[test]
+    fn test_simple_dependency_no_custom_filename() {
+        let dep = ResourceDependency::Simple("../local/file.md".to_string());
+        assert!(dep.get_filename().is_none());
+    }
+
+    #[test]
+    fn test_save_load_dependency_with_custom_filename() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        let mut manifest = Manifest::new();
+        manifest.add_source(
+            "official".to_string(),
+            "https://github.com/example/official.git".to_string(),
+        );
+
+        // Add dependency with custom filename
+        manifest.add_typed_dependency(
+            "my-agent".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("official".to_string()),
+                path: "agents/complex-name.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                target: None,
+                filename: Some("simple-name.txt".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+            }),
+            crate::core::ResourceType::Agent,
+        );
+
+        // Save and reload
+        manifest.save(&manifest_path).unwrap();
+        let loaded = Manifest::load(&manifest_path).unwrap();
+
+        assert_eq!(loaded.agents.len(), 1);
+        assert!(loaded.agents.contains_key("my-agent"));
+
+        let dep = loaded.get_dependency("my-agent").unwrap();
+        assert_eq!(dep.get_filename(), Some("simple-name.txt"));
+        assert_eq!(dep.get_path(), "agents/complex-name.md");
+    }
+
+    #[test]
+    fn test_dependency_with_both_target_and_filename() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("official".to_string()),
+            path: "agents/tool.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: Some("tools/ai".to_string()),
+            filename: Some("assistant.markdown".to_string()),
+        });
+
+        assert_eq!(dep.get_target(), Some("tools/ai"));
+        assert_eq!(dep.get_filename(), Some("assistant.markdown"));
     }
 }

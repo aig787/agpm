@@ -202,6 +202,7 @@ mod cli_tests {
         let orig_config = std::env::var("CCPM_CONFIG").ok();
 
         // Test applying config with all values
+        // Note: RUST_LOG is no longer set by apply_to_env, it's handled in main.rs
         let config = CliConfig {
             log_level: Some("debug".to_string()),
             no_progress: true,
@@ -209,7 +210,7 @@ mod cli_tests {
         };
         config.apply_to_env();
 
-        assert_eq!(std::env::var("RUST_LOG").unwrap(), "debug");
+        // RUST_LOG should not be modified by apply_to_env anymore
         assert_eq!(std::env::var("CCPM_NO_PROGRESS").unwrap(), "1");
         assert_eq!(std::env::var("CCPM_CONFIG").unwrap(), "/test/path");
 
@@ -239,13 +240,15 @@ mod cli_tests {
         use tempfile::TempDir;
 
         // Use WorkingDirGuard to serialize tests that change working directory
-        let _guard = WorkingDirGuard::new().unwrap();
+        // In coverage/CI environments, current dir might not exist, so set a safe one first
+        let _ = std::env::set_current_dir(std::env::temp_dir());
+        let guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
-        // Change to temp dir FIRST before creating the manifest
-        std::env::set_current_dir(&temp_path).unwrap();
+        // Change to temp dir using the guard
+        guard.change_to(&temp_path).unwrap();
 
         // Now create the manifest in the current directory
         let manifest_path = temp_path.join("ccpm.toml");
@@ -328,7 +331,7 @@ mod cli_tests {
 
         let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
-        let temp_path = temp_dir.path().canonicalize().unwrap();
+        let temp_path = temp_dir.path().to_path_buf();
         std::env::set_current_dir(&temp_path).unwrap();
 
         // Test Init command execution (line 692)
@@ -361,7 +364,7 @@ mod cli_tests {
     }
 
     #[tokio::test]
-    async fn test_cli_execute_mcp_command() {
+    async fn test_cli_execute_remove_command() {
         use crate::test_utils::WorkingDirGuard;
         use tempfile::TempDir;
 
@@ -374,15 +377,30 @@ mod cli_tests {
         // Change to temp directory
         std::env::set_current_dir(&temp_path).unwrap();
 
-        // Create a manifest for MCP operations
-        std::fs::write(temp_path.join("ccpm.toml"), "[sources]\n").unwrap();
+        // Create a manifest with a source to remove
+        std::fs::write(
+            temp_path.join("ccpm.toml"),
+            r#"[sources]
+test-source = "https://github.com/test/repo.git"
 
-        // Test MCP command execution (line 700)
-        let cli = Cli::try_parse_from(["ccpm", "mcp", "status"]).unwrap();
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+"#,
+        )
+        .unwrap();
+
+        // Test Remove command execution - try to remove non-existent source
+        let cli = Cli::try_parse_from(["ccpm", "remove", "source", "nonexistent"]).unwrap();
 
         let result = cli.execute().await;
 
-        assert!(result.is_ok(), "MCP command failed: {result:?}");
+        // Should fail because source doesn't exist
+        assert!(
+            result.is_err(),
+            "Remove command should fail for non-existent source"
+        );
 
         // WorkingDirGuard will automatically restore the directory
     }

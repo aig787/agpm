@@ -23,23 +23,22 @@
 //!
 //! # Manifest Structure
 //!
-//! The generated manifest follows this structure:
+//! The generated manifest contains empty sections for all resource types:
 //!
 //! ```toml
-//! # CCPM Manifest
-//! # This file defines your Claude Code resource dependencies
-//!
 //! [sources]
-//! # Add your Git repository sources here
-//! # Example: official = "https://github.com/example-org/ccpm-official.git"
 //!
 //! [agents]
-//! # Add your agent dependencies here
-//! # Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 //!
 //! [snippets]
-//! # Add your snippet dependencies here  
-//! # Example: utils = { source = "official", path = "snippets/utils.md", version = "v1.2.0" }
+//!
+//! [commands]
+//!
+//! [scripts]
+//!
+//! [hooks]
+//!
+//! [mcp-servers]
 //! ```
 //!
 //! # Error Conditions
@@ -102,8 +101,8 @@ pub struct InitCommand {
 impl InitCommand {
     /// Execute the init command to create a new CCPM manifest file.
     ///
-    /// This method creates a `ccpm.toml` manifest file with a basic template structure
-    /// that includes example sections for sources, agents, and snippets. The file is
+    /// This method creates a `ccpm.toml` manifest file with a minimal template structure
+    /// that includes empty sections for all resource types. The file is
     /// created in the specified directory or current directory if no path is provided.
     ///
     /// # Behavior
@@ -157,13 +156,13 @@ impl InitCommand {
             fs::create_dir_all(&target_dir)?;
         }
 
-        // Write a basic template with empty sections
+        // Write a minimal template with empty sections
         let template = r#"# CCPM Manifest
 # This file defines your Claude Code resource dependencies
 
 [sources]
 # Add your Git repository sources here
-# Example: official = "https://github.com/example-org/ccpm-official.git"
+# Example: official = "https://github.com/aig787/ccpm-community.git"
 
 [agents]
 # Add your agent dependencies here
@@ -171,12 +170,28 @@ impl InitCommand {
 
 [snippets]
 # Add your snippet dependencies here
-# Example: utils = { source = "official", path = "snippets/utils.md", version = "v1.2.0" }
+# Example: utils = { source = "official", path = "snippets/utils.md" }
+
+[commands]
+# Add your command dependencies here
+# Example: deploy = { source = "official", path = "commands/deploy.md" }
+
+[scripts]
+# Add your script dependencies here
+# Example: build = { source = "official", path = "scripts/build.sh" }
+
+[hooks]
+# Add your hook dependencies here
+# Example: pre-commit = { source = "official", path = "hooks/pre-commit.json" }
+
+[mcp-servers]
+# Add your MCP server dependencies here
+# Example: filesystem = { source = "official", path = "mcp-servers/filesystem.json" }
 "#;
         fs::write(&manifest_path, template)?;
 
         // Update or create .gitignore with CCPM entries
-        let gitignore_entries = vec![".claude/**/ccpm/", ".claude/ccpm/"];
+        let gitignore_entries = vec![".claude/ccpm/", ".claude/.gitignore"];
 
         let mut gitignore_content = if gitignore_path.exists() {
             fs::read_to_string(&gitignore_path)?
@@ -412,8 +427,8 @@ mod tests {
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains("# CCPM managed directories"));
-        assert!(content.contains(".claude/**/ccpm/"));
         assert!(content.contains(".claude/ccpm/"));
+        assert!(content.contains(".claude/.gitignore"));
     }
 
     #[tokio::test]
@@ -438,8 +453,8 @@ mod tests {
         assert!(content.contains("*.log"));
         // Should add CCPM entries
         assert!(content.contains("# CCPM managed directories"));
-        assert!(content.contains(".claude/**/ccpm/"));
         assert!(content.contains(".claude/ccpm/"));
+        assert!(content.contains(".claude/.gitignore"));
     }
 
     #[tokio::test]
@@ -473,8 +488,8 @@ mod tests {
             second_content.matches("# CCPM managed directories").count()
         );
         assert_eq!(
-            first_content.matches(".claude/**/ccpm/").count(),
-            second_content.matches(".claude/**/ccpm/").count()
+            first_content.matches(".claude/.gitignore").count(),
+            second_content.matches(".claude/.gitignore").count()
         );
     }
 }

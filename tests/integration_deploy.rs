@@ -150,7 +150,7 @@ path = "agents/my-agent.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-installed_at = ".claude/agents/ccpm/my-agent.md"
+installed_at = ".claude/agents/my-agent.md"
 
 [[agents]]
 name = "helper"
@@ -159,7 +159,7 @@ path = "agents/helper.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da"
-installed_at = ".claude/agents/ccpm/helper.md"
+installed_at = ".claude/agents/helper.md"
 "#,
         fixtures::path_to_file_url(&official_repo),
         official_sha,
@@ -179,12 +179,8 @@ installed_at = ".claude/agents/ccpm/helper.md"
         .success()
         .stdout(predicate::str::contains("Installing"));
 
-    // Verify agents directory was created and populated (with ccpm subdirectory)
-    let agents_dir = env
-        .project_path()
-        .join(".claude")
-        .join("agents")
-        .join("ccpm");
+    // Verify agents directory was created and populated
+    let agents_dir = env.project_path().join(".claude").join("agents");
     DirAssert::exists(&agents_dir);
     DirAssert::contains_file(&agents_dir, "my-agent.md");
     DirAssert::contains_file(&agents_dir, "helper.md");
@@ -297,7 +293,7 @@ path = "agents/my-agent.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-installed_at = ".claude/agents/ccpm/my-agent.md"
+installed_at = ".claude/agents/my-agent.md"
 "#,
         fixtures::path_to_file_url(&official_repo),
         official_sha,
@@ -306,11 +302,7 @@ installed_at = ".claude/agents/ccpm/my-agent.md"
     fs::write(env.project_path().join("ccpm.lock"), lockfile_content).unwrap();
 
     // Create existing agent file to test force overwrite
-    let agents_dir = env
-        .project_path()
-        .join(".claude")
-        .join("agents")
-        .join("ccpm");
+    let agents_dir = env.project_path().join(".claude").join("agents");
     fs::create_dir_all(&agents_dir).unwrap();
     fs::write(agents_dir.join("my-agent.md"), "old content").unwrap();
 
@@ -383,11 +375,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
         .stdout(predicate::str::contains("Installing"));
 
     // Verify that files were installed
-    let agents_dir = env
-        .project_path()
-        .join(".claude")
-        .join("agents")
-        .join("ccpm");
+    let agents_dir = env.project_path().join(".claude").join("agents");
     assert!(agents_dir.join("my-agent.md").exists());
     assert!(agents_dir.join("helper.md").exists());
 }
@@ -459,11 +447,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     assert!(lockfile_content.contains("local-utils")); // local dependency
 
     // Verify all dependencies were installed
-    let agents_dir = env
-        .project_path()
-        .join(".claude")
-        .join("agents")
-        .join("ccpm");
+    let agents_dir = env.project_path().join(".claude").join("agents");
     assert!(agents_dir.join("my-agent.md").exists());
     assert!(agents_dir.join("local-agent.md").exists());
 

@@ -368,12 +368,12 @@ impl DependencyResolver {
             lockfile.add_source(name.clone(), url.clone(), String::new());
         }
 
-        // Get all dependencies to resolve (clone to avoid borrow checker issues)
+        // Get all dependencies to resolve including MCP servers (clone to avoid borrow checker issues)
         let deps: Vec<(String, ResourceDependency)> = self
             .manifest
-            .all_dependencies()
+            .all_dependencies_with_mcp()
             .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.clone()))
+            .map(|(name, dep)| (name.to_string(), dep.into_owned()))
             .collect();
 
         // Resolve each dependency
@@ -394,8 +394,9 @@ impl DependencyResolver {
                 "agent" => lockfile.agents.push(entry),
                 "snippet" => lockfile.snippets.push(entry),
                 "command" => lockfile.commands.push(entry),
-                // MCP servers are handled separately, not added to lockfile here
-                "mcp-server" => {}
+                "script" => lockfile.scripts.push(entry),
+                "hook" => lockfile.hooks.push(entry),
+                "mcp-server" => lockfile.mcp_servers.push(entry),
                 _ => lockfile.snippets.push(entry), // Default fallback
             }
         }
@@ -454,12 +455,52 @@ impl DependencyResolver {
     ) -> Result<LockedResource> {
         if dep.is_local() {
             // Local dependency - just create entry with path
-            // Determine the installed location based on resource type
+            // Determine the installed location based on resource type, custom target, and custom filename
             let resource_type = self.get_resource_type(name);
-            let installed_at = if resource_type == "agent" {
-                format!("{}/{}.md", self.manifest.target.agents, name)
+
+            // Determine the filename to use
+            let filename = if let Some(custom_filename) = dep.get_filename() {
+                // Use custom filename as-is (includes extension)
+                custom_filename.to_string()
             } else {
-                format!("{}/{}.md", self.manifest.target.snippets, name)
+                // Use default filename based on dependency name and resource type
+                let extension = match resource_type.as_str() {
+                    "hook" | "mcp-server" => "json",
+                    "script" => {
+                        // Scripts maintain their original extension
+                        let path = dep.get_path();
+                        Path::new(path)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("sh")
+                    }
+                    _ => "md",
+                };
+                format!("{}.{}", name, extension)
+            };
+
+            // Determine the target directory
+            let installed_at = if let Some(custom_target) = dep.get_target() {
+                // Use custom target relative to .claude directory
+                let custom_path = format!(
+                    ".claude/{}",
+                    custom_target
+                        .trim_start_matches(".claude/")
+                        .trim_start_matches('/')
+                );
+                format!("{}/{}", custom_path, filename)
+            } else {
+                // Use default target based on resource type
+                let target_dir = match resource_type.as_str() {
+                    "agent" => &self.manifest.target.agents,
+                    "snippet" => &self.manifest.target.snippets,
+                    "command" => &self.manifest.target.commands,
+                    "script" => &self.manifest.target.scripts,
+                    "hook" => &self.manifest.target.hooks,
+                    "mcp-server" => &self.manifest.target.mcp_servers,
+                    _ => &self.manifest.target.snippets, // fallback
+                };
+                format!("{}/{}", target_dir, filename)
             };
 
             Ok(LockedResource {
@@ -499,12 +540,52 @@ impl DependencyResolver {
                 (None, commit)
             };
 
-            // Determine the installed location based on resource type
+            // Determine the installed location based on resource type, custom target, and custom filename
             let resource_type = self.get_resource_type(name);
-            let installed_at = if resource_type == "agent" {
-                format!("{}/{}.md", self.manifest.target.agents, name)
+
+            // Determine the filename to use
+            let filename = if let Some(custom_filename) = dep.get_filename() {
+                // Use custom filename as-is (includes extension)
+                custom_filename.to_string()
             } else {
-                format!("{}/{}.md", self.manifest.target.snippets, name)
+                // Use default filename based on dependency name and resource type
+                let extension = match resource_type.as_str() {
+                    "hook" | "mcp-server" => "json",
+                    "script" => {
+                        // Scripts maintain their original extension
+                        let path = dep.get_path();
+                        Path::new(path)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("sh")
+                    }
+                    _ => "md",
+                };
+                format!("{}.{}", name, extension)
+            };
+
+            // Determine the target directory
+            let installed_at = if let Some(custom_target) = dep.get_target() {
+                // Use custom target relative to .claude directory
+                let custom_path = format!(
+                    ".claude/{}",
+                    custom_target
+                        .trim_start_matches(".claude/")
+                        .trim_start_matches('/')
+                );
+                format!("{}/{}", custom_path, filename)
+            } else {
+                // Use default target based on resource type
+                let target_dir = match resource_type.as_str() {
+                    "agent" => &self.manifest.target.agents,
+                    "snippet" => &self.manifest.target.snippets,
+                    "command" => &self.manifest.target.commands,
+                    "script" => &self.manifest.target.scripts,
+                    "hook" => &self.manifest.target.hooks,
+                    "mcp-server" => &self.manifest.target.mcp_servers,
+                    _ => &self.manifest.target.snippets, // fallback
+                };
+                format!("{}/{}", target_dir, filename)
             };
 
             Ok(LockedResource {
@@ -736,18 +817,16 @@ impl DependencyResolver {
     /// - HEAD points to an invalid or missing commit
     /// - Process execution is interrupted or times out
     async fn get_current_commit(&self, repo: &GitRepo) -> Result<String> {
-        let output = tokio::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
+        use crate::git::command_builder::GitCommand;
+
+        // Use GitCommand which has built-in timeout support
+        let commit = GitCommand::current_commit()
             .current_dir(repo.path())
-            .output()
+            .execute_stdout()
             .await
             .context("Failed to get current commit")?;
 
-        if !output.status.success() {
-            anyhow::bail!("Failed to get current commit hash");
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        Ok(commit)
     }
 
     /// Determines the resource type (agent or snippet) from a dependency name.
@@ -785,6 +864,10 @@ impl DependencyResolver {
             "snippet".to_string()
         } else if self.manifest.commands.contains_key(name) {
             "command".to_string()
+        } else if self.manifest.scripts.contains_key(name) {
+            "script".to_string()
+        } else if self.manifest.hooks.contains_key(name) {
+            "hook".to_string()
         } else if self.manifest.mcp_servers.contains_key(name) {
             "mcp-server".to_string()
         } else {
@@ -908,8 +991,28 @@ impl DependencyResolver {
                         lockfile.commands.push(entry);
                     }
                 }
-                // MCP servers are handled separately
-                "mcp-server" => {}
+                "script" => {
+                    if let Some(existing) = lockfile.scripts.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.scripts.push(entry);
+                    }
+                }
+                "hook" => {
+                    if let Some(existing) = lockfile.hooks.iter_mut().find(|e| e.name == name) {
+                        *existing = entry;
+                    } else {
+                        lockfile.hooks.push(entry);
+                    }
+                }
+                "mcp-server" => {
+                    if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| e.name == name)
+                    {
+                        *existing = entry;
+                    } else {
+                        lockfile.mcp_servers.push(entry);
+                    }
+                }
                 _ => {
                     // Default to snippet
                     if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
@@ -1165,6 +1268,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1179,6 +1284,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1206,6 +1313,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1302,6 +1411,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1348,6 +1459,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1423,6 +1536,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1493,6 +1608,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1506,6 +1623,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
             true,
         );
@@ -1543,5 +1662,175 @@ mod tests {
         assert_eq!(lockfile.agents.len(), 0);
         assert_eq!(lockfile.snippets.len(), 0);
         assert_eq!(lockfile.sources.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_custom_target() {
+        let mut manifest = Manifest::new();
+
+        // Add local dependency with custom target
+        manifest.add_dependency(
+            "custom-agent".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "../test.md".to_string(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: Some("integrations/custom".to_string()),
+                filename: None,
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        assert_eq!(agent.name, "custom-agent");
+        // Verify the custom target is used in installed_at
+        assert!(agent.installed_at.contains(".claude/integrations/custom"));
+        assert_eq!(
+            agent.installed_at,
+            ".claude/integrations/custom/custom-agent.md"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_without_custom_target() {
+        let mut manifest = Manifest::new();
+
+        // Add local dependency without custom target
+        manifest.add_dependency(
+            "standard-agent".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "../test.md".to_string(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        assert_eq!(agent.name, "standard-agent");
+        // Verify the default target is used
+        assert_eq!(agent.installed_at, ".claude/agents/standard-agent.md");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_custom_filename() {
+        let mut manifest = Manifest::new();
+
+        // Add local dependency with custom filename
+        manifest.add_dependency(
+            "my-agent".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "../test.md".to_string(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some("ai-assistant.txt".to_string()),
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        assert_eq!(agent.name, "my-agent");
+        // Verify the custom filename is used
+        assert_eq!(agent.installed_at, ".claude/agents/ai-assistant.txt");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_custom_filename_and_target() {
+        let mut manifest = Manifest::new();
+
+        // Add local dependency with both custom filename and target
+        manifest.add_dependency(
+            "special-tool".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "../test.md".to_string(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: Some("tools/ai".to_string()),
+                filename: Some("assistant.markdown".to_string()),
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        assert_eq!(agent.name, "special-tool");
+        // Verify both custom target and filename are used
+        assert_eq!(agent.installed_at, ".claude/tools/ai/assistant.markdown");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_script_with_custom_filename() {
+        let mut manifest = Manifest::new();
+
+        // Add script with custom filename (different extension)
+        manifest.add_dependency(
+            "analyzer".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: "../scripts/data-analyzer-v3.py".to_string(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some("analyze.py".to_string()),
+            }),
+            false, // script (not agent)
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        // Scripts should be in snippets array for now (based on false flag)
+        assert_eq!(lockfile.snippets.len(), 1);
+
+        let script = &lockfile.snippets[0];
+        assert_eq!(script.name, "analyzer");
+        // Verify custom filename is used (with custom extension)
+        assert_eq!(script.installed_at, ".claude/ccpm/snippets/analyze.py");
     }
 }

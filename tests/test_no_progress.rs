@@ -1,8 +1,13 @@
 use ccpm::utils::progress::{create_progress_bar, spinner_with_message, ProgressBar};
 use std::env;
 
+// NOTE: These tests intentionally modify environment variables to test
+// the CCPM_NO_PROGRESS functionality. This is safe because each test
+// cleans up after itself by removing the environment variable.
+
 #[test]
 fn test_no_progress_flag_disables_progress() {
+    ccpm::test_utils::init_test_logging();
     // Clear the environment variable first
     env::remove_var("CCPM_NO_PROGRESS");
 
@@ -37,6 +42,7 @@ fn test_no_progress_flag_disables_progress() {
 
 #[test]
 fn test_no_progress_with_thread_safe_progress() {
+    ccpm::test_utils::init_test_logging();
     use ccpm::utils::progress::{create_thread_safe_progress, ThreadSafeProgressBar};
 
     // Clear the environment variable first
@@ -67,6 +73,7 @@ fn test_no_progress_with_thread_safe_progress() {
 
 #[test]
 fn test_no_progress_with_parallel_counter() {
+    ccpm::test_utils::init_test_logging();
     use ccpm::utils::progress::ParallelProgressCounter;
 
     // Clear the environment variable first

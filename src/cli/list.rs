@@ -143,7 +143,6 @@ struct ListItem {
 ///     files: false,
 ///     verbose: false,
 ///     sort: None,
-///     outdated: false,
 /// };
 ///
 /// // List only agents with detailed information
@@ -159,7 +158,6 @@ struct ListItem {
 ///     files: true,
 ///     verbose: false,
 ///     sort: Some("name".to_string()),
-///     outdated: false,
 /// };
 /// ```
 #[derive(Args)]
@@ -256,14 +254,6 @@ pub struct ListCommand {
     /// - `type`: Sort by resource type (agents first, then snippets)
     #[arg(long, value_name = "FIELD")]
     sort: Option<String>,
-
-    /// Show outdated resources
-    ///
-    /// Highlights resources that have newer versions available in their
-    /// source repositories. This requires network access to check remote
-    /// repositories for updates.
-    #[arg(long)]
-    outdated: bool,
 }
 
 impl ListCommand {
@@ -278,7 +268,6 @@ impl ListCommand {
     /// 2. **Filtering**: Applies type, source, and search filters
     /// 3. **Sorting**: Orders results according to the specified sort field
     /// 4. **Formatting**: Outputs data in the requested format
-    /// 5. **Outdated Check**: Optionally checks for available updates
     ///
     /// # Data Sources
     ///
@@ -300,7 +289,6 @@ impl ListCommand {
     ///   - Lockfile format is invalid
     /// - Unable to load manifest (in manifest mode)
     ///   - Output formatting fails
-    ///   - Network issues (when checking outdated)
     ///
     /// # Examples
     ///
@@ -320,7 +308,6 @@ impl ListCommand {
     ///     files: false,
     ///     verbose: false,
     ///     sort: Some("name".to_string()),
-    ///     outdated: false,
     /// };
     /// // cmd.execute().await?;
     /// # Ok::<(), anyhow::Error>(())
@@ -406,57 +393,54 @@ impl ListCommand {
     fn list_from_manifest(&self, manifest_path: &std::path::Path) -> Result<()> {
         let manifest = Manifest::load(manifest_path)?;
 
-        // Determine what to show based on filters
-        let show_agents = self.should_show_agents();
-        let show_snippets = self.should_show_snippets();
-        let show_commands = self.should_show_commands();
-
         // Collect and filter dependencies
         let mut items = Vec::new();
 
-        if show_agents {
-            for (name, dep) in &manifest.agents {
-                if self.matches_filters(name, Some(dep), "agent") {
-                    items.push(ListItem {
-                        name: name.clone(),
-                        source: dep.get_source().map(std::string::ToString::to_string),
-                        version: dep.get_version().map(std::string::ToString::to_string),
-                        path: Some(dep.get_path().to_string()),
-                        resource_type: "agent".to_string(),
-                        installed_at: None,
-                        checksum: None,
-                        resolved_commit: None,
-                    });
+        // Iterate through all resource types using the central definition
+        for resource_type in crate::core::ResourceType::all() {
+            // Check if we should show this resource type
+            if !self.should_show_resource_type(*resource_type) {
+                continue;
+            }
+
+            let type_str = resource_type.to_string();
+
+            // Note: MCP servers are handled separately as they use a different dependency type
+            if *resource_type == crate::core::ResourceType::McpServer {
+                // Skip MCP servers in this generic iteration - they need special handling
+                continue;
+            }
+
+            // Get dependencies for this resource type from the manifest
+            if let Some(deps) = manifest.get_dependencies(*resource_type) {
+                for (name, dep) in deps {
+                    if self.matches_filters(name, Some(dep), &type_str) {
+                        items.push(ListItem {
+                            name: name.clone(),
+                            source: dep.get_source().map(std::string::ToString::to_string),
+                            version: dep.get_version().map(std::string::ToString::to_string),
+                            path: Some(dep.get_path().to_string()),
+                            resource_type: type_str.clone(),
+                            installed_at: None,
+                            checksum: None,
+                            resolved_commit: None,
+                        });
+                    }
                 }
             }
         }
 
-        if show_snippets {
-            for (name, dep) in &manifest.snippets {
-                if self.matches_filters(name, Some(dep), "snippet") {
+        // Handle MCP servers (now using standard ResourceDependency)
+        if self.should_show_resource_type(crate::core::ResourceType::McpServer) {
+            for (name, mcp_dep) in &manifest.mcp_servers {
+                // MCP servers now use standard ResourceDependency
+                if self.matches_filters(name, Some(mcp_dep), "mcp-server") {
                     items.push(ListItem {
                         name: name.clone(),
-                        source: dep.get_source().map(std::string::ToString::to_string),
-                        version: dep.get_version().map(std::string::ToString::to_string),
-                        path: Some(dep.get_path().to_string()),
-                        resource_type: "snippet".to_string(),
-                        installed_at: None,
-                        checksum: None,
-                        resolved_commit: None,
-                    });
-                }
-            }
-        }
-
-        if show_commands {
-            for (name, dep) in &manifest.commands {
-                if self.matches_filters(name, Some(dep), "command") {
-                    items.push(ListItem {
-                        name: name.clone(),
-                        source: dep.get_source().map(std::string::ToString::to_string),
-                        version: dep.get_version().map(std::string::ToString::to_string),
-                        path: Some(dep.get_path().to_string()),
-                        resource_type: "command".to_string(),
+                        source: mcp_dep.get_source().map(std::string::ToString::to_string),
+                        version: mcp_dep.get_version().map(std::string::ToString::to_string),
+                        path: Some(mcp_dep.get_path().to_string()),
+                        resource_type: "mcp-server".to_string(),
                         installed_at: None,
                         checksum: None,
                         resolved_commit: None,
@@ -489,34 +473,22 @@ impl ListCommand {
 
         let lockfile = LockFile::load(&lockfile_path)?;
 
-        // Determine what to show based on filters
-        let show_agents = self.should_show_agents();
-        let show_snippets = self.should_show_snippets();
-        let show_commands = self.should_show_commands();
-
         // Collect and filter entries
         let mut items = Vec::new();
 
-        if show_agents {
-            for entry in &lockfile.agents {
-                if self.matches_lockfile_filters(&entry.name, entry, "agent") {
-                    items.push(self.lockentry_to_listitem(entry, "agent"));
-                }
+        // Iterate through all resource types using the central definition
+        for resource_type in crate::core::ResourceType::all() {
+            // Check if we should show this resource type
+            if !self.should_show_resource_type(*resource_type) {
+                continue;
             }
-        }
 
-        if show_snippets {
-            for entry in &lockfile.snippets {
-                if self.matches_lockfile_filters(&entry.name, entry, "snippet") {
-                    items.push(self.lockentry_to_listitem(entry, "snippet"));
-                }
-            }
-        }
+            let type_str = resource_type.to_string();
 
-        if show_commands {
-            for entry in &lockfile.commands {
-                if self.matches_lockfile_filters(&entry.name, entry, "command") {
-                    items.push(self.lockentry_to_listitem(entry, "command"));
+            // Get resources for this type from the lockfile
+            for entry in lockfile.get_resources(*resource_type) {
+                if self.matches_lockfile_filters(&entry.name, entry, &type_str) {
+                    items.push(self.lockentry_to_listitem(entry, &type_str));
                 }
             }
         }
@@ -525,16 +497,6 @@ impl ListCommand {
         self.sort_items(&mut items);
 
         // Handle special flags
-        if self.outdated {
-            // TODO: Implement outdated check logic
-            println!("Outdated resources:");
-            for item in &items {
-                // For now, just show items, in real implementation we'd check against latest versions
-                let current_version = item.version.as_deref().unwrap_or("unknown");
-                println!("  {} {} → v1.0.0", item.name, current_version);
-            }
-            return Ok(());
-        }
 
         // Output results
         self.output_items(&items, "Installed resources from ccpm.lock:")?;
@@ -542,30 +504,24 @@ impl ListCommand {
         Ok(())
     }
 
-    /// Determine if agents should be shown
-    fn should_show_agents(&self) -> bool {
-        if let Some(ref t) = self.r#type {
-            t == "agents" || t == "agent"
-        } else {
-            !self.snippets && !self.commands
-        }
-    }
+    /// Determine if a resource type should be shown based on filters
+    fn should_show_resource_type(&self, resource_type: crate::core::ResourceType) -> bool {
+        use crate::core::ResourceType;
 
-    /// Determine if snippets should be shown
-    fn should_show_snippets(&self) -> bool {
+        // Check if there's a type filter
         if let Some(ref t) = self.r#type {
-            t == "snippets" || t == "snippet"
-        } else {
-            !self.agents && !self.commands
+            let type_str = resource_type.to_string();
+            return t == &type_str || t == &format!("{}s", type_str);
         }
-    }
 
-    /// Determine if commands should be shown
-    fn should_show_commands(&self) -> bool {
-        if let Some(ref t) = self.r#type {
-            t == "commands" || t == "command"
-        } else {
-            !self.agents && !self.snippets
+        // Check individual flags
+        match resource_type {
+            ResourceType::Agent => !self.snippets && !self.commands,
+            ResourceType::Snippet => !self.agents && !self.commands,
+            ResourceType::Command => !self.agents && !self.snippets,
+            ResourceType::Script => !self.agents && !self.snippets && !self.commands,
+            ResourceType::Hook => !self.agents && !self.snippets && !self.commands,
+            ResourceType::McpServer => !self.agents && !self.snippets && !self.commands,
         }
     }
 
@@ -763,8 +719,8 @@ impl ListCommand {
             }
         } else {
             // Simple listing
-            let show_agents = self.should_show_agents();
-            let show_snippets = self.should_show_snippets();
+            let show_agents = self.should_show_resource_type(crate::core::ResourceType::Agent);
+            let show_snippets = self.should_show_resource_type(crate::core::ResourceType::Snippet);
 
             if show_agents {
                 let agents: Vec<_> = items
@@ -920,7 +876,6 @@ mod tests {
             files: false,
             verbose: false,
             sort: None,
-            outdated: false,
         }
     }
 
@@ -948,6 +903,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -967,6 +924,8 @@ mod tests {
                 branch: None,
                 rev: None,
                 args: None,
+                target: None,
+                filename: None,
             }),
         );
 
@@ -1199,115 +1158,115 @@ mod tests {
     fn test_should_show_agents() {
         // Show agents when no specific type filter
         let cmd = create_default_command();
-        assert!(cmd.should_show_agents());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Agent));
 
         // Show only agents when agents flag is set
         let cmd = ListCommand {
             agents: true,
             ..create_default_command()
         };
-        assert!(cmd.should_show_agents());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Agent));
 
         // Don't show agents when snippets flag is set
         let cmd = ListCommand {
             snippets: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_agents());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
 
         // Show agents when type is "agents"
         let cmd = ListCommand {
             r#type: Some("agents".to_string()),
             ..create_default_command()
         };
-        assert!(cmd.should_show_agents());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Agent));
 
         // Don't show agents when type is "snippets"
         let cmd = ListCommand {
             r#type: Some("snippets".to_string()),
             ..create_default_command()
         };
-        assert!(!cmd.should_show_agents());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
     }
 
     #[test]
     fn test_should_show_snippets() {
         // Show snippets when no specific type filter
         let cmd = create_default_command();
-        assert!(cmd.should_show_snippets());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
 
         // Don't show snippets when agents flag is set
         let cmd = ListCommand {
             agents: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_snippets());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
 
         // Show only snippets when snippets flag is set
         let cmd = ListCommand {
             snippets: true,
             ..create_default_command()
         };
-        assert!(cmd.should_show_snippets());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
 
         // Don't show snippets when type is "agents"
         let cmd = ListCommand {
             r#type: Some("agents".to_string()),
             ..create_default_command()
         };
-        assert!(!cmd.should_show_snippets());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
 
         // Show snippets when type is "snippets"
         let cmd = ListCommand {
             r#type: Some("snippets".to_string()),
             ..create_default_command()
         };
-        assert!(cmd.should_show_snippets());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
     }
 
     #[test]
     fn test_should_show_commands() {
         // Show commands when no specific type filter
         let cmd = create_default_command();
-        assert!(cmd.should_show_commands());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         // Don't show commands when agents flag is set
         let cmd = ListCommand {
             agents: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_commands());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         // Don't show commands when snippets flag is set
         let cmd = ListCommand {
             snippets: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_commands());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         // Show only commands when commands flag is set
         let cmd = ListCommand {
             commands: true,
             ..create_default_command()
         };
-        assert!(cmd.should_show_commands());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         // Don't show other types when commands flag is set
-        assert!(!cmd.should_show_agents());
-        assert!(!cmd.should_show_snippets());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
 
         // Show commands when type is "commands" or "command"
         let cmd = ListCommand {
             r#type: Some("commands".to_string()),
             ..create_default_command()
         };
-        assert!(cmd.should_show_commands());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         let cmd = ListCommand {
             r#type: Some("command".to_string()),
             ..create_default_command()
         };
-        assert!(cmd.should_show_commands());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
     }
 
     #[test]
@@ -1317,25 +1276,25 @@ mod tests {
             agents: true,
             ..create_default_command()
         };
-        assert!(cmd.should_show_agents());
-        assert!(!cmd.should_show_snippets());
-        assert!(!cmd.should_show_commands());
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Agent));
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         let cmd = ListCommand {
             snippets: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_agents());
-        assert!(cmd.should_show_snippets());
-        assert!(!cmd.should_show_commands());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Command));
 
         let cmd = ListCommand {
             commands: true,
             ..create_default_command()
         };
-        assert!(!cmd.should_show_agents());
-        assert!(!cmd.should_show_snippets());
-        assert!(cmd.should_show_commands());
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Agent));
+        assert!(!cmd.should_show_resource_type(crate::core::ResourceType::Snippet));
+        assert!(cmd.should_show_resource_type(crate::core::ResourceType::Command));
     }
 
     #[test]
@@ -1353,6 +1312,8 @@ mod tests {
             branch: None,
             rev: None,
             args: None,
+            target: None,
+            filename: None,
         });
 
         let dep_with_different_source = ResourceDependency::Detailed(DetailedDependency {
@@ -1363,6 +1324,8 @@ mod tests {
             branch: None,
             rev: None,
             args: None,
+            target: None,
+            filename: None,
         });
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
@@ -1884,28 +1847,6 @@ mod tests {
         let cmd = ListCommand {
             sort: Some("name".to_string()),
             manifest: true,
-            ..create_default_command()
-        };
-
-        let result = cmd.execute_from_path(manifest_path).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_list_outdated_flag() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
-
-        // Create both manifest and lockfile
-        let manifest = create_test_manifest();
-        manifest.save(&manifest_path).unwrap();
-
-        let lockfile = create_test_lockfile();
-        lockfile.save(&lockfile_path).unwrap();
-
-        let cmd = ListCommand {
-            outdated: true,
             ..create_default_command()
         };
 

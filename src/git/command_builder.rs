@@ -6,7 +6,10 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
+use tokio::time::timeout;
+use tracing::{debug, trace, warn};
 
 use crate::core::CcpmError;
 use crate::utils::platform::get_git_command;
@@ -17,6 +20,7 @@ pub struct GitCommand {
     current_dir: Option<std::path::PathBuf>,
     capture_output: bool,
     env_vars: Vec<(String, String)>,
+    timeout_duration: Option<Duration>,
 }
 
 impl Default for GitCommand {
@@ -26,6 +30,8 @@ impl Default for GitCommand {
             current_dir: None,
             capture_output: true,
             env_vars: Vec::new(),
+            // Default timeout of 5 minutes for most git operations
+            timeout_duration: Some(Duration::from_secs(300)),
         }
     }
 }
@@ -70,16 +76,34 @@ impl GitCommand {
         self
     }
 
+    /// Set a custom timeout for the command (None for no timeout)
+    pub fn with_timeout(mut self, duration: Option<Duration>) -> Self {
+        self.timeout_duration = duration;
+        self
+    }
+
     /// Execute the command and return the output
     pub async fn execute(self) -> Result<GitCommandOutput> {
-        let mut cmd = Command::new(get_git_command());
+        let git_command = get_git_command();
+        let mut cmd = Command::new(git_command);
         cmd.args(&self.args);
 
-        if let Some(dir) = &self.current_dir {
+        let git_args = self.args.clone();
+        let working_dir = self.current_dir.clone();
+
+        debug!(
+            "Executing git command: {} {}",
+            git_command,
+            git_args.join(" ")
+        );
+
+        if let Some(ref dir) = working_dir {
+            debug!("Working directory: {}", dir.display());
             cmd.current_dir(dir);
         }
 
         for (key, value) in &self.env_vars {
+            trace!("Setting env var: {}={}", key, value);
             cmd.env(key, value);
         }
 
@@ -91,14 +115,64 @@ impl GitCommand {
             cmd.stderr(Stdio::inherit());
         }
 
-        let output = cmd
-            .output()
-            .await
-            .context(format!("Failed to execute git {}", self.args.join(" ")))?;
+        if let Some(duration) = self.timeout_duration {
+            debug!("Command timeout set to {} seconds", duration.as_secs());
+        }
+
+        let output_future = cmd.output();
+
+        let output = match self.timeout_duration {
+            Some(duration) => match timeout(duration, output_future).await {
+                Ok(result) => {
+                    trace!("Git command completed within timeout");
+                    result.context(format!("Failed to execute git {}", git_args.join(" ")))?
+                }
+                Err(_) => {
+                    warn!(
+                        "Git command timed out after {} seconds: git {}",
+                        duration.as_secs(),
+                        git_args.join(" ")
+                    );
+                    return Err(CcpmError::GitCommandError {
+                        operation: git_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        stderr: format!(
+                            "Git command timed out after {} seconds. This may indicate:\n\
+                                - Network connectivity issues\n\
+                                - Authentication prompts waiting for input\n\
+                                - Large repository operations taking too long\n\
+                                Try running the command manually: git {}",
+                            duration.as_secs(),
+                            git_args.join(" ")
+                        ),
+                    }
+                    .into());
+                }
+            },
+            None => {
+                trace!("Executing git command without timeout");
+                output_future
+                    .await
+                    .context(format!("Failed to execute git {}", git_args.join(" ")))?
+            }
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let _error_msg = format!("Git command failed: git {}", self.args.join(" "));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            debug!(
+                "Git command failed with exit code: {:?}",
+                output.status.code()
+            );
+            if !stderr.is_empty() {
+                debug!("Git stderr: {}", stderr);
+            }
+            if !stdout.is_empty() {
+                trace!("Git stdout: {}", stdout);
+            }
 
             // Provide context-specific error messages
             let error = if self.args.first().is_some_and(|arg| arg == "clone") {
@@ -127,10 +201,18 @@ impl GitCommand {
             return Err(error.into());
         }
 
-        Ok(GitCommandOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        })
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        debug!("Git command completed successfully");
+        if !stdout.is_empty() {
+            trace!("Git stdout: {}", stdout.trim());
+        }
+        if !stderr.is_empty() {
+            trace!("Git stderr: {}", stderr.trim());
+        }
+
+        Ok(GitCommandOutput { stdout, stderr })
     }
 
     /// Execute the command and return only stdout as a trimmed string

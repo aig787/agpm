@@ -102,17 +102,27 @@
 //!         match resource_type {
 //!             ResourceType::Agent => {
 //!                 println!("Found agent resource");
-//!                 println!("Manifest: {}", resource_type.manifest_filename());
 //!                 println!("Install dir: {}", resource_type.default_directory());
 //!             }
 //!             ResourceType::Snippet => {
 //!                 println!("Found snippet resource");
+//!                 println!("Install dir: {}", resource_type.default_directory());
 //!             }
 //!             ResourceType::Command => {
 //!                 println!("Found command resource");
+//!                 println!("Install dir: {}", resource_type.default_directory());
 //!             }
 //!             ResourceType::McpServer => {
 //!                 println!("Found MCP server configuration");
+//!                 println!("Install dir: {}", resource_type.default_directory());
+//!             }
+//!             ResourceType::Script => {
+//!                 println!("Found script resource");
+//!                 println!("Install dir: {}", resource_type.default_directory());
+//!             }
+//!             ResourceType::Hook => {
+//!                 println!("Found hook configuration");
+//!                 println!("Install dir: {}", resource_type.default_directory());
 //!             }
 //!         }
 //!     } else {
@@ -195,13 +205,20 @@
 
 pub mod error;
 pub mod error_builders;
+pub mod error_helpers;
 mod resource;
+pub mod resource_iterator;
 
 pub use error::{user_friendly_error, CcpmError, ErrorContext, IntoAnyhowWithContext};
 pub use error_builders::{
     file_error_context, git_error_context, manifest_error_context, ErrorContextExt,
 };
+pub use error_helpers::{
+    FileOperations, FileOps, JsonOperations, JsonOps, LockfileOperations, LockfileOps,
+    ManifestOperations, ManifestOps, MarkdownOperations, MarkdownOps,
+};
 pub use resource::{Resource, ResourceType};
+pub use resource_iterator::{ResourceIterator, ResourceTypeExt};
 
 use std::path::Path;
 

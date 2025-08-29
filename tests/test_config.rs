@@ -10,16 +10,8 @@ static INIT: Once = Once::new();
 /// These environment variables configure the test environment globally.
 pub fn init_test_env() {
     INIT.call_once(|| {
-        // Set up logging for tests
-        if std::env::var("RUST_LOG").is_err() {
-            std::env::set_var("RUST_LOG", "ccpm=debug");
-        }
-
-        // Initialize tracing subscriber for test output
-        let _ = tracing_subscriber::fmt()
-            .with_test_writer()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .try_init();
+        // Use the shared logging initialization
+        ccpm::test_utils::init_test_logging();
 
         // Set test-specific environment variables
         std::env::set_var("CCPM_TEST_MODE", "1");

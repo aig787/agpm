@@ -19,14 +19,15 @@ echo ""
 # Get project name from argument or use default
 PROJECT_NAME="${1:-test}"
 
-# Clean up previous example if it exists
-echo "→ Cleaning up previous example (if exists)"
-rm -rf "examples/projects/$PROJECT_NAME"
-
 # Setup paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/projects/$PROJECT_NAME"
 DEPS_DIR="$SCRIPT_DIR/deps"
+
+# Clean up previous example if it exists
+echo "→ Cleaning up previous example (if exists)"
+rm -rf "$PROJECT_DIR"
+
 
 # Ensure ccpm is built
 echo "→ Building ccpm"
@@ -52,7 +53,7 @@ ccpm init
 # Show initial project structure
 echo ""
 echo "→ Initial project structure:"
-tree -a -L 3
+tree -a -L 4
 
 # Add the local-deps source using local path
 echo ""
@@ -84,11 +85,23 @@ echo "→ Adding commands to manifest"
 ccpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
 ccpm add dep command local-deps:commands/format-json.md --name format-json
 
+# Add scripts
+echo ""
+echo "→ Adding scripts to manifest"
+ccpm add dep script local-deps:scripts/build.sh --name build
+ccpm add dep script local-deps:scripts/test.js --name test
+
+# Add hooks
+echo ""
+echo "→ Adding hooks to manifest"
+ccpm add dep hook local-deps:hooks/pre-tool-use.json --name pre-tool-use
+ccpm add dep hook local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
+
 # Add MCP servers
 echo ""
 echo "→ Adding MCP servers to manifest"
-ccpm add dep mcp-server local-deps:mcp-servers/github-mcp.json --name github --mcp-command npx --mcp-args=-y,@modelcontextprotocol/server-github
-ccpm add dep mcp-server local-deps:mcp-servers/sqlite-mcp.json --name sqlite --mcp-command uvx --mcp-args=mcp-server-sqlite,--db,./data/local.db
+ccpm add dep mcp-server local-deps:mcp-servers/filesystem.json --name filesystem
+ccpm add dep mcp-server local-deps:mcp-servers/fetch.json --name fetch
 
 
 # Show the generated manifest
@@ -114,7 +127,7 @@ ccpm list
 # Show final structure
 echo ""
 echo "→ Final project structure:"
-tree -a -L 3
+tree -a -L 4
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
@@ -125,7 +138,13 @@ echo "Your Claude Code project '$PROJECT_NAME' is ready with:"
 echo "  • 2 agents"
 echo "  • 5 snippets"
 echo "  • 2 commands"
+echo "  • 2 scripts"
+echo "  • 2 hooks"
 echo "  • 2 MCP servers"
+
 echo ""
 echo "Project location: $PROJECT_DIR"
+echo ""
+echo "To clean up this project, run:"
+echo "  ./examples/cleanup_project.sh $PROJECT_NAME"
 echo ""

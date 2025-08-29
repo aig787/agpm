@@ -4,6 +4,7 @@ use ccpm::manifest::{DetailedDependency, Manifest, ResourceDependency};
 use tempfile::TempDir;
 #[tokio::test]
 async fn test_validate_check_redundancy_none() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let temp = TempDir::new()?;
     let manifest_path = temp.path().join("ccpm.toml");
     // Create manifest without redundancies
@@ -23,6 +24,8 @@ async fn test_validate_check_redundancy_none() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -36,6 +39,8 @@ async fn test_validate_check_redundancy_none() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -61,6 +66,7 @@ async fn test_validate_check_redundancy_none() -> Result<()> {
 }
 #[tokio::test]
 async fn test_validate_check_redundancy_direct() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let temp = TempDir::new()?;
     let manifest_path = temp.path().join("ccpm.toml");
     // Create manifest with direct redundancies
@@ -80,6 +86,8 @@ async fn test_validate_check_redundancy_direct() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -93,6 +101,8 @@ async fn test_validate_check_redundancy_direct() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -119,6 +129,7 @@ async fn test_validate_check_redundancy_direct() -> Result<()> {
 }
 #[tokio::test]
 async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let temp = TempDir::new()?;
     let manifest_path = temp.path().join("ccpm.toml");
     // Create manifest with latest vs specific version redundancy
@@ -138,6 +149,8 @@ async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -151,6 +164,8 @@ async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -180,6 +195,7 @@ async fn test_validate_check_redundancy_latest_vs_specific() -> Result<()> {
 }
 #[tokio::test]
 async fn test_validate_check_redundancy_multiple() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let temp = TempDir::new()?;
     let manifest_path = temp.path().join("ccpm.toml");
     // Create manifest with multiple redundancies
@@ -199,6 +215,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -212,6 +230,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -226,6 +246,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         false,
     );
@@ -239,6 +261,8 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         false,
     );
@@ -264,6 +288,7 @@ async fn test_validate_check_redundancy_multiple() -> Result<()> {
 }
 #[tokio::test]
 async fn test_validate_check_redundancy_json_output() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     let temp = TempDir::new()?;
     let manifest_path = temp.path().join("ccpm.toml");
     // Create manifest with redundancies
@@ -282,6 +307,8 @@ async fn test_validate_check_redundancy_json_output() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -295,6 +322,8 @@ async fn test_validate_check_redundancy_json_output() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -320,6 +349,7 @@ async fn test_validate_check_redundancy_json_output() -> Result<()> {
 }
 #[tokio::test]
 async fn test_resolver_detects_conflicts() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     use ccpm::resolver::DependencyResolver;
     let temp = TempDir::new()?;
     // Create manifest with redundancies
@@ -338,6 +368,8 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -351,6 +383,8 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
         true,
     );
@@ -371,6 +405,7 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
 }
 #[tokio::test]
 async fn test_redundancy_detector_direct() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     use ccpm::resolver::redundancy::RedundancyDetector;
     let mut detector = RedundancyDetector::new();
     // Add redundancying requirements
@@ -384,6 +419,8 @@ async fn test_redundancy_detector_direct() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
     );
     detector.add_usage(
@@ -396,6 +433,8 @@ async fn test_redundancy_detector_direct() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
     );
     let redundancies = detector.detect_redundancies();
@@ -410,6 +449,7 @@ async fn test_redundancy_detector_direct() -> Result<()> {
 }
 #[tokio::test]
 async fn test_redundancy_suggestions() -> Result<()> {
+    ccpm::test_utils::init_test_logging();
     use ccpm::resolver::redundancy::RedundancyDetector;
     let mut detector = RedundancyDetector::new();
     // Add redundancy between latest and specific version
@@ -423,6 +463,8 @@ async fn test_redundancy_suggestions() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
     );
     detector.add_usage(
@@ -435,6 +477,8 @@ async fn test_redundancy_suggestions() -> Result<()> {
             rev: None,
             command: None,
             args: None,
+            target: None,
+            filename: None,
         }),
     );
     let redundancies = detector.detect_redundancies();
