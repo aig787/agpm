@@ -242,10 +242,14 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
 
     // Validate that the referenced script exists
     let script_full_path = if config.command.starts_with(".claude/ccpm/scripts/") {
+        // If script_path is the hook file (e.g., .claude/ccpm/hooks/test.json),
+        // we need to go up to the project root:
+        // test.json -> hooks/ -> ccpm/ -> .claude/ -> project_root
         script_path
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
+            .parent() // hooks/
+            .and_then(|p| p.parent()) // ccpm/
+            .and_then(|p| p.parent()) // .claude/
+            .and_then(|p| p.parent()) // project root
             .map(|p| p.join(&config.command))
     } else {
         None
@@ -266,12 +270,35 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_hook_event_serialization() {
+        // Test all hook event types serialize correctly
+        let events = vec![
+            (HookEvent::PreToolUse, r#""PreToolUse""#),
+            (HookEvent::PostToolUse, r#""PostToolUse""#),
+            (HookEvent::UserPromptSubmit, r#""UserPromptSubmit""#),
+            (HookEvent::UserPromptReceive, r#""UserPromptReceive""#),
+            (
+                HookEvent::AssistantResponseReceive,
+                r#""AssistantResponseReceive""#,
+            ),
+        ];
+
+        for (event, expected) in events {
+            let json = serde_json::to_string(&event).unwrap();
+            assert_eq!(json, expected);
+            let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, event);
+        }
+    }
 
     #[test]
     fn test_hook_config_serialization() {
         let config = HookConfig {
-            events: vec![HookEvent::PreToolUse],
+            events: vec![HookEvent::PreToolUse, HookEvent::PostToolUse],
             matcher: "Bash|Write".to_string(),
             hook_type: "command".to_string(),
             command: ".claude/ccpm/scripts/security-check.sh".to_string(),
@@ -282,9 +309,77 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: HookConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events.len(), 2);
         assert_eq!(parsed.matcher, "Bash|Write");
         assert_eq!(parsed.timeout, Some(5000));
+        assert_eq!(parsed.description, Some("Security validation".to_string()));
+    }
+
+    #[test]
+    fn test_hook_config_minimal() {
+        // Test minimal config without optional fields
+        let config = HookConfig {
+            events: vec![HookEvent::UserPromptSubmit],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: "echo 'test'".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("timeout"));
+        assert!(!json.contains("description"));
+    }
+
+    #[test]
+    fn test_hook_command_serialization() {
+        let metadata = CcpmHookMetadata {
+            managed: true,
+            dependency_name: "test-hook".to_string(),
+            source: "community".to_string(),
+            version: "v1.0.0".to_string(),
+            installed_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        let command = HookCommand {
+            hook_type: "command".to_string(),
+            command: "test.sh".to_string(),
+            timeout: Some(3000),
+            ccpm_metadata: Some(metadata.clone()),
+        };
+
+        let json = serde_json::to_string(&command).unwrap();
+        let parsed: HookCommand = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.hook_type, "command");
+        assert_eq!(parsed.command, "test.sh");
+        assert_eq!(parsed.timeout, Some(3000));
+        assert!(parsed.ccpm_metadata.is_some());
+        let meta = parsed.ccpm_metadata.unwrap();
+        assert_eq!(meta.managed, true);
+        assert_eq!(meta.dependency_name, "test-hook");
+    }
+
+    #[test]
+    fn test_matcher_group_serialization() {
+        let command = HookCommand {
+            hook_type: "command".to_string(),
+            command: "test.sh".to_string(),
+            timeout: None,
+            ccpm_metadata: None,
+        };
+
+        let group = MatcherGroup {
+            matcher: "Bash.*".to_string(),
+            hooks: vec![command.clone(), command.clone()],
+        };
+
+        let json = serde_json::to_string(&group).unwrap();
+        let parsed: MatcherGroup = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.matcher, "Bash.*");
+        assert_eq!(parsed.hooks.len(), 2);
     }
 
     #[test]
@@ -293,8 +388,85 @@ mod tests {
         let hooks_dir = temp.path().join("hooks");
         std::fs::create_dir(&hooks_dir).unwrap();
 
-        let config = HookConfig {
+        // Create multiple hook configs
+        let config1 = HookConfig {
             events: vec![HookEvent::PreToolUse],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: "test1.sh".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        let config2 = HookConfig {
+            events: vec![HookEvent::PostToolUse],
+            matcher: "Write".to_string(),
+            hook_type: "command".to_string(),
+            command: "test2.sh".to_string(),
+            timeout: Some(1000),
+            description: Some("Test hook 2".to_string()),
+        };
+
+        fs::write(
+            hooks_dir.join("test-hook1.json"),
+            serde_json::to_string(&config1).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            hooks_dir.join("test-hook2.json"),
+            serde_json::to_string(&config2).unwrap(),
+        )
+        .unwrap();
+
+        // Also create a non-JSON file that should be ignored
+        fs::write(hooks_dir.join("readme.txt"), "This is not a hook").unwrap();
+
+        let configs = load_hook_configs(&hooks_dir).unwrap();
+        assert_eq!(configs.len(), 2);
+        assert!(configs.contains_key("test-hook1"));
+        assert!(configs.contains_key("test-hook2"));
+
+        let hook1 = &configs["test-hook1"];
+        assert_eq!(hook1.events.len(), 1);
+        assert_eq!(hook1.command, "test1.sh");
+
+        let hook2 = &configs["test-hook2"];
+        assert_eq!(hook2.timeout, Some(1000));
+    }
+
+    #[test]
+    fn test_load_hook_configs_empty_dir() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join("empty_hooks");
+        // Don't create the directory
+
+        let configs = load_hook_configs(&hooks_dir).unwrap();
+        assert_eq!(configs.len(), 0);
+    }
+
+    #[test]
+    fn test_load_hook_configs_invalid_json() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join("hooks");
+        fs::create_dir(&hooks_dir).unwrap();
+
+        // Write invalid JSON
+        fs::write(hooks_dir.join("invalid.json"), "{ not valid json").unwrap();
+
+        let result = load_hook_configs(&hooks_dir);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse hook config"));
+    }
+
+    #[test]
+    fn test_validate_hook_config_empty_events() {
+        let temp = tempdir().unwrap();
+
+        let config = HookConfig {
+            events: vec![], // Empty events
             matcher: ".*".to_string(),
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
@@ -302,47 +474,302 @@ mod tests {
             description: None,
         };
 
-        let config_path = hooks_dir.join("test-hook.json");
-        std::fs::write(&config_path, serde_json::to_string(&config).unwrap()).unwrap();
-
-        let configs = load_hook_configs(&hooks_dir).unwrap();
-        assert_eq!(configs.len(), 1);
-        assert!(configs.contains_key("test-hook"));
+        let result = validate_hook_config(&config, temp.path());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one event"));
     }
 
     #[test]
-    fn test_validate_hook_config() {
+    fn test_validate_hook_config_invalid_regex() {
         let temp = tempdir().unwrap();
 
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: "Bash|Write".to_string(),
-            hook_type: "command".to_string(),
-            command: ".claude/ccpm/scripts/test.sh".to_string(),
-            timeout: None,
-            description: None,
-        };
-
-        // Should pass basic validation (script existence check will fail but that's ok for this test)
-        let result = validate_hook_config(&config, temp.path());
-        assert!(
-            result.is_ok()
-                || result
-                    .unwrap_err()
-                    .to_string()
-                    .contains("non-existent script")
-        );
-
-        // Test invalid regex
-        let bad_config = HookConfig {
-            events: vec![HookEvent::PreToolUse],
-            matcher: "[invalid regex".to_string(),
+            matcher: "[invalid regex".to_string(), // Invalid regex
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: None,
             description: None,
         };
 
-        assert!(validate_hook_config(&bad_config, temp.path()).is_err());
+        let result = validate_hook_config(&config, temp.path());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid regex pattern"));
+    }
+
+    #[test]
+    fn test_validate_hook_config_unsupported_type() {
+        let temp = tempdir().unwrap();
+
+        let config = HookConfig {
+            events: vec![HookEvent::PreToolUse],
+            matcher: ".*".to_string(),
+            hook_type: "webhook".to_string(), // Unsupported type
+            command: "test.sh".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        let result = validate_hook_config(&config, temp.path());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Only 'command' hook type"));
+    }
+
+    #[test]
+    fn test_validate_hook_config_script_exists() {
+        let temp = tempdir().unwrap();
+
+        // Create the expected directory structure with script
+        let claude_dir = temp.path().join(".claude").join("ccpm");
+        let scripts_dir = claude_dir.join("scripts");
+        let hooks_dir = claude_dir.join("hooks");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        let script_path = scripts_dir.join("test.sh");
+        fs::write(&script_path, "#!/bin/bash\necho test").unwrap();
+
+        let config = HookConfig {
+            events: vec![HookEvent::PreToolUse],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: ".claude/ccpm/scripts/test.sh".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        // The hook file would be at .claude/ccpm/hooks/test.json
+        // validate_hook_config goes up 3 levels from the hook path to find the project root
+        let hook_json_path = hooks_dir.join("test.json");
+        let result = validate_hook_config(&config, &hook_json_path);
+
+        // Since the script exists at the expected location, this should succeed
+        assert!(
+            result.is_ok(),
+            "Expected validation to succeed, but got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_validate_hook_config_script_not_exists() {
+        let temp = tempdir().unwrap();
+
+        let config = HookConfig {
+            events: vec![HookEvent::PreToolUse],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: ".claude/ccpm/scripts/nonexistent.sh".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        // Pass the hook file path
+        let hook_path = temp
+            .path()
+            .join(".claude")
+            .join("ccpm")
+            .join("hooks")
+            .join("test.json");
+        let result = validate_hook_config(&config, &hook_path);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("non-existent script"));
+    }
+
+    #[test]
+    fn test_validate_hook_config_non_claude_path() {
+        let temp = tempdir().unwrap();
+
+        // Test with a command that doesn't start with .claude/ccpm/scripts/
+        let config = HookConfig {
+            events: vec![HookEvent::PreToolUse],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: "/usr/bin/echo".to_string(), // Absolute path not in .claude
+            timeout: None,
+            description: None,
+        };
+
+        let result = validate_hook_config(&config, temp.path());
+        // Should pass - we don't validate non-.claude paths
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_install_hooks_empty_manifest() {
+        let temp = tempdir().unwrap();
+        let manifest = crate::manifest::Manifest::default();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_install_hooks_with_hooks() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create a hook JSON file
+        let hook_config = HookConfig {
+            events: vec![HookEvent::PreToolUse],
+            matcher: "Bash".to_string(),
+            hook_type: "command".to_string(),
+            command: "test.sh".to_string(),
+            timeout: Some(5000),
+            description: Some("Test hook".to_string()),
+        };
+
+        fs::write(
+            hooks_dir.join("test-hook.json"),
+            serde_json::to_string(&hook_config).unwrap(),
+        )
+        .unwrap();
+
+        // Create a manifest with hooks
+        let mut manifest = crate::manifest::Manifest::default();
+        manifest.hooks.insert(
+            "test-hook".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("community".to_string()),
+                path: "hooks/test-hook.json".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        // Check that settings.local.json was created
+        let settings_path = temp.path().join(".claude/settings.local.json");
+        assert!(settings_path.exists());
+
+        // Verify the locked resource
+        let locked = &result[0];
+        assert_eq!(locked.name, "test-hook");
+        assert_eq!(locked.source, Some("community".to_string()));
+        assert_eq!(locked.version, Some("v1.0.0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_install_hooks_simple_dependency() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create a hook JSON file
+        let hook_config = HookConfig {
+            events: vec![HookEvent::UserPromptSubmit],
+            matcher: ".*".to_string(),
+            hook_type: "command".to_string(),
+            command: "echo 'prompt submitted'".to_string(),
+            timeout: None,
+            description: None,
+        };
+
+        fs::write(
+            hooks_dir.join("simple-hook.json"),
+            serde_json::to_string(&hook_config).unwrap(),
+        )
+        .unwrap();
+
+        // Create a manifest with a simple dependency
+        let mut manifest = crate::manifest::Manifest::default();
+        manifest.hooks.insert(
+            "simple-hook".to_string(),
+            crate::manifest::ResourceDependency::Simple("/path/to/hook.json".to_string()),
+        );
+        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        // Verify the locked resource for simple dependency
+        let locked = &result[0];
+        assert_eq!(locked.name, "simple-hook");
+        assert_eq!(locked.source, None);
+        assert_eq!(locked.path, "/path/to/hook.json");
+        assert_eq!(locked.version, None);
+    }
+
+    #[tokio::test]
+    async fn test_install_hooks_with_branch() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create a manifest with a branch-based dependency
+        let mut manifest = crate::manifest::Manifest::default();
+        manifest.hooks.insert(
+            "branch-hook".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("upstream".to_string()),
+                path: "hooks/branch.json".to_string(),
+                version: None,
+                branch: Some("main".to_string()),
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        let locked = &result[0];
+        assert_eq!(locked.version, Some("main".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_install_hooks_with_rev() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create a manifest with a rev-based dependency
+        let mut manifest = crate::manifest::Manifest::default();
+        manifest.hooks.insert(
+            "rev-hook".to_string(),
+            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("upstream".to_string()),
+                path: "hooks/rev.json".to_string(),
+                version: None,
+                branch: None,
+                rev: Some("abc123".to_string()),
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        let locked = &result[0];
+        assert_eq!(locked.version, Some("abc123".to_string()));
     }
 }

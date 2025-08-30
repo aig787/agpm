@@ -707,6 +707,67 @@ test-server = "../local/mcp-servers/test-server.json"
     }
 
     #[tokio::test]
+    async fn test_remove_script_success() {
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create a manifest with a script
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+[scripts]
+test-script = "../test/script.sh"
+another-script = "../test/another.sh"
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+        _guard.change_to(temp.path()).unwrap();
+
+        // Remove a script
+        let result = remove_dependency("test-script", "script").await;
+        assert!(result.is_ok());
+
+        // Verify it was removed
+        let manifest = Manifest::load(&manifest_path).unwrap();
+        assert!(!manifest.scripts.contains_key("test-script"));
+        assert!(manifest.scripts.contains_key("another-script"));
+    }
+
+    #[tokio::test]
+    async fn test_remove_hook_success() {
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+
+        // Create a manifest with a hook
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+[scripts]
+[hooks]
+pre-commit = "../test/hook.json"
+post-commit = "../test/another_hook.json"
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+        _guard.change_to(temp.path()).unwrap();
+
+        // Remove a hook
+        let result = remove_dependency("pre-commit", "hook").await;
+        assert!(result.is_ok());
+
+        // Verify it was removed
+        let manifest = Manifest::load(&manifest_path).unwrap();
+        assert!(!manifest.hooks.contains_key("pre-commit"));
+        assert!(manifest.hooks.contains_key("post-commit"));
+    }
+
+    #[tokio::test]
     async fn test_remove_invalid_dependency_type() {
         let _guard = WorkingDirGuard::new().unwrap();
         let temp = TempDir::new().unwrap();
@@ -804,6 +865,12 @@ test-command = { source = "used-source", path = "commands/test.md", version = "v
 
 [mcp-servers]
 test-server = { source = "used-source", path = "servers/test.toml", version = "v1.0.0", command = "npx", args = ["test"] }
+
+[scripts]
+test-script = { source = "used-source", path = "scripts/test.sh", version = "v1.0.0" }
+
+[hooks]
+test-hook = { source = "used-source", path = "hooks/test.json", version = "v1.0.0" }
 "#;
         fs::write(&manifest_path, manifest_content).unwrap();
         _guard.change_to(temp.path()).unwrap();
@@ -816,6 +883,8 @@ test-server = { source = "used-source", path = "servers/test.toml", version = "v
         assert!(err_msg.contains("snippet 'test-snippet'"));
         assert!(err_msg.contains("command 'test-command'"));
         assert!(err_msg.contains("mcp-server 'test-server'"));
+        assert!(err_msg.contains("script 'test-script'"));
+        assert!(err_msg.contains("hook 'test-hook'"));
     }
 
     #[tokio::test]
@@ -938,6 +1007,74 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         assert_eq!(updated_lockfile.agents.len(), 0);
         assert_eq!(updated_lockfile.snippets.len(), 0);
         assert_eq!(updated_lockfile.sources.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_remove_script_and_hook_from_lockfile() {
+        use crate::lockfile::{LockFile, LockedResource};
+
+        let _guard = WorkingDirGuard::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+
+        // Create a manifest with scripts and hooks
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+[scripts]
+test-script = "../test/script.sh"
+
+[hooks]
+test-hook = "../test/hook.json"
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        // Create a lockfile with script and hook
+        let mut lockfile = LockFile::new();
+        lockfile.scripts.push(LockedResource {
+            name: "test-script".to_string(),
+            source: None,
+            url: None,
+            path: "../test/script.sh".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:test".to_string(),
+            installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+        });
+        lockfile.hooks.push(LockedResource {
+            name: "test-hook".to_string(),
+            source: None,
+            url: None,
+            path: "../test/hook.json".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:test".to_string(),
+            installed_at: ".claude/ccpm/hooks/test-hook.json".to_string(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        _guard.change_to(temp.path()).unwrap();
+
+        // Remove script
+        let result = remove_dependency("test-script", "script").await;
+        assert!(result.is_ok());
+
+        // Verify script was removed from lockfile
+        let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
+        assert_eq!(updated_lockfile.scripts.len(), 0);
+        assert_eq!(updated_lockfile.hooks.len(), 1);
+
+        // Remove hook
+        let result = remove_dependency("test-hook", "hook").await;
+        assert!(result.is_ok());
+
+        // Verify hook was removed from lockfile
+        let final_lockfile = LockFile::load(&lockfile_path).unwrap();
+        assert_eq!(final_lockfile.hooks.len(), 0);
     }
 
     #[tokio::test]

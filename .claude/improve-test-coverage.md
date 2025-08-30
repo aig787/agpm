@@ -39,54 +39,100 @@ cargo test --all
 
 **IMPORTANT Coverage Measurement Notes:**
 
-- Use `cargo tarpaulin` WITHOUT `--lib` flag to include binary tests
-- Integration tests execute the binary and don't contribute to library coverage
+- Use `cargo tarpaulin` WITHOUT `--lib` flag to include integration tests for better overall coverage
+- Integration tests DO contribute to coverage when run with tarpaulin (they test the library code)
 - Test utilities themselves (test_utils module) should be excluded from coverage metrics
-- **CRITICAL: `cargo tarpaulin` is expensive to run** - save outputs to tmp files and refer back to them
+- **CRITICAL: `cargo tarpaulin` is expensive to run (takes ~3 minutes)** - save outputs to tmp files and refer back to them
 
 ```bash
-# Save coverage output to a tmp file for reference (avoid re-running)
-cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_$(date +%Y%m%d_%H%M%S).txt
+# Save baseline coverage output to a tmp file for reference (avoid re-running)
+cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_baseline.txt
 
-# Generate HTML coverage report (includes all test types)
+# Check current coverage percentage quickly from saved file
+tail -5 /tmp/ccpm_coverage_baseline.txt
+
+# Generate HTML coverage report only when needed for detailed analysis
 cargo tarpaulin --out html --exclude-files "*/test_utils/*" --output-dir target/coverage
 
-# View saved coverage reports
-ls -la /tmp/ccpm_coverage_*.txt
-
-# View most recent coverage report
-cat /tmp/ccpm_coverage_*.txt | tail -1
-
-# Or use the Makefile
-make coverage
-
-# View the HTML report
+# View the HTML report (optional, for detailed analysis)
 open target/coverage/tarpaulin-report.html  # macOS
 # xdg-open target/coverage/tarpaulin-report.html  # Linux
 # start target/coverage/tarpaulin-report.html  # Windows
+
+# Or use the Makefile (if available)
+make coverage
 ```
 
 ## Coverage Improvement Strategy
 
-### Step 3: Identify Coverage Gaps
+### Step 3: Identify Coverage Gaps with Impact Analysis
 
-Use the coverage report to identify:
+#### Prioritization Strategy
 
-1. **Uncovered modules** - Entire modules with no tests
-2. **Low coverage files** - Files with < 50% coverage
-3. **Critical paths** - Important functionality with no tests
-4. **Error handling** - Error cases that aren't tested
-5. **Edge cases** - Boundary conditions not covered
+**IMPORTANT**: Don't just look at coverage percentages! Calculate impact scores to maximize coverage improvements.
 
-Priority order for CCPM modules:
+**Working Script to Calculate Impact Scores:**
 
-1. **Core functionality** (`src/core/`)
-2. **CLI commands** (`src/cli/`)
-3. **Manifest/Lockfile** (`src/manifest/`, `src/lockfile/`)
-4. **Dependency resolver** (`src/resolver/`)
-5. **Git operations** (`src/git/`)
-6. **Source management** (`src/source/`)
-7. **Utilities** (`src/utils/`)
+```bash
+# Extract coverage ratios from the summary section (format: "src/file.rs: 123/456")
+grep -E "src/[^:]+: [0-9]+/[0-9]+" /tmp/ccpm_coverage_baseline.txt | while read line; do
+    # Extract file path and coverage
+    file=$(echo "$line" | cut -d: -f1 | sed 's/|| //')
+    coverage_part=$(echo "$line" | cut -d: -f2 | cut -d' ' -f2)
+    covered=$(echo "$coverage_part" | cut -d/ -f1)
+    total=$(echo "$coverage_part" | cut -d/ -f2)
+    
+    uncovered=$((total - covered))
+    if [ "$total" -gt 0 ] && [ "$uncovered" -gt 0 ]; then
+        percent=$((covered * 100 / total))
+        impact=$((uncovered * (100 - percent) / 100))
+        printf "%4d %4d %3d%% %s\n" "$impact" "$uncovered" "$percent" "$file"
+    fi
+done | sort -rn | head -20
+```
+
+**Note**: The coverage report has two sections:
+1. Uncovered lines section (format: `src/file.rs: 12-15, 20, 25-30`)
+2. Summary section (format: `src/file.rs: 123/456 +0.00%`) - use this for calculations
+
+**Impact Score Formula:**
+- `Impact = uncovered_lines × (100 - coverage%) / 100`
+- Higher impact = more overall coverage improvement
+- Example: 50 uncovered lines at 20% coverage = 50 × 80 / 100 = 40 impact
+
+#### What to Target First
+
+1. **High Impact Modules** - Highest impact scores regardless of percentage
+2. **Testable Logic** - Modules with algorithmic code, not just strings
+3. **Critical Paths** - Important functionality with no tests
+4. **Error Handling** - Error cases that aren't tested
+5. **Quick Wins** - Small modules that can reach 100% quickly
+
+#### What to Skip or Deprioritize
+
+1. **Template/String Heavy** - Modules with mostly template literals
+2. **CLI Output** - Print statements and formatting code
+3. **Generated Code** - Auto-generated or boilerplate code
+4. **External Wrappers** - Thin wrappers around external libraries
+
+#### Module Categories by Testing Value
+
+**High Value** (Test First):
+- `src/resolver/` - Dependency resolution logic
+- `src/core/` - Core business logic
+- `src/lockfile/` - Critical for reproducibility
+- `src/manifest/` - Parsing and validation logic
+
+**Medium Value** (Test Second):
+- `src/git/` - Git operations (if not just wrapping CLI)
+- `src/source/` - Source management logic
+- `src/hooks/` - Hook configuration logic
+- `src/cache/` - Cache management
+
+**Lower Value** (Test Last):
+- `src/cli/` - Often template-heavy with strings
+- `src/utils/` - Usually well-tested utilities
+- `src/config/` - Simple configuration loading
 
 ### Step 4: Writing Tests with Agent Assistance
 
@@ -227,6 +273,79 @@ fn test_lockfile_generation() {
 ### Step 7: Iterative Coverage Improvement Workflow
 
 **This is a continuous cycle - repeat for each module until overall target is met:**
+
+#### Smart Module Selection
+
+When selecting modules to test, use this decision matrix:
+
+```bash
+# Quick analysis to find best targets
+echo "=== High Impact Modules (test these first) ==="
+# Modules with >50 uncovered lines and <50% coverage
+grep "^|| src/" /tmp/ccpm_coverage_*.txt | awk -F': ' '{
+    split($2, a, " ");
+    split(a[1], b, "/");
+    if (b[2] > 0) {
+        uncovered = b[2] - b[1];
+        coverage = b[1] * 100 / b[2];
+        if (uncovered > 50 && coverage < 50) {
+            impact = uncovered * (100 - coverage) / 100;
+            printf "%3d impact | %3d lines | %5.1f%% | %s\n", impact, uncovered, coverage, $1;
+        }
+    }
+}' | sort -rn
+
+echo -e "\n=== Quick Wins (small modules to boost percentage) ==="
+# Modules with <20 uncovered lines that can reach 90%+
+grep "^|| src/" /tmp/ccpm_coverage_*.txt | awk -F': ' '{
+    split($2, a, " ");
+    split(a[1], b, "/");
+    if (b[2] > 0) {
+        uncovered = b[2] - b[1];
+        coverage = b[1] * 100 / b[2];
+        potential = (b[1] + uncovered * 0.8) * 100 / b[2];
+        if (uncovered < 20 && uncovered > 0 && potential > 90) {
+            printf "%3d lines | %5.1f%% → %5.1f%% | %s\n", uncovered, coverage, potential, $1;
+        }
+    }
+}' | sort -n
+```
+
+#### When You're Close to Target
+
+If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
+
+1. **Calculate Exact Need:**
+   ```bash
+   # Extract actual numbers from coverage report
+   coverage_line=$(tail -1 /tmp/ccpm_coverage_baseline.txt)
+   # Example line: "69.91% coverage, 3609/5162 lines covered, +0.00% change in coverage"
+   
+   current_pct=$(echo "$coverage_line" | grep -oE "[0-9]+\.[0-9]+%" | head -1 | tr -d '%')
+   current_covered=$(echo "$coverage_line" | grep -oE "[0-9]+/[0-9]+" | cut -d/ -f1)
+   total_lines=$(echo "$coverage_line" | grep -oE "[0-9]+/[0-9]+" | cut -d/ -f2)
+   
+   target_pct=70.0
+   target_covered=$(echo "scale=0; $total_lines * $target_pct / 100" | bc)
+   need_to_cover=$((target_covered - current_covered))
+   
+   echo "Current: $current_pct% ($current_covered/$total_lines)"
+   echo "Target: $target_pct% ($target_covered/$total_lines)"
+   echo "Need to cover $need_to_cover more lines to reach $target_pct%"
+   ```
+   
+   **Real Example**: From 69.91% to 70.0% required covering just 5 additional lines!
+
+2. **Find Quick Wins:**
+   - Look for modules with 5-10 uncovered lines
+   - Target utility functions that are easy to test
+   - Add missing error case tests
+   - Complete partially tested functions
+
+3. **Avoid Over-Engineering:**
+   - Don't write complex tests for string templates
+   - Skip CLI formatting/output code
+   - Focus on testable business logic
 
 1. **Measure Current State**
    ```bash
@@ -375,6 +494,25 @@ Based on module importance:
 - `src/git/`: Target 70% (wrapper around git CLI)
 - `src/utils/`: Target 60% (utility functions)
 
+## Practical Tips from Experience
+
+1. **Finding Missing Test Cases**: Look for patterns in existing tests - often resource types (agents, snippets, commands) have tests but newer types (scripts, hooks) are missing.
+
+2. **Test File Location**: Unit tests go in the same file in a `#[cfg(test)] mod tests` block at the bottom.
+
+3. **Running Specific Tests**: 
+   ```bash
+   # Run tests for a specific module
+   cargo test --lib cli::remove::tests
+   
+   # With output (note the -- before --nocapture)
+   cargo test --lib cli::remove::tests -- --nocapture
+   ```
+
+4. **Coverage Calculation**: Coverage percentage = (covered_lines / total_lines) × 100. Each line covered adds roughly 0.02% to a 5000-line codebase.
+
+5. **Integration vs Unit Tests**: Both contribute to coverage when using tarpaulin. Integration tests often provide broader coverage per test.
+
 ## Quick Commands Reference
 
 ```bash
@@ -382,7 +520,7 @@ Based on module importance:
 cargo test --all
 
 # Generate and save coverage report (EXPENSIVE - save output!)
-cargo tarpaulin --out Stdout | tee /tmp/ccpm_coverage_$(date +%Y%m%d_%H%M%S).txt
+cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_baseline.txt
 
 # Generate HTML report only when needed for detailed analysis
 cargo tarpaulin --out html --output-dir target/coverage
@@ -418,6 +556,42 @@ diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
 - **Fixing failures**: Use `rust-test-fixer` for quick fixes
 - **Complex issues**: Use `rust-troubleshooter-opus` for deep debugging
 - **Code quality**: Use `rust-linting-expert` for test code style
+
+## Real-World Example: Improving CCPM Coverage from 69.91% to 70.11%
+
+This is an actual example of how the coverage was improved:
+
+### 1. Initial Assessment
+```bash
+# Check baseline
+tail -5 /tmp/ccpm_coverage_baseline.txt
+# Output: 69.91% coverage, 3609/5162 lines covered
+```
+
+### 2. Impact Analysis
+```bash
+# Found highest impact modules
+# Output (top 3):
+#   68  113  39% src/cli/remove.rs     <- Highest impact!
+#   61  154  60% src/cli/install.rs
+#   60  140  57% src/cli/validate.rs
+```
+
+### 3. Targeted Improvement
+Added 3 strategic tests to `src/cli/remove.rs`:
+- `test_remove_script_success` - Covered script removal path
+- `test_remove_hook_success` - Covered hook removal path  
+- `test_remove_script_and_hook_from_lockfile` - Covered lockfile updates
+- Updated existing test to include script/hook checking
+
+### 4. Result
+```bash
+# After adding tests
+tail -5 /tmp/ccpm_coverage_after.txt
+# Output: 70.11% coverage, 3619/5162 lines covered, +0.19% change
+```
+
+**Key Insight**: Just 10 lines of additional coverage (focused on high-impact areas) achieved the goal!
 
 ## Success Criteria
 

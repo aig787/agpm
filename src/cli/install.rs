@@ -663,9 +663,11 @@ async fn install_resource(
             }
 
             // Read and copy file
-            let content = tokio::fs::read_to_string(&source_path).await.with_context(|| {
-                format!("Failed to read resource file: {}", source_path.display())
-            })?;
+            let content = tokio::fs::read_to_string(&source_path)
+                .await
+                .with_context(|| {
+                    format!("Failed to read resource file: {}", source_path.display())
+                })?;
 
             // Parse as markdown to validate
             let _markdown = MarkdownFile::parse(&content).with_context(|| {
@@ -698,7 +700,8 @@ async fn install_resource(
         }
 
         // Read the source file
-        let content = tokio::fs::read_to_string(&source_path).await
+        let content = tokio::fs::read_to_string(&source_path)
+            .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
@@ -906,9 +909,11 @@ async fn install_resource_for_parallel(
                 }
 
                 // Read and copy file
-                let content = tokio::fs::read_to_string(&source_path).await.with_context(|| {
-                    format!("Failed to read resource file: {}", source_path.display())
-                })?;
+                let content = tokio::fs::read_to_string(&source_path)
+                    .await
+                    .with_context(|| {
+                        format!("Failed to read resource file: {}", source_path.display())
+                    })?;
 
                 // Parse as markdown to validate
                 let _markdown = MarkdownFile::parse(&content).with_context(|| {
@@ -941,7 +946,8 @@ async fn install_resource_for_parallel(
         }
 
         // Read the source file
-        let content = tokio::fs::read_to_string(&source_path).await
+        let content = tokio::fs::read_to_string(&source_path)
+            .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
@@ -1688,14 +1694,14 @@ mod tests {
         // Create a local git repository to act as our "remote" source
         let source_dir = temp.path().join("test-source");
         fs::create_dir_all(&source_dir).unwrap();
-        
+
         // Initialize git repository
         std::process::Command::new("git")
             .arg("init")
             .current_dir(&source_dir)
             .output()
             .expect("Failed to init git repo");
-        
+
         // Configure git user for commits
         std::process::Command::new("git")
             .args(["config", "user.email", "test@example.com"])
@@ -1757,7 +1763,7 @@ mod tests {
 
         // This should succeed now with a real local git repository
         assert!(result.is_ok());
-        
+
         // Verify the file was installed
         let installed_path = project_dir.join(".claude/agents/remote-agent.md");
         assert!(installed_path.exists());

@@ -754,7 +754,9 @@ impl SourceManager {
 
         let source_cache = self.cache_dir.join("sources").join(name);
         if source_cache.exists() {
-            tokio::fs::remove_dir_all(&source_cache).await.context("Failed to remove source cache")?;
+            tokio::fs::remove_dir_all(&source_cache)
+                .await
+                .context("Failed to remove source cache")?;
         }
 
         Ok(())
@@ -1073,7 +1075,8 @@ impl SourceManager {
                     repo.fetch(Some(&url), progress).await?;
                     repo
                 } else {
-                    tokio::fs::remove_dir_all(&cache_path).await
+                    tokio::fs::remove_dir_all(&cache_path)
+                        .await
                         .context("Failed to remove invalid cache directory")?;
                     GitRepo::clone(&url, &cache_path, progress).await?
                 }
@@ -1087,7 +1090,8 @@ impl SourceManager {
                 repo.fetch(Some(&url), progress).await?;
                 repo
             } else {
-                tokio::fs::remove_dir_all(&cache_path).await
+                tokio::fs::remove_dir_all(&cache_path)
+                    .await
                     .context("Failed to remove invalid cache directory")?;
                 GitRepo::clone(&url, &cache_path, progress).await?
             }
@@ -1248,7 +1252,8 @@ impl SourceManager {
                 repo.fetch(Some(&authenticated_url), progress).await?;
                 repo
             } else {
-                tokio::fs::remove_dir_all(&cache_path).await
+                tokio::fs::remove_dir_all(&cache_path)
+                    .await
                     .context("Failed to remove invalid cache directory")?;
                 GitRepo::clone(&authenticated_url, &cache_path, progress).await?
             }

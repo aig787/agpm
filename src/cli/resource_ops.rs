@@ -60,7 +60,8 @@ pub async fn fetch_resource_content(
     }
 
     // Read the source file
-    let content = tokio::fs::read_to_string(&source_path).await
+    let content = tokio::fs::read_to_string(&source_path)
+        .await
         .with_context(|| format!("Failed to read source file: {}", source_path.display()))?;
 
     Ok((source_path, content))
