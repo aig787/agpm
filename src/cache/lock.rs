@@ -12,9 +12,9 @@ pub struct CacheLock {
 impl CacheLock {
     /// Acquires an exclusive lock for a specific source in the cache directory.
     ///
-    /// This method creates and acquires an exclusive file lock for the specified
-    /// source name. The operation is blocking - it will wait until any existing
-    /// locks are released before proceeding.
+    /// This async method creates and acquires an exclusive file lock for the specified
+    /// source name. The file locking operation uses `spawn_blocking` internally to avoid
+    /// blocking the tokio runtime, while still providing blocking file lock semantics.
     ///
     /// # Lock File Management
     ///
@@ -24,12 +24,13 @@ impl CacheLock {
     /// 3. **Exclusive locking**: Acquires exclusive access via OS file locking
     /// 4. **Handle retention**: Keeps file handle open to maintain lock
     ///
-    /// # Blocking Behavior
+    /// # Async and Blocking Behavior
     ///
     /// If another process already holds a lock for the same source:
-    /// - **Blocking wait**: Method blocks until other lock is released
+    /// - **Async-friendly**: Uses `spawn_blocking` to avoid blocking the tokio runtime
+    /// - **Blocking wait**: The spawned task blocks until other lock is released
     /// - **Fair queuing**: Locks are typically acquired in FIFO order
-    /// - **No timeout**: Method will wait indefinitely (use with caution)
+    /// - **No timeout**: Task will wait indefinitely (use with caution)
     /// - **Interruptible**: Can be interrupted by process signals
     ///
     /// # Lock File Location
@@ -88,11 +89,11 @@ impl CacheLock {
     /// use ccpm::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
-    /// # fn example() -> anyhow::Result<()> {
+    /// # async fn example() -> anyhow::Result<()> {
     /// let cache_dir = PathBuf::from("/home/user/.ccpm/cache");
     ///
     /// // This will block if another process has the lock
-    /// let lock = CacheLock::acquire(&cache_dir, "my-source")?;
+    /// let lock = CacheLock::acquire(&cache_dir, "my-source").await?;
     ///
     /// // Perform cache operations safely...
     /// println!("Lock acquired successfully!");
@@ -109,10 +110,10 @@ impl CacheLock {
     /// use ccpm::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
-    /// # fn example() -> anyhow::Result<()> {
+    /// # async fn example() -> anyhow::Result<()> {
     /// let cache_dir = PathBuf::from("/tmp/cache");
     ///
-    /// match CacheLock::acquire(&cache_dir, "problematic-source") {
+    /// match CacheLock::acquire(&cache_dir, "problematic-source").await {
     ///     Ok(lock) => {
     ///         println!("Lock acquired, proceeding with operations");
     ///         // Use lock...
@@ -126,26 +127,40 @@ impl CacheLock {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
+    pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
         // Create lock file path: ~/.ccpm/cache/.locks/source_name.lock
         let locks_dir = cache_dir.join(".locks");
-        std::fs::create_dir_all(&locks_dir).with_context(|| {
-            format!("Failed to create locks directory: {}", locks_dir.display())
-        })?;
+        tokio::fs::create_dir_all(&locks_dir)
+            .await
+            .with_context(|| {
+                format!("Failed to create locks directory: {}", locks_dir.display())
+            })?;
 
         let lock_path = locks_dir.join(format!("{source_name}.lock"));
+        let lock_path_clone = lock_path.clone();
+        let source_name = source_name.to_string();
 
-        // Open or create the lock file
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&lock_path)
-            .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
+        // Use spawn_blocking to perform blocking file lock operations
+        // This prevents blocking the tokio runtime
+        let file = tokio::task::spawn_blocking(move || -> Result<File> {
+            // Open or create the lock file
+            let file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&lock_path_clone)
+                .with_context(|| {
+                    format!("Failed to open lock file: {}", lock_path_clone.display())
+                })?;
 
-        // Try to acquire exclusive lock (blocking)
-        file.lock_exclusive()
-            .with_context(|| format!("Failed to acquire lock for: {source_name}"))?;
+            // Try to acquire exclusive lock (blocking)
+            file.lock_exclusive()
+                .with_context(|| format!("Failed to acquire lock for: {}", source_name))?;
+
+            Ok(file)
+        })
+        .await
+        .context("Failed to spawn blocking task for lock acquisition")??;
 
         Ok(CacheLock {
             _file: file,
@@ -170,13 +185,13 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_cache_lock_acquire_and_release() {
+    #[tokio::test]
+    async fn test_cache_lock_acquire_and_release() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
         // Acquire lock
-        let lock = CacheLock::acquire(cache_dir, "test_source").unwrap();
+        let lock = CacheLock::acquire(cache_dir, "test_source").await.unwrap();
 
         // Verify lock file was created
         let lock_path = cache_dir.join(".locks").join("test_source.lock");
@@ -189,8 +204,8 @@ mod tests {
         assert!(lock_path.exists());
     }
 
-    #[test]
-    fn test_cache_lock_creates_locks_directory() {
+    #[tokio::test]
+    async fn test_cache_lock_creates_locks_directory() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
@@ -199,18 +214,18 @@ mod tests {
         assert!(!locks_dir.exists());
 
         // Acquire lock - should create directory
-        let _lock = CacheLock::acquire(cache_dir, "test").unwrap();
+        let _lock = CacheLock::acquire(cache_dir, "test").await.unwrap();
 
         // Verify locks directory was created
         assert!(locks_dir.exists());
         assert!(locks_dir.is_dir());
     }
 
-    #[test]
-    fn test_cache_lock_exclusive_blocking() {
-        use std::sync::{Arc, Barrier};
-        use std::thread;
+    #[tokio::test]
+    async fn test_cache_lock_exclusive_blocking() {
+        use std::sync::Arc;
         use std::time::{Duration, Instant};
+        use tokio::sync::Barrier;
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = Arc::new(temp_dir.path().to_path_buf());
@@ -219,36 +234,40 @@ mod tests {
         let cache_dir1 = cache_dir.clone();
         let barrier1 = barrier.clone();
 
-        // Thread 1: Acquire lock and hold it
-        let handle1 = thread::spawn(move || {
-            let _lock = CacheLock::acquire(&cache_dir1, "exclusive_test").unwrap();
-            barrier1.wait(); // Signal that lock is acquired
-            thread::sleep(Duration::from_millis(100)); // Hold lock
-                                                       // Lock released on drop
+        // Task 1: Acquire lock and hold it
+        let handle1 = tokio::spawn(async move {
+            let _lock = CacheLock::acquire(&cache_dir1, "exclusive_test")
+                .await
+                .unwrap();
+            barrier1.wait().await; // Signal that lock is acquired
+            tokio::time::sleep(Duration::from_millis(100)).await; // Hold lock
+                                                                  // Lock released on drop
         });
 
         let cache_dir2 = cache_dir.clone();
 
-        // Thread 2: Try to acquire same lock (should block)
-        let handle2 = thread::spawn(move || {
-            barrier.wait(); // Wait for first thread to acquire lock
+        // Task 2: Try to acquire same lock (should block)
+        let handle2 = tokio::spawn(async move {
+            barrier.wait().await; // Wait for first task to acquire lock
             let start = Instant::now();
-            let _lock = CacheLock::acquire(&cache_dir2, "exclusive_test").unwrap();
+            let _lock = CacheLock::acquire(&cache_dir2, "exclusive_test")
+                .await
+                .unwrap();
             let elapsed = start.elapsed();
 
             // Should have blocked for at least 50ms (less than 100ms due to timing)
             assert!(elapsed >= Duration::from_millis(50));
         });
 
-        handle1.join().unwrap();
-        handle2.join().unwrap();
+        handle1.await.unwrap();
+        handle2.await.unwrap();
     }
 
-    #[test]
-    fn test_cache_lock_different_sources_dont_block() {
-        use std::sync::{Arc, Barrier};
-        use std::thread;
+    #[tokio::test]
+    async fn test_cache_lock_different_sources_dont_block() {
+        use std::sync::Arc;
         use std::time::{Duration, Instant};
+        use tokio::sync::Barrier;
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = Arc::new(temp_dir.path().to_path_buf());
@@ -257,32 +276,32 @@ mod tests {
         let cache_dir1 = cache_dir.clone();
         let barrier1 = barrier.clone();
 
-        // Thread 1: Lock source1
-        let handle1 = thread::spawn(move || {
-            let _lock = CacheLock::acquire(&cache_dir1, "source1").unwrap();
-            barrier1.wait();
-            thread::sleep(Duration::from_millis(100));
+        // Task 1: Lock source1
+        let handle1 = tokio::spawn(async move {
+            let _lock = CacheLock::acquire(&cache_dir1, "source1").await.unwrap();
+            barrier1.wait().await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         });
 
         let cache_dir2 = cache_dir.clone();
 
-        // Thread 2: Lock source2 (different source, shouldn't block)
-        let handle2 = thread::spawn(move || {
-            barrier.wait();
+        // Task 2: Lock source2 (different source, shouldn't block)
+        let handle2 = tokio::spawn(async move {
+            barrier.wait().await;
             let start = Instant::now();
-            let _lock = CacheLock::acquire(&cache_dir2, "source2").unwrap();
+            let _lock = CacheLock::acquire(&cache_dir2, "source2").await.unwrap();
             let elapsed = start.elapsed();
 
             // Should not block (complete quickly)
             assert!(elapsed < Duration::from_millis(50));
         });
 
-        handle1.join().unwrap();
-        handle2.join().unwrap();
+        handle1.await.unwrap();
+        handle2.await.unwrap();
     }
 
-    #[test]
-    fn test_cache_lock_path_with_special_characters() {
+    #[tokio::test]
+    async fn test_cache_lock_path_with_special_characters() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
 
@@ -295,7 +314,7 @@ mod tests {
         ];
 
         for name in special_names {
-            let lock = CacheLock::acquire(cache_dir, name).unwrap();
+            let lock = CacheLock::acquire(cache_dir, name).await.unwrap();
             let expected_path = cache_dir.join(".locks").join(format!("{name}.lock"));
             assert!(expected_path.exists());
             drop(lock);

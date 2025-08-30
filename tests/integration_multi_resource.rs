@@ -34,38 +34,94 @@ fn test_install_multiple_resources_with_versions() -> Result<()> {
     git.commit("Update snippets v1.1.0")?;
     git.tag("v1.1.0")?;
 
+    // Create v1.2.0 with new scripts
+    update_scripts_v1_2(&repo_dir)?;
+    git.add_all()?;
+    git.commit("Add scripts v1.2.0")?;
+    git.tag("v1.2.0")?;
+
     // Create v2.0.0 with updated agents
     update_agents_v2(&repo_dir)?;
     git.add_all()?;
     git.commit("Update agents v2.0.0")?;
     git.tag("v2.0.0")?;
 
-    // Create v2.1.0 with updated command
+    // Create v2.1.0 with updated command and hooks
     update_command_v2_1(&repo_dir)?;
     git.add_all()?;
-    git.commit("Update command v2.1.0")?;
+    git.commit("Update command and add hooks v2.1.0")?;
     git.tag("v2.1.0")?;
+
+    // Create v2.2.0 with MCP servers
+    update_mcp_v2_2(&repo_dir)?;
+    git.add_all()?;
+    git.commit("Add MCP servers v2.2.0")?;
+    git.tag("v2.2.0")?;
+
+    // Create v3.0.0 with major updates
+    update_major_v3(&repo_dir)?;
+    git.add_all()?;
+    git.commit("Major update v3.0.0")?;
+    git.tag("v3.0.0")?;
+
+    // Create v3.1.0 with additional resources
+    update_additional_v3_1(&repo_dir)?;
+    git.add_all()?;
+    git.commit("Additional resources v3.1.0")?;
+    git.tag("v3.1.0")?;
+
+    // Create v3.2.0 with more commands
+    update_commands_v3_2(&repo_dir)?;
+    git.add_all()?;
+    git.commit("More commands v3.2.0")?;
+    git.tag("v3.2.0")?;
+
+    // Create v4.0.0 with breaking changes
+    update_breaking_v4(&repo_dir)?;
+    git.add_all()?;
+    git.commit("Breaking changes v4.0.0")?;
+    git.tag("v4.0.0")?;
 
     // Create main branch pointing to latest
     git.create_branch("main")?;
 
-    // Create ccpm.toml with mixed versions
+    // Create ccpm.toml with 20 dependencies across 10+ versions
     let repo_url = path_to_file_url(&repo_dir);
     let manifest_content = format!(
         r#"[sources]
 test_repo = "{}"
 
-[snippets]
-snippet-one = {{ source = "test_repo", path = "snippets/snippet1.md", version = "v1.0.0" }}
-snippet-two = {{ source = "test_repo", path = "snippets/snippet2.md", version = "v1.1.0" }}
-
-[commands]
-deploy-cmd = {{ source = "test_repo", path = "commands/deploy.md", version = "v2.1.0" }}
-
 [agents]
 agent-alpha = {{ source = "test_repo", path = "agents/alpha.md", version = "v1.0.0" }}
 agent-beta = {{ source = "test_repo", path = "agents/beta.md", version = "v2.0.0" }}
 agent-gamma = {{ source = "test_repo", path = "agents/gamma.md", version = "main" }}
+agent-delta = {{ source = "test_repo", path = "agents/delta.md", version = "v3.1.0" }}
+
+[snippets]
+snippet-one = {{ source = "test_repo", path = "snippets/snippet1.md", version = "v1.0.0" }}
+snippet-two = {{ source = "test_repo", path = "snippets/snippet2.md", version = "v1.1.0" }}
+snippet-three = {{ source = "test_repo", path = "snippets/snippet3.md", version = "v3.0.0" }}
+snippet-four = {{ source = "test_repo", path = "snippets/snippet4.md", version = "v4.0.0" }}
+
+[commands]
+deploy-cmd = {{ source = "test_repo", path = "commands/deploy.md", version = "v2.1.0" }}
+build-cmd = {{ source = "test_repo", path = "commands/build.md", version = "v3.2.0" }}
+test-cmd = {{ source = "test_repo", path = "commands/test.md", version = "v3.2.0" }}
+lint-cmd = {{ source = "test_repo", path = "commands/lint.md", version = "v4.0.0" }}
+
+[scripts]
+build-script = {{ source = "test_repo", path = "scripts/build.sh", version = "v1.2.0" }}
+test-script = {{ source = "test_repo", path = "scripts/test.js", version = "v2.2.0" }}
+deploy-script = {{ source = "test_repo", path = "scripts/deploy.py", version = "v3.0.0" }}
+
+[hooks]
+pre-commit = {{ source = "test_repo", path = "hooks/pre-commit.json", version = "v2.1.0" }}
+post-commit = {{ source = "test_repo", path = "hooks/post-commit.json", version = "v3.1.0" }}
+
+[mcp-servers]
+filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", version = "v2.2.0" }}
+postgres = {{ source = "test_repo", path = "mcp-servers/postgres.json", version = "v3.0.0" }}
+redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.0.0" }}
 "#,
         repo_url
     );
@@ -83,118 +139,181 @@ agent-gamma = {{ source = "test_repo", path = "agents/gamma.md", version = "main
         .assert()
         .success();
 
-    // Verify all resources are installed with correct versions
+    // Verify all 20 resources are installed with correct versions
 
-    // Check snippets
-    assert!(env
-        .project_dir
-        .join(".claude/ccpm/snippets/snippet-one.md")
-        .exists());
-    let snippet1_content =
-        fs::read_to_string(env.project_dir.join(".claude/ccpm/snippets/snippet-one.md"))?;
-    assert!(
-        snippet1_content.contains("Snippet 1 v1.0.0"),
-        "snippet-one should be v1.0.0"
-    );
+    // Check agents (4 resources)
+    verify_file_contains(
+        &env.project_dir.join(".claude/agents/agent-alpha.md"),
+        "Agent Alpha v1.0.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/agents/agent-beta.md"),
+        "Agent Beta v2.0.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/agents/agent-gamma.md"),
+        "Agent Gamma v4.0.0",
+    )?; // main branch
+    verify_file_contains(
+        &env.project_dir.join(".claude/agents/agent-delta.md"),
+        "Agent Delta v3.1.0",
+    )?;
 
-    assert!(env
-        .project_dir
-        .join(".claude/ccpm/snippets/snippet-two.md")
-        .exists());
-    let snippet2_content =
-        fs::read_to_string(env.project_dir.join(".claude/ccpm/snippets/snippet-two.md"))?;
-    assert!(
-        snippet2_content.contains("Snippet 2 v1.1.0"),
-        "snippet-two should be v1.1.0"
-    );
+    // Check snippets (4 resources)
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/snippets/snippet-one.md"),
+        "Snippet 1 v1.0.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/snippets/snippet-two.md"),
+        "Snippet 2 v1.1.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir
+            .join(".claude/ccpm/snippets/snippet-three.md"),
+        "Snippet 3 v3.0.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir
+            .join(".claude/ccpm/snippets/snippet-four.md"),
+        "Snippet 4 v4.0.0",
+    )?;
 
-    // Check command
-    assert!(env
-        .project_dir
-        .join(".claude/commands/deploy-cmd.md")
-        .exists());
-    let command_content =
-        fs::read_to_string(env.project_dir.join(".claude/commands/deploy-cmd.md"))?;
-    assert!(
-        command_content.contains("Deploy Command v2.1.0"),
-        "deploy-cmd should be v2.1.0"
-    );
+    // Check commands (4 resources)
+    verify_file_contains(
+        &env.project_dir.join(".claude/commands/deploy-cmd.md"),
+        "Deploy Command v2.1.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/commands/build-cmd.md"),
+        "Build Command v3.2.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/commands/test-cmd.md"),
+        "Test Command v3.2.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/commands/lint-cmd.md"),
+        "Lint Command v4.0.0",
+    )?;
 
-    // Check agents
-    assert!(env
-        .project_dir
-        .join(".claude/agents/agent-alpha.md")
-        .exists());
-    let alpha_content = fs::read_to_string(env.project_dir.join(".claude/agents/agent-alpha.md"))?;
-    assert!(
-        alpha_content.contains("Agent Alpha v1.0.0"),
-        "agent-alpha should be v1.0.0"
-    );
+    // Check scripts (3 resources)
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/scripts/build-script.sh"),
+        "Build Script v1.2.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/scripts/test-script.js"),
+        "Test Script v2.2.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir
+            .join(".claude/ccpm/scripts/deploy-script.py"),
+        "Deploy Script v3.0.0",
+    )?;
 
-    assert!(env
-        .project_dir
-        .join(".claude/agents/agent-beta.md")
-        .exists());
-    let beta_content = fs::read_to_string(env.project_dir.join(".claude/agents/agent-beta.md"))?;
-    assert!(
-        beta_content.contains("Agent Beta v2.0.0"),
-        "agent-beta should be v2.0.0"
-    );
+    // Check hooks (2 resources)
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/hooks/pre-commit.json"),
+        "Pre-commit hook v2.1.0",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/hooks/post-commit.json"),
+        "Post-commit hook v3.1.0",
+    )?;
 
-    assert!(env
-        .project_dir
-        .join(".claude/agents/agent-gamma.md")
-        .exists());
-    let gamma_content = fs::read_to_string(env.project_dir.join(".claude/agents/agent-gamma.md"))?;
-    assert!(
-        gamma_content.contains("Agent Gamma v2.1.0"),
-        "agent-gamma should be latest (v2.1.0)"
-    );
+    // Check MCP servers (3 resources)
+    verify_file_contains(
+        &env.project_dir
+            .join(".claude/ccpm/mcp-servers/filesystem.json"),
+        "\"version\": \"v2.2.0\"",
+    )?;
+    verify_file_contains(
+        &env.project_dir
+            .join(".claude/ccpm/mcp-servers/postgres.json"),
+        "\"version\": \"v3.0.0\"",
+    )?;
+    verify_file_contains(
+        &env.project_dir.join(".claude/ccpm/mcp-servers/redis.json"),
+        "\"version\": \"v4.0.0\"",
+    )?;
 
     // Verify lockfile was created
     assert!(env.project_dir.join("ccpm.lock").exists());
     let lockfile = fs::read_to_string(env.project_dir.join("ccpm.lock"))?;
 
-    // Check that lockfile contains all resources
-    assert!(lockfile.contains("[[snippets]]"));
-    assert!(lockfile.contains("name = \"snippet-one\""));
-    assert!(lockfile.contains("name = \"snippet-two\""));
-    assert!(lockfile.contains("[[commands]]"));
-    assert!(lockfile.contains("name = \"deploy-cmd\""));
+    // Check that lockfile contains all 20 resources
     assert!(lockfile.contains("[[agents]]"));
-    assert!(lockfile.contains("name = \"agent-alpha\""));
-    assert!(lockfile.contains("name = \"agent-beta\""));
-    assert!(lockfile.contains("name = \"agent-gamma\""));
+    assert!(lockfile.contains("[[snippets]]"));
+    assert!(lockfile.contains("[[commands]]"));
+    assert!(lockfile.contains("[[scripts]]"));
+    assert!(lockfile.contains("[[hooks]]"));
+    assert!(lockfile.contains("[[mcp-servers]]"));
 
-    // Verify correct versions are locked
-    assert!(lockfile.contains("version = \"v1.0.0\""));
-    assert!(lockfile.contains("version = \"v1.1.0\""));
-    assert!(lockfile.contains("version = \"v2.0.0\""));
-    assert!(lockfile.contains("version = \"v2.1.0\""));
-    assert!(lockfile.contains("version = \"main\""));
+    // Verify all resource names are present
+    let resource_names = [
+        "agent-alpha",
+        "agent-beta",
+        "agent-gamma",
+        "agent-delta",
+        "snippet-one",
+        "snippet-two",
+        "snippet-three",
+        "snippet-four",
+        "deploy-cmd",
+        "build-cmd",
+        "test-cmd",
+        "lint-cmd",
+        "build-script",
+        "test-script",
+        "deploy-script",
+        "pre-commit",
+        "post-commit",
+        "filesystem",
+        "postgres",
+        "redis",
+    ];
+
+    for name in &resource_names {
+        assert!(
+            lockfile.contains(&format!("name = \"{}\"", name)),
+            "Lockfile should contain resource: {}",
+            name
+        );
+    }
+
+    // Verify all 10+ versions are locked
+    let versions = [
+        "v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0", "v2.1.0", "v2.2.0", "v3.0.0", "v3.1.0", "v3.2.0",
+        "v4.0.0", "main",
+    ];
+
+    for version in &versions {
+        assert!(
+            lockfile.contains(&format!("version = \"{}\"", version)),
+            "Lockfile should contain version: {}",
+            version
+        );
+    }
 
     Ok(())
 }
 
+// Helper function to verify file contains expected content
+fn verify_file_contains(path: &Path, expected: &str) -> Result<()> {
+    assert!(path.exists(), "File should exist: {:?}", path);
+    let content = fs::read_to_string(path)?;
+    assert!(
+        content.contains(expected),
+        "File {:?} should contain '{}', but got: {}",
+        path.file_name().unwrap_or_default(),
+        expected,
+        content
+    );
+    Ok(())
+}
+
 fn create_v1_resources(repo_dir: &Path) -> Result<()> {
-    // Create snippets
-    fs::create_dir_all(repo_dir.join("snippets"))?;
-    fs::write(
-        repo_dir.join("snippets/snippet1.md"),
-        "# Snippet 1 v1.0.0\n\nInitial snippet one content",
-    )?;
-    fs::write(
-        repo_dir.join("snippets/snippet2.md"),
-        "# Snippet 2 v1.0.0\n\nInitial snippet two content",
-    )?;
-
-    // Create command
-    fs::create_dir_all(repo_dir.join("commands"))?;
-    fs::write(
-        repo_dir.join("commands/deploy.md"),
-        "# Deploy Command v1.0.0\n\nInitial deploy command",
-    )?;
-
     // Create agents
     fs::create_dir_all(repo_dir.join("agents"))?;
     fs::write(
@@ -209,6 +328,48 @@ fn create_v1_resources(repo_dir: &Path) -> Result<()> {
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v1.0.0\n\nInitial gamma agent",
     )?;
+    fs::write(
+        repo_dir.join("agents/delta.md"),
+        "# Agent Delta v1.0.0\n\nInitial delta agent",
+    )?;
+
+    // Create snippets
+    fs::create_dir_all(repo_dir.join("snippets"))?;
+    fs::write(
+        repo_dir.join("snippets/snippet1.md"),
+        "# Snippet 1 v1.0.0\n\nInitial snippet one",
+    )?;
+    fs::write(
+        repo_dir.join("snippets/snippet2.md"),
+        "# Snippet 2 v1.0.0\n\nInitial snippet two",
+    )?;
+    fs::write(
+        repo_dir.join("snippets/snippet3.md"),
+        "# Snippet 3 v1.0.0\n\nInitial snippet three",
+    )?;
+    fs::write(
+        repo_dir.join("snippets/snippet4.md"),
+        "# Snippet 4 v1.0.0\n\nInitial snippet four",
+    )?;
+
+    // Create commands
+    fs::create_dir_all(repo_dir.join("commands"))?;
+    fs::write(
+        repo_dir.join("commands/deploy.md"),
+        "# Deploy Command v1.0.0\n\nInitial deploy",
+    )?;
+    fs::write(
+        repo_dir.join("commands/build.md"),
+        "# Build Command v1.0.0\n\nInitial build",
+    )?;
+    fs::write(
+        repo_dir.join("commands/test.md"),
+        "# Test Command v1.0.0\n\nInitial test",
+    )?;
+    fs::write(
+        repo_dir.join("commands/lint.md"),
+        "# Lint Command v1.0.0\n\nInitial lint",
+    )?;
 
     Ok(())
 }
@@ -217,7 +378,25 @@ fn update_snippets_v1_1(repo_dir: &Path) -> Result<()> {
     // Update snippet2 only
     fs::write(
         repo_dir.join("snippets/snippet2.md"),
-        "# Snippet 2 v1.1.0\n\nUpdated snippet two with new features",
+        "# Snippet 2 v1.1.0\n\nUpdated snippet two",
+    )?;
+    Ok(())
+}
+
+fn update_scripts_v1_2(repo_dir: &Path) -> Result<()> {
+    // Add scripts
+    fs::create_dir_all(repo_dir.join("scripts"))?;
+    fs::write(
+        repo_dir.join("scripts/build.sh"),
+        "#!/bin/bash\n# Build Script v1.2.0\necho 'Building...'",
+    )?;
+    fs::write(
+        repo_dir.join("scripts/test.js"),
+        "// Test Script v1.2.0\nconsole.log('Testing...');",
+    )?;
+    fs::write(
+        repo_dir.join("scripts/deploy.py"),
+        "#!/usr/bin/env python\n# Deploy Script v1.2.0\nprint('Deploying...')",
     )?;
     Ok(())
 }
@@ -226,28 +405,123 @@ fn update_agents_v2(repo_dir: &Path) -> Result<()> {
     // Update beta and gamma agents
     fs::write(
         repo_dir.join("agents/beta.md"),
-        "# Agent Beta v2.0.0\n\nMajor update to beta agent",
+        "# Agent Beta v2.0.0\n\nMajor update to beta",
     )?;
     fs::write(
         repo_dir.join("agents/gamma.md"),
-        "# Agent Gamma v2.0.0\n\nMajor update to gamma agent",
+        "# Agent Gamma v2.0.0\n\nMajor update to gamma",
     )?;
     Ok(())
 }
 
 fn update_command_v2_1(repo_dir: &Path) -> Result<()> {
-    // Update deploy command
+    // Update deploy command and add hooks
     fs::write(
         repo_dir.join("commands/deploy.md"),
-        "# Deploy Command v2.1.0\n\nEnhanced deploy command with new options",
+        "# Deploy Command v2.1.0\n\nEnhanced deploy",
     )?;
-
-    // Also update gamma agent for main branch
     fs::write(
         repo_dir.join("agents/gamma.md"),
-        "# Agent Gamma v2.1.0\n\nLatest gamma agent on main branch",
+        "# Agent Gamma v2.1.0\n\nGamma v2.1.0",
     )?;
 
+    // Add hooks
+    fs::create_dir_all(repo_dir.join("hooks"))?;
+    fs::write(
+        repo_dir.join("hooks/pre-commit.json"),
+        r#"{"events": ["PreToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Pre-commit hook'", "description": "Pre-commit hook v2.1.0"}"#,
+    )?;
+    fs::write(
+        repo_dir.join("hooks/post-commit.json"),
+        r#"{"events": ["PostToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Post-commit hook'", "description": "Post-commit hook v2.1.0"}"#,
+    )?;
+    Ok(())
+}
+
+fn update_mcp_v2_2(repo_dir: &Path) -> Result<()> {
+    // Update test script and add MCP servers
+    fs::write(
+        repo_dir.join("scripts/test.js"),
+        "// Test Script v2.2.0\nconsole.log('Testing v2.2...');",
+    )?;
+
+    fs::create_dir_all(repo_dir.join("mcp-servers"))?;
+    fs::write(
+        repo_dir.join("mcp-servers/filesystem.json"),
+        r#"{"name": "filesystem", "version": "v2.2.0", "type": "filesystem"}"#,
+    )?;
+    fs::write(
+        repo_dir.join("mcp-servers/postgres.json"),
+        r#"{"name": "postgres", "version": "v2.2.0", "type": "database"}"#,
+    )?;
+    fs::write(
+        repo_dir.join("mcp-servers/redis.json"),
+        r#"{"name": "redis", "version": "v2.2.0", "type": "cache"}"#,
+    )?;
+    Ok(())
+}
+
+fn update_major_v3(repo_dir: &Path) -> Result<()> {
+    // Major updates to multiple resources
+    fs::write(
+        repo_dir.join("snippets/snippet3.md"),
+        "# Snippet 3 v3.0.0\n\nMajor snippet three",
+    )?;
+    fs::write(
+        repo_dir.join("scripts/deploy.py"),
+        "#!/usr/bin/env python\n# Deploy Script v3.0.0\nprint('Deploying v3...')",
+    )?;
+    fs::write(
+        repo_dir.join("mcp-servers/postgres.json"),
+        r#"{"name": "postgres", "version": "v3.0.0", "type": "database", "features": ["ssl"]}"#,
+    )?;
+    Ok(())
+}
+
+fn update_additional_v3_1(repo_dir: &Path) -> Result<()> {
+    // Update delta agent and post-commit hook
+    fs::write(
+        repo_dir.join("agents/delta.md"),
+        "# Agent Delta v3.1.0\n\nDelta enhanced v3.1",
+    )?;
+    fs::write(
+        repo_dir.join("hooks/post-commit.json"),
+        r#"{"events": ["PostToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Post-commit v3.1'", "description": "Post-commit hook v3.1.0"}"#,
+    )?;
+    Ok(())
+}
+
+fn update_commands_v3_2(repo_dir: &Path) -> Result<()> {
+    // Add new commands
+    fs::write(
+        repo_dir.join("commands/build.md"),
+        "# Build Command v3.2.0\n\nBuild automation v3.2",
+    )?;
+    fs::write(
+        repo_dir.join("commands/test.md"),
+        "# Test Command v3.2.0\n\nTest runner v3.2",
+    )?;
+    Ok(())
+}
+
+fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
+    // Breaking changes v4.0.0
+    fs::write(
+        repo_dir.join("snippets/snippet4.md"),
+        "# Snippet 4 v4.0.0\n\nBreaking snippet four",
+    )?;
+    fs::write(
+        repo_dir.join("commands/lint.md"),
+        "# Lint Command v4.0.0\n\nLinter v4.0",
+    )?;
+    fs::write(
+        repo_dir.join("mcp-servers/redis.json"),
+        r#"{"name": "redis", "version": "v4.0.0", "type": "cache", "breaking": true}"#,
+    )?;
+    fs::write(
+        repo_dir.join("agents/gamma.md"),
+        "# Agent Gamma v4.0.0\n\nGamma breaking v4.0",
+    )?;
     Ok(())
 }
 

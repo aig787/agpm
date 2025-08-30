@@ -48,7 +48,11 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 
    **Performance Review (--performance)**:
    - Build in release mode: `cargo build --release`
-   - Check for blocking operations in async code
+   - Check for blocking operations in async code:
+     * Search for `.block_on()` calls in async functions
+     * Look for synchronous I/O operations (std::fs instead of tokio::fs)
+     * Check for blocking mutex locks (std::sync::Mutex in async contexts)
+     * Verify no blocking sleep calls (std::thread::sleep in async)
    - Look for unnecessary allocations or clones
    - Review algorithmic complexity
 

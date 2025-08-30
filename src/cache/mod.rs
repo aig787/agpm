@@ -514,6 +514,7 @@ impl Cache {
 
         // Acquire lock for this source to prevent concurrent access
         let _lock = CacheLock::acquire(&self.cache_dir, name)
+            .await
             .with_context(|| format!("Failed to acquire lock for source: {name}"))?;
 
         // Use the same cache directory structure as SourceManager for consistency

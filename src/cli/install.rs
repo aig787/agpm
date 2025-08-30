@@ -774,7 +774,14 @@ async fn install_resources_parallel(
         let project_dir = project_dir.to_path_buf();
         let installed_count = installed_count.clone();
         let pb_clone = pb.clone();
-        let cache_clone = cache.and_then(|_c| Cache::new().ok());
+        // IMPORTANT: Create a new cache instance for each task to avoid sharing
+        // file handles across async boundaries, but they will coordinate through
+        // file locking which is now async and won't block the runtime
+        let cache_clone = if cache.is_some() {
+            Cache::new().ok()
+        } else {
+            None
+        };
 
         let task = tokio::spawn(async move {
             let result = install_resource_for_parallel(

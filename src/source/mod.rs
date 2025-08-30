@@ -1032,7 +1032,7 @@ impl SourceManager {
 
         // Acquire lock for this source to prevent concurrent git operations
         // This prevents issues like concurrent "git remote set-url" commands
-        let _lock = CacheLock::acquire(&self.cache_dir, name)?;
+        let _lock = CacheLock::acquire(&self.cache_dir, name).await?;
 
         let repo = if is_local_path {
             // Local paths are treated as plain directories (not git repositories)
@@ -1235,7 +1235,7 @@ impl SourceManager {
         // Acquire lock for this URL-based source to prevent concurrent git operations
         // Use a deterministic lock name based on owner and repo
         let lock_name = format!("{owner}_{repo_name}");
-        let _lock = CacheLock::acquire(&self.cache_dir, &lock_name)?;
+        let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
 
         // Use the URL directly (auth tokens are already embedded in URLs from global config)
         let authenticated_url = url.to_string();

@@ -1538,7 +1538,7 @@ impl Manifest {
             ResourceType::Command => Some(&self.commands),
             ResourceType::Script => Some(&self.scripts),
             ResourceType::Hook => Some(&self.hooks),
-            ResourceType::McpServer => None, // MCP servers use McpServerDependency
+            ResourceType::McpServer => Some(&self.mcp_servers),
         }
     }
 
