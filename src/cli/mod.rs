@@ -121,6 +121,7 @@ mod tests;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 /// Runtime configuration for CLI execution.
 ///
@@ -386,6 +387,25 @@ pub struct Cli {
     /// ```
     #[arg(short, long, global = true)]
     config: Option<String>,
+
+    /// Path to the manifest file (ccpm.toml).
+    ///
+    /// By default, CCPM searches for ccpm.toml in the current directory
+    /// and parent directories. This option allows you to specify an exact
+    /// path to the manifest file, which is useful for:
+    ///
+    /// - Running commands from outside the project directory
+    /// - CI/CD pipelines with non-standard layouts
+    /// - Testing with temporary manifests
+    ///
+    /// # Examples
+    ///
+    /// ```bash
+    /// ccpm --manifest-path /path/to/ccpm.toml install
+    /// ccpm --manifest-path ../other-project/ccpm.toml list
+    /// ```
+    #[arg(long, global = true)]
+    manifest_path: Option<PathBuf>,
 
     /// Disable progress bars and spinners for automation.
     ///
@@ -691,14 +711,14 @@ impl Cli {
         config.apply_to_env();
 
         match self.command {
-            Commands::Init(cmd) => cmd.execute().await,
-            Commands::Add(cmd) => cmd.execute().await,
-            Commands::Remove(cmd) => cmd.execute().await,
-            Commands::Install(cmd) => cmd.execute().await,
-            Commands::Update(cmd) => cmd.execute().await,
-            Commands::List(cmd) => cmd.execute().await,
-            Commands::Validate(cmd) => cmd.execute().await,
-            Commands::Cache(cmd) => cmd.execute().await,
+            Commands::Init(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Add(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Remove(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Install(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Update(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::List(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Validate(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Cache(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Config(cmd) => cmd.execute().await,
         }
     }

@@ -71,7 +71,8 @@ use clap::{Args, Subcommand};
 use colored::Colorize;
 
 use crate::cache::Cache;
-use crate::manifest::{find_manifest, Manifest};
+use crate::manifest::{find_manifest_with_optional, Manifest};
+use std::path::PathBuf;
 
 /// Command to manage the global Git repository cache.
 ///
@@ -195,7 +196,25 @@ impl CacheCommand {
     /// ```
     pub async fn execute(self) -> Result<()> {
         let cache = Cache::new()?;
-        self.execute_with_cache(cache).await
+        self.execute_with_cache_and_manifest(cache, None).await
+    }
+
+    /// Execute the cache command with a specific manifest path.
+    ///
+    /// This method creates a new cache instance and uses the provided manifest path
+    /// for operations that need to read the project manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest_path` - Optional path to the manifest file
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the cache operation completed successfully
+    /// - `Err(anyhow::Error)` if cache creation or operation fails
+    pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
+        let cache = Cache::new()?;
+        self.execute_with_cache_and_manifest(cache, manifest_path).await
     }
 
     /// Execute the cache command with a specific cache instance.
@@ -237,12 +256,34 @@ impl CacheCommand {
     /// # });
     /// ```
     pub async fn execute_with_cache(self, cache: Cache) -> Result<()> {
+        self.execute_with_cache_and_manifest(cache, None).await
+    }
+
+    /// Execute the cache command with a specific cache instance and manifest path.
+    ///
+    /// This method allows dependency injection of both cache and manifest path,
+    /// which is particularly useful for testing.
+    ///
+    /// # Arguments
+    ///
+    /// * `cache` - The cache instance to use for operations
+    /// * `manifest_path` - Optional path to the manifest file
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the operation completed successfully
+    /// - `Err(anyhow::Error)` if the operation encounters an error
+    async fn execute_with_cache_and_manifest(
+        self,
+        cache: Cache,
+        manifest_path: Option<PathBuf>,
+    ) -> Result<()> {
         match self.command {
             Some(CacheSubcommands::Clean { all }) => {
                 if all {
                     self.clean_all(cache).await
                 } else {
-                    self.clean_unused(cache).await
+                    self.clean_unused(cache, manifest_path).await
                 }
             }
             Some(CacheSubcommands::Info) | None => self.show_info(cache).await,
@@ -302,6 +343,7 @@ impl CacheCommand {
     /// # Arguments
     ///
     /// * `cache` - The cache instance to operate on
+    /// * `manifest_path` - Optional path to the manifest file
     ///
     /// # Behavior Without Manifest
     ///
@@ -322,17 +364,20 @@ impl CacheCommand {
     /// - Cache entries "official" and "community" are preserved
     /// - Cache entry "old-unused" is removed
     /// - Cache entry "another-project" is removed
-    async fn clean_unused(&self, cache: Cache) -> Result<()> {
+    async fn clean_unused(&self, cache: Cache, manifest_path: Option<PathBuf>) -> Result<()> {
         println!("🔍 Scanning for unused cache entries...");
 
         // Find manifest to get active sources
-        let active_sources = if let Ok(manifest_path) = find_manifest() {
-            let manifest = Manifest::load(&manifest_path)?;
-            manifest.sources.keys().cloned().collect::<Vec<_>>()
-        } else {
-            // No manifest found, can't determine what's in use
-            println!("⚠️  No ccpm.toml found. Use --all to clear entire cache.");
-            return Ok(());
+        let active_sources = match find_manifest_with_optional(manifest_path) {
+            Ok(manifest_path) => {
+                let manifest = Manifest::load(&manifest_path)?;
+                manifest.sources.keys().cloned().collect::<Vec<_>>()
+            }
+            Err(_) => {
+                // No manifest found, can't determine what's in use
+                println!("⚠️  No ccpm.toml found. Use --all to clear entire cache.");
+                return Ok(());
+            }
         };
 
         let removed = cache.clean_unused(&active_sources).await?;
@@ -491,7 +536,6 @@ fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::WorkingDirGuard;
 
     #[test]
     fn test_format_size() {
@@ -583,21 +627,20 @@ mod tests {
     async fn test_cache_clean_unused_no_manifest() {
         use tempfile::TempDir;
 
-        // Use WorkingDirGuard to handle directory changes safely
-        let _guard = WorkingDirGuard::new().unwrap();
-
         let temp_dir = TempDir::new().unwrap();
         let work_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-
-        std::env::set_current_dir(work_dir.path()).unwrap();
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
+        // Pass a non-existent manifest path to ensure no manifest is found
+        let non_existent_manifest = work_dir.path().join("ccpm.toml");
+        assert!(!non_existent_manifest.exists());
+        
         // Without a manifest, should warn and not clean
-        let result = cmd.execute_with_cache(cache).await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
         assert!(result.is_ok());
     }
 
@@ -605,14 +648,9 @@ mod tests {
     async fn test_cache_clean_unused_with_manifest() {
         use tempfile::TempDir;
 
-        // Use WorkingDirGuard to handle directory changes safely
-        let _guard = WorkingDirGuard::new().unwrap();
-
         let temp_dir = TempDir::new().unwrap();
         let work_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-
-        std::env::set_current_dir(work_dir.path()).unwrap();
 
         // Create a manifest with one source
         let manifest = Manifest {
@@ -622,7 +660,8 @@ mod tests {
             )]),
             ..Default::default()
         };
-        manifest.save(&work_dir.path().join("ccpm.toml")).unwrap();
+        let manifest_path = work_dir.path().join("ccpm.toml");
+        manifest.save(&manifest_path).unwrap();
 
         // Create cache directories - one active (matches manifest), one unused
         let active_cache = temp_dir.path().join("active");
@@ -638,7 +677,7 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         // Give a small delay to ensure async removal is completed
@@ -717,12 +756,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_execute_without_dir() {
         // Test CacheCommand::execute which creates its own Cache
-        use crate::test_utils::WorkingDirGuard;
         use tempfile::TempDir;
 
-        let _guard = WorkingDirGuard::new().unwrap();
         let work_dir = TempDir::new().unwrap();
-        std::env::set_current_dir(work_dir.path()).unwrap();
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
@@ -756,12 +792,9 @@ mod tests {
     async fn test_cache_clean_with_multiple_sources() {
         use tempfile::TempDir;
 
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let work_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-
-        std::env::set_current_dir(work_dir.path()).unwrap();
 
         // Create manifest with multiple sources
         let manifest = Manifest {
@@ -777,7 +810,8 @@ mod tests {
             ]),
             ..Default::default()
         };
-        manifest.save(&work_dir.path().join("ccpm.toml")).unwrap();
+        let manifest_path = work_dir.path().join("ccpm.toml");
+        manifest.save(&manifest_path).unwrap();
 
         // Create cache directories
         let source1_cache = temp_dir.path().join("source1");
@@ -791,7 +825,7 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -832,15 +866,13 @@ mod tests {
     async fn test_cache_clean_no_manifest_warning() {
         use tempfile::TempDir;
 
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let work_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
 
-        std::env::set_current_dir(work_dir.path()).unwrap();
-
         // No manifest file exists
-        assert!(!work_dir.path().join("ccpm.toml").exists());
+        let non_existent_manifest = work_dir.path().join("ccpm.toml");
+        assert!(!non_existent_manifest.exists());
 
         // Create some cache directories
         let cache_dir1 = temp_dir.path().join("source1");
@@ -850,7 +882,8 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
+        // Pass a non-existent manifest path to ensure no manifest is found
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
         assert!(result.is_ok());
 
         // Cache should remain untouched without manifest
@@ -884,12 +917,9 @@ mod tests {
         use crate::lockfile::{LockFile, LockedSource};
         use tempfile::TempDir;
 
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let work_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-
-        std::env::set_current_dir(work_dir.path()).unwrap();
 
         // Create manifest with one source
         let manifest = Manifest {
@@ -899,7 +929,8 @@ mod tests {
             )]),
             ..Default::default()
         };
-        manifest.save(&work_dir.path().join("ccpm.toml")).unwrap();
+        let manifest_path = work_dir.path().join("ccpm.toml");
+        manifest.save(&manifest_path).unwrap();
 
         // Create lockfile with additional sources
         let lockfile = LockFile {
@@ -939,7 +970,7 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache(cache).await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

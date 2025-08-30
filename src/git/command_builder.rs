@@ -86,20 +86,31 @@ impl GitCommand {
     pub async fn execute(self) -> Result<GitCommandOutput> {
         let git_command = get_git_command();
         let mut cmd = Command::new(git_command);
-        cmd.args(&self.args);
+        
+        // Build the full arguments list including -C flag if needed
+        let mut full_args = Vec::new();
+        if let Some(ref dir) = self.current_dir {
+            // Use -C flag to specify working directory
+            // This makes git operations independent of the process's current directory
+            full_args.push("-C".to_string());
+            // Ensure absolute path for reliability
+            let abs_dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            full_args.push(abs_dir.display().to_string());
+        }
+        full_args.extend(self.args.clone());
+        
+        cmd.args(&full_args);
 
-        let git_args = self.args.clone();
         let working_dir = self.current_dir.clone();
 
         debug!(
             "Executing git command: {} {}",
             git_command,
-            git_args.join(" ")
+            full_args.join(" ")
         );
 
         if let Some(ref dir) = working_dir {
-            debug!("Working directory: {}", dir.display());
-            cmd.current_dir(dir);
+            debug!("Working directory (via -C flag): {}", dir.display());
         }
 
         for (key, value) in &self.env_vars {
@@ -125,19 +136,22 @@ impl GitCommand {
             Some(duration) => match timeout(duration, output_future).await {
                 Ok(result) => {
                     trace!("Git command completed within timeout");
-                    result.context(format!("Failed to execute git {}", git_args.join(" ")))?
+                    result.context(format!("Failed to execute git {}", full_args.join(" ")))?
                 }
                 Err(_) => {
                     warn!(
                         "Git command timed out after {} seconds: git {}",
                         duration.as_secs(),
-                        git_args.join(" ")
+                        full_args.join(" ")
                     );
+                    // Extract the actual git operation (skip -C and path if present)
+                    let git_operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                        full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
+                    } else {
+                        full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
+                    };
                     return Err(CcpmError::GitCommandError {
-                        operation: git_args
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "unknown".to_string()),
+                        operation: git_operation,
                         stderr: format!(
                             "Git command timed out after {} seconds. This may indicate:\n\
                                 - Network connectivity issues\n\
@@ -145,7 +159,7 @@ impl GitCommand {
                                 - Large repository operations taking too long\n\
                                 Try running the command manually: git {}",
                             duration.as_secs(),
-                            git_args.join(" ")
+                            full_args.join(" ")
                         ),
                     }
                     .into());
@@ -155,7 +169,7 @@ impl GitCommand {
                 trace!("Executing git command without timeout");
                 output_future
                     .await
-                    .context(format!("Failed to execute git {}", git_args.join(" ")))?
+                    .context(format!("Failed to execute git {}", full_args.join(" ")))?
             }
         };
 
@@ -175,22 +189,29 @@ impl GitCommand {
             }
 
             // Provide context-specific error messages
-            let error = if self.args.first().is_some_and(|arg| arg == "clone") {
-                let url = self.args.get(2).cloned().unwrap_or_default();
+            // Skip -C flag arguments when checking command type
+            let args_start = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                2
+            } else {
+                0
+            };
+            let effective_args = &full_args[args_start..];
+            
+            let error = if effective_args.first().is_some_and(|arg| arg == "clone") {
+                let url = effective_args.get(2).cloned().unwrap_or_default();
                 CcpmError::GitCloneFailed {
                     url,
                     reason: stderr.to_string(),
                 }
-            } else if self.args.first().is_some_and(|arg| arg == "checkout") {
-                let reference = self.args.get(1).cloned().unwrap_or_default();
+            } else if effective_args.first().is_some_and(|arg| arg == "checkout") {
+                let reference = effective_args.get(1).cloned().unwrap_or_default();
                 CcpmError::GitCheckoutFailed {
                     reference,
                     reason: stderr.to_string(),
                 }
             } else {
                 CcpmError::GitCommandError {
-                    operation: self
-                        .args
+                    operation: effective_args
                         .first()
                         .cloned()
                         .unwrap_or_else(|| "unknown".to_string()),

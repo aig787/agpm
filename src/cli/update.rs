@@ -75,7 +75,7 @@ use std::path::PathBuf;
 use crate::cache::Cache;
 use crate::installer::{install_updated_resources, update_gitignore};
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest, Manifest};
+use crate::manifest::{find_manifest_with_optional, Manifest};
 use crate::resolver::DependencyResolver;
 use crate::utils::progress::ProgressBar;
 
@@ -238,8 +238,13 @@ impl UpdateCommand {
     /// # });
     /// ```
     pub async fn execute(self) -> Result<()> {
+        self.execute_with_manifest_path(None).await
+    }
+
+    /// Execute the update command with an optional manifest path
+    pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
-        let manifest_path = find_manifest().with_context(|| {
+        let manifest_path = find_manifest_with_optional(manifest_path).with_context(|| {
             "No ccpm.toml found in current directory or any parent directory.\n\n\
             The update command requires a ccpm.toml file to know what dependencies to update.\n\
             Create one first, then run 'ccpm install' before updating."
@@ -581,14 +586,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_no_manifest_found() {
-        use crate::test_utils::WorkingDirGuard;
-
-        let _guard = WorkingDirGuard::new().unwrap();
-        let _temp = TempDir::new().unwrap();
-        std::env::set_current_dir(_temp.path()).unwrap();
+        let temp = TempDir::new().unwrap();
+        let non_existent_manifest = temp.path().join("ccpm.toml");
+        assert!(!non_existent_manifest.exists());
 
         let cmd = create_update_command();
-        let result = cmd.execute().await;
+        let result = cmd.execute_with_manifest_path(Some(non_existent_manifest)).await;
 
         assert!(result.is_err());
         let error_msg = format!("{}", result.unwrap_err());

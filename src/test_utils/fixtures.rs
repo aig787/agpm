@@ -319,20 +319,17 @@ impl GitRepoFixture {
 
         // Initialize git repository
         std::process::Command::new("git")
-            .arg("init")
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "init"])
             .output()
             .context("Failed to initialize git repository")?;
 
         // Configure git user (required for commits)
         std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "config", "user.email", "test@example.com"])
             .output()?;
 
         std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "config", "user.name", "Test User"])
             .output()?;
 
         // Add files
@@ -342,19 +339,16 @@ impl GitRepoFixture {
 
         // Add and commit all files
         std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "add", "."])
             .output()?;
 
         std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "commit", "-m", "Initial commit"])
             .output()?;
 
         // Create a v1.0.0 tag
         std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&self.path)
+            .args(["-C", self.path.to_str().unwrap(), "tag", "v1.0.0"])
             .output()?;
 
         Ok(())

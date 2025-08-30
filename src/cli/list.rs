@@ -92,7 +92,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest, Manifest};
+use crate::manifest::{find_manifest_with_optional, Manifest};
 
 /// Internal representation for list items used in various output formats.
 ///
@@ -314,11 +314,16 @@ impl ListCommand {
     /// # });
     /// ```
     pub async fn execute(self) -> Result<()> {
+        self.execute_with_manifest_path(None).await
+    }
+
+    /// Execute the list command with an optional manifest path
+    pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Validate arguments
         self.validate_arguments()?;
 
         // Find manifest file
-        let manifest_path = find_manifest()
+        let manifest_path = find_manifest_with_optional(manifest_path)
             .context("No ccpm.toml found. Please create one to define your dependencies.")?;
 
         self.execute_from_path(manifest_path).await

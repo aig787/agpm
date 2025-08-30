@@ -273,9 +273,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
       
       - name: List artifacts
-        run: ls -la artifacts/*/
+        run: ls -la artifacts/
       
       - name: Create release notes
         run: |
@@ -327,11 +328,11 @@ jobs:
           draft: false
           prerelease: ${{ contains(needs.prepare-release.outputs.version, '-') }}
           files: |
-            artifacts/ccpm-x86_64-linux.tar.gz/ccpm-x86_64-linux.tar.gz
-            artifacts/ccpm-aarch64-linux.tar.gz/ccpm-aarch64-linux.tar.gz
-            artifacts/ccpm-x86_64-windows.zip/ccpm-x86_64-windows.zip
-            artifacts/ccpm-x86_64-macos.tar.gz/ccpm-x86_64-macos.tar.gz
-            artifacts/ccpm-aarch64-macos.tar.gz/ccpm-aarch64-macos.tar.gz
+            artifacts/ccpm-x86_64-linux.tar.gz
+            artifacts/ccpm-aarch64-linux.tar.gz
+            artifacts/ccpm-x86_64-windows.zip
+            artifacts/ccpm-x86_64-macos.tar.gz
+            artifacts/ccpm-aarch64-macos.tar.gz
 
   publish-crate:
     name: Publish to crates.io

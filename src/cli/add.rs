@@ -16,7 +16,7 @@ use crate::cli::resource_ops::{
     update_settings_for_hook, update_settings_for_mcp_server, validate_resource_content,
 };
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest, DetailedDependency, Manifest, ResourceDependency};
+use crate::manifest::{find_manifest_with_optional, DetailedDependency, Manifest, ResourceDependency};
 use crate::models::{
     AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
     ScriptDependency, SnippetDependency, SourceSpec,
@@ -70,10 +70,12 @@ enum DependencySubcommand {
 }
 
 impl AddCommand {
-    /// Execute the add command
-    pub async fn execute(self) -> Result<()> {
+    /// Execute the add command with an optional manifest path
+    pub async fn execute_with_manifest_path(self, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
         match self.command {
-            AddSubcommand::Source { name, url } => add_source(SourceSpec { name, url }).await,
+            AddSubcommand::Source { name, url } => {
+                add_source_with_manifest_path(SourceSpec { name, url }, manifest_path).await
+            }
             AddSubcommand::Dep(dep_command) => {
                 let dep_type = match dep_command {
                     DependencySubcommand::Agent(agent) => DependencyType::Agent(agent),
@@ -83,16 +85,26 @@ impl AddCommand {
                     DependencySubcommand::Hook(hook) => DependencyType::Hook(hook),
                     DependencySubcommand::McpServer(mcp) => DependencyType::McpServer(mcp),
                 };
-                add_dependency(dep_type).await
+                add_dependency_with_manifest_path(dep_type, manifest_path).await
             }
         }
     }
+    
+    /// Execute the add command (legacy method for compatibility)
+    pub async fn execute(self) -> Result<()> {
+        self.execute_with_manifest_path(None).await
+    }
 }
 
-/// Add a new source to the manifest
+/// Add a new source to the manifest (legacy function for compatibility)
 async fn add_source(source: SourceSpec) -> Result<()> {
+    add_source_with_manifest_path(source, None).await
+}
+
+/// Add a new source to the manifest with optional manifest path
+async fn add_source_with_manifest_path(source: SourceSpec, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
     // Find manifest file
-    let manifest_path = find_manifest()?;
+    let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
 
     // Check if source already exists
@@ -122,13 +134,18 @@ async fn add_source(source: SourceSpec) -> Result<()> {
     Ok(())
 }
 
-/// Add a dependency to the manifest and install it
+/// Add a dependency to the manifest and install it (legacy function for compatibility)
 async fn add_dependency(dep_type: DependencyType) -> Result<()> {
+    add_dependency_with_manifest_path(dep_type, None).await
+}
+
+/// Add a dependency to the manifest and install it with optional manifest path
+async fn add_dependency_with_manifest_path(dep_type: DependencyType, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
     let common = dep_type.common();
     let (name, dependency) = parse_dependency_spec(&common.spec, &common.name)?;
 
     // Find manifest file
-    let manifest_path = find_manifest()?;
+    let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
 
     // Determine the resource type
@@ -182,7 +199,7 @@ async fn add_dependency(dep_type: DependencyType) -> Result<()> {
 
     // Auto-install the dependency
     println!("{}", "Installing dependency...".cyan());
-    install_single_dependency(&name, &dependency, resource_type, &manifest).await?;
+    install_single_dependency(&name, &dependency, resource_type, &manifest, &manifest_path).await?;
 
     Ok(())
 }
@@ -260,8 +277,10 @@ async fn install_single_dependency(
     dependency: &ResourceDependency,
     resource_type: &str,
     manifest: &Manifest,
+    manifest_path: &Path,
 ) -> Result<()> {
-    let project_root = std::env::current_dir()?;
+    let project_root = manifest_path.parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
     let cache = Cache::new()?;
 
     // Step 1: Get the source file content
@@ -287,7 +306,7 @@ async fn install_single_dependency(
     install_resource_file(&target_path, &content)?;
 
     // Step 4: Update lockfile
-    let lockfile_path = manifest_path_to_lockfile(&find_manifest()?);
+    let lockfile_path = manifest_path_to_lockfile(manifest_path);
     let mut lockfile = if lockfile_path.exists() {
         LockFile::load(&lockfile_path)?
     } else {
@@ -349,7 +368,6 @@ fn manifest_path_to_lockfile(manifest_path: &Path) -> std::path::PathBuf {
 mod tests {
     use super::*;
     use crate::models::DependencySpec;
-    use crate::test_utils::WorkingDirGuard;
     use tempfile::TempDir;
 
     // Helper function to create a test manifest with basic structure
@@ -491,13 +509,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_execute_add_source() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Source {
@@ -506,7 +522,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         };
 
-        let result = add_command.execute().await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         assert!(result.is_ok(), "Failed to execute add source: {result:?}");
 
@@ -521,7 +537,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_execute_add_agent_dependency() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
@@ -531,7 +546,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&agent_file, "# Test Agent\nThis is a test agent.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Dep(DependencySubcommand::Agent(AgentDependency {
@@ -544,7 +558,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         };
 
         // Execute the command - this should now succeed with local files
-        let result = add_command.execute().await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local agent: {result:?}");
@@ -556,7 +570,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_execute_add_snippet_dependency() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
@@ -566,7 +579,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&snippet_file, "# Test Snippet\nUseful code snippet.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Dep(DependencySubcommand::Snippet(SnippetDependency {
@@ -578,7 +590,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute().await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local snippet: {result:?}");
@@ -590,7 +602,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_execute_add_command_dependency() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
@@ -600,7 +611,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&command_file, "# Test Command\nUseful command.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Dep(DependencySubcommand::Command(CommandDependency {
@@ -612,7 +622,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute().await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local command: {result:?}");
@@ -624,7 +634,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_execute_add_mcp_server_dependency() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
@@ -639,7 +648,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&mcp_file_path, mcp_config.to_string()).unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let add_command = AddCommand {
             command: AddSubcommand::Dep(DependencySubcommand::McpServer(McpServerDependency {
@@ -651,7 +659,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute().await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         assert!(result.is_ok(), "Failed to add MCP server: {result:?}");
 
@@ -675,20 +683,18 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_source_success() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let source = SourceSpec {
             name: "new-source".to_string(),
             url: "https://github.com/new/repo.git".to_string(),
         };
 
-        let result = add_source(source).await;
+        let result = add_source_with_manifest_path(source, Some(manifest_path.clone())).await;
         assert!(result.is_ok(), "Failed to add source: {result:?}");
 
         // Verify source was added
@@ -702,20 +708,18 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_source_already_exists() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let source = SourceSpec {
             name: "existing".to_string(),
             url: "https://github.com/different/repo.git".to_string(),
         };
 
-        let result = add_source(source).await;
+        let result = add_source_with_manifest_path(source, Some(manifest_path.clone())).await;
         assert!(result.is_err());
 
         let error_msg = result.err().unwrap().to_string();
@@ -789,7 +793,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
     // we'll test the error cases and the MCP server special case
     #[tokio::test]
     async fn test_install_single_dependency_mcp_server() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
@@ -806,14 +809,13 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&mcp_file_path, mcp_config.to_string()).unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         // Load manifest and create dependency
         let manifest = Manifest::load(&manifest_path).unwrap();
         let dependency = ResourceDependency::Simple(mcp_file_path.to_string_lossy().to_string());
 
         let result =
-            install_single_dependency("test-mcp", &dependency, "mcp-server", &manifest).await;
+            install_single_dependency("test-mcp", &dependency, "mcp-server", &manifest, &manifest_path).await;
 
         // MCP servers should install both the file and update settings
         assert!(
@@ -862,6 +864,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             &dependency,
             "invalid-type", // Invalid resource type
             &manifest,
+            &manifest_path,
         )
         .await;
 
@@ -891,7 +894,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             filename: None,
         });
 
-        let result = install_single_dependency("test-agent", &dependency, "agent", &manifest).await;
+        let result = install_single_dependency("test-agent", &dependency, "agent", &manifest, &manifest_path).await;
 
         // Should return error for source not found in manifest
         assert!(result.is_err());
@@ -901,7 +904,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_dependency_agent_with_force() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest_with_content(&manifest_path);
@@ -911,7 +913,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&agent_file, "# New Agent\nReplacement agent.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let dep_type = DependencyType::Agent(AgentDependency {
             common: DependencySpec {
@@ -922,7 +923,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         });
 
         // This should succeed with force flag and overwrite the existing agent
-        let result = add_dependency(dep_type).await;
+        let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         // This should succeed since we're using force flag and a local file
         assert!(
@@ -937,13 +938,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_dependency_mcp_server_without_force() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let dep_type = DependencyType::McpServer(McpServerDependency {
             common: DependencySpec {
@@ -953,7 +952,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         });
 
-        let result = add_dependency(dep_type).await;
+        let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         assert!(result.is_err());
         let error_msg = result.err().unwrap().to_string();
@@ -966,7 +965,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_dependency_snippet_without_force() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest_with_content(&manifest_path);
@@ -976,7 +974,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&snippet_file, "# New Snippet\nReplacement snippet.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let dep_type = DependencyType::Snippet(SnippetDependency {
             common: DependencySpec {
@@ -986,7 +983,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         });
 
-        let result = add_dependency(dep_type).await;
+        let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         assert!(result.is_err());
         let error_msg = result.err().unwrap().to_string();
@@ -999,7 +996,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_dependency_command_without_force() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest_with_content(&manifest_path);
@@ -1009,7 +1005,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         std::fs::write(&command_file, "# New Command\nReplacement command.").unwrap();
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         let dep_type = DependencyType::Command(CommandDependency {
             common: DependencySpec {
@@ -1019,7 +1014,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         });
 
-        let result = add_dependency(dep_type).await;
+        let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         assert!(result.is_err());
         let error_msg = result.err().unwrap().to_string();
@@ -1032,13 +1027,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[tokio::test]
     async fn test_add_dependency_mcp_server_with_file() {
-        let _guard = WorkingDirGuard::new().unwrap();
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("ccpm.toml");
         create_test_manifest(&manifest_path);
 
         // Change to temp directory
-        _guard.change_to(temp_dir.path()).unwrap();
 
         // Create a test MCP server JSON file
         let mcp_config = serde_json::json!({
@@ -1059,7 +1052,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         });
 
-        let result = add_dependency(dep_type).await;
+        let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         assert!(
             result.is_ok(),

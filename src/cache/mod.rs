@@ -485,6 +485,31 @@ impl Cache {
         url: &str,
         version: Option<&str>,
     ) -> Result<PathBuf> {
+        self.get_or_clone_source_with_options(name, url, version, false).await
+    }
+    
+    /// Get or clone a source repository with options to control cache behavior.
+    ///
+    /// This method provides the core functionality for repository access with
+    /// additional control over cache behavior.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - The name of the source (used for cache directory naming)
+    /// * `url` - The Git repository URL or local path
+    /// * `version` - Optional specific version/tag/branch to checkout
+    /// * `force_refresh` - If true, ignore cached version and clone/fetch fresh
+    ///
+    /// # Returns
+    ///
+    /// Returns the path to the cached/cloned repository directory
+    pub async fn get_or_clone_source_with_options(
+        &self,
+        name: &str,
+        url: &str,
+        version: Option<&str>,
+        force_refresh: bool,
+    ) -> Result<PathBuf> {
         // Check if this is a local path (not a git repository URL)
         let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
 
@@ -533,9 +558,20 @@ impl Cache {
                 .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
         }
 
-        if source_dir.exists() {
+        if source_dir.exists() && !force_refresh {
+            // Use existing cache - just update to the requested version
             self.update_source(&source_dir, version).await?;
+        } else if source_dir.exists() && force_refresh {
+            // Force refresh - remove existing and clone fresh
+            tokio::fs::remove_dir_all(&source_dir)
+                .await
+                .with_context(|| format!("Failed to remove existing cache directory: {source_dir:?}"))?;
+            self.clone_source(url, &source_dir).await?;
+            if let Some(ver) = version {
+                self.checkout_version(&source_dir, ver).await?;
+            }
         } else {
+            // Directory doesn't exist - clone fresh
             self.clone_source(url, &source_dir).await?;
             if let Some(ver) = version {
                 self.checkout_version(&source_dir, ver).await?;

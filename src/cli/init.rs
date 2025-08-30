@@ -99,6 +99,13 @@ pub struct InitCommand {
 }
 
 impl InitCommand {
+    /// Execute the init command with an optional manifest path (for API compatibility)
+    pub async fn execute_with_manifest_path(self, _manifest_path: Option<std::path::PathBuf>) -> Result<()> {
+        // Init command doesn't use manifest_path since it creates a new manifest
+        // The path is already part of the InitCommand struct
+        self.execute().await
+    }
+    
     /// Execute the init command to create a new CCPM manifest file.
     ///
     /// This method creates a `ccpm.toml` manifest file with a minimal template structure
@@ -317,16 +324,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_uses_current_dir_by_default() {
-        use crate::test_utils::WorkingDirGuard;
-
         let temp_dir = TempDir::new().unwrap();
-        let _guard = WorkingDirGuard::new().unwrap();
 
-        // Change to temp directory
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-
+        // Use explicit path instead of changing directory
         let cmd = InitCommand {
-            path: None,
+            path: Some(temp_dir.path().to_path_buf()),
             force: false,
         };
 

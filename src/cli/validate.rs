@@ -92,7 +92,7 @@ use clap::Args;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::manifest::{find_manifest, Manifest};
+use crate::manifest::{find_manifest_with_optional, Manifest};
 use crate::resolver::DependencyResolver;
 use crate::utils::progress::ProgressBar;
 
@@ -322,11 +322,16 @@ impl ValidateCommand {
     /// # });
     /// ```
     pub async fn execute(self) -> Result<()> {
+        self.execute_with_manifest_path(None).await
+    }
+
+    /// Execute the validate command with an optional manifest path
+    pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find or use specified manifest file
         let manifest_path = if let Some(ref path) = self.file {
             PathBuf::from(path)
         } else {
-            match find_manifest() {
+            match find_manifest_with_optional(manifest_path) {
                 Ok(path) => path,
                 Err(e) => {
                     let error_msg =
@@ -3358,7 +3363,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_execute_without_manifest_file() {
         let temp = TempDir::new().unwrap();
-        std::env::set_current_dir(&temp).unwrap();
 
         let cmd = ValidateCommand {
             file: None,

@@ -2344,6 +2344,53 @@ pub fn find_manifest() -> Result<PathBuf> {
     find_manifest_from(current)
 }
 
+/// Find the manifest file, using an explicit path if provided.
+///
+/// This function provides a unified way to locate the manifest file,
+/// either using an explicitly provided path or by searching from the
+/// current directory.
+///
+/// # Arguments
+///
+/// * `explicit_path` - Optional path to a manifest file. If provided and the file exists,
+///   this path is returned. If provided but the file doesn't exist, an error is returned.
+///
+/// # Returns
+///
+/// The path to the manifest file.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - An explicit path is provided but the file doesn't exist
+/// - No explicit path is provided and no manifest is found via search
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::manifest::find_manifest_with_optional;
+/// use std::path::PathBuf;
+///
+/// // Use explicit path
+/// let explicit = Some(PathBuf::from("/path/to/ccpm.toml"));
+/// let manifest = find_manifest_with_optional(explicit)?;
+///
+/// // Search from current directory
+/// let manifest = find_manifest_with_optional(None)?;
+/// ```
+pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<PathBuf> {
+    match explicit_path {
+        Some(path) => {
+            if path.exists() {
+                Ok(path)
+            } else {
+                Err(crate::core::CcpmError::ManifestNotFound.into())
+            }
+        }
+        None => find_manifest(),
+    }
+}
+
 /// Find the manifest file by searching up from a specific starting directory.
 ///
 /// This is the core manifest discovery function that implements the directory

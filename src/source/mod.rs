@@ -1840,13 +1840,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_source_manager_sync_local_repo() {
-        use crate::test_utils::WorkingDirGuard;
         use std::process::Command;
 
-        // Use WorkingDirGuard to ensure proper test isolation
+
         // In coverage/CI environments, current dir might not exist, so set a safe one first
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-        let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
@@ -1898,13 +1895,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_source_manager_sync_all() {
-        use crate::test_utils::WorkingDirGuard;
         use std::process::Command;
 
-        // Use WorkingDirGuard to ensure proper test isolation
+
         // In coverage/CI environments, current dir might not exist, so set a safe one first
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-        let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
@@ -2017,13 +2011,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_invalid_cache_directory() {
-        use crate::test_utils::WorkingDirGuard;
         use std::process::Command;
 
         // Ensure stable test environment
         // In coverage/CI environments, current dir might not exist, so set a safe one first
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-        let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
@@ -2274,13 +2265,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_with_progress() {
-        use crate::test_utils::WorkingDirGuard;
         use std::process::Command;
 
         // Ensure stable test environment
         // In coverage/CI environments, current dir might not exist, so set a safe one first
-        let _ = std::env::set_current_dir(std::env::temp_dir());
-        let _guard = WorkingDirGuard::new().unwrap();
 
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
@@ -2401,11 +2389,7 @@ mod tests {
 
         // Test relative path
         {
-            use crate::test_utils::WorkingDirGuard;
             // In coverage/CI environments, current dir might not exist, so set a safe one first
-            let _ = std::env::set_current_dir(std::env::temp_dir());
-            let guard = WorkingDirGuard::new().unwrap();
-            guard.change_to(&temp_dir).unwrap();
             let result = manager.sync_by_url("./local_deps", None).await;
             assert!(result.is_ok());
             // Guard will restore directory when dropped
@@ -2509,17 +2493,10 @@ mod tests {
             let symlink_path = deps_dir.join("malicious_link");
             symlink(&sensitive_dir, &symlink_path).unwrap();
 
-            // Change to project directory
-            use crate::test_utils::WorkingDirGuard;
-            // In coverage/CI environments, current dir might not exist, so set a safe one first
-            let _ = std::env::set_current_dir(std::env::temp_dir());
-            let guard = WorkingDirGuard::new().unwrap();
-            guard.change_to(&project_dir).unwrap();
-
             let mut manager = SourceManager::new_with_cache(cache_dir);
 
-            // Try to access the symlink
-            let result = manager.sync_by_url("./deps/malicious_link", None).await;
+            // Try to access the symlink directly as a local path
+            let result = manager.sync_by_url(symlink_path.to_str().unwrap(), None).await;
             assert!(result.is_err());
             let err_msg = result.unwrap_err().to_string();
             assert!(

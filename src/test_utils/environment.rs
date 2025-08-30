@@ -170,20 +170,17 @@ installed_at = "snippets/utils.md"
 
         // Initialize as a real git repository
         std::process::Command::new("git")
-            .arg("init")
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "init"])
             .output()
             .context("Failed to initialize git repository")?;
 
         // Configure git user for commits (required for git)
         std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "config", "user.email", "test@example.com"])
             .output()?;
 
         std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "config", "user.name", "Test User"])
             .output()?;
 
         // Add markdown files
@@ -193,19 +190,16 @@ installed_at = "snippets/utils.md"
 
         // Add and commit all files
         std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "add", "."])
             .output()?;
 
         std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "commit", "-m", "Initial commit"])
             .output()?;
 
         // Create a v1.0.0 tag for testing version resolution
         std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "tag", "v1.0.0"])
             .output()?;
 
         Ok(source_dir)
