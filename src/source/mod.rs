@@ -730,19 +730,19 @@ impl SourceManager {
     /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
-    /// # fn example() -> anyhow::Result<()> {
+    /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
     ///
     /// // Add and then remove a source
     /// let source = Source::new("temp".to_string(), "https://github.com/temp/repo.git".to_string());
     /// manager.add(source)?;
-    /// manager.remove("temp")?;
+    /// manager.remove("temp").await?;
     ///
     /// assert!(manager.get("temp").is_none());
     /// # Ok(())
     /// # }
     /// ```
-    pub fn remove(&mut self, name: &str) -> Result<()> {
+    pub async fn remove(&mut self, name: &str) -> Result<()> {
         if !self.sources.contains_key(name) {
             return Err(CcpmError::SourceNotFound {
                 name: name.to_string(),
@@ -754,7 +754,7 @@ impl SourceManager {
 
         let source_cache = self.cache_dir.join("sources").join(name);
         if source_cache.exists() {
-            std::fs::remove_dir_all(&source_cache).context("Failed to remove source cache")?;
+            tokio::fs::remove_dir_all(&source_cache).await.context("Failed to remove source cache")?;
         }
 
         Ok(())
@@ -1073,7 +1073,7 @@ impl SourceManager {
                     repo.fetch(Some(&url), progress).await?;
                     repo
                 } else {
-                    std::fs::remove_dir_all(&cache_path)
+                    tokio::fs::remove_dir_all(&cache_path).await
                         .context("Failed to remove invalid cache directory")?;
                     GitRepo::clone(&url, &cache_path, progress).await?
                 }
@@ -1087,7 +1087,7 @@ impl SourceManager {
                 repo.fetch(Some(&url), progress).await?;
                 repo
             } else {
-                std::fs::remove_dir_all(&cache_path)
+                tokio::fs::remove_dir_all(&cache_path).await
                     .context("Failed to remove invalid cache directory")?;
                 GitRepo::clone(&url, &cache_path, progress).await?
             }
@@ -1248,7 +1248,7 @@ impl SourceManager {
                 repo.fetch(Some(&authenticated_url), progress).await?;
                 repo
             } else {
-                std::fs::remove_dir_all(&cache_path)
+                tokio::fs::remove_dir_all(&cache_path).await
                     .context("Failed to remove invalid cache directory")?;
                 GitRepo::clone(&authenticated_url, &cache_path, progress).await?
             }
@@ -1648,8 +1648,8 @@ mod tests {
         assert!(source.enabled);
     }
 
-    #[test]
-    fn test_source_manager_add_remove() {
+    #[tokio::test]
+    async fn test_source_manager_add_remove() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
@@ -1664,10 +1664,10 @@ mod tests {
         let result = manager.add(source);
         assert!(result.is_err());
 
-        manager.remove("test").unwrap();
+        manager.remove("test").await.unwrap();
         assert!(manager.get("test").is_none());
 
-        let result = manager.remove("test");
+        let result = manager.remove("test").await;
         assert!(result.is_err());
     }
 
@@ -2233,7 +2233,7 @@ mod tests {
         assert!(source_cache.exists());
 
         // Remove should clean up cache
-        manager.remove("test").unwrap();
+        manager.remove("test").await.unwrap();
         assert!(!source_cache.exists());
     }
 

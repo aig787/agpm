@@ -395,7 +395,7 @@ impl ConfigCommand {
 
         // Use save_to with our custom path
         if let Some(parent) = config_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            tokio::fs::create_dir_all(parent).await?;
         }
         config.save_to(&config_path).await?;
 

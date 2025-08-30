@@ -154,6 +154,7 @@ ccpm/
 - **Cache directory isolation**: Each test should use its own temp directory for cache
 - **No global state**: Tests must not rely on or modify global state that could affect other tests (except when
   explicitly testing such functionality)
+- **Async file I/O in tests**: Tests using async functions should use `tokio::fs` instead of `std::fs` to match production code patterns
 
 ## Build and Release
 
@@ -208,6 +209,7 @@ The codebase is organized into logical modules:
 3. **Resource trait abstraction** - Allows easy extension for new resource types
 4. **Atomic file operations** - Write to temp file then rename for safety
 5. **Platform-specific code isolation** - Using cfg! macros and separate functions
+6. **Async file I/O** - Using `tokio::fs` instead of `std::fs` in async contexts to prevent blocking the runtime
 
 ### Design Decision: Copy-Based Installation
 

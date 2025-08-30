@@ -372,8 +372,8 @@ pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) 
 
     // Read all MCP server JSON files
     let mut ccpm_servers = HashMap::new();
-    for entry in std::fs::read_dir(mcp_servers_dir)? {
-        let entry = entry?;
+    let mut entries = tokio::fs::read_dir(mcp_servers_dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
         if path.extension().is_some_and(|ext| ext == "json") {

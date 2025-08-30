@@ -301,7 +301,7 @@ async fn remove_source(name: &str, force: bool) -> Result<()> {
         {
             let path = project_root.join(path_str);
             if path.exists() {
-                std::fs::remove_file(&path).with_context(|| {
+                tokio::fs::remove_file(&path).await.with_context(|| {
                     format!("Failed to remove installed file: {}", path.display())
                 })?;
             }
@@ -408,7 +408,7 @@ async fn remove_dependency(name: &str, dep_type: &str) -> Result<()> {
         // Delete the installed file if it exists
         if let Some(path) = installed_path {
             if path.exists() {
-                std::fs::remove_file(&path).with_context(|| {
+                tokio::fs::remove_file(&path).await.with_context(|| {
                     format!("Failed to remove installed file: {}", path.display())
                 })?;
             }

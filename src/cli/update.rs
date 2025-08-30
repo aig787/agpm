@@ -295,7 +295,7 @@ impl UpdateCommand {
         // Create backup if requested
         if self.backup {
             let backup_path = lockfile_path.with_extension("lock.backup");
-            std::fs::copy(&lockfile_path, &backup_path)
+            tokio::fs::copy(&lockfile_path, &backup_path).await
                 .with_context(|| format!("Failed to create backup at {}", backup_path.display()))?;
             if !self.quiet {
                 println!("💾 Created backup: {}", backup_path.display());
@@ -472,7 +472,7 @@ impl UpdateCommand {
                             let backup_path = lockfile_path.with_extension("lock.backup");
                             if backup_path.exists() {
                                 if let Err(restore_err) =
-                                    std::fs::copy(&backup_path, &lockfile_path)
+                                    tokio::fs::copy(&backup_path, &lockfile_path).await
                                 {
                                     eprintln!("❌ Update failed: {e}");
                                     eprintln!("❌ Failed to restore backup: {restore_err}");

@@ -459,7 +459,7 @@ impl InstallCommand {
             for hook_entry in &lockfile.hooks {
                 let hook_path = project_dir.join(&hook_entry.installed_at);
                 if hook_path.exists() {
-                    let hook_content = std::fs::read_to_string(&hook_path)?;
+                    let hook_content = tokio::fs::read_to_string(&hook_path).await?;
                     let hook_config: crate::hooks::HookConfig =
                         serde_json::from_str(&hook_content)?;
 
@@ -528,7 +528,7 @@ impl InstallCommand {
             for mcp_entry in &lockfile.mcp_servers {
                 let mcp_path = project_dir.join(&mcp_entry.installed_at);
                 if mcp_path.exists() {
-                    let mcp_content = std::fs::read_to_string(&mcp_path)?;
+                    let mcp_content = tokio::fs::read_to_string(&mcp_path).await?;
                     let mcp_server_config: crate::mcp::McpServerConfig =
                         serde_json::from_str(&mcp_content)?;
                     ccpm_servers.insert(mcp_entry.name.clone(), mcp_server_config);
@@ -663,7 +663,7 @@ async fn install_resource(
             }
 
             // Read and copy file
-            let content = std::fs::read_to_string(&source_path).with_context(|| {
+            let content = tokio::fs::read_to_string(&source_path).await.with_context(|| {
                 format!("Failed to read resource file: {}", source_path.display())
             })?;
 
@@ -698,7 +698,7 @@ async fn install_resource(
         }
 
         // Read the source file
-        let content = std::fs::read_to_string(&source_path)
+        let content = tokio::fs::read_to_string(&source_path).await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
@@ -906,7 +906,7 @@ async fn install_resource_for_parallel(
                 }
 
                 // Read and copy file
-                let content = std::fs::read_to_string(&source_path).with_context(|| {
+                let content = tokio::fs::read_to_string(&source_path).await.with_context(|| {
                     format!("Failed to read resource file: {}", source_path.display())
                 })?;
 
@@ -941,7 +941,7 @@ async fn install_resource_for_parallel(
         }
 
         // Read the source file
-        let content = std::fs::read_to_string(&source_path)
+        let content = tokio::fs::read_to_string(&source_path).await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Parse as markdown to validate
@@ -1685,25 +1685,69 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let project_dir = temp.path();
 
-        // Create mock manifest
+        // Create a local git repository to act as our "remote" source
+        let source_dir = temp.path().join("test-source");
+        fs::create_dir_all(&source_dir).unwrap();
+        
+        // Initialize git repository
+        std::process::Command::new("git")
+            .arg("init")
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to init git repo");
+        
+        // Configure git user for commits
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create the agents directory and file in the mock source
+        let agents_dir = source_dir.join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(
+            agents_dir.join("remote.md"),
+            "# Remote Agent\nThis is a remote agent.",
+        )
+        .unwrap();
+
+        // Add and commit the file
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create mock manifest using file:// URL for the local repository
         let manifest_path = project_dir.join("ccpm.toml");
         let mut manifest = Manifest::new();
         let mut sources = HashMap::new();
         sources.insert(
             "test-source".to_string(),
-            "https://example.com/repo.git".to_string(),
+            format!("file://{}", source_dir.display()),
         );
         manifest.sources = sources;
         manifest.save(&manifest_path).unwrap();
 
-        // Create lock entry for remote resource (this would fail in real usage due to no git repo)
+        // Create lock entry for remote resource
         let entry = LockedResource {
             name: "remote-agent".to_string(),
             source: Some("test-source".to_string()),
-            url: Some("https://example.com/repo.git".to_string()),
+            url: Some(format!("file://{}", source_dir.display())),
             path: "agents/remote.md".to_string(),
-            version: Some("v1.0.0".to_string()),
-            resolved_commit: Some("abc123".to_string()),
+            version: None,
+            resolved_commit: None,
             checksum: "sha256:remote".to_string(),
             installed_at: ".claude/agents/remote-agent.md".to_string(),
         };
@@ -1711,9 +1755,15 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let result = install_resource(&entry, project_dir, ".claude/agents", &pb, None).await;
 
-        // This should fail because we can't actually sync the source (no real git repo)
-        assert!(result.is_err());
-        // But we've exercised the no-cache code path (lines 454-501)
+        // This should succeed now with a real local git repository
+        assert!(result.is_ok());
+        
+        // Verify the file was installed
+        let installed_path = project_dir.join(".claude/agents/remote-agent.md");
+        assert!(installed_path.exists());
+        let content = fs::read_to_string(&installed_path).unwrap();
+        assert!(content.contains("# Remote Agent"));
+        // We've successfully exercised the no-cache code path (lines 454-501)
     }
 
     /// Test remote resource missing URL error (lines 434-435)
