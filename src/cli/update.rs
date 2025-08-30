@@ -233,14 +233,10 @@ impl UpdateCommand {
     ///     verbose: true,
     ///     quiet: false,
     /// };
-    /// // cmd.execute().await?;
+    /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    pub async fn execute(self) -> Result<()> {
-        self.execute_with_manifest_path(None).await
-    }
-
     /// Execute the update command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
@@ -591,7 +587,9 @@ mod tests {
         assert!(!non_existent_manifest.exists());
 
         let cmd = create_update_command();
-        let result = cmd.execute_with_manifest_path(Some(non_existent_manifest)).await;
+        let result = cmd
+            .execute_with_manifest_path(Some(non_existent_manifest))
+            .await;
 
         assert!(result.is_err());
         let error_msg = format!("{}", result.unwrap_err());

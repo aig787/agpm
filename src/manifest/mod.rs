@@ -1487,6 +1487,31 @@ impl Manifest {
             }
         }
 
+        // Check for case-insensitive conflicts on all platforms
+        // This ensures manifests are portable across different filesystems
+        // Even though Linux supports case-sensitive files, we reject conflicts
+        // to ensure the manifest works on Windows and macOS too
+        let mut normalized_names: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        for (name, _) in self.all_dependencies() {
+            let normalized = name.to_lowercase();
+            if !normalized_names.insert(normalized.clone()) {
+                // Find the original conflicting name
+                for (other_name, _) in self.all_dependencies() {
+                    if other_name != name && other_name.to_lowercase() == normalized {
+                        return Err(crate::core::CcpmError::ManifestValidationError {
+                            reason: format!(
+                                "Case conflict: '{}' and '{}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique.",
+                                name, other_name
+                            ),
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -2367,16 +2392,19 @@ pub fn find_manifest() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::manifest::find_manifest_with_optional;
 /// use std::path::PathBuf;
 ///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Use explicit path
 /// let explicit = Some(PathBuf::from("/path/to/ccpm.toml"));
 /// let manifest = find_manifest_with_optional(explicit)?;
 ///
 /// // Search from current directory
 /// let manifest = find_manifest_with_optional(None)?;
+/// # Ok(())
+/// # }
 /// ```
 pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<PathBuf> {
     match explicit_path {

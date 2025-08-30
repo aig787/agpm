@@ -115,13 +115,10 @@ official = "file://{}"
         .stdout(predicate::str::contains("Installing"));
 }
 
-/// Test case sensitivity differences between platforms
-/// This test only runs on Linux because it tests behavior that requires
-/// a case-sensitive filesystem. On macOS and Windows, files differing only
-/// in case would overwrite each other.
+/// Test case conflict detection universally
+/// We reject case conflicts on all platforms to ensure manifest portability
 #[test]
-#[cfg(target_os = "linux")]
-fn test_case_sensitivity() {
+fn test_case_conflict_detection() {
     let env = TestEnvironment::new().unwrap();
 
     // Create consistent repository content across all platforms
@@ -159,126 +156,19 @@ MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v
 
     let mut cmd = env.ccpm_command();
 
-    // The new paradigm uses manifest keys as names, so case sensitivity
-    // depends on TOML key handling, not filesystem. TOML keys are case-sensitive,
-    // so resources should install successfully.
-    cmd.arg("install")
-        .arg("--no-cache") // Skip cache for tests
+    // Pass explicit manifest path to avoid path resolution issues
+    let manifest_path = env.project_path().join("ccpm.toml");
+
+    // Validation should fail with case conflict error on all platforms
+    // to ensure manifests are portable
+    cmd.arg("--manifest-path")
+        .arg(manifest_path)
+        .arg("validate")
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Installing"));
-
-    // Verify files were installed with correct names (in default location)
-    let agents_dir = env.project_path().join(".claude").join("agents");
-
-    // Both files should be installed with their TOML key names, not source file names
-    assert!(
-        agents_dir.join("myagent.md").exists(),
-        "myagent.md should exist"
-    );
-    assert!(
-        agents_dir.join("MyAgent.md").exists(),
-        "MyAgent.md should exist"
-    );
-
-    // Verify they have different content (from different source files)
-    let lower_content = fs::read_to_string(agents_dir.join("myagent.md")).unwrap();
-    let upper_content = fs::read_to_string(agents_dir.join("MyAgent.md")).unwrap();
-
-    // Debug output to see what's actually in the files
-    if !lower_content.contains("myagent-lower") {
-        eprintln!("ERROR: myagent.md doesn't contain 'myagent-lower'");
-        eprintln!(
-            "First 200 chars of myagent.md: {:?}",
-            &lower_content[..200.min(lower_content.len())]
-        );
-    }
-    if !upper_content.contains("MyAgent-upper") {
-        eprintln!("ERROR: MyAgent.md doesn't contain 'MyAgent-upper'");
-        eprintln!(
-            "First 200 chars of MyAgent.md: {:?}",
-            &upper_content[..200.min(upper_content.len())]
-        );
-    }
-
-    assert!(
-        lower_content.contains("myagent-lower"),
-        "myagent.md should contain 'myagent-lower'"
-    );
-    assert!(
-        upper_content.contains("MyAgent-upper"),
-        "MyAgent.md should contain 'MyAgent-upper'"
-    );
-}
-
-/// Test case-insensitive filesystem behavior on macOS and Windows
-/// This test verifies that when two resources differ only in case,
-/// the second one overwrites the first on case-insensitive filesystems.
-#[test]
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn test_case_insensitive_overwrite() {
-    let env = TestEnvironment::new().unwrap();
-
-    // Create repository with two different files
-    let official_files = vec![
-        MarkdownFixture::agent("resource-lower"),
-        MarkdownFixture::agent("resource-upper"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example-org/ccpm-official.git",
-            official_files,
-        )
-        .unwrap();
-
-    // Create manifest with file:// URL
-    let source_path_str = source_path.display().to_string().replace('\\', "/");
-
-    // Use keys that differ only in case, pointing to different source files
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "file://{source_path_str}"
-
-[agents]
-myagent = {{ source = "official", path = "agents/resource-lower.md", version = "v1.0.0" }}
-MyAgent = {{ source = "official", path = "agents/resource-upper.md", version = "v1.0.0" }}
-"#
-    );
-
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
-
-    let mut cmd = env.ccpm_command();
-
-    // Installation should succeed
-    cmd.arg("install")
-        .arg("--no-cache") // Skip cache for tests
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Installing"));
-
-    // Verify only one file exists (the second overwrites the first)
-    let agents_dir = env.project_path().join(".claude").join("agents");
-
-    // On case-insensitive systems, myagent.md and MyAgent.md are the same file
-    // The content should be from whichever was written last
-    assert!(
-        agents_dir.join("myagent.md").exists() || agents_dir.join("MyAgent.md").exists(),
-        "At least one file should exist"
-    );
-
-    // Count actual files in directory
-    let file_count = fs::read_dir(&agents_dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|s| s == "md").unwrap_or(false))
-        .count();
-
-    assert_eq!(
-        file_count, 1,
-        "Should have exactly one file due to case-insensitive overwrite"
-    );
+        .failure()
+        .stderr(predicate::str::contains("Case conflict"))
+        .stderr(predicate::str::contains("myagent"))
+        .stderr(predicate::str::contains("MyAgent"));
 }
 
 /// Test home directory expansion across platforms

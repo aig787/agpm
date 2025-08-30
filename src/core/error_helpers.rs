@@ -288,14 +288,23 @@ mod tests {
         let result = FileOps::write_bytes_with_context(&readonly_file, test_bytes);
 
         // Reset permissions for cleanup
-        let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(&readonly_dir, perms).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::Permissions::from_mode(0o755);
+            fs::set_permissions(&readonly_dir, perms).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&readonly_dir, perms).unwrap();
+        }
 
         // On some systems, writing to readonly directories might still work,
         // so we just check that the function doesn't panic
-        if result.is_err() {
-            let error_msg = result.unwrap_err().to_string();
+        if let Err(err) = result {
+            let error_msg = err.to_string();
             assert!(error_msg.contains("Failed to write file"));
         }
     }
@@ -604,12 +613,21 @@ fetched_at = "2024-01-01T00:00:00Z"
         let result = FileOps::write_file_with_context(&readonly_file, "test");
 
         // Reset permissions for cleanup
-        let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(&readonly_dir, perms).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = fs::Permissions::from_mode(0o755);
+            fs::set_permissions(&readonly_dir, perms).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&readonly_dir, perms).unwrap();
+        }
 
-        if result.is_err() {
-            let error_msg = result.unwrap_err().to_string();
+        if let Err(err) = result {
+            let error_msg = err.to_string();
             assert!(error_msg.contains("Failed to write file"));
         }
 

@@ -492,20 +492,29 @@ installed_at = "snippets/utils.md"
 
         // Initialize as a real git repository
         std::process::Command::new("git")
-            .arg("init")
-            .current_dir(&source_dir)
+            .args(["-C", source_dir.to_str().unwrap(), "init"])
             .output()
             .context("Failed to initialize git repository")?;
 
         // Configure git user for commits (required for git)
         std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
+            .args([
+                "-C",
+                source_dir.to_str().unwrap(),
+                "config",
+                "user.email",
+                "test@example.com",
+            ])
             .output()?;
 
         std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
+            .args([
+                "-C",
+                source_dir.to_str().unwrap(),
+                "config",
+                "user.name",
+                "Test User",
+            ])
             .output()?;
 
         // Write all markdown files
@@ -514,21 +523,42 @@ installed_at = "snippets/utils.md"
         }
 
         // Add and commit all files
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
+        let output = std::process::Command::new("git")
+            .args(["-C", source_dir.to_str().unwrap(), "add", "."])
             .output()?;
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to add files to git: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
 
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&source_dir)
+        let output = std::process::Command::new("git")
+            .args([
+                "-C",
+                source_dir.to_str().unwrap(),
+                "commit",
+                "-m",
+                "Initial commit",
+            ])
             .output()?;
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to commit files to git: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
 
         // Create a tag for v1.0.0 (commonly used in tests)
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
+        let output = std::process::Command::new("git")
+            .args(["-C", source_dir.to_str().unwrap(), "tag", "v1.0.0"])
             .output()?;
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to create git tag: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
 
         Ok(source_dir)
     }

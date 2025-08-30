@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(parsed.timeout, Some(3000));
         assert!(parsed.ccpm_metadata.is_some());
         let meta = parsed.ccpm_metadata.unwrap();
-        assert_eq!(meta.managed, true);
+        assert!(meta.managed);
         assert_eq!(meta.dependency_name, "test-hook");
     }
 

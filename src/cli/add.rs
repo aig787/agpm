@@ -16,7 +16,9 @@ use crate::cli::resource_ops::{
     update_settings_for_hook, update_settings_for_mcp_server, validate_resource_content,
 };
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest_with_optional, DetailedDependency, Manifest, ResourceDependency};
+use crate::manifest::{
+    find_manifest_with_optional, DetailedDependency, Manifest, ResourceDependency,
+};
 use crate::models::{
     AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
     ScriptDependency, SnippetDependency, SourceSpec,
@@ -70,8 +72,44 @@ enum DependencySubcommand {
 }
 
 impl AddCommand {
-    /// Execute the add command with an optional manifest path
-    pub async fn execute_with_manifest_path(self, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
+    /// Execute the add command with an optional manifest path.
+    ///
+    /// This method allows specifying a custom path to the ccpm.toml manifest file.
+    /// If no path is provided, it will search for ccpm.toml in the current directory
+    /// and parent directories.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest_path` - Optional path to the ccpm.toml file
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the add operation completed successfully
+    /// - `Err(anyhow::Error)` if the operation fails (e.g., invalid manifest, source not found)
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use ccpm::cli::add::{AddCommand, AddSubcommand};
+    /// use std::path::PathBuf;
+    ///
+    /// let cmd = AddCommand {
+    ///     command: AddSubcommand::Source {
+    ///         name: "my-source".to_string(),
+    ///         url: "https://github.com/example/repo.git".to_string(),
+    ///     }
+    /// };
+    ///
+    /// // Use default manifest location
+    /// cmd.execute_with_manifest_path(None).await?;
+    ///
+    /// // Or specify custom manifest path
+    /// cmd.execute_with_manifest_path(Some(PathBuf::from("/path/to/ccpm.toml"))).await?;
+    /// ```
+    pub async fn execute_with_manifest_path(
+        self,
+        manifest_path: Option<std::path::PathBuf>,
+    ) -> Result<()> {
         match self.command {
             AddSubcommand::Source { name, url } => {
                 add_source_with_manifest_path(SourceSpec { name, url }, manifest_path).await
@@ -89,20 +127,13 @@ impl AddCommand {
             }
         }
     }
-    
-    /// Execute the add command (legacy method for compatibility)
-    pub async fn execute(self) -> Result<()> {
-        self.execute_with_manifest_path(None).await
-    }
-}
-
-/// Add a new source to the manifest (legacy function for compatibility)
-async fn add_source(source: SourceSpec) -> Result<()> {
-    add_source_with_manifest_path(source, None).await
 }
 
 /// Add a new source to the manifest with optional manifest path
-async fn add_source_with_manifest_path(source: SourceSpec, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
+async fn add_source_with_manifest_path(
+    source: SourceSpec,
+    manifest_path: Option<std::path::PathBuf>,
+) -> Result<()> {
     // Find manifest file
     let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
@@ -134,13 +165,11 @@ async fn add_source_with_manifest_path(source: SourceSpec, manifest_path: Option
     Ok(())
 }
 
-/// Add a dependency to the manifest and install it (legacy function for compatibility)
-async fn add_dependency(dep_type: DependencyType) -> Result<()> {
-    add_dependency_with_manifest_path(dep_type, None).await
-}
-
 /// Add a dependency to the manifest and install it with optional manifest path
-async fn add_dependency_with_manifest_path(dep_type: DependencyType, manifest_path: Option<std::path::PathBuf>) -> Result<()> {
+async fn add_dependency_with_manifest_path(
+    dep_type: DependencyType,
+    manifest_path: Option<std::path::PathBuf>,
+) -> Result<()> {
     let common = dep_type.common();
     let (name, dependency) = parse_dependency_spec(&common.spec, &common.name)?;
 
@@ -279,7 +308,8 @@ async fn install_single_dependency(
     manifest: &Manifest,
     manifest_path: &Path,
 ) -> Result<()> {
-    let project_root = manifest_path.parent()
+    let project_root = manifest_path
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
     let cache = Cache::new()?;
 
@@ -300,7 +330,7 @@ async fn install_single_dependency(
             .join(&manifest.target.scripts)
             .join(format!("{}.{}", name, extension))
     } else {
-        get_resource_target_path(name, resource_type, manifest, &project_root)?
+        get_resource_target_path(name, resource_type, manifest, project_root)?
     };
 
     install_resource_file(&target_path, &content)?;
@@ -337,9 +367,9 @@ async fn install_single_dependency(
 
     // Step 5: Update settings.local.json if needed (hooks and MCP servers)
     if resource_type == "hook" {
-        update_settings_for_hook(name, &content, &project_root)?;
+        update_settings_for_hook(name, &content, project_root)?;
     } else if resource_type == "mcp-server" {
-        update_settings_for_mcp_server(name, &content, &project_root)?;
+        update_settings_for_mcp_server(name, &content, project_root)?;
     }
 
     println!(
@@ -522,7 +552,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         };
 
-        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = add_command
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
 
         assert!(result.is_ok(), "Failed to execute add source: {result:?}");
 
@@ -558,7 +590,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
         };
 
         // Execute the command - this should now succeed with local files
-        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = add_command
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local agent: {result:?}");
@@ -590,7 +624,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = add_command
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local snippet: {result:?}");
@@ -622,7 +658,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = add_command
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local command: {result:?}");
@@ -659,7 +697,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = add_command
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
 
         assert!(result.is_ok(), "Failed to add MCP server: {result:?}");
 
@@ -814,8 +854,14 @@ existing-mcp = "../local/mcp-servers/existing.json"
         let manifest = Manifest::load(&manifest_path).unwrap();
         let dependency = ResourceDependency::Simple(mcp_file_path.to_string_lossy().to_string());
 
-        let result =
-            install_single_dependency("test-mcp", &dependency, "mcp-server", &manifest, &manifest_path).await;
+        let result = install_single_dependency(
+            "test-mcp",
+            &dependency,
+            "mcp-server",
+            &manifest,
+            &manifest_path,
+        )
+        .await;
 
         // MCP servers should install both the file and update settings
         assert!(
@@ -894,7 +940,14 @@ existing-mcp = "../local/mcp-servers/existing.json"
             filename: None,
         });
 
-        let result = install_single_dependency("test-agent", &dependency, "agent", &manifest, &manifest_path).await;
+        let result = install_single_dependency(
+            "test-agent",
+            &dependency,
+            "agent",
+            &manifest,
+            &manifest_path,
+        )
+        .await;
 
         // Should return error for source not found in manifest
         assert!(result.is_err());

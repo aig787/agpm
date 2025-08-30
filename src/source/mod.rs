@@ -1842,7 +1842,6 @@ mod tests {
     async fn test_source_manager_sync_local_repo() {
         use std::process::Command;
 
-
         // In coverage/CI environments, current dir might not exist, so set a safe one first
 
         let temp_dir = TempDir::new().unwrap();
@@ -1896,7 +1895,6 @@ mod tests {
     #[tokio::test]
     async fn test_source_manager_sync_all() {
         use std::process::Command;
-
 
         // In coverage/CI environments, current dir might not exist, so set a safe one first
 
@@ -2496,7 +2494,9 @@ mod tests {
             let mut manager = SourceManager::new_with_cache(cache_dir);
 
             // Try to access the symlink directly as a local path
-            let result = manager.sync_by_url(symlink_path.to_str().unwrap(), None).await;
+            let result = manager
+                .sync_by_url(symlink_path.to_str().unwrap(), None)
+                .await;
             assert!(result.is_err());
             let err_msg = result.unwrap_err().to_string();
             assert!(

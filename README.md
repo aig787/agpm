@@ -7,7 +7,8 @@ dependency management, similar to Cargo.
 
 CCPM (Claude Code Package Manager) is a command-line tool written in Rust that simplifies the deployment and management
 of Claude agents and snippets across different projects. Using a manifest-based approach with lockfile support, CCPM
-provides reproducible, version-controlled installations of AI resources directly from Git repositories.
+provides reproducible, version-controlled installations of AI resources directly from Git repositories. CCPM includes
+specialized Rust development agents with delegation patterns for efficient code development workflows.
 
 ## Quick Links
 
@@ -77,7 +78,9 @@ provides reproducible, version-controlled installations of AI resources directly
 - **No Central Registry**: Fully decentralized - add any Git repository as a source
 - **Dependency Resolution**: Automatic version constraint resolution with conflict detection
 - **Cross-Platform Support**: Works reliably on Windows, macOS, and Linux
-- **Comprehensive CLI**: Full-featured command-line interface with 8 commands
+- **Comprehensive CLI**: Full-featured command-line interface with 9 commands
+- **Specialized Agents**: Includes expert Rust agents with delegation patterns for development workflows
+- **Parallel Operations**: Safe concurrent operations with automatic file locking
 
 ## Resource Types
 
@@ -1063,6 +1066,8 @@ CCPM is built with Rust and uses system Git for compatibility. Key components:
 - **resolver**: Dependency resolution and conflict detection
 - **git**: Git operations with authentication support
 - **cache**: Global repository cache with file locking
+- **cli**: Command implementations with optional manifest path support
+- **test_utils**: Comprehensive testing framework with parallel test safety
 
 ### Concurrent Operations & File Locking
 
@@ -1073,6 +1078,7 @@ repository has a lock file at `~/.ccpm/cache/.locks/<source-name>.lock` that ens
 - No git index corruption
 - Automatic lock management
 - Cross-platform compatibility via fs4
+- Parallel test execution without WorkingDirGuard for better performance
 
 ## Versioning
 
@@ -1092,6 +1098,7 @@ This provides simplicity and Git-native compatibility while trading off per-file
 4. **Use --frozen in CI/CD** - Ensures deterministic builds in automation
 5. **Leverage parallel operations** - Automatic parallel processing speeds up installations
 6. **Document custom sources** - Add comments in ccpm.toml for team clarity
+7. **Use specialized agents** - Leverage built-in Rust agents with delegation patterns for efficient development
 
 ## Troubleshooting
 

@@ -1,3 +1,9 @@
+//! File locking utilities for cache operations.
+//!
+//! This module provides thread-safe and process-safe file locking for cache directories
+//! to prevent corruption during concurrent cache operations. The locks are automatically
+//! released when the lock object is dropped.
+
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};

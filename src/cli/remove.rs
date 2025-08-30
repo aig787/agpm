@@ -196,15 +196,41 @@ fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: Reso
 }
 
 impl RemoveCommand {
-    /// Execute the remove command
-    pub async fn execute(self) -> Result<()> {
-        self.execute_with_manifest_path(None).await
-    }
-
-    /// Execute the remove command with an optional manifest path
+    /// Execute the remove command with an optional manifest path.
+    ///
+    /// This method allows specifying a custom path to the ccpm.toml manifest file.
+    /// If no path is provided, it will search for ccpm.toml in the current directory
+    /// and parent directories.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest_path` - Optional path to the ccpm.toml file
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the remove operation completed successfully
+    /// - `Err(anyhow::Error)` if the operation fails (e.g., dependency not found, manifest issues)
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use ccpm::cli::remove::{RemoveCommand, RemoveSubcommand};
+    /// use std::path::PathBuf;
+    ///
+    /// let cmd = RemoveCommand {
+    ///     command: RemoveSubcommand::Source {
+    ///         name: "my-source".to_string(),
+    ///         force: false,
+    ///     }
+    /// };
+    ///
+    /// cmd.execute_with_manifest_path(None).await?;
+    /// ```
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         match self.command {
-            RemoveSubcommand::Source { name, force } => remove_source_with_manifest_path(&name, force, manifest_path).await,
+            RemoveSubcommand::Source { name, force } => {
+                remove_source_with_manifest_path(&name, force, manifest_path).await
+            }
             RemoveSubcommand::Dep(dep_command) => match dep_command {
                 RemoveDependencySubcommand::Agent { name } => {
                     remove_dependency_with_manifest_path(&name, "agent", manifest_path).await
@@ -221,19 +247,20 @@ impl RemoveCommand {
                 RemoveDependencySubcommand::Script { name } => {
                     remove_dependency_with_manifest_path(&name, "script", manifest_path).await
                 }
-                RemoveDependencySubcommand::Hook { name } => remove_dependency_with_manifest_path(&name, "hook", manifest_path).await,
+                RemoveDependencySubcommand::Hook { name } => {
+                    remove_dependency_with_manifest_path(&name, "hook", manifest_path).await
+                }
             },
         }
     }
 }
 
-/// Remove a source from the manifest
-async fn remove_source(name: &str, force: bool) -> Result<()> {
-    remove_source_with_manifest_path(name, force, None).await
-}
-
 /// Remove a source from the manifest with optional manifest path
-async fn remove_source_with_manifest_path(name: &str, force: bool, manifest_path: Option<PathBuf>) -> Result<()> {
+async fn remove_source_with_manifest_path(
+    name: &str,
+    force: bool,
+    manifest_path: Option<PathBuf>,
+) -> Result<()> {
     // Find manifest file
     let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
@@ -348,13 +375,12 @@ async fn remove_source_with_manifest_path(name: &str, force: bool, manifest_path
     Ok(())
 }
 
-/// Remove a dependency from the manifest
-async fn remove_dependency(name: &str, dep_type: &str) -> Result<()> {
-    remove_dependency_with_manifest_path(name, dep_type, None).await
-}
-
 /// Remove a dependency from the manifest with optional manifest path
-async fn remove_dependency_with_manifest_path(name: &str, dep_type: &str, manifest_path: Option<PathBuf>) -> Result<()> {
+async fn remove_dependency_with_manifest_path(
+    name: &str,
+    dep_type: &str,
+    manifest_path: Option<PathBuf>,
+) -> Result<()> {
     // Find manifest file
     let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
@@ -490,7 +516,9 @@ existing = "https://github.com/test/repo.git"
         // Change to temp directory
 
         // Try to remove non-existent source
-        let result = remove_source_with_manifest_path("nonexistent", false, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("nonexistent", false, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -514,7 +542,9 @@ another-source = "https://github.com/another/repo.git"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a source
-        let result = remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -543,7 +573,9 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Try to remove a source in use without force
-        let result = remove_source_with_manifest_path("used-source", false, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("used-source", false, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("still being used"));
     }
@@ -568,7 +600,9 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a source in use with force
-        let result = remove_source_with_manifest_path("used-source", true, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("used-source", true, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_ok());
 
         // Verify the source was removed from the raw TOML
@@ -593,7 +627,12 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Try to remove non-existent agent
-        let result = remove_dependency_with_manifest_path("nonexistent", "agent", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "nonexistent",
+            "agent",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -617,7 +656,12 @@ another-agent = "../test/another.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove an agent
-        let result = remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-agent",
+            "agent",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -644,7 +688,12 @@ test-snippet = "../test/snippet.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a snippet
-        let result = remove_dependency_with_manifest_path("test-snippet", "snippet", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-snippet",
+            "snippet",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -670,7 +719,12 @@ test-command = "../test/command.md"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a command
-        let result = remove_dependency_with_manifest_path("test-command", "command", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-command",
+            "command",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -695,7 +749,12 @@ test-server = "../local/mcp-servers/test-server.json"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove an MCP server
-        let result = remove_dependency_with_manifest_path("test-server", "mcp-server", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-server",
+            "mcp-server",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -722,7 +781,12 @@ another-script = "../test/another.sh"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a script
-        let result = remove_dependency_with_manifest_path("test-script", "script", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-script",
+            "script",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -751,7 +815,9 @@ post-commit = "../test/another_hook.json"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Remove a hook
-        let result = remove_dependency_with_manifest_path("pre-commit", "hook", Some(manifest_path.clone())).await;
+        let result =
+            remove_dependency_with_manifest_path("pre-commit", "hook", Some(manifest_path.clone()))
+                .await;
         assert!(result.is_ok());
 
         // Verify it was removed
@@ -776,7 +842,12 @@ post-commit = "../test/another_hook.json"
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Try to remove with invalid type
-        let result = remove_dependency_with_manifest_path("test", "invalid-type", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test",
+            "invalid-type",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -818,7 +889,12 @@ test-agent = "../test/agent.md"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
-        let result = remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-agent",
+            "agent",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify the agent was removed from lockfile
@@ -861,7 +937,9 @@ test-hook = { source = "used-source", path = "hooks/test.json", version = "v1.0.
         fs::write(&manifest_path, manifest_content).unwrap();
 
         // Try to remove source without force
-        let result = remove_source_with_manifest_path("used-source", false, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("used-source", false, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("agent 'test-agent'"));
@@ -896,7 +974,9 @@ test = "https://github.com/test/repo.git"
                 force: false,
             },
         };
-        let result = cmd.execute_with_manifest_path(Some(manifest_path.clone())).await;
+        let result = cmd
+            .execute_with_manifest_path(Some(manifest_path.clone()))
+            .await;
         assert!(result.is_ok());
     }
 
@@ -972,7 +1052,13 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         assert!(std::path::Path::new(".claude/snippets/test-snippet.md").exists());
 
         // Remove the snippet
-        remove_dependency_with_manifest_path("test-snippet", "snippet", Some(manifest_path.clone())).await.unwrap();
+        remove_dependency_with_manifest_path(
+            "test-snippet",
+            "snippet",
+            Some(manifest_path.clone()),
+        )
+        .await
+        .unwrap();
 
         // Verify snippet file was deleted
         assert!(!std::path::Path::new(".claude/snippets/test-snippet.md").exists());
@@ -980,7 +1066,9 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         assert!(std::path::Path::new(".claude/agents/test-agent.md").exists());
 
         // Remove the source (should remove remaining agent)
-        remove_source_with_manifest_path("test-source", true, Some(manifest_path.clone())).await.unwrap();
+        remove_source_with_manifest_path("test-source", true, Some(manifest_path.clone()))
+            .await
+            .unwrap();
 
         // Verify agent file was also deleted
         assert!(!std::path::Path::new(".claude/agents/test-agent.md").exists());
@@ -1039,7 +1127,12 @@ test-hook = "../test/hook.json"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
-        let result = remove_dependency_with_manifest_path("test-script", "script", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-script",
+            "script",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify script was removed from lockfile
@@ -1048,7 +1141,9 @@ test-hook = "../test/hook.json"
         assert_eq!(updated_lockfile.hooks.len(), 1);
 
         // Remove hook
-        let result = remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone())).await;
+        let result =
+            remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
+                .await;
         assert!(result.is_ok());
 
         // Verify hook was removed from lockfile
@@ -1110,7 +1205,12 @@ test-snippet = "../local/snippet.md"
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
-        let result = remove_dependency_with_manifest_path("test-snippet", "snippet", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-snippet",
+            "snippet",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify lockfile was updated
@@ -1127,7 +1227,12 @@ test-snippet = "../local/snippet.md"
         );
 
         // Remove the agent
-        let result = remove_dependency_with_manifest_path("test-agent", "agent", Some(manifest_path.clone())).await;
+        let result = remove_dependency_with_manifest_path(
+            "test-agent",
+            "agent",
+            Some(manifest_path.clone()),
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify lockfile was updated again
@@ -1144,7 +1249,9 @@ test-snippet = "../local/snippet.md"
         );
 
         // Remove the source
-        let result = remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone())).await;
+        let result =
+            remove_source_with_manifest_path("test-source", false, Some(manifest_path.clone()))
+                .await;
         assert!(result.is_ok());
 
         // Verify source was removed from lockfile

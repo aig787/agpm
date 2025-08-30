@@ -12,7 +12,9 @@ argument-hint: [ --quick | --full | --security | --performance ] - e.g., "--quic
 
 ## Your task
 
-Perform a comprehensive pull request review for the CCPM project based on the arguments provided:
+Perform a comprehensive pull request review for the CCPM project based on the arguments provided.
+
+**IMPORTANT**: Always run multiple independent operations IN PARALLEL by using multiple tool calls in a single message. This significantly improves performance.
 
 1. Parse the review type from arguments:
    - `--quick`: Basic formatting and linting only
@@ -24,35 +26,39 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 2. Run automated checks based on review type:
 
    **Quick Review (--quick)**:
-   - Run `cargo fmt` to fix formatting
-   - Run `cargo clippy -- -D warnings` to catch issues
-   - Run basic tests with `cargo test --lib`
+   - Run these checks IN PARALLEL using multiple tool calls in a single message:
+     * `cargo fmt` to fix formatting
+     * `cargo clippy -- -D warnings` to catch issues
+     * `cargo test --lib` for basic tests
 
    **Full Review (--full or default)**:
-   - All quick review checks
-   - Use specialized agents for deep analysis:
-     * `rust-linting-expert` for formatting and linting
-     * `rust-expert` for architecture and API design
-     * `rust-troubleshooter-opus` for memory and safety issues
-     * `rust-test-fixer` if tests are failing
-   - Run full test suite: `cargo test --all`
-   - Build documentation: `cargo doc --no-deps`
+   - First, run quick checks IN PARALLEL (cargo fmt, clippy, test --lib)
+   - Then use specialized agents IN PARALLEL for deep analysis:
+     * `rust-linting-expert` for formatting and linting (delegates complex refactoring to rust-expert)
+     * `rust-expert` for architecture and API design review (handles implementation and refactoring)
+     * `rust-troubleshooter-opus` for memory safety, undefined behavior, and performance issues (use when rust-expert cannot resolve)
+     * `rust-test-fixer` if tests are failing (handles assertion failures, test setup issues)
+     * `rust-doc-expert` for documentation quality review (ensures comprehensive docs with examples)
+   - Run full test suite and doc build IN PARALLEL:
+     * `cargo test --all`
+     * `cargo doc --no-deps`
    - Check cross-platform compatibility
 
    **Security Review (--security)**:
-   - Search for credential patterns in changed files
-   - Validate input sanitization in git operations
-   - Check for path traversal vulnerabilities
-   - Review file system operations for safety
+   - Run these searches IN PARALLEL using multiple Grep calls:
+     * Search for credential patterns (tokens, passwords, secrets)
+     * Search for unsafe input handling in git operations
+     * Search for path traversal patterns (../, absolute paths)
+     * Search for unsafe file operations
    - Verify no secrets in version-controlled files
 
    **Performance Review (--performance)**:
    - Build in release mode: `cargo build --release`
-   - Check for blocking operations in async code:
+   - Check for blocking operations IN PARALLEL using multiple Grep calls:
      * Search for `.block_on()` calls in async functions
-     * Look for synchronous I/O operations (std::fs instead of tokio::fs)
-     * Check for blocking mutex locks (std::sync::Mutex in async contexts)
-     * Verify no blocking sleep calls (std::thread::sleep in async)
+     * Search for `std::fs::` usage in async contexts (should be tokio::fs)
+     * Search for `std::sync::Mutex` in async contexts
+     * Search for `std::thread::sleep` in async code
    - Look for unnecessary allocations or clones
    - Review algorithmic complexity
 

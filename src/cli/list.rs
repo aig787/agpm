@@ -309,14 +309,10 @@ impl ListCommand {
     ///     verbose: false,
     ///     sort: Some("name".to_string()),
     /// };
-    /// // cmd.execute().await?;
+    /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    pub async fn execute(self) -> Result<()> {
-        self.execute_with_manifest_path(None).await
-    }
-
     /// Execute the list command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Validate arguments

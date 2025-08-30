@@ -485,9 +485,10 @@ impl Cache {
         url: &str,
         version: Option<&str>,
     ) -> Result<PathBuf> {
-        self.get_or_clone_source_with_options(name, url, version, false).await
+        self.get_or_clone_source_with_options(name, url, version, false)
+            .await
     }
-    
+
     /// Get or clone a source repository with options to control cache behavior.
     ///
     /// This method provides the core functionality for repository access with
@@ -565,7 +566,9 @@ impl Cache {
             // Force refresh - remove existing and clone fresh
             tokio::fs::remove_dir_all(&source_dir)
                 .await
-                .with_context(|| format!("Failed to remove existing cache directory: {source_dir:?}"))?;
+                .with_context(|| {
+                    format!("Failed to remove existing cache directory: {source_dir:?}")
+                })?;
             self.clone_source(url, &source_dir).await?;
             if let Some(ver) = version {
                 self.checkout_version(&source_dir, ver).await?;
@@ -615,6 +618,16 @@ impl Cache {
         GitRepo::clone(url, target, None)
             .await
             .with_context(|| format!("Failed to clone repository from {url}"))?;
+
+        // Debug: List what was cloned
+        if cfg!(test) {
+            if let Ok(entries) = std::fs::read_dir(target) {
+                eprintln!("DEBUG: Cloned to {}, contents:", target.display());
+                for entry in entries.flatten() {
+                    eprintln!("  - {}", entry.path().display());
+                }
+            }
+        }
 
         Ok(())
     }

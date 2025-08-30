@@ -1,3 +1,9 @@
+//! Version comparison utilities for semantic version handling.
+//!
+//! This module provides utilities for comparing semantic versions, checking for
+//! newer versions, and handling version parsing operations used throughout the
+//! dependency resolution process.
+
 use anyhow::Result;
 use semver::Version;
 

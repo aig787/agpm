@@ -257,14 +257,10 @@ impl InstallCommand {
     /// };
     ///
     /// // This would install all dependencies from ccpm.toml
-    /// // cmd.execute().await?;
+    /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    pub async fn execute(self) -> Result<()> {
-        self.execute_with_manifest_path(None).await
-    }
-
     /// Execute the install command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
@@ -443,8 +439,15 @@ impl InstallCommand {
             count
         } else {
             // Install multiple resources
-            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, self.no_cache)
-                .await?
+            install_resources_parallel(
+                &lockfile,
+                &manifest,
+                project_dir,
+                &pb,
+                &cache,
+                self.no_cache,
+            )
+            .await?
         };
 
         pb.finish_with_message(format!("✅ Installed {installed_count} resources"));
@@ -1144,7 +1147,8 @@ mod tests {
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
         assert!(result.is_ok());
 
         // Check that resource was installed
@@ -1174,7 +1178,8 @@ mod tests {
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Local file") && error_msg.contains("not found"));
@@ -1207,7 +1212,8 @@ mod tests {
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
         // Should succeed - markdown parsing is lenient
         assert!(result.is_ok());
 
@@ -1239,7 +1245,8 @@ mod tests {
 
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, ".claude/agents", &pb, &cache, false).await;
         assert!(result.is_ok());
 
         // Check that resource was installed at custom path
@@ -1273,7 +1280,8 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
 
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
+        let result =
+            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0); // No resources installed
     }
@@ -1311,7 +1319,8 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
 
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
+        let result =
+            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1); // One resource installed
 
@@ -1365,7 +1374,8 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
 
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
+        let result =
+            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 2); // Two resources installed
 
@@ -1422,7 +1432,8 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
 
         let cache = Cache::with_dir(temp.path().join("test_cache")).unwrap();
-        let result = install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
+        let result =
+            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Failed to install"));
@@ -1456,7 +1467,8 @@ mod tests {
 
             let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
             let result =
-                install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+                install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false)
+                    .await;
             assert!(result.is_ok());
 
             // Verify file was installed
@@ -1473,7 +1485,9 @@ mod tests {
         assert!(!non_existent_manifest.exists());
 
         let cmd = InstallCommand::new();
-        let result = cmd.execute_with_manifest_path(Some(non_existent_manifest)).await;
+        let result = cmd
+            .execute_with_manifest_path(Some(non_existent_manifest))
+            .await;
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -1599,20 +1613,20 @@ mod tests {
     #[tokio::test]
     async fn test_install_remote_resource_no_cache() {
         use crate::test_utils::fixtures::{GitRepoFixture, MarkdownFixture};
-        
+
         // Protect against working directory changes from other tests
-        
+
         // Create a single temp directory for the entire test with unique ID
         let test_id = uuid::Uuid::new_v4().to_string();
         let temp = TempDir::new().unwrap();
         let project_dir = temp.path().join(format!("project_{}", test_id));
         fs::create_dir_all(&project_dir).unwrap();
-        
+
         // Create source repository using GitRepoFixture helper with unique name
         let source_dir = temp.path().join(format!("test-source-{}", test_id));
-        let git_fixture = GitRepoFixture::new(source_dir.clone())
-            .with_file(MarkdownFixture::agent("remote"));
-        
+        let git_fixture =
+            GitRepoFixture::new(source_dir.clone()).with_file(MarkdownFixture::agent("remote"));
+
         // Initialize the git repository with the file
         git_fixture.init().unwrap();
 
@@ -1643,28 +1657,42 @@ mod tests {
         // Use a unique cache directory within our test temp directory
         let cache_dir = temp.path().join(format!("test_cache_{}", test_id));
         let cache = Cache::with_dir(cache_dir).unwrap();
-        
+
         // Test with force_refresh=true to simulate --no-cache behavior
-        let result = install_resource(&entry, &project_dir, ".claude/agents", &pb, &cache, true).await;
+        let result =
+            install_resource(&entry, &project_dir, ".claude/agents", &pb, &cache, true).await;
 
         // Check for errors and provide helpful debugging info
         if let Err(e) = &result {
             eprintln!("Error during install: {:?}", e);
             eprintln!("Source dir exists: {}", source_dir.exists());
             eprintln!("Source .git exists: {}", source_dir.join(".git").exists());
-            eprintln!("Source file exists: {}", source_dir.join("agents/remote.md").exists());
+            eprintln!(
+                "Source file exists: {}",
+                source_dir.join("agents/remote.md").exists()
+            );
         }
-        assert!(result.is_ok(), "Failed to install resource with force refresh");
+        assert!(
+            result.is_ok(),
+            "Failed to install resource with force refresh"
+        );
 
         // Verify the file was installed
         let installed_path = project_dir.join(".claude/agents/remote-agent.md");
-        assert!(installed_path.exists(), "Installed file should exist at {:?}", installed_path);
-        
+        assert!(
+            installed_path.exists(),
+            "Installed file should exist at {:?}",
+            installed_path
+        );
+
         let content = fs::read_to_string(&installed_path).unwrap();
         // The MarkdownFixture creates content with the name, not "# Remote Agent"
         // Check for content that MarkdownFixture::agent actually creates
-        assert!(content.contains("Test agent: remote") || content.contains("remote"), 
-                "Installed file should contain expected content, but got: {}", content);
+        assert!(
+            content.contains("Test agent: remote") || content.contains("remote"),
+            "Installed file should contain expected content, but got: {}",
+            content
+        );
     }
 
     /// Test remote resource missing URL error (lines 434-435)
@@ -1779,16 +1807,25 @@ mod tests {
     /// Test `install_resource_for_parallel` with remote source but no manifest (lines 681-684)
     #[tokio::test]
     async fn test_install_resource_for_parallel_no_manifest() {
+        use crate::test_utils::fixtures::{GitRepoFixture, MarkdownFixture};
+
         let temp = TempDir::new().unwrap();
-        let project_dir = temp.path();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
         // Don't create ccpm.toml
+
+        // Create a test git repository with the resource file
+        let source_dir = temp.path().join("test-source");
+        let git_fixture =
+            GitRepoFixture::new(source_dir.clone()).with_file(MarkdownFixture::agent("remote"));
+        git_fixture.init().unwrap();
 
         let entry = LockedResource {
             name: "remote-agent".to_string(),
             source: Some("test-source".to_string()),
-            url: Some("https://example.com/repo.git".to_string()),
+            url: Some(format!("file://{}", source_dir.display())),
             path: "agents/remote.md".to_string(),
-            version: Some("v1.0.0".to_string()),
+            version: None, // file:// repos don't need versions
             resolved_commit: None,
             checksum: "sha256:remote".to_string(),
             installed_at: ".claude/agents/remote-agent.md".to_string(),
@@ -1796,26 +1833,39 @@ mod tests {
 
         let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+            install_resource_for_parallel(&entry, &project_dir, ".claude/agents", &cache, false)
+                .await;
 
-        // Should handle gracefully when manifest doesn't exist (lines 682-684)
-        // The specific behavior depends on implementation, but we exercise the code path
-        let _ = result;
+        // Should succeed even without manifest for remote resources
+        assert!(result.is_ok());
+
+        // Verify the file was installed
+        let installed_path = project_dir.join(".claude/agents/remote-agent.md");
+        assert!(installed_path.exists());
     }
 
     /// Test resource file not found error (lines 699-704)
     #[tokio::test]
     async fn test_install_resource_for_parallel_file_not_found() {
-        let temp = TempDir::new().unwrap();
-        let project_dir = temp.path();
+        use crate::test_utils::fixtures::GitRepoFixture;
 
-        // Create manifest but not the actual resource file
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        // Create a git repository WITHOUT the resource file we're looking for
+        let source_dir = temp.path().join("test-source");
+        let git_fixture = GitRepoFixture::new(source_dir.clone());
+        // Initialize empty repo (no files)
+        git_fixture.init().unwrap();
+
+        // Create manifest
         let manifest_path = project_dir.join("ccpm.toml");
         let mut manifest = Manifest::new();
         let mut sources = HashMap::new();
         sources.insert(
             "test-source".to_string(),
-            "https://example.com/repo.git".to_string(),
+            format!("file://{}", source_dir.display()),
         );
         manifest.sources = sources;
         manifest.save(&manifest_path).unwrap();
@@ -1823,8 +1873,8 @@ mod tests {
         let entry = LockedResource {
             name: "missing-file".to_string(),
             source: Some("test-source".to_string()),
-            url: Some("https://example.com/repo.git".to_string()),
-            path: "agents/missing.md".to_string(), // This file won't exist in any real repo
+            url: Some(format!("file://{}", source_dir.display())),
+            path: "agents/missing.md".to_string(), // This file doesn't exist in the repo
             version: None,
             resolved_commit: None,
             checksum: "sha256:missing".to_string(),
@@ -1833,10 +1883,13 @@ mod tests {
 
         let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+            install_resource_for_parallel(&entry, &project_dir, ".claude/agents", &cache, false)
+                .await;
 
         // Should fail when resource file not found - exercises lines 699-704
         assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("missing.md") || error_msg.contains("not found"));
     }
 
     /// Test `install_resource_for_parallel` with invalid markdown (lines 713-715, 717)
@@ -1862,7 +1915,8 @@ mod tests {
 
         let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false)
+                .await;
 
         // Markdown parsing is generally lenient, so this might succeed
         // But we exercise the validation code path (lines 713-715, 717)
@@ -1892,7 +1946,8 @@ mod tests {
 
         let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false)
+                .await;
         assert!(result.is_ok());
 
         // Verify file was installed in the deep path
@@ -1941,7 +1996,8 @@ mod tests {
         // Test without cache (local file copy path)
         let cache = Cache::with_dir(project_dir.join("test_cache")).unwrap();
         let result =
-            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false).await;
+            install_resource_for_parallel(&entry, project_dir, ".claude/agents", &cache, false)
+                .await;
 
         // This should succeed for local file
         assert!(result.is_ok());

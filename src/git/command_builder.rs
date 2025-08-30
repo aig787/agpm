@@ -86,19 +86,19 @@ impl GitCommand {
     pub async fn execute(self) -> Result<GitCommandOutput> {
         let git_command = get_git_command();
         let mut cmd = Command::new(git_command);
-        
+
         // Build the full arguments list including -C flag if needed
         let mut full_args = Vec::new();
         if let Some(ref dir) = self.current_dir {
             // Use -C flag to specify working directory
             // This makes git operations independent of the process's current directory
             full_args.push("-C".to_string());
-            // Ensure absolute path for reliability
-            let abs_dir = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-            full_args.push(abs_dir.display().to_string());
+            // Use the path as-is to avoid symlink resolution issues on macOS
+            // (e.g., /var vs /private/var)
+            full_args.push(dir.display().to_string());
         }
         full_args.extend(self.args.clone());
-        
+
         cmd.args(&full_args);
 
         let working_dir = self.current_dir.clone();
@@ -145,11 +145,18 @@ impl GitCommand {
                         full_args.join(" ")
                     );
                     // Extract the actual git operation (skip -C and path if present)
-                    let git_operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
-                        full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
-                    } else {
-                        full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
-                    };
+                    let git_operation =
+                        if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                            full_args
+                                .get(2)
+                                .cloned()
+                                .unwrap_or_else(|| "unknown".to_string())
+                        } else {
+                            full_args
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "unknown".to_string())
+                        };
                     return Err(CcpmError::GitCommandError {
                         operation: git_operation,
                         stderr: format!(
@@ -190,13 +197,14 @@ impl GitCommand {
 
             // Provide context-specific error messages
             // Skip -C flag arguments when checking command type
-            let args_start = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+            let args_start = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2
+            {
                 2
             } else {
                 0
             };
             let effective_args = &full_args[args_start..];
-            
+
             let error = if effective_args.first().is_some_and(|arg| arg == "clone") {
                 let url = effective_args.get(2).cloned().unwrap_or_default();
                 CcpmError::GitCloneFailed {

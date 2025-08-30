@@ -1,3 +1,9 @@
+//! Version conflict detection and reporting.
+//!
+//! This module handles detection and reporting of version conflicts that can occur
+//! when multiple dependencies require incompatible versions of the same resource.
+//! It provides detailed conflict information to help users resolve dependency issues.
+
 use anyhow::Result;
 use semver::{Version, VersionReq};
 use std::collections::{HashMap, HashSet};

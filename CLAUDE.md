@@ -44,6 +44,10 @@ ccpm/
 │   ├── utils/            # Cross-platform utilities
 │   └── version/          # Version constraint handling
 ├── tests/                # Integration tests
+├── .claude/
+│   ├── agents/           # Claude Code specialized agents
+│   ├── commands/         # Custom Claude Code commands
+│   └── snippets/         # Code snippets for development
 ├── Cargo.toml           # Project manifest
 ├── README.md            # User-facing documentation
 ├── USAGE.md             # Usage guide and examples
@@ -51,6 +55,25 @@ ccpm/
 ├── LICENSE.md           # MIT License
 └── CLAUDE.md            # This file (AI context)
 ```
+
+## Available Claude Code Agents
+
+The project includes specialized Rust agents for different aspects of development:
+
+- **rust-expert**: Expert Rust developer for implementation, refactoring, and API design. Delegates memory issues, undefined behavior, and deep debugging to rust-troubleshooter-opus.
+- **rust-linting-expert**: Fast linting fixes using cargo fmt and clippy --fix. Delegates complex refactoring to rust-expert, memory issues to rust-troubleshooter-opus.
+- **rust-doc-expert**: Expert in adding comprehensive documentation, docstrings, and architectural documentation to Rust projects. Ensures all code is properly documented with examples and explanations.
+- **rust-test-fixer**: Fast test failure fixer for assertion failures, missing imports, and test setup issues. Delegates complex refactoring to rust-expert, memory/UB issues to rust-troubleshooter-opus.
+- **rust-troubleshooter-opus**: Advanced Rust troubleshooting expert using Opus 4.1 for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving. Use when rust-expert cannot resolve the issue.
+
+### Agent Delegation Patterns
+
+Agents work together through delegation:
+- **rust-linting-expert** → rust-expert (for complex refactoring)
+- **rust-linting-expert** → rust-troubleshooter-opus (for memory issues)
+- **rust-test-fixer** → rust-expert (for complex refactoring)
+- **rust-test-fixer** → rust-troubleshooter-opus (for memory/UB issues)
+- **rust-expert** → rust-troubleshooter-opus (for issues it cannot resolve)
 
 ## Core Commands
 
@@ -98,30 +121,28 @@ ccpm/
 ## Key Dependencies
 
 - `clap` (4.5) - Command-line argument parsing with derive macros
-- `tokio` (1.40) - Async runtime with full features
-- `toml` (0.8) - TOML parsing and serialization
+- `tokio` (1.47) - Async runtime with full features
+- `toml` (0.9) - TOML parsing and serialization
 - `serde` (1.0) - Serialization framework with derive
 - `serde_json` (1.0) - JSON support for metadata
 - `serde_yaml` (0.9) - YAML parsing for configuration files
 - `semver` (1.0) - Semantic version parsing for git tags
 - `anyhow` (1.0) - Error handling with context
-- `thiserror` (1.0) - Custom error types with derive
-- `colored` (2.1) - Terminal colors for CLI output
-- `dirs` (5.0) - Platform-specific directory paths
+- `thiserror` (2.0) - Custom error types with derive
+- `colored` (3.0) - Terminal colors for CLI output
+- `dirs` (6.0) - Platform-specific directory paths
 - `tracing` (0.1) - Structured, event-based diagnostics
 - `tracing-subscriber` (0.3) - Utilities for tracing subscribers
-- `indicatif` (0.17) - Progress bars and spinners
+- `indicatif` (0.18) - Progress bars and spinners
 - `tempfile` (3.10) - Temporary file/directory management
 - `shellexpand` (3.1) - Shell-like path expansion (~, env vars)
-- `which` (6.0) - Command detection in PATH
+- `which` (8.0) - Command detection in PATH
 - `uuid` (1.10) - Unique identifier generation
 - `chrono` (0.4) - Date and time handling
-- `once_cell` (1.19) - Single initialization of global data
 - `walkdir` (2.5) - Recursive directory traversal
 - `sha2` (0.10) - SHA-256 hashing for checksums
 - `hex` (0.4) - Hexadecimal encoding/decoding
 - `regex` (1.11) - Regular expression matching
-- `rayon` (1.10) - Data parallelism library
 - `futures` (0.3) - Async programming primitives
 - `fs4` (0.13) - Extended file system operations with locking
 
@@ -140,6 +161,7 @@ ccpm/
 
 ### Critical Testing Requirements
 
+- **Parallel Test Safety**: Tests are designed to run safely in parallel after eliminating WorkingDirGuard
 - **Environment variable handling in tests**:
     - **NEVER use `std::env::set_var` in regular tests** - This causes race conditions when tests run in parallel
     - **Exception**: Tests that explicitly test environment variable functionality (e.g., testing env var expansion) MAY
@@ -155,6 +177,7 @@ ccpm/
 - **No global state**: Tests must not rely on or modify global state that could affect other tests (except when
   explicitly testing such functionality)
 - **Async file I/O in tests**: Tests using async functions should use `tokio::fs` instead of `std::fs` to match production code patterns
+- **Working Directory Management**: Tests no longer use WorkingDirGuard to avoid runtime spawning issues
 
 ## Build and Release
 
@@ -188,7 +211,6 @@ The codebase is organized into logical modules:
 - **core/** - Core types, error handling, and resource abstractions
 - **git/** - Git command wrapper and repository operations
 - **hooks/** - Claude Code hooks support and settings.local.json management
-- **installer/** - Resource installation logic and file operations
 - **lockfile/** - Lockfile generation and parsing (ccpm.lock)
 - **manifest/** - Manifest parsing and validation (ccpm.toml)
 - **markdown/** - Markdown file operations and frontmatter extraction
@@ -210,6 +232,7 @@ The codebase is organized into logical modules:
 4. **Atomic file operations** - Write to temp file then rename for safety
 5. **Platform-specific code isolation** - Using cfg! macros and separate functions
 6. **Async file I/O** - Using `tokio::fs` instead of `std::fs` in async contexts to prevent blocking the runtime
+7. **Parallel test execution** - Eliminated WorkingDirGuard to enable safe parallel test execution without runtime spawning
 
 ### Design Decision: Copy-Based Installation
 
@@ -260,6 +283,13 @@ The `tests/` directory contains comprehensive integration tests:
 - `integration_update.rs` - Update command and version constraint handling
 - `integration_validate.rs` - Manifest and lockfile validation
 - `integration_versioning.rs` - Version resolution and Git reference handling
+
+## Recent Architectural Changes
+
+- **Removed `once_cell` dependency**: Replaced with standard library features for better maintainability
+- **Eliminated WorkingDirGuard**: Refactored tests to run safely in parallel without changing working directories
+- **API improvements**: CLI commands now accept optional manifest_path parameter for better flexibility
+- **Enhanced agent documentation**: Added detailed agent delegation patterns and specializations
 
 ## Notes for Claude
 

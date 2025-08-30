@@ -194,6 +194,7 @@ impl CacheCommand {
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
+    #[allow(dead_code)] // Used in tests
     pub async fn execute(self) -> Result<()> {
         let cache = Cache::new()?;
         self.execute_with_cache_and_manifest(cache, None).await
@@ -214,7 +215,8 @@ impl CacheCommand {
     /// - `Err(anyhow::Error)` if cache creation or operation fails
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         let cache = Cache::new()?;
-        self.execute_with_cache_and_manifest(cache, manifest_path).await
+        self.execute_with_cache_and_manifest(cache, manifest_path)
+            .await
     }
 
     /// Execute the cache command with a specific cache instance.
@@ -255,6 +257,7 @@ impl CacheCommand {
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
+    #[allow(dead_code)] // Used in tests
     pub async fn execute_with_cache(self, cache: Cache) -> Result<()> {
         self.execute_with_cache_and_manifest(cache, None).await
     }
@@ -638,9 +641,11 @@ mod tests {
         // Pass a non-existent manifest path to ensure no manifest is found
         let non_existent_manifest = work_dir.path().join("ccpm.toml");
         assert!(!non_existent_manifest.exists());
-        
+
         // Without a manifest, should warn and not clean
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
+        let result = cmd
+            .execute_with_cache_and_manifest(cache, Some(non_existent_manifest))
+            .await;
         assert!(result.is_ok());
     }
 
@@ -677,7 +682,9 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
+        let result = cmd
+            .execute_with_cache_and_manifest(cache, Some(manifest_path))
+            .await;
         assert!(result.is_ok());
 
         // Give a small delay to ensure async removal is completed
@@ -756,9 +763,6 @@ mod tests {
     #[tokio::test]
     async fn test_cache_execute_without_dir() {
         // Test CacheCommand::execute which creates its own Cache
-        use tempfile::TempDir;
-
-        let work_dir = TempDir::new().unwrap();
 
         let cmd = CacheCommand {
             command: Some(CacheSubcommands::Info),
@@ -825,7 +829,9 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
+        let result = cmd
+            .execute_with_cache_and_manifest(cache, Some(manifest_path))
+            .await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -883,7 +889,9 @@ mod tests {
         };
 
         // Pass a non-existent manifest path to ensure no manifest is found
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
+        let result = cmd
+            .execute_with_cache_and_manifest(cache, Some(non_existent_manifest))
+            .await;
         assert!(result.is_ok());
 
         // Cache should remain untouched without manifest
@@ -970,7 +978,9 @@ mod tests {
             command: Some(CacheSubcommands::Clean { all: false }),
         };
 
-        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
+        let result = cmd
+            .execute_with_cache_and_manifest(cache, Some(manifest_path))
+            .await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

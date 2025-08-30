@@ -100,12 +100,15 @@ pub struct InitCommand {
 
 impl InitCommand {
     /// Execute the init command with an optional manifest path (for API compatibility)
-    pub async fn execute_with_manifest_path(self, _manifest_path: Option<std::path::PathBuf>) -> Result<()> {
+    pub async fn execute_with_manifest_path(
+        self,
+        _manifest_path: Option<std::path::PathBuf>,
+    ) -> Result<()> {
         // Init command doesn't use manifest_path since it creates a new manifest
         // The path is already part of the InitCommand struct
         self.execute().await
     }
-    
+
     /// Execute the init command to create a new CCPM manifest file.
     ///
     /// This method creates a `ccpm.toml` manifest file with a minimal template structure

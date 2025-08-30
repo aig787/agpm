@@ -28,6 +28,15 @@ Review the current code changes and ensure all related documentation (doc commen
    - Modified data structures or APIs
    - New or changed configuration options
    - Algorithm or logic changes
+   
+   **For comprehensive documentation updates, delegate to specialized agents:**
+   - Use `rust-doc-expert` agent for:
+     * Adding missing documentation to new or undocumented code
+     * Improving existing documentation with examples
+     * Ensuring all public APIs have proper rustdoc comments
+     * Adding module-level documentation where missing
+     * Generating comprehensive architectural documentation
+   - The agent will handle complex documentation patterns and ensure consistency
 
 3. Review documentation accuracy for changed code:
 
@@ -61,6 +70,7 @@ Review the current code changes and ensure all related documentation (doc commen
    - Suggest documentation improvements
 
    **Auto-update mode (--auto-update or default)**:
+   - Delegate to `rust-doc-expert` agent when substantial documentation is needed
    - Update doc comments to match implementation
    - Add missing documentation for public items
    - Fix parameter and return value descriptions

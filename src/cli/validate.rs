@@ -325,7 +325,42 @@ impl ValidateCommand {
         self.execute_with_manifest_path(None).await
     }
 
-    /// Execute the validate command with an optional manifest path
+    /// Execute the validate command with an optional manifest path.
+    ///
+    /// This method performs validation of the ccpm.toml manifest file and optionally
+    /// the associated lockfile. It can validate manifest syntax, source availability,
+    /// and dependency resolution consistency.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest_path` - Optional path to the ccpm.toml file. If None, searches
+    ///   for ccpm.toml in current directory and parent directories. If the command
+    ///   has a `file` field set, that takes precedence.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if validation passes
+    /// - `Err(anyhow::Error)` if validation fails or manifest is invalid
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use ccpm::cli::validate::ValidateCommand;
+    /// use std::path::PathBuf;
+    ///
+    /// let cmd = ValidateCommand {
+    ///     file: None,
+    ///     check_lock: false,
+    ///     resolve: false,
+    ///     check_redundancies: false,
+    ///     format: OutputFormat::Text,
+    ///     json: false,
+    ///     paths: false,
+    ///     fix: false,
+    /// };
+    ///
+    /// cmd.execute_with_manifest_path(Some(PathBuf::from("./ccpm.toml"))).await?;
+    /// ```
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find or use specified manifest file
         let manifest_path = if let Some(ref path) = self.file {
@@ -3362,8 +3397,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
     #[tokio::test]
     async fn test_execute_without_manifest_file() {
-        let temp = TempDir::new().unwrap();
-
+        // Test when no manifest file exists in current directory
         let cmd = ValidateCommand {
             file: None,
             resolve: false,

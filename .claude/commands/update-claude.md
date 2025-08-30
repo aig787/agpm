@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(cargo tree:*), Read, Edit, MultiEdit, Grep, LS
+allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(cargo tree:*), Read, Edit, MultiEdit, Grep, LS, Task
 description: Review changes and update CLAUDE.md to reflect current architecture and implementation
 argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only report needed updates
 ---
@@ -28,12 +28,24 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Security rule updates
    - Build or development workflow changes
    - New resource types or formats
+   
+   **For complex architectural documentation, consider delegating to specialized agents:**
+   - Use `rust-doc-expert` agent for:
+     * Generating comprehensive architectural documentation
+     * Writing detailed module descriptions
+     * Creating usage examples for new features
+     * Documenting design patterns and decisions
+   - Use `rust-expert` agent for:
+     * Reviewing architectural changes for best practices
+     * Validating design decisions
+     * Suggesting improvements to module structure
 
 3. Read the current CLAUDE.md and identify sections that may need updates:
 
    **Critical sections to check**:
    - **Project Structure**: New modules, renamed directories, reorganization
    - **Core Commands**: New commands, changed options, removed functionality
+   - **Available Agents**: Claude Code agents in `.claude/agents/` directory
    - **Key Dependencies**: Added/removed crates in Cargo.toml
    - **Module Structure**: Module responsibilities and interactions
    - **Implementation Details**: Changed algorithms, patterns, or approaches
@@ -50,6 +62,13 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Compare with documented module structure
    - Check if module descriptions match their actual responsibilities
    - Verify module interaction documentation is accurate
+
+   **Agent Documentation Verification**:
+   - List all agents in `.claude/agents/` directory
+   - Check if CLAUDE.md documents available agents
+   - Verify agent descriptions match their actual capabilities
+   - Document agent delegation patterns (which agents call others)
+   - Include agent specializations and when to use each
 
    **Dependency Verification**:
    - Check Cargo.toml for dependency changes
@@ -74,6 +93,7 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    **Types of updates to make**:
    - Add new modules to project structure
    - Update module responsibilities if refactored
+   - Document available Claude Code agents and their roles
    - Document new architectural decisions
    - Add new dependencies with explanations
    - Update testing requirements or patterns
@@ -82,6 +102,7 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Fix outdated implementation details
    - Add new configuration format examples
    - Update error handling patterns
+   - Add or update agent documentation section
 
 6. Apply updates based on mode:
 
@@ -109,6 +130,18 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Don't remove historical context that explains "why"
 
 8. Special sections in CLAUDE.md to verify:
+
+   **Available Claude Code Agents**:
+   - Document all agents in `.claude/agents/` directory
+   - Include agent descriptions and specializations
+   - Document delegation patterns between agents
+   - Specify when to use each agent
+   - Example format:
+     * `rust-expert`: Expert Rust developer for implementation, refactoring, API design
+     * `rust-linting-expert`: Fast linting fixes with cargo fmt, clippy --fix
+     * `rust-doc-expert`: Comprehensive documentation, docstrings, and architectural docs
+     * `rust-test-fixer`: Fast test failure fixes for assertion failures, test setup
+     * `rust-troubleshooter-opus`: Advanced debugging for memory issues, UB, performance
 
    **Implementation Lessons Learned**:
    - Keep valuable insights from development
@@ -141,6 +174,8 @@ Examples of changes requiring CLAUDE.md updates:
 - Adding new dependency → Update Key Dependencies with purpose
 - Refactoring module responsibilities → Update module descriptions
 - Adding new CLI command → Update Core Commands section
+- Adding new agent in `.claude/agents/` → Update Available Claude Code Agents section
+- Modifying agent capabilities → Update agent descriptions and delegation patterns
 - Changing testing approach → Update Testing Strategy
 - Implementing new security validation → Update Security Rules
 - Discovering new cross-platform issue → Update platform considerations

@@ -155,8 +155,6 @@ mod cli_tests {
         let test_config = CliConfig::new();
         let result = cli.execute_with_config(test_config).await;
         assert!(result.is_ok(), "Failed to execute with combined flags");
-
-
     }
 
     #[test]
@@ -242,32 +240,29 @@ mod cli_tests {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
-        // Change to temp dir
-
-        // Now create the manifest in the current directory
+        // Create the manifest in temp directory
         let manifest_path = temp_path.join("ccpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 
-        // Verify the file exists from our perspective
+        // Verify the file exists
         assert!(manifest_path.exists(), "Manifest file was not created");
-        assert!(
-            std::path::Path::new("ccpm.toml").exists(),
-            "Manifest not found in current dir"
-        );
 
         // Use a test config that doesn't modify environment for all commands
         let test_config = CliConfig::new();
 
-        // Test each command execution path
-        let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
+        // Test each command execution path - use manifest-path parameter for all
+        let cli = Cli::try_parse_from([
+            "ccpm",
+            "--manifest-path",
+            manifest_path.to_str().unwrap(),
+            "list",
+        ])
+        .unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
         assert!(result.is_ok(), "list command failed: {result:?}");
 
         // Verify the manifest still exists
-        assert!(
-            manifest_path.exists(),
-            "Manifest disappeared after list"
-        );
+        assert!(manifest_path.exists(), "Manifest disappeared after list");
 
         let cli = Cli::try_parse_from([
             "ccpm",
@@ -328,8 +323,6 @@ mod cli_tests {
         .unwrap();
         let result = cli.execute_with_config(test_config.clone()).await;
         assert!(result.is_ok(), "add source command failed: {result:?}");
-
-
     }
 
     #[tokio::test]
@@ -351,17 +344,12 @@ mod cli_tests {
 
         // Test Init command execution (line 692)
         // Parse the CLI to properly create the command with path option
-        let cli = Cli::try_parse_from([
-            "ccpm",
-            "init",
-            "--path",
-            temp_path.to_str().unwrap(),
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["ccpm", "init", "--path", temp_path.to_str().unwrap()]).unwrap();
 
         let result = cli.execute().await;
         assert!(result.is_ok(), "Init command failed: {result:?}");
-        
+
         // Verify the manifest was created
         let manifest_path = temp_path.join("ccpm.toml");
         assert!(manifest_path.exists());
@@ -388,8 +376,6 @@ mod cli_tests {
     #[tokio::test]
     async fn test_cli_execute_remove_command() {
         use tempfile::TempDir;
-
-
 
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
@@ -420,8 +406,6 @@ test-source = "https://github.com/test/repo.git"
             result.is_err(),
             "Remove command should fail for non-existent source"
         );
-
-
     }
 
     #[tokio::test]
