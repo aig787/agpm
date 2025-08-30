@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  clippy:
+    name: Clippy Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+  test:
+    name: Test Suite
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+        rust: [stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Build
+        run: cargo build --verbose
+      
+      - name: Run tests
+        run: cargo test --verbose
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      
+      - name: Generate coverage
+        run: cargo tarpaulin --exclude-files "*/test_utils/*" --verbose --workspace --timeout 120 --print-summary
+
+  build:
+    name: Build Check
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: ccpm
+            
+          - os: ubuntu-24.04-arm  # Native ARM64 Linux runner
+            target: aarch64-unknown-linux-gnu
+            binary_name: ccpm
+            
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: ccpm.exe
+            
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: ccpm
+            
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: ccpm
+            
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+      
+      - name: Verify binary exists
+        run: test -f target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+        shell: bash
