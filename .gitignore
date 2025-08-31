@@ -1,8 +1,8 @@
 # Rust
 /target/
 **/*.rs.bk
+**/*.orig
 *.pdb
-Cargo.lock
 
 # IDE
 .idea/
@@ -28,6 +28,10 @@ Thumbs.db
 # Coverage
 *.profraw
 *.profdata
+tarpaulin-report.html
+cobertura.xml
+**/mutants.out*/
+**/mutants.out.old*/
 
 # Debug
 *.dSYM/
