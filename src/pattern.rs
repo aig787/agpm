@@ -585,7 +585,8 @@ pub fn extract_resource_name(path: &Path) -> String {
 ///
 /// // Unsafe patterns
 /// assert!(validate_pattern_safety("../etc/passwd").is_err());
-/// assert!(validate_pattern_safety("/etc/*").is_err());
+/// # #[cfg(unix)]
+/// # assert!(validate_pattern_safety("/etc/*").is_err());
 /// # #[cfg(windows)]
 /// # assert!(validate_pattern_safety("C:\\Windows\\*").is_err());
 /// ```
