@@ -468,6 +468,36 @@ pub struct SourceManager {
     cache_dir: PathBuf,
 }
 
+/// Helper function to detect if a URL represents a local filesystem path
+fn is_local_filesystem_path(url: &str) -> bool {
+    // Unix-style relative paths
+    if url.starts_with('/') || url.starts_with("./") || url.starts_with("../") {
+        return true;
+    }
+
+    // Windows absolute paths (e.g., C:\path or C:/path)
+    #[cfg(windows)]
+    {
+        // Check for drive letter pattern: X:\ or X:/
+        if url.len() >= 3 {
+            let chars: Vec<char> = url.chars().collect();
+            if chars.len() >= 3
+                && chars[0].is_ascii_alphabetic()
+                && chars[1] == ':'
+                && (chars[2] == '\\' || chars[2] == '/')
+            {
+                return true;
+            }
+        }
+        // UNC paths (\\server\share)
+        if url.starts_with("\\\\") {
+            return true;
+        }
+    }
+
+    false
+}
+
 impl SourceManager {
     /// Creates a new source manager with the default cache directory.
     ///
@@ -1029,7 +1059,7 @@ impl SourceManager {
         let url = source.url.clone();
 
         // Distinguish between plain directories and git repositories
-        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
+        let is_local_path = is_local_filesystem_path(&url);
         let is_file_url = url.starts_with("file://");
 
         // Acquire lock for this source to prevent concurrent git operations
@@ -1053,12 +1083,20 @@ impl SourceManager {
         } else if is_file_url {
             // file:// URLs must point to valid git repositories
             let path_str = url.strip_prefix("file://").unwrap();
+
+            // On Windows, convert forward slashes back to backslashes
+            #[cfg(windows)]
+            let path_str = path_str.replace('/', "\\");
+            #[cfg(not(windows))]
+            let path_str = path_str.to_string();
+
             let abs_path = PathBuf::from(path_str);
 
             // Check if the local path exists and is a git repo
             if !abs_path.exists() {
                 return Err(anyhow::anyhow!(
-                    "Local repository path does not exist or is not accessible"
+                    "Local repository path does not exist or is not accessible: {}",
+                    abs_path.display()
                 ));
             }
 
@@ -1199,7 +1237,7 @@ impl SourceManager {
         ensure_dir(cache_path.parent().unwrap())?;
 
         // Check URL type
-        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
+        let is_local_path = is_local_filesystem_path(url);
         let is_file_url = url.starts_with("file://");
 
         // Handle local paths (not git repositories, just directories)
@@ -1221,11 +1259,19 @@ impl SourceManager {
         // For file:// URLs, verify they're git repositories
         if is_file_url {
             let path_str = url.strip_prefix("file://").unwrap();
+
+            // On Windows, convert forward slashes back to backslashes
+            #[cfg(windows)]
+            let path_str = path_str.replace('/', "\\");
+            #[cfg(not(windows))]
+            let path_str = path_str.to_string();
+
             let abs_path = PathBuf::from(path_str);
 
             if !abs_path.exists() {
                 return Err(anyhow::anyhow!(
-                    "Local repository path does not exist or is not accessible"
+                    "Local repository path does not exist or is not accessible: {}",
+                    abs_path.display()
                 ));
             }
 
@@ -2469,6 +2515,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_symlink_attack_prevention() {
         // Test that symlink attacks are prevented
@@ -2485,26 +2532,22 @@ mod tests {
         std::fs::write(sensitive_dir.join("secret.txt"), "secret data").unwrap();
 
         // Create a symlink pointing to sensitive directory
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-            let symlink_path = deps_dir.join("malicious_link");
-            symlink(&sensitive_dir, &symlink_path).unwrap();
+        use std::os::unix::fs::symlink;
+        let symlink_path = deps_dir.join("malicious_link");
+        symlink(&sensitive_dir, &symlink_path).unwrap();
 
-            let mut manager = SourceManager::new_with_cache(cache_dir);
+        let mut manager = SourceManager::new_with_cache(cache_dir);
 
-            // Try to access the symlink directly as a local path
-            let result = manager
-                .sync_by_url(symlink_path.to_str().unwrap(), None)
-                .await;
-            assert!(result.is_err());
-            let err_msg = result.unwrap_err().to_string();
-            assert!(
-                err_msg.contains("Symlinks are not allowed") || err_msg.contains("Security error"),
-                "Expected symlink error, got: {err_msg}"
-            );
-            // Guard will restore directory when dropped
-        }
+        // Try to access the symlink directly as a local path
+        let result = manager
+            .sync_by_url(symlink_path.to_str().unwrap(), None)
+            .await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Symlinks are not allowed") || err_msg.contains("Security error"),
+            "Expected symlink error, got: {err_msg}"
+        );
     }
 
     #[tokio::test]

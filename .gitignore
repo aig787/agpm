@@ -40,3 +40,11 @@ examples/projects/
 
 # CCPM managed directories
 .claude/ccpm/
+
+# Windows reserved device names (prevent sync issues)
+NUL
+CON
+PRN
+AUX
+COM[0-9]
+LPT[0-9]

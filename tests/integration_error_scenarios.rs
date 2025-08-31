@@ -69,14 +69,13 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
     fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
 
     // Simulate disk space issues by pointing to invalid cache directory
-    let invalid_cache = if cfg!(windows) {
-        "NUL" // Windows equivalent of /dev/null
-    } else {
-        "/dev/null" // Invalid directory on Unix
-    };
+    // Use a file path instead of directory path to trigger an error
+    let invalid_cache_file = env.project_path().join("invalid_cache_file.txt");
+    fs::write(&invalid_cache_file, "This is a file, not a directory").unwrap();
+
     let mut cmd = env.ccpm_command();
     cmd.arg("install")
-        .env("CCPM_CACHE_DIR", invalid_cache)
+        .env("CCPM_CACHE_DIR", invalid_cache_file.to_str().unwrap())
         .assert()
         .failure()
         .stderr(

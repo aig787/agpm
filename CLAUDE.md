@@ -269,6 +269,41 @@ CCPM copies files from the cache to project directories rather than using symlin
 3. **Platform-specific tests** - Use cfg(test) with platform conditions
 4. **Test infrastructure** - Git daemon for realistic repository testing
 
+### Windows Path Handling Gotchas
+
+When working with paths on Windows, be aware of these critical issues:
+
+1. **Absolute Path Detection**:
+   - Windows absolute paths can be `C:\path` or `\\server\share` (UNC)
+   - Simple checks like `starts_with('/')` won't work on Windows
+   - Use dedicated helper functions to detect absolute paths across platforms
+   - Watch out for `file:` prefix being mistaken for a drive letter pattern
+
+2. **file:// URL Handling**:
+   - Windows paths in file:// URLs should use forward slashes: `file://C:/path/to/repo`
+   - When converting back to filesystem paths, replace forward slashes with backslashes on Windows
+   - Always use helper functions like `path_to_file_url()` for consistent URL generation
+
+3. **Path Validation**:
+   - `Component::RootDir` (paths starting with `/`) is valid on Windows within projects
+   - Don't reject `/path` as invalid just because it's not absolute on Windows
+   - Be careful distinguishing between security issues (path traversal) and legitimate paths
+
+4. **Reserved Device Names**:
+   - Windows has reserved names like `CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`
+   - These cannot be used as filenames and will cause sync issues
+   - Add them to .gitignore to prevent accidental commits
+
+5. **Test Path Handling**:
+   - Never use platform-specific invalid paths like `/dev/null/invalid` or `NUL:` in tests
+   - Create invalid paths that work across platforms (e.g., file used as directory)
+   - Use `file://` URLs in tests for better cross-platform compatibility
+
+6. **Common Pitfalls**:
+   - Don't assume colons (`:`) only appear in URLs - Windows paths have them too (`C:`)
+   - Path separator normalization: always convert to forward slashes for TOML files
+   - Test on actual Windows systems - WSL/Linux behavior differs significantly
+
 ### Integration Test Coverage
 
 The `tests/` directory contains comprehensive integration tests:

@@ -11,6 +11,8 @@ use tempfile::TempDir;
 
 /// Helper to create a test manifest with gitignore configuration
 fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
+    // Convert path to string with forward slashes for TOML compatibility
+    let source_path = source_dir.display().to_string().replace('\\', "/");
     format!(
         r#"
 [sources]
@@ -30,15 +32,14 @@ path = "{}/snippets/test.md"
 [commands.test-command]
 path = "{}/commands/test.md"
 "#,
-        gitignore,
-        source_dir.display(),
-        source_dir.display(),
-        source_dir.display()
+        gitignore, source_path, source_path, source_path
     )
 }
 
 /// Helper to create a test manifest without explicit gitignore setting
 fn create_test_manifest_default(source_dir: &Path) -> String {
+    // Convert path to string with forward slashes for TOML compatibility
+    let source_path = source_dir.display().to_string().replace('\\', "/");
     format!(
         r#"
 [sources]
@@ -51,7 +52,7 @@ commands = ".claude/commands"
 [agents.test-agent]
 path = "{}/agents/test.md"
 "#,
-        source_dir.display()
+        source_path
     )
 }
 

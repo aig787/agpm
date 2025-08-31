@@ -92,7 +92,6 @@ pub fn ensure_within_directory(path: &Path, boundary: &Path) -> Result<bool> {
 /// # Errors
 /// Returns an error if the path contains dangerous components like:
 /// - Parent directory references (..)
-/// - Root references on non-absolute paths
 pub fn validate_no_traversal(path: &Path) -> Result<()> {
     for component in path.components() {
         match component {
@@ -102,11 +101,11 @@ pub fn validate_no_traversal(path: &Path) -> Result<()> {
                     path.display()
                 ));
             }
-            Component::RootDir if !path.is_absolute() => {
-                return Err(anyhow!(
-                    "Path contains unexpected root reference: {}",
-                    path.display()
-                ));
+            // Allow RootDir for absolute paths or paths that start with /
+            // On Windows, /path is not absolute but is still valid within a project
+            Component::RootDir => {
+                // RootDir is OK - it just means the path starts with /
+                // This is valid for both absolute paths and project-relative paths
             }
             _ => {}
         }

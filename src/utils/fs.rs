@@ -2470,11 +2470,10 @@ mod tests {
         let valid_path = temp.path().join("valid.txt");
 
         // Use an invalid path that will cause write to fail
-        let invalid_path = if cfg!(windows) {
-            PathBuf::from("NUL:")
-        } else {
-            PathBuf::from("/dev/null/invalid")
-        };
+        // Create a file and try to use it as a directory
+        let invalid_base = temp.path().join("not_a_directory.txt");
+        std::fs::write(&invalid_base, "this is a file").unwrap();
+        let invalid_path = invalid_base.join("impossible_file.txt");
 
         let files = vec![
             (valid_path.clone(), b"content".to_vec()),

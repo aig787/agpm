@@ -9,7 +9,7 @@ mod common;
 mod fixtures;
 mod test_config;
 use common::TestGit;
-use fixtures::TestEnvironment;
+use fixtures::{path_to_file_url, TestEnvironment};
 
 /// Helper to initialize a git repository with tags, branches, and commits
 fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
@@ -161,12 +161,12 @@ fn test_install_with_exact_version_tag() {
     // Create manifest with exact version
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -199,12 +199,12 @@ fn test_install_with_caret_version_range() {
     // Create manifest with caret range (^1.0.0 should match 1.2.0 but not 2.0.0)
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -235,12 +235,12 @@ fn test_install_with_tilde_version_range() {
     // Create manifest with tilde range (~1.1.0 should match 1.1.x but not 1.2.0)
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = "~1.1.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -271,13 +271,13 @@ fn test_install_with_branch_reference() {
     // Create manifest with branch reference
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 dev-example = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
 experimental = {{ source = "versioned", path = "agents/experimental.md", branch = "develop" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -314,12 +314,12 @@ fn test_install_with_feature_branch() {
     // Create manifest with feature branch
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 feature = {{ source = "versioned", path = "agents/feature.md", branch = "feature/new-agent" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -351,12 +351,12 @@ fn test_install_with_commit_hash() {
     // Create manifest with exact commit hash (rev)
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 "#,
-        source_path.display(),
+        path_to_file_url(&source_path),
         v1_commit
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
@@ -388,12 +388,12 @@ fn test_install_with_latest_keyword() {
     // Create manifest with "latest" keyword
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 latest = {{ source = "versioned", path = "agents/example.md", version = "latest" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -423,12 +423,12 @@ fn test_install_with_wildcard_version() {
     // Create manifest with wildcard "*"
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 any = {{ source = "versioned", path = "agents/example.md", version = "*" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -457,7 +457,7 @@ fn test_install_with_mixed_versioning_methods() {
     // Create manifest with mixed versioning methods
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 stable = {{ source = "versioned", path = "agents/example.md", version = "v1.1.0" }}
@@ -466,7 +466,7 @@ develop = {{ source = "versioned", path = "agents/example.md", branch = "develop
 pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 latest = {{ source = "versioned", path = "agents/example.md", version = "latest" }}
 "#,
-        source_path.display(),
+        path_to_file_url(&source_path),
         v1_commit
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
@@ -509,12 +509,12 @@ fn test_version_constraint_with_greater_than() {
     // Test >=1.1.0 constraint
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -544,12 +544,12 @@ fn test_version_constraint_with_range() {
     // Test complex range: >=1.1.0, <2.0.0
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.0, <2.0.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -580,12 +580,12 @@ fn test_update_branch_reference() {
     // Create manifest with branch reference
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -657,14 +657,14 @@ fn test_lockfile_records_correct_version_info() {
     // Create manifest with different version types
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 tagged = {{ source = "versioned", path = "agents/example.md", version = "v1.1.0" }}
 branched = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
 committed = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 "#,
-        source_path.display(),
+        path_to_file_url(&source_path),
         v1_commit
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
@@ -705,12 +705,12 @@ fn test_error_on_invalid_version_constraint() {
     // Create manifest with unsatisfiable version
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = "v99.0.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -736,12 +736,12 @@ fn test_error_on_nonexistent_branch() {
     // Create manifest with non-existent branch
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", branch = "nonexistent" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 
@@ -766,12 +766,12 @@ fn test_frozen_install_uses_lockfile_versions() {
     // Create manifest with version range
     let manifest = format!(
         r#"[sources]
-versioned = "file://{}"
+versioned = "{}"
 
 [agents]
 example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0" }}
 "#,
-        source_path.display()
+        path_to_file_url(&source_path)
     );
     fs::write(env.project_path().join("ccpm.toml"), manifest).unwrap();
 

@@ -981,12 +981,13 @@ test = "https://github.com/test/repo.git"
     }
 
     #[tokio::test]
-    #[ignore] // TODO: This test needs to be rewritten to work without changing directories
     async fn test_remove_deletes_installed_files() {
         use crate::lockfile::{LockedResource, LockedSource};
 
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let project_dir = temp.path();
+        let manifest_path = project_dir.join("ccpm.toml");
+        let lockfile_path = project_dir.join("ccpm.lock");
 
         // Create manifest with a dependency
         let manifest = r#"
@@ -1015,7 +1016,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             fetched_at: "2024-01-01T00:00:00Z".to_string(),
         });
 
-        // Add agent with installed path
+        // Add agent with installed path (relative to project directory)
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: Some("test-source".to_string()),
@@ -1027,7 +1028,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             installed_at: ".claude/agents/test-agent.md".to_string(),
         });
 
-        // Add snippet with installed path
+        // Add snippet with installed path (relative to project directory)
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
             source: Some("test-source".to_string()),
@@ -1039,17 +1040,28 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
         });
 
-        lockfile.save(std::path::Path::new("ccpm.lock")).unwrap();
+        lockfile.save(&lockfile_path).unwrap();
 
-        // Create the installed files
-        std::fs::create_dir_all(".claude/agents").unwrap();
-        std::fs::create_dir_all(".claude/snippets").unwrap();
-        std::fs::write(".claude/agents/test-agent.md", "# Test Agent").unwrap();
-        std::fs::write(".claude/snippets/test-snippet.md", "# Test Snippet").unwrap();
+        // Create the installed files in the project directory
+        let agent_dir = project_dir.join(".claude/agents");
+        let snippet_dir = project_dir.join(".claude/snippets");
+        let agent_file = agent_dir.join("test-agent.md");
+        let snippet_file = snippet_dir.join("test-snippet.md");
+
+        std::fs::create_dir_all(&agent_dir).unwrap();
+        std::fs::create_dir_all(&snippet_dir).unwrap();
+        std::fs::write(&agent_file, "# Test Agent").unwrap();
+        std::fs::write(&snippet_file, "# Test Snippet").unwrap();
 
         // Verify files exist
-        assert!(std::path::Path::new(".claude/agents/test-agent.md").exists());
-        assert!(std::path::Path::new(".claude/snippets/test-snippet.md").exists());
+        assert!(
+            agent_file.exists(),
+            "Agent file should exist before removal"
+        );
+        assert!(
+            snippet_file.exists(),
+            "Snippet file should exist before removal"
+        );
 
         // Remove the snippet
         remove_dependency_with_manifest_path(
@@ -1061,9 +1073,15 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         .unwrap();
 
         // Verify snippet file was deleted
-        assert!(!std::path::Path::new(".claude/snippets/test-snippet.md").exists());
+        assert!(
+            !snippet_file.exists(),
+            "Snippet file should be deleted after removal"
+        );
         // Agent file should still exist
-        assert!(std::path::Path::new(".claude/agents/test-agent.md").exists());
+        assert!(
+            agent_file.exists(),
+            "Agent file should still exist after snippet removal"
+        );
 
         // Remove the source (should remove remaining agent)
         remove_source_with_manifest_path("test-source", true, Some(manifest_path.clone()))
@@ -1071,13 +1089,28 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             .unwrap();
 
         // Verify agent file was also deleted
-        assert!(!std::path::Path::new(".claude/agents/test-agent.md").exists());
+        assert!(
+            !agent_file.exists(),
+            "Agent file should be deleted after source removal"
+        );
 
         // Verify lockfile was updated
-        let updated_lockfile = LockFile::load(std::path::Path::new("ccpm.lock")).unwrap();
-        assert_eq!(updated_lockfile.agents.len(), 0);
-        assert_eq!(updated_lockfile.snippets.len(), 0);
-        assert_eq!(updated_lockfile.sources.len(), 0);
+        let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
+        assert_eq!(
+            updated_lockfile.agents.len(),
+            0,
+            "No agents should remain in lockfile"
+        );
+        assert_eq!(
+            updated_lockfile.snippets.len(),
+            0,
+            "No snippets should remain in lockfile"
+        );
+        assert_eq!(
+            updated_lockfile.sources.len(),
+            0,
+            "No sources should remain in lockfile"
+        );
     }
 
     #[tokio::test]

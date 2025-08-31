@@ -4,7 +4,9 @@ use std::fs;
 use tempfile::TempDir;
 
 mod common;
+mod fixtures;
 use common::TestGit;
+use fixtures::path_to_file_url;
 
 /// Test that file:// URLs don't modify the source repository's working directory
 #[test]
@@ -58,7 +60,7 @@ fn test_file_url_source_repo_not_modified() -> Result<()> {
     let source_head_before = git.get_commit_hash()?;
 
     // Create a manifest using file:// URL pointing to v2.0.0
-    let file_url = format!("file://{}", source_repo_dir.display());
+    let file_url = path_to_file_url(&source_repo_dir);
     let manifest = format!(
         r#"
 [sources]
@@ -152,7 +154,7 @@ fn test_file_url_updates_work() -> Result<()> {
     git.tag("v1.0.0")?;
 
     // Create manifest using file:// URL
-    let file_url = format!("file://{}", source_repo_dir.display());
+    let file_url = path_to_file_url(&source_repo_dir);
     let manifest = format!(
         r#"
 [sources]
@@ -280,7 +282,7 @@ fn test_file_url_with_uncommitted_changes() -> Result<()> {
     );
 
     // Create manifest using file:// URL
-    let file_url = format!("file://{}", source_repo_dir.display());
+    let file_url = path_to_file_url(&source_repo_dir);
     let manifest = format!(
         r#"
 [sources]

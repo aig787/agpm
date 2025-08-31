@@ -566,7 +566,7 @@ installed_at = "snippets/utils.md"
     /// Get the file:// URL for a mock source
     #[allow(dead_code)]
     pub fn get_mock_source_url(&self, name: &str) -> String {
-        format!("file://{}/{}", self.sources_dir.display(), name)
+        path_to_file_url(&self.sources_dir.join(name))
     }
 
     /// Create a manifest with only local dependencies (no external sources)

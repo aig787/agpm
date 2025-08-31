@@ -238,10 +238,36 @@ fn parse_dependency_spec(
     spec: &str,
     custom_name: &Option<String>,
 ) -> Result<(String, ResourceDependency)> {
+    // Check if this is a Windows absolute path (e.g., C:\path\to\file)
+    // or Unix absolute path (e.g., /path/to/file)
+    let is_absolute_path = {
+        #[cfg(windows)]
+        {
+            // Windows: Check for drive letter (C:) or UNC path (\\server)
+            spec.len() >= 3
+                && spec.chars().nth(1) == Some(':')
+                && spec
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+                || spec.starts_with("\\\\")
+        }
+        #[cfg(not(windows))]
+        {
+            // Unix: Check for leading /
+            spec.starts_with('/')
+        }
+    };
+
+    // Check if it's a local file path
+    let is_local_path = is_absolute_path || spec.starts_with("file:") || Path::new(spec).exists();
+
     // Pattern: source:path@version or source:path
+    // But only apply if it's not a local path
     let remote_pattern = Regex::new(r"^([^:]+):([^@]+)(?:@(.+))?$")?;
 
-    if let Some(captures) = remote_pattern.captures(spec) {
+    if !is_local_path && remote_pattern.is_match(spec) {
+        let captures = remote_pattern.captures(spec).unwrap();
         // Remote dependency
         let source = captures.get(1).unwrap().as_str().to_string();
         let path = captures.get(2).unwrap().as_str().to_string();
@@ -269,7 +295,7 @@ fn parse_dependency_spec(
                 filename: None,
             }),
         ))
-    } else if spec.starts_with("file:") || Path::new(spec).exists() {
+    } else if is_local_path {
         // Local dependency
         let path = if spec.starts_with("file:") {
             spec.trim_start_matches("file:")
@@ -768,14 +794,13 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[test]
     fn test_parse_dependency_spec_file_prefix() {
-        // Test file: prefix - this matches the regex as source:path
+        // Test file: prefix - now correctly treated as local path
         let (name, dep) = parse_dependency_spec("file:/path/to/agent.md", &None).unwrap();
         assert_eq!(name, "agent");
-        if let ResourceDependency::Detailed(detailed) = dep {
-            assert_eq!(detailed.source, Some("file".to_string())); // "file" is treated as source
-            assert_eq!(detailed.path, "/path/to/agent.md"); // Path after colon
+        if let ResourceDependency::Simple(path) = dep {
+            assert_eq!(path, "/path/to/agent.md"); // Path without file: prefix
         } else {
-            panic!("Expected detailed dependency");
+            panic!("Expected simple dependency");
         }
     }
 

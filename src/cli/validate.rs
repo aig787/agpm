@@ -2239,15 +2239,23 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let manifest_path = temp.path().join("ccpm.toml");
 
         // Create manifest with sources that will fail accessibility check
+        // Use file:// URLs pointing to non-existent local paths
+        let nonexistent_path1 = temp.path().join("nonexistent1");
+        let nonexistent_path2 = temp.path().join("nonexistent2");
+
+        // Convert to file:// URLs with proper formatting for Windows
+        let url1 = format!(
+            "file://{}",
+            nonexistent_path1.display().to_string().replace('\\', "/")
+        );
+        let url2 = format!(
+            "file://{}",
+            nonexistent_path2.display().to_string().replace('\\', "/")
+        );
+
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "official".to_string(),
-            "https://github.com/nonexistent/official.git".to_string(),
-        );
-        manifest.add_source(
-            "community".to_string(),
-            "https://github.com/nonexistent/community.git".to_string(),
-        );
+        manifest.add_source("official".to_string(), url1);
+        manifest.add_source("community".to_string(), url2);
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -2274,15 +2282,23 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let manifest_path = temp.path().join("ccpm.toml");
 
         // Create manifest with sources that will fail accessibility check
+        // Use file:// URLs pointing to non-existent local paths
+        let nonexistent_path1 = temp.path().join("nonexistent1");
+        let nonexistent_path2 = temp.path().join("nonexistent2");
+
+        // Convert to file:// URLs with proper formatting for Windows
+        let url1 = format!(
+            "file://{}",
+            nonexistent_path1.display().to_string().replace('\\', "/")
+        );
+        let url2 = format!(
+            "file://{}",
+            nonexistent_path2.display().to_string().replace('\\', "/")
+        );
+
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "official".to_string(),
-            "https://github.com/nonexistent/official.git".to_string(),
-        );
-        manifest.add_source(
-            "community".to_string(),
-            "https://github.com/nonexistent/community.git".to_string(),
-        );
+        manifest.add_source("official".to_string(), url1);
+        manifest.add_source("community".to_string(), url2);
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
