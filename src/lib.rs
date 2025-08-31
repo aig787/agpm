@@ -64,6 +64,7 @@ pub mod manifest;
 pub mod markdown;
 pub mod mcp;
 pub mod models;
+pub mod pattern;
 pub mod resolver;
 pub mod source;
 pub mod utils;
