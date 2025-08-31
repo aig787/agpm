@@ -1,7 +1,7 @@
 ---
-name: rust-troubleshooter-opus
-description: Advanced Rust troubleshooting expert using Opus 4.1 for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving. Use when rust-expert cannot resolve the issue.
-model: opus-4-1
+name: rust-troubleshooter-advanced
+description: Advanced Rust troubleshooting expert (Opus 4.1) for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving.
+model: opus
 tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, WebSearch, WebFetch, TodoWrite, Task
 ---
 

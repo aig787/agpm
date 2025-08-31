@@ -3,192 +3,131 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release (e.g., 0.2.0) - defaults to minor bump'
+      version_bump:
+        description: 'Version bump override (leave empty to auto-detect from commits)'
         required: false
-        type: string
-      
+        default: ''
+        type: choice
+        options:
+          - ''
+          - 'patch'
+          - 'minor'
+          - 'major'
+      prerelease:
+        description: 'Pre-release type (leave empty for stable release)'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - 'beta'
+          - 'alpha'
+
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
-  prepare-release:
-    name: Prepare Release
+  release:
+    name: Release
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      prev_version: ${{ steps.version.outputs.prev_version }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
+      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
+      new-release-version: ${{ steps.semantic.outputs.new-release-version }}
+      new-release-git-tag: ${{ steps.semantic.outputs.new-release-git-tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Validate and set version
-        id: version
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install semantic-release and plugins
         run: |
-          # Get current version from Cargo.toml
-          PREV_VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
-          echo "Current version: $PREV_VERSION"
-          
-          # Check if version was provided
-          INPUT_VERSION="${{ github.event.inputs.version }}"
-          
-          if [ -z "$INPUT_VERSION" ]; then
-            echo "No version specified, calculating minor bump..."
-            
-            # Parse current version components
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$PREV_VERSION"
-            
-            # Remove any pre-release or build metadata from PATCH
-            PATCH=$(echo "$PATCH" | cut -d'-' -f1 | cut -d'+' -f1)
-            
-            # Increment minor version and reset patch
-            NEW_MINOR=$((MINOR + 1))
-            VERSION="${MAJOR}.${NEW_MINOR}.0"
-            
-            echo "Auto-bumped version: $VERSION"
-          else
-            VERSION="$INPUT_VERSION"
-            
-            # Validate semantic version format (X.Y.Z with optional pre-release and build metadata)
-            if ! echo "$VERSION" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
-              echo "Error: Invalid semantic version format. Expected: X.Y.Z[-prerelease][+buildmetadata]"
-              echo "Examples: 1.0.0, 1.0.0-alpha, 1.0.0-beta.1, 1.0.0+20130313144700"
-              exit 1
-            fi
-            
-            # Validate that new version is different from previous
-            if [ "$VERSION" = "$PREV_VERSION" ]; then
-              echo "Error: New version must be different from current version"
-              exit 1
-            fi
-          fi
-          
-          # Check if tag already exists
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "Error: Tag v$VERSION already exists"
-            exit 1
-          fi
-          
-          echo "Previous version: $PREV_VERSION"
-          echo "New version: $VERSION"
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "prev_version=$PREV_VERSION" >> $GITHUB_OUTPUT
-      
-      - name: Generate changelog
-        id: changelog
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          PREV_VERSION="${{ steps.version.outputs.prev_version }}"
-          
-          # Get the previous release tag
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          # Generate changelog from commits
-          {
-            echo "## What's Changed"
-            echo ""
-            
-            # Function to print section only if it has content
-            print_section() {
-              local title="$1"
-              local pattern="$2"
-              local commits
-              commits=$(git log ${PREV_TAG}..HEAD --no-merges --pretty=format:"* %s (%h)" --grep="$pattern" -i 2>/dev/null || true)
-              if [ -n "$commits" ]; then
-                echo "### $title"
-                echo "$commits"
-                echo ""
-              fi
-            }
-            
-            # Group commits by type (case-insensitive)
-            print_section "Features" "^feat"
-            print_section "Bug Fixes" "^fix"
-            print_section "Performance Improvements" "^perf"
-            print_section "Refactoring" "^refactor"
-            print_section "Documentation" "^docs"
-            print_section "Testing" "^test"
-            
-            # Other changes
-            OTHER=$(git log ${PREV_TAG}..HEAD --no-merges --pretty=format:"* %s (%h)" --grep -v -i "^feat\|^fix\|^perf\|^refactor\|^docs\|^test\|^chore\|^ci\|^build" 2>/dev/null || true)
-            if [ -n "$OTHER" ]; then
-              echo "### Other Changes"
-              echo "$OTHER"
-              echo ""
-            fi
-            
-            # Contributors (exclude bots)
-            echo "### Contributors"
-            git log ${PREV_TAG}..HEAD --no-merges --pretty=format:"%an" | \
-              grep -v "\[bot\]" | \
-              sort -u | \
-              sed 's/^/* @/' || true
-            echo ""
-            
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-v$PREV_VERSION}...v${VERSION}"
-          } > CHANGELOG_TEMP.md
-          
-          # Store changelog in output (escape newlines for GitHub Actions)
-          # Truncate if too large (GitHub has a 1MB limit for outputs)
-          CHANGELOG=$(head -c 900000 CHANGELOG_TEMP.md)
-          if [ $(wc -c < CHANGELOG_TEMP.md) -gt 900000 ]; then
-            CHANGELOG="${CHANGELOG}... (truncated)"
-          fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      
-      - name: Update version in Cargo.toml
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          
-          # Use sed to update version in Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          
-          # Verify the change
-          if ! grep "^version = \"$VERSION\"" Cargo.toml; then
-            echo "Error: Failed to update version in Cargo.toml"
-            exit 1
-          fi
-      
-      - name: Update Cargo.lock
-        run: |
-          # Update Cargo.lock to reflect new version
-          cargo update --workspace
-          
-          # Verify Cargo.lock is valid
-          cargo check --locked
-      
-      - name: Configure Git
+          npm install -g \
+            semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/github \
+            @semantic-release/git \
+            @semantic-release-cargo/semantic-release-cargo \
+            conventional-changelog-conventionalcommits
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Configure Git for semantic-release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      
-      - name: Commit and tag release
+
+      - name: Run semantic-release
+        id: semantic
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          # Configure branch based on input
+          BRANCH="main"
+          if [ "${{ github.event.inputs.prerelease }}" = "beta" ]; then
+            BRANCH="beta"
+            # Create beta branch if it doesn't exist
+            git checkout -B beta
+          elif [ "${{ github.event.inputs.prerelease }}" = "alpha" ]; then
+            BRANCH="alpha"
+            # Create alpha branch if it doesn't exist
+            git checkout -B alpha
+          fi
           
-          # Stage changes
-          git add Cargo.toml Cargo.lock
+          # Handle version bump override
+          if [ "${{ github.event.inputs.version_bump }}" != "" ]; then
+            echo "📌 Version bump override: ${{ github.event.inputs.version_bump }}"
+            
+            # Create a temporary commit with the appropriate type to force the desired bump
+            case "${{ github.event.inputs.version_bump }}" in
+              "major")
+                git commit --allow-empty -m "feat!: Manual release triggered with major version bump
+
+BREAKING CHANGE: Manual major version bump requested by release workflow"
+                ;;
+              "minor")
+                git commit --allow-empty -m "feat: Manual release triggered with minor version bump"
+                ;;
+              "patch")
+                git commit --allow-empty -m "fix: Manual release triggered with patch version bump"
+                ;;
+            esac
+          fi
           
-          # Create release commit
-          git commit -m "chore: release v${VERSION}"
+          # Run semantic-release
+          npx semantic-release --branches $BRANCH 2>&1 | tee semantic-release.log
           
-          # Create annotated tag
-          git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          
-          # Push commit and tag atomically
-          # This ensures both are pushed together or not at all
-          git push origin HEAD:main "v${VERSION}"
+          # Parse the output to extract version info
+          if grep -q "Published release" semantic-release.log; then
+            VERSION=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?' semantic-release.log | head -1)
+            echo "new-release-published=true" >> $GITHUB_OUTPUT
+            echo "new-release-version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "new-release-git-tag=v${VERSION}" >> $GITHUB_OUTPUT
+            echo "✅ Released version ${VERSION}"
+          else
+            echo "new-release-published=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Semantic-release did not create a release. This might happen if there are no changes since the last release."
+            echo "To force a release, ensure you have at least one commit with a conventional commit message."
+          fi
 
   build-binaries:
-    name: Build Binaries
-    needs: prepare-release
+    name: Build Release Binaries
+    needs: release
+    if: needs.release.outputs.new-release-published == 'true'
     strategy:
       matrix:
         include:
@@ -197,10 +136,11 @@ jobs:
             binary_name: ccpm
             archive_name: ccpm-x86_64-linux.tar.gz
             
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             binary_name: ccpm
             archive_name: ccpm-aarch64-linux.tar.gz
+            use_cross: true
             
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -219,26 +159,39 @@ jobs:
     
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          ref: v${{ needs.prepare-release.outputs.version }}
-      
-      - uses: dtolnay/rust-toolchain@stable
+          ref: ${{ needs.release.outputs.new-release-git-tag }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      
-      - name: Build release binary
+
+      - name: Build release binary (native)
+        if: matrix.use_cross != true
         run: cargo build --release --target ${{ matrix.target }}
-      
+
+      - name: Build release binary (cross)
+        if: matrix.use_cross == true
+        run: cross build --release --target ${{ matrix.target }}
+
       - name: Verify binary
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && matrix.use_cross != true
         run: |
           target/${{ matrix.target }}/release/${{ matrix.binary_name }} --version
-      
+
       - name: Create archive (Unix)
         if: matrix.os != 'windows-latest'
         run: |
@@ -246,132 +199,33 @@ jobs:
           tar czf ../../../${{ matrix.archive_name }} ${{ matrix.binary_name }}
           cd ../../..
           echo "ARCHIVE_PATH=${{ matrix.archive_name }}" >> $GITHUB_ENV
-      
+
       - name: Create archive (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           Compress-Archive -Path target/${{ matrix.target }}/release/${{ matrix.binary_name }} -DestinationPath ${{ matrix.archive_name }}
           echo "ARCHIVE_PATH=${{ matrix.archive_name }}" >> $env:GITHUB_ENV
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.archive_name }}
-          path: ${{ env.ARCHIVE_PATH }}
 
-  create-release:
-    name: Create GitHub Release
-    needs: [prepare-release, build-binaries]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare-release.outputs.version }}
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      
-      - name: List artifacts
-        run: ls -la artifacts/
-      
-      - name: Create release notes
-        run: |
-          VERSION="${{ needs.prepare-release.outputs.version }}"
-          
-          cat > release_notes.md << 'EOF'
-          ## CCPM v${{ needs.prepare-release.outputs.version }}
-          
-          ### Installation
-          
-          #### macOS (Intel)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare-release.outputs.version }}/ccpm-x86_64-macos.tar.gz | tar xz
-          sudo mv ccpm /usr/local/bin/
-          ```
-          
-          #### macOS (Apple Silicon)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare-release.outputs.version }}/ccpm-aarch64-macos.tar.gz | tar xz
-          sudo mv ccpm /usr/local/bin/
-          ```
-          
-          #### Linux (x86_64)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare-release.outputs.version }}/ccpm-x86_64-linux.tar.gz | tar xz
-          sudo mv ccpm /usr/local/bin/
-          ```
-          
-          #### Linux (ARM64/aarch64)
-          ```bash
-          curl -L https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare-release.outputs.version }}/ccpm-aarch64-linux.tar.gz | tar xz
-          sudo mv ccpm /usr/local/bin/
-          ```
-          
-          #### Windows
-          Download and extract `ccpm-x86_64-windows.zip`, then add to PATH.
-          
-          ---
-          
-          ${{ needs.prepare-release.outputs.changelog }}
-          EOF
-      
-      - name: Create GitHub Release
+      - name: Upload binary to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.prepare-release.outputs.version }}
-          name: v${{ needs.prepare-release.outputs.version }}
-          body_path: release_notes.md
-          draft: false
-          prerelease: ${{ contains(needs.prepare-release.outputs.version, '-') }}
-          files: |
-            artifacts/ccpm-x86_64-linux.tar.gz
-            artifacts/ccpm-aarch64-linux.tar.gz
-            artifacts/ccpm-x86_64-windows.zip
-            artifacts/ccpm-x86_64-macos.tar.gz
-            artifacts/ccpm-aarch64-macos.tar.gz
+          tag_name: ${{ needs.release.outputs.new-release-git-tag }}
+          files: ${{ env.ARCHIVE_PATH }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish-crate:
-    name: Publish to crates.io
-    needs: [prepare-release, create-release]
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [release, build-binaries]
+    if: needs.release.outputs.new-release-published == 'true' && github.event.inputs.prerelease == ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Update Homebrew formula
+        uses: dawidd6/action-homebrew-bump-formula@v3
         with:
-          ref: v${{ needs.prepare-release.outputs.version }}
-      
-      - uses: dtolnay/rust-toolchain@stable
-      
-      - uses: Swatinem/rust-cache@v2
-      
-      - name: Verify package
-        run: |
-          cargo package --verbose
-          cargo package --list
-      
-      - name: Publish to crates.io
-        run: |
-          # Retry logic for transient failures
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-          
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"; then
-              echo "Successfully published to crates.io"
-              exit 0
-            fi
-            
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-              echo "Publish failed, retrying in 10 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
-              sleep 10
-            fi
-          done
-          
-          echo "::error::Failed to publish to crates.io after $MAX_RETRIES attempts"
-          exit 1
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          token: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+          formula: ccpm
+          tag: ${{ needs.release.outputs.new-release-git-tag }}
+        continue-on-error: true  # Don't fail the workflow if homebrew update fails

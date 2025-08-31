@@ -2,16 +2,93 @@
 //!
 //! This module provides utilities for comparing semantic versions, checking for
 //! newer versions, and handling version parsing operations used throughout the
-//! dependency resolution process.
+//! dependency resolution process. It supports common version prefixes and
+//! provides error-handling for malformed version strings.
+//!
+//! # Features
+//!
+//! - **Semantic Version Parsing**: Handles `v1.2.3`, `version-1.2.3`, `release-1.2.3` formats
+//! - **Version Comparison**: Find newer versions and latest versions in collections
+//! - **Prefix Handling**: Automatically strips common version prefixes
+//! - **Error Resilience**: Gracefully handles malformed version strings
+//!
+//! # Examples
+//!
+//! ```rust
+//! use ccpm::version::comparison::VersionComparator;
+//!
+//! # fn example() -> anyhow::Result<()> {
+//! let versions = vec![
+//!     "v1.0.0".to_string(),
+//!     "v1.1.0".to_string(),
+//!     "v2.0.0".to_string(),
+//!     "version-1.0.1".to_string(),
+//! ];
+//!
+//! // Check if there are newer versions
+//! let has_newer = VersionComparator::has_newer_version("v1.0.0", &versions)?;
+//! assert!(has_newer);
+//!
+//! // Get the latest version
+//! let latest = VersionComparator::get_latest(&versions)?
+//!     .expect("Should find latest version");
+//! assert_eq!(latest, "v2.0.0");
+//!
+//! // Get all newer versions than current
+//! let newer = VersionComparator::get_newer_versions("v1.0.0", &versions)?;
+//! assert_eq!(newer.len(), 3); // v1.1.0, v2.0.0, version-1.0.1
+//! # Ok(())
+//! # }
+//! ```
 
 use anyhow::Result;
 use semver::Version;
 
-/// Version comparison utilities
+/// Version comparison utilities for semantic version operations.
+///
+/// This struct provides static methods for comparing semantic versions,
+/// finding newer versions, and handling version parsing with common prefixes.
+/// All methods are designed to handle malformed version strings gracefully.
 pub struct VersionComparator;
 
 impl VersionComparator {
-    /// Check if there are newer versions available
+    /// Checks if there are newer versions available than the current version.
+    ///
+    /// This method compares the current version against a list of available versions
+    /// and returns `true` if any version is semantically newer.
+    ///
+    /// # Arguments
+    ///
+    /// * `current` - The current version string (e.g., "v1.0.0", "1.2.3")
+    /// * `versions` - A slice of version strings to compare against
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if newer versions exist, `Ok(false)` if current is latest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the current version string cannot be parsed as a
+    /// semantic version. Malformed versions in the comparison list are ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::version::comparison::VersionComparator;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let versions = vec!["v1.0.0".to_string(), "v1.1.0".to_string(), "v2.0.0".to_string()];
+    ///
+    /// // Check if v1.0.0 has newer versions available
+    /// let has_newer = VersionComparator::has_newer_version("v1.0.0", &versions)?;
+    /// assert!(has_newer);
+    ///
+    /// // Check if v2.0.0 is the latest
+    /// let has_newer = VersionComparator::has_newer_version("v2.0.0", &versions)?;
+    /// assert!(!has_newer);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn has_newer_version(current: &str, versions: &[String]) -> Result<bool> {
         let current_version = Self::parse_version(current)?;
 
@@ -26,7 +103,48 @@ impl VersionComparator {
         Ok(false)
     }
 
-    /// Get all versions newer than the current one
+    /// Gets all versions newer than the current version, sorted by version descending.
+    ///
+    /// This method finds all versions in the provided list that are semantically
+    /// newer than the current version and returns them sorted from newest to oldest.
+    ///
+    /// # Arguments
+    ///
+    /// * `current` - The current version string to compare against
+    /// * `versions` - A slice of version strings to search
+    ///
+    /// # Returns
+    ///
+    /// A vector of references to version strings that are newer than current,
+    /// sorted in descending order (newest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the current version string cannot be parsed.
+    /// Malformed versions in the search list are silently ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::version::comparison::VersionComparator;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let versions = vec![
+    ///     "v1.0.0".to_string(),
+    ///     "v1.2.0".to_string(),
+    ///     "v1.1.0".to_string(),
+    ///     "v2.0.0".to_string(),
+    /// ];
+    ///
+    /// let newer = VersionComparator::get_newer_versions("v1.0.0", &versions)?;
+    /// assert_eq!(newer.len(), 3);
+    /// // Results are sorted newest first
+    /// assert_eq!(newer[0], "v2.0.0");
+    /// assert_eq!(newer[1], "v1.2.0");
+    /// assert_eq!(newer[2], "v1.1.0");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get_newer_versions<'a>(
         current: &str,
         versions: &'a [String],
@@ -52,7 +170,48 @@ impl VersionComparator {
         Ok(newer)
     }
 
-    /// Get the latest version from a list
+    /// Gets the latest (highest) semantic version from a list of versions.
+    ///
+    /// This method finds the semantically highest version from the provided list,
+    /// ignoring any malformed version strings.
+    ///
+    /// # Arguments
+    ///
+    /// * `versions` - A slice of version strings to search
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(&String))` with the latest version, or `Ok(None)` if the list is
+    /// empty or contains no valid semantic versions.
+    ///
+    /// # Errors
+    ///
+    /// This method does not return errors - malformed version strings are silently
+    /// ignored during comparison.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::version::comparison::VersionComparator;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let versions = vec![
+    ///     "v1.0.0".to_string(),
+    ///     "v2.0.0".to_string(),
+    ///     "v1.5.0".to_string(),
+    ///     "invalid-version".to_string(), // This will be ignored
+    /// ];
+    ///
+    /// let latest = VersionComparator::get_latest(&versions)?
+    ///     .expect("Should find a latest version");
+    /// assert_eq!(latest, "v2.0.0");
+    ///
+    /// // Empty list returns None
+    /// let empty: Vec<String> = vec![];
+    /// assert!(VersionComparator::get_latest(&empty)?.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get_latest(versions: &[String]) -> Result<Option<&String>> {
         if versions.is_empty() {
             return Ok(None);
@@ -71,7 +230,30 @@ impl VersionComparator {
         Ok(latest.map(|(s, _)| s))
     }
 
-    /// Parse a version string, handling common prefixes
+    /// Parses a version string, automatically handling common prefixes.
+    ///
+    /// This private method normalizes version strings by removing common prefixes
+    /// like "v", "version-", and "release-" before parsing with the semver crate.
+    ///
+    /// # Supported Prefixes
+    ///
+    /// - `v1.2.3` → `1.2.3`
+    /// - `version-1.2.3` → `1.2.3`
+    /// - `release-1.2.3` → `1.2.3`
+    /// - `1.2.3` → `1.2.3` (no change)
+    ///
+    /// # Arguments
+    ///
+    /// * `version_str` - The version string to parse
+    ///
+    /// # Returns
+    ///
+    /// A parsed `semver::Version` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the version string (after prefix removal) is not
+    /// a valid semantic version according to the semver specification.
     fn parse_version(version_str: &str) -> Result<Version> {
         // Remove common version prefixes
         let clean_version = if let Some(stripped) = version_str.strip_prefix("version-") {

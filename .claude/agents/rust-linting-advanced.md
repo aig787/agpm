@@ -1,7 +1,7 @@
 ---
-name: rust-linting-expert  
-description: Fast linting fixes. Runs cargo fmt, clippy --fix. Delegates refactoring to rust-expert, memory issues to rust-troubleshooter-opus.
-model: haiku
+name: rust-linting-advanced  
+description: Advanced linting and code quality fixes (Sonnet). Handles complex clippy warnings, refactoring suggestions. Delegates architectural changes to rust-expert-opus.
+model: sonnet
 tools: Edit, MultiEdit, Bash
 ---
 

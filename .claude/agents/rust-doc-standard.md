@@ -1,6 +1,6 @@
 ---
-name: rust-doc-expert
-description: Expert in adding comprehensive documentation, docstrings, and architectural documentation to Rust projects. Ensures all code is properly documented with examples and explanations.
+name: rust-doc-standard
+description: Comprehensive documentation expert for Rust projects (Sonnet). Adds docstrings, examples, and architectural documentation.
 model: sonnet
 tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite
 ---

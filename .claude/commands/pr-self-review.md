@@ -16,14 +16,22 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 
 **IMPORTANT**: Always run multiple independent operations IN PARALLEL by using multiple tool calls in a single message. This significantly improves performance.
 
-1. Parse the review type from arguments:
+**CRITICAL**: Use the Task tool to delegate to specialized agents for code analysis, NOT Grep or other direct tools. Agents have context about the project and can provide deeper insights.
+
+1. **Agent Delegation Strategy**:
+   - ALWAYS use Task tool for code analysis, NOT direct Grep/Read
+   - Provide agents with specific context about what changed
+   - Run multiple Task invocations in parallel for efficiency
+   - Include relevant file paths and change summaries in prompts
+
+2. Parse the review type from arguments:
    - `--quick`: Basic formatting and linting only
    - `--full`: Complete review with all checks (default)
    - `--security`: Focus on security implications
    - `--performance`: Focus on performance analysis
    - Arguments: $ARGUMENTS
 
-2. Run automated checks based on review type:
+3. Run automated checks based on review type:
 
    **Quick Review (--quick)**:
    - Run these checks IN PARALLEL using multiple tool calls in a single message:
@@ -33,36 +41,50 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 
    **Full Review (--full or default)**:
    - First, run quick checks IN PARALLEL (cargo fmt, clippy, test --lib)
-   - Then use specialized agents IN PARALLEL for deep analysis:
-     * `rust-linting-expert` for formatting and linting (delegates complex refactoring to rust-expert)
-     * `rust-expert` for architecture and API design review (handles implementation and refactoring)
-     * `rust-troubleshooter-opus` for memory safety, undefined behavior, and performance issues (use when rust-expert cannot resolve)
-     * `rust-test-fixer` if tests are failing (handles assertion failures, test setup issues)
-     * `rust-doc-expert` for documentation quality review (ensures comprehensive docs with examples)
+   - Then use the Task tool to delegate to specialized agents IN PARALLEL:
+     * Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
+     * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and best practices
+     * Use Task with subagent_type="rust-test-standard" to analyze test coverage and quality
+     * Use Task with subagent_type="rust-doc-standard" to review documentation completeness
+     * Only escalate to advanced agents (rust-expert-advanced, rust-troubleshooter-advanced) if initial review finds complex issues
+   - Example Task invocation:
+     ```
+     Task(description="Review code quality", 
+          prompt="Review the changed files for Rust best practices, error handling, and architecture...", 
+          subagent_type="rust-expert-standard")
+     ```
    - Run full test suite and doc build IN PARALLEL:
      * `cargo test --all`
      * `cargo doc --no-deps`
    - Check cross-platform compatibility
 
    **Security Review (--security)**:
-   - Run these searches IN PARALLEL using multiple Grep calls:
-     * Search for credential patterns (tokens, passwords, secrets)
-     * Search for unsafe input handling in git operations
-     * Search for path traversal patterns (../, absolute paths)
-     * Search for unsafe file operations
+   - Use Task with subagent_type="rust-expert-standard" with security-focused prompt:
+     ```
+     Task(description="Security review", 
+          prompt="Review for security issues: credentials in code, input validation, path traversal, unsafe operations...", 
+          subagent_type="rust-expert-standard")
+     ```
+   - Additionally run targeted Grep searches IN PARALLEL:
+     * Search for credential patterns: `(password|token|secret|api_key)\s*=\s*"`
+     * Search for unsafe blocks: `unsafe\s+\{`
+     * Search for path traversal: `\.\./`
    - Verify no secrets in version-controlled files
 
    **Performance Review (--performance)**:
    - Build in release mode: `cargo build --release`
-   - Check for blocking operations IN PARALLEL using multiple Grep calls:
-     * Search for `.block_on()` calls in async functions
-     * Search for `std::fs::` usage in async contexts (should be tokio::fs)
-     * Search for `std::sync::Mutex` in async contexts
-     * Search for `std::thread::sleep` in async code
-   - Look for unnecessary allocations or clones
-   - Review algorithmic complexity
+   - Use Task with subagent_type="rust-expert-standard" with performance-focused prompt:
+     ```
+     Task(description="Performance review",
+          prompt="Review for performance issues: blocking operations in async code, unnecessary allocations, algorithmic complexity...",
+          subagent_type="rust-expert-standard")
+     ```
+   - Additionally check for specific anti-patterns:
+     * `.block_on()` in async contexts
+     * `std::fs::` instead of `tokio::fs` in async code
+     * Excessive cloning or allocations
 
-3. Manual review based on these key areas:
+4. Manual review based on these key areas:
 
    **Code Quality**:
    - Rust best practices (Result usage, ownership, borrowing)
@@ -90,7 +112,7 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - README.md accuracy check
    - CLAUDE.md reflects architectural changes
 
-4. Generate a summary report with:
+5. Generate a summary report with:
    - **Changes Overview**: What was modified
    - **Test Results**: Pass/fail status of automated checks
    - **Issues Found**: Any problems discovered (grouped by severity)
@@ -98,7 +120,7 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - **Performance Impact**: Performance considerations
    - **Recommendations**: Approve, request changes, or needs discussion
 
-5. Focus only on tracked files - ignore untracked files marked with ?? in git status
+6. Focus only on tracked files - ignore untracked files marked with ?? in git status
 
 Examples of usage:
 - `/pr-review` - performs full comprehensive review

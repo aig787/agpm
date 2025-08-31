@@ -30,14 +30,32 @@ Yes, CCPM uses your system's Git command for all repository operations. This ens
 ## Installation & Setup
 
 ### How do I install CCPM?
-```bash
-# Via Cargo
-cargo install ccpm
 
-# Or download pre-built binary
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-$(uname -s)-$(uname -m) -o ccpm
+CCPM is published to crates.io with automated releases. You can install via:
+
+**All Platforms (via Cargo):**
+```bash
+# Requires Rust toolchain
+cargo install ccpm  # Published to crates.io
+# Or from GitHub for latest development
+cargo install --git https://github.com/aig787/ccpm.git
+```
+
+**Unix/macOS (Pre-built Binary):**
+```bash
+# Download pre-built binary (automatically detects architecture)
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-$(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]').tar.gz | tar xz
 chmod +x ccpm
 sudo mv ccpm /usr/local/bin/
+```
+
+**Windows (Pre-built Binary):**
+```powershell
+# PowerShell
+Invoke-WebRequest -Uri "https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-windows.zip" -OutFile ccpm.zip
+Expand-Archive -Path ccpm.zip -DestinationPath .
+# Move to a directory in PATH or add to PATH manually
+Move-Item ccpm.exe "$env:LOCALAPPDATA\ccpm\bin\"
 ```
 
 ### How do I start a new CCPM project?

@@ -140,13 +140,41 @@ When creating an issue:
    git commit -m "feat: add new feature" # or "fix: resolve issue #123"
    ```
    
-   Use conventional commits:
-   - `feat:` - New feature
-   - `fix:` - Bug fix
-   - `docs:` - Documentation changes
-   - `test:` - Test additions or changes
-   - `refactor:` - Code refactoring
-   - `chore:` - Maintenance tasks
+   ### Commit Message Convention
+   
+   This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning and changelog generation. Please follow this format:
+   
+   ```
+   <type>[optional scope]: <description>
+   
+   [optional body]
+   
+   [optional footer(s)]
+   ```
+   
+   **Commit Types:**
+   - `feat:` - New feature (triggers minor version bump)
+   - `fix:` - Bug fix (triggers patch version bump)
+   - `perf:` - Performance improvement (triggers patch version bump)
+   - `docs:` - Documentation changes (no version bump)
+   - `style:` - Code style changes (no version bump)
+   - `refactor:` - Code refactoring (no version bump)
+   - `test:` - Test additions or changes (no version bump)
+   - `build:` - Build system changes (no version bump)
+   - `ci:` - CI configuration changes (no version bump)
+   - `chore:` - Maintenance tasks (no version bump)
+   - `revert:` - Revert a previous commit (triggers patch version bump)
+   
+   **Breaking Changes:**
+   To indicate a breaking change (triggers major version bump), add `BREAKING CHANGE:` in the commit body/footer, or append `!` after the type:
+   
+   ```bash
+   # Breaking change with !
+   git commit -m "feat!: change manifest format to TOML tables"
+   
+   # Breaking change in body
+   git commit -m "feat: update dependency format" -m "BREAKING CHANGE: Dependencies now use [agents] table instead of [dependencies]"
+   ```
 
 5. **Push to your fork:**
    ```bash
@@ -284,7 +312,7 @@ Use CI to verify cross-platform compatibility.
 ### Types of Documentation
 
 1. **Code Documentation**: Doc comments in source files
-2. **User Documentation**: README.md, USAGE.md
+2. **User Documentation**: README.md, docs/
 3. **Developer Documentation**: CONTRIBUTING.md, CLAUDE.md
 4. **API Documentation**: Generated via `cargo doc`
 
@@ -344,6 +372,57 @@ We value all contributions! Contributors are recognized through:
 - [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) - Best practices
 - [Conventional Commits](https://www.conventionalcommits.org/) - Commit message format
 - [Semantic Versioning](https://semver.org/) - Version numbering
+
+## Release Process
+
+CCPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and release management based on conventional commits.
+
+### Creating a Release
+
+1. **Go to Actions → Release workflow**
+2. **Configure release options:**
+   - **Version Bump Override** (optional): Leave empty for automatic detection, or force a specific bump:
+     - `patch` - Force patch release (0.0.X)
+     - `minor` - Force minor release (0.X.0)
+     - `major` - Force major release (X.0.0)
+   - **Pre-release Type** (optional): Choose release channel:
+     - Leave empty for stable release
+     - Select "beta" for beta release (e.g., 1.0.0-beta.1)
+     - Select "alpha" for alpha release (e.g., 1.0.0-alpha.1)
+3. **Click "Run workflow"**
+
+### What Happens During Release
+
+The workflow uses semantic-release to:
+
+1. **Analyze Commits**: Determines version bump from commit messages since last release:
+   - `fix:`, `perf:`, `docs:`, `chore:`, etc. → Patch release (0.0.X)
+   - `feat:` → Minor release (0.X.0)
+   - Breaking changes (`!` or `BREAKING CHANGE:`) → Major release (X.0.0)
+2. **Create Release** (if commits warrant it):
+   - Updates version in `Cargo.toml` and `Cargo.lock`
+   - Creates git tag (e.g., `v1.0.0`)
+   - Generates changelog from conventional commits
+   - Creates GitHub release with changelog
+   - Builds and attaches binaries for all platforms
+   - Publishes package to crates.io
+   - Updates Homebrew formula (for stable releases only)
+
+### Semantic Release Configuration
+
+The release process is configured in `.releaserc.json`:
+- **Branches**: `main` (stable), `beta`, `alpha`
+- **Commit Analysis**: Uses `conventionalcommits` preset
+- **Release Rules**: All commit types trigger at least a patch release
+- **Plugins**: Handles Cargo.toml updates, GitHub releases, and crates.io publishing
+
+### Important Notes
+
+- Releases are **manual-only** - triggered via GitHub Actions workflow
+- Semantic-release may skip release if no releasable commits exist (unless version bump is forced)
+- Version is automatically determined from commit messages
+- Pre-releases (alpha/beta) use separate branches and increment independently
+- All conventional commit types trigger at least a patch release to ensure continuous delivery
 
 ## Questions?
 

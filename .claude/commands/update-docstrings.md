@@ -14,6 +14,8 @@ argument-hint: [ --check-only | --auto-update | --focus=<module> ] - e.g., "--fo
 
 Review the current code changes and ensure all related documentation (doc comments, module docs, CLAUDE.md) accurately reflects the implementation.
 
+**CRITICAL**: Use the Task tool to delegate to specialized documentation agents for comprehensive updates. Do NOT attempt to update extensive documentation manually.
+
 1. Parse the review mode from arguments:
    - `--check-only`: Only report documentation issues without making changes
    - `--auto-update`: Update documentation to match code changes (default)
@@ -29,8 +31,15 @@ Review the current code changes and ensure all related documentation (doc commen
    - New or changed configuration options
    - Algorithm or logic changes
    
-   **For comprehensive documentation updates, delegate to specialized agents:**
-   - Use `rust-doc-expert` agent for:
+   **For comprehensive documentation updates, delegate to specialized agents using Task:**
+   - Use Task with appropriate subagent_type:
+     ```
+     Task(description="Update code documentation",
+          prompt="Review code changes in [files] and update rustdoc comments to match implementation. Add missing docs for public APIs...",
+          subagent_type="rust-doc-standard")
+     ```
+   - For complex architectural documentation, use subagent_type="rust-doc-advanced"
+   - The agent will handle:
      * Adding missing documentation to new or undocumented code
      * Improving existing documentation with examples
      * Ensuring all public APIs have proper rustdoc comments
@@ -70,7 +79,7 @@ Review the current code changes and ensure all related documentation (doc commen
    - Suggest documentation improvements
 
    **Auto-update mode (--auto-update or default)**:
-   - Delegate to `rust-doc-expert` agent when substantial documentation is needed
+   - Use Task to delegate to `rust-doc-standard` for regular docs or `rust-doc-advanced` for architectural documentation
    - Update doc comments to match implementation
    - Add missing documentation for public items
    - Fix parameter and return value descriptions
@@ -143,7 +152,7 @@ Examples of changes requiring doc updates:
 - New test requirements → Document in test module
 
 Examples of usage:
-- `/update-docs-review` - automatically update docs based on code changes
-- `/update-docs-review --check-only` - report documentation issues without changes
-- `/update-docs-review --focus=cli` - focus on CLI module documentation
-- `/update-docs-review --focus=resolver` - focus on resolver module documentation
+- `/update-docstrings` - automatically update docstrings based on code changes
+- `/update-docstrings --check-only` - report documentation issues without changes
+- `/update-docstrings --focus=cli` - focus on CLI module documentation
+- `/update-docstrings --focus=resolver` - focus on resolver module documentation

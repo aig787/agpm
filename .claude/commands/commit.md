@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*)
+allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Task
 description: Create a well-formatted git commit following project conventions
 argument-hint: [ --co-authored | --contributed | --no-attribution ] [ paths... ] [ message ] - e.g., "tests/" or "--co-authored fix: update dependencies"
 ---
@@ -13,6 +13,21 @@ argument-hint: [ --co-authored | --contributed | --no-attribution ] [ paths... ]
 ## Your task
 
 Based on the changes shown above, create a single git commit following these guidelines:
+
+**Note**: For complex commits with extensive changes across multiple modules, delegate to specialized agents using Task:
+- Use Task with subagent_type="rust-expert-standard" to review architectural implications:
+  ```
+  Task(description="Review commit changes",
+       prompt="Review the changes for architectural implications before committing...",
+       subagent_type="rust-expert-standard")
+  ```
+- Use Task with subagent_type="rust-linting-standard" to ensure code quality:
+  ```
+  Task(description="Lint before commit", 
+       prompt="Run linting checks to ensure code quality before committing...",
+       subagent_type="rust-linting-standard")
+  ```
+- These agents can help ensure commits are well-structured and complete
 
 1. Parse the arguments provided:
     - Check for attribution flags: `--co-authored`, `--contributed`, or `--no-attribution`

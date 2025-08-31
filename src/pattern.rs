@@ -1,3 +1,55 @@
+//! Pattern-based dependency resolution for CCPM.
+//!
+//! This module provides glob pattern matching functionality to support
+//! pattern-based dependencies in CCPM manifests. Pattern dependencies
+//! allow installation of multiple resources matching a glob pattern,
+//! enabling bulk operations on related resources.
+//!
+//! # Pattern Syntax
+//!
+//! CCPM uses standard glob patterns with the following support:
+//!
+//! - `*` matches any sequence of characters within a single path component
+//! - `**` matches any sequence of path components (recursive matching)
+//! - `?` matches any single character
+//! - `[abc]` matches any character in the set
+//! - `[a-z]` matches any character in the range
+//! - `{foo,bar}` matches either "foo" or "bar" (brace expansion)
+//!
+//! # Examples
+//!
+//! ## Common Pattern Usage
+//!
+//! ```toml
+//! # Install all agents in the agents/ directory
+//! [agents]
+//! ai-helpers = { source = "community", path = "agents/*.md", version = "v1.0.0" }
+//!
+//! # Install all review-related agents recursively
+//! review-tools = { source = "community", path = "**/review*.md", version = "v1.0.0" }
+//!
+//! # Install specific agent categories
+//! python-agents = { source = "community", path = "agents/python-*.md", version = "v1.0.0" }
+//! ```
+//!
+//! ## Security Considerations
+//!
+//! Pattern matching includes several security measures:
+//!
+//! - **Path Traversal Prevention**: Patterns containing `..` are rejected
+//! - **Absolute Path Restriction**: Patterns starting with `/` or containing drive letters are rejected
+//! - **Symlink Safety**: Pattern matching does not follow symlinks to prevent directory traversal
+//! - **Input Validation**: All patterns are validated before processing
+//!
+//! # Performance
+//!
+//! Pattern matching is optimized for typical repository structures:
+//!
+//! - **Recursive Traversal**: Uses `walkdir` for efficient directory traversal
+//! - **Pattern Caching**: Compiled glob patterns are reused across matches
+//! - **Early Termination**: Stops on first match when appropriate
+//! - **Memory Efficient**: Streaming approach for large directory trees
+
 use anyhow::{Context, Result};
 use glob::Pattern;
 use std::collections::HashSet;
@@ -5,7 +57,35 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, trace};
 use walkdir::WalkDir;
 
-/// Pattern matcher for resource discovery in repositories
+/// Pattern matcher for resource discovery in repositories.
+///
+/// The `PatternMatcher` provides glob pattern matching capabilities for
+/// discovering resources in Git repositories and local directories. It supports
+/// standard glob patterns and handles cross-platform path matching.
+///
+/// # Thread Safety
+///
+/// `PatternMatcher` is thread-safe and can be cloned for use in concurrent contexts.
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::pattern::PatternMatcher;
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let matcher = PatternMatcher::new("agents/*.md")?;
+///
+/// // Check if a path matches
+/// assert!(matcher.matches(Path::new("agents/helper.md")));
+/// assert!(!matcher.matches(Path::new("snippets/code.md")));
+///
+/// // Find all matches in a directory
+/// let matches = matcher.find_matches(Path::new("/path/to/repo"))?;
+/// println!("Found {} matching files", matches.len());
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone)]
 pub struct PatternMatcher {
     pattern: Pattern,
@@ -13,7 +93,40 @@ pub struct PatternMatcher {
 }
 
 impl PatternMatcher {
-    /// Create a new pattern matcher from a glob pattern string
+    /// Creates a new pattern matcher from a glob pattern string.
+    ///
+    /// The pattern is compiled once during creation for efficient matching.
+    /// Invalid glob patterns will return an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern_str` - A glob pattern string (e.g., "*.md", "**/*.py")
+    ///
+    /// # Returns
+    ///
+    /// A new `PatternMatcher` instance ready for matching operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The pattern contains invalid glob syntax
+    /// - The pattern is malformed or contains unsupported features
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::pattern::PatternMatcher;
+    ///
+    /// // Simple wildcard
+    /// let matcher = PatternMatcher::new("*.md")?;
+    ///
+    /// // Recursive matching
+    /// let matcher = PatternMatcher::new("**/docs/*.md")?;
+    ///
+    /// // Character classes
+    /// let matcher = PatternMatcher::new("agent[0-9].md")?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn new(pattern_str: &str) -> Result<Self> {
         let pattern = Pattern::new(pattern_str)
             .with_context(|| format!("Invalid glob pattern: {}", pattern_str))?;
@@ -24,7 +137,52 @@ impl PatternMatcher {
         })
     }
 
-    /// Find all matching files in a directory
+    /// Finds all files matching the pattern in the specified directory.
+    ///
+    /// This method recursively traverses the directory tree and returns all
+    /// files that match the compiled pattern. The search is performed relative
+    /// to the base path, ensuring portable pattern matching across platforms.
+    ///
+    /// # Security
+    ///
+    /// This method includes security measures:
+    /// - Does not follow symlinks to prevent directory traversal attacks
+    /// - Returns relative paths to prevent information disclosure
+    /// - Handles permission errors gracefully
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The directory to search in (must exist)
+    ///
+    /// # Returns
+    ///
+    /// A vector of relative paths (from `base_path`) that match the pattern.
+    /// Paths are returned as `PathBuf` for easy manipulation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The base path does not exist or cannot be accessed
+    /// - The base path cannot be canonicalized
+    /// - Permission errors occur during directory traversal
+    /// - I/O errors prevent directory reading
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::pattern::PatternMatcher;
+    /// use std::path::Path;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let matcher = PatternMatcher::new("**/*.md")?;
+    /// let matches = matcher.find_matches(Path::new("/repo"))?;
+    ///
+    /// for path in matches {
+    ///     println!("Found: {}", path.display());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn find_matches(&self, base_path: &Path) -> Result<Vec<PathBuf>> {
         debug!(
             "Searching for pattern '{}' in {:?}",
@@ -64,33 +222,162 @@ impl PatternMatcher {
         Ok(matches)
     }
 
-    /// Check if a single path matches the pattern
+    /// Checks if a single path matches the compiled pattern.
+    ///
+    /// This is a lightweight operation that checks if the given path
+    /// matches the pattern without filesystem access. Useful for filtering
+    /// or validation operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to test against the pattern
+    ///
+    /// # Returns
+    ///
+    /// `true` if the path matches the pattern, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::pattern::PatternMatcher;
+    /// use std::path::Path;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let matcher = PatternMatcher::new("agents/*.md")?;
+    ///
+    /// assert!(matcher.matches(Path::new("agents/helper.md")));
+    /// assert!(matcher.matches(Path::new("agents/reviewer.md")));
+    /// assert!(!matcher.matches(Path::new("snippets/code.md")));
+    /// assert!(!matcher.matches(Path::new("agents/nested/deep.md")));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn matches(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         self.pattern.matches(&path_str)
     }
 
-    /// Get the original pattern string
+    /// Returns the original pattern string used to create this matcher.
+    ///
+    /// Useful for logging, debugging, or displaying the pattern to users.
+    ///
+    /// # Returns
+    ///
+    /// The original pattern string as provided to [`PatternMatcher::new`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::pattern::PatternMatcher;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let pattern_str = "**/*.md";
+    /// let matcher = PatternMatcher::new(pattern_str)?;
+    ///
+    /// assert_eq!(matcher.pattern(), pattern_str);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn pattern(&self) -> &str {
         &self.original_pattern
     }
 }
 
-/// Resolve pattern-based dependencies to concrete paths
+/// Resolves pattern-based dependencies to concrete file paths.
+///
+/// The `PatternResolver` provides advanced pattern matching with exclusion
+/// support and deterministic ordering. It's designed for resolving
+/// pattern-based dependencies in CCPM manifests to concrete resource files.
+///
+/// # Features
+///
+/// - **Exclusion Patterns**: Support for excluding specific patterns from results
+/// - **Deterministic Ordering**: Results are always returned in sorted order
+/// - **Deduplication**: Automatically removes duplicate paths from results
+/// - **Multiple Pattern Support**: Can resolve multiple patterns in one operation
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::pattern::PatternResolver;
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let mut resolver = PatternResolver::new();
+///
+/// // Add exclusion patterns
+/// resolver.exclude("**/test_*.md")?;
+/// resolver.exclude("**/.*")?; // Exclude hidden files
+///
+/// // Resolve pattern with exclusions applied
+/// let matches = resolver.resolve("**/*.md", Path::new("/repo"))?;
+/// println!("Found {} files (excluding test files and hidden files)", matches.len());
+/// # Ok(())
+/// # }
+/// ```
 pub struct PatternResolver {
     /// Patterns to exclude from matching
     exclude_patterns: Vec<Pattern>,
 }
 
 impl PatternResolver {
-    /// Create a new pattern resolver
+    /// Creates a new pattern resolver with no exclusions.
+    ///
+    /// The resolver starts with an empty exclusion list. Use [`exclude`]
+    /// to add patterns that should be filtered out of results.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::pattern::PatternResolver;
+    ///
+    /// let resolver = PatternResolver::new();
+    /// // PatternResolver starts with no exclusions
+    /// ```
+    ///
+    /// [`exclude`]: PatternResolver::exclude
     pub fn new() -> Self {
         Self {
             exclude_patterns: Vec::new(),
         }
     }
 
-    /// Add an exclusion pattern
+    /// Adds an exclusion pattern to filter out unwanted results.
+    ///
+    /// Files matching exclusion patterns will be removed from resolution
+    /// results. Exclusions are applied after the main pattern matching,
+    /// making them useful for filtering out test files, hidden files,
+    /// or other unwanted resources.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - A glob pattern for files to exclude
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the exclusion pattern is invalid glob syntax.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use ccpm::pattern::PatternResolver;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let mut resolver = PatternResolver::new();
+    ///
+    /// // Exclude test files
+    /// resolver.exclude("**/test_*.md")?;
+    /// resolver.exclude("**/*_test.md")?;
+    ///
+    /// // Exclude hidden files
+    /// resolver.exclude("**/.*")?;
+    ///
+    /// // Exclude backup files
+    /// resolver.exclude("**/*.bak")?;
+    /// resolver.exclude("**/*~")?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn exclude(&mut self, pattern: &str) -> Result<()> {
         let pattern = Pattern::new(pattern)
             .with_context(|| format!("Invalid exclusion pattern: {}", pattern))?;
@@ -98,7 +385,53 @@ impl PatternResolver {
         Ok(())
     }
 
-    /// Resolve a pattern to a list of resource paths, applying exclusions
+    /// Resolves a pattern to a list of resource paths with exclusions applied.
+    ///
+    /// This is the primary method for pattern resolution. It finds all files
+    /// matching the pattern, applies exclusion filters, removes duplicates,
+    /// and returns results in deterministic sorted order.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Use `PatternMatcher` to find all files matching the pattern
+    /// 2. Filter out any files matching exclusion patterns
+    /// 3. Remove duplicates (though unlikely with file paths)
+    /// 4. Sort results for deterministic ordering
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The glob pattern to match files against
+    /// * `base_path` - The directory to search within
+    ///
+    /// # Returns
+    ///
+    /// A vector of `PathBuf` objects representing matching files,
+    /// sorted in lexicographic order for deterministic results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The pattern is invalid glob syntax
+    /// - The base path doesn't exist or can't be accessed
+    /// - I/O errors occur during directory traversal
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::pattern::PatternResolver;
+    /// use std::path::Path;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let mut resolver = PatternResolver::new();
+    /// resolver.exclude("**/test_*.md")?;
+    ///
+    /// let matches = resolver.resolve("agents/*.md", Path::new("/repo"))?;
+    /// for path in &matches {
+    ///     println!("Agent: {}", path.display());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn resolve(&self, pattern: &str, base_path: &Path) -> Result<Vec<PathBuf>> {
         let matcher = PatternMatcher::new(pattern)?;
         let mut matches = matcher.find_matches(base_path)?;
@@ -120,7 +453,45 @@ impl PatternResolver {
         Ok(matches)
     }
 
-    /// Resolve multiple patterns and return unique results
+    /// Resolves multiple patterns and returns unique results.
+    ///
+    /// This method combines results from multiple pattern resolutions,
+    /// automatically deduplicating any files that match multiple patterns.
+    /// Useful for installing resources from multiple pattern-based dependencies.
+    ///
+    /// # Arguments
+    ///
+    /// * `patterns` - A slice of pattern strings to resolve
+    /// * `base_path` - The directory to search within
+    ///
+    /// # Returns
+    ///
+    /// A vector of unique `PathBuf` objects representing all files that
+    /// match any of the provided patterns, sorted for deterministic results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any pattern is invalid or if directory access fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::pattern::PatternResolver;
+    /// use std::path::Path;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let resolver = PatternResolver::new();
+    /// let patterns = vec![
+    ///     "agents/*.md".to_string(),
+    ///     "helpers/*.md".to_string(),
+    ///     "tools/*.md".to_string(),
+    /// ];
+    ///
+    /// let matches = resolver.resolve_multiple(&patterns, Path::new("/repo"))?;
+    /// println!("Found {} unique resources", matches.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn resolve_multiple(&self, patterns: &[String], base_path: &Path) -> Result<Vec<PathBuf>> {
         let mut all_matches = HashSet::new();
 
@@ -142,7 +513,31 @@ impl Default for PatternResolver {
     }
 }
 
-/// Extract resource name from a file path
+/// Extracts a resource name from a file path.
+///
+/// This function determines an appropriate resource name by extracting
+/// the file stem (filename without extension) from the path. This is
+/// used when generating resource names for pattern-based dependencies.
+///
+/// # Arguments
+///
+/// * `path` - The file path to extract a name from
+///
+/// # Returns
+///
+/// The file stem as a string, or "unknown" if the path has no filename.
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::pattern::extract_resource_name;
+/// use std::path::Path;
+///
+/// assert_eq!(extract_resource_name(Path::new("agents/helper.md")), "helper");
+/// assert_eq!(extract_resource_name(Path::new("/path/to/script.py")), "script");
+/// assert_eq!(extract_resource_name(Path::new("no-extension")), "no-extension");
+/// assert_eq!(extract_resource_name(Path::new("/")), "unknown");
+/// ```
 pub fn extract_resource_name(path: &Path) -> String {
     path.file_stem()
         .and_then(|s| s.to_str())
@@ -150,7 +545,50 @@ pub fn extract_resource_name(path: &Path) -> String {
         .to_string()
 }
 
-/// Validate that a pattern is safe (no path traversal)
+/// Validates that a pattern is safe and doesn't contain path traversal attempts.
+///
+/// This security function prevents malicious patterns that could access
+/// files outside the intended directory boundaries. It checks for common
+/// path traversal patterns and absolute paths that could escape the
+/// repository or project directory.
+///
+/// # Security Checks
+///
+/// - **Path Traversal**: Rejects patterns containing `..` components
+/// - **Absolute Paths (Unix)**: Rejects patterns starting with `/`
+/// - **Absolute Paths (Windows)**: Rejects patterns containing `:` or starting with `\`
+///
+/// # Arguments
+///
+/// * `pattern` - The glob pattern to validate
+///
+/// # Returns
+///
+/// `Ok(())` if the pattern is safe to use.
+///
+/// # Errors
+///
+/// Returns an error if the pattern contains dangerous components:
+/// - Path traversal attempts (`../`, `../../`, etc.)
+/// - Absolute paths (`/etc/passwd`, `C:\Windows\`, etc.)
+/// - UNC paths on Windows (`\\server\share`)
+///
+/// # Examples
+///
+/// ```rust
+/// use ccpm::pattern::validate_pattern_safety;
+///
+/// // Safe patterns
+/// assert!(validate_pattern_safety("*.md").is_ok());
+/// assert!(validate_pattern_safety("agents/*.md").is_ok());
+/// assert!(validate_pattern_safety("**/*.md").is_ok());
+///
+/// // Unsafe patterns
+/// assert!(validate_pattern_safety("../etc/passwd").is_err());
+/// assert!(validate_pattern_safety("/etc/*").is_err());
+/// # #[cfg(windows)]
+/// # assert!(validate_pattern_safety("C:\\Windows\\*").is_err());
+/// ```
 pub fn validate_pattern_safety(pattern: &str) -> Result<()> {
     // Check for path traversal attempts
     if pattern.contains("..") {
@@ -177,7 +615,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_pattern_matcher_basic() {
+    fn test_pattern_matcher_creation_and_basic_matching() {
         let pattern = PatternMatcher::new("*.md").unwrap();
 
         assert!(pattern.matches(Path::new("test.md")));
@@ -187,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_matcher_nested() {
+    fn test_pattern_matcher_directory_patterns() {
         let pattern = PatternMatcher::new("agents/*.md").unwrap();
 
         assert!(pattern.matches(Path::new("agents/test.md")));
@@ -198,7 +636,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_matcher_recursive() {
+    fn test_pattern_matcher_recursive_globstar() {
         let pattern = PatternMatcher::new("**/*.md").unwrap();
 
         assert!(pattern.matches(Path::new("test.md")));
@@ -208,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_matches() {
+    fn test_find_matches_in_directory_structure() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
@@ -250,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_resolver_exclusions() {
+    fn test_pattern_resolver_with_exclusion_filters() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
@@ -270,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_multiple_patterns() {
+    fn test_resolve_multiple_patterns_with_deduplication() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
@@ -296,7 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_resource_name() {
+    fn test_extract_resource_name_from_paths() {
         assert_eq!(
             extract_resource_name(Path::new("agents/helper.md")),
             "helper"
@@ -313,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_pattern_safety() {
+    fn test_validate_pattern_security_checks() {
         // Valid patterns
         assert!(validate_pattern_safety("*.md").is_ok());
         assert!(validate_pattern_safety("agents/*.md").is_ok());

@@ -12,7 +12,7 @@ argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only r
 
 ## Your task
 
-Review the current changes and ensure CLAUDE.md accurately reflects the project's architecture, implementation details, and development guidelines.
+Review the current changes and ensure CLAUDE.md accurately reflects the project's architecture, implementation details, and development guidelines. **IMPORTANT**: CLAUDE.md must remain under 20,000 characters total.
 
 1. Parse the update mode from arguments:
    - `--check-only`: Only report what needs updating without making changes
@@ -29,13 +29,25 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Build or development workflow changes
    - New resource types or formats
    
-   **For complex architectural documentation, consider delegating to specialized agents:**
-   - Use `rust-doc-expert` agent for:
+   **For complex architectural documentation, delegate to specialized agents using Task:**
+   - Use Task with subagent_type="rust-doc-standard" or "rust-doc-advanced":
+     ```
+     Task(description="Update architectural docs",
+          prompt="Review architectural changes and update CLAUDE.md documentation accordingly...",
+          subagent_type="rust-doc-advanced")
+     ```
+   - The documentation agent will handle:
      * Generating comprehensive architectural documentation
      * Writing detailed module descriptions
      * Creating usage examples for new features
      * Documenting design patterns and decisions
-   - Use `rust-expert` agent for:
+   - Use Task with subagent_type="rust-expert-standard" or "rust-expert-advanced":
+     ```
+     Task(description="Review architecture",
+          prompt="Review architectural changes in CLAUDE.md for best practices and design patterns...",
+          subagent_type="rust-expert-standard")
+     ```
+   - The expert agent will handle:
      * Reviewing architectural changes for best practices
      * Validating design decisions
      * Suggesting improvements to module structure
@@ -122,12 +134,18 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Preserve existing valuable context and lessons learned
 
 7. Maintain CLAUDE.md quality and purpose:
+   - **CRITICAL**: Keep file under 20,000 characters total
    - Keep focus on helping AI assistants understand the codebase
    - Preserve "Lessons Learned" and "Design Decisions" sections
    - Maintain detailed explanations of complex algorithms
    - Keep security rules prominent and clear
    - Ensure cross-platform considerations are documented
    - Don't remove historical context that explains "why"
+   - If file exceeds 20k characters, prioritize removing:
+     * Verbose examples (use concise versions)
+     * Redundant information covered in other docs
+     * Overly detailed dependency lists
+     * Long code examples (reference files instead)
 
 8. Special sections in CLAUDE.md to verify:
 
@@ -137,11 +155,11 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Document delegation patterns between agents
    - Specify when to use each agent
    - Example format:
-     * `rust-expert`: Expert Rust developer for implementation, refactoring, API design
-     * `rust-linting-expert`: Fast linting fixes with cargo fmt, clippy --fix
-     * `rust-doc-expert`: Comprehensive documentation, docstrings, and architectural docs
-     * `rust-test-fixer`: Fast test failure fixes for assertion failures, test setup
-     * `rust-troubleshooter-opus`: Advanced debugging for memory issues, UB, performance
+     * `rust-expert-standard`/`rust-expert-advanced`: Rust development and architecture
+     * `rust-linting-standard`/`rust-linting-advanced`: Code formatting and linting
+     * `rust-doc-standard`/`rust-doc-advanced`: Documentation and docstrings
+     * `rust-test-standard`/`rust-test-advanced`: Test fixes and test infrastructure
+     * `rust-troubleshooter-standard`/`rust-troubleshooter-advanced`: Debugging and troubleshooting
 
    **Implementation Lessons Learned**:
    - Keep valuable insights from development
@@ -168,6 +186,14 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Verify manifest format examples match actual implementation
    - Check that build commands work as documented
    - Validate that module descriptions align with code comments
+
+10. Final character count check:
+   - After all edits, check the file size with `wc -c CLAUDE.md`
+   - If over 20,000 characters, further condense:
+     * Remove verbose sections
+     * Use bullet points instead of paragraphs
+     * Reference other docs instead of duplicating content
+   - Target: Keep under 20,000 characters while maintaining essential information
 
 Examples of changes requiring CLAUDE.md updates:
 - Adding new `src/` module → Update Project Structure and Module Structure
