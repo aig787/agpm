@@ -72,7 +72,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       
       - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
       
       - name: Generate coverage
         run: cargo tarpaulin --exclude-files "*/test_utils/*" --verbose --workspace --timeout 120 --out Html

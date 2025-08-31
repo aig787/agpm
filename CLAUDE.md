@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, and
-more), written in Rust. It follows a lockfile-based dependency management model similar to Cargo, enabling reproducible
-installations of AI resources from multiple Git repositories. The system is designed to work seamlessly on Windows,
-macOS, and Linux.
+CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands, 
+scripts, hooks, and MCP servers), written in Rust. It follows a lockfile-based dependency management model similar to 
+Cargo, enabling reproducible installations of AI resources from multiple Git repositories. The system is designed to 
+work seamlessly on Windows, macOS, and Linux with comprehensive cross-platform path handling and file URL support.
 
 ## Key Architecture Decisions
 
@@ -75,6 +75,18 @@ Agents work together through delegation:
 - **rust-test-fixer** → rust-troubleshooter-opus (for memory/UB issues)
 - **rust-expert** → rust-troubleshooter-opus (for issues it cannot resolve)
 
+## Available Claude Code Commands
+
+The project includes specialized commands for development workflows:
+
+- **commit**: Intelligent git commit with automatic staging and conventional commit messages
+- **lint**: Fast linting and formatting using cargo fmt and clippy --fix
+- **pr-self-review**: Automated pull request self-review with comprehensive analysis
+- **update-all**: Update all project dependencies and documentation in one command
+- **update-claude**: Update this CLAUDE.md file with current project context
+- **update-docs-review**: Review and update project documentation for accuracy
+- **update-readme**: Update README.md with current features and examples
+
 ## Core Commands
 
 1. `install` - Install dependencies from ccpm.toml, generate/update ccpm.lock
@@ -120,31 +132,35 @@ Agents work together through delegation:
 
 ## Key Dependencies
 
-- `clap` (4.5) - Command-line argument parsing with derive macros
-- `tokio` (1.47) - Async runtime with full features
-- `toml` (0.9) - TOML parsing and serialization
+- `clap` (4.5) - Command-line argument parsing with derive, cargo, and env features
+- `tokio` (1.40) - Async runtime with full features
+- `toml` (0.9.5) - TOML parsing and serialization
 - `serde` (1.0) - Serialization framework with derive
 - `serde_json` (1.0) - JSON support for metadata
 - `serde_yaml` (0.9) - YAML parsing for configuration files
 - `semver` (1.0) - Semantic version parsing for git tags
 - `anyhow` (1.0) - Error handling with context
-- `thiserror` (2.0) - Custom error types with derive
-- `colored` (3.0) - Terminal colors for CLI output
-- `dirs` (6.0) - Platform-specific directory paths
+- `thiserror` (2.0.16) - Custom error types with derive
+- `colored` (3.0.0) - Terminal colors for CLI output
+- `dirs` (6.0.0) - Platform-specific directory paths
 - `tracing` (0.1) - Structured, event-based diagnostics
 - `tracing-subscriber` (0.3) - Utilities for tracing subscribers
-- `indicatif` (0.18) - Progress bars and spinners
+- `indicatif` (0.18.0) - Progress bars and spinners
 - `tempfile` (3.10) - Temporary file/directory management
 - `shellexpand` (3.1) - Shell-like path expansion (~, env vars)
-- `which` (8.0) - Command detection in PATH
-- `uuid` (1.10) - Unique identifier generation
-- `chrono` (0.4) - Date and time handling
+- `which` (8.0.0) - Command detection in PATH
+- `uuid` (1.10) - Unique identifier generation with v4 features
+- `chrono` (0.4) - Date and time handling with serde features
 - `walkdir` (2.5) - Recursive directory traversal
 - `sha2` (0.10) - SHA-256 hashing for checksums
 - `hex` (0.4) - Hexadecimal encoding/decoding
 - `regex` (1.11) - Regular expression matching
 - `futures` (0.3) - Async programming primitives
 - `fs4` (0.13) - Extended file system operations with locking
+
+### Development Dependencies
+- `assert_cmd` (2.0) - Command-line testing utilities
+- `predicates` (3.1) - Assertion predicates for testing
 
 ## Testing Strategy
 
@@ -199,6 +215,29 @@ RUST_LOG=debug cargo run
 
 # Full pre-commit check
 cargo fmt && cargo clippy -- -D warnings && cargo test
+
+# Optimized release build configuration
+# - Link Time Optimization (LTO): true
+# - Single codegen unit for maximum optimization
+# - Strip symbols for smaller binary size  
+# - Size optimization (opt-level = "z")
+```
+
+## CI/CD and Build Configuration
+
+The project includes comprehensive GitHub Actions workflows for:
+
+- **Cross-platform testing** on Windows, macOS, and Linux
+- **Cargo fmt and clippy** linting checks
+- **Test coverage** reporting with tarpaulin
+- **Documentation** building and validation
+- **Release builds** with optimized binary sizes
+
+Release builds are configured for maximum optimization:
+- Link Time Optimization (LTO) enabled
+- Single codegen unit for better optimization
+- Symbol stripping for smaller binaries
+- Size optimization with `opt-level = "z"`
 ```
 
 ## Module Organization
@@ -309,22 +348,30 @@ When working with paths on Windows, be aware of these critical issues:
 The `tests/` directory contains comprehensive integration tests:
 - `integration_cross_platform.rs` - Cross-platform path and behavior testing
 - `integration_deploy.rs` - Deployment and installation scenarios
+- `integration_deps_refresh.rs` - Dependency refresh and update scenarios
 - `integration_error_scenarios.rs` - Error handling and recovery
+- `integration_file_url.rs` - File URL handling and local repository support
 - `integration_gitignore.rs` - Gitignore generation and management
 - `integration_list.rs` - List command functionality
 - `integration_multi_resource.rs` - Multi-resource installation and management
 - `integration_redundancy.rs` - Redundancy detection and handling
 - `integration_test_helpers_example.rs` - Test helper utility examples
-- `integration_update.rs` - Update command and version constraint handling
 - `integration_validate.rs` - Manifest and lockfile validation
 - `integration_versioning.rs` - Version resolution and Git reference handling
+- `test_config.rs` - Configuration management testing
+- `test_no_progress.rs` - Progress indicator testing
 
 ## Recent Architectural Changes
 
+- **Enhanced cross-platform path handling**: Improved Windows compatibility and file:// URL support
+- **Comprehensive documentation**: Added rustdoc comments across all modules with examples
 - **Removed `once_cell` dependency**: Replaced with standard library features for better maintainability
 - **Eliminated WorkingDirGuard**: Refactored tests to run safely in parallel without changing working directories
 - **API improvements**: CLI commands now accept optional manifest_path parameter for better flexibility
 - **Enhanced agent documentation**: Added detailed agent delegation patterns and specializations
+- **Claude Code command automation**: Added comprehensive command set for development workflows
+- **File URL support**: Enhanced local repository support with file:// URLs
+- **Dependency refresh system**: Improved update mechanisms for better dependency management
 
 ## Notes for Claude
 
@@ -358,6 +405,7 @@ The `tests/` directory contains comprehensive integration tests:
         - Warn users before installing resources without checksums
         - Validate markdown file content before execution (no embedded scripts)
         - Limit resource file sizes to prevent denial of service
+        - Validate file extensions and content types for each resource category
     - **Network Security**:
         - Use HTTPS for all git operations by default
         - Validate SSL certificates (no --insecure flags)

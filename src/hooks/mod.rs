@@ -15,14 +15,19 @@ use std::path::Path;
 /// Hook event types supported by Claude Code
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookEvent {
+    /// Triggered before a tool is executed by Claude
     #[serde(rename = "PreToolUse")]
     PreToolUse,
+    /// Triggered after a tool has been executed by Claude
     #[serde(rename = "PostToolUse")]
     PostToolUse,
+    /// Triggered when the user submits a prompt
     #[serde(rename = "UserPromptSubmit")]
     UserPromptSubmit,
+    /// Triggered when Claude receives a user prompt
     #[serde(rename = "UserPromptReceive")]
     UserPromptReceive,
+    /// Triggered when the user receives an assistant response
     #[serde(rename = "AssistantResponseReceive")]
     AssistantResponseReceive,
 }

@@ -78,7 +78,7 @@ specialized Rust development agents with delegation patterns for efficient code 
 - **No Central Registry**: Fully decentralized - add any Git repository as a source
 - **Dependency Resolution**: Automatic version constraint resolution with conflict detection
 - **Cross-Platform Support**: Works reliably on Windows, macOS, and Linux
-- **Comprehensive CLI**: Full-featured command-line interface with 9 commands
+- **Comprehensive CLI**: Full-featured command-line interface with 9 commands plus global options
 - **Specialized Agents**: Includes expert Rust agents with delegation patterns for development workflows
 - **Parallel Operations**: Safe concurrent operations with automatic file locking
 
@@ -132,19 +132,26 @@ files defining how to run external servers.
 
 ## Installation
 
+**Note**: CCPM is currently in active development. Installation will be available once the first release is published.
+
 ```bash
-# Install via cargo
-cargo install ccpm
-
-# Or download pre-built binary
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-$(uname -s)-$(uname -m) -o ccpm
-chmod +x ccpm
-sudo mv ccpm /usr/local/bin/
-
-# Or build from source
+# Build from source (current method)
 git clone https://github.com/aig787/ccpm.git
-cargo install --path ccpm
+cd ccpm
+cargo build --release
+sudo cp target/release/ccpm /usr/local/bin/
+
+# Or install directly with cargo
+cargo install --git https://github.com/aig787/ccpm.git
+
+# Future: Install via cargo (once published)
+# cargo install ccpm
 ```
+
+**Requirements:**
+- Rust 1.70 or later
+- Git 2.0 or later
+- Cross-platform support: Windows, macOS, Linux
 
 ## Quick Start
 
@@ -265,6 +272,13 @@ CCPM provides 9 commands for managing dependencies:
 | `validate` | Validate ccpm.toml syntax and check dependencies              | `--resolve`, `--check-lock`                           |
 | `cache`    | Manage the global git cache                                   | `clean`, `clean --all`, `info`                        |
 | `config`   | Manage global configuration                                   | `init`, `show`, `edit`, `add-source`, `list-sources`  |
+
+**Global Options** (available for all commands):
+- `--verbose` / `-v`: Enable debug output
+- `--quiet` / `-q`: Suppress output except errors
+- `--config` / `-c`: Path to custom global config file
+- `--manifest-path`: Path to custom manifest file (ccpm.toml)
+- `--no-progress`: Disable progress bars and spinners
 
 ### Command Examples
 
@@ -1033,10 +1047,11 @@ Benefits:
 
 ## Building from Source
 
-Requirements:
+**Requirements:**
 
-- Rust 1.70 or later
-- Git 2.0 or later
+- Rust 1.70 or later (required for building)
+- Git 2.0 or later (required for repository operations)
+- Cross-platform support: Windows 10+, macOS 10.15+, Linux (modern distributions)
 
 ```bash
 # Clone the repository
@@ -1067,7 +1082,7 @@ CCPM is built with Rust and uses system Git for compatibility. Key components:
 - **git**: Git operations with authentication support
 - **cache**: Global repository cache with file locking
 - **cli**: Command implementations with optional manifest path support
-- **test_utils**: Comprehensive testing framework with parallel test safety
+- **test_utils**: Comprehensive testing framework with parallel test safety (no WorkingDirGuard)
 
 ### Concurrent Operations & File Locking
 
@@ -1078,17 +1093,18 @@ repository has a lock file at `~/.ccpm/cache/.locks/<source-name>.lock` that ens
 - No git index corruption
 - Automatic lock management
 - Cross-platform compatibility via fs4
-- Parallel test execution without WorkingDirGuard for better performance
+- Safe parallel test execution after eliminating WorkingDirGuard for better performance
 
 ## Versioning
 
-CCPM uses repository-level versioning (like GitHub Actions and Cargo workspaces):
+CCPM follows [semantic versioning](https://semver.org/) and uses repository-level versioning (similar to GitHub Actions and Cargo workspaces):
 
-- Versions apply to entire repositories, not individual files
-- When you specify `version = "v1.1.0"`, you get the repository at that tag
-- Files unchanged between versions still report the repository version
+- **Repository-level versioning**: Versions apply to entire repositories, not individual files
+- **Git-native**: When you specify `version = "v1.1.0"`, you get the repository at that Git tag
+- **Consistency**: All resources from the same repository version share the same resolved commit
+- **Simplicity**: No complex per-file version tracking, just standard Git operations
 
-This provides simplicity and Git-native compatibility while trading off per-file version tracking.
+This design provides Git-native compatibility and operational simplicity while trading off granular per-file version control.
 
 ## Best Practices
 
@@ -1098,7 +1114,12 @@ This provides simplicity and Git-native compatibility while trading off per-file
 4. **Use --frozen in CI/CD** - Ensures deterministic builds in automation
 5. **Leverage parallel operations** - Automatic parallel processing speeds up installations
 6. **Document custom sources** - Add comments in ccpm.toml for team clarity
-7. **Use specialized agents** - Leverage built-in Rust agents with delegation patterns for efficient development
+7. **Use specialized agents** - Leverage built-in Rust development agents:
+   - `rust-expert`: General Rust development and API design
+   - `rust-linting-expert`: Fast linting fixes with cargo fmt and clippy
+   - `rust-doc-expert`: Comprehensive documentation and rustdoc comments
+   - `rust-test-fixer`: Fast test failure fixes and assertion debugging
+   - `rust-troubleshooter-opus`: Advanced debugging and performance analysis
 
 ## Troubleshooting
 
@@ -1169,6 +1190,17 @@ CCPM draws inspiration from:
 - [Cargo](https://crates.io/) - Rust package manager (lockfile approach)
 - [npm](https://npmjs.com/) - Node.js package manager
 - [Helm](https://helm.sh/) - Kubernetes package manager
+
+## Project Status
+
+CCPM is currently in active development with comprehensive test coverage and cross-platform support. The project includes:
+
+- ✅ **Core functionality**: All 9 commands implemented and tested
+- ✅ **Cross-platform support**: Windows, macOS, and Linux compatibility
+- ✅ **Test coverage**: Comprehensive test suite with parallel execution safety
+- ✅ **Documentation**: Extensive rustdoc comments and user guides
+- ✅ **Specialized agents**: Built-in Rust development agents with delegation patterns
+- 🚧 **First release**: Preparing for initial public release
 
 ## Support
 

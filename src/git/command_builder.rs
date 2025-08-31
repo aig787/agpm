@@ -259,7 +259,9 @@ impl GitCommand {
 
 /// Output from a Git command
 pub struct GitCommandOutput {
+    /// Standard output from the Git command
     pub stdout: String,
+    /// Standard error output from the Git command
     pub stderr: String,
 }
 

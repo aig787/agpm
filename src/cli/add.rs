@@ -246,10 +246,7 @@ fn parse_dependency_spec(
             // Windows: Check for drive letter (C:) or UNC path (\\server)
             spec.len() >= 3
                 && spec.chars().nth(1) == Some(':')
-                && spec
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_alphabetic())
+                && spec.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
                 || spec.starts_with("\\\\")
         }
         #[cfg(not(windows))]

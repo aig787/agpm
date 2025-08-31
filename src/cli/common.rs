@@ -31,9 +31,13 @@ pub trait CommandExecutor: Sized {
 /// Common context for CLI commands that need manifest and project information
 #[derive(Debug)]
 pub struct CommandContext {
+    /// Parsed project manifest (ccpm.toml)
     pub manifest: Manifest,
+    /// Path to the manifest file
     pub manifest_path: PathBuf,
+    /// Project root directory (containing ccpm.toml)
     pub project_dir: PathBuf,
+    /// Path to the lockfile (ccpm.lock)
     pub lockfile_path: PathBuf,
 }
 
