@@ -1,7 +1,7 @@
 ---
 allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*)
 description: Create a well-formatted git commit following project conventions
-argument-hint: [ --co-authored | --contributed ] [ paths... ] [ message ] - e.g., "tests/" or "--co-authored fix: update dependencies"
+argument-hint: [ --co-authored | --contributed | --no-attribution ] [ paths... ] [ message ] - e.g., "tests/" or "--co-authored fix: update dependencies"
 ---
 
 ## Context
@@ -15,7 +15,7 @@ argument-hint: [ --co-authored | --contributed ] [ paths... ] [ message ] - e.g.
 Based on the changes shown above, create a single git commit following these guidelines:
 
 1. Parse the arguments provided:
-    - Check for attribution flags: `--co-authored` or `--contributed`
+    - Check for attribution flags: `--co-authored`, `--contributed`, or `--no-attribution`
     - If paths are specified (e.g., "tests/", ".github/"), only stage and commit changes in those paths
     - If a commit message is provided, use it (otherwise generate one)
     - Arguments: $ARGUMENTS
@@ -35,6 +35,7 @@ Based on the changes shown above, create a single git commit following these gui
     - Clearly describes what changed and why
 
 4. Handle attribution:
+    - If `--no-attribution` flag is provided, skip all attribution (no co-author or contribution note)
     - If `--co-authored` or `--contributed` flag is explicitly provided, use that
     - If NO attribution flags are provided, automatically determine based on AI contribution:
         * Analyze the diff to estimate AI-generated percentage using these indicators:
@@ -94,6 +95,8 @@ Examples of usage:
 - `/commit` - commits all changes with automatic attribution detection
 - `/commit --co-authored` - commits all changes with explicit co-author attribution
 - `/commit --contributed tests/` - commits tests directory with explicit contribution note
+- `/commit --no-attribution` - commits all changes with no attribution
 - `/commit --co-authored fix: resolve test failures` - commits with specified message and co-author
+- `/commit --no-attribution fix: manual bugfix` - commits with specified message and no attribution
 - `/commit tests/` - commits specific directory with automatic attribution detection
 - `/commit fix: update dependencies` - commits with specified message and automatic attribution

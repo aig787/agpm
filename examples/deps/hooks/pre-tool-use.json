@@ -1,0 +1,10 @@
+{
+  "events": [
+    "PreToolUse"
+  ],
+  "matcher": "Bash|Write",
+  "type": "command",
+  "command": ".claude/ccpm/scripts/build.sh",
+  "timeout": 5000,
+  "description": "Validate dangerous operations before execution"
+}
