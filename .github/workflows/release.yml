@@ -95,9 +95,7 @@ jobs:
             # Create a temporary commit with the appropriate type to force the desired bump
             case "${{ github.event.inputs.version_bump }}" in
               "major")
-                git commit --allow-empty -m "feat!: Manual release triggered with major version bump
-
-BREAKING CHANGE: Manual major version bump requested by release workflow"
+                git commit --allow-empty -m $'feat!: Manual release triggered with major version bump\n\nBREAKING CHANGE: Manual major version bump requested by release workflow'
                 ;;
               "minor")
                 git commit --allow-empty -m "feat: Manual release triggered with minor version bump"
