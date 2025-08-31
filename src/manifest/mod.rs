@@ -898,22 +898,34 @@ pub struct DetailedDependency {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
-    /// Path to the resource file.
+    /// Path to the resource file or glob pattern for multiple resources.
     ///
     /// For **remote dependencies**: Path within the Git repository\
-    /// For **local dependencies**: Filesystem path relative to manifest directory
+    /// For **local dependencies**: Filesystem path relative to manifest directory\
+    /// For **pattern dependencies**: Glob pattern to match multiple resources
     ///
-    /// The path must end with `.md` and point to a valid Markdown file.
-    /// This field is required and cannot be empty.
+    /// This field supports both individual file paths and glob patterns:
+    /// - Individual file: `"agents/helper.md"`
+    /// - Pattern matching: `"agents/*.md"`, `"**/*.md"`, `"agents/[a-z]*.md"`
+    ///
+    /// Pattern dependencies are detected by the presence of glob characters
+    /// (`*`, `?`, `[`) in the path. When a pattern is detected, CCPM will
+    /// expand it to match all resources in the source repository.
     ///
     /// # Examples
     ///
     /// ```toml
-    /// # Remote: path within git repo
+    /// # Remote: single file in git repo
     /// remote = { source = "repo", path = "agents/helper.md", version = "v1.0.0" }
     ///
     /// # Local: filesystem path
     /// local = { path = "../shared/helper.md" }
+    ///
+    /// # Pattern: all agents in AI folder
+    /// ai_agents = { source = "repo", path = "agents/ai/*.md", version = "v1.0.0" }
+    ///
+    /// # Pattern: all agents recursively
+    /// all_agents = { source = "repo", path = "agents/**/*.md", version = "v1.0.0" }
     /// ```
     pub path: String,
 
@@ -1050,6 +1062,7 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+
     /// Custom filename for this dependency.
     ///
     /// Overrides the default filename (which is based on the dependency key).
@@ -1385,6 +1398,15 @@ impl Manifest {
                 .into());
             }
 
+            // Validate pattern safety if it's a pattern dependency
+            if dep.is_pattern() {
+                crate::pattern::validate_pattern_safety(dep.get_path()).map_err(|e| {
+                    crate::core::CcpmError::ManifestValidationError {
+                        reason: format!("Invalid pattern in dependency '{}': {}", name, e),
+                    }
+                })?;
+            }
+
             // Check for version when source is specified (non-local dependencies)
             if let Some(source) = dep.get_source() {
                 if !self.sources.contains_key(source) {
@@ -1412,19 +1434,22 @@ impl Manifest {
                 }
             } else {
                 // For local path dependencies (no source), version is not allowed
-                let path = dep.get_path();
-                let is_plain_dir =
-                    path.starts_with('/') || path.starts_with("./") || path.starts_with("../");
+                // Skip directory check for pattern dependencies
+                if !dep.is_pattern() {
+                    let path = dep.get_path();
+                    let is_plain_dir =
+                        path.starts_with('/') || path.starts_with("./") || path.starts_with("../");
 
-                if is_plain_dir && dep.get_version().is_some() {
-                    return Err(crate::core::CcpmError::ManifestValidationError {
-                        reason: format!(
-                            "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
-                            Plain directory dependencies do not support versions. \n\
+                    if is_plain_dir && dep.get_version().is_some() {
+                        return Err(crate::core::CcpmError::ManifestValidationError {
+                            reason: format!(
+                                "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
+                                Plain directory dependencies do not support versions. \n\
                             Remove the 'version' field or use a git source instead."
                         ),
                     }
                     .into());
+                    }
                 }
             }
         }
@@ -2045,6 +2070,19 @@ impl ResourceDependency {
             ResourceDependency::Simple(path) => path,
             ResourceDependency::Detailed(d) => &d.path,
         }
+    }
+
+    /// Check if this is a pattern-based dependency.
+    ///
+    /// Returns `true` if this dependency uses a glob pattern to match
+    /// multiple resources, `false` if it specifies a single resource path.
+    ///
+    /// Patterns are detected by the presence of glob characters (`*`, `?`, `[`)
+    /// in the path field.
+    #[must_use]
+    pub fn is_pattern(&self) -> bool {
+        let path = self.get_path();
+        path.contains('*') || path.contains('?') || path.contains('[')
     }
 
     /// Get the version constraint for dependency resolution.
@@ -2969,6 +3007,100 @@ mod tests {
         let dep = loaded.get_dependency("my-agent").unwrap();
         assert_eq!(dep.get_filename(), Some("simple-name.txt"));
         assert_eq!(dep.get_path(), "agents/complex-name.md");
+    }
+
+    #[test]
+    fn test_pattern_dependency() {
+        let dep = ResourceDependency::Detailed(DetailedDependency {
+            source: Some("repo".to_string()),
+            path: "agents/**/*.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: None,
+            filename: None,
+        });
+
+        assert!(dep.is_pattern());
+        assert_eq!(dep.get_path(), "agents/**/*.md");
+        assert!(!dep.is_local());
+    }
+
+    #[test]
+    fn test_pattern_dependency_validation() {
+        let mut manifest = Manifest::new();
+        manifest.sources.insert(
+            "repo".to_string(),
+            "https://github.com/example/repo.git".to_string(),
+        );
+
+        // Valid pattern dependency (uses glob characters in path)
+        manifest.agents.insert(
+            "ai-agents".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("repo".to_string()),
+                path: "agents/ai/*.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+
+        assert!(manifest.validate().is_ok());
+
+        // Valid: regular dependency (no glob characters)
+        manifest.agents.insert(
+            "regular".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("repo".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+
+        let result = manifest.validate();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_pattern_dependency_with_path_traversal() {
+        let mut manifest = Manifest::new();
+        manifest.sources.insert(
+            "repo".to_string(),
+            "https://github.com/example/repo.git".to_string(),
+        );
+
+        // Pattern with path traversal (using path field now)
+        manifest.agents.insert(
+            "unsafe".to_string(),
+            ResourceDependency::Detailed(DetailedDependency {
+                source: Some("repo".to_string()),
+                path: "../../../etc/*.conf".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+        );
+
+        let result = manifest.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid pattern"));
     }
 
     #[test]

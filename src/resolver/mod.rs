@@ -382,11 +382,32 @@ impl DependencyResolver {
                 pb.set_message(format!("Resolving {name}"));
             }
 
-            let entry = self.resolve_dependency(&name, &dep).await?;
-            resolved.insert(name.to_string(), entry);
+            // Check if this is a pattern dependency
+            if dep.is_pattern() {
+                // Pattern dependencies resolve to multiple resources
+                let entries = self.resolve_pattern_dependency(&name, &dep).await?;
+
+                // Add each resolved entry to the appropriate resource type
+                for entry in entries {
+                    let resource_type = self.get_resource_type(&name);
+                    match resource_type.as_str() {
+                        "agent" => lockfile.agents.push(entry),
+                        "snippet" => lockfile.snippets.push(entry),
+                        "command" => lockfile.commands.push(entry),
+                        "script" => lockfile.scripts.push(entry),
+                        "hook" => lockfile.hooks.push(entry),
+                        "mcp-server" => lockfile.mcp_servers.push(entry),
+                        _ => lockfile.snippets.push(entry), // Default fallback
+                    }
+                }
+            } else {
+                // Regular single dependency
+                let entry = self.resolve_dependency(&name, &dep).await?;
+                resolved.insert(name.to_string(), entry);
+            }
         }
 
-        // Add resolved entries to lockfile
+        // Add resolved single entries to lockfile
         for (name, entry) in resolved {
             let resource_type = self.get_resource_type(&name);
             // Add entry based on resource type
@@ -453,6 +474,16 @@ impl DependencyResolver {
         name: &str,
         dep: &ResourceDependency,
     ) -> Result<LockedResource> {
+        // Check if this is a pattern-based dependency
+        if dep.is_pattern() {
+            // Pattern dependencies resolve to multiple resources
+            // This should be handled by a separate method
+            return Err(anyhow::anyhow!(
+                "Pattern dependency '{}' should be resolved using resolve_pattern_dependency",
+                name
+            ));
+        }
+
         if dep.is_local() {
             // Local dependency - just create entry with path
             // Determine the installed location based on resource type, custom target, and custom filename
@@ -599,6 +630,172 @@ impl DependencyResolver {
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
             })
+        }
+    }
+
+    /// Resolves a pattern-based dependency to multiple locked resources.
+    ///
+    /// Pattern dependencies match multiple resources using glob patterns,
+    /// enabling batch installation of related resources.
+    ///
+    /// # Process
+    ///
+    /// 1. Sync the source repository
+    /// 2. Checkout the specified version (if any)
+    /// 3. Search for files matching the pattern
+    /// 4. Create a locked resource for each match
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: The dependency name (used for the collection)
+    /// - `dep`: The pattern-based dependency specification
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`LockedResource`] entries, one for each matched file.
+    async fn resolve_pattern_dependency(
+        &mut self,
+        name: &str,
+        dep: &ResourceDependency,
+    ) -> Result<Vec<LockedResource>> {
+        // Pattern dependencies use the path field with glob characters
+        if !dep.is_pattern() {
+            return Err(anyhow::anyhow!(
+                "Expected pattern dependency but no glob characters found in path"
+            ));
+        }
+
+        let pattern = dep.get_path();
+
+        if dep.is_local() {
+            // Local pattern dependency - search in filesystem
+            let base_path = PathBuf::from(".");
+            let pattern_resolver = crate::pattern::PatternResolver::new();
+            let matches = pattern_resolver.resolve(pattern, &base_path)?;
+
+            let resource_type = self.get_resource_type(name);
+            let mut resources = Vec::new();
+
+            for matched_path in matches {
+                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+                // Determine the target directory
+                let target_dir = if let Some(custom_target) = dep.get_target() {
+                    format!(
+                        ".claude/{}",
+                        custom_target
+                            .trim_start_matches(".claude/")
+                            .trim_start_matches('/')
+                    )
+                } else {
+                    match resource_type.as_str() {
+                        "agent" => self.manifest.target.agents.clone(),
+                        "snippet" => self.manifest.target.snippets.clone(),
+                        "command" => self.manifest.target.commands.clone(),
+                        "script" => self.manifest.target.scripts.clone(),
+                        "hook" => self.manifest.target.hooks.clone(),
+                        "mcp-server" => self.manifest.target.mcp_servers.clone(),
+                        _ => self.manifest.target.snippets.clone(),
+                    }
+                };
+
+                let extension = matched_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("md");
+                let filename = format!("{}.{}", resource_name, extension);
+                let installed_at = format!("{}/{}", target_dir, filename);
+
+                resources.push(LockedResource {
+                    name: resource_name.clone(),
+                    source: None,
+                    url: None,
+                    path: matched_path.to_string_lossy().to_string(),
+                    version: None,
+                    resolved_commit: None,
+                    checksum: String::new(),
+                    installed_at,
+                });
+            }
+
+            Ok(resources)
+        } else {
+            // Remote pattern dependency - need to sync and search
+            let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
+                message: format!("Pattern dependency '{name}' has no source specified"),
+            })?;
+
+            let source_url = self
+                .source_manager
+                .get_source_url(source_name)
+                .ok_or_else(|| CcpmError::SourceNotFound {
+                    name: source_name.to_string(),
+                })?;
+
+            // Sync the source repository
+            let repo = self.source_manager.sync(source_name, None).await?;
+
+            // Checkout specific version if specified
+            let (resolved_version, resolved_commit) = if let Some(version) = dep.get_version() {
+                self.checkout_version_with_resolved(&repo, version).await?
+            } else {
+                let commit = self.get_current_commit(&repo).await?;
+                (None, commit)
+            };
+
+            // Search for matching files in the repository
+            let pattern_resolver = crate::pattern::PatternResolver::new();
+            let repo_path = Path::new(repo.path());
+            let matches = pattern_resolver.resolve(pattern, repo_path)?;
+
+            let resource_type = self.get_resource_type(name);
+            let mut resources = Vec::new();
+
+            for matched_path in matches {
+                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+                // Determine the target directory
+                let target_dir = if let Some(custom_target) = dep.get_target() {
+                    format!(
+                        ".claude/{}",
+                        custom_target
+                            .trim_start_matches(".claude/")
+                            .trim_start_matches('/')
+                    )
+                } else {
+                    match resource_type.as_str() {
+                        "agent" => self.manifest.target.agents.clone(),
+                        "snippet" => self.manifest.target.snippets.clone(),
+                        "command" => self.manifest.target.commands.clone(),
+                        "script" => self.manifest.target.scripts.clone(),
+                        "hook" => self.manifest.target.hooks.clone(),
+                        "mcp-server" => self.manifest.target.mcp_servers.clone(),
+                        _ => self.manifest.target.snippets.clone(),
+                    }
+                };
+
+                let extension = matched_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("md");
+                let filename = format!("{}.{}", resource_name, extension);
+                let installed_at = format!("{}/{}", target_dir, filename);
+
+                resources.push(LockedResource {
+                    name: resource_name.clone(),
+                    source: Some(source_name.to_string()),
+                    url: Some(source_url.clone()),
+                    path: matched_path.to_string_lossy().to_string(),
+                    version: resolved_version
+                        .clone()
+                        .or_else(|| dep.get_version().map(std::string::ToString::to_string)),
+                    resolved_commit: Some(resolved_commit.clone()),
+                    checksum: String::new(),
+                    installed_at,
+                });
+            }
+
+            Ok(resources)
         }
     }
 

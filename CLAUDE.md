@@ -14,6 +14,7 @@ work seamlessly on Windows, macOS, and Linux with comprehensive cross-platform p
 - **Dependency Management**: Lockfile-based (ccpm.toml + ccpm.lock) like Cargo
 - **Configuration Format**: TOML for manifest and lockfile
 - **Resource Format**: Markdown files (.md) for agents, snippets, and commands; JSON files (.json) for hooks and MCP servers; executable files (.sh, .js, .py) for scripts
+- **Pattern Dependencies**: Glob patterns in path field (e.g., `agents/*.md`, `**/*.md`) to install multiple resources at once
 - **MCP Servers**: JSON configuration files installed to `.mcp.json` for Claude Code
 - **Hooks**: JSON configuration files configured in `.claude/settings.local.json`
 - **CLI Framework**: Using Clap for command-line parsing
@@ -38,6 +39,7 @@ ccpm/
 │   ├── markdown/         # Markdown file operations
 │   ├── mcp/              # MCP server management
 │   ├── models/           # Data models and structures
+│   ├── pattern/          # Pattern matching for glob dependencies
 │   ├── resolver/         # Dependency resolution
 │   ├── source/           # Source repository operations
 │   ├── test_utils/       # Testing utilities and fixtures
@@ -157,6 +159,7 @@ The project includes specialized commands for development workflows:
 - `regex` (1.11) - Regular expression matching
 - `futures` (0.3) - Async programming primitives
 - `fs4` (0.13) - Extended file system operations with locking
+- `glob` (0.3) - Pattern matching for glob-based dependencies
 
 ### Development Dependencies
 - `assert_cmd` (2.0) - Command-line testing utilities
@@ -255,6 +258,7 @@ The codebase is organized into logical modules:
 - **markdown/** - Markdown file operations and frontmatter extraction
 - **mcp/** - MCP server configuration and .mcp.json management
 - **models/** - Data models for dependencies and resources
+- **pattern/** - Pattern matching for glob-based dependencies (e.g., `agents/*.md`)
 - **resolver/** - Dependency resolution, version matching, and conflict detection
 - **source/** - Source repository management and caching
 - **test_utils/** - Testing utilities, fixtures, and environment setup
@@ -354,6 +358,7 @@ The `tests/` directory contains comprehensive integration tests:
 - `integration_gitignore.rs` - Gitignore generation and management
 - `integration_list.rs` - List command functionality
 - `integration_multi_resource.rs` - Multi-resource installation and management
+- `integration_pattern.rs` - Pattern-based dependency installation using glob patterns
 - `integration_redundancy.rs` - Redundancy detection and handling
 - `integration_test_helpers_example.rs` - Test helper utility examples
 - `integration_validate.rs` - Manifest and lockfile validation
@@ -431,11 +436,18 @@ community = "https://github.com/aig787/ccpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
 [agents]
+# Single file dependency
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 local-agent = { path = "../local-agents/helper.md" }  # Direct local path
 
+# Pattern-based dependencies (glob patterns in path field)
+ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # All AI agents
+review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }  # All review agents recursively
+
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
+# Pattern for all Python snippets
+python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [commands]
 deployment = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
