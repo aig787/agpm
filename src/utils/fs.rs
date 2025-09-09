@@ -2570,10 +2570,10 @@ mod tests {
         // Test that we can get a cache directory (using the config module)
         // Without setting env vars (to avoid race conditions in parallel tests)
         let cache_dir = crate::config::get_cache_dir().unwrap();
-        
+
         // The cache directory should be a valid non-empty path
         assert!(!cache_dir.as_os_str().is_empty());
-        
+
         // When no env var is set, it should contain "ccpm" in its path
         // (unless CCPM_CACHE_DIR is already set in the test environment)
         if std::env::var("CCPM_CACHE_DIR").is_err() {

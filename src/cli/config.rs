@@ -1302,11 +1302,8 @@ mod tests {
         };
 
         // Verify the command is constructed correctly
-        assert!(matches!(
-            cmd.command,
-            Some(ConfigSubcommands::Edit)
-        ));
-        
+        assert!(matches!(cmd.command, Some(ConfigSubcommands::Edit)));
+
         // Note: We cannot safely test the actual execution of the edit command
         // because it would either:
         // 1. Open an actual editor (hangs in CI)
@@ -1449,12 +1446,12 @@ mod tests {
     async fn test_editor_fallback_logic() {
         // Test the editor selection logic conceptually
         // We cannot safely test with actual environment variables in parallel tests
-        
+
         // The logic in edit() is:
         // 1. Check EDITOR env var
         // 2. Fall back to VISUAL env var
         // 3. Fall back to "notepad" on Windows or "vi" on Unix
-        
+
         // Verify the default fallback values are correct for each platform
         if cfg!(target_os = "windows") {
             // On Windows, default should be notepad
@@ -1465,7 +1462,7 @@ mod tests {
             let default = "vi";
             assert_eq!(default, "vi");
         }
-        
+
         // Note: We cannot test the actual environment variable checking
         // because std::env::set_var causes race conditions in parallel tests
     }
