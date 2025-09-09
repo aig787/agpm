@@ -1,6 +1,6 @@
 [package]
 name = "ccpm"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Aaron Griffin <aig787@icloud.com>"]
 description = "Claude Code Package Manager - A Git-based package manager for Claude agents"
