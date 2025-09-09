@@ -2645,9 +2645,16 @@ mod tests {
         let mut manifest = Manifest::new();
 
         // Add dependency with non-existent absolute path
+        // Use platform-specific absolute path
+        let nonexistent_path = if cfg!(windows) {
+            "C:\\nonexistent\\path\\agent.md"
+        } else {
+            "/nonexistent/path/agent.md"
+        };
+        
         manifest.add_dependency(
             "missing-agent".to_string(),
-            ResourceDependency::Simple("/nonexistent/path/agent.md".to_string()),
+            ResourceDependency::Simple(nonexistent_path.to_string()),
             true,
         );
 
