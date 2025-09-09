@@ -285,7 +285,7 @@ temp/
 
 #[test]
 fn test_gitignore_preserves_content_after_ccpm_section() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
