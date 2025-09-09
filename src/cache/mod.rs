@@ -132,7 +132,8 @@
 //! ```rust,no_run
 //! use ccpm::cache::Cache;
 //!
-//! # async fn maintenance() -> anyhow::Result<()> {
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
 //! let cache = Cache::new()?;
 //!
 //! // Check cache size
