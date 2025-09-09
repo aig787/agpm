@@ -11,18 +11,18 @@ async fn setup_test_repo(path: &std::path::Path, name: &str) -> anyhow::Result<(
         .args(["init"])
         .current_dir(path)
         .output()?;
-    
+
     // Configure git
     std::process::Command::new("git")
         .args(["config", "user.email", "test@example.com"])
         .current_dir(path)
         .output()?;
-    
+
     std::process::Command::new("git")
         .args(["config", "user.name", "Test User"])
         .current_dir(path)
         .output()?;
-    
+
     // Create initial commit
     std::fs::write(path.join("README.md"), format!("# {}", name))?;
     std::process::Command::new("git")
@@ -33,13 +33,13 @@ async fn setup_test_repo(path: &std::path::Path, name: &str) -> anyhow::Result<(
         .args(["commit", "-m", "Initial commit"])
         .current_dir(path)
         .output()?;
-    
+
     // Create v1.0.0 tag
     std::process::Command::new("git")
         .args(["tag", "v1.0.0"])
         .current_dir(path)
         .output()?;
-    
+
     // Second commit and tag
     std::fs::write(path.join("file.txt"), "v2 content")?;
     std::process::Command::new("git")
@@ -54,7 +54,7 @@ async fn setup_test_repo(path: &std::path::Path, name: &str) -> anyhow::Result<(
         .args(["tag", "v2.0.0"])
         .current_dir(path)
         .output()?;
-    
+
     Ok(())
 }
 
@@ -62,30 +62,30 @@ async fn setup_test_repo(path: &std::path::Path, name: &str) -> anyhow::Result<(
 async fn test_worktree_basic_operations() {
     let cache_dir = TempDir::new().unwrap();
     let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
-    
+
     let repo_dir = TempDir::new().unwrap();
     setup_test_repo(repo_dir.path(), "test-repo").await.unwrap();
-    
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Get worktree for v1.0.0
     let worktree1 = cache
         .get_or_clone_source_worktree("test-repo", &repo_url, Some("v1.0.0"))
         .await
         .unwrap();
-    
+
     assert!(worktree1.exists());
     assert!(worktree1.join(".git").exists());
-    
+
     // Get worktree for v2.0.0
     let worktree2 = cache
         .get_or_clone_source_worktree("test-repo", &repo_url, Some("v2.0.0"))
         .await
         .unwrap();
-    
+
     assert!(worktree2.exists());
     assert_ne!(worktree1, worktree2); // Different worktrees
-    
+
     // Cleanup
     cache.cleanup_worktree(&worktree1).await.unwrap();
     cache.cleanup_worktree(&worktree2).await.unwrap();
@@ -95,12 +95,12 @@ async fn test_worktree_basic_operations() {
 async fn test_worktree_with_context() {
     let cache_dir = TempDir::new().unwrap();
     let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
-    
+
     let repo_dir = TempDir::new().unwrap();
     setup_test_repo(repo_dir.path(), "test-repo").await.unwrap();
-    
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Test with context for better logging
     let worktree = cache
         .get_or_clone_source_worktree_with_context(
@@ -111,9 +111,9 @@ async fn test_worktree_with_context() {
         )
         .await
         .unwrap();
-    
+
     assert!(worktree.exists());
-    
+
     // Cleanup
     cache.cleanup_worktree(&worktree).await.unwrap();
 }
@@ -122,19 +122,21 @@ async fn test_worktree_with_context() {
 async fn test_worktree_parallel_access() {
     let cache_dir = TempDir::new().unwrap();
     let cache = Arc::new(Cache::with_dir(cache_dir.path().to_path_buf()).unwrap());
-    
+
     let repo_dir = TempDir::new().unwrap();
-    setup_test_repo(repo_dir.path(), "parallel-repo").await.unwrap();
-    
+    setup_test_repo(repo_dir.path(), "parallel-repo")
+        .await
+        .unwrap();
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Spawn multiple tasks requesting different versions concurrently
     let mut handles = vec![];
     for i in 0..4 {
         let cache = cache.clone();
         let url = repo_url.clone();
         let version = if i % 2 == 0 { "v1.0.0" } else { "v2.0.0" };
-        
+
         let handle = tokio::spawn(async move {
             cache
                 .get_or_clone_source_worktree(&format!("parallel-repo-{}", i), &url, Some(version))
@@ -142,7 +144,7 @@ async fn test_worktree_parallel_access() {
         });
         handles.push(handle);
     }
-    
+
     // All should succeed without conflicts
     let mut worktrees = vec![];
     for handle in handles {
@@ -150,12 +152,12 @@ async fn test_worktree_parallel_access() {
         assert!(result.is_ok());
         worktrees.push(result.unwrap());
     }
-    
+
     // Verify all worktrees exist
     for worktree in &worktrees {
         assert!(worktree.exists());
     }
-    
+
     // Cleanup
     for worktree in worktrees {
         cache.cleanup_worktree(&worktree).await.unwrap();
@@ -166,26 +168,28 @@ async fn test_worktree_parallel_access() {
 async fn test_worktree_cleanup_lifecycle() {
     let cache_dir = TempDir::new().unwrap();
     let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
-    
+
     let repo_dir = TempDir::new().unwrap();
-    setup_test_repo(repo_dir.path(), "cleanup-repo").await.unwrap();
-    
+    setup_test_repo(repo_dir.path(), "cleanup-repo")
+        .await
+        .unwrap();
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Create worktree
     let worktree = cache
         .get_or_clone_source_worktree("cleanup-repo", &repo_url, Some("v1.0.0"))
         .await
         .unwrap();
-    
+
     assert!(worktree.exists());
-    
+
     // Clean up worktree
     cache.cleanup_worktree(&worktree).await.unwrap();
-    
+
     // Verify it's removed
     assert!(!worktree.exists());
-    
+
     // Cleanup should be idempotent
     cache.cleanup_worktree(&worktree).await.unwrap();
 }
@@ -194,29 +198,31 @@ async fn test_worktree_cleanup_lifecycle() {
 async fn test_cleanup_all_worktrees() {
     let cache_dir = TempDir::new().unwrap();
     let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
-    
+
     let repo_dir = TempDir::new().unwrap();
-    setup_test_repo(repo_dir.path(), "cleanup-all-repo").await.unwrap();
-    
+    setup_test_repo(repo_dir.path(), "cleanup-all-repo")
+        .await
+        .unwrap();
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Create multiple worktrees
     let worktree1 = cache
         .get_or_clone_source_worktree("cleanup-all-1", &repo_url, Some("v1.0.0"))
         .await
         .unwrap();
-    
+
     let worktree2 = cache
         .get_or_clone_source_worktree("cleanup-all-2", &repo_url, Some("v2.0.0"))
         .await
         .unwrap();
-    
+
     assert!(worktree1.exists());
     assert!(worktree2.exists());
-    
+
     // Clean up all worktrees at once
     cache.cleanup_all_worktrees().await.unwrap();
-    
+
     // Verify all are removed
     assert!(!worktree1.exists());
     assert!(!worktree2.exists());
@@ -227,28 +233,28 @@ async fn test_semaphore_limits_concurrent_operations() {
     // This test validates that the GIT_SEMAPHORE actually limits concurrent operations
     let cache_dir = TempDir::new().unwrap();
     let cache = Arc::new(Cache::with_dir(cache_dir.path().to_path_buf()).unwrap());
-    
+
     let repo_dir = TempDir::new().unwrap();
-    
+
     // Create a larger repo for longer operations
     std::process::Command::new("git")
         .args(["init"])
         .current_dir(repo_dir.path())
         .output()
         .unwrap();
-    
+
     std::process::Command::new("git")
         .args(["config", "user.email", "test@example.com"])
         .current_dir(repo_dir.path())
         .output()
         .unwrap();
-    
+
     std::process::Command::new("git")
         .args(["config", "user.name", "Test User"])
         .current_dir(repo_dir.path())
         .output()
         .unwrap();
-    
+
     // Create multiple commits and tags
     for i in 0..10 {
         std::fs::write(
@@ -272,39 +278,44 @@ async fn test_semaphore_limits_concurrent_operations() {
             .output()
             .unwrap();
     }
-    
+
     let repo_url = format!("file://{}", repo_dir.path().display());
-    
+
     // Expected limit is 3 * CPU count
     let expected_limit = std::thread::available_parallelism()
         .map(|n| n.get())
-        .unwrap_or(4) * 3;
-    
+        .unwrap_or(4)
+        * 3;
+
     // Spawn many tasks (more than the semaphore limit)
     let mut handles = vec![];
     for i in 0..expected_limit * 2 {
         let cache = cache.clone();
         let url = repo_url.clone();
         let version = format!("v{}.0.0", i % 10);
-        
+
         let handle = tokio::spawn(async move {
             // Note: We can't accurately measure semaphore-limited concurrency from outside
             // because the semaphore is acquired inside the cache methods.
             // This test just verifies operations complete successfully.
-            
+
             // Perform the operation
             let result = cache
-                .get_or_clone_source_worktree(&format!("semaphore-test-{}", i), &url, Some(&version))
+                .get_or_clone_source_worktree(
+                    &format!("semaphore-test-{}", i),
+                    &url,
+                    Some(&version),
+                )
                 .await;
-            
+
             result
         });
         handles.push(handle);
-        
+
         // Small delay to allow operations to start
         tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
     }
-    
+
     // Wait for all operations to complete
     let mut worktrees = vec![];
     for handle in handles {
@@ -313,21 +324,21 @@ async fn test_semaphore_limits_concurrent_operations() {
             worktrees.push(worktree);
         }
     }
-    
+
     // Since the semaphore is internal to the cache operations, we can't directly
     // measure concurrent operations from here. The test verifies that all operations
     // complete successfully, which indicates the semaphore is preventing deadlocks
     // and resource exhaustion.
-    
+
     println!("Successfully created {} worktrees", worktrees.len());
     println!("Expected limit would be: {}", expected_limit);
-    
+
     // Verify we got a reasonable number of successful operations
     assert!(
         !worktrees.is_empty(),
         "No worktrees were created successfully"
     );
-    
+
     // Cleanup
     for worktree in worktrees {
         cache.cleanup_worktree(&worktree).await.ok();

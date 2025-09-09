@@ -2651,7 +2651,7 @@ mod tests {
         } else {
             "/nonexistent/path/agent.md"
         };
-        
+
         manifest.add_dependency(
             "missing-agent".to_string(),
             ResourceDependency::Simple(nonexistent_path.to_string()),

@@ -594,13 +594,14 @@ impl Cache {
                     .acquire()
                     .await
                     .map_err(|e| anyhow::anyhow!("Failed to acquire git semaphore: {}", e))?;
-                
+
                 if let Some(ctx) = context {
                     println!("📦 ({ctx}) Cloning bare repository: {url}...");
                 } else {
                     println!("📦 Cloning bare repository {url} to cache...");
                 }
-                let repo = GitRepo::clone_bare_with_context(url, &bare_repo_dir, None, context).await?;
+                let repo =
+                    GitRepo::clone_bare_with_context(url, &bare_repo_dir, None, context).await?;
                 drop(_permit); // Release semaphore after clone completes
                 repo
             } else {
