@@ -116,7 +116,7 @@ fn create_test_source_files(source_dir: &Path) -> Result<()> {
 
 #[test]
 fn test_gitignore_enabled_by_default() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -156,7 +156,7 @@ fn test_gitignore_enabled_by_default() {
 
 #[test]
 fn test_gitignore_explicitly_enabled() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -194,7 +194,7 @@ fn test_gitignore_explicitly_enabled() {
 
 #[test]
 fn test_gitignore_disabled() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -229,7 +229,7 @@ fn test_gitignore_disabled() {
 
 #[test]
 fn test_gitignore_preserves_user_entries() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -285,7 +285,7 @@ temp/
 
 #[test]
 fn test_gitignore_update_command() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -319,7 +319,7 @@ fn test_gitignore_update_command() {
 
 #[test]
 fn test_gitignore_handles_external_paths() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
@@ -411,7 +411,7 @@ installed_at = ".claude/agents/internal.md"
 
 #[test]
 fn test_gitignore_empty_lockfile() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -450,7 +450,7 @@ fn test_gitignore_empty_lockfile() {
 
 #[test]
 fn test_gitignore_idempotent() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -508,7 +508,7 @@ fn test_gitignore_idempotent() {
 
 #[test]
 fn test_gitignore_switch_enabled_disabled() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -583,7 +583,7 @@ fn test_gitignore_switch_enabled_disabled() {
 
 #[test]
 fn test_gitignore_actually_ignored_by_git() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     use std::process::Command as StdCommand;
 
     let temp = TempDir::new().unwrap();
@@ -721,7 +721,7 @@ fn test_gitignore_actually_ignored_by_git() {
 
 #[test]
 fn test_gitignore_disabled_files_not_ignored_by_git() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     use std::process::Command as StdCommand;
 
     let temp = TempDir::new().unwrap();
@@ -816,7 +816,7 @@ fn test_gitignore_disabled_files_not_ignored_by_git() {
 
 #[test]
 fn test_gitignore_malformed_existing() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");

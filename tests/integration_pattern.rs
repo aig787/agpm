@@ -11,7 +11,7 @@ use fixtures::{path_to_file_url, TestEnvironment};
 /// Test installing dependencies using glob patterns.
 #[test]
 fn test_pattern_based_installation() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("test_repo");
@@ -147,7 +147,7 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
 /// Test pattern dependencies with custom target directories.
 #[test]
 fn test_pattern_with_custom_target() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("test_repo");
@@ -211,7 +211,7 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
 /// Test pattern dependencies with version constraints.
 #[test]
 fn test_pattern_with_versions() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("test_repo");
@@ -285,7 +285,7 @@ v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
 /// Test local filesystem patterns.
 #[test]
 fn test_local_pattern_dependencies() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
 
@@ -338,7 +338,7 @@ local-agents = {{ path = "{}/agents/local*.md" }}
 /// Test error handling for invalid patterns.
 #[test]
 fn test_invalid_pattern_error() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
 
@@ -366,7 +366,7 @@ unsafe = { source = "test-repo", path = "../../../etc/*.conf", version = "latest
 #[test]
 #[ignore = "Performance test - run manually"]
 fn test_pattern_performance() -> Result<()> {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("test_repo");

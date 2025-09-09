@@ -11,7 +11,7 @@ static INIT: Once = Once::new();
 pub fn init_test_env() {
     INIT.call_once(|| {
         // Use the shared logging initialization
-        ccpm::test_utils::init_test_logging();
+        ccpm::test_utils::init_test_logging(None);
 
         // Set test-specific environment variables
         std::env::set_var("CCPM_TEST_MODE", "1");

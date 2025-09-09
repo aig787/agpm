@@ -138,21 +138,25 @@ CCPM uses file locking to prevent corruption during concurrent operations:
 
 ```
 ~/.ccpm/cache/
-├── github.com/
-│   ├── org1/
-│   │   └── repo1/
-│   └── org2/
-│       └── repo2/
-└── gitlab.com/
-    └── org3/
-        └── repo3/
+├── sources/                 # Bare repositories for worktrees
+│   ├── github_org1_repo1.git/
+│   ├── github_org2_repo2.git/
+│   └── gitlab_org3_repo3.git/
+├── worktrees/              # Temporary worktrees for parallel access
+│   ├── github_org1_repo1_uuid1/
+│   ├── github_org1_repo1_uuid2/
+│   └── github_org2_repo2_uuid3/
+└── .locks/                 # Lock files for concurrency
+    ├── github_org1_repo1.lock
+    └── github_org2_repo2.lock
 ```
 
 ### Cache Operations
 
-- **Initial clone** - Full repository clone
-- **Updates** - Incremental fetch
-- **Cleanup** - Remove unused repositories
+- **Initial clone** - Clone as bare repository for worktree support
+- **Updates** - Incremental fetch to bare repository
+- **Worktree creation** - Create temporary worktrees for parallel access
+- **Cleanup** - Remove unused repositories and stale worktrees
 - **Bypass** - `--no-cache` flag for fresh clones
 
 ## Security Model
@@ -182,9 +186,10 @@ CCPM uses file locking to prevent corruption during concurrent operations:
 
 ### Parallel Operations
 
-- Concurrent repository fetches
-- Parallel file copying
+- Concurrent repository fetches with worktrees
+- Parallel file copying from independent worktrees
 - Async I/O with Tokio
+- Global semaphore limiting Git operations (3 * CPU cores)
 - Configurable parallelism level
 
 ### Incremental Updates
@@ -263,6 +268,78 @@ Each error includes:
 - Fixture repositories
 - Isolated temp directories
 - No global state
+
+## Worktree Support
+
+CCPM uses Git worktrees for parallel-safe operations, enabling concurrent access to different versions of the same repository.
+
+### Benefits
+
+- **Parallel Safety** - Multiple tasks can access different versions simultaneously
+- **Performance** - Eliminates blocking on shared repository state
+- **Resource Efficiency** - Single bare repository supports multiple concurrent checkouts
+- **Version Isolation** - Each worktree can be at a different commit/tag/branch
+
+### Implementation
+
+1. **Bare Repository** - Each source is cloned as a bare repository (`repo.git`)
+2. **Worktree Creation** - Temporary worktrees created with unique UUIDs
+3. **Parallel Access** - Multiple worktrees enable concurrent read operations
+4. **Cleanup** - Worktrees removed after use, bare repo remains cached
+
+### Directory Structure
+
+```
+~/.ccpm/cache/sources/github_owner_repo.git/  # Bare repository
+~/.ccpm/cache/worktrees/
+├── github_owner_repo_uuid-1/                # Worktree at v1.0.0
+├── github_owner_repo_uuid-2/                # Worktree at v2.0.0
+└── github_owner_repo_uuid-3/                # Worktree at main branch
+```
+
+## Concurrency Control
+
+CCPM implements multiple layers of concurrency control for safe parallel operations.
+
+### Global Git Semaphore
+
+- **Purpose** - Prevents CPU overload from too many concurrent Git processes
+- **Limit** - 3 × CPU core count (detected at runtime)
+- **Scope** - All Git operations (clone, fetch, worktree creation)
+- **Benefit** - Stable performance under heavy parallel load
+
+### File Locking
+
+- **Per-source locks** - Each repository source has its own lock file
+- **Atomic operations** - Lock acquisition prevents race conditions
+- **Cross-process safety** - Multiple CCPM instances can run safely
+- **Platform-agnostic** - Uses `fs4` crate for cross-platform compatibility
+
+### Worktree Isolation
+
+- **Unique paths** - Each worktree has a UUID-based directory name
+- **No conflicts** - Multiple versions can be checked out simultaneously
+- **Fast cleanup** - Directory removal without Git commands
+- **Reusable cache** - Bare repositories shared across operations
+
+### Enhanced Logging
+
+CCPM now provides context-aware logging for better debugging and monitoring.
+
+### Features
+
+- **Context propagation** - Dependency names included in Git operation logs
+- **Structured logging** - Uses `target="git"` for filtering Git operations
+- **Clean output** - Avoids redundant prefixes in user-facing messages
+- **Debug information** - Detailed operation tracking for troubleshooting
+
+### Example Output
+
+```bash
+# Context-aware logging
+DEBUG git: (rust-helper) Cloning bare repository: https://github.com/example/repo.git
+DEBUG git: (rust-helper) Creating worktree: repo @ v1.0.0
+```
 
 ## Future Considerations
 

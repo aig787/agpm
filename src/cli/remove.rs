@@ -431,12 +431,36 @@ async fn remove_dependency_with_manifest_path(
         format!("Removed {} '{}'", dep_type_display, name).green()
     );
 
+    let project_root = manifest_path.parent().unwrap();
+
+    // For MCP servers and hooks, also update the settings file
+    let settings_path = project_root.join(".claude/settings.local.json");
+    if settings_path.exists() {
+        match resource_type {
+            ResourceType::McpServer => {
+                let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
+                if let Some(servers) = &mut settings.mcp_servers {
+                    servers.remove(name);
+                }
+                settings.save(&settings_path)?;
+            }
+            ResourceType::Hook => {
+                let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
+                if let Some(hooks) = &mut settings.hooks {
+                    if let Some(hooks_obj) = hooks.as_object_mut() {
+                        hooks_obj.remove(name);
+                    }
+                }
+                settings.save(&settings_path)?;
+            }
+            _ => {}
+        }
+    }
+
     // Update lockfile and remove installed files
     let lockfile_path = manifest_path.parent().unwrap().join("ccpm.lock");
-
     if lockfile_path.exists() {
         let mut lockfile = LockFile::load(&lockfile_path)?;
-        let project_root = manifest_path.parent().unwrap();
 
         // Find the installed file path and remove it
         let installed_path = get_installed_path_from_lockfile(
@@ -453,30 +477,6 @@ async fn remove_dependency_with_manifest_path(
                 tokio::fs::remove_file(&path).await.with_context(|| {
                     format!("Failed to remove installed file: {}", path.display())
                 })?;
-            }
-        }
-
-        // For MCP servers and hooks, also update the settings file
-        let settings_path = project_root.join(".claude/settings.local.json");
-        if settings_path.exists() {
-            match resource_type {
-                ResourceType::McpServer => {
-                    let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
-                    if let Some(servers) = &mut settings.mcp_servers {
-                        servers.remove(name);
-                    }
-                    settings.save(&settings_path)?;
-                }
-                ResourceType::Hook => {
-                    let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
-                    if let Some(hooks) = &mut settings.hooks {
-                        if let Some(hooks_obj) = hooks.as_object_mut() {
-                            hooks_obj.remove(name);
-                        }
-                    }
-                    settings.save(&settings_path)?;
-                }
-                _ => {}
             }
         }
 
@@ -1294,5 +1294,165 @@ test-snippet = "../local/snippet.md"
             0,
             "Source should be removed from lockfile"
         );
+    }
+
+    #[tokio::test]
+    async fn test_remove_mcp_server_updates_settings() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let settings_dir = temp.path().join(".claude");
+        let settings_path = settings_dir.join("settings.local.json");
+
+        // Create manifest with MCP server
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+test-server = "../mcp/test-server.json"
+[scripts]
+[hooks]
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        // Create .claude directory and settings file
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_content = r#"
+{
+  "mcpServers": {
+    "test-server": {
+      "command": "node",
+      "args": ["test.js"]
+    },
+    "other-server": {
+      "command": "python",
+      "args": ["other.py"]
+    }
+  }
+}
+"#;
+        fs::write(&settings_path, settings_content).unwrap();
+
+        // Remove MCP server
+        let result = remove_dependency_with_manifest_path(
+            "test-server",
+            "mcp-server",
+            Some(manifest_path.clone()),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        // Verify settings file was updated (test-server removed but other-server remains)
+        let updated_settings = fs::read_to_string(&settings_path).unwrap();
+        assert!(!updated_settings.contains("test-server"));
+        assert!(updated_settings.contains("other-server"));
+    }
+
+    #[tokio::test]
+    async fn test_remove_hook_updates_settings() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let settings_dir = temp.path().join(".claude");
+        let settings_path = settings_dir.join("settings.local.json");
+
+        // Create manifest with hook
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+[scripts]
+[hooks]
+test-hook = "../hooks/test-hook.json"
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        // Create .claude directory and settings file
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_content = r#"
+{
+  "hooks": {
+    "test-hook": {
+      "command": "echo test"
+    },
+    "other-hook": {
+      "command": "echo other"
+    }
+  }
+}
+"#;
+        fs::write(&settings_path, settings_content).unwrap();
+
+        // Remove hook
+        let result =
+            remove_dependency_with_manifest_path("test-hook", "hook", Some(manifest_path.clone()))
+                .await;
+        assert!(result.is_ok());
+
+        // Verify settings file was updated (test-hook removed but other-hook remains)
+        let updated_settings = fs::read_to_string(&settings_path).unwrap();
+        assert!(!updated_settings.contains("test-hook"));
+        assert!(updated_settings.contains("other-hook"));
+    }
+
+    #[tokio::test]
+    async fn test_remove_script_with_lockfile_entry() {
+        use crate::lockfile::{LockFile, LockedResource};
+
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+        let script_dir = temp.path().join(".claude/ccpm/scripts");
+        let script_file = script_dir.join("test-script.sh");
+
+        // Create manifest with script
+        let manifest_content = r#"
+[sources]
+[agents]
+[snippets]
+[commands]
+[mcp-servers]
+[scripts]
+test-script = "../test/script.sh"
+[hooks]
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        // Create lockfile with script entry
+        let mut lockfile = LockFile::new();
+        lockfile.scripts.push(LockedResource {
+            name: "test-script".to_string(),
+            source: None,
+            url: None,
+            path: "../test/script.sh".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:test".to_string(),
+            installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        // Create the actual script file
+        std::fs::create_dir_all(&script_dir).unwrap();
+        fs::write(&script_file, "#!/bin/bash\necho test").unwrap();
+        assert!(script_file.exists());
+
+        // Remove script
+        let result = remove_dependency_with_manifest_path(
+            "test-script",
+            "script",
+            Some(manifest_path.clone()),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        // Verify script file was deleted
+        assert!(!script_file.exists());
+
+        // Verify lockfile was updated
+        let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
+        assert_eq!(updated_lockfile.scripts.len(), 0);
     }
 }

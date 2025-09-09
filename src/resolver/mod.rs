@@ -2030,4 +2030,932 @@ mod tests {
         // Verify custom filename is used (with custom extension)
         assert_eq!(script.installed_at, ".claude/ccpm/snippets/analyze.py");
     }
+
+    // ============ NEW TESTS FOR UNCOVERED AREAS ============
+
+    // Disable pattern tests for now as they require changing directory which breaks parallel test safety
+    // These tests would need to be rewritten to not use pattern dependencies or
+    // the resolver would need to support absolute base paths for pattern resolution
+
+    #[tokio::test]
+    #[ignore = "Pattern tests need rework to avoid changing working directory"]
+    async fn test_resolve_pattern_dependency_local() {
+        // This test is disabled because it requires changing the working directory
+        // which is not safe for parallel test execution
+    }
+
+    #[tokio::test]
+    async fn test_resolve_pattern_dependency_remote() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a local mock git repository with pattern-matching files
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create multiple agent files
+        let agents_dir = source_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("python-linter.md"), "# Python Linter").unwrap();
+        std::fs::write(agents_dir.join("python-formatter.md"), "# Python Formatter").unwrap();
+        std::fs::write(agents_dir.join("rust-linter.md"), "# Rust Linter").unwrap();
+
+        // Add and commit
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Add agents"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create a tag
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Add pattern dependency for python agents
+        manifest.add_dependency(
+            "python-tools".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agents/python-*.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true, // agents
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        // Should have resolved to 2 python agents
+        assert_eq!(lockfile.agents.len(), 2);
+
+        // Check that both python agents were found
+        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
+        assert!(agent_names.contains(&"python-linter".to_string()));
+        assert!(agent_names.contains(&"python-formatter".to_string()));
+        assert!(!agent_names.contains(&"rust-linter".to_string()));
+    }
+
+    #[tokio::test]
+    #[ignore = "Pattern tests need rework to avoid changing working directory"]
+    async fn test_resolve_pattern_dependency_with_custom_target() {
+        // This test is disabled because it requires pattern resolution which needs
+        // changing the working directory, which is not safe for parallel test execution
+    }
+
+    #[tokio::test]
+    async fn test_update_specific_dependencies() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a local mock git repository
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create initial files
+        let agents_dir = source_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("agent1.md"), "# Agent 1 v1").unwrap();
+        std::fs::write(agents_dir.join("agent2.md"), "# Agent 2 v1").unwrap();
+
+        // Initial commit
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Update agent1 and create v2.0.0
+        std::fs::write(agents_dir.join("agent1.md"), "# Agent 1 v2").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Update agent1"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Add dependencies with new versions
+        manifest.add_dependency(
+            "agent1".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agents/agent1.md".to_string(),
+                version: Some("v2.0.0".to_string()), // Updated version
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+        manifest.add_dependency(
+            "agent2".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agents/agent2.md".to_string(),
+                version: Some("v1.0.0".to_string()), // Keep old version
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache_dir.clone());
+
+        // First resolve with v1.0.0 for both
+        let initial_lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(initial_lockfile.agents.len(), 2);
+
+        // Now update only agent1
+        let mut resolver2 = DependencyResolver::with_cache(manifest, cache_dir);
+        let updated_lockfile = resolver2
+            .update(&initial_lockfile, Some(vec!["agent1".to_string()]), None)
+            .await
+            .unwrap();
+
+        // agent1 should be updated to v2.0.0
+        let agent1 = updated_lockfile
+            .agents
+            .iter()
+            .find(|a| a.name == "agent1")
+            .unwrap();
+        assert_eq!(agent1.version.as_ref().unwrap(), "v2.0.0");
+
+        // agent2 should remain at v1.0.0
+        let agent2 = updated_lockfile
+            .agents
+            .iter()
+            .find(|a| a.name == "agent2")
+            .unwrap();
+        assert_eq!(agent2.version.as_ref().unwrap(), "v1.0.0");
+    }
+
+    #[tokio::test]
+    async fn test_update_all_dependencies() {
+        let mut manifest = Manifest::new();
+        manifest.add_dependency(
+            "local1".to_string(),
+            ResourceDependency::Simple("../a1.md".to_string()),
+            true,
+        );
+        manifest.add_dependency(
+            "local2".to_string(),
+            ResourceDependency::Simple("../a2.md".to_string()),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver =
+            DependencyResolver::with_cache(manifest.clone(), temp_dir.path().to_path_buf());
+
+        // Initial resolve
+        let initial_lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(initial_lockfile.agents.len(), 2);
+
+        // Update all (None means update all)
+        let mut resolver2 = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let updated_lockfile = resolver2
+            .update(&initial_lockfile, None, None)
+            .await
+            .unwrap();
+
+        // All dependencies should be present
+        assert_eq!(updated_lockfile.agents.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_hooks_resource_type() {
+        let mut manifest = Manifest::new();
+
+        // Add hook dependencies
+        manifest.hooks.insert(
+            "pre-commit".to_string(),
+            ResourceDependency::Simple("../hooks/pre-commit.json".to_string()),
+        );
+        manifest.hooks.insert(
+            "post-commit".to_string(),
+            ResourceDependency::Simple("../hooks/post-commit.json".to_string()),
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.hooks.len(), 2);
+
+        // Check that hooks are installed to the correct location
+        for hook in &lockfile.hooks {
+            assert!(hook.installed_at.contains(".claude/ccpm/hooks/"));
+            assert!(hook.installed_at.ends_with(".json"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_scripts_resource_type() {
+        let mut manifest = Manifest::new();
+
+        // Add script dependencies
+        manifest.scripts.insert(
+            "build".to_string(),
+            ResourceDependency::Simple("../scripts/build.sh".to_string()),
+        );
+        manifest.scripts.insert(
+            "test".to_string(),
+            ResourceDependency::Simple("../scripts/test.py".to_string()),
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.scripts.len(), 2);
+
+        // Check that scripts maintain their extensions
+        let build_script = lockfile.scripts.iter().find(|s| s.name == "build").unwrap();
+        assert!(build_script.installed_at.ends_with("build.sh"));
+
+        let test_script = lockfile.scripts.iter().find(|s| s.name == "test").unwrap();
+        assert!(test_script.installed_at.ends_with("test.py"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_mcp_servers_resource_type() {
+        let mut manifest = Manifest::new();
+
+        // Add MCP server dependencies
+        manifest.mcp_servers.insert(
+            "filesystem".to_string(),
+            ResourceDependency::Simple("../mcp/filesystem.json".to_string()),
+        );
+        manifest.mcp_servers.insert(
+            "database".to_string(),
+            ResourceDependency::Simple("../mcp/database.json".to_string()),
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.mcp_servers.len(), 2);
+
+        // Check that MCP servers are tracked correctly
+        for server in &lockfile.mcp_servers {
+            assert!(server.installed_at.contains(".claude/ccpm/mcp-servers/"));
+            assert!(server.installed_at.ends_with(".json"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_commands_resource_type() {
+        let mut manifest = Manifest::new();
+
+        // Add command dependencies
+        manifest.commands.insert(
+            "deploy".to_string(),
+            ResourceDependency::Simple("../commands/deploy.md".to_string()),
+        );
+        manifest.commands.insert(
+            "lint".to_string(),
+            ResourceDependency::Simple("../commands/lint.md".to_string()),
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.commands.len(), 2);
+
+        // Check that commands are installed to the correct location
+        for command in &lockfile.commands {
+            assert!(command.installed_at.contains(".claude/commands/"));
+            assert!(command.installed_at.ends_with(".md"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_checkout_version_with_constraint() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a git repo with multiple version tags
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create file and make commits with version tags
+        let test_file = source_dir.join("test.txt");
+
+        // v1.0.0
+        std::fs::write(&test_file, "v1.0.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // v1.1.0
+        std::fs::write(&test_file, "v1.1.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v1.1.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v1.1.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // v1.2.0
+        std::fs::write(&test_file, "v1.2.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v1.2.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v1.2.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // v2.0.0
+        std::fs::write(&test_file, "v2.0.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v2.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Test version constraint resolution (^1.0.0 should resolve to 1.2.0)
+        manifest.add_dependency(
+            "constrained-dep".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "test.txt".to_string(),
+                version: Some("^1.0.0".to_string()), // Constraint: compatible with 1.x.x
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        // Should resolve to highest 1.x version (1.2.0), not 2.0.0
+        assert_eq!(agent.version.as_ref().unwrap(), "v1.2.0");
+    }
+
+    #[tokio::test]
+    async fn test_checkout_version_latest_constraint() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a git repo with version tags
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create versions
+        let test_file = source_dir.join("test.txt");
+
+        // v1.0.0
+        std::fs::write(&test_file, "v1.0.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // v2.0.0
+        std::fs::write(&test_file, "v2.0.0").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "v2.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Test "latest" constraint
+        manifest.add_dependency(
+            "latest-dep".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "test.txt".to_string(),
+                version: Some("latest".to_string()), // Should resolve to highest version
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        // Should resolve to v2.0.0 (highest)
+        assert_eq!(agent.version.as_ref().unwrap(), "v2.0.0");
+    }
+
+    #[tokio::test]
+    async fn test_verify_absolute_path_error() {
+        let mut manifest = Manifest::new();
+
+        // Add dependency with non-existent absolute path
+        manifest.add_dependency(
+            "missing-agent".to_string(),
+            ResourceDependency::Simple("/nonexistent/path/agent.md".to_string()),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let result = resolver.verify(None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_pattern_dependency_error() {
+        let mut manifest = Manifest::new();
+
+        // Add pattern dependency without source (should error in resolve_pattern_dependency)
+        manifest.add_dependency(
+            "pattern-dep".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("nonexistent".to_string()),
+                path: "agents/*.md".to_string(), // Pattern path
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let result = resolver.resolve(None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_checkout_version_with_branch() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a git repo with a branch
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create initial commit on main
+        let test_file = source_dir.join("test.txt");
+        std::fs::write(&test_file, "main").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create and switch to develop branch
+        std::process::Command::new("git")
+            .args(["checkout", "-b", "develop"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Make a commit on develop
+        std::fs::write(&test_file, "develop").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Develop commit"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Test branch checkout
+        manifest.add_dependency(
+            "branch-dep".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "test.txt".to_string(),
+                version: Some("develop".to_string()), // Branch name
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        // Should have resolved to develop branch
+        let agent = &lockfile.agents[0];
+        assert!(agent.resolved_commit.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_checkout_version_with_commit_hash() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a git repo
+        let source_dir = temp_dir.path().join("test-source");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&source_dir)
+            .output()
+            .expect("Failed to initialize git repository");
+
+        // Configure git
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Create a commit
+        let test_file = source_dir.join("test.txt");
+        std::fs::write(&test_file, "content").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Test commit"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+
+        // Get the commit hash
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&source_dir)
+            .output()
+            .unwrap();
+        let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        let mut manifest = Manifest::new();
+        let source_url = source_dir.display().to_string();
+        manifest.add_source("test".to_string(), source_url);
+
+        // Test commit hash checkout (use first 7 chars for short hash)
+        manifest.add_dependency(
+            "commit-dep".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "test.txt".to_string(),
+                version: Some(commit_hash[..7].to_string()), // Short commit hash
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let cache_dir = temp_dir.path().join("cache");
+        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+        assert_eq!(lockfile.agents.len(), 1);
+
+        let agent = &lockfile.agents[0];
+        assert!(agent.resolved_commit.is_some());
+        // The resolved commit should start with our short hash
+        assert!(agent
+            .resolved_commit
+            .as_ref()
+            .unwrap()
+            .starts_with(&commit_hash[..7]));
+    }
+
+    #[test]
+    fn test_check_redundancies_with_details() {
+        let mut manifest = Manifest::new();
+        manifest.add_source(
+            "official".to_string(),
+            "https://github.com/test/repo.git".to_string(),
+        );
+
+        // Add redundant dependencies
+        manifest.add_dependency(
+            "helper-v1".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("official".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        manifest.add_dependency(
+            "helper-v2".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("official".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v2.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let redundancies = resolver.check_redundancies_with_details();
+        assert!(!redundancies.is_empty());
+
+        // Should have detected the redundancy
+        let redundancy = &redundancies[0];
+        assert_eq!(redundancy.source_file, "official:agents/helper.md");
+        assert_eq!(redundancy.usages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_mixed_resource_types() {
+        let mut manifest = Manifest::new();
+
+        // Add various resource types
+        manifest.add_dependency(
+            "agent1".to_string(),
+            ResourceDependency::Simple("../agents/a1.md".to_string()),
+            true,
+        );
+
+        manifest.scripts.insert(
+            "build".to_string(),
+            ResourceDependency::Simple("../scripts/build.sh".to_string()),
+        );
+
+        manifest.hooks.insert(
+            "pre-commit".to_string(),
+            ResourceDependency::Simple("../hooks/pre-commit.json".to_string()),
+        );
+
+        manifest.commands.insert(
+            "deploy".to_string(),
+            ResourceDependency::Simple("../commands/deploy.md".to_string()),
+        );
+
+        manifest.mcp_servers.insert(
+            "filesystem".to_string(),
+            ResourceDependency::Simple("../mcp/filesystem.json".to_string()),
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+
+        let lockfile = resolver.resolve(None).await.unwrap();
+
+        // Check all resource types are resolved
+        assert_eq!(lockfile.agents.len(), 1);
+        assert_eq!(lockfile.scripts.len(), 1);
+        assert_eq!(lockfile.hooks.len(), 1);
+        assert_eq!(lockfile.commands.len(), 1);
+        assert_eq!(lockfile.mcp_servers.len(), 1);
+    }
 }

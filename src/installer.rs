@@ -3,9 +3,31 @@
 //! This module provides common functionality for installing resources from
 //! lockfile entries to the project directory. It's shared between the install
 //! and update commands to avoid code duplication.
+//!
+//! # Parallel Installation Architecture
+//!
+//! The installer uses Git worktrees for safe parallel resource installation:
+//! - **Worktree-based operations**: Each dependency uses its own worktree to avoid conflicts
+//! - **Concurrency control**: Global semaphore limits concurrent Git operations
+//! - **Context-aware logging**: Each operation includes dependency name for debugging
+//! - **Efficient cleanup**: Worktrees are managed by the cache layer for reuse
+//!
+//! # Installation Process
+//!
+//! 1. **Repository access**: Uses cache layer to get or create worktrees
+//! 2. **Content validation**: Validates markdown format and structure
+//! 3. **Atomic installation**: Files are written atomically to prevent corruption
+//! 4. **Progress tracking**: Real-time progress updates during parallel operations
+//!
+//! # Performance Characteristics
+//!
+//! - **Parallel processing**: Multiple dependencies installed simultaneously
+//! - **Worktree reuse**: Cache layer optimizes Git repository access
+//! - **Semaphore-controlled**: Prevents system overload from too many Git processes
+//! - **Atomic operations**: Fast, safe file installation with proper error handling
 
 use anyhow::{Context, Result};
-use futures::future::try_join_all;
+use futures::stream::{self, StreamExt};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -20,7 +42,68 @@ use crate::utils::progress::ProgressBar;
 use std::collections::HashSet;
 use std::fs;
 
-/// Install a single resource from a lock entry
+/// Install a single resource from a lock entry using worktrees for parallel safety.
+///
+/// This function installs a resource specified by a lockfile entry to the project
+/// directory. It uses Git worktrees through the cache layer to enable safe parallel
+/// operations without conflicts between concurrent installations.
+///
+/// # Arguments
+///
+/// * `entry` - The locked resource to install containing source and version info
+/// * `project_dir` - The root project directory where resources should be installed
+/// * `resource_dir` - The subdirectory name for this resource type (e.g., "agents")
+/// * `cache` - The cache instance for managing Git repositories and worktrees
+///
+/// # Worktree Usage
+///
+/// For remote resources, this function:
+/// 1. Uses `cache.get_or_clone_source_worktree_with_context()` to get a worktree
+/// 2. Each dependency gets its own isolated worktree for parallel safety
+/// 3. Worktrees are automatically managed and reused by the cache layer
+/// 4. Context (dependency name) is provided for debugging parallel operations
+///
+/// # Installation Process
+///
+/// 1. **Path resolution**: Determines destination based on `installed_at` or defaults
+/// 2. **Repository access**: Gets worktree from cache (for remote) or validates local path
+/// 3. **Content validation**: Verifies markdown format and structure
+/// 4. **Atomic write**: Installs file atomically to prevent corruption
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::installer::install_resource;
+/// use ccpm::lockfile::LockedResource;
+/// use ccpm::cache::Cache;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let cache = Cache::new()?;
+/// let entry = LockedResource {
+///     name: "example-agent".to_string(),
+///     source: Some("community".to_string()),
+///     url: Some("https://github.com/example/repo.git".to_string()),
+///     path: "agents/example.md".to_string(),
+///     version: Some("v1.0.0".to_string()),
+///     resolved_commit: Some("abc123".to_string()),
+///     checksum: "sha256:...".to_string(),
+///     installed_at: ".claude/agents/example.md".to_string(),
+/// };
+///
+/// install_resource(&entry, Path::new("."), "agents", &cache).await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Error Handling
+///
+/// Returns an error if:
+/// - The source repository cannot be accessed or cloned
+/// - The specified file path doesn't exist in the repository
+/// - The file is not valid markdown format
+/// - File system operations fail (permissions, disk space)
+/// - Worktree creation fails due to Git issues
 pub async fn install_resource(
     entry: &LockedResource,
     project_dir: &Path,
@@ -45,9 +128,9 @@ pub async fn install_resource(
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Remote resource {} has no URL", entry.name))?;
 
-        // Get or clone the source to cache
+        // Get or clone the source to cache using worktree for parallel safety
         let cache_dir = cache
-            .get_or_clone_source(
+            .get_or_clone_source_worktree_with_context(
                 source_name,
                 url,
                 entry
@@ -55,6 +138,7 @@ pub async fn install_resource(
                     .as_ref()
                     .or(entry.version.as_ref())
                     .map(std::string::String::as_str),
+                Some(&entry.name),
             )
             .await
             .with_context(|| {
@@ -84,6 +168,8 @@ pub async fn install_resource(
         // Write to destination with atomic operation
         atomic_write(&dest_path, content.as_bytes())
             .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
+
+        // Don't clean up worktrees - they'll be cleaned by cache clean command
     } else {
         // Local resource
         let source_path = Path::new(&entry.path);
@@ -126,7 +212,94 @@ pub async fn install_resource_with_progress(
     install_resource(entry, project_dir, resource_dir, cache).await
 }
 
-/// Install multiple resources in parallel
+/// Install multiple resources in parallel using worktree-based concurrency.
+///
+/// This function performs parallel installation of all resources defined in the
+/// lockfile, using Git worktrees to enable safe concurrent access to repositories.
+/// Each dependency gets its own isolated worktree to prevent conflicts.
+///
+/// # Arguments
+///
+/// * `lockfile` - The lockfile containing all resources to install
+/// * `manifest` - The project manifest for configuration
+/// * `project_dir` - The root project directory for installation
+/// * `pb` - Progress bar for user feedback
+/// * `cache` - Cache instance managing Git repositories and worktrees
+///
+/// # Parallel Architecture
+///
+/// The function uses several layers of concurrency control:
+/// - **Tokio tasks**: Each resource installation runs in its own async task
+/// - **Unlimited task concurrency**: Uses `buffer_unordered(usize::MAX)`
+/// - **Git semaphore**: Global semaphore in cache layer limits concurrent Git operations
+/// - **Worktree isolation**: Each dependency gets its own worktree for safety
+///
+/// # Performance Optimizations
+///
+/// - **Stream processing**: Uses `futures::stream` for efficient task scheduling
+/// - **Context logging**: Each operation includes dependency name for debugging
+/// - **Worktree reuse**: Cache layer optimizes Git repository access
+/// - **Batched progress**: Updates progress atomically to reduce contention
+/// - **Deferred cleanup**: Worktrees are left for reuse, cleaned up by cache commands
+///
+/// # Concurrency Control Flow
+///
+/// ```text
+/// Lockfile Resources
+///       ↓
+/// Async Task Stream (unlimited concurrency)
+///       ↓
+/// install_resource_for_parallel() calls
+///       ↓
+/// Cache worktree operations (semaphore-controlled)
+///       ↓
+/// Git operations (limited by semaphore)
+/// ```
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::installer::install_resources_parallel;
+/// use ccpm::lockfile::LockFile;
+/// use ccpm::manifest::Manifest;
+/// use ccpm::cache::Cache;
+/// use ccpm::utils::progress::ProgressBar;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let cache = Cache::new()?;
+///
+/// // Count total resources for progress bar
+/// let total = lockfile.agents.len() + lockfile.snippets.len()
+///     + lockfile.commands.len() + lockfile.scripts.len()
+///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
+/// let pb = ProgressBar::new(total as u64);
+///
+/// let count = install_resources_parallel(
+///     &lockfile,
+///     &manifest,
+///     Path::new("."),
+///     &pb,
+///     &cache
+/// ).await?;
+///
+/// println!("Installed {} resources", count);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Error Handling
+///
+/// - **Atomic failure**: If any resource fails, the entire operation fails
+/// - **Detailed context**: Errors include specific resource and source information
+/// - **Progress preservation**: Progress updates continue even on partial failures
+/// - **Resource cleanup**: Failed operations don't leave partial state
+///
+/// # Return Value
+///
+/// Returns the total number of resources successfully installed.
 pub async fn install_resources_parallel(
     lockfile: &LockFile,
     manifest: &Manifest,
@@ -152,31 +325,42 @@ pub async fn install_resources_parallel(
     // Set initial progress
     pb.set_message(format!("Installing 0/{total} resources"));
 
-    // Create installation tasks
-    let tasks = all_entries.into_iter().map(|(entry, resource_dir)| {
-        let entry = entry.clone();
-        let project_dir = project_dir.to_path_buf();
-        let resource_dir = resource_dir.to_string();
-        let installed_count = Arc::clone(&installed_count);
-        let pb = Arc::clone(&pb);
-        let cache = Arc::clone(&cache);
+    // Use concurrent stream processing for better control over parallelism
+    // This allows tokio to better schedule tasks and reduce contention
+    let results: Vec<Result<(), anyhow::Error>> = stream::iter(all_entries)
+        .map(|(entry, resource_dir)| {
+            let entry = entry.clone();
+            let project_dir = project_dir.to_path_buf();
+            let resource_dir = resource_dir.to_string();
+            let installed_count = Arc::clone(&installed_count);
+            let pb = Arc::clone(&pb);
+            let cache = Arc::clone(&cache);
 
-        async move {
-            // Install the resource
-            install_resource_for_parallel(&entry, &project_dir, &resource_dir, cache.as_ref())
-                .await?;
+            async move {
+                // Install the resource
+                // Repository locks in the cache will naturally limit concurrency
+                install_resource_for_parallel(&entry, &project_dir, &resource_dir, cache.as_ref())
+                    .await?;
 
-            // Update progress
-            let mut count = installed_count.lock().await;
-            *count += 1;
-            pb.set_message(format!("Installing {}/{} resources", *count, total));
+                // Update progress
+                let mut count = installed_count.lock().await;
+                *count += 1;
+                pb.set_message(format!("Installing {}/{} resources", *count, total));
 
-            Ok::<(), anyhow::Error>(())
-        }
-    });
+                Ok::<(), anyhow::Error>(())
+            }
+        })
+        .buffer_unordered(usize::MAX) // Allow unlimited task concurrency, git semaphore handles the bottleneck
+        .collect()
+        .await;
 
-    // Execute all tasks in parallel
-    try_join_all(tasks).await?;
+    // Check all results for errors
+    for result in results {
+        result?;
+    }
+
+    // Skip cleanup - worktrees will be cleaned up later by cache clean command
+    // This saves significant time during installation
 
     let final_count = *installed_count.lock().await;
     Ok(final_count)

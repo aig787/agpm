@@ -174,11 +174,14 @@ ccpm install --no-cache
 # Clean specific source
 ccpm cache clean
 
-# Clear entire cache
+# Clear entire cache (including worktrees)
 ccpm cache clean --all
 
 # Bypass cache
 ccpm install --no-cache
+
+# Clean only worktrees (keep bare repositories)
+ccpm cache clean --worktrees
 ```
 
 ### Disk Space
@@ -302,6 +305,60 @@ chmod -R u+rw ~/.ccpm
 find ~/.ccpm -type d -exec chmod u+x {} \;
 ```
 
+## Worktree Issues
+
+### Worktree Creation Failures
+
+**Concurrent access conflicts:**
+```bash
+# Check for existing worktrees
+ls ~/.ccpm/cache/worktrees/
+
+# Clean stale worktrees
+ccpm cache clean --worktrees
+
+# Retry with fresh worktrees
+ccpm install --no-cache
+```
+
+**Bare repository issues:**
+```bash
+# Verify bare repository exists
+ls ~/.ccpm/cache/sources/
+
+# Check if bare repo has refs
+git --git-dir ~/.ccpm/cache/sources/repo.git show-ref
+
+# Re-clone if corrupted
+ccpm cache clean --source repo-name
+ccpm install
+```
+
+### Parallel Installation Problems
+
+**Too many concurrent operations:**
+```bash
+# Check system load
+top -n1 | grep "load average"
+
+# Reduce parallelism
+ccpm install --max-parallel 2
+
+# Monitor Git operations
+RUST_LOG="ccpm::git=debug" ccpm install
+```
+
+**Git semaphore exhaustion:**
+```bash
+# Check CPU count (semaphore = 3 * cores)
+nproc  # Linux
+sysctl -n hw.ncpu  # macOS
+echo $NUMBER_OF_PROCESSORS  # Windows
+
+# Force sequential operations
+ccpm install --max-parallel 1
+```
+
 ## Performance Issues
 
 ### Slow Installation
@@ -310,21 +367,28 @@ find ~/.ccpm -type d -exec chmod u+x {} \;
 # Check network speed
 ping github.com
 
-# Use parallel operations
+# Use parallel operations with worktrees
 ccpm install --max-parallel 8
 
-# Use cache
+# Use cache (worktrees reuse bare repos)
 ccpm install  # Second run uses cache
+
+# Check worktree overhead
+RUST_LOG="ccpm::cache=debug" ccpm install
 ```
 
 ### High Memory Usage
 
 ```bash
-# Limit parallelism
+# Limit parallelism (reduces concurrent worktrees)
 ccpm install --max-parallel 2
 
-# Clean cache regularly
+# Clean cache and worktrees regularly
 ccpm cache clean
+ccpm cache clean --worktrees
+
+# Monitor worktree count
+find ~/.ccpm/cache/worktrees/ -maxdepth 1 -type d | wc -l
 ```
 
 ## Debugging
@@ -334,6 +398,12 @@ ccpm cache clean
 ```bash
 # Verbose output
 RUST_LOG=debug ccpm install
+
+# Focus on Git operations
+RUST_LOG="ccpm::git=debug" ccpm install
+
+# Focus on cache operations
+RUST_LOG="ccpm::cache=debug" ccpm install
 
 # Trace-level logging
 RUST_LOG=trace ccpm install
@@ -348,8 +418,18 @@ RUST_LOG=debug ccpm install 2> debug.log
 # Test git commands directly
 GIT_TRACE=1 git clone https://github.com/org/repo.git
 
+# Test bare clone (CCPM method)
+GIT_TRACE=1 git clone --bare https://github.com/org/repo.git /tmp/test.git
+
+# Test worktree creation
+cd /tmp/test.git
+GIT_TRACE=1 git worktree add /tmp/work main
+
 # Check git config
 git config --list
+
+# Verify worktree support
+git --version  # Should be >= 2.5
 ```
 
 ### Validate Configuration
