@@ -29,6 +29,14 @@
 //! - Progress reporting during long operations
 //! - Graceful cancellation support
 //!
+//! ## Worktree Support for Parallel Operations
+//! Advanced Git worktree integration for safe parallel package installation:
+//! - **Bare repository cloning**: Creates repositories optimized for worktrees
+//! - **Parallel worktree creation**: Multiple versions checked out simultaneously
+//! - **Concurrency control**: Global semaphore prevents resource exhaustion
+//! - **Automatic cleanup**: Efficient worktree lifecycle management
+//! - **Conflict-free operations**: Each dependency gets its own isolated working directory
+//!
 //! ## Progress Reporting
 //! Integration with [`ProgressBar`] for user feedback during:
 //! - Repository cloning with transfer progress
@@ -153,6 +161,36 @@
 //!     let url = repo.get_remote_url().await?;
 //!     println!("Repository URL: {}", url);
 //! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Worktree-based Parallel Operations
+//! ```rust,no_run
+//! use ccpm::git::GitRepo;
+//!
+//! # async fn worktree_example() -> anyhow::Result<()> {
+//! // Clone repository as bare for worktree use
+//! let bare_repo = GitRepo::clone_bare(
+//!     "https://github.com/example/repo.git",
+//!     "/tmp/cache/repo.git",
+//!     None
+//! ).await?;
+//!
+//! // Create multiple worktrees for parallel processing
+//! let worktree1 = bare_repo.create_worktree("/tmp/work1", Some("v1.0.0")).await?;
+//! let worktree2 = bare_repo.create_worktree("/tmp/work2", Some("v2.0.0")).await?;
+//! let worktree3 = bare_repo.create_worktree("/tmp/work3", Some("main")).await?;
+//!
+//! // Each worktree can be used independently and concurrently
+//! // Process files from worktree1 at v1.0.0
+//! // Process files from worktree2 at v2.0.0  
+//! // Process files from worktree3 at latest main
+//!
+//! // Clean up when done
+//! bare_repo.remove_worktree("/tmp/work1").await?;
+//! bare_repo.remove_worktree("/tmp/work2").await?;
+//! bare_repo.remove_worktree("/tmp/work3").await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -1043,6 +1081,443 @@ impl GitRepo {
             .execute_success()
             .await
             .context("Failed to verify remote repository")
+    }
+
+    /// Fetch updates for a bare repository with logging context.
+    async fn ensure_bare_repo_has_refs_with_context(&self, context: Option<&str>) -> Result<()> {
+        // Try to fetch to ensure we have refs
+        let mut fetch_cmd = GitCommand::fetch().current_dir(&self.path);
+
+        if let Some(ctx) = context {
+            fetch_cmd = fetch_cmd.with_context(ctx);
+        }
+
+        let fetch_result = fetch_cmd.execute_success().await;
+
+        if fetch_result.is_err() {
+            // If fetch fails, it might be because there's no remote
+            // Just check if we have any refs at all
+            let mut check_cmd = GitCommand::new()
+                .args(["show-ref", "--head"])
+                .current_dir(&self.path);
+
+            if let Some(ctx) = context {
+                check_cmd = check_cmd.with_context(ctx);
+            }
+
+            check_cmd
+                .execute_success()
+                .await
+                .map_err(|e| anyhow::anyhow!("Bare repository has no refs available: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    /// Clone a repository as a bare repository (no working directory).
+    ///
+    /// Bare repositories are optimized for use as a source for worktrees,
+    /// allowing multiple concurrent checkouts without conflicts.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The remote repository URL
+    /// * `target` - The local directory where the bare repository will be stored
+    /// * `progress` - Optional progress bar for user feedback
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `GitRepo` instance pointing to the bare repository
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let bare_repo = GitRepo::clone_bare(
+    ///     "https://github.com/example/repo.git",
+    ///     "/tmp/repo.git",
+    ///     None
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn clone_bare(
+        url: &str,
+        target: impl AsRef<Path>,
+        progress: Option<&ProgressBar>,
+    ) -> Result<Self> {
+        Self::clone_bare_with_context(url, target, progress, None).await
+    }
+
+    /// Clone a repository as a bare repository with logging context.
+    ///
+    /// Bare repositories are optimized for use as a source for worktrees,
+    /// allowing multiple concurrent checkouts without conflicts.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The remote repository URL
+    /// * `target` - The local directory where the bare repository will be stored
+    /// * `progress` - Optional progress bar for user feedback
+    /// * `context` - Optional context for logging (e.g., dependency name)
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `GitRepo` instance pointing to the bare repository
+    pub async fn clone_bare_with_context(
+        url: &str,
+        target: impl AsRef<Path>,
+        progress: Option<&ProgressBar>,
+        context: Option<&str>,
+    ) -> Result<Self> {
+        let target_path = target.as_ref();
+
+        if let Some(pb) = &progress {
+            pb.set_message(format!("Cloning bare repository {url}"));
+        }
+
+        let mut cmd = GitCommand::clone_bare(url, target_path);
+
+        if let Some(ctx) = context {
+            cmd = cmd.with_context(ctx);
+        }
+
+        cmd.execute_success().await?;
+
+        let repo = Self::new(target_path);
+
+        // Ensure the bare repo has refs available for worktree creation
+        // Also needs context for the fetch operation
+        repo.ensure_bare_repo_has_refs_with_context(context)
+            .await
+            .ok();
+
+        if let Some(pb) = progress {
+            pb.finish_with_message("Bare clone complete");
+        }
+
+        Ok(repo)
+    }
+
+    /// Create a new worktree from this repository.
+    ///
+    /// Worktrees allow multiple working directories to be checked out from
+    /// a single repository, enabling parallel operations on different versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `worktree_path` - The path where the worktree will be created
+    /// * `reference` - Optional Git reference (branch/tag/commit) to checkout
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `GitRepo` instance pointing to the worktree
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let bare_repo = GitRepo::new("/path/to/bare.git");
+    ///
+    /// // Create worktree with specific version
+    /// let worktree = bare_repo.create_worktree(
+    ///     "/tmp/worktree1",
+    ///     Some("v1.0.0")
+    /// ).await?;
+    ///
+    /// // Create worktree with default branch
+    /// let worktree2 = bare_repo.create_worktree(
+    ///     "/tmp/worktree2",
+    ///     None
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_worktree(
+        &self,
+        worktree_path: impl AsRef<Path>,
+        reference: Option<&str>,
+    ) -> Result<GitRepo> {
+        self.create_worktree_with_context(worktree_path, reference, None)
+            .await
+    }
+
+    /// Create a new worktree from this repository with logging context.
+    ///
+    /// Worktrees allow multiple working directories to be checked out from
+    /// a single repository, enabling parallel operations on different versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `worktree_path` - The path where the worktree will be created
+    /// * `reference` - Optional Git reference (branch/tag/commit) to checkout
+    /// * `context` - Optional context for logging (e.g., dependency name)
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `GitRepo` instance pointing to the worktree
+    pub async fn create_worktree_with_context(
+        &self,
+        worktree_path: impl AsRef<Path>,
+        reference: Option<&str>,
+        context: Option<&str>,
+    ) -> Result<GitRepo> {
+        let worktree_path = worktree_path.as_ref();
+
+        // Ensure parent directory exists
+        if let Some(parent) = worktree_path.parent() {
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
+                format!("Failed to create parent directory for worktree: {parent:?}")
+            })?;
+        }
+
+        // Retry logic for worktree creation to handle concurrent operations
+        let max_retries = 3;
+        let mut retry_count = 0;
+
+        loop {
+            // For bare repositories, we may need to handle the case where no default branch exists yet
+            // If no reference provided, try to use the default branch
+            let default_branch = if reference.is_none() && retry_count == 0 {
+                // Try to get the default branch
+                GitCommand::new()
+                    .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
+                    .current_dir(&self.path)
+                    .execute_stdout()
+                    .await
+                    .ok()
+                    .and_then(|s| s.strip_prefix("refs/remotes/origin/").map(String::from))
+                    .or_else(|| Some("main".to_string()))
+            } else {
+                None
+            };
+
+            let effective_ref = if let Some(ref branch) = default_branch {
+                Some(branch.as_str())
+            } else {
+                reference
+            };
+
+            let mut cmd =
+                GitCommand::worktree_add(worktree_path, effective_ref).current_dir(&self.path);
+
+            if let Some(ctx) = context {
+                cmd = cmd.with_context(ctx);
+            }
+
+            let result = cmd.execute_success().await;
+
+            match result {
+                Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                Err(e) => {
+                    let error_str = e.to_string();
+
+                    // Check if this is a concurrent access issue
+                    if error_str.contains("already exists")
+                        || error_str.contains("is already checked out")
+                        || error_str.contains("fatal: could not create directory")
+                    {
+                        retry_count += 1;
+                        if retry_count >= max_retries {
+                            return Err(e).with_context(|| {
+                                format!(
+                                    "Failed to create worktree at {} from {} after {} retries",
+                                    worktree_path.display(),
+                                    self.path.display(),
+                                    max_retries
+                                )
+                            });
+                        }
+
+                        // Wait a bit before retrying
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100 * retry_count))
+                            .await;
+                        continue;
+                    }
+
+                    // If no reference was provided and the command failed, it might be because
+                    // the bare repo doesn't have a default branch set. Try with explicit HEAD
+                    if reference.is_none() && retry_count == 0 {
+                        let mut head_cmd = GitCommand::worktree_add(worktree_path, Some("HEAD"))
+                            .current_dir(&self.path);
+
+                        if let Some(ctx) = context {
+                            head_cmd = head_cmd.with_context(ctx);
+                        }
+
+                        let head_result = head_cmd.execute_success().await;
+
+                        match head_result {
+                            Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                            Err(head_err) => {
+                                // If HEAD also fails, return the original error
+                                return Err(e).with_context(|| {
+                                    format!(
+                                        "Failed to create worktree at {} from {} (also tried HEAD: {})",
+                                        worktree_path.display(),
+                                        self.path.display(),
+                                        head_err
+                                    )
+                                });
+                            }
+                        }
+                    }
+
+                    return Err(e).with_context(|| {
+                        format!(
+                            "Failed to create worktree at {} from {}",
+                            worktree_path.display(),
+                            self.path.display()
+                        )
+                    });
+                }
+            }
+        }
+    }
+
+    /// Remove a worktree associated with this repository.
+    ///
+    /// This removes the worktree and its administrative files, but preserves
+    /// the bare repository for future use.
+    ///
+    /// # Arguments
+    ///
+    /// * `worktree_path` - The path to the worktree to remove
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let bare_repo = GitRepo::new("/path/to/bare.git");
+    /// bare_repo.remove_worktree("/tmp/worktree1").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn remove_worktree(&self, worktree_path: impl AsRef<Path>) -> Result<()> {
+        let worktree_path = worktree_path.as_ref();
+
+        GitCommand::worktree_remove(worktree_path)
+            .current_dir(&self.path)
+            .execute_success()
+            .await
+            .with_context(|| format!("Failed to remove worktree at {}", worktree_path.display()))?;
+
+        // Also try to remove the directory if it still exists
+        if worktree_path.exists() {
+            tokio::fs::remove_dir_all(worktree_path).await.ok(); // Ignore errors as git worktree remove may have already cleaned it
+        }
+
+        Ok(())
+    }
+
+    /// List all worktrees associated with this repository.
+    ///
+    /// Returns a list of paths to existing worktrees.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let bare_repo = GitRepo::new("/path/to/bare.git");
+    /// let worktrees = bare_repo.list_worktrees().await?;
+    /// for worktree in worktrees {
+    ///     println!("Worktree: {}", worktree.display());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn list_worktrees(&self) -> Result<Vec<PathBuf>> {
+        let output = GitCommand::worktree_list()
+            .current_dir(&self.path)
+            .execute_stdout()
+            .await?;
+
+        let mut worktrees = Vec::new();
+        let mut current_worktree: Option<PathBuf> = None;
+
+        for line in output.lines() {
+            if line.starts_with("worktree ") {
+                if let Some(path) = line.strip_prefix("worktree ") {
+                    current_worktree = Some(PathBuf::from(path));
+                }
+            } else if line == "bare" {
+                // Skip bare repository entry
+                current_worktree = None;
+            } else if line.is_empty() && current_worktree.is_some() {
+                if let Some(path) = current_worktree.take() {
+                    worktrees.push(path);
+                }
+            }
+        }
+
+        // Add the last worktree if there is one
+        if let Some(path) = current_worktree {
+            worktrees.push(path);
+        }
+
+        Ok(worktrees)
+    }
+
+    /// Prune stale worktree administrative files.
+    ///
+    /// This cleans up worktree entries that no longer have a corresponding
+    /// working directory on disk.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let bare_repo = GitRepo::new("/path/to/bare.git");
+    /// bare_repo.prune_worktrees().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn prune_worktrees(&self) -> Result<()> {
+        GitCommand::worktree_prune()
+            .current_dir(&self.path)
+            .execute_success()
+            .await
+            .with_context(|| "Failed to prune worktrees")?;
+
+        Ok(())
+    }
+
+    /// Check if this repository is a bare repository.
+    ///
+    /// Bare repositories don't have a working directory and are optimized
+    /// for use as a source for worktrees.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::GitRepo;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let repo = GitRepo::new("/path/to/repo.git");
+    /// if repo.is_bare().await? {
+    ///     println!("This is a bare repository");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn is_bare(&self) -> Result<bool> {
+        let output = GitCommand::new()
+            .args(["config", "--get", "core.bare"])
+            .current_dir(&self.path)
+            .execute_stdout()
+            .await?;
+
+        Ok(output.trim() == "true")
     }
 
     /// Get the current commit SHA of the repository.

@@ -10,8 +10,9 @@ A Git-based package manager for Claude Code resources that enables reproducible 
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🔒 **Secure credential handling** - Separate config for sensitive data
-- ⚡ **Parallel operations** - Fast, concurrent installations
+- ⚡ **Advanced parallel operations** - Git worktrees enable safe concurrent access to different versions
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
+- 🚀 **Performance optimized** - Global semaphore controls Git operations, worktrees eliminate blocking
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 
 ## Quick Start

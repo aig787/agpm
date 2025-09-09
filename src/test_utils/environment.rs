@@ -21,7 +21,7 @@ impl TestEnvironment {
     /// Create a new test environment
     pub fn new() -> Result<Self> {
         // Initialize test logging if RUST_LOG is set
-        super::init_test_logging();
+        super::init_test_logging(None);
 
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("project");

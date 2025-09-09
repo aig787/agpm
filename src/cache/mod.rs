@@ -23,15 +23,15 @@
 //! The cache organizes repositories by source name with supporting infrastructure:
 //! ```text
 //! ~/.ccpm/cache/
-//! ├── community/              # Source name from ccpm.toml
-//! │   ├── .git/              # Full Git repository
-//! │   ├── agents/            # Resource directories
-//! │   └── snippets/          # Organized by type
-//! ├── private-source/        # Another source repository
-//! │   └── resources/         # Repository-specific structure
+//! ├── sources/               # Bare repositories for worktree use
+//! │   ├── github_user_repo.git/  # Bare repo optimized for worktrees
+//! │   └── gitlab_org_project.git/ # Parsed from repository URLs
+//! ├── worktrees/             # Temporary worktrees for parallel operations
+//! │   ├── github_user_repo_uuid1/ # Unique worktree for each operation
+//! │   └── github_user_repo_uuid2/ # Enables safe parallel access
 //! └── .locks/                # Lock files for concurrency
-//!     ├── community.lock     # Per-source lock files
-//!     └── private-source.lock
+//!     ├── github_user_repo.lock  # Per-repository lock files
+//!     └── gitlab_org_project.lock # Repository-level locking
 //! ```
 //!
 //! # Concurrency and Thread Safety
@@ -41,6 +41,8 @@
 //! - **Process-safe operations**: Multiple CCPM processes can run simultaneously
 //! - **Atomic file operations**: Resource copying uses safe atomic operations
 //! - **Lock scope isolation**: Different sources can be accessed concurrently
+//! - **Worktree-based parallelism**: Git worktrees enable safe concurrent checkouts
+//! - **Global semaphore control**: Limits concurrent Git operations to prevent overload
 //!
 //! ## Locking Strategy
 //!
@@ -181,8 +183,24 @@ use crate::git::GitRepo;
 use crate::utils::fs;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::fs as async_fs;
+use tokio::sync::Semaphore;
+use uuid::Uuid;
+
+// Global semaphore to limit concurrent git operations
+// This prevents CPU overload from too many git processes
+// Uses 3 * CPU core count for stable parallelism
+static GIT_SEMAPHORE: Lazy<Arc<Semaphore>> = Lazy::new(|| {
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4); // Default to 4 if detection fails
+    let limit = num_cpus * 3;
+    tracing::debug!(target: "cache", "Git semaphore initialized with limit: {}", limit);
+    Arc::new(Semaphore::new(limit))
+});
 
 /// File-based locking mechanism for cache operations
 ///
@@ -487,6 +505,223 @@ impl Cache {
     ) -> Result<PathBuf> {
         self.get_or_clone_source_with_options(name, url, version, false)
             .await
+    }
+
+    /// Get or clone a source repository with worktree support.
+    ///
+    /// This method creates a worktree from a bare repository for parallel-safe
+    /// access to different versions of the same repository.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - The name of the source (used for cache directory naming)
+    /// * `url` - The Git repository URL or local path
+    /// * `version` - Optional specific version/tag/branch to checkout
+    ///
+    /// # Returns
+    ///
+    /// Returns the path to a worktree checked out to the requested version
+    pub async fn get_or_clone_source_worktree(
+        &self,
+        name: &str,
+        url: &str,
+        version: Option<&str>,
+    ) -> Result<PathBuf> {
+        self.get_or_clone_source_worktree_with_context(name, url, version, None)
+            .await
+    }
+
+    /// Get or clone a source repository with worktree support and context.
+    ///
+    /// This method creates a worktree from a bare repository for parallel-safe
+    /// access to different versions of the same repository.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - The name of the source (used for cache directory naming)
+    /// * `url` - The Git repository URL or local path
+    /// * `version` - Optional specific version/tag/branch to checkout
+    /// * `context` - Optional context for logging (e.g., dependency name)
+    ///
+    /// # Returns
+    ///
+    /// Returns the path to a worktree checked out to the requested version
+    pub async fn get_or_clone_source_worktree_with_context(
+        &self,
+        name: &str,
+        url: &str,
+        version: Option<&str>,
+        context: Option<&str>,
+    ) -> Result<PathBuf> {
+        // Check if this is a local path (not a git repository URL)
+        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
+
+        if is_local_path {
+            // For local paths, use the existing behavior (no worktrees needed)
+            return self.get_or_clone_source(name, url, version).await;
+        }
+
+        self.ensure_cache_dir().await?;
+
+        // Parse URL for cache structure
+        let (owner, repo) =
+            crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
+
+        // Use .git suffix for bare repositories
+        let bare_repo_dir = self
+            .cache_dir
+            .join("sources")
+            .join(format!("{owner}_{repo}.git"));
+
+        // Only hold lock for bare repository operations
+        let bare_repo = {
+            let lock_name = format!("{owner}_{repo}");
+            let _lock = CacheLock::acquire(&self.cache_dir, &lock_name)
+                .await
+                .with_context(|| format!("Failed to acquire lock for repository: {lock_name}"))?;
+
+            // Ensure parent directory exists
+            if let Some(parent) = bare_repo_dir.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
+            }
+
+            // Clone as bare repository if it doesn't exist
+            if !bare_repo_dir.exists() {
+                // Acquire semaphore for clone operation
+                let _permit = GIT_SEMAPHORE
+                    .acquire()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to acquire git semaphore: {}", e))?;
+
+                if let Some(ctx) = context {
+                    println!("📦 ({ctx}) Cloning bare repository: {url}...");
+                } else {
+                    println!("📦 Cloning bare repository {url} to cache...");
+                }
+                let repo =
+                    GitRepo::clone_bare_with_context(url, &bare_repo_dir, None, context).await?;
+                drop(_permit); // Release semaphore after clone completes
+                repo
+            } else {
+                // Update existing bare repository
+                let repo = GitRepo::new(&bare_repo_dir);
+                // Acquire semaphore for fetch operation
+                let _permit = GIT_SEMAPHORE
+                    .acquire()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to acquire git semaphore: {}", e))?;
+                repo.fetch(None, None).await.ok(); // Ignore fetch errors for now
+                drop(_permit); // Release semaphore after fetch completes
+                repo
+            }
+            // Lock is automatically dropped here
+        };
+
+        // Create a unique worktree for this operation
+        // This avoids race conditions when multiple tasks try to read from the same worktree
+        let worktree_id = Uuid::new_v4();
+        let worktree_path = self
+            .cache_dir
+            .join("worktrees")
+            .join(format!("{owner}_{repo}_{worktree_id}"));
+
+        // Create worktree with the specified version
+        // Use detached HEAD mode to avoid branch conflicts in parallel operations
+        let detached_ref = version.map(|v| {
+            // If it's a branch name, convert to detached HEAD to avoid conflicts
+            if !v.contains('/') && !v.starts_with("v") && v != "HEAD" {
+                format!("{}^{{commit}}", v) // Force detached HEAD
+            } else {
+                v.to_string()
+            }
+        });
+
+        // Create worktree - each has a unique path so no conflicts
+        // Use semaphore to limit concurrent git operations
+        let _permit = GIT_SEMAPHORE
+            .acquire()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to acquire git semaphore: {}", e))?;
+
+        if let Some(ctx) = context {
+            tracing::debug!(target: "git", "({}) Creating worktree: {} @ {}",
+                ctx,
+                url.split('/').next_back().unwrap_or(url),
+                version.unwrap_or("HEAD")
+            );
+        } else {
+            tracing::debug!(target: "git", "Creating worktree: {} @ {}",
+                url.split('/').next_back().unwrap_or(url),
+                version.unwrap_or("HEAD")
+            );
+        }
+
+        let _worktree = bare_repo
+            .create_worktree_with_context(&worktree_path, detached_ref.as_deref(), context)
+            .await?;
+        drop(_permit); // Release semaphore after git operation completes
+
+        // If version wasn't specified during worktree creation, checkout now
+        if version.is_some() && version != Some("HEAD") {
+            // Worktree creation with a reference handles checkout
+            // No additional checkout needed
+        }
+
+        Ok(worktree_path)
+    }
+
+    /// Clean up a worktree after use (fast version).
+    ///
+    /// This just removes the worktree directory without calling git.
+    /// Git will clean up its internal references when `git worktree prune` is called.
+    ///
+    /// # Parameters
+    ///
+    /// * `worktree_path` - The path to the worktree to clean up
+    pub async fn cleanup_worktree(&self, worktree_path: &Path) -> Result<()> {
+        // Just remove the directory - don't call git worktree remove
+        // This is much faster and git will clean up its references later
+        if worktree_path.exists() {
+            tokio::fs::remove_dir_all(worktree_path)
+                .await
+                .with_context(|| {
+                    format!("Failed to remove worktree directory: {worktree_path:?}")
+                })?;
+        }
+        Ok(())
+    }
+
+    /// Clean up all worktrees in the cache.
+    ///
+    /// This is useful for cleaning up after batch operations or on cache clear.
+    pub async fn cleanup_all_worktrees(&self) -> Result<()> {
+        let worktrees_dir = self.cache_dir.join("worktrees");
+
+        if !worktrees_dir.exists() {
+            return Ok(());
+        }
+
+        // Remove the entire worktrees directory
+        tokio::fs::remove_dir_all(&worktrees_dir)
+            .await
+            .with_context(|| "Failed to clean up worktrees")?;
+
+        // Also prune worktree references from all bare repos
+        let sources_dir = self.cache_dir.join("sources");
+        if sources_dir.exists() {
+            let mut entries = tokio::fs::read_dir(&sources_dir).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("git") {
+                    let bare_repo = GitRepo::new(&path);
+                    bare_repo.prune_worktrees().await.ok();
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Get or clone a source repository with options to control cache behavior.

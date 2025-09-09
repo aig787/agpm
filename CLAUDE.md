@@ -13,18 +13,20 @@ CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Cod
 - **Resources**: Markdown (.md), JSON (.json), executables (.sh/.js/.py)
 - **Patterns**: Glob patterns for bulk installation (`agents/*.md`)
 - **Platforms**: Windows, macOS, Linux with full path support
+- **Parallelism**: Git worktrees for safe concurrent operations
+- **Concurrency**: Global semaphore (3 × CPU cores) prevents overload
 
 ## Key Modules
 
 ```
 src/
 ├── cli/         # Command implementations
-├── cache/       # Git cache management
+├── cache/       # Git cache + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
-├── git/         # Git CLI wrapper
+├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
-├── installer.rs # Resource installation
+├── installer.rs # Parallel resource installation
 ├── lockfile/    # ccpm.lock management
 ├── manifest/    # ccpm.toml parsing
 ├── pattern.rs   # Glob pattern resolution
@@ -82,9 +84,9 @@ src/
 
 ## Dependencies
 
-Main: clap, tokio, toml, serde, anyhow, thiserror, colored, dirs, indicatif, tempfile, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob
+Main: clap, tokio, toml, serde, anyhow, thiserror, colored, dirs, indicatif, tempfile, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell
 
-Dev: assert_cmd, predicates
+Dev: assert_cmd, predicates, serial_test
 
 ## Testing
 
@@ -111,6 +113,8 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Async I/O** with tokio::fs
 - **Parallel tests** without WorkingDirGuard
 - **System git** command (no git2 library)
+- **Git worktrees** for parallel-safe operations
+- **Semaphore control** limits concurrent Git processes
 
 
 
@@ -122,6 +126,24 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - Test on real Windows (not WSL)
 
 
+
+## Worktree Architecture
+
+Cache uses Git worktrees for parallel-safe operations:
+
+```
+~/.ccpm/cache/
+├── sources/        # Bare repositories (.git suffix)
+│   └── github_owner_repo.git/
+├── worktrees/      # Temporary worktrees (UUID-based)
+│   └── github_owner_repo_uuid/
+└── .locks/         # File-based locks for safety
+```
+
+- **Bare repos**: Cloned once, shared by all worktrees
+- **Worktrees**: Each dependency gets isolated working directory
+- **UUID paths**: Prevents conflicts in parallel operations
+- **Fast cleanup**: Directory removal without Git commands
 
 ## Key Requirements
 

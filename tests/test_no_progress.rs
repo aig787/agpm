@@ -7,7 +7,7 @@ use std::env;
 
 #[test]
 fn test_no_progress_flag_disables_progress() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     // Clear the environment variable first
     env::remove_var("CCPM_NO_PROGRESS");
 
@@ -42,7 +42,7 @@ fn test_no_progress_flag_disables_progress() {
 
 #[test]
 fn test_no_progress_with_thread_safe_progress() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     use ccpm::utils::progress::{create_thread_safe_progress, ThreadSafeProgressBar};
 
     // Clear the environment variable first
@@ -73,7 +73,7 @@ fn test_no_progress_with_thread_safe_progress() {
 
 #[test]
 fn test_no_progress_with_parallel_counter() {
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
     use ccpm::utils::progress::ParallelProgressCounter;
 
     // Clear the environment variable first

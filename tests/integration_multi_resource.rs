@@ -11,7 +11,7 @@ use fixtures::{path_to_file_url, TestEnvironment};
 #[test]
 fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Initialize test logging
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("test_repo");
@@ -528,7 +528,7 @@ fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
 #[test]
 fn test_install_with_version_conflicts() -> Result<()> {
     // Initialize test logging
-    ccpm::test_utils::init_test_logging();
+    ccpm::test_utils::init_test_logging(None);
 
     let env = TestEnvironment::new()?;
     let repo_dir = env.sources_dir.join("conflict_repo");

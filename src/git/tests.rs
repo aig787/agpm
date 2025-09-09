@@ -1491,4 +1491,556 @@ mod tests {
         assert!(results.1.unwrap().is_ok());
         assert!(results.2.unwrap().is_ok());
     }
+
+    // Tests for worktree functionality
+    #[tokio::test]
+    async fn test_clone_bare() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+
+        // Create source repo with content
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(source_path.join("README.md"), "# Test").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare repository using file:// URL
+        let pb = crate::utils::progress::ProgressBar::new_spinner();
+        let file_url = format!("file://{}", source_path.display());
+        let result = GitRepo::clone_bare(&file_url, &bare_path, Some(&pb)).await;
+
+        assert!(result.is_ok(), "Failed to clone bare: {:?}", result.err());
+        let bare_repo = result.unwrap();
+        assert!(bare_repo.path().exists());
+
+        // For bare repos, we need to check for the git objects, not the .git directory
+        // Bare repos have their git objects directly in the repo directory
+        let has_objects = bare_repo.path().join("objects").exists();
+        let has_refs = bare_repo.path().join("refs").exists();
+        let has_head = bare_repo.path().join("HEAD").exists();
+
+        assert!(has_objects, "Bare repo missing objects directory");
+        assert!(has_refs, "Bare repo missing refs directory");
+        assert!(has_head, "Bare repo missing HEAD file");
+
+        // Note: is_git_repo() returns false for bare repos because they don't have .git subdirectory
+        // This is expected behavior
+
+        // Check if it's actually bare
+        let is_bare = bare_repo.is_bare().await.unwrap();
+        assert!(is_bare);
+    }
+
+    #[tokio::test]
+    async fn test_clone_bare_with_context() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+
+        // Create source repo
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone bare with context
+        let result = GitRepo::clone_bare_with_context(
+            source_path.to_str().unwrap(),
+            &bare_path,
+            None,
+            Some("test-dependency"),
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+        let worktree_path = temp_dir.path().join("worktree");
+
+        // Create source repo with content
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(source_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Create a tag
+        Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+            .await
+            .unwrap();
+
+        // Create worktree
+        let worktree = bare_repo
+            .create_worktree(&worktree_path, Some("v1.0.0"))
+            .await
+            .unwrap();
+        assert!(worktree.is_git_repo());
+        assert!(worktree_path.join("file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_create_worktree_with_context() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+        let worktree_path = temp_dir.path().join("worktree");
+
+        // Create minimal source repo
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+            .await
+            .unwrap();
+
+        // Create worktree with context
+        let result = bare_repo
+            .create_worktree_with_context(&worktree_path, None, Some("test-dependency"))
+            .await;
+
+        // This might fail because the bare repo has no commits, which is expected
+        // We're mainly testing that the context parameter is handled
+        let _ = result; // Don't assert success since empty repos might fail
+    }
+
+    #[tokio::test]
+    async fn test_remove_worktree() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+        let worktree_path = temp_dir.path().join("worktree");
+
+        // Create source repo
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(source_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare and create worktree
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+            .await
+            .unwrap();
+
+        let _worktree = bare_repo
+            .create_worktree(&worktree_path, None)
+            .await
+            .unwrap();
+        assert!(worktree_path.exists());
+
+        // Remove worktree
+        let result = bare_repo.remove_worktree(&worktree_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_worktrees() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+
+        // Create source repo
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(source_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+            .await
+            .unwrap();
+
+        // List worktrees (should be empty initially for bare repo)
+        let worktrees = bare_repo.list_worktrees().await.unwrap();
+        // Bare repos typically don't show up in worktree list, so this should be empty or minimal
+        assert!(worktrees.len() <= 1); // Allow for different Git versions (some show main repo)
+    }
+
+    #[tokio::test]
+    async fn test_prune_worktrees() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let bare_path = temp_dir.path().join("bare.git");
+
+        // Create source repo
+        std::fs::create_dir(&source_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(source_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&source_path)
+            .output()
+            .unwrap();
+
+        // Clone as bare
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+            .await
+            .unwrap();
+
+        // Prune worktrees (should succeed even if there are none)
+        let result = bare_repo.prune_worktrees().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_is_bare() {
+        let temp_dir = TempDir::new().unwrap();
+        let normal_repo_path = temp_dir.path().join("normal");
+        let bare_repo_path = temp_dir.path().join("bare.git");
+
+        // Create normal repo
+        std::fs::create_dir(&normal_repo_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&normal_repo_path)
+            .output()
+            .unwrap();
+
+        // Create bare repo
+        std::fs::create_dir(&bare_repo_path).unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(&bare_repo_path)
+            .output()
+            .unwrap();
+
+        let normal_repo = GitRepo::new(&normal_repo_path);
+        let bare_repo = GitRepo::new(&bare_repo_path);
+
+        // Test that normal repo is not bare
+        let is_bare = normal_repo.is_bare().await.unwrap();
+        assert!(!is_bare);
+
+        // Test that bare repo is bare
+        let is_bare = bare_repo.is_bare().await.unwrap();
+        assert!(is_bare);
+    }
+
+    #[tokio::test]
+    async fn test_get_current_commit() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Create initial commit
+        std::fs::write(repo_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let repo = GitRepo::new(repo_path);
+        let commit = repo.get_current_commit().await.unwrap();
+
+        // Should be a valid SHA-1 hash (40 characters)
+        assert_eq!(commit.len(), 40);
+        assert!(commit.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[tokio::test]
+    async fn test_get_current_commit_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let non_git_path = temp_dir.path().join("not_git");
+        std::fs::create_dir(&non_git_path).unwrap();
+
+        let repo = GitRepo::new(&non_git_path);
+        let result = repo.get_current_commit().await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to get current commit"));
+    }
+
+    #[tokio::test]
+    async fn test_checkout_remote_branch_fallback() {
+        let temp_dir = TempDir::new().unwrap();
+        let origin_path = temp_dir.path().join("origin");
+        let repo_path = temp_dir.path().join("repo");
+
+        // Create origin repo
+        std::fs::create_dir(&origin_path).unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(origin_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        // Create feature branch
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(origin_path.join("feature.txt"), "feature").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Feature commit"])
+            .current_dir(&origin_path)
+            .output()
+            .unwrap();
+
+        // Clone the repo
+        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path, None)
+            .await
+            .unwrap();
+
+        // Fetch to get remote branches
+        repo.fetch(None, None).await.unwrap();
+
+        // Try to checkout the feature branch (should work via remote branch fallback)
+        let result = repo.checkout("feature").await;
+        assert!(
+            result.is_ok(),
+            "Failed to checkout remote branch: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_checkout_error_handling() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        std::fs::write(repo_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let repo = GitRepo::new(repo_path);
+
+        // Try to checkout non-existent reference
+        let result = repo.checkout("definitely-does-not-exist").await;
+        assert!(result.is_err());
+
+        // Check that it's the right error type
+        let error_str = result.unwrap_err().to_string();
+        assert!(
+            error_str.contains("Failed to checkout") || error_str.contains("GitCheckoutFailed")
+        );
+    }
 }

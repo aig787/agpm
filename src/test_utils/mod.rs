@@ -36,6 +36,7 @@ pub use environment::TestEnvironment;
 pub use fixtures::{GitRepoFixture, LockfileFixture, ManifestFixture, MarkdownFixture};
 
 use std::sync::Once;
+use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
 /// Global flag to ensure logging is only initialized once in tests
@@ -45,31 +46,52 @@ static INIT_LOGGING: Once = Once::new();
 ///
 /// This function initializes the tracing subscriber for tests, but only once
 /// regardless of how many times it's called. It respects the RUST_LOG environment
-/// variable if set.
+/// variable if set, or uses the provided log level.
+///
+/// # Arguments
+///
+/// * `level` - Optional log level to use. If None, uses RUST_LOG environment variable
 ///
 /// # Example
 ///
 /// ```rust
+/// use tracing::Level;
+///
 /// fn my_test() {
-///     ccpm::test_utils::init_test_logging();
+///     // Use environment variable
+///     ccpm::test_utils::init_test_logging(None);
+///     
+///     // Or set level programmatically
+///     ccpm::test_utils::init_test_logging(Some(Level::DEBUG));
+///     
 ///     // Your test code here - logging will work
 /// }
 /// ```
 ///
-/// To enable logging in tests, run:
+/// To enable logging in tests via environment variable:
 /// ```bash
 /// RUST_LOG=debug cargo test
 /// ```
-pub fn init_test_logging() {
+pub fn init_test_logging(level: Option<Level>) {
     INIT_LOGGING.call_once(|| {
-        // Only initialize if RUST_LOG is set
-        if std::env::var("RUST_LOG").is_ok() {
-            let _ = tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .with_test_writer() // Important: uses test-compatible writer
-                .with_target(false)
-                .with_thread_ids(false)
-                .try_init();
-        }
+        // Determine the filter to use
+        let filter = if let Some(level) = level {
+            // Use the provided level
+            EnvFilter::new(level.to_string())
+        } else if std::env::var("RUST_LOG").is_ok() {
+            // Use environment variable
+            EnvFilter::from_default_env()
+        } else {
+            // No logging if neither is provided
+            return;
+        };
+
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_test_writer() // Important: uses test-compatible writer
+            .with_target(true) // Show module targets like "git"
+            .with_thread_ids(false)
+            .with_ansi(true) // Enable ANSI color codes for better readability
+            .try_init();
     });
 }

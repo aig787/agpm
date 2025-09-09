@@ -77,6 +77,14 @@ Based on the changes shown above, create a single git commit following these gui
             - TODO comments or debugging code
             - Inconsistent formatting or style
             - Trial-and-error patterns (multiple similar attempts)
+            
+
+          **Automated tool indicators (no attribution):**
+            - Changes from `cargo fmt` or `rustfmt`
+            - Changes from `cargo clippy --fix`
+            - Dependency updates from `cargo update` or similar
+            - Any changes that are purely whitespace/formatting
+            - Auto-generated files or tool outputs
 
           **Contextual analysis:**
             - Check file history: new files vs modifications
@@ -95,6 +103,7 @@ Based on the changes shown above, create a single git commit following these gui
               🤖 Generated with Claude assistance
               ```
             - <25% AI-generated: No attribution
+            - Automated tool changes: No attribution (regardless of who ran the tool)
     - Briefly explain your attribution decision (e.g., "~70% AI-generated content, adding co-author")
 
 5. Stage the appropriate files:

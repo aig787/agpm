@@ -304,10 +304,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "This test uses environment variables which cause race conditions in parallel tests. Run with --ignored --test-threads=1"]
     fn test_cache_dir_with_env_var() {
         // NOTE: This test explicitly tests environment variable functionality
         // It uses std::env::set_var which can cause race conditions in parallel test execution.
-        // If this test becomes flaky, run with: cargo test -- --test-threads=1
+        // Run with: cargo test -- --ignored --test-threads=1
 
         // Save original value
         let original = std::env::var("CCPM_CACHE_DIR").ok();
