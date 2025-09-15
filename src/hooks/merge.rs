@@ -218,9 +218,13 @@ fn event_to_string(event: &HookEvent) -> String {
     match event {
         HookEvent::PreToolUse => "PreToolUse".to_string(),
         HookEvent::PostToolUse => "PostToolUse".to_string(),
+        HookEvent::Notification => "Notification".to_string(),
         HookEvent::UserPromptSubmit => "UserPromptSubmit".to_string(),
-        HookEvent::UserPromptReceive => "UserPromptReceive".to_string(),
-        HookEvent::AssistantResponseReceive => "AssistantResponseReceive".to_string(),
+        HookEvent::Stop => "Stop".to_string(),
+        HookEvent::SubagentStop => "SubagentStop".to_string(),
+        HookEvent::PreCompact => "PreCompact".to_string(),
+        HookEvent::SessionStart => "SessionStart".to_string(),
+        HookEvent::SessionEnd => "SessionEnd".to_string(),
     }
 }
 

@@ -21,15 +21,27 @@ pub enum HookEvent {
     /// Triggered after a tool has been executed by Claude
     #[serde(rename = "PostToolUse")]
     PostToolUse,
+    /// Triggered when Claude needs permission or input is idle
+    #[serde(rename = "Notification")]
+    Notification,
     /// Triggered when the user submits a prompt
     #[serde(rename = "UserPromptSubmit")]
     UserPromptSubmit,
-    /// Triggered when Claude receives a user prompt
-    #[serde(rename = "UserPromptReceive")]
-    UserPromptReceive,
-    /// Triggered when the user receives an assistant response
-    #[serde(rename = "AssistantResponseReceive")]
-    AssistantResponseReceive,
+    /// Triggered when main Claude Code agent finishes responding
+    #[serde(rename = "Stop")]
+    Stop,
+    /// Triggered when a subagent (Task tool) finishes responding
+    #[serde(rename = "SubagentStop")]
+    SubagentStop,
+    /// Triggered before compact operation
+    #[serde(rename = "PreCompact")]
+    PreCompact,
+    /// Triggered when starting/resuming a session
+    #[serde(rename = "SessionStart")]
+    SessionStart,
+    /// Triggered when session ends
+    #[serde(rename = "SessionEnd")]
+    SessionEnd,
 }
 
 /// Hook configuration as stored in JSON files
@@ -284,12 +296,13 @@ mod tests {
         let events = vec![
             (HookEvent::PreToolUse, r#""PreToolUse""#),
             (HookEvent::PostToolUse, r#""PostToolUse""#),
+            (HookEvent::Notification, r#""Notification""#),
             (HookEvent::UserPromptSubmit, r#""UserPromptSubmit""#),
-            (HookEvent::UserPromptReceive, r#""UserPromptReceive""#),
-            (
-                HookEvent::AssistantResponseReceive,
-                r#""AssistantResponseReceive""#,
-            ),
+            (HookEvent::Stop, r#""Stop""#),
+            (HookEvent::SubagentStop, r#""SubagentStop""#),
+            (HookEvent::PreCompact, r#""PreCompact""#),
+            (HookEvent::SessionStart, r#""SessionStart""#),
+            (HookEvent::SessionEnd, r#""SessionEnd""#),
         ];
 
         for (event, expected) in events {
