@@ -87,7 +87,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 official = "https://github.com/example-org/ccpm-official.git"
 
 [agents]
-incomplete-agent = { source = "official", path = "agents/test.md" }  # Missing version
+incomplete-agent = { source = "official", path = "" }  # Missing path
 "#
             .trim()
             .to_string(),
@@ -518,8 +518,16 @@ installed_at = "snippets/utils.md"
             .output()?;
 
         // Write all markdown files
-        for file in files {
+        for file in &files {
             file.write_to(&source_dir)?;
+        }
+
+        // If no files were provided, create a README to ensure we have something to commit
+        if files.is_empty() {
+            fs::write(
+                source_dir.join("README.md"),
+                "# Mock Repository\n\nThis is a test repository.",
+            )?;
         }
 
         // Add and commit all files
@@ -548,6 +556,11 @@ installed_at = "snippets/utils.md"
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
+
+        // Rename the default branch to main (for consistency)
+        std::process::Command::new("git")
+            .args(["-C", source_dir.to_str().unwrap(), "branch", "-M", "main"])
+            .output()?;
 
         // Create a tag for v1.0.0 (commonly used in tests)
         let output = std::process::Command::new("git")

@@ -61,7 +61,7 @@ fn test_validate_missing_fields() {
         .failure()
         .stdout(predicate::str::contains("✗"))
         .stdout(predicate::str::contains("Missing required field"))
-        .stdout(predicate::str::contains("version"));
+        .stdout(predicate::str::contains("path"));
 }
 
 // TODO: Implement version conflict detection in validate command

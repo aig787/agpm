@@ -226,12 +226,8 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 
     let mut cmd = env.ccpm_command();
     cmd.arg("install").assert().failure().stderr(
-        predicate::str::contains("Permission denied")
-            .or(predicate::str::contains("could not create"))
-            .or(predicate::str::contains("Access is denied"))
-            .or(predicate::str::contains("Failed to checkout"))
-            .or(predicate::str::contains("not found")),
-    ); // Git checkout may succeed but file copy fails
+        predicate::str::contains("Failed to install").and(predicate::str::contains("resource")),
+    ); // The error message format has changed to be more generic
 
     // Restore permissions for cleanup
     let claude_dir = env.project_path().join(".claude");
@@ -494,7 +490,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     cmd.arg("install")
         .assert()
         .success() // Should handle large files properly
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(predicate::str::contains("Installed"));
 }
 
 /// Test handling of filesystem corruption
@@ -708,7 +704,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     cmd.arg("install")
         .assert()
         .success() // File URLs should work correctly now
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(predicate::str::contains("Installed"));
 }
 
 /// Test error message quality and helpfulness

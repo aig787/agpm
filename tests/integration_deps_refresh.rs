@@ -57,8 +57,10 @@ fn test_update_all_dependencies() {
     cmd.arg("update")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Updating dependencies"))
-        .stdout(predicate::str::contains("Updated lockfile"));
+        .stdout(predicate::str::contains("Found"))
+        .stdout(predicate::str::contains("update(s)"))
+        .stdout(predicate::str::contains("Updated"))
+        .stdout(predicate::str::contains("resources"));
 
     // Verify lockfile was updated
     let lockfile_path = env.project_path().join("ccpm.lock");
@@ -101,7 +103,8 @@ fn test_update_specific_dependency() {
         .arg("my-agent")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Updating"));
+        .stdout(predicate::str::contains("Found"))
+        .stdout(predicate::str::contains("update(s)"));
 
     // Verify only the specified dependency was updated
     let lockfile_content = fs::read_to_string(env.project_path().join("ccpm.lock")).unwrap();
@@ -214,7 +217,8 @@ installed_at = "agents/my-agent.md"
 
     let mut cmd = env.ccpm_command();
     cmd.arg("update").arg("--check").assert().success().stdout(
-        predicate::str::contains("Updates available")
+        predicate::str::contains("Found")
+            .and(predicate::str::contains("update(s)"))
             .or(predicate::str::contains("All dependencies are up to date")),
     );
 }
@@ -231,7 +235,8 @@ fn test_update_with_version_constraints() {
     cmd.arg("update")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Updating dependencies"));
+        .stdout(predicate::str::contains("Found"))
+        .stdout(predicate::str::contains("update(s)"));
 
     let lockfile_content = fs::read_to_string(env.project_path().join("ccpm.lock")).unwrap();
     assert!(lockfile_content.contains("my-agent"));
@@ -252,7 +257,8 @@ fn test_update_force_ignore_constraints() {
         .arg("--force")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Updating dependencies"));
+        .stdout(predicate::str::contains("Found"))
+        .stdout(predicate::str::contains("update(s)"));
 }
 
 /// Test update with backup/rollback capability
@@ -287,9 +293,8 @@ fn test_update_verbose() {
         .arg("--verbose")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Checking for updates"))
-        .stdout(predicate::str::contains("Resolving dependencies"))
-        .stdout(predicate::str::contains("Fetching latest"));
+        .stdout(predicate::str::contains("Found"))
+        .stdout(predicate::str::contains("update(s)"));
 }
 
 /// Test update with quiet output

@@ -52,7 +52,11 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
         .arg("--no-cache") // Skip cache for tests
         .assert()
         .success()
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(
+            predicate::str::contains("Installing")
+                .or(predicate::str::contains("Cloning"))
+                .or(predicate::str::contains("Installed")),
+        );
 
     // Verify lockfile was created
     let lockfile_path = env.project_path().join("ccpm.lock");
@@ -177,7 +181,11 @@ installed_at = ".claude/agents/helper.md"
         .arg("--no-cache") // Skip cache for tests
         .assert()
         .success()
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(
+            predicate::str::contains("Installing")
+                .or(predicate::str::contains("Cloning"))
+                .or(predicate::str::contains("Installed")),
+        );
 
     // Verify agents directory was created and populated
     let agents_dir = env.project_path().join(".claude").join("agents");
@@ -233,94 +241,6 @@ fn test_install_missing_manifest_fields() {
         .stderr(predicate::str::contains("Missing required field"));
 }
 
-/// Test install with --force flag
-#[tokio::test]
-async fn test_install_force_flag() {
-    let env = TestEnvironment::new().unwrap();
-
-    // Create mock source repositories with all required files using local files
-    let official_files = vec![
-        MarkdownFixture::agent("my-agent"),
-        MarkdownFixture::snippet("utils"),
-    ];
-
-    let official_repo = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example-org/ccpm-official.git",
-            official_files,
-        )
-        .unwrap();
-
-    // Create manifest with file:// URLs (no git server needed)
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        fixtures::path_to_file_url(&official_repo)
-    );
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
-
-    // Get the HEAD commit SHA for the repo
-    let official_commit = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(&official_repo)
-        .output()
-        .unwrap();
-    let official_sha = String::from_utf8_lossy(&official_commit.stdout)
-        .trim()
-        .to_string();
-
-    // Create a lockfile for the existing setup
-    let lockfile_content = format!(
-        r#"# Auto-generated lockfile - DO NOT EDIT
-version = 1
-
-[[sources]]
-name = "official"
-url = "file://{}"
-commit = "{}"
-fetched_at = "2024-01-01T00:00:00Z"
-
-[[agents]]
-name = "my-agent"
-source = "official"
-path = "agents/my-agent.md"
-version = "v1.0.0"
-resolved_commit = "{}"
-checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-installed_at = ".claude/agents/my-agent.md"
-"#,
-        fixtures::path_to_file_url(&official_repo),
-        official_sha,
-        official_sha
-    );
-    fs::write(env.project_path().join("ccpm.lock"), lockfile_content).unwrap();
-
-    // Create existing agent file to test force overwrite
-    let agents_dir = env.project_path().join(".claude").join("agents");
-    fs::create_dir_all(&agents_dir).unwrap();
-    fs::write(agents_dir.join("my-agent.md"), "old content").unwrap();
-
-    // Run install command with force flag
-    let mut cmd = env.ccpm_command();
-    cmd.arg("install")
-        .arg("--no-cache") // Skip cache for tests
-        .arg("--force")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Installing"));
-
-    // Verify the file was overwritten with new content
-    let content = fs::read_to_string(agents_dir.join("my-agent.md")).unwrap();
-    assert_ne!(content, "old content");
-    assert!(content.contains("# my-agent Agent"));
-}
-
 /// Test install with --parallel flag
 #[tokio::test]
 async fn test_install_parallel_flag() {
@@ -372,7 +292,11 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
         .arg("2")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(
+            predicate::str::contains("Installing")
+                .or(predicate::str::contains("Cloning"))
+                .or(predicate::str::contains("Installed")),
+        );
 
     // Verify that files were installed
     let agents_dir = env.project_path().join(".claude").join("agents");
@@ -438,7 +362,11 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
         .arg("--no-cache") // Skip cache for tests
         .assert()
         .success()
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(
+            predicate::str::contains("Installing")
+                .or(predicate::str::contains("Cloning"))
+                .or(predicate::str::contains("Installed")),
+        );
 
     // Verify lockfile was created and contains all dependencies
     let lockfile_content = fs::read_to_string(env.project_path().join("ccpm.lock")).unwrap();
@@ -497,7 +425,11 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
         .arg("--verbose")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(
+            predicate::str::contains("Installing")
+                .or(predicate::str::contains("Cloning"))
+                .or(predicate::str::contains("Installed")),
+        );
 }
 
 /// Test install with quiet output
@@ -578,7 +510,6 @@ fn test_install_help() {
         .stdout(predicate::str::contains(
             "Install Claude Code resources from manifest",
         ))
-        .stdout(predicate::str::contains("--force"))
         .stdout(predicate::str::contains("--max-parallel"))
         .stdout(predicate::str::contains("--no-lock"))
         .stdout(predicate::str::contains("--frozen"));

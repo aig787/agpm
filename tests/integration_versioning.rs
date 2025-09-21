@@ -103,8 +103,26 @@ fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
         .current_dir(repo_path)
         .output()?;
 
+    // Go back to main/master branch first to ensure we're on the default branch
+    // Try main first, fall back to master
+    let checkout_result = std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(repo_path)
+        .output()?;
+
+    if !checkout_result.status.success() {
+        // Try master if main doesn't exist
+        std::process::Command::new("git")
+            .args(["checkout", "master"])
+            .current_dir(repo_path)
+            .output()?;
+    }
+
     // Create develop branch with different content
-    git.create_branch("develop")?;
+    std::process::Command::new("git")
+        .args(["checkout", "-b", "develop"])
+        .current_dir(repo_path)
+        .output()?;
 
     fs::write(
         repo_path.join("agents/example.md"),
@@ -139,11 +157,19 @@ fn setup_git_repo_with_versions(repo_path: &Path) -> Result<String> {
     git.add_all()?;
     git.commit("Add feature agent")?;
 
-    // Go back to main branch
-    std::process::Command::new("git")
+    // Go back to main/master branch
+    let checkout_result = std::process::Command::new("git")
         .args(["checkout", "main"])
         .current_dir(repo_path)
         .output()?;
+
+    if !checkout_result.status.success() {
+        // Try master if main doesn't exist
+        std::process::Command::new("git")
+            .args(["checkout", "master"])
+            .current_dir(repo_path)
+            .output()?;
+    }
 
     Ok(v1_commit)
 }

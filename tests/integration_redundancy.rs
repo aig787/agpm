@@ -1,4 +1,5 @@
 use anyhow::Result;
+use ccpm::cache::Cache;
 use ccpm::cli::validate::ValidateCommand;
 use ccpm::manifest::{DetailedDependency, Manifest, ResourceDependency};
 use tempfile::TempDir;
@@ -388,7 +389,8 @@ async fn test_resolver_detects_conflicts() -> Result<()> {
         }),
         true,
     );
-    let resolver = DependencyResolver::with_cache(manifest, temp.path().to_path_buf());
+    let cache = Cache::with_dir(temp.path().to_path_buf()).unwrap();
+    let resolver = DependencyResolver::with_cache(manifest, cache);
     // Test check_redundancies
     let warning = resolver.check_redundancies();
     assert!(
