@@ -2,7 +2,7 @@
 name: rust-linting-advanced  
 description: Advanced linting and code quality fixes (Sonnet). Handles complex clippy warnings, refactoring suggestions. Delegates architectural changes to rust-expert-opus.
 model: sonnet
-tools: Edit, MultiEdit, Bash
+tools: Task, Bash, BashOutput, Read, Edit, MultiEdit, Glob, Grep, TodoWrite
 ---
 
 # Pragmatic Rust Linting & Code Quality Expert

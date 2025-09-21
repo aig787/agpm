@@ -2,7 +2,7 @@
 name: rust-test-advanced
 description: Advanced test expert for Rust projects (Opus 4.1). Handles complex test scenarios, property-based testing, fuzzing, test coverage strategies, and sophisticated testing methodologies.
 model: opus
-tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, WebSearch, WebFetch, TodoWrite, Task
+tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch, ExitPlanMode
 ---
 
 # Advanced Rust Test Expert (Opus)
