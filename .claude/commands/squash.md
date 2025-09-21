@@ -68,20 +68,25 @@ Squash commits between the specified range into a single commit, with optional i
      * Analyze all changes to determine commit type (feat/fix/docs/test/refactor/chore)
      * Create concise message (≤72 chars) that summarizes the overall change
      * Include a body section listing the original commits being squashed
-   - Use interactive rebase or reset + commit approach:
+   - Analyze the code diff to determine appropriate attribution:
+     * Review the actual changes being squashed: `git diff <from> <to>`
+     * Apply commit.md attribution rules based on AI contribution percentage
+   - Use reset + commit approach:
      ```bash
-     # Option 1: Interactive rebase (safer)
-     git rebase -i <from>^
-     # Mark all commits except first as 'squash'
-
-     # Option 2: Reset approach (simpler)
      git reset --soft <from>
-     git commit -m "type: concise summary
+     # Analyze changes and determine attribution need
+     git diff --cached
+     git commit -m "$(cat <<'EOF'
+     type: concise summary
 
      Squashed commits:
      - original commit 1
      - original commit 2
-     ..."
+     ...
+
+     [Include attribution only if analysis shows >25% AI contribution]
+     EOF
+     )"
      ```
 
 **With --regroup flag (intelligent regrouping)**:
@@ -108,12 +113,26 @@ Squash commits between the specified range into a single commit, with optional i
       - Atomic units of work
       - Cross-cutting concerns that span multiple files
 
-   c. **Create staged commits**:
-      - Reset to `from` commit: `git reset --soft <from>`
+   c. **Create staged commits with analyzed attribution**:
+      - Reset to `from` commit: `git reset --mixed <from>` (use mixed to allow proper staging)
       - For each logical group identified:
         * Stage relevant files: `git add <files>`
-        * Create commit with appropriate message (using commit.md guidelines)
-        * Determine attribution per commit.md rules based on diff analysis
+        * Analyze the diff to determine AI contribution: `git diff --cached`
+        * Apply attribution rules from commit.md based on the actual code changes:
+          - >50% AI-generated: Add co-author
+          - 25-50% AI-generated: Add contribution note
+          - <25% AI or tool-generated: No attribution needed
+        * Create commit with appropriate message and attribution:
+          ```
+          git commit -m "$(cat <<'EOF'
+          type: concise summary
+
+          [Additional body if needed]
+
+          [Attribution based on analysis - only if warranted]
+          EOF
+          )"
+          ```
       - Ensure no changes are left unstaged
 
    d. **Example regrouping**:
@@ -125,15 +144,22 @@ Squash commits between the specified range into a single commit, with optional i
       3. docs: update API documentation
       ```
 
-5. **Commit message generation** (reference `.claude/commands/commit.md`):
-   - Analyze changes to determine type prefix
+5. **Commit message generation and attribution**:
+   - Analyze changes to determine type prefix (feat/fix/docs/test/refactor/chore)
    - Use present tense, be concise (≤72 chars)
    - For squashed commits, include summary in body
-   - Apply attribution rules from commit.md:
-     * Analyze diff for AI-generated percentage
-     * >50% AI: Add co-author
-     * 25-50% AI: Add contribution note
-     * <25% AI or tool-generated: No attribution
+   - **Apply attribution based on code analysis (per commit.md)**:
+     * Analyze the actual diff to determine AI contribution percentage
+     * >50% AI-generated code: Add co-author attribution
+     * 25-50% AI-generated code: Add contribution note
+     * <25% AI or tool-generated: No attribution needed
+     * The squashing operation itself doesn't require attribution - only the actual code changes matter
+     * Example attribution when warranted:
+       ```
+       🤖 Generated with [Claude Code](https://claude.ai/code)
+
+       Co-Authored-By: Claude <noreply@anthropic.com>
+       ```
 
 6. **Safety checks**:
    - Verify working directory is clean before starting
