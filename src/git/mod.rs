@@ -33,12 +33,13 @@
 //! Advanced Git worktree integration for safe parallel package installation:
 //! - **Bare repository cloning**: Creates repositories optimized for worktrees
 //! - **Parallel worktree creation**: Multiple versions checked out simultaneously
-//! - **Concurrency control**: Global semaphore prevents resource exhaustion
+//! - **Per-worktree locking**: Individual worktree creation locks prevent conflicts
+//! - **Command-level concurrency**: Parallelism controlled by `--max-parallel` flag
 //! - **Automatic cleanup**: Efficient worktree lifecycle management
 //! - **Conflict-free operations**: Each dependency gets its own isolated working directory
 //!
 //! ## Progress Reporting
-//! Integration with [`ProgressBar`] for user feedback during:
+//! User feedback during:
 //! - Repository cloning with transfer progress
 //! - Fetch operations with network activity
 //! - Large repository operations
@@ -99,11 +100,9 @@
 //! ## Basic Repository Operations
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
-//! use ccpm::utils::progress::ProgressBar;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Clone a repository with progress reporting
-//! let progress = ProgressBar::new(100);
 //! let repo = GitRepo::clone(
 //!     "https://github.com/example/repo.git",
 //!     "/tmp/repo",
@@ -222,7 +221,6 @@
 //! - [`crate::utils::progress`] - User progress feedback
 //! - [`crate::core::CcpmError`] - Centralized error handling
 //!
-//! [`ProgressBar`]: crate::utils::progress::ProgressBar
 //! [`CcpmError`]: crate::core::CcpmError
 
 pub mod command_builder;
@@ -231,7 +229,6 @@ mod tests;
 
 use crate::core::CcpmError;
 use crate::git::command_builder::GitCommand;
-use crate::utils::progress::ProgressBar;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -355,7 +352,6 @@ impl GitRepo {
     ///
     /// ```rust,no_run
     /// use ccpm::git::GitRepo;
-    /// use ccpm::utils::progress::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Clone public repository
@@ -366,7 +362,6 @@ impl GitRepo {
     /// ).await?;
     ///
     /// // Clone with progress reporting
-    /// let progress = ProgressBar::new(100);
     /// let repo = GitRepo::clone(
     ///     "https://github.com/large/repository.git",
     ///     "/tmp/large-repo",
@@ -391,16 +386,8 @@ impl GitRepo {
     /// tokens in URLs are never logged or exposed in error messages.
     ///
     /// [`CcpmError::GitCloneFailed`]: crate::core::CcpmError::GitCloneFailed
-    pub async fn clone(
-        url: &str,
-        target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<Self> {
+    pub async fn clone(url: &str, target: impl AsRef<Path>) -> Result<Self> {
         let target_path = target.as_ref();
-
-        if let Some(pb) = &progress {
-            pb.set_message(format!("Cloning {url}"));
-        }
 
         // Use command builder for consistent clone operations
         let mut cmd = GitCommand::clone(url, target_path);
@@ -408,16 +395,18 @@ impl GitRepo {
         // For file:// URLs, clone with all branches to ensure commit availability
         if url.starts_with("file://") {
             cmd = GitCommand::new()
-                .args(["clone", "--progress", "--no-single-branch", url])
+                .args([
+                    "clone",
+                    "--progress",
+                    "--no-single-branch",
+                    "--recurse-submodules",
+                    url,
+                ])
                 .arg(target_path.display().to_string());
         }
 
         // Execute will handle error context properly
         cmd.execute().await?;
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Clone complete");
-        }
 
         Ok(Self::new(target_path))
     }
@@ -450,7 +439,6 @@ impl GitRepo {
     ///
     /// ```rust,no_run
     /// use ccpm::git::GitRepo;
-    /// use ccpm::utils::progress::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -459,7 +447,6 @@ impl GitRepo {
     /// repo.fetch(None, None).await?;
     ///
     /// // Fetch with authentication and progress
-    /// let progress = ProgressBar::new(100);
     /// let auth_url = "https://token:ghp_xxxx@github.com/user/repo.git";
     /// repo.fetch(Some(auth_url), Some(&progress)).await?;
     /// # Ok(())
@@ -482,17 +469,9 @@ impl GitRepo {
     /// - Use efficient Git transfer protocols
     ///
     /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
-    pub async fn fetch(
-        &self,
-        auth_url: Option<&str>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<()> {
+    pub async fn fetch(&self, auth_url: Option<&str>) -> Result<()> {
         // Note: file:// URLs are local repositories, but we still need to fetch
         // from them to get updates from the source repository
-
-        if let Some(pb) = progress {
-            pb.set_message("Fetching updates");
-        }
 
         // Use git fetch with authentication from global config URL if provided
         if let Some(url) = auth_url {
@@ -508,10 +487,6 @@ impl GitRepo {
             .current_dir(&self.path)
             .execute_success()
             .await?;
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Fetch complete");
-        }
 
         Ok(())
     }
@@ -1012,7 +987,7 @@ impl GitRepo {
     /// let url = "https://github.com/user/private-repo.git";
     /// match GitRepo::verify_url(url).await {
     ///     Ok(_) => {
-    ///         let repo = GitRepo::clone(url, "/tmp/repo", None).await?;
+    ///         let repo = GitRepo::clone(url, "/tmp/repo").await?;
     ///         println!("Repository cloned successfully");
     ///     }
     ///     Err(e) => {
@@ -1143,12 +1118,8 @@ impl GitRepo {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn clone_bare(
-        url: &str,
-        target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<Self> {
-        Self::clone_bare_with_context(url, target, progress, None).await
+    pub async fn clone_bare(url: &str, target: impl AsRef<Path>) -> Result<Self> {
+        Self::clone_bare_with_context(url, target, None).await
     }
 
     /// Clone a repository as a bare repository with logging context.
@@ -1169,14 +1140,9 @@ impl GitRepo {
     pub async fn clone_bare_with_context(
         url: &str,
         target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
         context: Option<&str>,
     ) -> Result<Self> {
         let target_path = target.as_ref();
-
-        if let Some(pb) = &progress {
-            pb.set_message(format!("Cloning bare repository {url}"));
-        }
 
         let mut cmd = GitCommand::clone_bare(url, target_path);
 
@@ -1193,10 +1159,6 @@ impl GitRepo {
         repo.ensure_bare_repo_has_refs_with_context(context)
             .await
             .ok();
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Bare clone complete");
-        }
 
         Ok(repo)
     }
@@ -1312,7 +1274,36 @@ impl GitRepo {
             let result = cmd.execute_success().await;
 
             match result {
-                Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                Ok(_) => {
+                    // Initialize and update submodules in the new worktree
+                    let worktree_repo = GitRepo::new(worktree_path);
+
+                    // Initialize submodules
+                    let mut init_cmd = GitCommand::new()
+                        .args(["submodule", "init"])
+                        .current_dir(worktree_path);
+
+                    if let Some(ctx) = context {
+                        init_cmd = init_cmd.with_context(ctx);
+                    }
+
+                    // Ignore errors - if there are no submodules, this will fail
+                    let _ = init_cmd.execute_success().await;
+
+                    // Update submodules
+                    let mut update_cmd = GitCommand::new()
+                        .args(["submodule", "update", "--recursive"])
+                        .current_dir(worktree_path);
+
+                    if let Some(ctx) = context {
+                        update_cmd = update_cmd.with_context(ctx);
+                    }
+
+                    // Ignore errors - if there are no submodules, this will fail
+                    let _ = update_cmd.execute_success().await;
+
+                    return Ok(worktree_repo);
+                }
                 Err(e) => {
                     let error_str = e.to_string();
 
@@ -1339,6 +1330,66 @@ impl GitRepo {
                         continue;
                     }
 
+                    // Handle stale registration: "missing but already registered worktree"
+                    if error_str.contains("missing but already registered worktree") {
+                        // Prune stale admin entries, then retry (once) with --force
+                        let _ = self.prune_worktrees().await;
+
+                        // Retry with --force
+                        let worktree_path_str = worktree_path.display().to_string();
+                        let mut args = vec![
+                            "worktree".to_string(),
+                            "add".to_string(),
+                            "--force".to_string(),
+                            worktree_path_str,
+                        ];
+                        if let Some(r) = effective_ref {
+                            args.push(r.to_string());
+                        }
+
+                        let mut force_cmd = GitCommand::new().args(args).current_dir(&self.path);
+                        if let Some(ctx) = context {
+                            force_cmd = force_cmd.with_context(ctx);
+                        }
+
+                        match force_cmd.execute_success().await {
+                            Ok(_) => {
+                                // Initialize and update submodules in the new worktree
+                                let worktree_repo = GitRepo::new(worktree_path);
+
+                                let mut init_cmd = GitCommand::new()
+                                    .args(["submodule", "init"])
+                                    .current_dir(worktree_path);
+                                if let Some(ctx) = context {
+                                    init_cmd = init_cmd.with_context(ctx);
+                                }
+                                let _ = init_cmd.execute_success().await;
+
+                                let mut update_cmd = GitCommand::new()
+                                    .args(["submodule", "update", "--recursive"])
+                                    .current_dir(worktree_path);
+                                if let Some(ctx) = context {
+                                    update_cmd = update_cmd.with_context(ctx);
+                                }
+                                let _ = update_cmd.execute_success().await;
+
+                                return Ok(worktree_repo);
+                            }
+                            Err(e2) => {
+                                // Fall through to other recovery paths with the original error context
+                                // but include the forced attempt error as context
+                                return Err(e).with_context(|| {
+                                    format!(
+                                        "Failed to create worktree at {} from {} (forced add failed: {})",
+                                        worktree_path.display(),
+                                        self.path.display(),
+                                        e2
+                                    )
+                                });
+                            }
+                        }
+                    }
+
                     // If no reference was provided and the command failed, it might be because
                     // the bare repo doesn't have a default branch set. Try with explicit HEAD
                     if reference.is_none() && retry_count == 0 {
@@ -1352,7 +1403,36 @@ impl GitRepo {
                         let head_result = head_cmd.execute_success().await;
 
                         match head_result {
-                            Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                            Ok(_) => {
+                                // Initialize and update submodules in the new worktree
+                                let worktree_repo = GitRepo::new(worktree_path);
+
+                                // Initialize submodules
+                                let mut init_cmd = GitCommand::new()
+                                    .args(["submodule", "init"])
+                                    .current_dir(worktree_path);
+
+                                if let Some(ctx) = context {
+                                    init_cmd = init_cmd.with_context(ctx);
+                                }
+
+                                // Ignore errors - if there are no submodules, this will fail
+                                let _ = init_cmd.execute_success().await;
+
+                                // Update submodules
+                                let mut update_cmd = GitCommand::new()
+                                    .args(["submodule", "update", "--recursive"])
+                                    .current_dir(worktree_path);
+
+                                if let Some(ctx) = context {
+                                    update_cmd = update_cmd.with_context(ctx);
+                                }
+
+                                // Ignore errors - if there are no submodules, this will fail
+                                let _ = update_cmd.execute_success().await;
+
+                                return Ok(worktree_repo);
+                            }
                             Err(head_err) => {
                                 // If HEAD also fails, return the original error
                                 return Err(e).with_context(|| {
@@ -1364,6 +1444,22 @@ impl GitRepo {
                                     )
                                 });
                             }
+                        }
+                    }
+
+                    // Check if the error is likely due to an invalid reference
+                    let error_str = e.to_string();
+                    if let Some(ref_name) = reference {
+                        if error_str.contains("pathspec")
+                            || error_str.contains("not found")
+                            || error_str.contains("ambiguous")
+                            || error_str.contains("invalid")
+                            || error_str.contains("unknown revision")
+                        {
+                            return Err(anyhow::anyhow!(
+                                "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
+                                ref_name
+                            ));
                         }
                     }
 

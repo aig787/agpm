@@ -248,7 +248,7 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let result = GitRepo::clone(source_path.to_str().unwrap(), &target_path, None).await;
+        let result = GitRepo::clone(source_path.to_str().unwrap(), &target_path).await;
 
         assert!(result.is_ok());
         let cloned_repo = result.unwrap();
@@ -282,7 +282,7 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test clone");
 
-        let result = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, Some(&pb)).await;
+        let result = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path).await;
 
         assert!(result.is_ok());
         let repo = result.unwrap();
@@ -298,7 +298,7 @@ mod tests {
         let target_dir = TempDir::new().unwrap();
         let target_path = target_dir.path().join("cloned");
 
-        let result = GitRepo::clone("/non/existent/path", &target_path, None).await;
+        let result = GitRepo::clone("/non/existent/path", &target_path).await;
 
         assert!(result.is_err());
         assert!(!target_path.exists());
@@ -318,7 +318,7 @@ mod tests {
         ];
 
         for url in invalid_urls {
-            let result = GitRepo::clone(url, &target_path, None).await;
+            let result = GitRepo::clone(url, &target_path).await;
             assert!(result.is_err(), "Expected error for URL: {url}");
             if let Err(error) = result {
                 assert!(
@@ -338,7 +338,6 @@ mod tests {
         let result = GitRepo::clone(
             "https://invalid.host.that.does.not.exist.9999/repo.git",
             &target_path,
-            None,
         )
         .await;
 
@@ -369,18 +368,18 @@ mod tests {
         );
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path)
             .await
             .unwrap();
 
         // Fetch should work (even though there's nothing to fetch)
-        let fetch_result = repo.fetch(None, None).await;
+        let fetch_result = repo.fetch(None).await;
         assert!(fetch_result.is_ok());
 
         // Fetch with progress should also work
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test fetch");
-        let fetch_result = repo.fetch(None, Some(&pb)).await;
+        let fetch_result = repo.fetch(None).await;
         assert!(fetch_result.is_ok());
         pb.finish_with_message("Fetch complete");
     }
@@ -400,7 +399,7 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
@@ -408,7 +407,7 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test fetch");
 
-        let result = repo.fetch(None, Some(&pb)).await;
+        let result = repo.fetch(None).await;
         assert!(result.is_ok());
 
         pb.finish_with_message("Fetch complete");
@@ -438,7 +437,7 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(repo_path);
-        let result = repo.fetch(None, None).await;
+        let result = repo.fetch(None).await;
 
         assert!(result.is_err());
         assert!(result
@@ -923,7 +922,7 @@ mod tests {
         // Try git operations on non-git directory
         let fake_repo = GitRepo { path };
 
-        let result = fake_repo.fetch(None, None).await;
+        let result = fake_repo.fetch(None).await;
         assert!(result.is_err());
 
         let result = fake_repo.get_current_branch().await;
@@ -1065,7 +1064,7 @@ mod tests {
             "file://{}",
             source_path.display().to_string().replace('\\', "/")
         );
-        let result = GitRepo::clone(&source_url, &target_path, None).await;
+        let result = GitRepo::clone(&source_url, &target_path).await;
 
         // Clean up permissions before assertion
         #[cfg(unix)]
@@ -1089,7 +1088,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let target_path = temp_dir.path().join("target");
 
-        let result = GitRepo::clone("", &target_path, None).await;
+        let result = GitRepo::clone("", &target_path).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to clone"));
     }
@@ -1125,7 +1124,7 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(&repo_path);
-        let result = repo.fetch(None, None).await;
+        let result = repo.fetch(None).await;
 
         // Should fetch successfully from local repositories
         assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
@@ -1163,8 +1162,7 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(repo_path);
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = repo.fetch(None, Some(&pb)).await;
+        let result = repo.fetch(None).await;
 
         // Should fetch for file:// repositories
         assert!(result.is_ok());
@@ -1185,13 +1183,13 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
         // Fetch with specific auth URL
         let auth_url = format!("file://{}", bare_path.display());
-        let result = repo.fetch(Some(&auth_url), None).await;
+        let result = repo.fetch(Some(&auth_url)).await;
         assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
     }
 
@@ -1532,9 +1530,8 @@ mod tests {
             .unwrap();
 
         // Clone as bare repository using file:// URL
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
         let file_url = format!("file://{}", source_path.display());
-        let result = GitRepo::clone_bare(&file_url, &bare_path, Some(&pb)).await;
+        let result = GitRepo::clone_bare(&file_url, &bare_path).await;
 
         assert!(result.is_ok(), "Failed to clone bare: {:?}", result.err());
         let bare_repo = result.unwrap();
@@ -1576,7 +1573,6 @@ mod tests {
         let result = GitRepo::clone_bare_with_context(
             source_path.to_str().unwrap(),
             &bare_path,
-            None,
             Some("test-dependency"),
         )
         .await;
@@ -1631,7 +1627,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1660,7 +1656,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1714,7 +1710,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare and create worktree
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1768,7 +1764,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1817,7 +1813,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1979,12 +1975,12 @@ mod tests {
             .unwrap();
 
         // Clone the repo
-        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
         // Fetch to get remote branches
-        repo.fetch(None, None).await.unwrap();
+        repo.fetch(None).await.unwrap();
 
         // Try to checkout the feature branch (should work via remote branch fallback)
         let result = repo.checkout("feature").await;

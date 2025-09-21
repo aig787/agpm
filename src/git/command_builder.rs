@@ -13,13 +13,84 @@ use tokio::time::timeout;
 use crate::core::CcpmError;
 use crate::utils::platform::get_git_command;
 
-/// Builder for constructing and executing Git commands with consistent error handling
+/// Type-safe builder for constructing and executing Git commands with consistent error handling.
+///
+/// This builder provides a fluent API for Git command construction that ensures
+/// consistent behavior across CCPM's Git operations. It handles platform-specific
+/// differences, timeout management, error context, and output capture in a unified way.
+///
+/// # Features
+///
+/// - **Fluent API**: Chainable methods for building commands
+/// - **Error Context**: Automatic error message enhancement with context
+/// - **Timeout Management**: Configurable timeouts with sensible defaults
+/// - **Platform Independence**: Works across Windows, macOS, and Linux
+/// - **Output Capture**: Flexible handling of command output and errors
+/// - **Environment Variables**: Support for Git-specific environment settings
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use ccpm::git::command_builder::GitCommand;
+/// use std::path::Path;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// // Simple command with output capture
+/// let output = GitCommand::new()
+///     .args(["status", "--porcelain"])
+///     .current_dir(Path::new("/path/to/repo"))
+///     .execute()
+///     .await?;
+///
+/// // Command with timeout and error context
+/// let result = GitCommand::new()
+///     .args(["clone", "https://github.com/example/repo.git"])
+///     .timeout(std::time::Duration::from_secs(60))
+///     .with_context("Cloning community repository")
+///     .execute_success()
+///     .await?;
+///
+/// // Interactive command (no output capture)
+/// GitCommand::new()
+///     .args(["merge", "--interactive"])
+///     .inherit_stdio()
+///     .execute_success()
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Default Configuration
+///
+/// New commands are created with sensible defaults:
+/// - **Timeout**: 5 minutes (300 seconds)
+/// - **Output capture**: Enabled
+/// - **Working directory**: Current process directory
+/// - **Environment**: Inherits from parent process
+///
+/// # Platform Compatibility
+///
+/// The builder automatically handles platform-specific Git command location:
+/// - **Windows**: Uses `git.exe` from PATH or common installation directories
+/// - **Unix-like**: Uses `git` from PATH
+/// - **Error handling**: Provides clear messages if Git is not installed
 pub struct GitCommand {
+    /// Command arguments to pass to Git (e.g., ["clone", "url", "path"])
     args: Vec<String>,
+
+    /// Working directory for command execution (defaults to current directory)
     current_dir: Option<std::path::PathBuf>,
+
+    /// Whether to capture command output (true) or inherit stdio (false)
     capture_output: bool,
+
+    /// Environment variables to set for the Git process
     env_vars: Vec<(String, String)>,
+
+    /// Maximum duration to wait for command completion (None = no timeout)
     timeout_duration: Option<Duration>,
+
+    /// Optional context string for enhanced error messages
     context: Option<String>,
 }
 
@@ -38,24 +109,118 @@ impl Default for GitCommand {
 }
 
 impl GitCommand {
-    /// Create a new Git command builder
+    /// Creates a new Git command builder with default settings.
+    ///
+    /// The new builder is initialized with:
+    /// - Empty argument list
+    /// - Current process directory as working directory
+    /// - Output capture enabled
+    /// - 5-minute timeout
+    /// - No additional environment variables
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::git::command_builder::GitCommand;
+    ///
+    /// let cmd = GitCommand::new()
+    ///     .args(["status", "--short"])
+    ///     .current_dir("/path/to/repo");
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the working directory for the command
+    /// Sets the working directory for Git command execution.
+    ///
+    /// The command will be executed in the specified directory, which should
+    /// typically be a Git repository root or subdirectory. If not set, the
+    /// command executes in the current process working directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `dir` - Path to the directory where the Git command should run
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::git::command_builder::GitCommand;
+    /// use std::path::Path;
+    ///
+    /// let cmd = GitCommand::new()
+    ///     .current_dir("/path/to/repository")
+    ///     .args(["log", "--oneline"]);
+    ///
+    /// // Can also use Path references
+    /// let repo_path = Path::new("/path/to/repo");
+    /// let cmd2 = GitCommand::new()
+    ///     .current_dir(repo_path)
+    ///     .args(["status"]);
+    /// ```
     pub fn current_dir(mut self, dir: impl AsRef<Path>) -> Self {
         self.current_dir = Some(dir.as_ref().to_path_buf());
         self
     }
 
-    /// Add an argument to the command
+    /// Adds a single argument to the Git command.
+    ///
+    /// Arguments are passed to Git in the order they are added. This method
+    /// is useful when building commands dynamically or when you need to add
+    /// arguments conditionally.
+    ///
+    /// # Arguments
+    ///
+    /// * `arg` - The argument to add (will be converted to String)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::git::command_builder::GitCommand;
+    ///
+    /// let cmd = GitCommand::new()
+    ///     .arg("clone")
+    ///     .arg("--depth")
+    ///     .arg("1")
+    ///     .arg("https://github.com/example/repo.git");
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// For adding multiple arguments at once, consider using [`args`](Self::args)
+    /// which is more efficient for static argument lists.
     pub fn arg(mut self, arg: impl Into<String>) -> Self {
         self.args.push(arg.into());
         self
     }
 
-    /// Add multiple arguments to the command
+    /// Adds multiple arguments to the Git command.
+    ///
+    /// This is the preferred method for adding multiple arguments at once,
+    /// as it's more efficient than multiple calls to [`arg`](Self::arg).
+    /// Arguments can be provided as any iterable of string-like types.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - An iterable of arguments to add to the command
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::git::command_builder::GitCommand;
+    ///
+    /// // Using array literals
+    /// let cmd = GitCommand::new()
+    ///     .args(["clone", "--recursive", "https://github.com/example/repo.git"]);
+    ///
+    /// // Using vectors
+    /// let clone_args = vec!["clone", "--depth", "1"];
+    /// let cmd2 = GitCommand::new().args(clone_args);
+    ///
+    /// // Mixing with other methods
+    /// let cmd3 = GitCommand::new()
+    ///     .args(["fetch", "origin"])
+    ///     .arg("--prune");
+    /// ```
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -65,13 +230,85 @@ impl GitCommand {
         self
     }
 
-    /// Add an environment variable
+    /// Adds an environment variable for the Git command execution.
+    ///
+    /// Environment variables are useful for configuring Git behavior without
+    /// modifying global Git configuration. Common use cases include setting
+    /// credentials, configuration overrides, and locale settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Environment variable name
+    /// * `value` - Environment variable value
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use ccpm::git::command_builder::GitCommand;
+    ///
+    /// // Set Git configuration for this command only
+    /// let cmd = GitCommand::new()
+    ///     .args(["clone", "https://github.com/example/repo.git"])
+    ///     .env("GIT_CONFIG_GLOBAL", "/dev/null")  // Ignore global config
+    ///     .env("GIT_CONFIG_SYSTEM", "/dev/null"); // Ignore system config
+    ///
+    /// // Set locale for consistent output parsing
+    /// let cmd2 = GitCommand::new()
+    ///     .args(["log", "--oneline"])
+    ///     .env("LC_ALL", "C");
+    /// ```
+    ///
+    /// # Common Environment Variables
+    ///
+    /// - `GIT_DIR`: Override Git directory location
+    /// - `GIT_WORK_TREE`: Override working tree location
+    /// - `GIT_CONFIG_*`: Override configuration file locations
+    /// - `LC_ALL`: Set locale for consistent output parsing
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.env_vars.push((key.into(), value.into()));
         self
     }
 
-    /// Disable output capture (for interactive commands)
+    /// Disables output capture, allowing the command to inherit parent stdio.
+    ///
+    /// By default, Git commands have their output captured for processing.
+    /// This method disables capture, allowing the command to write directly
+    /// to the terminal. This is useful for interactive commands or when you
+    /// want to show Git output directly to the user.
+    ///
+    /// # Use Cases
+    ///
+    /// - Interactive Git commands (merge conflicts, rebase, etc.)
+    /// - Commands where you want real-time output streaming
+    /// - Debugging Git operations by seeing output immediately
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::git::command_builder::GitCommand;
+    ///
+    /// // Interactive merge that may require user input
+    /// # async fn example() -> anyhow::Result<()> {
+    /// GitCommand::new()
+    ///     .args(["merge", "feature-branch"])
+    ///     .inherit_stdio()  // Allow user interaction
+    ///     .execute_success()
+    ///     .await?;
+    ///
+    /// // Show clone progress to user
+    /// GitCommand::new()
+    ///     .args(["clone", "--progress", "https://github.com/large/repo.git"])
+    ///     .inherit_stdio()  // Show progress bars
+    ///     .execute_success()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// When stdio is inherited, you cannot use [`execute`](Self::execute) to
+    /// capture output. Use [`execute_success`](Self::execute_success) instead.
     pub fn inherit_stdio(mut self) -> Self {
         self.capture_output = false;
         self
@@ -122,6 +359,7 @@ impl GitCommand {
 
     /// Execute the command and return the output
     pub async fn execute(self) -> Result<GitCommandOutput> {
+        let start = std::time::Instant::now();
         let git_command = get_git_command();
         let mut cmd = Command::new(git_command);
 
@@ -302,6 +540,48 @@ impl GitCommand {
             }
         }
 
+        let elapsed = start.elapsed();
+
+        // Log performance for expensive operations
+        if elapsed.as_secs() > 1 {
+            let operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                full_args
+                    .get(2)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string())
+            } else {
+                full_args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string())
+            };
+
+            if let Some(ref ctx) = self.context {
+                tracing::info!(target: "git::perf", "({}) Git {} took {:.2}s", ctx, operation, elapsed.as_secs_f64());
+            } else {
+                tracing::info!(target: "git::perf", "Git {} took {:.2}s", operation, elapsed.as_secs_f64());
+            }
+        } else if elapsed.as_millis() > 100 {
+            // Log debug for moderately slow operations
+            let operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                full_args
+                    .get(2)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string())
+            } else {
+                full_args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".to_string())
+            };
+
+            if let Some(ref ctx) = self.context {
+                tracing::debug!(target: "git::perf", "({}) Git {} took {}ms", ctx, operation, elapsed.as_millis());
+            } else {
+                tracing::debug!(target: "git::perf", "Git {} took {}ms", operation, elapsed.as_millis());
+            }
+        }
+
         Ok(GitCommandOutput { stdout, stderr })
     }
 
@@ -334,25 +614,15 @@ impl GitCommand {
         let mut cmd = Self::new();
         cmd.args.push("clone".to_string());
         cmd.args.push("--progress".to_string());
+        cmd.args.push("--filter=blob:none".to_string());
+        cmd.args.push("--recurse-submodules".to_string());
         cmd.args.push(url.to_string());
         cmd.args.push(target.as_ref().display().to_string());
         cmd
     }
 
     /// Create a clone command with specific depth
-    pub fn shallow_clone(url: &str, target: impl AsRef<Path>, depth: u32) -> Self {
-        let mut cmd = Self::new();
-        cmd.args.extend(vec![
-            "clone".to_string(),
-            "--progress".to_string(),
-            "--depth".to_string(),
-            depth.to_string(),
-            url.to_string(),
-            target.as_ref().display().to_string(),
-        ]);
-        cmd
-    }
-
+    ///
     /// Create a fetch command
     pub fn fetch() -> Self {
         Self::new().args(["fetch", "--all", "--tags"])
@@ -507,6 +777,8 @@ impl GitCommand {
             "clone".to_string(),
             "--bare".to_string(),
             "--progress".to_string(),
+            "--filter=blob:none".to_string(),
+            "--recurse-submodules".to_string(),
             url.to_string(),
             target.as_ref().display().to_string(),
         ]);
@@ -766,13 +1038,6 @@ mod tests {
         assert!(cmd
             .args
             .contains(&"https://example.com/repo.git".to_string()));
-    }
-
-    #[test]
-    fn test_shallow_clone_builder() {
-        let cmd = GitCommand::shallow_clone("https://example.com/repo.git", "/tmp/target", 1);
-        assert!(cmd.args.contains(&"--depth".to_string()));
-        assert!(cmd.args.contains(&"1".to_string()));
     }
 
     #[test]
