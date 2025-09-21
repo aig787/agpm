@@ -1,13 +1,13 @@
 ---
 allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo build:*), Bash(cargo doc:*), Bash(cargo check:*), Read, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 description: Perform comprehensive PR review for CCPM project
-argument-hint: [ <commit> ] [ --quick | --full | --security | --performance ] - e.g., "abc123 --quick" to review commit abc123 with basic checks
+argument-hint: [ <commit> | <range> ] [ --quick | --full | --security | --performance ] - e.g., "abc123 --quick" for single commit, "main..HEAD --full" for range
 ---
 
 ## Context
 
-- Changes to review: !`if [ -n "$(echo "$ARGUMENTS" | grep -E '^[a-f0-9]{6,40}(\s|$)')" ]; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); echo "Commit $COMMIT:"; git show --stat $COMMIT; else echo "Current diff:"; git diff HEAD; fi`
-- Files changed: !`if [ -n "$(echo "$ARGUMENTS" | grep -E '^[a-f0-9]{6,40}(\s|$)')" ]; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); git diff-tree --no-commit-id --name-status -r $COMMIT; else git status --short; fi`
+- Changes to review: !`if echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}'); echo "Commit range $RANGE:"; git log --oneline $RANGE; echo ""; git diff --stat $RANGE; elif echo "$ARGUMENTS" | grep -qE '^[^[:space:]]+\.\.[^[:space:]]+(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[^[:space:]]+\.\.[^[:space:]]+'); echo "Commit range $RANGE:"; git log --oneline $RANGE 2>/dev/null || echo "Invalid range: $RANGE"; echo ""; git diff --stat $RANGE 2>/dev/null; elif echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}(\s|$)'; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); echo "Commit $COMMIT:"; git show --stat $COMMIT; else echo "Current diff:"; git diff HEAD; fi`
+- Files changed: !`if echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}'); git diff --name-status $RANGE; elif echo "$ARGUMENTS" | grep -qE '^[^[:space:]]+\.\.[^[:space:]]+(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[^[:space:]]+\.\.[^[:space:]]+'); git diff --name-status $RANGE 2>/dev/null || echo "Invalid range: $RANGE"; elif echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}(\s|$)'; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); git diff-tree --no-commit-id --name-status -r $COMMIT; else git status --short; fi`
 - Recent commits: !`git log --oneline -5`
 
 ## Your task
@@ -25,9 +25,14 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Include relevant file paths and change summaries in prompts
 
 2. Parse arguments to determine review target and type:
-   - Extract commit hash if provided (6-40 character hex string at start of arguments)
-   - If commit provided: Review that specific commit using `git show` and `git diff-tree`
-   - If no commit: Review current working changes using `git diff HEAD`
+   - Extract target from start of arguments:
+     * Commit range: Pattern like `abc123..def456` or `main..HEAD` (two refs separated by ..)
+     * Single commit: 6-40 character hex string
+     * No target: Review current working changes
+   - Review targets:
+     * If range provided: Review all changes between the two commits using `git diff <range>` and `git log <range>`
+     * If single commit: Review that specific commit using `git show` and `git diff-tree`
+     * If no target: Review current working changes using `git diff HEAD`
    - Parse review type from remaining arguments:
    - `--quick`: Basic formatting and linting only
    - `--full`: Complete review with all checks (default)
@@ -134,3 +139,7 @@ Examples of usage:
 - `/pr-review abc123` - full review of specific commit abc123
 - `/pr-review HEAD~1 --quick` - quick review of the previous commit
 - `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d
+- `/pr-review main..HEAD` - full review of all changes from main to HEAD
+- `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456
+- `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main
+- `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range
