@@ -1,13 +1,13 @@
 ---
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo build:*), Bash(cargo doc:*), Task, Grep, Read, LS
+allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo build:*), Bash(cargo doc:*), Bash(cargo check:*), Read, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 description: Perform comprehensive PR review for CCPM project
-argument-hint: [ --quick | --full | --security | --performance ] - e.g., "--quick" for basic checks only
+argument-hint: [ <commit> ] [ --quick | --full | --security | --performance ] - e.g., "abc123 --quick" to review commit abc123 with basic checks
 ---
 
 ## Context
 
-- Current changes: !`git diff HEAD`
-- Files changed: !`git status --short`
+- Changes to review: !`if [ -n "$(echo "$ARGUMENTS" | grep -E '^[a-f0-9]{6,40}(\s|$)')" ]; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); echo "Commit $COMMIT:"; git show --stat $COMMIT; else echo "Current diff:"; git diff HEAD; fi`
+- Files changed: !`if [ -n "$(echo "$ARGUMENTS" | grep -E '^[a-f0-9]{6,40}(\s|$)')" ]; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); git diff-tree --no-commit-id --name-status -r $COMMIT; else git status --short; fi`
 - Recent commits: !`git log --oneline -5`
 
 ## Your task
@@ -24,7 +24,11 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Run multiple Task invocations in parallel for efficiency
    - Include relevant file paths and change summaries in prompts
 
-2. Parse the review type from arguments:
+2. Parse arguments to determine review target and type:
+   - Extract commit hash if provided (6-40 character hex string at start of arguments)
+   - If commit provided: Review that specific commit using `git show` and `git diff-tree`
+   - If no commit: Review current working changes using `git diff HEAD`
+   - Parse review type from remaining arguments:
    - `--quick`: Basic formatting and linting only
    - `--full`: Complete review with all checks (default)
    - `--security`: Focus on security implications
@@ -123,7 +127,10 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 6. Focus only on tracked files - ignore untracked files marked with ?? in git status
 
 Examples of usage:
-- `/pr-review` - performs full comprehensive review
-- `/pr-review --quick` - quick formatting and linting check
-- `/pr-review --security` - focused security review
-- `/pr-review --performance` - performance-focused analysis
+- `/pr-review` - performs full comprehensive review of current changes
+- `/pr-review --quick` - quick formatting and linting check of current changes
+- `/pr-review --security` - focused security review of current changes
+- `/pr-review --performance` - performance-focused analysis of current changes
+- `/pr-review abc123` - full review of specific commit abc123
+- `/pr-review HEAD~1 --quick` - quick review of the previous commit
+- `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d
