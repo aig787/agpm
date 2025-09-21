@@ -1387,6 +1387,90 @@ impl LockFile {
         let actual = Self::compute_checksum(path)?;
         Ok(actual == expected)
     }
+
+    /// Update the checksum for a specific resource in the lockfile.
+    ///
+    /// This method finds a resource by name across all resource types and updates
+    /// its checksum value. Used after installation to record the actual file checksum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the resource to update
+    /// * `checksum` - The new SHA-256 checksum in "sha256:hex" format
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the resource was found and updated, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use ccpm::lockfile::{LockFile, LockedResource};
+    /// # use ccpm::core::ResourceType;
+    /// # let mut lockfile = LockFile::default();
+    /// # // First add a resource to update
+    /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource {
+    /// #     name: "my-agent".to_string(),
+    /// #     source: None,
+    /// #     url: None,
+    /// #     path: "my-agent.md".to_string(),
+    /// #     version: None,
+    /// #     resolved_commit: None,
+    /// #     checksum: "".to_string(),
+    /// #     installed_at: "agents/my-agent.md".to_string(),
+    /// # }, ResourceType::Agent);
+    /// let updated = lockfile.update_resource_checksum(
+    ///     "my-agent",
+    ///     "sha256:abcdef123456..."
+    /// );
+    /// assert!(updated);
+    /// ```
+    pub fn update_resource_checksum(&mut self, name: &str, checksum: &str) -> bool {
+        // Try each resource type until we find a match
+        for resource in &mut self.agents {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.snippets {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.commands {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.scripts {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.hooks {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.mcp_servers {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 impl Default for LockFile {

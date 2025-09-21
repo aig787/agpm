@@ -41,8 +41,9 @@ async fn main() -> Result<()> {
         // Rules 1 & 2: RUST_LOG is set, use it regardless of verbose flag
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("error"))
     } else if is_verbose {
-        // Rule 3: No RUST_LOG but verbose flag is set, use INFO level
-        EnvFilter::new("info")
+        // Rule 3: No RUST_LOG but verbose flag is set, use DEBUG level
+        // Verbose flag should surface detailed debug logs without requiring RUST_LOG
+        EnvFilter::new("debug")
     } else {
         // Rule 4: No RUST_LOG and no verbose flag, no logging
         EnvFilter::new("off")

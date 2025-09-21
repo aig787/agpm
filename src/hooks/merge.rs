@@ -450,7 +450,6 @@ mod tests {
             }]
         });
 
-        // Updated CCPM hook
         let mut ccpm_hooks = HashMap::new();
         ccpm_hooks.insert(
             "security-hook".to_string(),
@@ -1014,7 +1013,7 @@ mod tests {
 
         let post_group = post_tool[0].as_object().unwrap();
         let post_hooks = post_group.get("hooks").unwrap().as_array().unwrap();
-        assert_eq!(post_hooks.len(), 1); // Updated logger
+        assert_eq!(post_hooks.len(), 1);
         assert_eq!(
             post_hooks[0].get("command").unwrap().as_str().unwrap(),
             "new-logging.sh"

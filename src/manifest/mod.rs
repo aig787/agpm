@@ -1418,20 +1418,13 @@ impl Manifest {
 
                 // Check if the source URL is a local path
                 let source_url = self.sources.get(source).unwrap();
-                let is_local_source = source_url.starts_with('/')
+                let _is_local_source = source_url.starts_with('/')
                     || source_url.starts_with("./")
                     || source_url.starts_with("../");
 
-                // Non-local dependencies (git repositories) should have a version
+                // Git dependencies can optionally have a version (defaults to 'main' if not specified)
                 // Local path sources don't need versions
-                if !is_local_source
-                    && (dep.get_version().is_none() || dep.get_version() == Some(""))
-                {
-                    return Err(crate::core::CcpmError::ManifestValidationError {
-                        reason: format!("Missing required field 'version' for dependency '{name}' from source '{source}'. Suggestion: Add version = \"v1.0.0\" to specify a version"),
-                    }
-                    .into());
-                }
+                // We no longer require versions for Git dependencies - they'll default to 'main'
             } else {
                 // For local path dependencies (no source), version is not allowed
                 // Skip directory check for pattern dependencies
@@ -2409,7 +2402,7 @@ pub fn find_manifest() -> Result<PathBuf> {
 
 /// Find the manifest file, using an explicit path if provided.
 ///
-/// This function provides a unified way to locate the manifest file,
+/// This function provides a consistent way to locate the manifest file,
 /// either using an explicitly provided path or by searching from the
 /// current directory.
 ///

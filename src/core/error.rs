@@ -1089,9 +1089,24 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 op if op.contains("clone") => "Check the repository URL and your internet connection. Verify you have access to the repository",
                 op if op.contains("fetch") => "Check your internet connection and repository access. Try 'git fetch' manually in the repository directory",
                 op if op.contains("checkout") => "Verify the branch, tag, or commit exists. Use 'git tag -l' or 'git branch -r' to list available references",
+                op if op.contains("worktree") => {
+                    if stderr.contains("invalid reference")
+                        || stderr.contains("not a valid object name")
+                        || stderr.contains("pathspec")
+                        || stderr.contains("did not match")
+                        || stderr.contains("unknown revision") {
+                        "Invalid version: The specified version/tag/branch does not exist in the repository. Check available versions with 'git tag -l' or 'git branch -r'"
+                    } else {
+                        "Failed to create worktree. Check that the reference exists and the repository is valid"
+                    }
+                },
                 _ => "Check your git configuration and repository access. Try running the git command manually for more details",
             })
-            .with_details("Git operations failed. This is often due to network issues, authentication problems, or invalid references")
+            .with_details(if operation.contains("worktree") && (stderr.contains("invalid reference") || stderr.contains("not a valid object name") || stderr.contains("pathspec") || stderr.contains("did not match") || stderr.contains("unknown revision")) {
+                "Invalid version specification: Failed to checkout reference - the specified version/tag/branch does not exist"
+            } else {
+                "Git operations failed. This is often due to network issues, authentication problems, or invalid references"
+            })
         }
 
         CcpmError::GitAuthenticationFailed { url } => ErrorContext::new(CcpmError::GitAuthenticationFailed {
