@@ -111,15 +111,16 @@
 //! ```rust,no_run
 //! use ccpm::resolver::DependencyResolver;
 //! use ccpm::manifest::Manifest;
+//! use ccpm::cache::Cache;
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
-//! let mut resolver = DependencyResolver::new_with_global(manifest).await?;
+//! let cache = Cache::new()?;
+//! let mut resolver = DependencyResolver::new_with_global(manifest, cache).await?;
 //!
-//! // Resolve all dependencies with progress reporting
-//! let progress = ccpm::utils::progress::ProgressBar::new(10);
-//! let lockfile = resolver.resolve(Some(&progress)).await?;
+//! // Resolve all dependencies
+//! let lockfile = resolver.resolve().await?;
 //!
 //! println!("Resolved {} agents and {} snippets",
 //!          lockfile.agents.len(), lockfile.snippets.len());
@@ -131,10 +132,13 @@
 //! ```rust,no_run
 //! use ccpm::resolver::{DependencyResolver, redundancy::RedundancyDetector};
 //! use ccpm::manifest::Manifest;
+//! use ccpm::cache::Cache;
+//! use std::path::Path;
 //!
 //! # async fn redundancy_example() -> anyhow::Result<()> {
 //! let manifest = Manifest::load("ccpm.toml".as_ref())?;
-//! let resolver = DependencyResolver::new(manifest.clone())?;
+//! let cache = Cache::new()?;
+//! let resolver = DependencyResolver::new(manifest.clone(), cache)?;
 //!
 //! // Check for redundancies before resolution
 //! if let Some(warning) = resolver.check_redundancies() {
@@ -157,11 +161,14 @@
 //! ```rust,no_run
 //! use ccpm::resolver::DependencyResolver;
 //! use ccpm::lockfile::LockFile;
+//! use ccpm::cache::Cache;
+//! use std::path::Path;
 //!
 //! # async fn update_example() -> anyhow::Result<()> {
 //! let existing = LockFile::load("ccpm.lock".as_ref())?;
 //! let manifest = ccpm::manifest::Manifest::load("ccpm.toml".as_ref())?;
-//! let mut resolver = DependencyResolver::new(manifest)?;
+//! let cache = Cache::new()?;
+//! let mut resolver = DependencyResolver::new(manifest, cache)?;
 //!
 //! // Update specific dependencies only
 //! let deps_to_update = vec!["agent1".to_string(), "snippet2".to_string()];
@@ -176,18 +183,16 @@
 pub mod redundancy;
 pub mod version_resolution;
 
+use crate::cache::Cache;
 use crate::core::CcpmError;
-use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::source::SourceManager;
-use crate::utils::progress::ProgressBar;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use self::redundancy::RedundancyDetector;
-use self::version_resolution::{find_best_matching_tag, is_version_constraint};
 
 /// Core dependency resolver that transforms manifest dependencies into lockfile entries.
 ///
@@ -213,11 +218,243 @@ use self::version_resolution::{find_best_matching_tag, is_version_constraint};
 pub struct DependencyResolver {
     manifest: Manifest,
     pub source_manager: SourceManager,
-    #[allow(dead_code)]
-    cache_dir: PathBuf,
+    cache: Cache,
+    /// Cached per-(source, version) preparation results built during the
+    /// analysis stage so individual dependency resolution can reuse worktrees
+    /// without triggering additional sync operations.
+    prepared_versions: HashMap<String, PreparedSourceVersion>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct PreparedSourceVersion {
+    worktree_path: PathBuf,
+    resolved_version: Option<String>,
+    resolved_commit: String,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+struct PreparedGroupDescriptor {
+    key: String,
+    source: String,
+    requested_version: Option<String>,
+    version_key: String,
 }
 
 impl DependencyResolver {
+    fn group_key(source: &str, version: &str) -> String {
+        format!("{source}::{version}")
+    }
+
+    async fn prepare_remote_groups(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
+        use crate::git::command_builder::GitCommand;
+        use crate::git::GitRepo;
+
+        self.prepared_versions.clear();
+
+        // Process each source + version combination only once
+        let mut grouped = HashMap::new();
+
+        for (_, dep) in deps {
+            if let Some(source_name) = dep.get_source() {
+                let source_url =
+                    self.source_manager
+                        .get_source_url(source_name)
+                        .ok_or_else(|| CcpmError::SourceNotFound {
+                            name: source_name.to_string(),
+                        })?;
+
+                let version_key = dep
+                    .get_version()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "main".to_string());
+                let group_key = Self::group_key(source_name, &version_key);
+
+                if !self.prepared_versions.contains_key(&group_key) {
+                    grouped
+                        .entry((source_name.to_string(), version_key))
+                        .or_insert_with(|| source_url.to_string());
+                }
+            }
+        }
+
+        if grouped.is_empty() {
+            return Ok(());
+        }
+
+        // Progress is handled at the phase level, no individual updates needed
+
+        // Process all sources in parallel
+        let mut futures = Vec::new();
+
+        for ((source_name, version_key), source_url) in grouped {
+            let repo_key = Self::group_key(&source_name, &version_key);
+            let cache_clone = self.cache.clone();
+            let source_name_clone = source_name.clone();
+            let source_url_clone = source_url.clone();
+            let version_key_clone = version_key.clone();
+
+            let future = async move {
+                // Progress is tracked at the phase level
+
+                // First, we need to get a bare repo to resolve versions
+                // We'll clone it if needed but won't create a worktree yet
+                let bare_repo_path = cache_clone
+                    .get_or_clone_source(
+                        &source_name_clone,
+                        &source_url_clone,
+                        None, // Don't checkout anything in the bare repo
+                    )
+                    .await?;
+
+                // Create GitRepo from the bare repo path
+                let repo = GitRepo::new(&bare_repo_path);
+
+                let requested_version = Some(version_key_clone.clone());
+
+                // Update progress to show we're checking out the version
+                // Progress is tracked at the phase level
+
+                let (resolved_version, resolved_commit) = if let Some(ref requested) =
+                    requested_version
+                {
+                    // For explicit versions, resolve them to commits
+                    if version_resolution::is_version_constraint(requested) {
+                        // Get all available tags from the repository
+                        let mut tags = repo.list_tags().await?;
+
+                        // If no tags found, try fetching them first
+                        if tags.is_empty() {
+                            repo.fetch(None).await.ok();
+                            tags = repo.list_tags().await?;
+                        }
+
+                        if tags.is_empty() {
+                            return Err(anyhow::anyhow!(
+                                "No tags found in repository. Version constraint '{}' requires tags to resolve.",
+                                requested
+                            ));
+                        }
+
+                        // Find the best matching tag for the constraint
+                        let best_tag = version_resolution::find_best_matching_tag(requested, tags)
+                            .with_context(|| {
+                                format!("Failed to resolve version constraint: {}", requested)
+                            })?;
+
+                        // Resolve the tag to a commit (we're in a bare repo, can't checkout)
+                        let commit = GitCommand::rev_parse(&best_tag)
+                            .current_dir(repo.path())
+                            .execute_stdout()
+                            .await
+                            .with_context(|| format!("Failed to resolve tag '{}' to commit", best_tag))?;
+                        (Some(best_tag), commit)
+                    } else {
+                        // Check if this is a local source before trying origin/
+                        let is_local_source = source_url_clone.starts_with('/')
+                            || source_url_clone.starts_with("./")
+                            || source_url_clone.starts_with("../");
+
+                        // Not a constraint, resolve directly (we're in a bare repo, use rev-parse)
+                        match GitCommand::rev_parse(requested)
+                            .current_dir(repo.path())
+                            .execute_stdout()
+                            .await
+                        {
+                            Ok(commit) => (Some(requested.clone()), commit),
+                            Err(_) if !is_local_source => {
+                                // Check if it looks like a version that doesn't exist
+                                if requested.starts_with('v')
+                                    && requested.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+                                {
+                                    // This looks like a version tag but wasn't found
+                                    let tags = repo.list_tags().await?;
+                                    return Err(anyhow::anyhow!(
+                                        "No matching version found for '{}'. Available versions: {}",
+                                        requested,
+                                        if tags.is_empty() {
+                                            "none".to_string()
+                                        } else {
+                                            tags.join(", ")
+                                        }
+                                    ));
+                                }
+
+                                // Try as a branch by prepending origin/ (only for remote sources)
+                                let remote_branch = format!("origin/{}", requested);
+                                match GitCommand::rev_parse(&remote_branch)
+                                    .current_dir(repo.path())
+                                    .execute_stdout()
+                                    .await
+                                {
+                                    Ok(commit) => (Some(requested.clone()), commit),
+                                    Err(_) => {
+                                        return Err(anyhow::anyhow!(
+                                            "Failed to resolve reference '{}' in repository",
+                                            requested
+                                        ));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                // For local sources, return a more descriptive error
+                                return Err(anyhow::anyhow!(
+                                    "Failed to resolve '{}' in local repository at {:?}: {}",
+                                    requested,
+                                    repo.path(),
+                                    e
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    // No specific version requested, resolve HEAD
+                    let commit = GitCommand::rev_parse("HEAD")
+                        .current_dir(repo.path())
+                        .execute_stdout()
+                        .await
+                        .context("Failed to get current commit")?;
+                    (None, commit)
+                };
+
+                // Now create a worktree at the specific commit
+                let worktree_path = cache_clone
+                    .get_or_clone_source_worktree(
+                        &source_name_clone,
+                        &source_url_clone,
+                        Some(&resolved_commit), // Use the exact commit
+                    )
+                    .await?;
+
+                // Progress is tracked at the phase level
+
+                Ok::<_, anyhow::Error>((
+                    repo_key,
+                    PreparedSourceVersion {
+                        worktree_path,
+                        resolved_version,
+                        resolved_commit,
+                    },
+                ))
+            };
+
+            futures.push(future);
+        }
+
+        // Execute all futures concurrently and collect results
+        let results = futures::future::join_all(futures).await;
+
+        // Process results
+        for result in results {
+            let (key, prepared) = result?;
+            self.prepared_versions.insert(key, prepared);
+        }
+
+        // Phase completion is handled by the caller
+
+        Ok(())
+    }
+
     /// Creates a new resolver using only manifest-defined sources.
     ///
     /// This constructor creates a resolver that only considers sources defined
@@ -236,17 +473,17 @@ impl DependencyResolver {
     ///
     /// # Errors
     ///
-    /// Returns an error if the cache directory cannot be determined or created.
+    /// Returns an error if the cache cannot be created.
     ///
     /// [`new_with_global()`]: DependencyResolver::new_with_global
-    pub fn new(manifest: Manifest) -> Result<Self> {
+    pub fn new(manifest: Manifest, cache: Cache) -> Result<Self> {
         let source_manager = SourceManager::from_manifest(&manifest)?;
-        let cache_dir = crate::config::get_cache_dir()?;
 
         Ok(Self {
             manifest,
             source_manager,
-            cache_dir,
+            cache,
+            prepared_versions: HashMap::new(),
         })
     }
 
@@ -268,21 +505,21 @@ impl DependencyResolver {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The cache directory cannot be determined or created
+    /// - The cache cannot be created
     /// - The global config file exists but cannot be parsed
     /// - Network errors occur while validating global sources
-    pub async fn new_with_global(manifest: Manifest) -> Result<Self> {
+    pub async fn new_with_global(manifest: Manifest, cache: Cache) -> Result<Self> {
         let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
-        let cache_dir = crate::config::get_cache_dir()?;
 
         Ok(Self {
             manifest,
             source_manager,
-            cache_dir,
+            cache,
+            prepared_versions: HashMap::new(),
         })
     }
 
-    /// Creates a new resolver with a custom cache directory.
+    /// Creates a new resolver with a custom cache.
     ///
     /// This constructor is primarily used for testing and specialized deployments
     /// where the default cache location (`~/.ccpm/cache/`) is not suitable.
@@ -302,13 +539,15 @@ impl DependencyResolver {
     ///
     /// [`new_with_global()`]: DependencyResolver::new_with_global
     #[must_use]
-    pub fn with_cache(manifest: Manifest, cache_dir: PathBuf) -> Self {
-        let source_manager = SourceManager::from_manifest_with_cache(&manifest, cache_dir.clone());
+    pub fn with_cache(manifest: Manifest, cache: Cache) -> Self {
+        let cache_dir = cache.get_cache_location().to_path_buf();
+        let source_manager = SourceManager::from_manifest_with_cache(&manifest, cache_dir);
 
         Self {
             manifest,
             source_manager,
-            cache_dir,
+            cache,
+            prepared_versions: HashMap::new(),
         }
     }
 
@@ -333,7 +572,7 @@ impl DependencyResolver {
     ///
     /// # Parameters
     ///
-    /// - `progress`: Optional progress bar for user feedback during long operations
+    /// - `progress`: Optional progress manager for user feedback during long operations
     ///
     /// # Returns
     ///
@@ -359,7 +598,7 @@ impl DependencyResolver {
     /// - **Progress Reporting**: Non-blocking UI updates during resolution
     ///
     /// [`LockFile`]: crate::lockfile::LockFile
-    pub async fn resolve(&mut self, progress: Option<&ProgressBar>) -> Result<LockFile> {
+    pub async fn resolve(&mut self) -> Result<LockFile> {
         let mut lockfile = LockFile::new();
         let mut resolved = HashMap::new();
 
@@ -376,20 +615,22 @@ impl DependencyResolver {
             .map(|(name, dep)| (name.to_string(), dep.into_owned()))
             .collect();
 
+        // Show initial message about what we're doing
+        // Sync sources (phase management is handled by caller)
+        self.prepare_remote_groups(&deps).await?;
+
         // Resolve each dependency
-        for (name, dep) in deps {
-            if let Some(pb) = progress {
-                pb.set_message(format!("Resolving {name}"));
-            }
+        for (name, dep) in deps.iter() {
+            // Progress is tracked at the phase level
 
             // Check if this is a pattern dependency
             if dep.is_pattern() {
                 // Pattern dependencies resolve to multiple resources
-                let entries = self.resolve_pattern_dependency(&name, &dep).await?;
+                let entries = self.resolve_pattern_dependency(name, dep).await?;
 
                 // Add each resolved entry to the appropriate resource type
                 for entry in entries {
-                    let resource_type = self.get_resource_type(&name);
+                    let resource_type = self.get_resource_type(name);
                     match resource_type.as_str() {
                         "agent" => lockfile.agents.push(entry),
                         "snippet" => lockfile.snippets.push(entry),
@@ -402,10 +643,14 @@ impl DependencyResolver {
                 }
             } else {
                 // Regular single dependency
-                let entry = self.resolve_dependency(&name, &dep).await?;
+                let entry = self.resolve_dependency(name, dep).await?;
                 resolved.insert(name.to_string(), entry);
             }
+
+            // Progress is tracked by updating messages, no need to increment
         }
+
+        // Progress is tracked at the phase level
 
         // Add resolved single entries to lockfile
         for (name, entry) in resolved {
@@ -422,9 +667,7 @@ impl DependencyResolver {
             }
         }
 
-        if let Some(pb) = progress {
-            pb.finish_with_message("Resolution complete");
-        }
+        // Progress completion is handled by the caller
 
         Ok(lockfile)
     }
@@ -547,7 +790,7 @@ impl DependencyResolver {
         } else {
             // Remote dependency - need to sync and resolve
             let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
-                message: format!("Dependency '{name}' has no source specified"),
+                message: format!("Dependency '{}' has no source specified", name),
             })?;
 
             // Get source URL
@@ -558,18 +801,41 @@ impl DependencyResolver {
                     name: source_name.to_string(),
                 })?;
 
-            // Sync the source repository (auth comes from global config if needed)
-            let repo = self.source_manager.sync(source_name, None).await?;
+            let version_key = dep
+                .get_version()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "main".to_string());
+            let prepared_key = Self::group_key(source_name, &version_key);
 
-            // Checkout specific version if specified and get both resolved version and commit
-            let (resolved_version, resolved_commit) = if let Some(version) = dep.get_version() {
-                // Use checkout_version_with_resolved to get both the resolved version and commit
-                self.checkout_version_with_resolved(&repo, version).await?
-            } else {
-                // No version specified, use current HEAD
-                let commit = self.get_current_commit(&repo).await?;
-                (None, commit)
-            };
+            // Check if this dependency has been prepared
+            let (resolved_version, resolved_commit) =
+                if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
+                    // Use prepared version
+                    (
+                        prepared.resolved_version.clone(),
+                        prepared.resolved_commit.clone(),
+                    )
+                } else {
+                    // This dependency wasn't prepared (e.g., when called from `ccpm add`)
+                    // We need to prepare it on-demand
+                    let deps = vec![(name.to_string(), dep.clone())];
+                    self.prepare_remote_groups(&deps).await?;
+
+                    // Now it should be prepared
+                    if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
+                        (
+                            prepared.resolved_version.clone(),
+                            prepared.resolved_commit.clone(),
+                        )
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Failed to prepare dependency '{}' from source '{}' @ '{}'",
+                            name,
+                            source_name,
+                            version_key
+                        ));
+                    }
+                };
 
             // Determine the installed location based on resource type, custom target, and custom filename
             let resource_type = self.get_resource_type(name);
@@ -624,8 +890,7 @@ impl DependencyResolver {
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
                 path: dep.get_path().to_string(),
-                version: resolved_version
-                    .or_else(|| dep.get_version().map(std::string::ToString::to_string)),
+                version: resolved_version, // Use the resolved version (e.g., "main")
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
@@ -732,21 +997,31 @@ impl DependencyResolver {
                     name: source_name.to_string(),
                 })?;
 
-            // Sync the source repository
-            let repo = self.source_manager.sync(source_name, None).await?;
+            let version_key = dep
+                .get_version()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "main".to_string());
+            let prepared_key = Self::group_key(source_name, &version_key);
 
-            // Checkout specific version if specified
-            let (resolved_version, resolved_commit) = if let Some(version) = dep.get_version() {
-                self.checkout_version_with_resolved(&repo, version).await?
-            } else {
-                let commit = self.get_current_commit(&repo).await?;
-                (None, commit)
-            };
+            let prepared = self
+                .prepared_versions
+                .get(&prepared_key)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Prepared state missing for source '{}' @ '{}'. Stage 1 preparation should have populated this entry.",
+                        source_name,
+                        version_key
+                    )
+                })?;
+
+            let repo_path = prepared.worktree_path.clone();
+            let resolved_version = prepared.resolved_version.clone();
+            let resolved_commit = prepared.resolved_commit.clone();
 
             // Search for matching files in the repository
             let pattern_resolver = crate::pattern::PatternResolver::new();
-            let repo_path = Path::new(repo.path());
-            let matches = pattern_resolver.resolve(pattern, repo_path)?;
+            let repo_path_ref = Path::new(&repo_path);
+            let matches = pattern_resolver.resolve(pattern, repo_path_ref)?;
 
             let resource_type = self.get_resource_type(name);
             let mut resources = Vec::new();
@@ -786,9 +1061,7 @@ impl DependencyResolver {
                     source: Some(source_name.to_string()),
                     url: Some(source_url.clone()),
                     path: matched_path.to_string_lossy().to_string(),
-                    version: resolved_version
-                        .clone()
-                        .or_else(|| dep.get_version().map(std::string::ToString::to_string)),
+                    version: resolved_version.clone(), // Use the resolved version (e.g., "main")
                     resolved_commit: Some(resolved_commit.clone()),
                     checksum: String::new(),
                     installed_at,
@@ -841,191 +1114,6 @@ impl DependencyResolver {
     /// - Git checkout fails due to conflicts or permissions
     /// - Repository is corrupted or inaccessible
     ///
-    /// Checks out a version and returns both the resolved version string and commit hash.
-    ///
-    /// This is similar to `checkout_version` but also returns the actual resolved version
-    /// string when a version constraint is resolved. This is needed to store the correct
-    /// version in the lockfile instead of the constraint.
-    ///
-    /// # Returns
-    ///
-    /// A tuple of (Option<`resolved_version`>, `commit_hash`) where:
-    /// - `resolved_version` is Some(tag) when a constraint was resolved to a specific tag
-    /// - `resolved_version` is None when the version was already exact (branch/tag/commit)
-    /// - `commit_hash` is always the resulting HEAD commit after checkout
-    async fn checkout_version_with_resolved(
-        &self,
-        repo: &GitRepo,
-        version: &str,
-    ) -> Result<(Option<String>, String)> {
-        // Check if it's a version constraint that needs resolution
-        if is_version_constraint(version) {
-            // Get all available tags from the repository
-            let mut tags = repo.list_tags().await?;
-
-            // Debug: Check if we have any tags at all
-            if tags.is_empty() {
-                // If no tags found, try fetching them first
-                repo.fetch(None, None)
-                    .await
-                    .context("Failed to fetch tags from repository")?;
-
-                // Try again after fetch
-                tags = repo.list_tags().await?;
-                if tags.is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "No tags found in repository. Version constraint '{}' requires tags to resolve.",
-                        version
-                    ));
-                }
-            }
-
-            // Find the best matching tag for the constraint
-            let best_tag = find_best_matching_tag(version, tags)
-                .context(format!("Failed to resolve version constraint: {version}"))?;
-
-            // Checkout the resolved tag
-            repo.checkout(&best_tag)
-                .await
-                .context(format!("Failed to checkout resolved version: {best_tag}"))?;
-
-            let commit = self.get_current_commit(repo).await?;
-            // Return the resolved tag as the version to store in lockfile
-            Ok((Some(best_tag), commit))
-        } else {
-            // Not a constraint, checkout directly and return the original version
-            let commit = self.checkout_version(repo, version).await?;
-            Ok((None, commit))
-        }
-    }
-
-    async fn checkout_version(&self, repo: &GitRepo, version: &str) -> Result<String> {
-        // Check if it's a version constraint that needs resolution
-        if is_version_constraint(version) {
-            // Get all available tags from the repository
-            let mut tags = repo.list_tags().await?;
-
-            // Debug: Check if we have any tags at all
-            if tags.is_empty() {
-                // If no tags found, try fetching them first
-                repo.fetch(None, None)
-                    .await
-                    .context("Failed to fetch tags from repository")?;
-
-                // Try again after fetch
-                tags = repo.list_tags().await?;
-                if tags.is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "No tags found in repository. Version constraint '{}' requires tags to resolve.",
-                        version
-                    ));
-                }
-            }
-
-            // Special handling for "latest" and "*" - they should resolve to the highest stable version
-            // This is handled inside find_best_matching_tag via VersionConstraint::parse
-
-            // Find the best matching tag for the constraint
-            let best_tag = find_best_matching_tag(version, tags)
-                .context(format!("Failed to resolve version constraint: {version}"))?;
-
-            // Checkout the resolved tag
-            repo.checkout(&best_tag)
-                .await
-                .context(format!("Failed to checkout resolved version: {best_tag}"))?;
-
-            return self.get_current_commit(repo).await;
-        }
-
-        // Not a constraint, try as exact tag/branch/commit
-        // Try as tag first
-        let tags = repo.list_tags().await?;
-        if tags.contains(&version.to_string()) {
-            repo.checkout(version).await?;
-            return self.get_current_commit(repo).await;
-        }
-
-        // Check if it looks like a semantic version tag that doesn't exist
-        // Pattern: starts with 'v' followed by a digit, or looks like a semver (e.g., "1.0.0")
-        // But exclude commit hashes (which are 40 hex chars or shorter prefixes)
-        let looks_like_version = if version.starts_with('v')
-            && version.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
-        {
-            true
-        } else if version.contains('.')
-            && version.chars().next().is_some_and(|c| c.is_ascii_digit())
-        {
-            // Looks like semver (has dots and starts with digit)
-            true
-        } else {
-            false
-        };
-
-        if looks_like_version {
-            // This looks like a version tag but wasn't found
-            return Err(anyhow::anyhow!(
-                "No matching version found for '{}'. Available versions: {}",
-                version,
-                tags.join(", ")
-            ));
-        }
-
-        // Try as branch or commit hash
-        repo.checkout(version)
-            .await
-            .or_else(|e| {
-                // If checkout failed and this looks like a commit hash, provide better error
-                if version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit()) {
-                    Err(anyhow::anyhow!(
-                        "Failed to checkout commit hash '{}'. The commit may not exist in the repository or may not be reachable from the cloned branches. Original error: {}",
-                        version, e
-                    ))
-                } else {
-                    Err(e).context(format!("Failed to checkout reference '{version}'"))
-                }
-            })?;
-
-        self.get_current_commit(repo).await
-    }
-
-    /// Retrieves the current commit hash from a Git repository.
-    ///
-    /// This method executes `git rev-parse HEAD` to get the current commit
-    /// hash, which is used as the resolved version in lockfile entries.
-    ///
-    /// # Implementation Note
-    ///
-    /// Uses `tokio::process::Command` for async Git execution, allowing
-    /// the resolver to remain non-blocking during potentially slow operations.
-    ///
-    /// # Parameters
-    ///
-    /// - `repo`: Git repository to query
-    ///
-    /// # Returns
-    ///
-    /// The full 40-character SHA hash of the current HEAD commit.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Git command execution fails
-    /// - Repository is not in a valid Git state
-    /// - HEAD points to an invalid or missing commit
-    /// - Process execution is interrupted or times out
-    async fn get_current_commit(&self, repo: &GitRepo) -> Result<String> {
-        use crate::git::command_builder::GitCommand;
-
-        // Use GitCommand which has built-in timeout support
-        let commit = GitCommand::current_commit()
-            .current_dir(repo.path())
-            .execute_stdout()
-            .await
-            .context("Failed to get current commit")?;
-
-        Ok(commit)
-    }
-
     /// Determines the resource type (agent or snippet) from a dependency name.
     ///
     /// This method checks which manifest section contains the dependency
@@ -1129,7 +1217,6 @@ impl DependencyResolver {
         &mut self,
         existing: &LockFile,
         deps_to_update: Option<Vec<String>>,
-        progress: Option<&ProgressBar>,
     ) -> Result<LockFile> {
         let mut lockfile = existing.clone();
 
@@ -1153,13 +1240,24 @@ impl DependencyResolver {
             .map(|(name, dep)| (name.to_string(), dep.clone()))
             .collect();
 
+        // Pre-sync all unique sources once to avoid redundant fetches
+        let mut sources_to_sync = HashSet::new();
+        for (name, dep) in &deps {
+            if deps_to_check.contains(name) && !dep.is_local() {
+                if let Some(source_name) = dep.get_source() {
+                    sources_to_sync.insert(source_name.to_string());
+                }
+            }
+        }
+
+        for source_name in sources_to_sync {
+            self.source_manager.sync(&source_name).await?;
+        }
+
         for (name, dep) in deps {
             if !deps_to_check.contains(&name) {
+                // Skip this dependency but still increment progress
                 continue;
-            }
-
-            if let Some(pb) = progress {
-                pb.set_message(format!("Updating {name}"));
             }
 
             let entry = self.resolve_dependency(&name, &dep).await?;
@@ -1221,9 +1319,7 @@ impl DependencyResolver {
             }
         }
 
-        if let Some(pb) = progress {
-            pb.finish_with_message("Update complete");
-        }
+        // Progress bar completion is handled by the caller
 
         Ok(lockfile)
     }
@@ -1358,7 +1454,7 @@ impl DependencyResolver {
     /// Successful verification doesn't guarantee resolution will succeed,
     /// since network issues or missing versions can still cause failures.
     /// Use this method for fast validation before expensive resolution operations.
-    pub fn verify(&mut self, progress: Option<&ProgressBar>) -> Result<()> {
+    pub fn verify(&mut self) -> Result<()> {
         // Check for redundancies and warn (but don't fail)
         if let Some(warning) = self.check_redundancies() {
             eprintln!("{warning}");
@@ -1372,10 +1468,6 @@ impl DependencyResolver {
             .map(|(name, dep)| (name.to_string(), dep.clone()))
             .collect();
         for (name, dep) in deps {
-            if let Some(pb) = progress {
-                pb.set_message(format!("Verifying {name}"));
-            }
-
             if dep.is_local() {
                 // Check if local path exists or is relative
                 let path = Path::new(dep.get_path());
@@ -1402,9 +1494,7 @@ impl DependencyResolver {
             }
         }
 
-        if let Some(pb) = progress {
-            pb.finish_with_message("Verification complete");
-        }
+        // Progress bar completion is handled by the caller
 
         Ok(())
     }
@@ -1419,9 +1509,10 @@ mod tests {
     fn test_resolver_new() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
 
-        assert_eq!(resolver.cache_dir, temp_dir.path());
+        assert_eq!(resolver.cache.get_cache_location(), temp_dir.path());
     }
 
     #[tokio::test]
@@ -1434,9 +1525,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let entry = &lockfile.agents[0];
@@ -1488,7 +1580,8 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
 
         let warning = resolver.check_redundancies();
         assert!(warning.is_some());
@@ -1517,9 +1610,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let result = resolver.verify(None);
+        let result = resolver.verify();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("undefined source"));
     }
@@ -1540,7 +1634,8 @@ mod tests {
         // Remove dev-snippet1 test as dev concept is removed
 
         let temp_dir = TempDir::new().unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
 
         assert_eq!(resolver.get_resource_type("agent1"), "agent");
         assert_eq!(resolver.get_resource_type("snippet1"), "snippet");
@@ -1615,10 +1710,11 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
         // This should now succeed with the local repository
-        let result = resolver.resolve(None).await;
+        let result = resolver.resolve().await;
         assert!(result.is_ok());
     }
 
@@ -1632,10 +1728,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let progress = ProgressBar::new(1);
-        let lockfile = resolver.resolve(Some(&progress)).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
     }
 
@@ -1663,10 +1759,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let progress = ProgressBar::new(1);
-        let result = resolver.verify(Some(&progress));
+        let result = resolver.verify();
         assert!(result.is_ok());
     }
 
@@ -1740,24 +1836,27 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
         // This should now succeed with the local repository
-        let result = resolver.resolve(None).await;
+        let result = resolver.resolve().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_new_with_global() {
         let manifest = Manifest::new();
-        let result = DependencyResolver::new_with_global(manifest).await;
+        let cache = Cache::new().unwrap();
+        let result = DependencyResolver::new_with_global(manifest, cache).await;
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_resolver_new_default() {
         let manifest = Manifest::new();
-        let result = DependencyResolver::new(manifest);
+        let cache = Cache::new().unwrap();
+        let result = DependencyResolver::new(manifest, cache);
         assert!(result.is_ok());
     }
 
@@ -1781,9 +1880,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 2);
         assert_eq!(lockfile.snippets.len(), 1);
     }
@@ -1827,7 +1927,8 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
 
         let warning = resolver.check_redundancies();
         assert!(warning.is_none());
@@ -1843,9 +1944,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let result = resolver.verify(None);
+        let result = resolver.verify();
         assert!(result.is_ok());
     }
 
@@ -1853,9 +1955,10 @@ mod tests {
     async fn test_resolve_with_empty_manifest() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 0);
         assert_eq!(lockfile.snippets.len(), 0);
         assert_eq!(lockfile.sources.len(), 0);
@@ -1883,9 +1986,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -1920,9 +2024,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -1953,9 +2058,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -1986,9 +2092,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -2019,9 +2126,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         // Scripts should be in snippets array for now (based on false flag)
         assert_eq!(lockfile.snippets.len(), 1);
 
@@ -2117,9 +2225,10 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         // Should have resolved to 2 python agents
         assert_eq!(lockfile.agents.len(), 2);
 
@@ -2207,13 +2316,13 @@ mod tests {
         let source_url = source_dir.display().to_string();
         manifest.add_source("test".to_string(), source_url);
 
-        // Add dependencies with new versions
+        // Add dependencies - initially both at v1.0.0
         manifest.add_dependency(
             "agent1".to_string(),
             ResourceDependency::Detailed(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent1.md".to_string(),
-                version: Some("v2.0.0".to_string()), // Updated version
+                version: Some("v1.0.0".to_string()), // Start with v1.0.0
                 branch: None,
                 rev: None,
                 command: None,
@@ -2228,7 +2337,7 @@ mod tests {
             ResourceDependency::Detailed(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent2.md".to_string(),
-                version: Some("v1.0.0".to_string()), // Keep old version
+                version: Some("v1.0.0".to_string()), // Start with v1.0.0
                 branch: None,
                 rev: None,
                 command: None,
@@ -2240,16 +2349,52 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache_dir.clone());
+        let cache = Cache::with_dir(cache_dir.clone()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
 
         // First resolve with v1.0.0 for both
-        let initial_lockfile = resolver.resolve(None).await.unwrap();
+        let initial_lockfile = resolver.resolve().await.unwrap();
         assert_eq!(initial_lockfile.agents.len(), 2);
 
+        // Create a new manifest with agent1 updated to v2.0.0
+        let mut updated_manifest = Manifest::new();
+        updated_manifest.add_source("test".to_string(), source_dir.display().to_string());
+        updated_manifest.add_dependency(
+            "agent1".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agents/agent1.md".to_string(),
+                version: Some("v2.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+        updated_manifest.add_dependency(
+            "agent2".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test".to_string()),
+                path: "agents/agent2.md".to_string(),
+                version: Some("v1.0.0".to_string()), // Keep v1.0.0
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
         // Now update only agent1
-        let mut resolver2 = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache2 = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver2 = DependencyResolver::with_cache(updated_manifest, cache2);
         let updated_lockfile = resolver2
-            .update(&initial_lockfile, Some(vec!["agent1".to_string()]), None)
+            .update(&initial_lockfile, Some(vec!["agent1".to_string()]))
             .await
             .unwrap();
 
@@ -2285,19 +2430,17 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver =
-            DependencyResolver::with_cache(manifest.clone(), temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
 
         // Initial resolve
-        let initial_lockfile = resolver.resolve(None).await.unwrap();
+        let initial_lockfile = resolver.resolve().await.unwrap();
         assert_eq!(initial_lockfile.agents.len(), 2);
 
         // Update all (None means update all)
-        let mut resolver2 = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
-        let updated_lockfile = resolver2
-            .update(&initial_lockfile, None, None)
-            .await
-            .unwrap();
+        let cache2 = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver2 = DependencyResolver::with_cache(manifest, cache2);
+        let updated_lockfile = resolver2.update(&initial_lockfile, None).await.unwrap();
 
         // All dependencies should be present
         assert_eq!(updated_lockfile.agents.len(), 2);
@@ -2318,9 +2461,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.hooks.len(), 2);
 
         // Check that hooks are installed to the correct location
@@ -2345,9 +2489,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.scripts.len(), 2);
 
         // Check that scripts maintain their extensions
@@ -2373,9 +2518,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.mcp_servers.len(), 2);
 
         // Check that MCP servers are tracked correctly
@@ -2400,9 +2546,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.commands.len(), 2);
 
         // Check that commands are installed to the correct location
@@ -2534,9 +2681,10 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -2630,9 +2778,10 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -2659,9 +2808,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let result = resolver.verify(None);
+        let result = resolver.verify();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -2688,9 +2838,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let result = resolver.resolve(None).await;
+        let result = resolver.resolve().await;
         assert!(result.is_err());
     }
 
@@ -2775,9 +2926,10 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         // Should have resolved to develop branch
@@ -2854,9 +3006,10 @@ mod tests {
         );
 
         let cache_dir = temp_dir.path().join("cache");
-        let mut resolver = DependencyResolver::with_cache(manifest, cache_dir);
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 1);
 
         let agent = &lockfile.agents[0];
@@ -2911,7 +3064,8 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
 
         let redundancies = resolver.check_redundancies_with_details();
         assert!(!redundancies.is_empty());
@@ -2954,9 +3108,10 @@ mod tests {
         );
 
         let temp_dir = TempDir::new().unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, temp_dir.path().to_path_buf());
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
-        let lockfile = resolver.resolve(None).await.unwrap();
+        let lockfile = resolver.resolve().await.unwrap();
 
         // Check all resource types are resolved
         assert_eq!(lockfile.agents.len(), 1);

@@ -152,7 +152,7 @@
 //! let mut manager = SourceManager::from_manifest_with_global(&manifest).await?;
 //!
 //! // Sync a specific source
-//! let repo = manager.sync("community", None).await?;
+//! let repo = manager.sync("community").await?;
 //! println!("Repository ready at: {:?}", repo.path());
 //!
 //! // List all available sources
@@ -166,10 +166,8 @@
 //! ## Progress Monitoring
 //! ```rust,no_run
 //! use ccpm::source::SourceManager;
-//! use ccpm::utils::progress::ProgressBar;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
-//! let progress = ProgressBar::new_spinner();
 //! progress.set_message("Syncing repositories...");
 //!
 //! // Sync all sources with progress updates
@@ -205,7 +203,6 @@ use crate::core::CcpmError;
 use crate::git::{parse_git_url, GitRepo};
 use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
-use crate::utils::progress::ProgressBar;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -439,7 +436,7 @@ impl Source {
 /// manager.add(source)?;
 ///
 /// // Sync the repository
-/// let repo = manager.sync("community", None).await?;
+/// let repo = manager.sync("community").await?;
 /// println!("Repository synced to: {:?}", repo.path());
 /// # Ok(())
 /// # }
@@ -1009,7 +1006,7 @@ impl SourceManager {
     /// manager.add(source)?;
     ///
     /// // Sync without progress feedback
-    /// let repo = manager.sync("community", None).await?;
+    /// let repo = manager.sync("community").await?;
     /// println!("Repository available at: {:?}", repo.path());
     /// # Ok(())
     /// # }
@@ -1018,7 +1015,6 @@ impl SourceManager {
     /// ## Synchronization with Progress
     /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
-    /// use ccpm::utils::progress::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1029,7 +1025,6 @@ impl SourceManager {
     /// manager.add(source)?;
     ///
     /// // Sync with progress feedback
-    /// let progress = ProgressBar::new_spinner();
     /// progress.set_message("Syncing large repository...");
     ///
     /// let repo = manager.sync("large-repo", Some(&progress)).await?;
@@ -1037,7 +1032,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn sync(&mut self, name: &str, progress: Option<&ProgressBar>) -> Result<GitRepo> {
+    pub async fn sync(&mut self, name: &str) -> Result<GitRepo> {
         let source = self
             .sources
             .get(name)
@@ -1110,31 +1105,31 @@ impl SourceManager {
                 let repo = GitRepo::new(&cache_path);
                 if repo.is_git_repo() {
                     // For file:// repos, fetch to get latest changes
-                    repo.fetch(Some(&url), progress).await?;
+                    repo.fetch(Some(&url)).await?;
                     repo
                 } else {
                     tokio::fs::remove_dir_all(&cache_path)
                         .await
                         .context("Failed to remove invalid cache directory")?;
-                    GitRepo::clone(&url, &cache_path, progress).await?
+                    GitRepo::clone(&url, &cache_path).await?
                 }
             } else {
-                GitRepo::clone(&url, &cache_path, progress).await?
+                GitRepo::clone(&url, &cache_path).await?
             }
         } else if cache_path.exists() {
             let repo = GitRepo::new(&cache_path);
             if repo.is_git_repo() {
                 // Always fetch for all URLs to get latest changes
-                repo.fetch(Some(&url), progress).await?;
+                repo.fetch(Some(&url)).await?;
                 repo
             } else {
                 tokio::fs::remove_dir_all(&cache_path)
                     .await
                     .context("Failed to remove invalid cache directory")?;
-                GitRepo::clone(&url, &cache_path, progress).await?
+                GitRepo::clone(&url, &cache_path).await?
             }
         } else {
-            GitRepo::clone(&url, &cache_path, progress).await?
+            GitRepo::clone(&url, &cache_path).await?
         };
 
         if let Some(source) = self.sources.get_mut(name) {
@@ -1222,11 +1217,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn sync_by_url(
-        &mut self,
-        url: &str,
-        progress: Option<&ProgressBar>,
-    ) -> Result<GitRepo> {
+    pub async fn sync_by_url(&mut self, url: &str) -> Result<GitRepo> {
         // Generate a cache directory based on the URL
         let (owner, repo_name) =
             parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
@@ -1295,16 +1286,16 @@ impl SourceManager {
             if repo.is_git_repo() {
                 // For file:// URLs, always fetch to update refs
                 // For remote URLs, also fetch
-                repo.fetch(Some(&authenticated_url), progress).await?;
+                repo.fetch(Some(&authenticated_url)).await?;
                 repo
             } else {
                 tokio::fs::remove_dir_all(&cache_path)
                     .await
                     .context("Failed to remove invalid cache directory")?;
-                GitRepo::clone(&authenticated_url, &cache_path, progress).await?
+                GitRepo::clone(&authenticated_url, &cache_path).await?
             }
         } else {
-            GitRepo::clone(&authenticated_url, &cache_path, progress).await?
+            GitRepo::clone(&authenticated_url, &cache_path).await?
         };
 
         Ok(repo)
@@ -1326,52 +1317,29 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns an error if any source fails to sync
-    pub async fn sync_all(&mut self, progress: Option<&ProgressBar>) -> Result<()> {
+    pub async fn sync_all(&mut self) -> Result<()> {
         let enabled_sources: Vec<String> =
             self.list_enabled().iter().map(|s| s.name.clone()).collect();
 
         for name in enabled_sources {
-            if let Some(pb) = &progress {
-                pb.set_message(format!("Syncing {name}"));
-            }
-            self.sync(&name, progress).await?;
-        }
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("All sources synced");
+            self.sync(&name).await?;
         }
 
         Ok(())
     }
 
     /// Sync multiple sources by URL in parallel
-    pub async fn sync_multiple_by_url(
-        &mut self,
-        urls: &[String],
-        progress: Option<&ProgressBar>,
-    ) -> Result<Vec<GitRepo>> {
+    pub async fn sync_multiple_by_url(&mut self, urls: &[String]) -> Result<Vec<GitRepo>> {
         if urls.is_empty() {
             return Ok(Vec::new());
-        }
-
-        if let Some(pb) = progress {
-            pb.set_message(format!("Syncing {} repositories", urls.len()));
         }
 
         // For now, sync sequentially
         // TODO: Use tokio::join_all for parallel execution
         let mut repos = Vec::new();
-        for (index, url) in urls.iter().enumerate() {
-            if let Some(pb) = progress {
-                pb.set_message(format!("Syncing repository {}/{}", index + 1, urls.len()));
-            }
-
-            let repo = self.sync_by_url(url, None).await?;
+        for url in urls.iter() {
+            let repo = self.sync_by_url(url).await?;
             repos.push(repo);
-        }
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("All repositories synced");
         }
 
         Ok(repos)
@@ -1599,7 +1567,6 @@ impl SourceManager {
     ///
     /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
-    /// use ccpm::utils::progress::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1611,34 +1578,22 @@ impl SourceManager {
     /// ))?;
     ///
     /// // Verify all sources with progress feedback
-    /// let progress = ProgressBar::new_spinner();
     /// manager.verify_all(Some(&progress)).await?;
     ///
     /// println!("All sources verified successfully");
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn verify_all(&self, progress: Option<&ProgressBar>) -> Result<()> {
+    pub async fn verify_all(&self) -> Result<()> {
         let enabled_sources: Vec<&Source> = self.list_enabled();
 
         if enabled_sources.is_empty() {
-            if let Some(pb) = progress {
-                pb.finish_with_message("No sources to verify");
-            }
             return Ok(());
         }
 
         for source in enabled_sources {
-            if let Some(pb) = progress {
-                pb.set_message(format!("Verifying {}", source.name));
-            }
-
             // Check if source URL is reachable by attempting a quick operation
             self.verify_source(&source.url).await?;
-        }
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("All sources verified");
         }
 
         Ok(())
@@ -1871,7 +1826,7 @@ mod tests {
         manager.add(source).unwrap();
         manager.disable("test").unwrap();
 
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         assert!(result.is_err());
     }
 
@@ -1880,7 +1835,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        let result = manager.sync("nonexistent", None).await;
+        let result = manager.sync("nonexistent").await;
         assert!(result.is_err());
     }
 
@@ -1928,13 +1883,13 @@ mod tests {
         manager.add(source).unwrap();
 
         // First sync (clone)
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         assert!(result.is_ok());
         let repo = result.unwrap();
         assert!(repo.is_git_repo());
 
         // Second sync (fetch + pull)
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         assert!(result.is_ok());
     }
 
@@ -1998,7 +1953,7 @@ mod tests {
             .unwrap();
 
         // Sync all
-        let result = manager.sync_all(None).await;
+        let result = manager.sync_all().await;
         assert!(result.is_ok());
 
         // Verify both repos were cloned
@@ -2019,7 +1974,7 @@ mod tests {
         let source = Source::new("test".to_string(), "/non/existent/path".to_string());
         manager.add(source).unwrap();
 
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("does not exist"));
     }
@@ -2039,7 +1994,7 @@ mod tests {
         manager.add(source).unwrap();
 
         // Local paths are now treated as plain directories, so sync should succeed
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         if let Err(ref e) = result {
             eprintln!("Test failed with error: {e}");
             eprintln!("Path was: {non_git_dir:?}");
@@ -2103,7 +2058,7 @@ mod tests {
         std::fs::write(source_cache_dir.join("file.txt"), "not a git repo").unwrap();
 
         // Sync should detect invalid cache and re-clone
-        let result = manager.sync("test", None).await;
+        let result = manager.sync("test").await;
         assert!(result.is_ok());
         assert!(source_cache_dir.join(".git").exists());
     }
@@ -2114,7 +2069,7 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
-        let result = manager.sync_by_url("not-a-valid-url", None).await;
+        let result = manager.sync_by_url("not-a-valid-url").await;
         assert!(result.is_err());
     }
 
@@ -2124,7 +2079,7 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
-        let result = manager.sync_multiple_by_url(&[], None).await;
+        let result = manager.sync_multiple_by_url(&[]).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
     }
@@ -2174,7 +2129,7 @@ mod tests {
         ];
 
         // Should fail on invalid URL
-        let result = manager.sync_multiple_by_url(&urls, None).await;
+        let result = manager.sync_multiple_by_url(&urls).await;
         assert!(result.is_err());
     }
 
@@ -2206,8 +2161,7 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let manager = SourceManager::new_with_cache(cache_dir);
 
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = manager.verify_all(Some(&pb)).await;
+        let result = manager.verify_all().await;
         assert!(result.is_ok());
     }
 
@@ -2226,7 +2180,7 @@ mod tests {
         manager.disable("test").unwrap();
 
         // Verify should skip disabled sources
-        let result = manager.verify_all(None).await;
+        let result = manager.verify_all().await;
         assert!(result.is_ok());
     }
 
@@ -2351,13 +2305,8 @@ mod tests {
         let source = Source::new("test".to_string(), format!("file://{}", repo_dir.display()));
         manager.add(source).unwrap();
 
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        pb.set_message("Testing sync");
-
-        let result = manager.sync("test", Some(&pb)).await;
+        let result = manager.sync("test").await;
         assert!(result.is_ok());
-
-        pb.finish_with_message("Done");
     }
 
     #[tokio::test]
@@ -2395,7 +2344,7 @@ mod tests {
         manager.add(source).unwrap();
 
         // Sync should work with plain directory (not require git)
-        let result = manager.sync("local", None).await;
+        let result = manager.sync("local").await;
         assert!(result.is_ok());
 
         let repo = result.unwrap();
@@ -2421,9 +2370,7 @@ mod tests {
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
         // Test absolute path
-        let result = manager
-            .sync_by_url(&local_dir.to_string_lossy(), None)
-            .await;
+        let result = manager.sync_by_url(&local_dir.to_string_lossy()).await;
         assert!(result.is_ok());
         let repo = result.unwrap();
         assert_eq!(
@@ -2434,7 +2381,7 @@ mod tests {
         // Test relative path
         {
             // In coverage/CI environments, current dir might not exist, so set a safe one first
-            let result = manager.sync_by_url("./local_deps", None).await;
+            let result = manager.sync_by_url("./local_deps").await;
             assert!(result.is_ok());
             // Guard will restore directory when dropped
         }
@@ -2447,7 +2394,7 @@ mod tests {
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
         // Try to sync non-existent local path
-        let result = manager.sync_by_url("/non/existent/path", None).await;
+        let result = manager.sync_by_url("/non/existent/path").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("does not exist"));
     }
@@ -2467,7 +2414,7 @@ mod tests {
 
         // file:// URL should fail for non-git directory
         let file_url = format!("file://{}", plain_dir.display());
-        let result = manager.sync_by_url(&file_url, None).await;
+        let result = manager.sync_by_url(&file_url).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -2492,7 +2439,7 @@ mod tests {
                 continue;
             }
 
-            let result = manager.sync_by_url(malicious_path, None).await;
+            let result = manager.sync_by_url(malicious_path).await;
             assert!(
                 result.is_err(),
                 "Blacklisted path not detected for: {malicious_path}"
@@ -2508,7 +2455,7 @@ mod tests {
         let safe_dir = temp_dir.path().join("safe_dir");
         std::fs::create_dir(&safe_dir).unwrap();
 
-        let result = manager.sync_by_url(&safe_dir.to_string_lossy(), None).await;
+        let result = manager.sync_by_url(&safe_dir.to_string_lossy()).await;
         assert!(
             result.is_ok(),
             "Safe path was incorrectly blocked: {result:?}"
@@ -2539,9 +2486,7 @@ mod tests {
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
         // Try to access the symlink directly as a local path
-        let result = manager
-            .sync_by_url(symlink_path.to_str().unwrap(), None)
-            .await;
+        let result = manager.sync_by_url(symlink_path.to_str().unwrap()).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -2564,7 +2509,7 @@ mod tests {
         std::fs::create_dir(&safe_dir).unwrap();
         std::fs::write(safe_dir.join("file.txt"), "content").unwrap();
 
-        let result = manager.sync_by_url(&safe_dir.to_string_lossy(), None).await;
+        let result = manager.sync_by_url(&safe_dir.to_string_lossy()).await;
 
         // Temp directories should work fine with blacklist approach
         assert!(
