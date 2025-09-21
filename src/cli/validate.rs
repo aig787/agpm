@@ -92,9 +92,9 @@ use clap::Args;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::cache::Cache;
 use crate::manifest::{find_manifest_with_optional, Manifest};
 use crate::resolver::DependencyResolver;
-use crate::utils::progress::ProgressBar;
 
 /// Command to validate CCPM project configuration and dependencies.
 ///
@@ -534,22 +534,13 @@ impl ValidateCommand {
                 println!("\n🔄 Checking dependency resolution...");
             }
 
-            let pb: Option<ProgressBar> = None; // Always use direct output for tests
-
-            if let Some(ref pb) = pb {
-                pb.set_message("Verifying dependencies");
-            }
-
-            let resolver_result = DependencyResolver::new(manifest.clone());
+            let cache = Cache::new()?;
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
                     let error_msg = format!("Dependency resolution failed: {e}");
                     errors.push(error_msg.clone());
-
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✗ Dependency resolution failed");
-                    }
 
                     if matches!(self.format, OutputFormat::Json) {
                         validation_results.valid = false;
@@ -564,12 +555,10 @@ impl ValidateCommand {
                 }
             };
 
-            match resolver.verify(pb.as_ref()) {
+            match resolver.verify() {
                 Ok(()) => {
                     validation_results.dependencies_resolvable = true;
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✓ Dependencies resolvable");
-                    } else if !self.quiet {
+                    if !self.quiet {
                         println!("✓ Dependencies resolvable");
                     }
                 }
@@ -580,10 +569,6 @@ impl ValidateCommand {
                         format!("Dependency resolution failed: {e}")
                     };
                     errors.push(error_msg.clone());
-
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✗ Dependency resolution failed");
-                    }
 
                     if matches!(self.format, OutputFormat::Json) {
                         validation_results.valid = false;
@@ -605,22 +590,13 @@ impl ValidateCommand {
                 println!("\n🔍 Checking source accessibility...");
             }
 
-            let pb: Option<ProgressBar> = None; // Always use direct output for tests
-
-            if let Some(ref pb) = pb {
-                pb.set_message("Checking sources");
-            }
-
-            let resolver_result = DependencyResolver::new(manifest.clone());
+            let cache = Cache::new()?;
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
             let resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
                     let error_msg = "Source not accessible: official, community".to_string();
                     errors.push(error_msg.clone());
-
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✗ Source verification failed");
-                    }
 
                     if matches!(self.format, OutputFormat::Json) {
                         validation_results.valid = false;
@@ -635,27 +611,18 @@ impl ValidateCommand {
                 }
             };
 
-            if let Some(ref pb) = pb {
-                pb.set_message("Checking sources");
-            }
-            let result = resolver.source_manager.verify_all(pb.as_ref()).await;
+            let result = resolver.source_manager.verify_all().await;
 
             match result {
                 Ok(()) => {
                     validation_results.sources_accessible = true;
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✓ Sources accessible");
-                    } else if !self.quiet {
+                    if !self.quiet {
                         println!("✓ Sources accessible");
                     }
                 }
                 Err(e) => {
                     let error_msg = "Source not accessible: official, community".to_string();
                     errors.push(error_msg.clone());
-
-                    if let Some(pb) = pb {
-                        pb.finish_with_message("✗ Source verification failed");
-                    }
 
                     if matches!(self.format, OutputFormat::Json) {
                         validation_results.valid = false;
@@ -677,7 +644,8 @@ impl ValidateCommand {
                 println!("\n🔍 Checking for redundant dependencies...");
             }
 
-            let resolver_result = DependencyResolver::new(manifest.clone());
+            let cache = Cache::new()?;
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
             let resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
@@ -3413,9 +3381,12 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
     #[tokio::test]
     async fn test_execute_without_manifest_file() {
-        // Test when no manifest file exists in current directory
+        // Test when no manifest file exists - use temp directory with specific non-existent file
+        let temp = TempDir::new().unwrap();
+        let non_existent_manifest = temp.path().join("non_existent.toml");
+
         let cmd = ValidateCommand {
-            file: None,
+            file: Some(non_existent_manifest.to_string_lossy().to_string()),
             resolve: false,
             check_lock: false,
             sources: false,

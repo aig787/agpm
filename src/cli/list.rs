@@ -97,7 +97,7 @@ use crate::manifest::{find_manifest_with_optional, Manifest};
 /// Internal representation for list items used in various output formats.
 ///
 /// This struct normalizes resource information from both agents and snippets
-/// in the lockfile to provide a unified view for display purposes.
+/// in the lockfile to provide a consistent view for display purposes.
 #[derive(Debug, Clone)]
 struct ListItem {
     /// The name/key of the resource as defined in the manifest

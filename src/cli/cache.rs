@@ -321,6 +321,14 @@ impl CacheCommand {
     async fn clean_all(&self, cache: Cache) -> Result<()> {
         println!("🗑️  Cleaning all cache...");
 
+        // Also clean up stale lock files (older than 1 hour)
+        let cache_dir = cache.cache_dir();
+        if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await {
+            if removed > 0 {
+                println!("  Removed {} stale lock files", removed);
+            }
+        }
+
         cache.clear_all().await?;
 
         println!("{}", "✅ Cache cleared successfully".green().bold());
@@ -385,10 +393,23 @@ impl CacheCommand {
 
         let removed = cache.clean_unused(&active_sources).await?;
 
-        if removed > 0 {
+        // Also clean up stale lock files (older than 1 hour)
+        let cache_dir = cache.cache_dir();
+        let lock_removed = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600)
+            .await
+            .unwrap_or(0);
+
+        if removed > 0 || lock_removed > 0 {
+            let mut messages = Vec::new();
+            if removed > 0 {
+                messages.push(format!("{} unused cache entries", removed));
+            }
+            if lock_removed > 0 {
+                messages.push(format!("{} stale lock files", lock_removed));
+            }
             println!(
                 "{}",
-                format!("✅ Removed {removed} unused cache entries")
+                format!("✅ Removed {}", messages.join(" and "))
                     .green()
                     .bold()
             );

@@ -345,6 +345,24 @@ impl GlobalConfig {
             .await
             .with_context(|| format!("Failed to write global config to {}", path.display()))?;
 
+        // Set restrictive permissions on Unix systems to protect credentials
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            use tokio::fs as async_fs;
+
+            let mut perms = async_fs::metadata(path)
+                .await
+                .with_context(|| format!("Failed to read permissions for {}", path.display()))?
+                .permissions();
+            perms.set_mode(0o600); // Owner read/write only, no group/other access
+            async_fs::set_permissions(path, perms)
+                .await
+                .with_context(|| {
+                    format!("Failed to set secure permissions on {}", path.display())
+                })?;
+        }
+
         Ok(())
     }
 
@@ -1010,6 +1028,25 @@ mod tests {
             config.get_source("private"),
             Some(&"https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-ccpm.git".to_string())
         );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_config_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("test-config.toml");
+
+        // Create and save config
+        let config = GlobalConfig::default();
+        config.save_to(&config_path).await.unwrap();
+
+        // Check permissions
+        let metadata = tokio::fs::metadata(&config_path).await.unwrap();
+        let permissions = metadata.permissions();
+        let mode = permissions.mode() & 0o777; // Get only permission bits
+
+        assert_eq!(mode, 0o600, "Config file should have 600 permissions");
     }
 
     #[tokio::test]
