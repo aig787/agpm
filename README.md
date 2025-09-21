@@ -10,9 +10,11 @@ A Git-based package manager for Claude Code resources that enables reproducible 
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🔒 **Secure credential handling** - Separate config for sensitive data
-- ⚡ **Advanced parallel operations** - Git worktrees enable safe concurrent access to different versions
+- ⚡ **Worktree-based parallel operations** - Git worktrees enable safe concurrent access to different repository versions
+- 🚀 **Configurable parallelism** - User-controlled concurrency with `--max-parallel` flag (default: max(10, 2 × CPU cores))
+- 📊 **Enhanced progress tracking** - Multi-phase progress reporting with real-time installation updates
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
-- 🚀 **Performance optimized** - Global semaphore controls Git operations, worktrees eliminate blocking
+- 🚀 **Performance optimized** - Command-level parallelism (max(10, 2×CPU cores)), per-command fetch caching
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 
 ## Quick Start
@@ -55,6 +57,12 @@ ccpm install
 
 # Use exact lockfile versions (for CI/CD)
 ccpm install --frozen
+
+# Control parallelism (default: max(10, 2 × CPU cores))
+ccpm install --max-parallel 8
+
+# Bypass cache for fresh installation
+ccpm install --no-cache
 ```
 
 ## Core Commands
@@ -62,7 +70,7 @@ ccpm install --frozen
 | Command | Description |
 |---------|-------------|
 | `ccpm init` | Initialize a new project |
-| `ccpm install` | Install dependencies from ccpm.toml |
+| `ccpm install` | Install dependencies from ccpm.toml with parallel processing |
 | `ccpm update` | Update dependencies within version constraints |
 | `ccpm list` | List installed resources |
 | `ccpm validate` | Validate manifest and dependencies |

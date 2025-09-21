@@ -61,8 +61,11 @@ internal = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.company.com/resources
 # Optional: Override default cache directory
 cache_dir = "/custom/cache/path"
 
-# Optional: Set default parallelism
-max_parallel = 4
+# Optional: Set default parallelism (default: max(10, 2 × CPU cores))
+max_parallel = 8
+
+# Optional: Enable enhanced progress reporting
+enhanced_progress = true
 ```
 
 ## Source Priority
@@ -209,19 +212,38 @@ ccpm install --no-cache
 
 ### Parallelism Control
 
+CCPM provides flexible parallelism control at multiple levels:
+
 ```toml
 # ~/.ccpm/config.toml
 [settings]
-# Default parallelism for all operations
-max_parallel = 4
+# Default parallelism for all operations (default: max(10, 2 × CPU cores))
+max_parallel = 8
 ```
 
-Or per-command:
+Per-command override:
 
 ```bash
-ccpm install --max-parallel 2
-ccpm update --max-parallel 4
+# Override global setting for specific commands
+ccpm install --max-parallel 12
+ccpm update --max-parallel 6
 ```
+
+Environment variable override:
+
+```bash
+# Set default for current session
+export CCPM_MAX_PARALLEL=16
+ccpm install  # Uses 16 parallel operations
+```
+
+#### Parallelism Guidelines
+
+- **Default behavior**: CCPM automatically sets reasonable limits based on your system
+- **High-end systems**: Can safely use 16-32 parallel operations
+- **Resource-constrained environments**: Consider lowering to 4-8 operations
+- **CI/CD environments**: May need lower limits depending on container resources
+- **Network-limited environments**: Lower parallelism reduces network congestion
 
 ## Target Directories
 
@@ -243,19 +265,46 @@ gitignore = false  # Don't create .gitignore (default: true)
 
 ## Environment Variables
 
-CCPM respects these environment variables:
+CCPM respects these environment variables for configuration and debugging:
+
+### Configuration Variables
 
 - `CCPM_CONFIG` - Path to custom global config file
-- `CCPM_CACHE_DIR` - Override cache directory
-- `CCPM_NO_PROGRESS` - Disable progress bars
-- `RUST_LOG` - Set logging level (debug, info, warn, error)
+- `CCPM_CACHE_DIR` - Override cache directory location
+- `CCPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
 
-Example:
+### User Interface Variables
+
+- `CCPM_NO_PROGRESS` - Disable progress bars (useful for CI/CD)
+- `CCPM_ENHANCED_PROGRESS` - Enable enhanced progress reporting with phase details
+
+### Debugging Variables
+
+- `RUST_LOG` - Set logging level (debug, info, warn, error)
+- `RUST_LOG_STYLE` - Control log formatting (auto, always, never)
+
+### Git Operation Variables
+
+- `GIT_TRACE` - Enable Git command tracing
+- `GIT_TRACE_PERFORMANCE` - Enable Git performance tracing
+
+### Examples
 
 ```bash
+# Debug mode with detailed Git operation logging
 RUST_LOG=debug ccpm install
-CCPM_NO_PROGRESS=1 ccpm update
-CCPM_CONFIG=/custom/config.toml ccpm list
+
+# CI/CD mode: no progress bars, custom parallelism
+CCPM_NO_PROGRESS=1 CCPM_MAX_PARALLEL=4 ccpm install --frozen
+
+# Enhanced progress with custom config location
+CCPM_ENHANCED_PROGRESS=1 CCPM_CONFIG=/custom/config.toml ccpm install
+
+# High-performance mode for powerful systems
+CCPM_MAX_PARALLEL=20 ccpm install --max-parallel 32
+
+# Debugging Git worktree operations
+RUST_LOG=debug GIT_TRACE=1 ccpm install
 ```
 
 ## Troubleshooting Configuration
@@ -283,11 +332,28 @@ git ls-remote https://token@github.com/org/repo.git
 ### Source Priority Issues
 
 ```bash
-# Check which source is being used
+# Check which source is being used (with worktree context)
 RUST_LOG=debug ccpm install
+
+# Trace Git operations to see repository access patterns
+GIT_TRACE=1 RUST_LOG=debug ccpm install
 
 # Override with local source
 # In ccpm.toml, redefine the source name
+```
+
+### Parallel Operation Issues
+
+```bash
+# Reduce parallelism if experiencing resource contention
+ccpm install --max-parallel 2
+
+# Debug worktree creation issues
+RUST_LOG=debug ccpm install --no-cache
+
+# Monitor system resources during installation
+top -p $(pgrep ccpm) &
+ccpm install --max-parallel 16
 ```
 
 ### Token Rotation

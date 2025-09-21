@@ -14,14 +14,14 @@ CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Cod
 - **Patterns**: Glob patterns for bulk installation (`agents/*.md`)
 - **Platforms**: Windows, macOS, Linux with full path support
 - **Parallelism**: Git worktrees for safe concurrent operations
-- **Concurrency**: Global semaphore (3 × CPU cores) prevents overload
+- **Concurrency**: Command-level parallelism (default: max(10, 2 × CPU cores))
 
 ## Key Modules
 
 ```
 src/
 ├── cli/         # Command implementations
-├── cache/       # Git cache + worktree management
+├── cache/       # Instance-level caching + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
@@ -29,8 +29,14 @@ src/
 ├── installer.rs # Parallel resource installation
 ├── lockfile/    # ccpm.lock management
 ├── manifest/    # ccpm.toml parsing
+├── markdown/    # Markdown file operations
+├── mcp/         # MCP server management
+├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
 ├── resolver/    # Dependency resolution
+├── source/      # Source repository management
+├── test_utils/  # Test infrastructure
+├── utils/       # Cross-platform utilities + progress management
 ├── version/     # Version constraints
 └── tests/       # Integration tests
 ```
@@ -56,16 +62,17 @@ src/
 ## Commands
 
 - `/commit`: Git commit with conventional messages
-- `/lint`: Format and clippy
+- `/lint`: Format and clippy (--all-targets)
 - `/pr-self-review`: PR analysis
 - `/update-all`: Update all docs
 - `/update-claude`: Update CLAUDE.md (max 20k chars)
 - `/update-docstrings`: Update Rust docstrings
 - `/update-docs`: Update README and docs/
+- `/execute`: Execute saved commands (new)
 
 ## CLI Commands
 
-- `install [--frozen] [--no-cache]` - Install from ccpm.toml
+- `install [--frozen] [--no-cache] [--max-parallel N]` - Install from ccpm.toml
 - `update [dep]` - Update dependencies
 - `list` - List installed resources
 - `validate [--check-lock] [--resolve]` - Validate manifest
@@ -79,7 +86,7 @@ src/
 
 - Use `Result<T, E>` for errors
 - Test on Windows, macOS, Linux
-- `cargo fmt && cargo clippy && cargo test`
+- `cargo fmt && cargo clippy && cargo nextest run && cargo test --doc`
 - Handle paths cross-platform
 
 ## Dependencies
@@ -90,17 +97,21 @@ Dev: assert_cmd, predicates, serial_test
 
 ## Testing
 
+- **Uses cargo nextest** for faster, parallel test execution
+- Run tests: `cargo nextest run` (integration/unit tests) + `cargo test --doc` (doctests)
 - Parallel-safe tests (no WorkingDirGuard)
 - Never use `std::env::set_var` (causes races)
 - Each test gets own temp directory
 - Use `tokio::fs` in async tests
+- Default parallelism: max(10, 2 × CPU cores)
 - 70% coverage target
+- **IMPORTANT**: When running commands via Bash tool, they run in NON-TTY mode. The user sees TTY mode with spinners. Test both modes.
 
 ## Build & CI
 
 ```bash
 cargo build --release  # Optimized with LTO
-cargo fmt && cargo clippy -- -D warnings && cargo test
+cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --doc
 ```
 
 GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
@@ -111,10 +122,13 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Copy files** instead of symlinks (better compatibility)
 - **Atomic operations** (temp file + rename)
 - **Async I/O** with tokio::fs
-- **Parallel tests** without WorkingDirGuard
 - **System git** command (no git2 library)
 - **Git worktrees** for parallel-safe operations
-- **Semaphore control** limits concurrent Git processes
+- **Direct concurrency control**: Command parallelism via --max-parallel + per-worktree locking
+- **Instance-level caching** with WorktreeState enum (Pending/Ready)
+- **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
+- **Fetch operation caching** (per-command instance to reduce redundancy)
+- **Enhanced dependency parsing** with manifest context for better local vs Git detection
 
 
 
@@ -129,7 +143,7 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 
 ## Worktree Architecture
 
-Cache uses Git worktrees for parallel-safe operations:
+Cache uses Git worktrees with advanced concurrency control:
 
 ```
 ~/.ccpm/cache/
@@ -142,7 +156,10 @@ Cache uses Git worktrees for parallel-safe operations:
 
 - **Bare repos**: Cloned once, shared by all worktrees
 - **Worktrees**: Each dependency gets isolated working directory
+- **Instance-level cache**: WorktreeState (Pending/Ready) tracks creation status
+- **Per-worktree locks**: Fine-grained locking instead of global bottlenecks
 - **UUID paths**: Prevents conflicts in parallel operations
+- **Fetch caching**: Per-command cache prevents redundant network operations
 - **Fast cleanup**: Directory removal without Git commands
 
 ## Key Requirements
