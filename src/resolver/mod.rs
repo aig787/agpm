@@ -943,9 +943,36 @@ impl DependencyResolver {
 
         if dep.is_local() {
             // Local pattern dependency - search in filesystem
-            let base_path = PathBuf::from(".");
+            // Extract base path from the pattern if it contains an absolute path
+            let (base_path, pattern_str) = if pattern.contains('/') || pattern.contains('\\') {
+                // Pattern contains path separators, extract base path
+                let pattern_path = Path::new(pattern);
+                if let Some(parent) = pattern_path.parent() {
+                    if parent.is_absolute() || parent.starts_with("..") || parent.starts_with(".") {
+                        // Use the parent as base path and just the filename pattern
+                        (
+                            parent.to_path_buf(),
+                            pattern_path
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(pattern)
+                                .to_string(),
+                        )
+                    } else {
+                        // Relative path, use current directory as base
+                        (PathBuf::from("."), pattern.to_string())
+                    }
+                } else {
+                    // No parent, use current directory
+                    (PathBuf::from("."), pattern.to_string())
+                }
+            } else {
+                // Simple pattern without path separators
+                (PathBuf::from("."), pattern.to_string())
+            };
+
             let pattern_resolver = crate::pattern::PatternResolver::new();
-            let matches = pattern_resolver.resolve(pattern, &base_path)?;
+            let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
 
             let resource_type = self.get_resource_type(name);
             let mut resources = Vec::new();
@@ -2155,10 +2182,38 @@ mod tests {
     // the resolver would need to support absolute base paths for pattern resolution
 
     #[tokio::test]
-    #[ignore = "Pattern tests need rework to avoid changing working directory"]
     async fn test_resolve_pattern_dependency_local() {
-        // This test is disabled because it requires changing the working directory
-        // which is not safe for parallel test execution
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+
+        // Create local agent files
+        let agents_dir = project_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("helper.md"), "# Helper Agent").unwrap();
+        std::fs::write(agents_dir.join("assistant.md"), "# Assistant Agent").unwrap();
+        std::fs::write(agents_dir.join("tester.md"), "# Tester Agent").unwrap();
+
+        // Create manifest with local pattern dependency
+        let mut manifest = Manifest::new();
+        manifest.add_dependency(
+            "local-agents".to_string(),
+            ResourceDependency::Simple(format!("{}/agents/*.md", project_dir.display())),
+            true,
+        );
+
+        // Create resolver and resolve dependencies
+        let cache_dir = temp_dir.path().join("cache");
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
+
+        let lockfile = resolver.resolve().await.unwrap();
+
+        // Verify all agents were resolved
+        assert_eq!(lockfile.agents.len(), 3);
+        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
+        assert!(agent_names.contains(&"helper".to_string()));
+        assert!(agent_names.contains(&"assistant".to_string()));
+        assert!(agent_names.contains(&"tester".to_string()));
     }
 
     #[tokio::test]
@@ -2249,10 +2304,50 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Pattern tests need rework to avoid changing working directory"]
     async fn test_resolve_pattern_dependency_with_custom_target() {
-        // This test is disabled because it requires pattern resolution which needs
-        // changing the working directory, which is not safe for parallel test execution
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+
+        // Create local agent files
+        let agents_dir = project_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("helper.md"), "# Helper Agent").unwrap();
+        std::fs::write(agents_dir.join("assistant.md"), "# Assistant Agent").unwrap();
+
+        // Create manifest with local pattern dependency and custom target
+        let mut manifest = Manifest::new();
+        manifest.add_dependency(
+            "custom-agents".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: None,
+                path: format!("{}/agents/*.md", project_dir.display()),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: Some("custom/agents".to_string()),
+                filename: None,
+            }),
+            true,
+        );
+
+        // Create resolver and resolve dependencies
+        let cache_dir = temp_dir.path().join("cache");
+        let cache = Cache::with_dir(cache_dir).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest, cache);
+
+        let lockfile = resolver.resolve().await.unwrap();
+
+        // Verify agents were resolved with custom target
+        assert_eq!(lockfile.agents.len(), 2);
+        for agent in &lockfile.agents {
+            assert!(agent.installed_at.starts_with(".claude/custom/agents/"));
+        }
+
+        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
+        assert!(agent_names.contains(&"helper".to_string()));
+        assert!(agent_names.contains(&"assistant".to_string()));
     }
 
     #[tokio::test]

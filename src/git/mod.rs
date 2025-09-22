@@ -106,7 +106,7 @@
 //! // Use platform-appropriate temp directory
 //! let temp_dir = env::temp_dir();
 //! let repo_path = temp_dir.join("repo");
-//! 
+//!
 //! // Clone a repository
 //! let repo = GitRepo::clone(
 //!     "https://github.com/example/repo.git",
@@ -135,7 +135,7 @@
 //! // Use platform-appropriate temp directory
 //! let temp_dir = env::temp_dir();
 //! let repo_path = temp_dir.join("private-repo");
-//! 
+//!
 //! // Clone with authentication embedded in URL
 //! let repo = GitRepo::clone(
 //!     "https://token:ghp_xxxx@github.com/private/repo.git",
@@ -183,7 +183,7 @@
 //! let temp_dir = env::temp_dir();
 //! let cache_dir = temp_dir.join("cache");
 //! let bare_path = cache_dir.join("repo.git");
-//! 
+//!
 //! // Clone repository as bare for worktree use
 //! let bare_repo = GitRepo::clone_bare(
 //!     "https://github.com/example/repo.git",
@@ -194,7 +194,7 @@
 //! let work1 = temp_dir.join("work1");
 //! let work2 = temp_dir.join("work2");
 //! let work3 = temp_dir.join("work3");
-//! 
+//!
 //! let worktree1 = bare_repo.create_worktree(&work1, Some("v1.0.0")).await?;
 //! let worktree2 = bare_repo.create_worktree(&work2, Some("v2.0.0")).await?;
 //! let worktree3 = bare_repo.create_worktree(&work3, Some("main")).await?;
@@ -374,7 +374,7 @@ impl GitRepo {
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let temp_dir = env::temp_dir();
-    /// 
+    ///
     /// // Clone public repository
     /// let repo = GitRepo::clone(
     ///     "https://github.com/rust-lang/git2-rs.git",

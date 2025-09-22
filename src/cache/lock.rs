@@ -392,8 +392,11 @@ mod tests {
 
             // Should not block (complete quickly)
             // Increased timeout for slower systems while still ensuring no blocking
-            assert!(elapsed < Duration::from_millis(200), 
-                "Lock acquisition took {:?}, expected < 200ms for non-blocking operation", elapsed);
+            assert!(
+                elapsed < Duration::from_millis(200),
+                "Lock acquisition took {:?}, expected < 200ms for non-blocking operation",
+                elapsed
+            );
         });
 
         handle1.await.unwrap();

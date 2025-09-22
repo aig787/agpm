@@ -297,6 +297,7 @@ mod tests {
         #[cfg(not(unix))]
         {
             let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
             perms.set_readonly(false);
             fs::set_permissions(&readonly_dir, perms).unwrap();
         }
@@ -622,6 +623,7 @@ fetched_at = "2024-01-01T00:00:00Z"
         #[cfg(not(unix))]
         {
             let mut perms = fs::metadata(&readonly_dir).unwrap().permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
             perms.set_readonly(false);
             fs::set_permissions(&readonly_dir, perms).unwrap();
         }
