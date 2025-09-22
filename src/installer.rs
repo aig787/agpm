@@ -1053,58 +1053,6 @@ pub async fn install_resources_parallel_with_progress(
     Ok(final_count)
 }
 
-/// Configuration for progress reporting during resource installation.
-///
-/// This enum provides flexible progress reporting options to accommodate different
-/// use cases and command contexts. The configuration determines how installation
-/// progress is displayed to users during resource processing.
-///
-/// # Variants
-///
-/// ## Dynamic Progress
-/// [`ProgressConfig::Dynamic`] provides real-time parallel progress tracking with
-/// live updates showing which dependencies are currently being processed. This is
-/// ideal for the install command where users want detailed visibility into
-/// concurrent operations.
-///
-/// ## Simple Progress
-/// [`ProgressConfig::Simple`] uses a traditional progress bar that shows overall
-/// completion percentage and count. This is suitable for update operations or
-/// when simplified progress display is preferred.
-///
-/// ## Quiet Mode
-/// [`ProgressConfig::Quiet`] disables all progress output, suitable for scripts,
-/// automation, and CI/CD environments where clean output is required.
-///
-/// # Examples
-///
-/// Dynamic progress for install command:
-/// ```rust,no_run
-/// use ccpm::installer::ProgressConfig;
-/// use ccpm::utils::progress::ProgressBar;
-/// use std::sync::Arc;
-///
-/// let progress = Arc::new(ProgressBar::new(100));
-/// let config = ProgressConfig::Dynamic(Some(manager));
-/// ```
-///
-/// Simple progress for update command:
-/// ```rust,no_run
-/// use ccpm::installer::ProgressConfig;
-/// use ccpm::utils::progress::ProgressBar;
-/// use std::sync::Arc;
-///
-/// let pb = Arc::new(ProgressBar::new(100));
-/// let config = ProgressConfig::Simple(Some(pb));
-/// ```
-///
-/// Quiet mode for automation:
-/// ```rust,no_run
-/// use ccpm::installer::ProgressConfig;
-///
-/// let config = ProgressConfig::Quiet;
-/// ```
-// ProgressConfig removed - using MultiPhaseProgress directly instead
 /// Filtering options for resource installation operations.
 ///
 /// This enum controls which resources are processed during installation,
@@ -1203,13 +1151,13 @@ pub enum ResourceFilter {
 /// * `cache` - Cache instance for Git repository and worktree management
 /// * `force_refresh` - Whether to force refresh of cached repositories
 /// * `max_concurrency` - Optional limit on concurrent operations (None = unlimited)
-/// * `progress_config` - Progress reporting configuration ([`ProgressConfig`])
+/// * `progress` - Optional multi-phase progress manager ([`MultiPhaseProgress`])
 ///
-/// # Progress Configuration Options
+/// # Progress Reporting
 ///
-/// - [`ProgressConfig::Dynamic`]: Real-time parallel progress with live dependency tracking
-/// - [`ProgressConfig::Simple`]: Traditional progress bar with position updates
-/// - [`ProgressConfig::Quiet`]: No progress output (for scripts and automation)
+/// Progress is reported through the optional [`MultiPhaseProgress`] parameter:
+/// - **Enabled**: Pass `Some(progress)` for multi-phase progress with live updates
+/// - **Disabled**: Pass `None` for quiet operation (scripts and automation)
 ///
 /// # Installation Process
 ///
@@ -1241,10 +1189,10 @@ pub enum ResourceFilter {
 ///
 /// # Examples
 ///
-/// Install all resources with dynamic progress:
+/// Install all resources with progress tracking:
 /// ```rust,no_run
-/// use ccpm::installer::{install_resources, ProgressConfig, ResourceFilter};
-/// use ccpm::utils::progress::ProgressBar;
+/// use ccpm::installer::{install_resources, ResourceFilter};
+/// use ccpm::utils::progress::MultiPhaseProgress;
 /// use ccpm::lockfile::LockFile;
 /// use ccpm::manifest::Manifest;
 /// use ccpm::cache::Cache;
@@ -1256,8 +1204,7 @@ pub enum ResourceFilter {
 /// # let manifest = Manifest::default();
 /// # let project_dir = Path::new(".");
 /// # let cache = Cache::new()?;
-/// let progress_bar = Arc::new(ProgressBar::new(100));
-/// let progress_config = ProgressConfig::Dynamic(Some(progress_manager));
+/// let progress = Arc::new(MultiPhaseProgress::new(true));
 ///
 /// let (count, _checksums) = install_resources(
 ///     ResourceFilter::All,
@@ -1267,7 +1214,7 @@ pub enum ResourceFilter {
 ///     cache,
 ///     false,
 ///     Some(8), // Limit to 8 concurrent operations
-///     progress_config,
+///     Some(progress),
 /// ).await?;
 ///
 /// println!("Installed {} resources", count);
@@ -1275,14 +1222,12 @@ pub enum ResourceFilter {
 /// # }
 /// ```
 ///
-/// Install only updated resources with simple progress:
+/// Install resources quietly (for automation):
 /// ```rust,no_run
-/// use ccpm::installer::{install_resources, ProgressConfig, ResourceFilter};
-/// use ccpm::utils::progress::ProgressBar;
+/// use ccpm::installer::{install_resources, ResourceFilter};
 /// use ccpm::lockfile::LockFile;
 /// use ccpm::manifest::Manifest;
 /// use ccpm::cache::Cache;
-/// use std::sync::Arc;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1290,12 +1235,9 @@ pub enum ResourceFilter {
 /// # let manifest = Manifest::default();
 /// # let project_dir = Path::new(".");
 /// # let cache = Cache::new()?;
-/// # let total_resources = 10;
-/// let pb = Arc::new(ProgressBar::new(total_resources as u64));
-/// let progress_config = ProgressConfig::Simple(Some(pb));
 /// let updates = vec![("agent1".to_string(), "v1.0".to_string(), "v1.1".to_string())];
 ///
-/// let count = install_resources(
+/// let (count, _checksums) = install_resources(
 ///     ResourceFilter::Updated(updates),
 ///     &lockfile,
 ///     &manifest,
@@ -1303,8 +1245,10 @@ pub enum ResourceFilter {
 ///     cache,
 ///     false,
 ///     None, // Unlimited concurrency
-///     progress_config,
+///     None, // No progress output
 /// ).await?;
+///
+/// println!("Updated {} resources", count);
 /// # Ok(())
 /// # }
 /// ```
@@ -1518,7 +1462,7 @@ pub async fn install_resources(
 /// * `cache` - Cache instance for Git repository and worktree management
 /// * `force_refresh` - Whether to force refresh of cached repositories
 /// * `max_concurrency` - Optional limit on concurrent operations (`None` = unlimited)
-/// * `progress_manager` - Optional dynamic progress manager for real-time updates
+/// * `progress_bar` - Optional dynamic progress bar for real-time updates
 ///
 /// # Dynamic Progress Features
 ///
@@ -1561,7 +1505,7 @@ pub async fn install_resources(
 ///     &cache,
 ///     false,                    // No force refresh
 ///     Some(10),                 // Max 10 concurrent operations
-///     Some(progress_manager)    // Dynamic progress display
+///     Some(progress_bar)        // Dynamic progress display
 /// ).await?;
 ///
 /// println!("Successfully installed {} resources", count);
@@ -2273,30 +2217,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_resources_parallel_empty() {
+    async fn test_install_resources_empty() {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
-        let pb = ProgressBar::new(1);
 
         // Create empty lockfile and manifest
         let lockfile = LockFile::new();
         let manifest = Manifest::new();
 
-        let count =
-            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false, None)
-                .await
-                .unwrap();
+        let (count, _) = install_resources(
+            ResourceFilter::All,
+            &lockfile,
+            &manifest,
+            project_dir,
+            cache,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(count, 0, "Should install 0 resources from empty lockfile");
     }
 
     #[tokio::test]
-    async fn test_install_resources_parallel_multiple() {
+    async fn test_install_resources_multiple() {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
-        let pb = ProgressBar::new(1);
 
         // Create test markdown files
         let file1 = temp_dir.path().join("agent.md");
@@ -2322,10 +2272,18 @@ mod tests {
 
         let manifest = Manifest::new();
 
-        let count =
-            install_resources_parallel(&lockfile, &manifest, project_dir, &pb, &cache, false, None)
-                .await
-                .unwrap();
+        let (count, _) = install_resources(
+            ResourceFilter::All,
+            &lockfile,
+            &manifest,
+            project_dir,
+            cache,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(count, 3, "Should install 3 resources");
 

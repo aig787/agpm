@@ -83,21 +83,68 @@ pub struct HookCommand {
 /// Metadata for CCPM-managed hooks
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CcpmHookMetadata {
+    /// Whether this hook is managed by CCPM (true) or manually configured (false)
     pub managed: bool,
+    /// Name of the dependency that installed this hook
     pub dependency_name: String,
+    /// Source repository name where this hook originated
     pub source: String,
+    /// Version constraint or resolved version of the hook dependency
     pub version: String,
+    /// ISO 8601 timestamp when this hook was installed
     pub installed_at: String,
 }
 
-/// A matcher group containing multiple hooks
+/// A matcher group containing multiple hooks with the same regex pattern.
+///
+/// In Claude Code's settings.local.json, hooks are organized into matcher groups
+/// where multiple hook commands can share the same regex pattern for tool matching.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatcherGroup {
+    /// Regex pattern that determines which tools this group applies to
     pub matcher: String,
+    /// List of hook commands to execute when the matcher pattern matches
     pub hooks: Vec<HookCommand>,
 }
 
-/// Load hook configurations from a directory
+/// Load hook configurations from a directory containing JSON files.
+///
+/// Scans the specified directory for `.json` files and parses each one as a
+/// [`HookConfig`]. The filename (without extension) becomes the hook name in
+/// the returned map.
+///
+/// # Arguments
+///
+/// * `hooks_dir` - Directory path containing hook JSON configuration files
+///
+/// # Returns
+///
+/// A HashMap mapping hook names to their configurations. If the directory
+/// doesn't exist, returns an empty map.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Directory reading fails due to permissions or I/O errors
+/// - Any JSON file cannot be read or parsed
+/// - A filename is invalid or cannot be converted to a string
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::hooks::load_hook_configs;
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let hooks_dir = Path::new(".claude/ccpm/hooks");
+/// let configs = load_hook_configs(hooks_dir)?;
+///
+/// for (name, config) in configs {
+///     println!("Loaded hook '{}' with {} events", name, config.events.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>> {
     let mut configs = HashMap::new();
 
@@ -239,7 +286,53 @@ pub async fn install_hooks(
     Ok(locked_hooks)
 }
 
-/// Validate a hook configuration
+/// Validate a hook configuration for correctness and safety.
+///
+/// Performs comprehensive validation of a hook configuration including:
+/// - Event list validation (must have at least one event)
+/// - Regex pattern syntax validation for the matcher
+/// - Hook type validation (only "command" type is supported)
+/// - Script existence validation for CCPM-managed scripts
+///
+/// # Arguments
+///
+/// * `config` - The hook configuration to validate
+/// * `script_path` - Path to the hook file (used to resolve relative script paths)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the configuration is valid.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - No events are specified
+/// - The matcher regex pattern is invalid
+/// - Unsupported hook type is used (only "command" is supported)
+/// - Referenced script file doesn't exist (for CCPM-managed scripts)
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::hooks::{validate_hook_config, HookConfig, HookEvent};
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let config = HookConfig {
+///     events: vec![HookEvent::PreToolUse],
+///     matcher: "Bash|Write".to_string(),
+///     hook_type: "command".to_string(),
+///     command: "echo 'validation'".to_string(),
+///     timeout: Some(5000),
+///     description: None,
+/// };
+///
+/// let hook_file = Path::new(".claude/ccpm/hooks/test.json");
+/// validate_hook_config(&config, hook_file)?;
+/// println!("Hook configuration is valid!");
+/// # Ok(())
+/// # }
+/// ```
 pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<()> {
     // Validate events
     if config.events.is_empty() {

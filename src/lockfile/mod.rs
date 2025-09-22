@@ -1210,6 +1210,32 @@ impl LockFile {
         }
     }
 
+    /// Returns all locked resources across all resource types.
+    ///
+    /// This method collects all resources from agents, snippets, commands,
+    /// scripts, hooks, and MCP servers into a single vector. It's useful for
+    /// operations that need to process all resources uniformly, such as:
+    /// - Generating installation reports
+    /// - Validating checksums across all resources
+    /// - Bulk operations on resources
+    ///
+    /// # Returns
+    ///
+    /// A vector containing references to all [`LockedResource`] entries in the lockfile.
+    /// The order matches the resource type order defined in [`crate::core::ResourceType::all()`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use ccpm::lockfile::LockFile;
+    /// # let lockfile = LockFile::new();
+    /// let all_resources = lockfile.all_resources();
+    /// println!("Total locked resources: {}", all_resources.len());
+    ///
+    /// for resource in all_resources {
+    ///     println!("- {}: {}", resource.name, resource.installed_at);
+    /// }
+    /// ```
     #[must_use]
     pub fn all_resources(&self) -> Vec<&LockedResource> {
         let mut resources = Vec::new();

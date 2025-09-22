@@ -217,6 +217,13 @@ use self::redundancy::RedundancyDetector;
 /// [`with_cache()`]: DependencyResolver::with_cache
 pub struct DependencyResolver {
     manifest: Manifest,
+    /// Manages Git repository operations, source URL resolution, and authentication.
+    ///
+    /// The source manager handles:
+    /// - Mapping source names to Git repository URLs
+    /// - Git operations (clone, fetch, checkout) for dependency resolution
+    /// - Authentication token management for private repositories
+    /// - Source validation and configuration management
     pub source_manager: SourceManager,
     cache: Cache,
     /// Cached per-(source, version) preparation results built during the
@@ -347,7 +354,9 @@ impl DependencyResolver {
                             .current_dir(repo.path())
                             .execute_stdout()
                             .await
-                            .with_context(|| format!("Failed to resolve tag '{}' to commit", best_tag))?;
+                            .with_context(|| {
+                                format!("Failed to resolve tag '{}' to commit", best_tag)
+                            })?;
                         (Some(best_tag), commit)
                     } else {
                         // Check if this is a local source before trying origin/

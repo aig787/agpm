@@ -1598,6 +1598,36 @@ impl Manifest {
         }
     }
 
+    /// Returns all dependencies from all resource types.
+    ///
+    /// This method collects dependencies from agents, snippets, commands,
+    /// scripts, hooks, and MCP servers into a single vector. It's commonly used for:
+    /// - Manifest validation across all dependency types
+    /// - Dependency resolution operations
+    /// - Generating reports of all configured dependencies
+    /// - Bulk operations on all dependencies
+    ///
+    /// # Returns
+    ///
+    /// A vector of tuples containing the dependency name and its configuration.
+    /// Each tuple is `(name, dependency)` where:
+    /// - `name`: The dependency name as specified in the manifest
+    /// - `dependency`: Reference to the [`ResourceDependency`] configuration
+    ///
+    /// The order follows the resource type order defined in [`crate::core::ResourceType::all()`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use ccpm::manifest::Manifest;
+    /// # let manifest = Manifest::new();
+    /// for (name, dep) in manifest.all_dependencies() {
+    ///     println!("Dependency: {} -> {}", name, dep.get_path());
+    ///     if let Some(source) = dep.get_source() {
+    ///         println!("  Source: {}", source);
+    ///     }
+    /// }
+    /// ```
     #[must_use]
     pub fn all_dependencies(&self) -> Vec<(&str, &ResourceDependency)> {
         let mut deps = Vec::new();

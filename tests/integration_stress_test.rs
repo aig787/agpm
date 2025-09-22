@@ -3,11 +3,12 @@
 use anyhow::Result;
 use ccpm::cache::Cache;
 use ccpm::git::command_builder::GitCommand;
-use ccpm::installer::install_resources_parallel;
+use ccpm::installer::{install_resources, ResourceFilter};
+use ccpm::utils::progress::MultiPhaseProgress;
+use std::sync::Arc;
 use ccpm::lockfile::{LockFile, LockedResource};
 use ccpm::manifest::Manifest;
 use ccpm::test_utils::init_test_logging;
-use ccpm::utils::progress::ProgressBar;
 use tempfile::TempDir;
 use tokio::fs;
 use tracing::debug;
@@ -56,16 +57,23 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     }
 
     let manifest = Manifest::new();
-    let pb = ProgressBar::new(total_agents as u64);
-    pb.set_message("Installing 500 agents from 5 repositories");
+    let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("🚀 Starting heavy stress test with {} agents", total_agents);
     debug!("Starting parallel installation of {} agents", total_agents);
     let start = std::time::Instant::now();
 
-    let count =
-        install_resources_parallel(&lockfile, &manifest, &project_dir, &pb, &cache, false, None)
-            .await?;
+    let (count, _) = install_resources(
+        ResourceFilter::All,
+        &lockfile,
+        &manifest,
+        &project_dir,
+        cache.clone(),
+        false,
+        None,
+        Some(progress),
+    )
+    .await?;
 
     let duration = start.elapsed();
     debug!("Installation completed in {:?}", duration);
@@ -317,8 +325,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     }
 
     let manifest = Manifest::new();
-    let pb = ProgressBar::new(total_agents as u64);
-    pb.set_message("Initial installation of 500 agents");
+    let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!(
         "📦 Installing initial version (v1.0.0) of {} agents",
@@ -326,14 +333,15 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     );
     let start_install = std::time::Instant::now();
 
-    let count = install_resources_parallel(
+    let (count, _) = install_resources(
+        ResourceFilter::All,
         &lockfile_v1,
         &manifest,
         &project_dir,
-        &pb,
-        &cache,
+        cache.clone(),
         false,
         None,
+        Some(progress.clone()),
     )
     .await?;
     assert_eq!(count, total_agents);
@@ -362,20 +370,20 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         }
     }
 
-    let pb2 = ProgressBar::new(total_agents as u64);
-    pb2.set_message("Updating 500 agents from v1.0.0 to v2.0.0");
+    let progress2 = Arc::new(MultiPhaseProgress::new(false));
 
     println!("🔄 Updating all {} agents to v2.0.0", total_agents);
     let start_update = std::time::Instant::now();
 
-    let update_count = install_resources_parallel(
+    let (update_count, _) = install_resources(
+        ResourceFilter::All,
         &lockfile_v2,
         &manifest,
         &project_dir,
-        &pb2,
-        &cache,
+        cache.clone(),
         false,
         None,
+        Some(progress2),
     )
     .await?;
 
@@ -507,11 +515,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     }
 
     let manifest = Manifest::new();
-    let pb = ProgressBar::new(total_resources as u64);
-    pb.set_message(format!(
-        "Installing {} resources from mixed repo types",
-        total_resources
-    ));
+    let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!(
         "🌐 Starting mixed repository test: {} local agents + {} community agents",
@@ -520,9 +524,17 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     );
     let start = std::time::Instant::now();
 
-    let count =
-        install_resources_parallel(&lockfile, &manifest, &project_dir, &pb, &cache, false, None)
-            .await?;
+    let (count, _) = install_resources(
+        ResourceFilter::All,
+        &lockfile,
+        &manifest,
+        &project_dir,
+        cache.clone(),
+        false,
+        None,
+        Some(progress),
+    )
+    .await?;
 
     let duration = start.elapsed();
     assert_eq!(count, total_resources);
@@ -614,11 +626,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let total_agents = community_agents.len();
     let manifest = Manifest::new();
-    let pb = ProgressBar::new(total_agents as u64);
-    pb.set_message(format!(
-        "Installing {} agents from ccpm-community",
-        total_agents
-    ));
+    let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("📦 Testing parallel checkout from ccpm-community repository");
     println!("   Repository: https://github.com/aig787/ccpm-community.git");
@@ -626,9 +634,17 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let count =
-        install_resources_parallel(&lockfile, &manifest, &project_dir, &pb, &cache, false, None)
-            .await?;
+    let (count, _) = install_resources(
+        ResourceFilter::All,
+        &lockfile,
+        &manifest,
+        &project_dir,
+        cache.clone(),
+        false,
+        None,
+        Some(progress),
+    )
+    .await?;
 
     let duration = start.elapsed();
     assert_eq!(count, total_agents);
@@ -734,16 +750,17 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     // Install all dependencies in parallel
     let start = std::time::Instant::now();
     let manifest = Manifest::new();
-    let progress = ProgressBar::new(lockfile.agents.len() as u64);
+    let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    install_resources_parallel(
+    let (_, _) = install_resources(
+        ResourceFilter::All,
         &lockfile,
         &manifest,
         &project_dir,
-        &progress,
-        &cache,
+        cache,
         false,
         None,
+        Some(progress),
     )
     .await?;
 

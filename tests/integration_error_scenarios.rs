@@ -79,10 +79,10 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
         .assert()
         .failure()
         .stderr(
-            predicate::str::contains("Disk space")
-                .or(predicate::str::contains("No space left"))
-                .or(predicate::str::contains("Cannot create directory"))
+            predicate::str::contains("Cannot create directory")
                 .or(predicate::str::contains("Failed to create directory"))
+                .or(predicate::str::contains("cache path is not a directory"))
+                .or(predicate::str::contains("Failed to acquire lock"))
                 .or(predicate::str::contains("Permission denied"))
                 .or(predicate::str::contains("File system error"))
                 .or(predicate::str::contains("file access")),
