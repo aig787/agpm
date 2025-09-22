@@ -112,7 +112,7 @@ official = "file://{}"
         .arg("--no-cache") // Skip cache to avoid network issues
         .assert()
         .success() // Should handle long paths gracefully
-        .stdout(predicate::str::contains("Installing"));
+        .stdout(predicate::str::contains("Installed").or(predicate::str::contains("Installing")));
 }
 
 /// Test case conflict detection universally

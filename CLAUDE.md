@@ -106,6 +106,7 @@ Dev: assert_cmd, predicates, serial_test
 - Default parallelism: max(10, 2 × CPU cores)
 - 70% coverage target
 - **IMPORTANT**: When running commands via Bash tool, they run in NON-TTY mode. The user sees TTY mode with spinners. Test both modes.
+- **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 
 ## Build & CI
 

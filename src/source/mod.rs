@@ -166,12 +166,14 @@
 //! ## Progress Monitoring
 //! ```rust,no_run
 //! use ccpm::source::SourceManager;
+//! use indicatif::ProgressBar;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
+//! let progress = ProgressBar::new(100);
 //! progress.set_message("Syncing repositories...");
 //!
-//! // Sync all sources with progress updates
-//! manager.sync_all(Some(&progress)).await?;
+//! // Sync all sources
+//! manager.sync_all().await?;
 //!
 //! progress.finish_with_message("All sources synced successfully");
 //! # Ok(())
@@ -185,8 +187,7 @@
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
 //! // Sync a repository by URL (for direct dependencies)
 //! let repo = manager.sync_by_url(
-//!     "https://github.com/example/dependency.git",
-//!     None
+//!     "https://github.com/example/dependency.git"
 //! ).await?;
 //!
 //! // Access the cached repository
@@ -1015,6 +1016,7 @@ impl SourceManager {
     /// ## Synchronization with Progress
     /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
+    /// use indicatif::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1024,10 +1026,11 @@ impl SourceManager {
     /// );
     /// manager.add(source)?;
     ///
-    /// // Sync with progress feedback
+    /// // Sync repository
+    /// let progress = ProgressBar::new(100);
     /// progress.set_message("Syncing large repository...");
     ///
-    /// let repo = manager.sync("large-repo", Some(&progress)).await?;
+    /// let repo = manager.sync("large-repo").await?;
     /// progress.finish_with_message("Repository synced successfully");
     /// # Ok(())
     /// # }
@@ -1193,8 +1196,7 @@ impl SourceManager {
     ///
     /// // Sync a repository directly by URL
     /// let repo = manager.sync_by_url(
-    ///     "https://github.com/example/direct-dependency.git",
-    ///     None
+    ///     "https://github.com/example/direct-dependency.git"
     /// ).await?;
     ///
     /// println!("Direct repository available at: {:?}", repo.path());
@@ -1205,14 +1207,15 @@ impl SourceManager {
     /// ## Local Repository Access
     /// ```rust,no_run
     /// use ccpm::source::SourceManager;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
     ///
     /// // Access a local development repository
+    /// let local_path = env::temp_dir().join("development").join("repo");
     /// let repo = manager.sync_by_url(
-    ///     "/path/to/local/development/repo",
-    ///     None
+    ///     &local_path.to_string_lossy()
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -1577,8 +1580,8 @@ impl SourceManager {
     ///     "https://github.com/example/ccpm-community.git".to_string()
     /// ))?;
     ///
-    /// // Verify all sources with progress feedback
-    /// manager.verify_all(Some(&progress)).await?;
+    /// // Verify all sources
+    /// manager.verify_all().await?;
     ///
     /// println!("All sources verified successfully");
     /// # Ok(())

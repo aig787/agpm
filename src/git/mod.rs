@@ -100,17 +100,21 @@
 //! ## Basic Repository Operations
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
+//! use std::env;
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! // Clone a repository with progress reporting
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let repo_path = temp_dir.join("repo");
+//! 
+//! // Clone a repository
 //! let repo = GitRepo::clone(
 //!     "https://github.com/example/repo.git",
-//!     "/tmp/repo",
-//!     Some(&progress)
+//!     &repo_path
 //! ).await?;
 //!
 //! // Fetch updates from remote
-//! repo.fetch(None, Some(&progress)).await?;
+//! repo.fetch(None).await?;
 //!
 //! // Checkout a specific version
 //! repo.checkout("v1.2.3").await?;
@@ -125,18 +129,22 @@
 //! ## Authentication with URLs
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
+//! use std::env;
 //!
 //! # async fn auth_example() -> anyhow::Result<()> {
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let repo_path = temp_dir.join("private-repo");
+//! 
 //! // Clone with authentication embedded in URL
 //! let repo = GitRepo::clone(
 //!     "https://token:ghp_xxxx@github.com/private/repo.git",
-//!     "/tmp/private-repo",
-//!     None
+//!     &repo_path
 //! ).await?;
 //!
 //! // Fetch with different authentication URL
 //! let auth_url = "https://oauth2:token@github.com/private/repo.git";
-//! repo.fetch(Some(auth_url), None).await?;
+//! repo.fetch(Some(auth_url)).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -144,7 +152,7 @@
 //! ## Repository Validation
 //! ```rust,no_run
 //! use ccpm::git::{GitRepo, ensure_git_available, is_valid_git_repo};
-//! use std::path::Path;
+//! use std::env;
 //!
 //! # async fn validation_example() -> anyhow::Result<()> {
 //! // Ensure Git is installed
@@ -154,9 +162,10 @@
 //! GitRepo::verify_url("https://github.com/example/repo.git").await?;
 //!
 //! // Check if directory is a valid Git repository
-//! let path = Path::new("/tmp/repo");
-//! if is_valid_git_repo(path) {
-//!     let repo = GitRepo::new(path);
+//! let temp_dir = env::temp_dir();
+//! let path = temp_dir.join("repo");
+//! if is_valid_git_repo(&path) {
+//!     let repo = GitRepo::new(&path);
 //!     let url = repo.get_remote_url().await?;
 //!     println!("Repository URL: {}", url);
 //! }
@@ -167,19 +176,28 @@
 //! ## Worktree-based Parallel Operations
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
+//! use std::env;
 //!
 //! # async fn worktree_example() -> anyhow::Result<()> {
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let cache_dir = temp_dir.join("cache");
+//! let bare_path = cache_dir.join("repo.git");
+//! 
 //! // Clone repository as bare for worktree use
 //! let bare_repo = GitRepo::clone_bare(
 //!     "https://github.com/example/repo.git",
-//!     "/tmp/cache/repo.git",
-//!     None
+//!     &bare_path
 //! ).await?;
 //!
 //! // Create multiple worktrees for parallel processing
-//! let worktree1 = bare_repo.create_worktree("/tmp/work1", Some("v1.0.0")).await?;
-//! let worktree2 = bare_repo.create_worktree("/tmp/work2", Some("v2.0.0")).await?;
-//! let worktree3 = bare_repo.create_worktree("/tmp/work3", Some("main")).await?;
+//! let work1 = temp_dir.join("work1");
+//! let work2 = temp_dir.join("work2");
+//! let work3 = temp_dir.join("work3");
+//! 
+//! let worktree1 = bare_repo.create_worktree(&work1, Some("v1.0.0")).await?;
+//! let worktree2 = bare_repo.create_worktree(&work2, Some("v2.0.0")).await?;
+//! let worktree3 = bare_repo.create_worktree(&work3, Some("main")).await?;
 //!
 //! // Each worktree can be used independently and concurrently
 //! // Process files from worktree1 at v1.0.0
@@ -187,9 +205,9 @@
 //! // Process files from worktree3 at latest main
 //!
 //! // Clean up when done
-//! bare_repo.remove_worktree("/tmp/work1").await?;
-//! bare_repo.remove_worktree("/tmp/work2").await?;
-//! bare_repo.remove_worktree("/tmp/work3").await?;
+//! bare_repo.remove_worktree(&work1).await?;
+//! bare_repo.remove_worktree(&work2).await?;
+//! bare_repo.remove_worktree(&work3).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -352,20 +370,21 @@ impl GitRepo {
     ///
     /// ```rust,no_run
     /// use ccpm::git::GitRepo;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
+    /// let temp_dir = env::temp_dir();
+    /// 
     /// // Clone public repository
     /// let repo = GitRepo::clone(
     ///     "https://github.com/rust-lang/git2-rs.git",
-    ///     "/tmp/git2-rs",
-    ///     None
+    ///     temp_dir.join("git2-rs")
     /// ).await?;
     ///
-    /// // Clone with progress reporting
+    /// // Clone another repository
     /// let repo = GitRepo::clone(
-    ///     "https://github.com/large/repository.git",
-    ///     "/tmp/large-repo",
-    ///     Some(&progress)
+    ///     "https://github.com/example/repository.git",
+    ///     temp_dir.join("example-repo")
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -439,16 +458,19 @@ impl GitRepo {
     ///
     /// ```rust,no_run
     /// use ccpm::git::GitRepo;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let repo = GitRepo::new("/path/to/repo");
+    /// let temp_dir = env::temp_dir();
+    /// let repo_path = temp_dir.join("repo");
+    /// let repo = GitRepo::new(&repo_path);
     ///
     /// // Basic fetch from configured remote
-    /// repo.fetch(None, None).await?;
+    /// repo.fetch(None).await?;
     ///
-    /// // Fetch with authentication and progress
+    /// // Fetch with authentication
     /// let auth_url = "https://token:ghp_xxxx@github.com/user/repo.git";
-    /// repo.fetch(Some(auth_url), Some(&progress)).await?;
+    /// repo.fetch(Some(auth_url)).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -1108,12 +1130,13 @@ impl GitRepo {
     ///
     /// ```rust,no_run
     /// use ccpm::git::GitRepo;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
+    /// let temp_dir = env::temp_dir();
     /// let bare_repo = GitRepo::clone_bare(
     ///     "https://github.com/example/repo.git",
-    ///     "/tmp/repo.git",
-    ///     None
+    ///     temp_dir.join("repo.git")
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -1793,16 +1816,17 @@ pub fn is_git_installed() -> bool {
 ///
 /// ```rust,no_run
 /// use ccpm::git::{ensure_git_available, GitRepo};
+/// use std::env;
 ///
 /// # async fn git_operation() -> anyhow::Result<()> {
 /// // Validate prerequisites first
 /// ensure_git_available()?;
 ///
 /// // Then proceed with Git operations
+/// let temp_dir = env::temp_dir();
 /// let repo = GitRepo::clone(
 ///     "https://github.com/example/repo.git",
-///     "/tmp/repo",
-///     None
+///     temp_dir.join("repo")
 /// ).await?;
 /// # Ok(())
 /// # }
