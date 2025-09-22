@@ -1,7 +1,7 @@
 ---
 allowed-tools: Task, Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git show:*), Read, Glob, Grep, TodoWrite
 description: Create a well-formatted git commit following project conventions
-argument-hint: [ --co-authored | --contributed | --no-attribution ] [ paths... ] [ message ] - e.g., "tests/" or "--co-authored fix: update dependencies"
+argument-hint: [ --co-authored | --contributed | --no-attribution | --include-untracked ] [ paths... ] [ message ] - e.g., "tests/" or "--co-authored fix: update dependencies"
 ---
 
 ## Context
@@ -31,6 +31,7 @@ Based on the changes shown above, create a single git commit following these gui
 
 1. Parse the arguments provided:
     - Check for attribution flags: `--co-authored`, `--contributed`, or `--no-attribution`
+    - Check for `--include-untracked` flag to include untracked files (default: exclude untracked)
     - If paths are specified (e.g., "tests/", ".github/"), only stage and commit changes in those paths
     - If a commit message is provided, use it (otherwise generate one)
     - Arguments: $ARGUMENTS
@@ -49,78 +50,31 @@ Based on the changes shown above, create a single git commit following these gui
     - Is no longer than 72 characters
     - Clearly describes what changed and why
 
-4. Handle attribution:
-    - If `--no-attribution` flag is provided, skip all attribution (no co-author or contribution note)
-    - If `--co-authored` or `--contributed` flag is explicitly provided, use that
-    - If NO attribution flags are provided, automatically determine based on AI contribution:
-        * Analyze the diff to estimate AI-generated percentage using these indicators:
-
-          **Strong AI indicators (high weight):**
-            - New files with 100+ lines of boilerplate/template code
-            - Comprehensive documentation blocks with consistent formatting
-            - Systematic error handling across multiple functions
-            - Complete test suites with edge cases
-            - Multi-language configurations (CI/CD workflows, Docker, etc.)
-            - Repetitive patterns with consistent naming conventions
-
-          **Mixed indicators (medium weight):**
-            - Refactoring with consistent style changes
-            - Adding type definitions or interfaces
-            - Implementing standard patterns (singleton, factory, etc.)
-            - Configuration updates with detailed comments
-
-          **Human indicators (negative weight):**
-            - Single-line fixes or small tweaks (<5 lines)
-            - Business-specific logic or domain knowledge
-            - Hotfixes addressing specific bugs
-            - Custom regex patterns or complex conditionals
-            - TODO comments or debugging code
-            - Inconsistent formatting or style
-            - Trial-and-error patterns (multiple similar attempts)
-            
-
-          **Automated tool indicators (no attribution):**
-            - Changes from `cargo fmt` or `rustfmt`
-            - Changes from `cargo clippy --fix`
-            - Dependency updates from `cargo update` or similar
-            - Any changes that are purely whitespace/formatting
-            - Auto-generated files or tool outputs
-
-          **Contextual analysis:**
-            - Check file history: new files vs modifications
-            - Line count ratio: added vs modified vs deleted
-            - Complexity: simple changes vs architectural additions
-            - Consistency: uniform style suggests AI generation
-            - Completeness: AI tends to handle edge cases comprehensively
-
-        * Apply attribution based on percentage:
-            - > 50% AI-generated: Add co-author attribution
-              ```
-              Co-authored-by: Claude <noreply@anthropic.com>
-              ```
-            - 25-50% AI-generated: Add contribution note
-              ```
-              🤖 Generated with Claude assistance
-              ```
-            - <25% AI-generated: No attribution
-            - Automated tool changes: No attribution (regardless of who ran the tool)
-    - Briefly explain your attribution decision (e.g., "~70% AI-generated content, adding co-author")
+4. Handle attribution based on flags:
+    - If `--no-attribution` flag is provided: Skip all attribution
+    - If `--co-authored` flag is provided: Force co-author attribution
+    - If `--contributed` flag is provided: Force contribution note
+    - If NO attribution flags are provided: Automatically determine attribution by analyzing the diff using the logic in `.claude/snippets/attribution.md`
+    - Briefly explain your attribution decision
 
 5. Stage the appropriate files:
-    - If specific paths were provided, only stage those paths
-    - Otherwise, stage all tracked files with changes (avoid untracked files)
-    - Use `git add <path>` for specific paths or `git add -u` for all tracked files
-    - Never use `git add -A` to avoid accidentally committing untracked files
+    - If `--include-untracked` flag is provided: Use `git add -A` or `git add .` to include untracked files
+    - If specific paths were provided: Use `git add <path>` to stage only those paths
+    - Default behavior (no `--include-untracked`): Use `git add -u` to stage only tracked files with changes
+    - Never include untracked files unless `--include-untracked` is explicitly provided
 
 6. Create the commit with the formatted message and appropriate attribution
 
 Examples of usage:
 
-- `/commit` - commits all changes with automatic attribution detection
-- `/commit --co-authored` - commits all changes with explicit co-author attribution
+- `/commit` - commits tracked changes only with automatic attribution detection
+- `/commit --include-untracked` - commits all changes including untracked files
+- `/commit --co-authored` - commits tracked changes with explicit co-author attribution
 - `/commit --contributed tests/` - commits tests directory with explicit contribution note
-- `/commit --no-attribution` - commits all changes with no attribution
+- `/commit --no-attribution` - commits tracked changes with no attribution
+- `/commit --include-untracked --co-authored` - commits all files including untracked with co-author
 - `/commit --co-authored fix: resolve test failures` - commits with specified message and co-author
 - `/commit --no-attribution fix: manual bugfix` - commits with specified message and no attribution
 - `/commit tests/` - commits specific directory with automatic attribution detection
+- `/commit --include-untracked tests/` - commits specific directory including untracked files
 - `/commit fix: update dependencies` - commits with specified message and automatic attribution

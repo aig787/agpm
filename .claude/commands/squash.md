@@ -32,6 +32,11 @@ Squash commits between the specified range into a single commit, with optional i
 
 2. **Restore mode (--restore)**:
 
+   **Consider using checkpoint restore first**:
+   - Check if checkpoints are available by loading `.claude/commands/checkpoint.md` list command
+   - If recent checkpoint exists from squash operation, suggest using `/checkpoint restore latest`
+   - Checkpoints provide cleaner restoration with better context preservation
+
    **With specific reflog entry**:
    - If reflog entry provided (e.g., `HEAD@{3}` or `ORIG_HEAD`):
      * Validate the entry exists: `git rev-parse <entry>`
@@ -41,6 +46,7 @@ Squash commits between the specified range into a single commit, with optional i
      * Report success and show new HEAD
 
    **Without specific entry (auto-detect)**:
+   - First check for available checkpoints (preferred method)
    - Search reflog for recent squash-related operations:
      * `git reflog --grep="rebase" --grep="reset" --grep="squash" -10`
      * Look for patterns indicating squash operations:
@@ -48,10 +54,11 @@ Squash commits between the specified range into a single commit, with optional i
        - "reset: moving to" followed by commit refs
        - Previous HEAD positions before these operations
    - Present findings to user:
-     * Show last 3-5 potential restore points
+     * Show available checkpoints first (if any)
+     * Show last 3-5 potential restore points from reflog
      * Include commit message and timestamp
      * Let user select which one to restore
-   - Execute restoration: `git reset --hard <selected-entry>`
+   - Execute restoration: `git reset --hard <selected-entry>` or checkpoint restore
    - Verify: Show resulting commits and confirm changes are restored
 
 3. **Analyze the commit range** (skip if in restore mode):
@@ -70,7 +77,7 @@ Squash commits between the specified range into a single commit, with optional i
      * Include a body section listing the original commits being squashed
    - Analyze the code diff to determine appropriate attribution:
      * Review the actual changes being squashed: `git diff <from> <to>`
-     * Apply commit.md attribution rules based on AI contribution percentage
+     * Apply attribution analysis from `.claude/snippets/attribution.md` to determine AI contribution percentage
    - Use reset + commit approach:
      ```bash
      git reset --soft <from>
@@ -118,10 +125,7 @@ Squash commits between the specified range into a single commit, with optional i
       - For each logical group identified:
         * Stage relevant files: `git add <files>`
         * Analyze the diff to determine AI contribution: `git diff --cached`
-        * Apply attribution rules from commit.md based on the actual code changes:
-          - >50% AI-generated: Add co-author
-          - 25-50% AI-generated: Add contribution note
-          - <25% AI or tool-generated: No attribution needed
+        * Apply attribution analysis and thresholds from `.claude/snippets/attribution.md`
         * Create commit with appropriate message and attribution:
           ```
           git commit -m "$(cat <<'EOF'
@@ -148,11 +152,8 @@ Squash commits between the specified range into a single commit, with optional i
    - Analyze changes to determine type prefix (feat/fix/docs/test/refactor/chore)
    - Use present tense, be concise (≤72 chars)
    - For squashed commits, include summary in body
-   - **Apply attribution based on code analysis (per commit.md)**:
-     * Analyze the actual diff to determine AI contribution percentage
-     * >50% AI-generated code: Add co-author attribution
-     * 25-50% AI-generated code: Add contribution note
-     * <25% AI or tool-generated: No attribution needed
+   - **Apply attribution based on code analysis**:
+     * Analyze the actual diff using logic and thresholds from `.claude/snippets/attribution.md`
      * The squashing operation itself doesn't require attribution - only the actual code changes matter
      * Example attribution when warranted:
        ```
@@ -163,16 +164,22 @@ Squash commits between the specified range into a single commit, with optional i
 
 6. **Safety checks**:
    - Verify working directory is clean before starting
+   - **Create a checkpoint before squashing**:
+     * Load and execute `.claude/commands/checkpoint.md` create command
+     * Use message: "Before squash operation from <from> to <to>"
+     * This provides an additional safety net beyond Git's ORIG_HEAD
    - Git automatically saves current HEAD to `ORIG_HEAD` before rebase/reset operations
    - If operation fails or needs reverting:
-     * Use `git reset --hard ORIG_HEAD` to return to pre-squash state
+     * Use `/checkpoint restore latest` to return to pre-squash state
+     * Or use `git reset --hard ORIG_HEAD` to return to pre-squash state
      * Or check `git reflog` to find the commit before squashing
      * Reset with `git reset --hard HEAD@{n}` where n is the reflog entry
    - Never force push without explicit user confirmation
    - Inform user about recovery options before starting:
      ```
-     Note: Git will save your current HEAD to ORIG_HEAD.
-     To undo this squash operation, run: git reset --hard ORIG_HEAD
+     Note: A checkpoint will be created before squashing.
+     To undo this squash operation, run: /checkpoint restore latest
+     Alternatively, use: git reset --hard ORIG_HEAD
      Or use git reflog to find and restore any previous state.
      ```
 
@@ -182,10 +189,11 @@ Squash commits between the specified range into a single commit, with optional i
    - Confirm all original changes are preserved
 
 Examples of usage:
-- `/squash HEAD~3 HEAD` - squash last 3 commits into one
-- `/squash abc123 def456` - squash commits between abc123 and def456
-- `/squash HEAD~5 HEAD --regroup` - intelligently regroup last 5 commits
-- `/squash feature-start HEAD --regroup` - regroup all feature branch commits
-- `/squash --restore` - find and restore from most recent squash operation
+- `/squash HEAD~3 HEAD` - squash last 3 commits into one (creates checkpoint first)
+- `/squash abc123 def456` - squash commits between abc123 and def456 (creates checkpoint first)
+- `/squash HEAD~5 HEAD --regroup` - intelligently regroup last 5 commits (creates checkpoint first)
+- `/squash feature-start HEAD --regroup` - regroup all feature branch commits (creates checkpoint first)
+- `/squash --restore` - find and restore from most recent squash operation (checks checkpoints first)
 - `/squash --restore ORIG_HEAD` - restore to ORIG_HEAD (last HEAD change)
 - `/squash --restore HEAD@{3}` - restore to specific reflog entry
+- `/checkpoint restore latest` - alternative way to undo last squash if checkpoint was created

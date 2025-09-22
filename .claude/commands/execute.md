@@ -6,7 +6,7 @@ argument-hint: <prompt-name> [additional-args...] - e.g., "fix-failing-tests" or
 
 ## Context
 
-- Available prompts: !`ls -1 .claude/*.md | grep -v commands | xargs -I {} basename {} .md`
+- Available prompts: !`{ ls -1 .claude/*.md 2>/dev/null | grep -v commands; ls -1 .claude/snippets/prompts/*.md 2>/dev/null; } | xargs -I {} basename {} .md | sort -u`
 - Current directory: !`pwd`
 - Git status: !`git status --short`
 
@@ -20,7 +20,7 @@ Execute a shared markdown prompt from the `.claude/` directory based on the prov
    - Arguments: $ARGUMENTS
 
 2. **Load and execute the prompt**:
-   - Look for the prompt file at `.claude/{prompt-name}.md`
+   - Look for the prompt file at `.claude/snippets/prompts/{prompt-name}.md` or `.claude/{prompt-name}.md` (for backward compatibility)
    - If the prompt doesn't exist, list available prompts and provide helpful guidance
    - Read the entire prompt file to understand the task
    - Execute the prompt, incorporating any additional arguments provided
@@ -34,7 +34,7 @@ Execute a shared markdown prompt from the `.claude/` directory based on the prov
    - `fix-failing-tests`: Identify and fix failing tests in the codebase
    - `improve-test-coverage`: Analyze and improve test coverage
    - `refactor-duplicated-code`: Find and refactor duplicated code patterns
-   - Custom prompts can be added to `.claude/` directory as needed
+   - Custom prompts can be added to `.claude/snippets/prompts/` or `.claude/` directory as needed
 
 5. **Error handling**:
    - If the prompt file doesn't exist, show available prompts with descriptions
@@ -57,7 +57,7 @@ Execute a shared markdown prompt from the `.claude/` directory based on the prov
 ## Implementation approach
 
 When executing a prompt:
-1. First, verify the prompt exists and read its content
+1. First, verify the prompt exists (check `.claude/snippets/prompts/{name}.md` first, then `.claude/{name}.md`) and read its content
 2. Parse any special directives or requirements from the prompt
 3. Create a todo list if the prompt involves multiple steps
 4. Execute the prompt instructions, using appropriate tools
