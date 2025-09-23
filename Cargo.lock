@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "ccpm"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
