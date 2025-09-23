@@ -1001,9 +1001,9 @@ impl Cache {
 
             if !bare_repo_dir.exists() {
                 if let Some(ctx) = context {
-                    println!("📦 ({ctx}) Cloning repository {url}...");
+                    tracing::debug!("📦 ({ctx}) Cloning repository {url}...");
                 } else {
-                    println!("📦 Cloning repository {url} to cache...");
+                    tracing::debug!("📦 Cloning repository {url} to cache...");
                 }
 
                 GitRepo::clone_bare_with_context(url, &bare_repo_dir, context).await?;
@@ -1251,7 +1251,7 @@ impl Cache {
     /// - Network connectivity issues
     /// - Git command is not available in PATH
     async fn clone_source(&self, url: &str, target: &Path) -> Result<()> {
-        println!("📦 Cloning {} to cache...", url);
+        tracing::debug!("📦 Cloning {} to cache...", url);
 
         // Clone as a bare repository for better concurrency and worktree support
         GitRepo::clone_bare(url, target)
