@@ -79,7 +79,7 @@ use crate::cache::Cache;
 use crate::core::ResourceIterator;
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
-use crate::manifest::find_manifest_with_optional;
+use crate::manifest::{ResourceDependency, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 
 /// Command to install Claude Code resources from manifest dependencies.
@@ -353,19 +353,37 @@ impl InstallCommand {
         // Initialize cache (always needed now, even with --no-cache)
         let cache = Cache::new()?;
 
-        // Syncing sources phase (if not frozen and we have remote deps)
+        // Resolution phase
+        let mut resolver =
+            DependencyResolver::new_with_global(manifest.clone(), cache.clone()).await?;
+
+        // Pre-sync sources phase (if not frozen and we have remote deps)
         let has_remote_deps = manifest
             .all_dependencies()
             .iter()
             .any(|(_, dep)| dep.get_source().is_some());
 
-        if !self.frozen && !self.quiet && !self.no_progress && has_remote_deps {
-            multi_phase.start_phase(InstallationPhase::SyncingSources, None);
-        }
+        if !self.frozen && has_remote_deps {
+            // Start syncing sources phase
+            if !self.quiet && !self.no_progress {
+                multi_phase.start_phase(InstallationPhase::SyncingSources, None);
+            }
 
-        // Resolution phase
-        let mut resolver =
-            DependencyResolver::new_with_global(manifest.clone(), cache.clone()).await?;
+            // Get all dependencies for pre-syncing
+            let deps: Vec<(String, ResourceDependency)> = manifest
+                .all_dependencies_with_mcp()
+                .into_iter()
+                .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+                .collect();
+
+            // Pre-sync all required sources (performs actual Git operations)
+            resolver.pre_sync_sources(&deps).await?;
+
+            // Complete syncing sources phase
+            if !self.quiet && !self.no_progress {
+                multi_phase.complete_phase(Some("Sources synced"));
+            }
+        }
 
         let mut lockfile = if let Some(existing) = existing_lockfile {
             if self.frozen {
@@ -375,11 +393,6 @@ impl InstallCommand {
                 }
                 existing
             } else {
-                // Complete syncing phase if it was started
-                if !self.quiet && !self.no_progress && has_remote_deps {
-                    multi_phase.complete_phase(Some("Sources synced"));
-                }
-
                 // Start resolving phase
                 if !self.quiet && !self.no_progress && total_deps > 0 {
                     multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
@@ -397,11 +410,6 @@ impl InstallCommand {
                 result
             }
         } else {
-            // Complete syncing phase if it was started
-            if !self.quiet && !self.no_progress && has_remote_deps {
-                multi_phase.complete_phase(Some("Sources synced"));
-            }
-
             // Start resolving phase
             if !self.quiet && !self.no_progress && total_deps > 0 {
                 multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);

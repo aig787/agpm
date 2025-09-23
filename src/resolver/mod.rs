@@ -6,10 +6,22 @@
 //!
 //! # Architecture Overview
 //!
-//! The resolver operates in a three-phase process optimized for SHA-based worktree caching:
-//! 1. **Analysis Phase**: Parse dependencies, validate constraints, detect conflicts
-//! 2. **SHA Resolution Phase**: Batch resolve all versions to commit SHAs using [`version_resolver::VersionResolver`]
-//! 3. **Installation Phase**: Create SHA-based worktrees, install resources, generate lockfile entries
+//! The resolver operates using a **two-phase architecture** optimized for SHA-based worktree caching:
+//!
+//! ## Phase 1: Source Synchronization (`pre_sync_sources`)
+//! - **Purpose**: Perform all Git network operations upfront during "Syncing sources" phase
+//! - **Operations**: Clone/fetch repositories, update refs, populate cache
+//! - **Benefits**: Clear progress reporting, batch network operations, error isolation
+//! - **Result**: All required repositories cached locally for phase 2
+//!
+//! ## Phase 2: Version Resolution (`resolve` or `update`)
+//! - **Purpose**: Resolve versions to commit SHAs using cached repositories
+//! - **Operations**: Parse dependencies, resolve constraints, detect conflicts, create worktrees
+//! - **Benefits**: Fast local operations, no network I/O, deterministic behavior
+//! - **Result**: Locked dependencies ready for installation
+//!
+//! This two-phase approach replaces the previous three-phase model and provides better
+//! separation of concerns between network operations and dependency resolution logic.
 //!
 //! ## Algorithm Complexity
 //!
@@ -28,16 +40,25 @@
 //!
 //! # Resolution Process
 //!
-//! The dependency resolution follows these steps:
+//! The two-phase dependency resolution follows these steps:
 //!
+//! ## Phase 1: Source Synchronization
 //! 1. **Dependency Collection**: Extract all dependencies from manifest
-//! 2. **Source Validation**: Verify all referenced sources exist
-//! 3. **Batch SHA Resolution**: Use [`version_resolver::VersionResolver`] to resolve all versions to SHAs upfront
+//! 2. **Source Validation**: Verify all referenced sources exist and are accessible
+//! 3. **Repository Preparation**: Use [`version_resolver::VersionResolver`] to collect unique sources
 //! 4. **Source Synchronization**: Clone/update source repositories with single fetch per repository
-//! 5. **SHA-based Worktree Creation**: Create worktrees keyed by commit SHA for maximum deduplication
-//! 6. **Conflict Detection**: Check for path conflicts and incompatible versions
-//! 7. **Redundancy Analysis**: Identify duplicate resources across sources
-//! 8. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs
+//! 5. **Cache Population**: Store bare repository paths for phase 2 operations
+//!
+//! ## Phase 2: Version Resolution & Installation
+//! 1. **Batch SHA Resolution**: Resolve all collected versions to commit SHAs using cached repositories
+//! 2. **SHA-based Worktree Creation**: Create worktrees keyed by commit SHA for maximum deduplication
+//! 3. **Conflict Detection**: Check for path conflicts and incompatible versions
+//! 4. **Redundancy Analysis**: Identify duplicate resources across sources
+//! 5. **Resource Installation**: Copy resources to target locations with checksums
+//! 6. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs
+//!
+//! This separation ensures all network operations complete in phase 1, while phase 2
+//! operates entirely on cached data for fast, deterministic resolution.
 //!
 //! ## Version Resolution Strategy
 //!
@@ -112,7 +133,7 @@
 //!
 //! # Example Usage
 //!
-//! ## Basic Resolution
+//! ## Two-Phase Resolution Pattern
 //! ```rust,no_run
 //! use ccpm::resolver::DependencyResolver;
 //! use ccpm::manifest::Manifest;
@@ -122,13 +143,54 @@
 //! # async fn example() -> anyhow::Result<()> {
 //! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
 //! let cache = Cache::new()?;
-//! let mut resolver = DependencyResolver::new_with_global(manifest, cache).await?;
+//! let mut resolver = DependencyResolver::new_with_global(manifest.clone(), cache).await?;
 //!
-//! // Resolve all dependencies
-//! let lockfile = resolver.resolve().await?;
+//! // Get all dependencies from manifest
+//! let deps: Vec<(String, ccpm::manifest::ResourceDependency)> = manifest
+//!     .all_dependencies()
+//!     .into_iter()
+//!     .map(|(name, dep)| (name.to_string(), dep.clone()))
+//!     .collect();
+//!
+//! // Phase 1: Sync all required sources (network operations)
+//! resolver.pre_sync_sources(&deps).await?;
+//!
+//! // Phase 2: Resolve dependencies using cached repositories (local operations)
+//! let lockfile = resolver.resolve(&deps).await?;
 //!
 //! println!("Resolved {} agents and {} snippets",
 //!          lockfile.agents.len(), lockfile.snippets.len());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Update Pattern
+//! ```rust,no_run
+//! # use ccpm::resolver::DependencyResolver;
+//! # use ccpm::manifest::Manifest;
+//! # use ccpm::cache::Cache;
+//! # use ccpm::lockfile::LockFile;
+//! # use std::path::Path;
+//! # async fn update_example() -> anyhow::Result<()> {
+//! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+//! let mut lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+//! let cache = Cache::new()?;
+//! let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
+//!
+//! // Get dependencies to update
+//! let deps: Vec<(String, ccpm::manifest::ResourceDependency)> = manifest
+//!     .all_dependencies()
+//!     .into_iter()
+//!     .map(|(name, dep)| (name.to_string(), dep.clone()))
+//!     .collect();
+//!
+//! // Phase 1: Sync sources for update
+//! resolver.pre_sync_sources(&deps).await?;
+//!
+//! // Phase 2: Update specific dependencies
+//! resolver.update(&deps, &mut lockfile, None).await?;
+//!
+//! lockfile.save(Path::new("ccpm.lock"))?;
 //! # Ok(())
 //! # }
 //! ```
@@ -278,11 +340,202 @@ impl DependencyResolver {
         format!("{source}::{version}")
     }
 
-    async fn prepare_remote_groups(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
-        self.prepared_versions.clear();
+    /// Adds or updates a resource entry in the lockfile based on resource type.
+    ///
+    /// This helper method eliminates code duplication between the `resolve()` and `update()`
+    /// methods by centralizing lockfile entry management logic. It automatically determines
+    /// the resource type from the entry name and adds or updates the entry in the appropriate
+    /// collection within the lockfile.
+    ///
+    /// The method performs upsert behavior - if an entry with the same name already exists
+    /// in the appropriate collection, it will be updated; otherwise, a new entry is added.
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - Mutable reference to the lockfile to modify
+    /// * `name` - The name of the resource entry (used to determine resource type)
+    /// * `entry` - The [`LockedResource`] entry to add or update
+    ///
+    /// # Resource Type Detection
+    ///
+    /// Resource type is determined by calling `get_resource_type()` on the entry name,
+    /// which maps to the following lockfile collections:
+    /// - `"agent"` → `lockfile.agents`
+    /// - `"snippet"` → `lockfile.snippets`
+    /// - `"command"` → `lockfile.commands`
+    /// - `"script"` → `lockfile.scripts`
+    /// - `"hook"` → `lockfile.hooks`
+    /// - `"mcp-server"` → `lockfile.mcp_servers`
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// # use ccpm::lockfile::{LockFile, LockedResource};
+    /// # use ccpm::resolver::DependencyResolver;
+    /// # let resolver = DependencyResolver::new();
+    /// let mut lockfile = LockFile::new();
+    /// let entry = LockedResource {
+    ///     name: "my-agent".to_string(),
+    ///     source: Some("github".to_string()),
+    ///     url: Some("https://github.com/org/repo.git".to_string()),
+    ///     path: "agents/my-agent.md".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     resolved_commit: Some("abc123def456...".to_string()),
+    ///     checksum: "sha256:a1b2c3d4...".to_string(),
+    ///     installed_at: ".claude/agents/my-agent.md".to_string(),
+    /// };
+    ///
+    /// // Automatically adds to agents collection based on resource type detection
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", entry);
+    /// assert_eq!(lockfile.agents.len(), 1);
+    ///
+    /// // Subsequent calls update the existing entry
+    /// let updated_entry = LockedResource {
+    ///     name: "my-agent".to_string(),
+    ///     version: Some("v1.1.0".to_string()),
+    ///     // ... other fields
+    /// #   source: Some("github".to_string()),
+    /// #   url: Some("https://github.com/org/repo.git".to_string()),
+    /// #   path: "agents/my-agent.md".to_string(),
+    /// #   resolved_commit: Some("def456789abc...".to_string()),
+    /// #   checksum: "sha256:b2c3d4e5...".to_string()),
+    /// #   installed_at: ".claude/agents/my-agent.md".to_string(),
+    /// };
+    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", updated_entry);
+    /// assert_eq!(lockfile.agents.len(), 1); // Still one entry, but updated
+    /// ```
+    fn add_or_update_lockfile_entry(
+        &self,
+        lockfile: &mut LockFile,
+        name: &str,
+        entry: LockedResource,
+    ) {
+        let resource_type = self.get_resource_type(name);
+
+        match resource_type.as_str() {
+            "agent" => {
+                if let Some(existing) = lockfile.agents.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.agents.push(entry);
+                }
+            }
+            "snippet" => {
+                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.snippets.push(entry);
+                }
+            }
+            "command" => {
+                if let Some(existing) = lockfile.commands.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.commands.push(entry);
+                }
+            }
+            "script" => {
+                if let Some(existing) = lockfile.scripts.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.scripts.push(entry);
+                }
+            }
+            "hook" => {
+                if let Some(existing) = lockfile.hooks.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.hooks.push(entry);
+                }
+            }
+            "mcp-server" => {
+                if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.mcp_servers.push(entry);
+                }
+            }
+            _ => {
+                // Default to snippet
+                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
+                    *existing = entry;
+                } else {
+                    lockfile.snippets.push(entry);
+                }
+            }
+        }
+    }
+
+    /// Pre-syncs all sources needed for the given dependencies.
+    ///
+    /// This method implements the first phase of the two-phase resolution architecture.
+    /// It should be called during the "Syncing sources" phase to perform all Git
+    /// clone/fetch operations upfront, before actual dependency resolution.
+    ///
+    /// This separation provides several benefits:
+    /// - Clear separation of network operations from version resolution logic
+    /// - Better progress reporting with distinct phases
+    /// - Enables batch processing of Git operations for efficiency
+    /// - Allows the `resolve_all()` method to work purely with local cached data
+    ///
+    /// After calling this method, the internal [`VersionResolver`] will have all
+    /// necessary source repositories cached and ready for version-to-SHA resolution.
+    ///
+    /// # Arguments
+    ///
+    /// * `deps` - A slice of tuples containing dependency names and their definitions.
+    ///   Only dependencies with Git sources will be processed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use ccpm::resolver::DependencyResolver;
+    /// # use ccpm::manifest::{Manifest, ResourceDependency};
+    /// # use ccpm::cache::Cache;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let manifest = Manifest::new();
+    /// let cache = Cache::new()?;
+    /// let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
+    ///
+    /// // Get all dependencies from manifest
+    /// let deps: Vec<(String, ResourceDependency)> = manifest
+    ///     .all_dependencies()
+    ///     .into_iter()
+    ///     .map(|(name, dep)| (name.to_string(), dep.clone()))
+    ///     .collect();
+    ///
+    /// // Phase 1: Pre-sync all sources (performs Git clone/fetch operations)
+    /// resolver.pre_sync_sources(&deps).await?;
+    ///
+    /// // Phase 2: Now sources are ready for version resolution (no network I/O)
+    /// let resolved = resolver.resolve(&deps).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Two-Phase Resolution Pattern
+    ///
+    /// This method is part of CCPM's two-phase resolution architecture:
+    ///
+    /// 1. **Sync Phase** (`pre_sync_sources`): Clone/fetch all Git repositories
+    /// 2. **Resolution Phase** (`resolve` or `update`): Resolve versions to SHAs locally
+    ///
+    /// This pattern ensures all network operations happen upfront with clear progress
+    /// reporting, while version resolution can proceed quickly using cached data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Source repository cloning or fetching fails
+    /// - Network connectivity issues occur
+    /// - Authentication fails for private repositories
+    /// - Source names in dependencies don't match configured sources
+    /// - Git operations fail due to repository corruption or disk space issues
+    pub async fn pre_sync_sources(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
+        // Clear and rebuild the version resolver entries
         self.version_resolver.clear();
 
-        // Step 1: Collect all unique (source, version) pairs for resolution
+        // Collect all unique (source, version) pairs
         for (_, dep) in deps {
             if let Some(source_name) = dep.get_source() {
                 let source_url =
@@ -294,22 +547,75 @@ impl DependencyResolver {
 
                 let version = dep.get_version();
 
-                // Add to version resolver for batch resolution
+                // Add to version resolver for batch syncing
                 self.version_resolver
                     .add_version(source_name, &source_url, version);
             }
         }
 
-        // Step 2: Resolve all versions to SHAs in batch (handles fetching internally)
+        // Pre-sync all sources (performs Git operations)
         self.version_resolver
-            .resolve_all()
+            .pre_sync_sources()
             .await
-            .context("Failed to resolve versions to SHAs")?;
+            .context("Failed to sync sources")?;
 
-        // Step 3: Create worktrees for all resolved SHAs
+        Ok(())
+    }
+
+    /// Creates worktrees for all resolved SHAs in parallel.
+    ///
+    /// This helper method is part of CCPM's SHA-based worktree architecture, processing
+    /// all resolved versions from the [`VersionResolver`] and creating Git worktrees
+    /// for each unique commit SHA. It leverages async concurrency to create multiple
+    /// worktrees in parallel while maintaining proper error propagation.
+    ///
+    /// The method implements SHA-based deduplication - multiple versions (tags, branches)
+    /// that resolve to the same commit SHA will share a single worktree, maximizing
+    /// disk space efficiency and reducing clone operations.
+    ///
+    /// # Implementation Details
+    ///
+    /// 1. **Parallel Execution**: Uses `futures::future::join_all()` for concurrent worktree creation
+    /// 2. **SHA-based Keys**: Worktrees are keyed by commit SHA rather than version strings
+    /// 3. **Deduplication**: Multiple refs pointing to the same commit share one worktree
+    /// 4. **Error Handling**: Fails fast if any worktree creation fails
+    ///
+    /// # Returns
+    ///
+    /// Returns a [`HashMap`] mapping repository keys (format: `"source::version"`) to
+    /// [`PreparedSourceVersion`] structs containing:
+    /// - `worktree_path`: Absolute path to the created worktree directory
+    /// - `resolved_version`: The resolved Git reference (tag, branch, or SHA)
+    /// - `resolved_commit`: The final commit SHA for the worktree
+    ///
+    /// # Example Usage
+    ///
+    /// ```ignore
+    /// // This is called internally after version resolution
+    /// let prepared = resolver.create_worktrees_for_resolved_versions().await?;
+    ///
+    /// // Access worktree for a specific dependency
+    /// let key = DependencyResolver::group_key("my-source", "v1.0.0");
+    /// if let Some(prepared_version) = prepared.get(&key) {
+    ///     println!("Worktree at: {}", prepared_version.worktree_path.display());
+    ///     println!("Commit SHA: {}", prepared_version.resolved_commit);
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Source URL cannot be found for a resolved version (indicates configuration issue)
+    /// - Worktree creation fails for any SHA (disk space, permissions, Git errors)
+    /// - File system operations fail (I/O errors, permission denied)
+    /// - Git operations fail (corrupted repository, invalid SHA)
+    async fn create_worktrees_for_resolved_versions(
+        &self,
+    ) -> Result<HashMap<String, PreparedSourceVersion>> {
         let resolved_full = self.version_resolver.get_all_resolved_full().clone();
+        let mut prepared_versions = HashMap::new();
 
-        // Process all resolved versions in parallel
+        // Build futures for parallel worktree creation
         let mut futures = Vec::new();
 
         for ((source_name, version_key), resolved_version) in resolved_full {
@@ -332,7 +638,7 @@ impl DependencyResolver {
             let resolved_ref_clone = resolved_ref.clone();
 
             let future = async move {
-                // Use our new SHA-based worktree creation
+                // Use SHA-based worktree creation
                 // The version resolver has already handled fetching and SHA resolution
                 let worktree_path = cache_clone
                     .get_or_create_worktree_for_sha(
@@ -359,11 +665,58 @@ impl DependencyResolver {
         // Execute all futures concurrently and collect results
         let results = futures::future::join_all(futures).await;
 
-        // Process results
+        // Process results and build the map
         for result in results {
             let (key, prepared) = result?;
-            self.prepared_versions.insert(key, prepared);
+            prepared_versions.insert(key, prepared);
         }
+
+        Ok(prepared_versions)
+    }
+
+    async fn prepare_remote_groups(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
+        self.prepared_versions.clear();
+
+        // Check if we need to rebuild version resolver entries
+        // This happens when prepare_remote_groups is called without pre_sync_sources
+        // (e.g., during tests or backward compatibility)
+        if !self.version_resolver.has_entries() {
+            // Rebuild entries for version resolution
+            for (_, dep) in deps {
+                if let Some(source_name) = dep.get_source() {
+                    let source_url =
+                        self.source_manager
+                            .get_source_url(source_name)
+                            .ok_or_else(|| CcpmError::SourceNotFound {
+                                name: source_name.to_string(),
+                            })?;
+
+                    let version = dep.get_version();
+
+                    // Add to version resolver for batch resolution
+                    self.version_resolver
+                        .add_version(source_name, &source_url, version);
+                }
+            }
+
+            // If entries were rebuilt, we need to sync sources first
+            self.version_resolver
+                .pre_sync_sources()
+                .await
+                .context("Failed to sync sources")?;
+        }
+
+        // Now resolve all versions to SHAs
+        self.version_resolver
+            .resolve_all()
+            .await
+            .context("Failed to resolve versions to SHAs")?;
+
+        // Step 3: Create worktrees for all resolved SHAs in parallel
+        let prepared_versions = self.create_worktrees_for_resolved_versions().await?;
+
+        // Store the prepared versions
+        self.prepared_versions.extend(prepared_versions);
 
         // Phase completion is handled by the caller
 
@@ -575,17 +928,7 @@ impl DependencyResolver {
 
         // Add resolved single entries to lockfile
         for (name, entry) in resolved {
-            let resource_type = self.get_resource_type(&name);
-            // Add entry based on resource type
-            match resource_type.as_str() {
-                "agent" => lockfile.agents.push(entry),
-                "snippet" => lockfile.snippets.push(entry),
-                "command" => lockfile.commands.push(entry),
-                "script" => lockfile.scripts.push(entry),
-                "hook" => lockfile.hooks.push(entry),
-                "mcp-server" => lockfile.mcp_servers.push(entry),
-                _ => lockfile.snippets.push(entry), // Default fallback
-            }
+            self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
         }
 
         // Progress completion is handled by the caller
@@ -1188,84 +1531,23 @@ impl DependencyResolver {
             .map(|(name, dep)| (name.to_string(), dep.clone()))
             .collect();
 
-        // Pre-sync all unique sources once to avoid redundant fetches
-        let mut sources_to_sync = HashSet::new();
-        for (name, dep) in &deps {
-            if deps_to_check.contains(name)
-                && !dep.is_local()
-                && let Some(source_name) = dep.get_source()
-            {
-                sources_to_sync.insert(source_name.to_string());
-            }
-        }
+        // Note: We assume the update command has already called pre_sync_sources
+        // during the "Syncing sources" phase, so repositories are already available.
+        // We just need to prepare and resolve versions now.
 
-        for source_name in sources_to_sync {
-            self.source_manager.sync(&source_name).await?;
-        }
+        // Prepare remote groups to resolve versions (reuses pre-synced repos)
+        self.prepare_remote_groups(&deps).await?;
 
         for (name, dep) in deps {
             if !deps_to_check.contains(&name) {
-                // Skip this dependency but still increment progress
+                // Skip this dependency
                 continue;
             }
 
             let entry = self.resolve_dependency(&name, &dep).await?;
-            let resource_type = self.get_resource_type(&name);
 
-            // Update or add entry in lockfile based on resource type
-            match resource_type.as_str() {
-                "agent" => {
-                    if let Some(existing) = lockfile.agents.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.agents.push(entry);
-                    }
-                }
-                "snippet" => {
-                    if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.snippets.push(entry);
-                    }
-                }
-                "command" => {
-                    if let Some(existing) = lockfile.commands.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.commands.push(entry);
-                    }
-                }
-                "script" => {
-                    if let Some(existing) = lockfile.scripts.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.scripts.push(entry);
-                    }
-                }
-                "hook" => {
-                    if let Some(existing) = lockfile.hooks.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.hooks.push(entry);
-                    }
-                }
-                "mcp-server" => {
-                    if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| e.name == name)
-                    {
-                        *existing = entry;
-                    } else {
-                        lockfile.mcp_servers.push(entry);
-                    }
-                }
-                _ => {
-                    // Default to snippet
-                    if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
-                        *existing = entry;
-                    } else {
-                        lockfile.snippets.push(entry);
-                    }
-                }
-            }
+            // Use the helper method to add or update the entry
+            self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
         }
 
         // Progress bar completion is handled by the caller
@@ -1535,6 +1817,152 @@ mod tests {
         let warning = resolver.check_redundancies();
         assert!(warning.is_some());
         assert!(warning.unwrap().contains("Redundant dependencies detected"));
+    }
+
+    #[tokio::test]
+    async fn test_pre_sync_sources() {
+        // Skip test if git is not available
+        if std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("Skipping test: git not available");
+            return;
+        }
+
+        // Create a test Git repository with resources
+        let temp_dir = TempDir::new().unwrap();
+        let repo_dir = temp_dir.path().join("test-repo");
+        std::fs::create_dir(&repo_dir).unwrap();
+
+        // Initialize git repo
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        // Create test files
+        std::fs::create_dir_all(repo_dir.join("agents")).unwrap();
+        std::fs::write(
+            repo_dir.join("agents/test.md"),
+            "# Test Agent\n\nTest content",
+        )
+        .unwrap();
+
+        // Commit files
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        std::process::Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(&repo_dir)
+            .output()
+            .unwrap();
+
+        // Create a manifest with a dependency from this source
+        let mut manifest = Manifest::new();
+        let source_url = format!("file://{}", repo_dir.display());
+        manifest.add_source("test-source".to_string(), source_url.clone());
+
+        manifest.add_dependency(
+            "test-agent".to_string(),
+            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+                source: Some("test-source".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+            }),
+            true,
+        );
+
+        // Create resolver with test cache
+        let cache_dir = TempDir::new().unwrap();
+        let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
+        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
+
+        // Prepare dependencies for pre-sync
+        let deps: Vec<(String, ResourceDependency)> = manifest
+            .all_dependencies()
+            .into_iter()
+            .map(|(name, dep)| (name.to_string(), dep.clone()))
+            .collect();
+
+        // Call pre_sync_sources - this should clone the repository and prepare entries
+        resolver.pre_sync_sources(&deps).await.unwrap();
+
+        // Verify that entries and repos are prepared
+        assert!(
+            resolver.version_resolver.pending_count() > 0,
+            "Should have entries after pre-sync"
+        );
+
+        let bare_repo = resolver.version_resolver.get_bare_repo_path("test-source");
+        assert!(bare_repo.is_some(), "Should have bare repo path cached");
+
+        // Verify the repository exists in cache (uses normalized name)
+        let cached_repo_path = resolver.cache.get_cache_location().join("sources");
+
+        // The cache normalizes the source name, so we check if any .git directory exists
+        let mut found_repo = false;
+        if let Ok(entries) = std::fs::read_dir(&cached_repo_path) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str()
+                    && name.ends_with(".git")
+                {
+                    found_repo = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_repo, "Repository should be cloned to cache");
+
+        // Now call resolve_all() - it should work without cloning again
+        resolver.version_resolver.resolve_all().await.unwrap();
+
+        // Verify resolution succeeded by checking we have resolved versions
+        let all_resolved = resolver.version_resolver.get_all_resolved();
+        assert!(
+            !all_resolved.is_empty(),
+            "Resolution should produce resolved versions"
+        );
+
+        // Check that v1.0.0 was resolved to a SHA
+        let key = ("test-source".to_string(), "v1.0.0".to_string());
+        assert!(
+            all_resolved.contains_key(&key),
+            "Should have resolved v1.0.0"
+        );
+
+        let sha = all_resolved.get(&key).unwrap();
+        assert_eq!(sha.len(), 40, "SHA should be 40 characters");
     }
 
     #[test]

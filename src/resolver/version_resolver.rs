@@ -126,20 +126,86 @@ impl VersionResolver {
         });
     }
 
-    /// Resolves all collected versions to their commit SHAs
+    /// Resolves all collected versions to their commit SHAs using cached repositories.
     ///
-    /// This method performs the following steps:
-    /// 1. Groups entries by source to minimize repository operations
-    /// 2. Ensures each repository is fetched once
-    /// 3. Resolves all versions to SHAs using `git rev-parse`
-    /// 4. Caches results for quick retrieval
+    /// This method implements the second phase of CCPM's two-phase resolution architecture.
+    /// It processes all version entries collected via `add_version()` calls and resolves
+    /// them to concrete commit SHAs using locally cached Git repositories.
+    ///
+    /// # Prerequisites
+    ///
+    /// **CRITICAL**: `pre_sync_sources()` must be called before this method. The resolver
+    /// requires all repositories to be pre-synced to the cache, and will return an error
+    /// if any required repository is missing from the `bare_repos` map.
+    ///
+    /// # Resolution Process
+    ///
+    /// The method performs the following steps:
+    /// 1. **Source Grouping**: Groups entries by source to minimize repository operations
+    /// 2. **Repository Access**: Uses pre-synced repositories from `pre_sync_sources()`
+    /// 3. **Version Constraint Resolution**: Handles semver constraints (`^1.0`, `~2.1`)
+    /// 4. **SHA Resolution**: Resolves all versions to SHAs using `git rev-parse`
+    /// 5. **Result Caching**: Stores resolved SHAs for quick retrieval
+    ///
+    /// # Version Resolution Strategy
+    ///
+    /// The resolver handles different version types:
+    /// - **Exact SHAs**: Used directly without resolution
+    /// - **Semantic Versions**: Resolved using semver constraint matching
+    /// - **Tags**: Resolved to their commit SHAs
+    /// - **Branch Names**: Resolved to current HEAD commit
+    /// - **Latest/None**: Defaults to the repository's default branch
+    ///
+    /// # Performance Characteristics
+    ///
+    /// - **Time Complexity**: O(n·log(t)) where n = entries, t = tags per repo
+    /// - **Space Complexity**: O(n) for storing resolved results
+    /// - **Network I/O**: Zero (operates on cached repositories only)
+    /// - **Parallelization**: Single-threaded but optimized for batch operations
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// # use ccpm::resolver::version_resolver::VersionResolver;
+    /// # use ccpm::cache::Cache;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let cache = Cache::new()?;
+    /// let mut resolver = VersionResolver::new(cache);
+    ///
+    /// // Add various version types
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.2.3"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("^1.0"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("main"));
+    /// resolver.add_version("source", "https://github.com/org/repo.git", None); // latest
+    ///
+    /// // Phase 1: Sync repositories
+    /// resolver.pre_sync_sources().await?;
+    ///
+    /// // Phase 2: Resolve versions to SHAs (this method)
+    /// resolver.resolve_all().await?;
+    ///
+    /// // Access resolved SHAs
+    /// if resolver.is_resolved("source", "v1.2.3") {
+    ///     println!("v1.2.3 resolved successfully");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Error Handling
+    ///
+    /// The method uses fail-fast behavior - if any version resolution fails,
+    /// the entire operation is aborted. This ensures consistency and prevents
+    /// partial resolution states.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Repository cloning fails
-    /// - Version resolution fails (ref doesn't exist)
-    /// - Network issues prevent fetching
+    /// - **Pre-sync Required**: Repository was not pre-synced (call `pre_sync_sources()` first)
+    /// - **Version Not Found**: Specified version/tag/branch doesn't exist in repository
+    /// - **Constraint Resolution**: Semver constraint cannot be satisfied by available tags
+    /// - **Git Operations**: `git rev-parse` or other Git commands fail
+    /// - **Repository Access**: Cached repository is corrupted or inaccessible
     pub async fn resolve_all(&mut self) -> Result<()> {
         // Group entries by source for efficient processing
         let mut by_source: HashMap<String, Vec<(String, VersionEntry)>> = HashMap::new();
@@ -153,18 +219,13 @@ impl VersionResolver {
 
         // Process each source
         for (source, versions) in by_source {
-            // Get the URL from the first entry (all should have same URL)
-            let url = &versions[0].1.url;
-
-            // Get or clone the bare repository (with single fetch)
-            let repo_path = self
-                .cache
-                .get_or_clone_source(&source, url, None)
-                .await
-                .with_context(|| format!("Failed to prepare repository for source '{}'", source))?;
-
-            // Store bare repo path for later use
-            self.bare_repos.insert(source.clone(), repo_path.clone());
+            // Repository must have been pre-synced
+            let repo_path = self.bare_repos.get(&source)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Repository for source '{}' was not pre-synced. Call pre_sync_sources() first.",
+                    source
+                ))?
+                .clone();
 
             let repo = GitRepo::new(&repo_path);
 
@@ -299,6 +360,111 @@ impl VersionResolver {
         self.resolved.contains_key(&key)
     }
 
+    /// Pre-syncs all unique sources to ensure repositories are cloned/fetched.
+    ///
+    /// This method implements the first phase of CCPM's two-phase resolution architecture.
+    /// It is designed to be called during the "Syncing sources" phase to perform all
+    /// Git network operations upfront, before version resolution occurs.
+    ///
+    /// The method processes all entries in the resolver, groups them by unique source URLs,
+    /// and ensures each repository is cloned to the cache with the latest refs fetched.
+    /// This enables the subsequent `resolve_all()` method to work purely with local
+    /// cached data, providing better performance and progress reporting.
+    ///
+    /// # Post-Execution State
+    ///
+    /// After this method completes successfully:
+    /// - All required repositories will be cloned to `~/.ccpm/cache/sources/`
+    /// - All repositories will have their latest refs fetched from remote
+    /// - The internal `bare_repos` map will be populated with repository paths
+    /// - `resolve_all()` can proceed without any network operations
+    ///
+    /// This separation provides several benefits:
+    /// - **Clear progress phases**: Network operations vs. local resolution
+    /// - **Better error handling**: Network failures separated from resolution logic
+    /// - **Batch optimization**: Single clone/fetch per unique repository
+    /// - **Parallelization potential**: Multiple repositories can be synced concurrently
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use ccpm::resolver::version_resolver::VersionResolver;
+    /// use ccpm::cache::Cache;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let cache = Cache::new()?;
+    /// let mut version_resolver = VersionResolver::new(cache);
+    ///
+    /// // Add versions to resolve across multiple sources
+    /// version_resolver.add_version(
+    ///     "community",
+    ///     "https://github.com/org/ccpm-community.git",
+    ///     Some("v1.0.0"),
+    /// );
+    /// version_resolver.add_version(
+    ///     "community",
+    ///     "https://github.com/org/ccpm-community.git",
+    ///     Some("v2.0.0"),
+    /// );
+    /// version_resolver.add_version(
+    ///     "private-tools",
+    ///     "https://github.com/company/private-ccpm.git",
+    ///     Some("main"),
+    /// );
+    ///
+    /// // Phase 1: Pre-sync all repositories (network operations)
+    /// version_resolver.pre_sync_sources().await?;
+    ///
+    /// // Phase 2: Resolve all versions to SHAs (local operations only)
+    /// version_resolver.resolve_all().await?;
+    ///
+    /// // Access resolved data
+    /// if version_resolver.is_resolved("community", "v1.0.0") {
+    ///     println!("Successfully resolved community v1.0.0");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Deduplication
+    ///
+    /// The method automatically deduplicates by source URL - if multiple entries
+    /// reference the same repository, only one clone/fetch operation is performed.
+    /// This is particularly efficient when resolving multiple versions from the
+    /// same source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Repository cloning fails (network issues, authentication, invalid URL)
+    /// - Fetching latest refs fails (network connectivity, permission issues)
+    /// - Authentication fails for private repositories
+    /// - Disk space is insufficient for cloning repositories
+    /// - Repository is corrupted and cannot be accessed
+    pub async fn pre_sync_sources(&mut self) -> Result<()> {
+        // Group entries by source to get unique sources
+        let mut unique_sources: HashMap<String, String> = HashMap::new();
+
+        for entry in self.entries.values() {
+            unique_sources.insert(entry.source.clone(), entry.url.clone());
+        }
+
+        // Pre-sync each unique source
+        for (source, url) in unique_sources {
+            // Clone or update the repository (this does the actual Git operations)
+            let repo_path = self
+                .cache
+                .get_or_clone_source(&source, &url, None)
+                .await
+                .with_context(|| format!("Failed to sync repository for source '{}'", source))?;
+
+            // Store bare repo path for later use in resolve_all
+            self.bare_repos.insert(source.clone(), repo_path);
+        }
+
+        Ok(())
+    }
+
     /// Gets the bare repository path for a source
     ///
     /// Returns None if the source hasn't been processed yet.
@@ -318,6 +484,33 @@ impl VersionResolver {
     /// Returns the number of unique versions to resolve
     pub fn pending_count(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Checks if the resolver has any entries to resolve.
+    ///
+    /// This is a convenience method to determine if the resolver has been populated
+    /// with version entries via `add_version()` calls. It's useful for conditional
+    /// logic to avoid unnecessary operations when no versions need resolution.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if there are entries that need resolution, `false` if the
+    /// resolver is empty.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use ccpm::resolver::version_resolver::VersionResolver;
+    /// # use ccpm::cache::Cache;
+    /// # let cache = Cache::new().unwrap();
+    /// let mut resolver = VersionResolver::new(cache);
+    /// assert!(!resolver.has_entries()); // Initially empty
+    ///
+    /// resolver.add_version("source", "https://github.com/org/repo.git", Some("v1.0.0"));
+    /// assert!(resolver.has_entries()); // Now has entries
+    /// ```
+    pub fn has_entries(&self) -> bool {
+        !self.entries.is_empty()
     }
 
     /// Returns the number of successfully resolved versions

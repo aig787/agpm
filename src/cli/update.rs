@@ -77,7 +77,7 @@ use crate::cache::Cache;
 use crate::core::ResourceIterator;
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
-use crate::manifest::{Manifest, find_manifest_with_optional};
+use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 
 /// Command-line arguments for the update command.
@@ -368,12 +368,21 @@ impl UpdateCommand {
         // Resolve updated dependencies
         let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())?;
 
-        // Sync sources
-        resolver.source_manager.sync_all().await?;
+        // Get all dependencies for pre-syncing (only if we have remote deps)
+        if has_remote_deps {
+            let all_deps: Vec<(String, ResourceDependency)> = manifest
+                .all_dependencies_with_mcp()
+                .into_iter()
+                .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+                .collect();
 
-        // Complete syncing phase if it was started
-        if !self.quiet && !self.no_progress && has_remote_deps {
-            multi_phase.complete_phase(Some("Sources synced"));
+            // Pre-sync all required sources (performs actual Git operations)
+            resolver.pre_sync_sources(&all_deps).await?;
+
+            // Complete syncing phase if it was started
+            if !self.quiet && !self.no_progress {
+                multi_phase.complete_phase(Some("Sources synced"));
+            }
         }
 
         // Start resolving phase
