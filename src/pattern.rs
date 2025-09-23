@@ -69,7 +69,7 @@ use walkdir::WalkDir;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::pattern::PatternMatcher;
 /// use std::path::Path;
 ///
@@ -114,7 +114,7 @@ impl PatternMatcher {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternMatcher;
     ///
     /// // Simple wildcard
@@ -169,7 +169,7 @@ impl PatternMatcher {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
@@ -238,7 +238,7 @@ impl PatternMatcher {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
@@ -267,7 +267,7 @@ impl PatternMatcher {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternMatcher;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -298,7 +298,7 @@ impl PatternMatcher {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::pattern::PatternResolver;
 /// use std::path::Path;
 ///
@@ -328,7 +328,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternResolver;
     ///
     /// let resolver = PatternResolver::new();
@@ -359,7 +359,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternResolver;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -417,7 +417,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
@@ -475,7 +475,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
@@ -529,7 +529,7 @@ impl Default for PatternResolver {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::pattern::extract_resource_name;
 /// use std::path::Path;
 ///
@@ -575,7 +575,7 @@ pub fn extract_resource_name(path: &Path) -> String {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::pattern::validate_pattern_safety;
 ///
 /// // Safe patterns

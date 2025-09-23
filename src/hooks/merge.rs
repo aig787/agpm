@@ -122,8 +122,8 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
     let mut user_hooks: HashMap<String, Vec<MatcherGroup>> = HashMap::new();
     let mut ccpm_hooks: HashMap<String, Vec<String>> = HashMap::new();
 
-    if let Some(existing) = existing {
-        if let Some(obj) = existing.as_object() {
+    if let Some(existing) = existing
+        && let Some(obj) = existing.as_object() {
             for (event_name, matcher_groups) in obj {
                 if let Some(groups) = matcher_groups.as_array() {
                     let mut user_groups = Vec::new();
@@ -179,7 +179,6 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
                 }
             }
         }
-    }
 
     Ok((user_hooks, ccpm_hooks))
 }
@@ -564,9 +563,11 @@ mod tests {
         assert_eq!(pre_tool.len(), 1);
 
         // The "Write" matcher group should be gone
-        assert!(!pre_tool
-            .iter()
-            .any(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Write")));
+        assert!(
+            !pre_tool
+                .iter()
+                .any(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Write"))
+        );
     }
 
     #[test]

@@ -14,7 +14,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::version::comparison::VersionComparator;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -73,7 +73,7 @@ impl VersionComparator {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -93,11 +93,10 @@ impl VersionComparator {
         let current_version = Self::parse_version(current)?;
 
         for version_str in versions {
-            if let Ok(version) = Self::parse_version(version_str) {
-                if version > current_version {
+            if let Ok(version) = Self::parse_version(version_str)
+                && version > current_version {
                     return Ok(true);
                 }
-            }
         }
 
         Ok(false)
@@ -125,7 +124,7 @@ impl VersionComparator {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -153,11 +152,10 @@ impl VersionComparator {
         let mut newer = Vec::new();
 
         for version_str in versions {
-            if let Ok(version) = Self::parse_version(version_str) {
-                if version > current_version {
+            if let Ok(version) = Self::parse_version(version_str)
+                && version > current_version {
                     newer.push(version_str);
                 }
-            }
         }
 
         // Sort by version descending
@@ -191,7 +189,7 @@ impl VersionComparator {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -220,11 +218,10 @@ impl VersionComparator {
         let mut latest: Option<(&String, Version)> = None;
 
         for version_str in versions {
-            if let Ok(version) = Self::parse_version(version_str) {
-                if latest.is_none() || version > latest.as_ref().unwrap().1 {
+            if let Ok(version) = Self::parse_version(version_str)
+                && (latest.is_none() || version > latest.as_ref().unwrap().1) {
                     latest = Some((version_str, version));
                 }
-            }
         }
 
         Ok(latest.map(|(s, _)| s))

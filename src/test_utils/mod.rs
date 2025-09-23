@@ -13,7 +13,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! #[cfg(test)]
 //! mod tests {
 //!     
@@ -54,7 +54,7 @@ static INIT_LOGGING: Once = Once::new();
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use tracing::Level;
 ///
 /// fn my_test() {

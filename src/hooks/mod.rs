@@ -177,7 +177,7 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
 }
 
 // Re-export commonly used merge functions
-pub use merge::{apply_hooks_to_settings, merge_hooks_advanced, MergeResult};
+pub use merge::{MergeResult, apply_hooks_to_settings, merge_hooks_advanced};
 
 /// Install hooks from manifest to .claude/settings.local.json
 ///
@@ -365,14 +365,13 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
         None
     };
 
-    if let Some(path) = script_full_path {
-        if !path.exists() {
+    if let Some(path) = script_full_path
+        && !path.exists() {
             return Err(anyhow::anyhow!(
                 "Hook references non-existent script: {}",
                 config.command
             ));
         }
-    }
 
     Ok(())
 }
@@ -566,10 +565,12 @@ mod tests {
 
         let result = load_hook_configs(&hooks_dir);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse hook config"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse hook config")
+        );
     }
 
     #[test]
@@ -587,10 +588,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("at least one event"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("at least one event")
+        );
     }
 
     #[test]
@@ -608,10 +611,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid regex pattern"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid regex pattern")
+        );
     }
 
     #[test]
@@ -629,10 +634,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Only 'command' hook type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Only 'command' hook type")
+        );
     }
 
     #[test]
@@ -693,10 +700,12 @@ mod tests {
             .join("test.json");
         let result = validate_hook_config(&config, &hook_path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("non-existent script"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("non-existent script")
+        );
     }
 
     #[test]

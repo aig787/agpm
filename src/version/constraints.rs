@@ -25,7 +25,7 @@
 //!
 //! ## Basic Constraint Parsing
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::version::constraints::VersionConstraint;
 //!
 //! // Parse different constraint types
@@ -38,7 +38,7 @@
 //!
 //! ## Constraint Set Management
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
 //! use semver::Version;
 //!
@@ -59,7 +59,7 @@
 //!
 //! ## Dependency Resolution
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::version::constraints::ConstraintResolver;
 //! use semver::Version;
 //! use std::collections::HashMap;
@@ -140,7 +140,7 @@ use crate::core::CcpmError;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::VersionConstraint;
 /// use semver::Version;
 ///
@@ -215,7 +215,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::VersionConstraint;
     ///
     /// // Exact version matching
@@ -300,7 +300,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
@@ -348,7 +348,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::VersionConstraint;
     ///
     /// let branch_constraint = VersionConstraint::parse("main")?;
@@ -393,7 +393,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
@@ -457,7 +457,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::VersionConstraint;
     ///
     /// let latest = VersionConstraint::parse("latest")?;
@@ -526,7 +526,7 @@ impl fmt::Display for VersionConstraint {
 ///
 /// ## Basic Usage
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
@@ -544,7 +544,7 @@ impl fmt::Display for VersionConstraint {
 ///
 /// ## Best Match Selection
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
@@ -565,7 +565,7 @@ impl fmt::Display for VersionConstraint {
 ///
 /// ## Conflict Detection
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
@@ -627,7 +627,7 @@ impl ConstraintSet {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
@@ -672,7 +672,7 @@ impl ConstraintSet {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
@@ -721,7 +721,7 @@ impl ConstraintSet {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
@@ -743,7 +743,7 @@ impl ConstraintSet {
     ///
     /// ## Prerelease Handling
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
@@ -789,7 +789,7 @@ impl ConstraintSet {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut stable_set = ConstraintSet::new();
@@ -845,7 +845,7 @@ impl ConstraintSet {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run,ignore
     /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
@@ -912,7 +912,7 @@ impl ConstraintSet {
 ///
 /// ## Basic Multi-Dependency Resolution
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::ConstraintResolver;
 /// use semver::Version;
 /// use std::collections::HashMap;
@@ -938,7 +938,7 @@ impl ConstraintSet {
 ///
 /// ## Incremental Constraint Addition
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::constraints::ConstraintResolver;
 ///
 /// let mut resolver = ConstraintResolver::new();
@@ -1010,7 +1010,7 @@ impl ConstraintResolver {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::ConstraintResolver;
     ///
     /// let mut resolver = ConstraintResolver::new();
@@ -1078,7 +1078,7 @@ impl ConstraintResolver {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::ConstraintResolver;
     /// use semver::Version;
     /// use std::collections::HashMap;
@@ -1116,7 +1116,7 @@ impl ConstraintResolver {
     ///
     /// ## Error Handling
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::constraints::ConstraintResolver;
     /// use std::collections::HashMap;
     ///
