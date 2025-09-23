@@ -173,6 +173,10 @@ pub struct InstallCommand {
     /// Progress bars and status messages will be hidden.
     #[arg(short, long)]
     quiet: bool,
+
+    /// Disable progress bars (for programmatic use, not exposed as CLI arg)
+    #[arg(skip)]
+    pub no_progress: bool,
 }
 
 impl InstallCommand {
@@ -201,6 +205,7 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            no_progress: false,
         }
     }
 
@@ -226,6 +231,7 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: true,
+            no_progress: true,
         }
     }
 
@@ -305,7 +311,7 @@ impl InstallCommand {
     }
 
     pub async fn execute_from_path(&self, path: Option<&Path>) -> Result<()> {
-        use crate::installer::{install_resources, ResourceFilter};
+        use crate::installer::{ResourceFilter, install_resources};
         use crate::manifest::Manifest;
         use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
         use std::sync::Arc;
@@ -327,7 +333,7 @@ impl InstallCommand {
         let total_deps = manifest.all_dependencies().len();
 
         // Initialize multi-phase progress for all progress tracking
-        let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet));
+        let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet && !self.no_progress));
 
         // Show initial status
 
@@ -353,7 +359,7 @@ impl InstallCommand {
             .iter()
             .any(|(_, dep)| dep.get_source().is_some());
 
-        if !self.frozen && !self.quiet && has_remote_deps {
+        if !self.frozen && !self.quiet && !self.no_progress && has_remote_deps {
             multi_phase.start_phase(InstallationPhase::SyncingSources, None);
         }
 
@@ -370,12 +376,12 @@ impl InstallCommand {
                 existing
             } else {
                 // Complete syncing phase if it was started
-                if !self.quiet && has_remote_deps {
+                if !self.quiet && !self.no_progress && has_remote_deps {
                     multi_phase.complete_phase(Some("Sources synced"));
                 }
 
                 // Start resolving phase
-                if !self.quiet && total_deps > 0 {
+                if !self.quiet && !self.no_progress && total_deps > 0 {
                     multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
                 }
 
@@ -383,7 +389,7 @@ impl InstallCommand {
                 let result = resolver.update(&existing, None).await?;
 
                 // Complete resolving phase
-                if !self.quiet && total_deps > 0 {
+                if !self.quiet && !self.no_progress && total_deps > 0 {
                     multi_phase
                         .complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
                 }
@@ -392,12 +398,12 @@ impl InstallCommand {
             }
         } else {
             // Complete syncing phase if it was started
-            if !self.quiet && has_remote_deps {
+            if !self.quiet && !self.no_progress && has_remote_deps {
                 multi_phase.complete_phase(Some("Sources synced"));
             }
 
             // Start resolving phase
-            if !self.quiet && total_deps > 0 {
+            if !self.quiet && !self.no_progress && total_deps > 0 {
                 multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
             }
 
@@ -405,7 +411,7 @@ impl InstallCommand {
             let result = resolver.resolve().await?;
 
             // Complete resolving phase
-            if !self.quiet && total_deps > 0 {
+            if !self.quiet && !self.no_progress && total_deps > 0 {
                 multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
             }
 
@@ -425,7 +431,7 @@ impl InstallCommand {
             0
         } else {
             // Start installation phase
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 multi_phase.start_phase(
                     InstallationPhase::Installing,
                     Some(&format!("({} resources)", total_resources)),
@@ -460,7 +466,7 @@ impl InstallCommand {
                     }
 
                     // Complete installation phase
-                    if count > 0 && !self.quiet {
+                    if count > 0 && !self.quiet && !self.no_progress {
                         multi_phase.complete_phase(Some(&format!("Installed {} resources", count)));
                     }
                     count
@@ -503,7 +509,10 @@ impl InstallCommand {
         }
 
         // Start finalizing phase
-        if !self.quiet && (installed_count > 0 || hook_count > 0 || server_count > 0) {
+        if !self.quiet
+            && !self.no_progress
+            && (installed_count > 0 || hook_count > 0 || server_count > 0)
+        {
             multi_phase.start_phase(InstallationPhase::Finalizing, None);
         }
 
@@ -521,7 +530,10 @@ impl InstallCommand {
         }
 
         // Complete finalizing phase
-        if !self.quiet && (installed_count > 0 || hook_count > 0 || server_count > 0) {
+        if !self.quiet
+            && !self.no_progress
+            && (installed_count > 0 || hook_count > 0 || server_count > 0)
+        {
             multi_phase.complete_phase(Some("Installation finalized"));
         }
 
@@ -531,7 +543,7 @@ impl InstallCommand {
         }
 
         // Clear the multi-phase display before final message
-        if !self.quiet {
+        if !self.quiet && !self.no_progress {
             multi_phase.clear();
         }
 
@@ -605,6 +617,7 @@ mod tests {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            no_progress: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -727,6 +740,7 @@ Body",
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            no_progress: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -835,10 +849,11 @@ Body",
 
         let lockfile = LockFile::load(&temp.path().join("ccpm.lock")).unwrap();
         assert_eq!(lockfile.commands.len(), 1);
-        assert!(temp
-            .path()
-            .join(&lockfile.commands[0].installed_at)
-            .exists());
+        assert!(
+            temp.path()
+                .join(&lockfile.commands[0].installed_at)
+                .exists()
+        );
     }
 
     #[tokio::test]

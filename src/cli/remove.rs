@@ -31,13 +31,13 @@
 //! ccpm remove source old-repo --force
 //! ```
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::{Args, Subcommand};
 use colored::Colorize;
 
 use crate::core::ResourceType;
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest_with_optional, Manifest, ResourceDependency};
+use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
 use crate::utils::fs::atomic_write;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -446,11 +446,10 @@ async fn remove_dependency_with_manifest_path(
             }
             ResourceType::Hook => {
                 let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
-                if let Some(hooks) = &mut settings.hooks {
-                    if let Some(hooks_obj) = hooks.as_object_mut() {
+                if let Some(hooks) = &mut settings.hooks
+                    && let Some(hooks_obj) = hooks.as_object_mut() {
                         hooks_obj.remove(name);
                     }
-                }
                 settings.save(&settings_path)?;
             }
             _ => {}
@@ -472,13 +471,12 @@ async fn remove_dependency_with_manifest_path(
         );
 
         // Delete the installed file if it exists
-        if let Some(path) = installed_path {
-            if path.exists() {
+        if let Some(path) = installed_path
+            && path.exists() {
                 tokio::fs::remove_file(&path).await.with_context(|| {
                     format!("Failed to remove installed file: {}", path.display())
                 })?;
             }
-        }
 
         // Remove the dependency from the appropriate section
         remove_from_lockfile(&mut lockfile, name, resource_type);
@@ -849,10 +847,12 @@ post-commit = "../test/another_hook.json"
         )
         .await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid dependency type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid dependency type")
+        );
     }
 
     #[tokio::test]

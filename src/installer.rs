@@ -4,27 +4,33 @@
 //! lockfile entries to the project directory. It's shared between the install
 //! and update commands to avoid code duplication.
 //!
-//! # Parallel Installation Architecture
+//! # SHA-Based Parallel Installation Architecture
 //!
-//! The installer uses Git worktrees for safe parallel resource installation:
-//! - **Worktree-based operations**: Each dependency uses its own worktree to avoid conflicts
+//! The installer uses SHA-based worktrees for optimal parallel resource installation:
+//! - **SHA-based worktrees**: Each unique commit gets one worktree for maximum deduplication
+//! - **Pre-resolved SHAs**: All versions resolved to SHAs before installation begins
 //! - **Concurrency control**: Direct parallelism control via --max-parallel flag
 //! - **Context-aware logging**: Each operation includes dependency name for debugging
 //! - **Efficient cleanup**: Worktrees are managed by the cache layer for reuse
+//! - **Pre-warming**: Worktrees created upfront to minimize installation latency
 //!
 //! # Installation Process
 //!
-//! 1. **Repository access**: Uses cache layer to get or create worktrees
-//! 2. **Content validation**: Validates markdown format and structure
-//! 3. **Atomic installation**: Files are written atomically to prevent corruption
-//! 4. **Progress tracking**: Real-time progress updates during parallel operations
+//! 1. **SHA validation**: Ensures all resources have valid 40-character commit SHAs
+//! 2. **Worktree pre-warming**: Creates SHA-based worktrees for all unique commits
+//! 3. **Parallel processing**: Installs multiple resources concurrently using dedicated worktrees
+//! 4. **Content validation**: Validates markdown format and structure
+//! 5. **Atomic installation**: Files are written atomically to prevent corruption
+//! 6. **Progress tracking**: Real-time progress updates during parallel operations
 //!
 //! # Performance Characteristics
 //!
+//! - **SHA-based deduplication**: Multiple refs to same commit share one worktree
 //! - **Parallel processing**: Multiple dependencies installed simultaneously
-//! - **Worktree reuse**: Cache layer optimizes Git repository access
+//! - **Pre-warming optimization**: Worktrees created upfront to minimize latency
 //! - **Parallelism-controlled**: User controls concurrency via --max-parallel flag
 //! - **Atomic operations**: Fast, safe file installation with proper error handling
+//! - **Reduced disk usage**: No duplicate worktrees for identical commits
 
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::{Context, Result};
@@ -98,7 +104,7 @@ use futures::{
 };
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::cache::Cache;
 use crate::core::{ResourceIterator, ResourceTypeExt};
@@ -219,30 +225,36 @@ pub async fn install_resource(
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Remote resource {} has no URL", entry.name))?;
 
-        let revision = entry
+        // Always use SHA-based worktree creation
+        // The resolver should have already resolved all versions to SHAs
+        let sha = entry
             .resolved_commit
             .as_deref()
             .filter(|commit| *commit != "local")
-            .or(entry.version.as_deref());
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+                    entry.name
+                )
+            })?;
+
+        // Validate SHA format
+        if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(anyhow::anyhow!(
+                "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
+                sha,
+                entry.name
+            ));
+        }
 
         let mut cache_dir = cache
-            .get_or_clone_source_worktree_with_context(
-                source_name,
-                url,
-                revision,
-                Some(&entry.name),
-            )
+            .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
             .await?;
 
         if force_refresh {
             let _ = cache.cleanup_worktree(&cache_dir).await;
             cache_dir = cache
-                .get_or_clone_source_worktree_with_context(
-                    source_name,
-                    url,
-                    revision,
-                    Some(&entry.name),
-                )
+                .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
                 .await?;
         }
 
@@ -518,36 +530,29 @@ pub async fn install_resources_parallel(
     let total = all_entries.len();
     pb.set_message("Preparing resources");
 
-    // Collect unique (source, version) pairs to pre-create worktrees
+    // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
-        if let Some(source_name) = &entry.source {
-            if let Some(url) = &entry.url {
-                let version = entry
-                    .resolved_commit
-                    .as_ref()
-                    .or(entry.version.as_ref())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "HEAD".to_string());
-                unique_worktrees.insert((source_name.clone(), url.clone(), version));
+        if let Some(source_name) = &entry.source
+            && let Some(url) = &entry.url {
+                // Only pre-warm if we have a valid SHA
+                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+                }) {
+                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+                }
             }
-        }
     }
 
     // Pre-create all worktrees in parallel
     if !unique_worktrees.is_empty() {
         let worktree_futures: Vec<_> = unique_worktrees
             .into_iter()
-            .map(|(source, url, version)| {
+            .map(|(source, url, sha)| {
                 let cache = cache.clone();
                 async move {
                     cache
-                        .get_or_clone_source_worktree_with_context(
-                            &source,
-                            &url,
-                            Some(&version),
-                            Some("pre-warm"),
-                        )
+                        .get_or_create_worktree_for_sha(&source, &url, &sha, Some("pre-warm"))
                         .await
                         .ok(); // Ignore errors during pre-warming
                 }
@@ -912,34 +917,27 @@ pub async fn install_resources_parallel_with_progress(
     let total = all_entries.len();
 
     // Pre-warm the cache by creating all needed worktrees upfront
-    // Collect unique (source, version) pairs to pre-create worktrees
+    // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
-        if let Some(source_name) = &entry.source {
-            if let Some(url) = &entry.url {
-                let version = entry
-                    .resolved_commit
-                    .as_ref()
-                    .or(entry.version.as_ref())
-                    .unwrap_or(&"main".to_string())
-                    .clone();
-                unique_worktrees.insert((source_name.clone(), url.clone(), version));
+        if let Some(source_name) = &entry.source
+            && let Some(url) = &entry.url {
+                // Only pre-warm if we have a valid SHA
+                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+                }) {
+                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+                }
             }
-        }
     }
 
     if !unique_worktrees.is_empty() {
         let worktree_futures: Vec<_> = unique_worktrees
             .into_iter()
-            .map(|(source, url, version)| {
+            .map(|(source, url, sha)| {
                 async move {
                     cache
-                        .get_or_clone_source_worktree_with_context(
-                            &source,
-                            &url,
-                            Some(&version),
-                            Some("pre-warm"),
-                        )
+                        .get_or_create_worktree_for_sha(&source, &url, &sha, Some("pre-warm"))
                         .await
                         .ok(); // Ignore errors during pre-warming
                 }
@@ -1301,17 +1299,15 @@ pub async fn install_resources(
     // Pre-warm the cache by creating all needed worktrees upfront
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
-        if let Some(source_name) = &entry.source {
-            if let Some(url) = &entry.url {
-                let version = entry
-                    .resolved_commit
-                    .as_ref()
-                    .or(entry.version.as_ref())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "HEAD".to_string());
-                unique_worktrees.insert((source_name.clone(), url.clone(), version));
+        if let Some(source_name) = &entry.source
+            && let Some(url) = &entry.url {
+                // Only pre-warm if we have a valid SHA
+                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+                }) {
+                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+                }
             }
-        }
     }
 
     if !unique_worktrees.is_empty() {
@@ -1322,16 +1318,11 @@ pub async fn install_resources(
 
         let worktree_futures: Vec<_> = unique_worktrees
             .into_iter()
-            .map(|(source, url, version)| {
+            .map(|(source, url, sha)| {
                 let cache = cache.clone();
                 async move {
                     cache
-                        .get_or_clone_source_worktree_with_context(
-                            &source,
-                            &url,
-                            Some(&version),
-                            Some(context),
-                        )
+                        .get_or_create_worktree_for_sha(&source, &url, &sha, Some(context))
                         .await
                         .ok(); // Ignore errors during pre-warming
                 }
@@ -1558,34 +1549,27 @@ pub async fn install_resources_with_dynamic_progress(
     }
 
     // Pre-warm the cache by creating all needed worktrees upfront
-    // Collect unique (source, version) pairs to pre-create worktrees
+    // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
-        if let Some(source_name) = &entry.source {
-            if let Some(url) = &entry.url {
-                let version = entry
-                    .resolved_commit
-                    .as_ref()
-                    .or(entry.version.as_ref())
-                    .unwrap_or(&"main".to_string())
-                    .clone();
-                unique_worktrees.insert((source_name.clone(), url.clone(), version));
+        if let Some(source_name) = &entry.source
+            && let Some(url) = &entry.url {
+                // Only pre-warm if we have a valid SHA
+                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+                }) {
+                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+                }
             }
-        }
     }
 
     if !unique_worktrees.is_empty() {
         let worktree_futures: Vec<_> = unique_worktrees
             .into_iter()
-            .map(|(source, url, version)| {
+            .map(|(source, url, sha)| {
                 async move {
                     cache
-                        .get_or_clone_source_worktree_with_context(
-                            &source,
-                            &url,
-                            Some(&version),
-                            Some("pre-warm"),
-                        )
+                        .get_or_create_worktree_for_sha(&source, &url, &sha, Some("pre-warm"))
                         .await
                         .ok(); // Ignore errors during pre-warming
                 }
@@ -1827,33 +1811,31 @@ pub async fn install_updated_resources(
         pb.set_message("Preparing resources...");
     }
 
-    // Collect unique (source, version) pairs to pre-create worktrees
+    // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &entries_to_install {
-        if let Some(source_name) = &entry.source {
-            if let Some(url) = &entry.url {
-                let version = entry
-                    .resolved_commit
-                    .as_ref()
-                    .or(entry.version.as_ref())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "HEAD".to_string());
-                unique_worktrees.insert((source_name.clone(), url.clone(), version));
+        if let Some(source_name) = &entry.source
+            && let Some(url) = &entry.url {
+                // Only pre-warm if we have a valid SHA
+                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+                }) {
+                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+                }
             }
-        }
     }
 
     // Pre-create all worktrees in parallel
     if !unique_worktrees.is_empty() {
         let worktree_futures: Vec<_> = unique_worktrees
             .into_iter()
-            .map(|(source, url, version)| {
+            .map(|(source, url, sha)| {
                 async move {
                     cache
-                        .get_or_clone_source_worktree_with_context(
+                        .get_or_create_worktree_for_sha(
                             &source,
                             &url,
-                            Some(&version),
+                            &sha,
                             Some("update-pre-warm"),
                         )
                         .await
@@ -2289,12 +2271,16 @@ mod tests {
 
         // Verify all files were installed (using default directories)
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(project_dir
-            .join(".claude/ccpm/snippets/test-snippet.md")
-            .exists());
-        assert!(project_dir
-            .join(".claude/commands/test-command.md")
-            .exists());
+        assert!(
+            project_dir
+                .join(".claude/ccpm/snippets/test-snippet.md")
+                .exists()
+        );
+        assert!(
+            project_dir
+                .join(".claude/commands/test-command.md")
+                .exists()
+        );
     }
 
     #[tokio::test]
@@ -2342,9 +2328,11 @@ mod tests {
 
         assert_eq!(count, 1, "Should install 1 updated resource");
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(!project_dir
-            .join(".claude/snippets/test-snippet.md")
-            .exists()); // Not updated
+        assert!(
+            !project_dir
+                .join(".claude/snippets/test-snippet.md")
+                .exists()
+        ); // Not updated
     }
 
     #[tokio::test]
@@ -2384,9 +2372,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(count, 1);
-        assert!(project_dir
-            .join(".claude/commands/test-command.md")
-            .exists());
+        assert!(
+            project_dir
+                .join(".claude/commands/test-command.md")
+                .exists()
+        );
     }
 
     #[tokio::test]

@@ -358,23 +358,64 @@ impl ConfigCommand {
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
-    pub async fn execute(self) -> Result<()> {
+    /// Execute the config command with an optional config path.
+    ///
+    /// # Parameters
+    ///
+    /// - `config_path`: Optional custom path for the configuration file
+    pub async fn execute(self, config_path: Option<PathBuf>) -> Result<()> {
         match self.command {
-            Some(ConfigSubcommands::Init { force }) => Self::init(force).await,
-            Some(ConfigSubcommands::Show) | None => Self::show().await,
-            Some(ConfigSubcommands::Edit) => Self::edit().await,
-            Some(ConfigSubcommands::AddSource { name, url }) => Self::add_source(name, url).await,
-            Some(ConfigSubcommands::RemoveSource { name }) => Self::remove_source(name).await,
-            Some(ConfigSubcommands::ListSources) => Self::list_sources().await,
-            Some(ConfigSubcommands::Path) => Self::show_path(),
+            Some(ConfigSubcommands::Init { force }) => {
+                Self::init_with_config_path(force, config_path).await
+            }
+            Some(ConfigSubcommands::Show) | None => Self::show(config_path).await,
+            Some(ConfigSubcommands::Edit) => Self::edit_with_path(config_path).await,
+            Some(ConfigSubcommands::AddSource { name, url }) => {
+                Self::add_source_with_path(name, url, config_path).await
+            }
+            Some(ConfigSubcommands::RemoveSource { name }) => {
+                Self::remove_source_with_path(name, config_path).await
+            }
+            Some(ConfigSubcommands::ListSources) => Self::list_sources_with_path(config_path).await,
+            Some(ConfigSubcommands::Path) => Self::show_path(config_path),
         }
     }
 
-    async fn init(force: bool) -> Result<()> {
-        Self::init_with_path(force, None).await
+    async fn init_with_config_path(force: bool, config_path: Option<PathBuf>) -> Result<()> {
+        let config_path = config_path.unwrap_or_else(|| {
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
+
+        if config_path.exists() && !force {
+            println!(
+                "❌ Global config already exists at: {}",
+                config_path.display()
+            );
+            println!("   Use --force to overwrite");
+            return Ok(());
+        }
+
+        let config = GlobalConfig::init_example();
+
+        // Create parent directories if needed
+        if let Some(parent) = config_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        config.save_to(&config_path).await?;
+
+        println!("✅ Created global config at: {}", config_path.display());
+        println!("\n{}", "Example configuration:".bold());
+        println!("{}", toml::to_string_pretty(&config)?);
+        println!("\n{}", "Next steps:".yellow());
+        println!("  1. Edit the config to add your private sources with authentication");
+        println!("  2. Replace 'YOUR_TOKEN' with actual access tokens");
+
+        Ok(())
     }
 
     // Separate method that accepts an optional path for testing
+    #[allow(dead_code)]
     pub async fn init_with_path(force: bool, base_dir: Option<PathBuf>) -> Result<()> {
         let config_path = if let Some(base) = base_dir {
             base.join("config.toml")
@@ -409,9 +450,11 @@ impl ConfigCommand {
         Ok(())
     }
 
-    async fn show() -> Result<()> {
-        let config = GlobalConfig::load().await?;
-        let config_path = GlobalConfig::default_path()?;
+    async fn show(config_path: Option<PathBuf>) -> Result<()> {
+        let config = GlobalConfig::load_with_optional(config_path.clone()).await?;
+        let config_path = config_path.unwrap_or_else(|| {
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
 
         println!("{}", "Global Configuration".bold());
         println!("Location: {}\n", config_path.display());
@@ -427,8 +470,10 @@ impl ConfigCommand {
         Ok(())
     }
 
-    async fn edit() -> Result<()> {
-        let config_path = GlobalConfig::default_path()?;
+    async fn edit_with_path(config_path: Option<PathBuf>) -> Result<()> {
+        let config_path = config_path.unwrap_or_else(|| {
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
 
         if !config_path.exists() {
             println!("❌ No global config found. Creating one...");
@@ -462,8 +507,14 @@ impl ConfigCommand {
         Ok(())
     }
 
-    async fn add_source(name: String, url: String) -> Result<()> {
-        let mut config = GlobalConfig::load().await.unwrap_or_default();
+    async fn add_source_with_path(
+        name: String,
+        url: String,
+        config_path: Option<PathBuf>,
+    ) -> Result<()> {
+        let mut config = GlobalConfig::load_with_optional(config_path.clone())
+            .await
+            .unwrap_or_default();
 
         if config.has_source(&name) {
             println!("⚠️  Source '{name}' already exists");
@@ -473,7 +524,10 @@ impl ConfigCommand {
         }
 
         config.add_source(name.clone(), url.clone());
-        config.save().await?;
+        let save_path = config_path.unwrap_or_else(|| {
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
+        config.save_to(&save_path).await?;
 
         println!("✅ Added global source '{}': {}", name.green(), url);
 
@@ -485,11 +539,17 @@ impl ConfigCommand {
         Ok(())
     }
 
-    async fn remove_source(name: String) -> Result<()> {
-        let mut config = GlobalConfig::load().await.unwrap_or_default();
+    async fn remove_source_with_path(name: String, config_path: Option<PathBuf>) -> Result<()> {
+        let mut config = GlobalConfig::load_with_optional(config_path.clone())
+            .await
+            .unwrap_or_default();
 
         if config.remove_source(&name) {
-            config.save().await?;
+            let save_path = config_path.unwrap_or_else(|| {
+                GlobalConfig::default_path()
+                    .unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            });
+            config.save_to(&save_path).await?;
             println!("✅ Removed global source '{}'", name.red());
         } else {
             println!("❌ Source '{name}' not found in global config");
@@ -498,14 +558,18 @@ impl ConfigCommand {
         Ok(())
     }
 
-    async fn list_sources() -> Result<()> {
-        let config = GlobalConfig::load().await.unwrap_or_default();
+    async fn list_sources_with_path(config_path: Option<PathBuf>) -> Result<()> {
+        let config = GlobalConfig::load_with_optional(config_path)
+            .await
+            .unwrap_or_default();
 
         if config.sources.is_empty() {
             println!("No global sources configured.");
             println!("\n{}", "Tip:".yellow());
             println!("  Add a source with: ccpm config add-source <name> <url>");
-            println!("  Example: ccpm config add-source private https://oauth2:TOKEN@gitlab.com/company/agents.git");
+            println!(
+                "  Example: ccpm config add-source private https://oauth2:TOKEN@gitlab.com/company/agents.git"
+            );
         } else {
             println!("{}", "Global Sources:".bold());
             for (name, url) in &config.sources {
@@ -533,8 +597,10 @@ impl ConfigCommand {
         Ok(())
     }
 
-    fn show_path() -> Result<()> {
-        let config_path = GlobalConfig::default_path()?;
+    fn show_path(config_path: Option<PathBuf>) -> Result<()> {
+        let config_path = config_path.unwrap_or_else(|| {
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
         println!("{}", config_path.display());
         Ok(())
     }
@@ -547,7 +613,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_path() {
-        let result = ConfigCommand::show_path();
+        let result = ConfigCommand::show_path(None);
         assert!(result.is_ok());
     }
 
@@ -574,14 +640,12 @@ mod tests {
     }
 
     // This test specifically tests CCPM_CONFIG_PATH environment variable handling
-    // It uses std::env::set_var which can cause race conditions in parallel tests
-    // Run with: cargo test -- --test-threads=1 if flakiness occurs
     #[tokio::test]
     async fn test_config_show_empty() {
         let temp = TempDir::new().unwrap();
-        std::env::set_var("CCPM_CONFIG_PATH", temp.path().join("config.toml"));
+        let config_path = temp.path().join("config.toml");
 
-        let result = ConfigCommand::show().await;
+        let result = ConfigCommand::show(Some(config_path)).await;
         // Show succeeds even with empty/missing config
         assert!(result.is_ok());
     }
@@ -771,7 +835,7 @@ mod tests {
 
         // We can't easily test show without affecting global state
         // but we can verify the individual methods work
-        assert!(ConfigCommand::show_path().is_ok());
+        assert!(ConfigCommand::show_path(None).is_ok());
     }
 
     #[tokio::test]
@@ -869,7 +933,7 @@ mod tests {
         };
 
         // Path should always work
-        let result = cmd.execute().await;
+        let result = cmd.execute(None).await;
         assert!(result.is_ok());
     }
 
@@ -1257,7 +1321,7 @@ mod tests {
         };
 
         // Execute should not panic even if global config operations fail
-        let _ = cmd.execute().await;
+        let _ = cmd.execute(None).await;
     }
 
     #[tokio::test]
@@ -1269,7 +1333,7 @@ mod tests {
         };
 
         // Execute should not panic even if source doesn't exist
-        let _ = cmd.execute().await;
+        let _ = cmd.execute(None).await;
     }
 
     #[tokio::test]
@@ -1278,7 +1342,7 @@ mod tests {
             command: Some(ConfigSubcommands::ListSources),
         };
 
-        let result = cmd.execute().await;
+        let result = cmd.execute(None).await;
         assert!(result.is_ok());
     }
 
@@ -1288,7 +1352,7 @@ mod tests {
             command: Some(ConfigSubcommands::Path),
         };
 
-        let result = cmd.execute().await;
+        let result = cmd.execute(None).await;
         assert!(result.is_ok());
     }
 

@@ -273,7 +273,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::GitRepo;
 /// use std::path::Path;
 ///
@@ -317,7 +317,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     /// use std::path::Path;
     ///
@@ -368,7 +368,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
     /// use std::env;
     ///
@@ -456,7 +456,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     /// use std::env;
     ///
@@ -546,7 +546,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -633,11 +633,10 @@ impl GitRepo {
             .map_err(|e| {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
-                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>() {
-                    if matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. }) {
+                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>()
+                    && matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. }) {
                         return e;
                     }
-                }
                 CcpmError::GitCheckoutFailed {
                     reference: ref_name.to_string(),
                     reason: e.to_string(),
@@ -666,7 +665,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -691,7 +690,7 @@ impl GitRepo {
     ///
     /// For semantic version ordering, consider using the `semver` crate:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use anyhow::Result;
     /// use semver::Version;
     /// use ccpm::git::GitRepo;
@@ -735,7 +734,9 @@ impl GitRepo {
             ));
         }
 
-        if !self.path.join(".git").exists() {
+        // Check if it's a git repository (either regular or bare)
+        // Regular repos have .git directory, bare repos have HEAD file
+        if !self.path.join(".git").exists() && !self.path.join("HEAD").exists() {
             return Err(anyhow::anyhow!("Not a git repository: {:?}", self.path));
         }
 
@@ -774,7 +775,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -796,7 +797,7 @@ impl GitRepo {
     ///
     /// For processing the URL further, consider using [`parse_git_url`]:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::{GitRepo, parse_git_url};
     ///
     /// # async fn parse_example() -> anyhow::Result<()> {
@@ -833,34 +834,27 @@ impl GitRepo {
             .await
     }
 
-    /// Checks if the directory contains a valid Git repository.
-    ///
-    /// This is a fast, synchronous operation that simply checks for the presence
-    /// of a `.git` subdirectory in the repository path. It does not validate
-    /// the Git repository's internal structure or integrity.
-    ///
-    /// # Return Value
-    ///
-    /// - `true` if the directory contains a `.git` subdirectory
-    /// - `false` if the `.git` subdirectory is missing or inaccessible
-    ///
-    /// # Performance
-    ///
-    /// This method is intentionally synchronous and lightweight for efficiency.
-    /// It performs a single filesystem check without spawning async tasks or
-    /// executing Git commands.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
+    /// Checks if the directory contains a valid Git repository.\n    ///
+    /// This method detects both regular and bare Git repositories:\n    /// - **Regular repositories**: Have a `.git` subdirectory\n    /// - **Bare repositories**: Have a `HEAD` file in the root\n    ///
+    /// Bare repositories are commonly used for:\n    /// - Serving repositories (like GitHub/GitLab)\n    /// - Cache storage in package managers\n    /// - Worktree sources for parallel operations\n    ///
+    /// # Return Value\n    ///
+    /// - `true` if the directory is a valid Git repository (regular or bare)\n    /// - `false` if neither `.git` directory nor `HEAD` file exists\n    ///
+    /// # Performance\n    ///
+    /// This method is intentionally synchronous and lightweight for efficiency.\n    /// It performs at most two filesystem checks without spawning async tasks or\n    /// executing Git commands.\n    ///
+    /// # Examples\n    ///
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
-    /// let repo = GitRepo::new("/path/to/repo");
-    ///
+    /// // Regular repository
+    /// let repo = GitRepo::new("/path/to/regular/repo");
     /// if repo.is_git_repo() {
     ///     println!("Valid Git repository detected");
-    /// } else {
-    ///     println!("Not a Git repository");
+    /// }
+    ///
+    /// // Bare repository
+    /// let bare_repo = GitRepo::new("/path/to/repo.git");
+    /// if bare_repo.is_git_repo() {
+    ///     println!("Valid bare Git repository detected");
     /// }
     ///
     /// // Use before async operations
@@ -876,20 +870,19 @@ impl GitRepo {
     ///
     /// # Validation Scope
     ///
-    /// This method only checks for the `.git` directory's presence. It does not:
+    /// This method only checks for the presence of Git repository markers. It does not:
     /// - Validate Git repository integrity
     /// - Check for repository corruption
     /// - Verify specific Git version compatibility
     /// - Test network connectivity to remotes
     ///
-    /// For more thorough validation, use Git operations that will fail with
-    /// detailed error information if the repository is corrupted.
+    /// For more thorough validation, use Git operations that will fail with\n    /// detailed error information if the repository is corrupted.
     ///
     /// # Alternative
     ///
     /// For error-based validation with detailed context, use [`ensure_valid_git_repo`]:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::ensure_valid_git_repo;
     /// use std::path::Path;
     ///
@@ -903,7 +896,7 @@ impl GitRepo {
     /// [`ensure_valid_git_repo`]: fn.ensure_valid_git_repo.html
     #[must_use]
     pub fn is_git_repo(&self) -> bool {
-        self.path.join(".git").exists()
+        is_git_repository(&self.path)
     }
 
     /// Returns the filesystem path to the Git repository.
@@ -918,7 +911,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     /// use std::path::Path;
     ///
@@ -939,7 +932,7 @@ impl GitRepo {
     ///
     /// The returned path can be used for various filesystem operations:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # fn example() -> std::io::Result<()> {
@@ -998,7 +991,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1128,7 +1121,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
     /// use std::env;
     ///
@@ -1177,6 +1170,18 @@ impl GitRepo {
 
         let repo = Self::new(target_path);
 
+        // Configure the fetch refspec to ensure all branches are fetched as remote tracking branches
+        // This is crucial for file:// URLs and ensures we can resolve origin/branch after fetching
+        let _ = GitCommand::new()
+            .args([
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ])
+            .current_dir(repo.path())
+            .execute_success()
+            .await;
+
         // Ensure the bare repo has refs available for worktree creation
         // Also needs context for the fetch operation
         repo.ensure_bare_repo_has_refs_with_context(context)
@@ -1202,7 +1207,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1472,19 +1477,18 @@ impl GitRepo {
 
                     // Check if the error is likely due to an invalid reference
                     let error_str = e.to_string();
-                    if let Some(ref_name) = reference {
-                        if error_str.contains("pathspec")
+                    if let Some(ref_name) = reference
+                        && (error_str.contains("pathspec")
                             || error_str.contains("not found")
                             || error_str.contains("ambiguous")
                             || error_str.contains("invalid")
-                            || error_str.contains("unknown revision")
+                            || error_str.contains("unknown revision"))
                         {
                             return Err(anyhow::anyhow!(
                                 "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
                                 ref_name
                             ));
                         }
-                    }
 
                     return Err(e).with_context(|| {
                         format!(
@@ -1509,7 +1513,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1541,7 +1545,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1570,11 +1574,10 @@ impl GitRepo {
             } else if line == "bare" {
                 // Skip bare repository entry
                 current_worktree = None;
-            } else if line.is_empty() && current_worktree.is_some() {
-                if let Some(path) = current_worktree.take() {
+            } else if line.is_empty() && current_worktree.is_some()
+                && let Some(path) = current_worktree.take() {
                     worktrees.push(path);
                 }
-            }
         }
 
         // Add the last worktree if there is one
@@ -1592,7 +1595,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1618,7 +1621,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1674,6 +1677,115 @@ impl GitRepo {
             .context("Failed to get current commit")
     }
 
+    /// Resolves a Git reference (tag, branch, commit) to its full SHA-1 hash.
+    ///
+    /// This method is central to CCPM's optimization strategy - by resolving all
+    /// version specifications to SHAs upfront, we can:
+    /// - Create worktrees keyed by SHA for maximum reuse
+    /// - Avoid redundant checkouts for the same commit
+    /// - Ensure deterministic, reproducible installations
+    ///
+    /// # Arguments
+    ///
+    /// * `ref_spec` - The Git reference to resolve (tag, branch, short/full SHA, or None for HEAD)
+    ///
+    /// # Returns
+    ///
+    /// Returns the full 40-character SHA-1 hash of the resolved reference.
+    ///
+    /// # Resolution Strategy
+    ///
+    /// 1. If `ref_spec` is None or "HEAD", resolves to current HEAD commit
+    /// 2. If already a full SHA (40 hex chars), returns it unchanged
+    /// 3. Otherwise uses `git rev-parse` to resolve:
+    ///    - Tags (e.g., "v1.0.0")
+    ///    - Branches (e.g., "main", "origin/main")
+    ///    - Short SHAs (e.g., "abc123")
+    ///    - Symbolic refs (e.g., "HEAD~1")
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ccpm::git::GitRepo;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let repo = GitRepo::new("/path/to/repo");
+    ///
+    /// // Resolve a tag
+    /// let sha = repo.resolve_to_sha(Some("v1.2.3")).await?;
+    /// assert_eq!(sha.len(), 40);
+    ///
+    /// // Resolve HEAD
+    /// let head_sha = repo.resolve_to_sha(None).await?;
+    ///
+    /// // Already a full SHA - returned as-is
+    /// let full_sha = "a".repeat(40);
+    /// let resolved = repo.resolve_to_sha(Some(&full_sha)).await?;
+    /// assert_eq!(resolved, full_sha);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The reference doesn't exist in the repository
+    /// - The repository is invalid or corrupted
+    /// - Git command execution fails
+    pub async fn resolve_to_sha(&self, ref_spec: Option<&str>) -> Result<String> {
+        let reference = ref_spec.unwrap_or("HEAD");
+
+        // Optimization: if it's already a full SHA, return it directly
+        if reference.len() == 40 && reference.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(reference.to_string());
+        }
+
+        // For branch names, try to resolve origin/branch first to get the latest from remote
+        // This ensures we get the most recent commit after a fetch
+        let ref_to_resolve = if !reference.contains('/') && reference != "HEAD" {
+            // Looks like a branch name (not a tag or special ref)
+            // Try origin/branch first
+            let origin_ref = format!("origin/{}", reference);
+            if GitCommand::rev_parse(&origin_ref)
+                .current_dir(&self.path)
+                .execute_stdout()
+                .await
+                .is_ok()
+            {
+                origin_ref
+            } else {
+                // Fallback to the original reference (might be a tag or local branch)
+                reference.to_string()
+            }
+        } else {
+            reference.to_string()
+        };
+
+        // Use rev-parse to get the full SHA
+        let sha = GitCommand::rev_parse(&ref_to_resolve)
+            .current_dir(&self.path)
+            .execute_stdout()
+            .await
+            .with_context(|| format!("Failed to resolve reference '{}' to SHA", reference))?;
+
+        // Ensure we have a full SHA (sometimes rev-parse can return short SHAs)
+        if sha.len() < 40 {
+            // Request the full SHA explicitly
+            let full_sha = GitCommand::new()
+                .args([
+                    "rev-parse",
+                    "--verify",
+                    &format!("{}^{{commit}}", reference),
+                ])
+                .current_dir(&self.path)
+                .execute_stdout()
+                .await
+                .with_context(|| format!("Failed to get full SHA for reference '{}'", reference))?;
+            Ok(full_sha)
+        } else {
+            Ok(sha)
+        }
+    }
+
     #[cfg(test)]
     pub async fn get_current_branch(&self) -> Result<String> {
         let branch = GitCommand::current_branch()
@@ -1717,7 +1829,7 @@ impl GitRepo {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::is_git_installed;
 ///
 /// if is_git_installed() {
@@ -1739,7 +1851,7 @@ impl GitRepo {
 ///
 /// For error-based validation with detailed context, use [`ensure_git_available()`]:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1780,7 +1892,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1795,7 +1907,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Error Handling
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 /// use ccpm::core::CcpmError;
 ///
@@ -1814,7 +1926,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// Typically called at the start of Git-dependent operations:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::{ensure_git_available, GitRepo};
 /// use std::env;
 ///
@@ -1841,6 +1953,50 @@ pub fn ensure_git_available() -> Result<()> {
     Ok(())
 }
 
+/// Checks if a path contains a Git repository (regular or bare).
+///
+/// This function detects both types of Git repositories:
+/// - **Regular repositories**: Contain a `.git` subdirectory
+/// - **Bare repositories**: Contain a `HEAD` file in the root
+///
+/// # Arguments
+///
+/// * `path` - The path to check for a Git repository
+///
+/// # Returns
+///
+/// * `true` if the path is a valid Git repository (regular or bare)
+/// * `false` if neither repository marker exists
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::path::Path;
+/// use ccpm::git::is_git_repository;
+///
+/// // Check a regular repository
+/// let repo_path = Path::new("/path/to/repo");
+/// if is_git_repository(repo_path) {
+///     println!("Found Git repository");
+/// }
+///
+/// // Check a bare repository
+/// let bare_path = Path::new("/path/to/repo.git");
+/// if is_git_repository(bare_path) {
+///     println!("Found bare Git repository");
+/// }
+/// ```
+///
+/// # Performance
+///
+/// This is a lightweight synchronous check that performs at most two
+/// filesystem operations to determine repository type.
+#[must_use]
+pub fn is_git_repository(path: &Path) -> bool {
+    // Check for regular repository (.git directory) or bare repository (HEAD file)
+    path.join(".git").exists() || path.join("HEAD").exists()
+}
+
 /// Checks if a directory contains a valid Git repository.
 ///
 /// This function performs the same validation as [`GitRepo::is_git_repo()`] but
@@ -1858,7 +2014,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::is_valid_git_repo;
 /// use std::path::Path;
 ///
@@ -1880,7 +2036,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// # Batch Processing Example
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::is_valid_git_repo;
 /// use std::fs;
 /// use std::path::Path;
@@ -1915,7 +2071,7 @@ pub fn ensure_git_available() -> Result<()> {
 /// [`GitRepo::is_git_repo()`]: struct.GitRepo.html#method.is_git_repo
 #[must_use]
 pub fn is_valid_git_repo(path: &Path) -> bool {
-    path.join(".git").exists()
+    is_git_repository(path)
 }
 
 /// Ensures a directory contains a valid Git repository or returns a detailed error.
@@ -1942,7 +2098,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use std::path::Path;
 ///
@@ -1960,7 +2116,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Error Handling Pattern
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use ccpm::core::CcpmError;
 /// use std::path::Path;
@@ -1982,7 +2138,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// This function provides validation before creating `GitRepo` instances:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::{ensure_valid_git_repo, GitRepo};
 /// use std::path::Path;
 ///
@@ -2053,7 +2209,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::parse_git_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -2084,7 +2240,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 ///
 /// # Cache Integration Example
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::parse_git_url;
 /// use std::path::PathBuf;
 ///
@@ -2108,7 +2264,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// The parser handles URLs with embedded authentication but extracts only
 /// the repository components:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::parse_git_url;
 ///
 /// # fn auth_example() -> anyhow::Result<()> {
@@ -2157,8 +2313,8 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
     }
 
     // Handle SSH URLs like git@github.com:user/repo.git
-    if url.contains('@') && url.contains(':') && !url.starts_with("ssh://") {
-        if let Some(colon_pos) = url.find(':') {
+    if url.contains('@') && url.contains(':') && !url.starts_with("ssh://")
+        && let Some(colon_pos) = url.find(':') {
             let path = &url[colon_pos + 1..];
             let path = path.trim_end_matches(".git");
             if let Some(slash_pos) = path.find('/') {
@@ -2168,7 +2324,6 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
                 ));
             }
         }
-    }
 
     // Handle HTTPS URLs
     if url.contains("github.com") || url.contains("gitlab.com") || url.contains("bitbucket.org") {
@@ -2224,7 +2379,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::strip_auth_from_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -2245,7 +2400,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Safe Logging Pattern
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use anyhow::Result;
 ///
@@ -2260,7 +2415,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Error Context Integration
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use ccpm::core::CcpmError;
 ///

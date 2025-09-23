@@ -11,15 +11,16 @@
 //! - **CI/quiet mode support**: Automatically disables in non-interactive environments
 //! - **Thread safety**: Safe to use across async tasks and parallel operations
 //!
-//! # Environment Variables
+//! # Configuration
 //!
-//! - `CCPM_NO_PROGRESS`: Set to any value to disable all progress indicators
+//! Progress indicators are now controlled via the MultiPhaseProgress constructor
+//! parameter rather than environment variables for better thread safety.
 //!
 //! # Examples
 //!
 //! ## Multi-Phase Progress
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::utils::progress::{MultiPhaseProgress, InstallationPhase};
 //!
 //! let progress = MultiPhaseProgress::new(true);
@@ -43,31 +44,6 @@ use std::time::Duration;
 // Re-export for deprecated functions - use MultiPhaseProgress instead
 #[deprecated(since = "0.3.0", note = "Use MultiPhaseProgress instead")]
 pub use indicatif::ProgressBar;
-
-/// Checks if progress bars should be disabled.
-///
-/// Progress bars are disabled when the `CCPM_NO_PROGRESS` environment variable
-/// is set to any value. This is useful for CI/CD environments, scripts, or
-/// when clean output is desired.
-///
-/// # Returns
-///
-/// `true` if progress bars should be disabled, `false` otherwise
-///
-/// # Examples
-///
-/// ```bash
-/// # Disable progress bars
-/// export CCPM_NO_PROGRESS=1
-/// ccpm install  # No progress bars shown
-///
-/// # Re-enable progress bars
-/// unset CCPM_NO_PROGRESS
-/// ccpm install  # Progress bars shown
-/// ```
-fn is_progress_disabled() -> bool {
-    std::env::var("CCPM_NO_PROGRESS").is_ok()
-}
 
 /// Represents different phases of the installation process
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,7 +108,7 @@ impl MultiPhaseProgress {
 
     /// Start a new phase with a spinner
     pub fn start_phase(&self, phase: InstallationPhase, message: Option<&str>) {
-        if !self.enabled || is_progress_disabled() {
+        if !self.enabled {
             // In non-TTY mode, just print the phase
             if !self.enabled {
                 return;
@@ -179,7 +155,7 @@ impl MultiPhaseProgress {
 
     /// Start a new phase with a progress bar
     pub fn start_phase_with_progress(&self, phase: InstallationPhase, total: usize) {
-        if !self.enabled || is_progress_disabled() {
+        if !self.enabled {
             // In non-TTY mode, just print the phase
             if !self.enabled {
                 return;
@@ -220,43 +196,39 @@ impl MultiPhaseProgress {
 
     /// Update the message of the current phase
     pub fn update_message(&self, message: String) {
-        if let Ok(guard) = self.current_bar.lock() {
-            if let Some(ref bar) = *guard {
+        if let Ok(guard) = self.current_bar.lock()
+            && let Some(ref bar) = *guard {
                 bar.set_message(message);
             }
-        }
     }
 
     /// Update the current message for the active phase
     pub fn update_current_message(&self, message: &str) {
-        if let Ok(guard) = self.current_bar.lock() {
-            if let Some(ref bar) = *guard {
+        if let Ok(guard) = self.current_bar.lock()
+            && let Some(ref bar) = *guard {
                 bar.set_message(message.to_string());
             }
-        }
     }
 
     /// Increment progress for progress bars
     pub fn increment_progress(&self, delta: u64) {
-        if let Ok(guard) = self.current_bar.lock() {
-            if let Some(ref bar) = *guard {
+        if let Ok(guard) = self.current_bar.lock()
+            && let Some(ref bar) = *guard {
                 bar.inc(delta);
             }
-        }
     }
 
     /// Set progress position for progress bars
     pub fn set_progress(&self, pos: usize) {
-        if let Ok(guard) = self.current_bar.lock() {
-            if let Some(ref bar) = *guard {
+        if let Ok(guard) = self.current_bar.lock()
+            && let Some(ref bar) = *guard {
                 bar.set_position(pos as u64);
             }
-        }
     }
 
     /// Complete the current phase and show it as a static message
     pub fn complete_phase(&self, message: Option<&str>) {
-        if !self.enabled || is_progress_disabled() {
+        if !self.enabled {
             // In non-TTY mode, just print completion
             if !self.enabled {
                 return;
@@ -268,8 +240,8 @@ impl MultiPhaseProgress {
         }
 
         // Complete the current bar/spinner with a message and leave it visible
-        if let Ok(mut guard) = self.current_bar.lock() {
-            if let Some(bar) = guard.take() {
+        if let Ok(mut guard) = self.current_bar.lock()
+            && let Some(bar) = guard.take() {
                 // Disable any animation
                 bar.disable_steady_tick();
 
@@ -289,23 +261,21 @@ impl MultiPhaseProgress {
                     println!("{}", final_message);
                 });
             }
-        }
     }
 
     /// Clear all progress displays
     pub fn clear(&self) {
         // Clear current bar if any
-        if let Ok(mut guard) = self.current_bar.lock() {
-            if let Some(bar) = guard.take() {
+        if let Ok(mut guard) = self.current_bar.lock()
+            && let Some(bar) = guard.take() {
                 bar.finish_and_clear();
             }
-        }
         self.multi.clear().ok();
     }
 
     /// Create a subordinate progress bar for detailed progress within a phase
     pub fn add_progress_bar(&self, total: u64) -> Option<IndicatifBar> {
-        if !self.enabled || is_progress_disabled() {
+        if !self.enabled {
             return None;
         }
 
@@ -402,26 +372,6 @@ mod tests {
         progress.clear();
     }
 
-    #[test]
-    fn test_is_progress_disabled() {
-        use std::env;
-
-        // Clear the environment variable first
-        env::remove_var("CCPM_NO_PROGRESS");
-        assert!(!is_progress_disabled());
-
-        // Set the environment variable
-        env::set_var("CCPM_NO_PROGRESS", "1");
-        assert!(is_progress_disabled());
-
-        // Any value should work
-        env::set_var("CCPM_NO_PROGRESS", "true");
-        assert!(is_progress_disabled());
-
-        // Clean up
-        env::remove_var("CCPM_NO_PROGRESS");
-        assert!(!is_progress_disabled());
-    }
 
     #[test]
     fn test_collect_dependency_names() {

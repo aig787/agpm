@@ -77,7 +77,7 @@ use crate::cache::Cache;
 use crate::core::ResourceIterator;
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest_with_optional, Manifest};
+use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 
 /// Command-line arguments for the update command.
@@ -207,6 +207,10 @@ pub struct UpdateCommand {
     /// Default: max(10, 2 × CPU cores)
     #[arg(long, value_name = "NUMBER")]
     pub max_parallel: Option<usize>,
+
+    /// Disable progress bars (for programmatic use, not exposed as CLI arg)
+    #[arg(skip)]
+    pub no_progress: bool,
 }
 
 impl UpdateCommand {
@@ -283,7 +287,7 @@ impl UpdateCommand {
     }
 
     pub async fn execute_from_path(self, manifest_path: PathBuf) -> Result<()> {
-        use crate::installer::{install_resources, ResourceFilter};
+        use crate::installer::{ResourceFilter, install_resources};
         use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
         use std::sync::Arc;
 
@@ -296,7 +300,7 @@ impl UpdateCommand {
         }
 
         let project_dir = manifest_path.parent().unwrap();
-        let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet));
+        let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet && !self.no_progress));
 
         // Load manifest
         let manifest = Manifest::load(&manifest_path).with_context(|| {
@@ -312,7 +316,7 @@ impl UpdateCommand {
         let existing_lockfile = if lockfile_path.exists() {
             LockFile::load(&lockfile_path)?
         } else {
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 println!("⚠️  No lockfile found");
                 println!("ℹ️  Performing fresh install");
             }
@@ -333,7 +337,7 @@ impl UpdateCommand {
             tokio::fs::copy(&lockfile_path, &backup_path)
                 .await
                 .with_context(|| format!("Failed to create backup at {}", backup_path.display()))?;
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 println!("ℹ️  Created backup: {}", backup_path.display());
             }
         }
@@ -354,7 +358,7 @@ impl UpdateCommand {
             .iter()
             .any(|(_, dep)| dep.get_source().is_some());
 
-        if !self.quiet && has_remote_deps {
+        if !self.quiet && !self.no_progress && has_remote_deps {
             multi_phase.start_phase(InstallationPhase::SyncingSources, None);
         }
 
@@ -368,12 +372,12 @@ impl UpdateCommand {
         resolver.source_manager.sync_all().await?;
 
         // Complete syncing phase if it was started
-        if !self.quiet && has_remote_deps {
+        if !self.quiet && !self.no_progress && has_remote_deps {
             multi_phase.complete_phase(Some("Sources synced"));
         }
 
         // Start resolving phase
-        if !self.quiet && total_deps > 0 {
+        if !self.quiet && !self.no_progress && total_deps > 0 {
             multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
         }
 
@@ -382,7 +386,7 @@ impl UpdateCommand {
             .await?;
 
         // Complete resolving phase
-        if !self.quiet && total_deps > 0 {
+        if !self.quiet && !self.no_progress && total_deps > 0 {
             multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
         }
 
@@ -391,8 +395,7 @@ impl UpdateCommand {
         ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
             if let Some((_, old_entry)) =
                 ResourceIterator::find_resource_by_name(&existing_lockfile, &new_entry.name)
-            {
-                if old_entry.resolved_commit != new_entry.resolved_commit {
+                && old_entry.resolved_commit != new_entry.resolved_commit {
                     let old_version = old_entry
                         .version
                         .clone()
@@ -403,20 +406,19 @@ impl UpdateCommand {
                         .unwrap_or_else(|| "latest".to_string());
                     updates.push((new_entry.name.clone(), old_version, new_version));
                 }
-            }
         });
 
         // Display results
         if updates.is_empty() {
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 println!("✓ All dependencies are up to date!");
             }
         } else {
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 println!("✓ Found {} update(s)", updates.len());
             }
 
-            if !self.quiet {
+            if !self.quiet && !self.no_progress {
                 println!(); // Add spacing
                 for (name, old_ver, new_ver) in &updates {
                     println!(
@@ -429,7 +431,7 @@ impl UpdateCommand {
             }
 
             if self.dry_run || self.check {
-                if !self.quiet {
+                if !self.quiet && !self.no_progress {
                     println!(); // Add spacing
                     if self.check {
                         println!("{}", "Check mode - no changes made".yellow());
@@ -444,7 +446,7 @@ impl UpdateCommand {
                         // Lockfile saved successfully (no progress needed for this quick operation)
 
                         // Install all updated resources using main installation function
-                        if !self.quiet && !updates.is_empty() {
+                        if !self.quiet && !self.no_progress && !updates.is_empty() {
                             multi_phase.start_phase(
                                 InstallationPhase::Installing,
                                 Some(&format!("({} resources)", updates.len())),
@@ -459,7 +461,7 @@ impl UpdateCommand {
                             cache,
                             false,             // don't force refresh for updates
                             self.max_parallel, // use provided or default concurrency
-                            if self.quiet {
+                            if self.quiet || self.no_progress {
                                 None
                             } else {
                                 Some(multi_phase.clone())
@@ -473,7 +475,7 @@ impl UpdateCommand {
                         }
 
                         // Complete installation phase
-                        if install_count > 0 && !self.quiet {
+                        if install_count > 0 && !self.quiet && !self.no_progress {
                             multi_phase.complete_phase(Some(&format!(
                                 "Updated {} resources",
                                 install_count
@@ -481,7 +483,7 @@ impl UpdateCommand {
                         }
 
                         // Start finalizing phase
-                        if !self.quiet && install_count > 0 {
+                        if !self.quiet && !self.no_progress && install_count > 0 {
                             multi_phase.start_phase(InstallationPhase::Finalizing, None);
                         }
 
@@ -495,16 +497,16 @@ impl UpdateCommand {
                         }
 
                         // Complete finalizing phase
-                        if !self.quiet && install_count > 0 {
+                        if !self.quiet && !self.no_progress && install_count > 0 {
                             multi_phase.complete_phase(Some("Update finalized"));
                         }
 
                         // Clear the multi-phase display before final message
-                        if !self.quiet {
+                        if !self.quiet && !self.no_progress {
                             multi_phase.clear();
                         }
 
-                        if !self.quiet && install_count > 0 {
+                        if !self.quiet && !self.no_progress && install_count > 0 {
                             println!("\n✓ Updated {} resources", install_count);
                         }
                     }
@@ -516,11 +518,11 @@ impl UpdateCommand {
                                 if let Err(restore_err) =
                                     tokio::fs::copy(&backup_path, &lockfile_path).await
                                 {
-                                    if !self.quiet {
+                                    if !self.quiet && !self.no_progress {
                                         eprintln!("✗ Update failed: {}", e);
                                         eprintln!("✗ Failed to restore backup: {}", restore_err);
                                     }
-                                } else if !self.quiet {
+                                } else if !self.quiet && !self.no_progress {
                                     eprintln!("✗ Update failed: {}", e);
                                     println!("ℹ️  Rolled back to previous lockfile");
                                 }
@@ -555,6 +557,7 @@ mod tests {
             backup: false,
             verbose: false,
             quiet: true, // Quiet by default for tests
+            no_progress: true, // No progress bars in tests
             max_parallel: None,
         }
     }
@@ -1070,6 +1073,7 @@ mod tests {
             backup: false,
             verbose: false,
             quiet: false,
+            no_progress: false,
             max_parallel: None,
         };
 
@@ -1092,6 +1096,7 @@ mod tests {
             backup: true,
             verbose: true,
             quiet: true,
+            no_progress: true,
             max_parallel: Some(4),
         };
 

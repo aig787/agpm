@@ -625,7 +625,9 @@ impl GitCommand {
     ///
     /// Create a fetch command
     pub fn fetch() -> Self {
-        Self::new().args(["fetch", "--all", "--tags"])
+        // Use --all to fetch from all remotes and --tags to get tags
+        // For bare repositories, we need to ensure remote tracking branches are created
+        Self::new().args(["fetch", "--all", "--tags", "--force"])
     }
 
     /// Create a checkout command
@@ -1035,9 +1037,10 @@ mod tests {
         let cmd = GitCommand::clone("https://example.com/repo.git", "/tmp/target");
         assert_eq!(cmd.args[0], "clone");
         assert_eq!(cmd.args[1], "--progress");
-        assert!(cmd
-            .args
-            .contains(&"https://example.com/repo.git".to_string()));
+        assert!(
+            cmd.args
+                .contains(&"https://example.com/repo.git".to_string())
+        );
     }
 
     #[test]

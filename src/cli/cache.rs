@@ -71,7 +71,7 @@ use clap::{Args, Subcommand};
 use colored::Colorize;
 
 use crate::cache::Cache;
-use crate::manifest::{find_manifest_with_optional, Manifest};
+use crate::manifest::{Manifest, find_manifest_with_optional};
 use std::path::PathBuf;
 
 /// Command to manage the global Git repository cache.
@@ -323,11 +323,10 @@ impl CacheCommand {
 
         // Also clean up stale lock files (older than 1 hour)
         let cache_dir = cache.cache_dir();
-        if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await {
-            if removed > 0 {
+        if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await
+            && removed > 0 {
                 println!("  Removed {} stale lock files", removed);
             }
-        }
 
         cache.clear_all().await?;
 
@@ -473,11 +472,10 @@ impl CacheCommand {
             let mut repos = Vec::new();
 
             while let Some(entry) = entries.next_entry().await? {
-                if entry.path().is_dir() {
-                    if let Some(name) = entry.path().file_name() {
+                if entry.path().is_dir()
+                    && let Some(name) = entry.path().file_name() {
                         repos.push(name.to_string_lossy().to_string());
                     }
-                }
             }
 
             if !repos.is_empty() {

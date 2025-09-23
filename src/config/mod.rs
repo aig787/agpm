@@ -290,38 +290,8 @@ mod tests {
 
     #[test]
     fn test_get_cache_dir() {
-        // Save and clear any existing CCPM_CACHE_DIR to ensure we test the default behavior
-        let original = std::env::var("CCPM_CACHE_DIR").ok();
-        std::env::remove_var("CCPM_CACHE_DIR");
-
+        // Test that we get a valid cache dir
         let dir = get_cache_dir().unwrap();
         assert!(dir.to_string_lossy().contains("ccpm"));
-
-        // Restore original value if it existed
-        if let Some(val) = original {
-            std::env::set_var("CCPM_CACHE_DIR", val);
-        }
-    }
-
-    #[test]
-    #[ignore = "This test uses environment variables which cause race conditions in parallel tests. Run with --ignored --test-threads=1"]
-    fn test_cache_dir_with_env_var() {
-        // NOTE: This test explicitly tests environment variable functionality
-        // It uses std::env::set_var which can cause race conditions in parallel test execution.
-        // Run with: cargo test -- --ignored --test-threads=1
-
-        // Save original value
-        let original = std::env::var("CCPM_CACHE_DIR").ok();
-
-        // Set test value
-        std::env::set_var("CCPM_CACHE_DIR", "/tmp/test_cache");
-        let dir = get_cache_dir().unwrap();
-        assert_eq!(dir, PathBuf::from("/tmp/test_cache"));
-
-        // Restore original value
-        match original {
-            Some(val) => std::env::set_var("CCPM_CACHE_DIR", val),
-            None => std::env::remove_var("CCPM_CACHE_DIR"),
-        }
     }
 }

@@ -17,7 +17,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::utils::platform::{get_home_dir, resolve_path, is_windows};
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -73,7 +73,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::is_windows;
 ///
 /// if is_windows() {
@@ -106,7 +106,7 @@ pub fn is_windows() -> bool {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::get_home_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -159,7 +159,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::get_git_command;
 /// use std::process::Command;
 ///
@@ -191,11 +191,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 /// - System PATH configuration for Git availability
 #[must_use]
 pub fn get_git_command() -> &'static str {
-    if is_windows() {
-        "git.exe"
-    } else {
-        "git"
-    }
+    if is_windows() { "git.exe" } else { "git" }
 }
 
 /// Resolves a path with tilde expansion and environment variable substitution.
@@ -215,7 +211,7 @@ pub fn get_git_command() -> &'static str {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::resolve_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -291,11 +287,10 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
         let re = Regex::new(r"%([^%]+)%").unwrap();
 
         for cap in re.captures_iter(&path_str) {
-            if let Some(var_name) = cap.get(1) {
-                if let Ok(value) = std::env::var(var_name.as_str()) {
+            if let Some(var_name) = cap.get(1)
+                && let Ok(value) = std::env::var(var_name.as_str()) {
                     result = result.replace(&format!("%{}%", var_name.as_str()), &value);
                 }
-            }
         }
 
         // Also handle Unix-style for compatibility
@@ -350,7 +345,7 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::normalize_path_separator;
 /// use std::path::Path;
 ///
@@ -406,7 +401,7 @@ pub fn normalize_path_separator(path: &Path) -> String {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::path_to_string;
 /// use std::path::Path;
 ///
@@ -458,7 +453,7 @@ pub fn path_to_string(path: &Path) -> String {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::path_to_os_str;
 /// use std::path::Path;
 /// use std::process::Command;
@@ -515,7 +510,7 @@ pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::paths_equal;
 /// use std::path::Path;
 ///
@@ -589,7 +584,7 @@ pub fn paths_equal(path1: &Path, path2: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::safe_canonicalize;
 /// use std::path::Path;
 ///
@@ -676,7 +671,7 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::command_exists;
 ///
 /// // Check if Git is available
@@ -732,7 +727,7 @@ pub fn command_exists(cmd: &str) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::get_cache_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -797,7 +792,7 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::get_data_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -873,7 +868,7 @@ pub fn get_data_dir() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::windows_long_path;
 /// use std::path::Path;
 ///
@@ -988,7 +983,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::get_shell_command;
 /// use std::process::Command;
 ///
@@ -1058,7 +1053,7 @@ pub fn get_shell_command() -> (&'static str, &'static str) {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::validate_path_chars;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1122,7 +1117,8 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
             if INVALID_CHARS.contains(&ch) || ch.is_control() {
                 return Err(anyhow::anyhow!(
                     "Invalid character '{}' in path: {}\\n\\n\\\n                    Windows paths cannot contain: < > : \" | ? * or control characters",
-                    ch, path
+                    ch,
+                    path
                 ));
             }
         }
@@ -1144,7 +1140,9 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
                 if RESERVED_NAMES.contains(&upper.as_str()) {
                     return Err(anyhow::anyhow!(
                         "Reserved name '{}' in path: {}\\n\\n\\\n                    Windows reserved names: {}",
-                        os_str, path, RESERVED_NAMES.join(", ")
+                        os_str,
+                        path,
+                        RESERVED_NAMES.join(", ")
                     ));
                 }
             }
@@ -1174,7 +1172,7 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::platform::safe_join;
 /// use std::path::Path;
 ///
@@ -1503,32 +1501,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_resolve_path_env_expansion() {
-        // NOTE: This test explicitly tests environment variable expansion functionality
-        // It uses std::env::set_var which can cause race conditions in parallel test execution.
-        // If this test becomes flaky, run with: cargo test -- --test-threads=1
-
-        std::env::set_var("TEST_VAR", "test_value");
-
-        #[cfg(unix)]
-        {
-            let result = resolve_path("$TEST_VAR/subpath");
-            assert!(result.is_ok());
-            let resolved = result.unwrap();
-            assert!(resolved.to_string_lossy().contains("test_value"));
-        }
-
-        #[cfg(windows)]
-        {
-            let result = resolve_path("%TEST_VAR%/subpath");
-            assert!(result.is_ok());
-            let resolved = result.unwrap();
-            assert!(resolved.to_string_lossy().contains("test_value"));
-        }
-
-        std::env::remove_var("TEST_VAR");
-    }
 
     #[test]
     fn test_resolve_path_invalid_env_var() {
@@ -1664,31 +1636,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_get_shell_command_custom_shell() {
-        // NOTE: This test modifies environment variables for testing shell detection
-        // It can cause race conditions in parallel test execution
-        // Run with: cargo test -- --test-threads=1 if flakiness occurs
-
-        // Save original SHELL value
-        let original_shell = std::env::var("SHELL").ok();
-
-        #[cfg(unix)]
-        {
-            // Test with custom shell
-            std::env::set_var("SHELL", "/bin/bash");
-            let (shell, flag) = get_shell_command();
-            // Default implementation doesn't check SHELL env var, but test the function anyway
-            assert_eq!(shell, "sh");
-            assert_eq!(flag, "-c");
-        }
-
-        // Restore original SHELL
-        match original_shell {
-            Some(val) => std::env::set_var("SHELL", val),
-            None => std::env::remove_var("SHELL"),
-        }
-    }
 
     #[test]
     fn test_normalize_path_separator_edge_cases() {

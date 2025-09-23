@@ -93,7 +93,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::cache::Cache;
-use crate::manifest::{find_manifest_with_optional, Manifest};
+use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 
 /// Command to validate CCPM project configuration and dependencies.
@@ -511,13 +511,12 @@ impl ValidateCommand {
 
         // Check for potential warnings (outdated versions)
         for (name, dep) in manifest.agents.iter().chain(manifest.snippets.iter()) {
-            if let Some(version) = dep.get_version() {
-                if version.starts_with("v0.") {
+            if let Some(version) = dep.get_version()
+                && version.starts_with("v0.") {
                     warnings.push(format!(
                         "Potentially outdated version for {name}: {version}"
                     ));
                 }
-            }
         }
 
         if self.verbose && !self.quiet && matches!(self.format, OutputFormat::Text) {
@@ -2533,7 +2532,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok()); // Missing dependencies are warnings, not errors
-                                 // This tests lines 775-777, 811-822 (missing dependencies in lockfile)
+        // This tests lines 775-777, 811-822 (missing dependencies in lockfile)
     }
 
     #[tokio::test]
@@ -2575,7 +2574,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_err()); // Extra entries cause errors
-                                  // This tests lines 801-804, 807 (extra entries in lockfile error)
+        // This tests lines 801-804, 807 (extra entries in lockfile error)
     }
 
     #[tokio::test]
@@ -2602,7 +2601,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_err()); // Strict mode treats warnings as errors
-                                  // This tests lines 849-852 (strict mode with JSON output)
+        // This tests lines 849-852 (strict mode with JSON output)
     }
 
     #[tokio::test]
@@ -2758,7 +2757,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok()); // Redundancies are warnings
-                                 // This tests lines 637-638 (verbose mode for redundancy check)
+        // This tests lines 637-638 (verbose mode for redundancy check)
     }
 
     #[tokio::test]

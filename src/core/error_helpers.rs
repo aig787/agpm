@@ -482,9 +482,11 @@ This is a test agent for reading.
         // Test reading markdown with context
         let markdown = MarkdownOps::read_markdown_with_context(&md_path).unwrap();
         assert_eq!(markdown.get_title().unwrap(), "Test Agent");
-        assert!(markdown
-            .content
-            .contains("This is a test agent for reading"));
+        assert!(
+            markdown
+                .content
+                .contains("This is a test agent for reading")
+        );
 
         // Test error case - non-existent file
         let missing_path = temp.path().join("missing.md");

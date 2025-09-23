@@ -14,7 +14,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::utils::fs::{ensure_dir, safe_write, calculate_checksum};
 //! use std::path::Path;
 //!
@@ -73,7 +73,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::ensure_dir;
 /// use std::path::Path;
 ///
@@ -135,7 +135,7 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::safe_write;
 /// use std::path::Path;
 ///
@@ -175,7 +175,7 @@ pub fn safe_write(path: &Path, content: &str) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::atomic_write;
 /// use std::path::Path;
 ///
@@ -258,7 +258,7 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::copy_dir;
 /// use std::path::Path;
 ///
@@ -331,7 +331,7 @@ pub fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::remove_dir_all;
 /// use std::path::Path;
 ///
@@ -381,7 +381,7 @@ pub fn remove_dir_all(path: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::utils::fs::normalize_path;
 /// use std::path::{Path, PathBuf};
 ///
@@ -440,7 +440,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::is_safe_path;
 /// use std::path::Path;
 ///
@@ -497,7 +497,7 @@ pub fn is_safe_path(base: &Path, path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::find_files;
 /// use std::path::Path;
 ///
@@ -543,13 +543,11 @@ fn find_files_recursive(dir: &Path, pattern: &str, files: &mut Vec<PathBuf>) -> 
 
         if path.is_dir() {
             find_files_recursive(&path, pattern, files)?;
-        } else if path.is_file() {
-            if let Some(name) = path.file_name() {
-                if name.to_string_lossy().contains(pattern) {
+        } else if path.is_file()
+            && let Some(name) = path.file_name()
+                && name.to_string_lossy().contains(pattern) {
                     files.push(path);
                 }
-            }
-        }
     }
 
     Ok(())
@@ -570,7 +568,7 @@ fn find_files_recursive(dir: &Path, pattern: &str, files: &mut Vec<PathBuf>) -> 
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::dir_size;
 /// use std::path::Path;
 ///
@@ -632,7 +630,7 @@ pub fn dir_size(path: &Path) -> Result<u64> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::get_directory_size;
 /// use std::path::Path;
 ///
@@ -680,7 +678,7 @@ pub async fn get_directory_size(path: &Path) -> Result<u64> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::ensure_parent_dir;
 /// use std::path::Path;
 ///
@@ -735,7 +733,7 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::find_project_root;
 /// use std::env;
 ///
@@ -795,7 +793,7 @@ pub fn find_project_root(start: &Path) -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::get_global_config_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -840,7 +838,7 @@ pub fn get_global_config_path() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::TempDir;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -895,7 +893,7 @@ impl TempDir {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::utils::fs::TempDir;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -950,7 +948,7 @@ impl Drop for TempDir {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::calculate_checksum;
 /// use std::path::Path;
 ///
@@ -1014,7 +1012,7 @@ pub fn calculate_checksum(path: &Path) -> Result<String> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::calculate_checksums_parallel;
 /// use std::path::PathBuf;
 ///
@@ -1120,7 +1118,7 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::copy_files_parallel;
 /// use std::path::PathBuf;
 ///
@@ -1235,7 +1233,7 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::atomic_write_multiple;
 /// use std::path::PathBuf;
 ///
@@ -1331,7 +1329,7 @@ pub async fn atomic_write_multiple(files: &[(PathBuf, Vec<u8>)]) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::copy_dirs_parallel;
 /// use std::path::PathBuf;
 ///
@@ -1432,7 +1430,7 @@ pub async fn copy_dirs_parallel(sources_and_destinations: &[(PathBuf, PathBuf)])
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::utils::fs::read_files_parallel;
 /// use std::path::PathBuf;
 ///

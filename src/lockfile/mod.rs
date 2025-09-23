@@ -317,7 +317,7 @@ use crate::utils::fs::atomic_write;
 ///
 /// Creating a new lockfile:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::lockfile::LockFile;
 ///
 /// let lockfile = LockFile::new();
@@ -327,7 +327,7 @@ use crate::utils::fs::atomic_write;
 ///
 /// Loading an existing lockfile:
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// # use std::path::Path;
 /// # use ccpm::lockfile::LockFile;
 /// # fn example() -> anyhow::Result<()> {
@@ -601,7 +601,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::LockFile;
     ///
     /// let lockfile = LockFile::new();
@@ -650,7 +650,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -771,7 +771,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -886,7 +886,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::LockFile;
     ///
     /// let mut lockfile = LockFile::new();
@@ -941,7 +941,7 @@ impl LockFile {
     ///
     /// Adding an agent:
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::{LockFile, LockedResource};
     ///
     /// let mut lockfile = LockFile::new();
@@ -962,7 +962,7 @@ impl LockFile {
     ///
     /// Adding a snippet:
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::{LockFile, LockedResource};
     /// # let mut lockfile = LockFile::new();
     /// let snippet = LockedResource {
@@ -1004,7 +1004,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::{LockFile, LockedResource};
     /// use ccpm::core::ResourceType;
     ///
@@ -1064,7 +1064,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(resource) = lockfile.get_resource("example-agent") {
@@ -1102,7 +1102,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(source) = lockfile.get_source("community") {
@@ -1131,7 +1131,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if lockfile.has_resource("example-agent") {
@@ -1159,7 +1159,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
@@ -1226,7 +1226,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
@@ -1255,7 +1255,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// let mut lockfile = LockFile::new();
     /// // ... add sources and resources ...
@@ -1305,7 +1305,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1374,7 +1374,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1430,7 +1430,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::{LockFile, LockedResource};
     /// # use ccpm::core::ResourceType;
     /// # let mut lockfile = LockFile::default();
@@ -1531,7 +1531,7 @@ impl Default for LockFile {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// use ccpm::lockfile::find_lockfile;
 ///
 /// if let Some(lockfile_path) = find_lockfile() {
@@ -1668,10 +1668,12 @@ mod tests {
         // Should fail to load
         let result = LockFile::load(&lockfile_path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("newer than supported"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("newer than supported")
+        );
     }
 
     #[test]

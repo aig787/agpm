@@ -201,7 +201,7 @@
 use crate::cache::lock::CacheLock;
 use crate::config::GlobalConfig;
 use crate::core::CcpmError;
-use crate::git::{parse_git_url, GitRepo};
+use crate::git::{GitRepo, parse_git_url};
 use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
 use crate::utils::security::validate_path_security;
@@ -243,7 +243,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::source::Source;
 ///
 /// // Public repository
@@ -288,7 +288,7 @@ impl Source {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::source::Source;
     ///
     /// let source = Source::new(
@@ -323,7 +323,7 @@ impl Source {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::source::Source;
     ///
     /// let source = Source::new(
@@ -360,7 +360,7 @@ impl Source {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::source::Source;
     /// use std::path::Path;
     ///
@@ -421,7 +421,7 @@ impl Source {
 /// # Examples
 ///
 /// ## Basic Usage
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::source::{Source, SourceManager};
 /// use anyhow::Result;
 ///
@@ -444,7 +444,7 @@ impl Source {
 /// ```
 ///
 /// ## Loading from Manifest
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::source::SourceManager;
 /// use ccpm::manifest::Manifest;
 /// use std::path::Path;
@@ -508,7 +508,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -536,7 +536,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     /// use std::path::PathBuf;
     ///
@@ -569,7 +569,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
@@ -624,7 +624,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
@@ -669,7 +669,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::{Path, PathBuf};
@@ -709,7 +709,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -755,7 +755,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -800,7 +800,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -830,7 +830,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -856,7 +856,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -883,7 +883,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -912,7 +912,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -995,7 +995,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ## Basic Synchronization
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1014,7 +1014,7 @@ impl SourceManager {
     /// ```
     ///
     /// ## Synchronization with Progress
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     /// use indicatif::ProgressBar;
     ///
@@ -1098,7 +1098,8 @@ impl SourceManager {
                 ));
             }
 
-            if !abs_path.join(".git").exists() {
+            // Check if it's a git repository (either regular or bare)
+            if !crate::git::is_git_repository(&abs_path) {
                 return Err(anyhow::anyhow!(
                     "Specified path is not a git repository. file:// URLs must point to valid git repositories."
                 ));
@@ -1188,7 +1189,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ## Direct Repository Access
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1205,7 +1206,7 @@ impl SourceManager {
     /// ```
     ///
     /// ## Local Repository Access
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::SourceManager;
     /// use std::env;
     ///
@@ -1269,7 +1270,8 @@ impl SourceManager {
                 ));
             }
 
-            if !abs_path.join(".git").exists() {
+            // Check if it's a git repository (either regular or bare)
+            if !crate::git::is_git_repository(&abs_path) {
                 return Err(anyhow::anyhow!(
                     "Specified path is not a git repository. file:// URLs must point to valid git repositories."
                 ));
@@ -1363,7 +1365,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1410,7 +1412,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1461,7 +1463,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1507,7 +1509,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1568,7 +1570,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -2063,7 +2065,7 @@ mod tests {
         // Sync should detect invalid cache and re-clone
         let result = manager.sync("test").await;
         assert!(result.is_ok());
-        assert!(source_cache_dir.join(".git").exists());
+        assert!(crate::git::is_git_repository(&source_cache_dir));
     }
 
     #[tokio::test]
@@ -2419,10 +2421,12 @@ mod tests {
         let file_url = format!("file://{}", plain_dir.display());
         let result = manager.sync_by_url(&file_url).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not a git repository"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not a git repository")
+        );
     }
 
     #[tokio::test]

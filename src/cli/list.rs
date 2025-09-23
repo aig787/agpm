@@ -92,7 +92,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest_with_optional, Manifest};
+use crate::manifest::{Manifest, find_manifest_with_optional};
 
 /// Internal representation for list items used in various output formats.
 ///
@@ -358,7 +358,7 @@ impl ListCommand {
                 return Err(anyhow::anyhow!(
                     "Invalid format '{}'. Valid formats are: table, json, yaml, compact, simple",
                     self.format
-                ))
+                ));
             }
         }
 
@@ -370,7 +370,7 @@ impl ListCommand {
                     return Err(anyhow::anyhow!(
                         "Invalid type '{}'. Valid types are: agents, snippets",
                         t
-                    ))
+                    ));
                 }
             }
         }
@@ -383,7 +383,7 @@ impl ListCommand {
                     return Err(anyhow::anyhow!(
                         "Invalid sort field '{}'. Valid fields are: name, version, source, type",
                         field
-                    ))
+                    ));
                 }
             }
         }
@@ -534,8 +534,8 @@ impl ListCommand {
         _resource_type: &str,
     ) -> bool {
         // Source filter
-        if let Some(ref source_filter) = self.source {
-            if let Some(dep) = dep {
+        if let Some(ref source_filter) = self.source
+            && let Some(dep) = dep {
                 if let Some(source) = dep.get_source() {
                     if source != source_filter {
                         return false;
@@ -544,14 +544,12 @@ impl ListCommand {
                     return false; // No source but filter specified
                 }
             }
-        }
 
         // Search filter
-        if let Some(ref search) = self.search {
-            if !name.contains(search) {
+        if let Some(ref search) = self.search
+            && !name.contains(search) {
                 return false;
             }
-        }
 
         true
     }
@@ -828,11 +826,10 @@ impl ListCommand {
         }
 
         // Search filter
-        if let Some(ref search) = self.search {
-            if !name.contains(search) {
+        if let Some(ref search) = self.search
+            && !name.contains(search) {
                 return false;
             }
-        }
 
         true
     }
@@ -1149,10 +1146,12 @@ mod tests {
 
         let result = cmd.validate_arguments();
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid sort field"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid sort field")
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! to a CCPM project manifest. It supports both Git repository sources
 //! and various types of resource dependencies (agents, snippets, commands, MCP servers).
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use regex::Regex;
@@ -17,7 +17,7 @@ use crate::cli::resource_ops::{
 };
 use crate::lockfile::LockFile;
 use crate::manifest::{
-    find_manifest_with_optional, DetailedDependency, Manifest, ResourceDependency,
+    DetailedDependency, Manifest, ResourceDependency, find_manifest_with_optional,
 };
 use crate::models::{
     AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
@@ -995,11 +995,13 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
         let settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path).unwrap();
         assert!(settings.mcp_servers.is_some());
-        assert!(settings
-            .mcp_servers
-            .as_ref()
-            .unwrap()
-            .contains_key("test-mcp"));
+        assert!(
+            settings
+                .mcp_servers
+                .as_ref()
+                .unwrap()
+                .contains_key("test-mcp")
+        );
     }
 
     #[tokio::test]

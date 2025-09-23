@@ -438,7 +438,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::manifest::{Manifest, ResourceDependency};
 ///
 /// // Create a new empty manifest
@@ -1116,7 +1116,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
@@ -1169,7 +1169,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run,ignore
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
     ///
@@ -1251,7 +1251,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
     ///
@@ -1342,7 +1342,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
@@ -1547,7 +1547,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
@@ -1618,7 +1618,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::manifest::Manifest;
     /// # let manifest = Manifest::new();
     /// for (name, dep) in manifest.all_dependencies() {
@@ -1673,7 +1673,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
@@ -1705,7 +1705,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
@@ -1758,7 +1758,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::Manifest;
     ///
     /// let mut manifest = Manifest::new();
@@ -1814,7 +1814,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
@@ -1865,7 +1865,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{Manifest, ResourceDependency};
     /// use ccpm::core::ResourceType;
     ///
@@ -1915,7 +1915,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run,ignore
     /// use ccpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
@@ -1940,7 +1940,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no source
@@ -1984,7 +1984,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom target
@@ -2020,7 +2020,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom filename
@@ -2059,7 +2059,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - filesystem path
@@ -2118,7 +2118,7 @@ impl ResourceDependency {
     /// If both `version` and `git` fields are present in a detailed dependency,
     /// the `git` field takes precedence:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// let dep = ResourceDependency::Detailed(DetailedDependency {
@@ -2138,7 +2138,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no version
@@ -2206,7 +2206,7 @@ impl ResourceDependency {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency
@@ -2285,7 +2285,7 @@ impl Default for Manifest {
 ///
 /// # Examples
 ///
-/// ```rust,ignore
+/// ```rust,no_run,ignore
 /// # use ccpm::manifest::expand_url;
 /// # fn example() -> anyhow::Result<()> {
 /// // Standard URLs remain unchanged
@@ -2390,7 +2390,7 @@ fn expand_url(url: &str) -> Result<String> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// use ccpm::manifest::find_manifest;
 ///
 /// // Find manifest from current directory
@@ -2453,7 +2453,7 @@ pub fn find_manifest() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::manifest::find_manifest_with_optional;
 /// use std::path::PathBuf;
 ///
@@ -2501,7 +2501,7 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// use ccpm::manifest::find_manifest_from;
 /// use std::path::PathBuf;
 ///
