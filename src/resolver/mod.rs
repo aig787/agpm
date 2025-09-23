@@ -156,7 +156,7 @@
 //! resolver.pre_sync_sources(&deps).await?;
 //!
 //! // Phase 2: Resolve dependencies using cached repositories (local operations)
-//! let lockfile = resolver.resolve(&deps).await?;
+//! let lockfile = resolver.resolve().await?;
 //!
 //! println!("Resolved {} agents and {} snippets",
 //!          lockfile.agents.len(), lockfile.snippets.len());
@@ -188,7 +188,7 @@
 //! resolver.pre_sync_sources(&deps).await?;
 //!
 //! // Phase 2: Update specific dependencies
-//! resolver.update(&deps, &mut lockfile, None).await?;
+//! resolver.update(&mut lockfile, None).await?;
 //!
 //! lockfile.save(Path::new("ccpm.lock"))?;
 //! # Ok(())
@@ -508,7 +508,7 @@ impl DependencyResolver {
     /// resolver.pre_sync_sources(&deps).await?;
     ///
     /// // Phase 2: Now sources are ready for version resolution (no network I/O)
-    /// let resolved = resolver.resolve(&deps).await?;
+    /// let resolved = resolver.resolve().await?;
     /// # Ok(())
     /// # }
     /// ```
