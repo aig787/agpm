@@ -6,9 +6,10 @@
 //!
 //! # Architecture Overview
 //!
-//! The resolver operates in a two-phase process:
+//! The resolver operates in a three-phase process optimized for SHA-based worktree caching:
 //! 1. **Analysis Phase**: Parse dependencies, validate constraints, detect conflicts
-//! 2. **Resolution Phase**: Sync sources, resolve versions, generate lockfile entries
+//! 2. **SHA Resolution Phase**: Batch resolve all versions to commit SHAs using [`version_resolver::VersionResolver`]
+//! 3. **Installation Phase**: Create SHA-based worktrees, install resources, generate lockfile entries
 //!
 //! ## Algorithm Complexity
 //!
@@ -31,11 +32,12 @@
 //!
 //! 1. **Dependency Collection**: Extract all dependencies from manifest
 //! 2. **Source Validation**: Verify all referenced sources exist
-//! 3. **Parallel Sync**: Clone/update source repositories concurrently
-//! 4. **Version Resolution**: Resolve version constraints to specific commits
-//! 5. **Conflict Detection**: Check for path conflicts and incompatible versions
-//! 6. **Redundancy Analysis**: Identify duplicate resources across sources
-//! 7. **Lockfile Generation**: Create deterministic lockfile entries
+//! 3. **Batch SHA Resolution**: Use [`version_resolver::VersionResolver`] to resolve all versions to SHAs upfront
+//! 4. **Source Synchronization**: Clone/update source repositories with single fetch per repository
+//! 5. **SHA-based Worktree Creation**: Create worktrees keyed by commit SHA for maximum deduplication
+//! 6. **Conflict Detection**: Check for path conflicts and incompatible versions
+//! 7. **Redundancy Analysis**: Identify duplicate resources across sources
+//! 8. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs
 //!
 //! ## Version Resolution Strategy
 //!
@@ -91,6 +93,9 @@
 //!
 //! # Performance Optimizations
 //!
+//! - **SHA-based Worktree Caching**: Worktrees keyed by commit SHA maximize reuse across versions
+//! - **Batch Version Resolution**: All versions resolved to SHAs upfront via [`version_resolver::VersionResolver`]
+//! - **Single Fetch Per Repository**: Command-instance fetch caching eliminates redundant network operations
 //! - **Source Caching**: Git repositories are cached globally in `~/.ccpm/cache/`
 //! - **Incremental Updates**: Only modified sources are re-synchronized
 //! - **Parallel Operations**: Source syncing and version resolution run concurrently
@@ -173,7 +178,7 @@
 //! // Update specific dependencies only
 //! let deps_to_update = vec!["agent1".to_string(), "snippet2".to_string()];
 //! let deps_count = deps_to_update.len();
-//! let updated = resolver.update(&existing, Some(deps_to_update), None).await?;
+//! let updated = resolver.update(&existing, Some(deps_to_update)).await?;
 //!
 //! println!("Updated {} dependencies", deps_count);
 //! # Ok(())
@@ -182,6 +187,7 @@
 
 pub mod redundancy;
 pub mod version_resolution;
+pub mod version_resolver;
 
 use crate::cache::Cache;
 use crate::core::CcpmError;
@@ -193,12 +199,23 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use self::redundancy::RedundancyDetector;
+use self::version_resolver::VersionResolver;
 
 /// Core dependency resolver that transforms manifest dependencies into lockfile entries.
 ///
 /// The [`DependencyResolver`] is the main entry point for dependency resolution.
 /// It manages source repositories, resolves version constraints, detects conflicts,
-/// and generates deterministic lockfile entries.
+/// and generates deterministic lockfile entries using a centralized SHA-based
+/// resolution strategy for optimal performance.
+///
+/// # SHA-Based Resolution Workflow
+///
+/// Starting in v0.3.2, the resolver uses [`VersionResolver`] for centralized version
+/// resolution that minimizes Git operations and maximizes worktree reuse:
+/// 1. **Collection**: Gather all (source, version) pairs from dependencies
+/// 2. **Batch Resolution**: Resolve all versions to commit SHAs in parallel
+/// 3. **SHA-Based Worktrees**: Create worktrees keyed by commit SHA
+/// 4. **Deduplication**: Multiple refs to same SHA share one worktree
 ///
 /// # Configuration
 ///
@@ -230,6 +247,14 @@ pub struct DependencyResolver {
     /// analysis stage so individual dependency resolution can reuse worktrees
     /// without triggering additional sync operations.
     prepared_versions: HashMap<String, PreparedSourceVersion>,
+    /// Centralized version resolver for efficient SHA-based dependency resolution.
+    ///
+    /// The `VersionResolver` handles the crucial first phase of dependency resolution
+    /// by batch-resolving all version specifications to commit SHAs before any worktree
+    /// operations. This strategy enables maximum worktree reuse and minimal Git operations.
+    ///
+    /// Used by [`prepare_remote_groups`] to resolve all dependencies upfront.
+    version_resolver: VersionResolver,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -254,14 +279,10 @@ impl DependencyResolver {
     }
 
     async fn prepare_remote_groups(&mut self, deps: &[(String, ResourceDependency)]) -> Result<()> {
-        use crate::git::command_builder::GitCommand;
-        use crate::git::GitRepo;
-
         self.prepared_versions.clear();
+        self.version_resolver.clear();
 
-        // Process each source + version combination only once
-        let mut grouped = HashMap::new();
-
+        // Step 1: Collect all unique (source, version) pairs for resolution
         for (_, dep) in deps {
             if let Some(source_name) = dep.get_source() {
                 let source_url =
@@ -271,178 +292,63 @@ impl DependencyResolver {
                             name: source_name.to_string(),
                         })?;
 
-                let version_key = dep
-                    .get_version()
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| "main".to_string());
-                let group_key = Self::group_key(source_name, &version_key);
+                let version = dep.get_version();
 
-                if !self.prepared_versions.contains_key(&group_key) {
-                    grouped
-                        .entry((source_name.to_string(), version_key))
-                        .or_insert_with(|| source_url.to_string());
-                }
+                // Add to version resolver for batch resolution
+                self.version_resolver
+                    .add_version(source_name, &source_url, version);
             }
         }
 
-        if grouped.is_empty() {
-            return Ok(());
-        }
+        // Step 2: Resolve all versions to SHAs in batch (handles fetching internally)
+        self.version_resolver
+            .resolve_all()
+            .await
+            .context("Failed to resolve versions to SHAs")?;
 
-        // Progress is handled at the phase level, no individual updates needed
+        // Step 3: Create worktrees for all resolved SHAs
+        let resolved_full = self.version_resolver.get_all_resolved_full().clone();
 
-        // Process all sources in parallel
+        // Process all resolved versions in parallel
         let mut futures = Vec::new();
 
-        for ((source_name, version_key), source_url) in grouped {
+        for ((source_name, version_key), resolved_version) in resolved_full {
+            let sha = resolved_version.sha;
+            let resolved_ref = resolved_version.resolved_ref;
             let repo_key = Self::group_key(&source_name, &version_key);
             let cache_clone = self.cache.clone();
             let source_name_clone = source_name.clone();
-            let source_url_clone = source_url.clone();
-            let version_key_clone = version_key.clone();
+
+            // Get the source URL for this source
+            let source_url_clone = self
+                .source_manager
+                .get_source_url(&source_name)
+                .ok_or_else(|| CcpmError::SourceNotFound {
+                    name: source_name.to_string(),
+                })?
+                .to_string();
+
+            let sha_clone = sha.clone();
+            let resolved_ref_clone = resolved_ref.clone();
 
             let future = async move {
-                // Progress is tracked at the phase level
-
-                // First, we need to get a bare repo to resolve versions
-                // We'll clone it if needed but won't create a worktree yet
-                let bare_repo_path = cache_clone
-                    .get_or_clone_source(
-                        &source_name_clone,
-                        &source_url_clone,
-                        None, // Don't checkout anything in the bare repo
-                    )
-                    .await?;
-
-                // Create GitRepo from the bare repo path
-                let repo = GitRepo::new(&bare_repo_path);
-
-                let requested_version = Some(version_key_clone.clone());
-
-                // Update progress to show we're checking out the version
-                // Progress is tracked at the phase level
-
-                let (resolved_version, resolved_commit) = if let Some(ref requested) =
-                    requested_version
-                {
-                    // For explicit versions, resolve them to commits
-                    if version_resolution::is_version_constraint(requested) {
-                        // Get all available tags from the repository
-                        let mut tags = repo.list_tags().await?;
-
-                        // If no tags found, try fetching them first
-                        if tags.is_empty() {
-                            repo.fetch(None).await.ok();
-                            tags = repo.list_tags().await?;
-                        }
-
-                        if tags.is_empty() {
-                            return Err(anyhow::anyhow!(
-                                "No tags found in repository. Version constraint '{}' requires tags to resolve.",
-                                requested
-                            ));
-                        }
-
-                        // Find the best matching tag for the constraint
-                        let best_tag = version_resolution::find_best_matching_tag(requested, tags)
-                            .with_context(|| {
-                                format!("Failed to resolve version constraint: {}", requested)
-                            })?;
-
-                        // Resolve the tag to a commit (we're in a bare repo, can't checkout)
-                        let commit = GitCommand::rev_parse(&best_tag)
-                            .current_dir(repo.path())
-                            .execute_stdout()
-                            .await
-                            .with_context(|| {
-                                format!("Failed to resolve tag '{}' to commit", best_tag)
-                            })?;
-                        (Some(best_tag), commit)
-                    } else {
-                        // Check if this is a local source before trying origin/
-                        let is_local_source = source_url_clone.starts_with('/')
-                            || source_url_clone.starts_with("./")
-                            || source_url_clone.starts_with("../");
-
-                        // Not a constraint, resolve directly (we're in a bare repo, use rev-parse)
-                        match GitCommand::rev_parse(requested)
-                            .current_dir(repo.path())
-                            .execute_stdout()
-                            .await
-                        {
-                            Ok(commit) => (Some(requested.clone()), commit),
-                            Err(_) if !is_local_source => {
-                                // Check if it looks like a version that doesn't exist
-                                if requested.starts_with('v')
-                                    && requested.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
-                                {
-                                    // This looks like a version tag but wasn't found
-                                    let tags = repo.list_tags().await?;
-                                    return Err(anyhow::anyhow!(
-                                        "No matching version found for '{}'. Available versions: {}",
-                                        requested,
-                                        if tags.is_empty() {
-                                            "none".to_string()
-                                        } else {
-                                            tags.join(", ")
-                                        }
-                                    ));
-                                }
-
-                                // Try as a branch by prepending origin/ (only for remote sources)
-                                let remote_branch = format!("origin/{}", requested);
-                                match GitCommand::rev_parse(&remote_branch)
-                                    .current_dir(repo.path())
-                                    .execute_stdout()
-                                    .await
-                                {
-                                    Ok(commit) => (Some(requested.clone()), commit),
-                                    Err(_) => {
-                                        return Err(anyhow::anyhow!(
-                                            "Failed to resolve reference '{}' in repository",
-                                            requested
-                                        ));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                // For local sources, return a more descriptive error
-                                return Err(anyhow::anyhow!(
-                                    "Failed to resolve '{}' in local repository at {:?}: {}",
-                                    requested,
-                                    repo.path(),
-                                    e
-                                ));
-                            }
-                        }
-                    }
-                } else {
-                    // No specific version requested, resolve HEAD
-                    let commit = GitCommand::rev_parse("HEAD")
-                        .current_dir(repo.path())
-                        .execute_stdout()
-                        .await
-                        .context("Failed to get current commit")?;
-                    (None, commit)
-                };
-
-                // Now create a worktree at the specific commit
+                // Use our new SHA-based worktree creation
+                // The version resolver has already handled fetching and SHA resolution
                 let worktree_path = cache_clone
-                    .get_or_clone_source_worktree(
+                    .get_or_create_worktree_for_sha(
                         &source_name_clone,
                         &source_url_clone,
-                        Some(&resolved_commit), // Use the exact commit
+                        &sha_clone,
+                        Some(&source_name_clone), // context for logging
                     )
                     .await?;
-
-                // Progress is tracked at the phase level
 
                 Ok::<_, anyhow::Error>((
                     repo_key,
                     PreparedSourceVersion {
                         worktree_path,
-                        resolved_version,
-                        resolved_commit,
+                        resolved_version: Some(resolved_ref_clone),
+                        resolved_commit: sha_clone,
                     },
                 ))
             };
@@ -487,12 +393,14 @@ impl DependencyResolver {
     /// [`new_with_global()`]: DependencyResolver::new_with_global
     pub fn new(manifest: Manifest, cache: Cache) -> Result<Self> {
         let source_manager = SourceManager::from_manifest(&manifest)?;
+        let version_resolver = VersionResolver::new(cache.clone());
 
         Ok(Self {
             manifest,
             source_manager,
             cache,
             prepared_versions: HashMap::new(),
+            version_resolver,
         })
     }
 
@@ -519,12 +427,14 @@ impl DependencyResolver {
     /// - Network errors occur while validating global sources
     pub async fn new_with_global(manifest: Manifest, cache: Cache) -> Result<Self> {
         let source_manager = SourceManager::from_manifest_with_global(&manifest).await?;
+        let version_resolver = VersionResolver::new(cache.clone());
 
         Ok(Self {
             manifest,
             source_manager,
             cache,
             prepared_versions: HashMap::new(),
+            version_resolver,
         })
     }
 
@@ -551,12 +461,14 @@ impl DependencyResolver {
     pub fn with_cache(manifest: Manifest, cache: Cache) -> Self {
         let cache_dir = cache.get_cache_location().to_path_buf();
         let source_manager = SourceManager::from_manifest_with_cache(&manifest, cache_dir);
+        let version_resolver = VersionResolver::new(cache.clone());
 
         Self {
             manifest,
             source_manager,
             cache,
             prepared_versions: HashMap::new(),
+            version_resolver,
         }
     }
 
@@ -813,7 +725,7 @@ impl DependencyResolver {
             let version_key = dep
                 .get_version()
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "main".to_string());
+                .unwrap_or_else(|| "HEAD".to_string());
             let prepared_key = Self::group_key(source_name, &version_key);
 
             // Check if this dependency has been prepared
@@ -1036,7 +948,7 @@ impl DependencyResolver {
             let version_key = dep
                 .get_version()
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "main".to_string());
+                .unwrap_or_else(|| "HEAD".to_string());
             let prepared_key = Self::group_key(source_name, &version_key);
 
             let prepared = self
@@ -1279,11 +1191,10 @@ impl DependencyResolver {
         // Pre-sync all unique sources once to avoid redundant fetches
         let mut sources_to_sync = HashSet::new();
         for (name, dep) in &deps {
-            if deps_to_check.contains(name) && !dep.is_local() {
-                if let Some(source_name) = dep.get_source() {
+            if deps_to_check.contains(name) && !dep.is_local()
+                && let Some(source_name) = dep.get_source() {
                     sources_to_sync.insert(source_name.to_string());
                 }
-            }
         }
 
         for source_name in sources_to_sync {
@@ -1877,6 +1788,9 @@ mod tests {
 
         // This should now succeed with the local repository
         let result = resolver.resolve().await;
+        if let Err(e) = &result {
+            eprintln!("Test failed with error: {:#}", e);
+        }
         assert!(result.is_ok());
     }
 
@@ -2797,103 +2711,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_checkout_version_latest_constraint() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a git repo with version tags
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create versions
-        let test_file = source_dir.join("test.txt");
-
-        // v1.0.0
-        std::fs::write(&test_file, "v1.0.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // v2.0.0
-        std::fs::write(&test_file, "v2.0.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v2.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v2.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
-        manifest.add_source("test".to_string(), source_url);
-
-        // Test "latest" constraint
-        manifest.add_dependency(
-            "latest-dep".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.txt".to_string(),
-                version: Some("latest".to_string()), // Should resolve to highest version
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        // Should resolve to v2.0.0 (highest)
-        assert_eq!(agent.version.as_ref().unwrap(), "v2.0.0");
-    }
-
-    #[tokio::test]
     async fn test_verify_absolute_path_error() {
         let mut manifest = Manifest::new();
 
@@ -3119,11 +2936,13 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert!(agent.resolved_commit.is_some());
         // The resolved commit should start with our short hash
-        assert!(agent
-            .resolved_commit
-            .as_ref()
-            .unwrap()
-            .starts_with(&commit_hash[..7]));
+        assert!(
+            agent
+                .resolved_commit
+                .as_ref()
+                .unwrap()
+                .starts_with(&commit_hash[..7])
+        );
     }
 
     #[test]

@@ -11,7 +11,7 @@ use crate::version::constraints::{ConstraintSet, VersionConstraint};
 /// Checks if a string represents a version constraint rather than a direct reference.
 ///
 /// Version constraints contain operators like `^`, `~`, `>`, `<`, `=`, or special
-/// keywords like `latest`. Direct references are branch names, tag names, or commit hashes.
+/// keywords. Direct references are branch names, tag names, or commit hashes.
 ///
 /// # Arguments
 ///
@@ -29,7 +29,6 @@ use crate::version::constraints::{ConstraintSet, VersionConstraint};
 /// assert!(is_version_constraint("^1.0.0"));
 /// assert!(is_version_constraint("~1.2.0"));
 /// assert!(is_version_constraint(">=1.0.0"));
-/// assert!(is_version_constraint("latest"));
 /// assert!(!is_version_constraint("v1.0.0"));
 /// assert!(!is_version_constraint("main"));
 /// assert!(!is_version_constraint("abc123def"));
@@ -37,7 +36,8 @@ use crate::version::constraints::{ConstraintSet, VersionConstraint};
 #[must_use]
 pub fn is_version_constraint(version: &str) -> bool {
     // Check for special keywords
-    if version == "latest" || version == "latest-prerelease" || version == "*" {
+    // Note: "latest" is not supported - use explicit version constraints instead
+    if version == "*" {
         return true;
     }
 
@@ -166,8 +166,6 @@ mod tests {
         assert!(is_version_constraint(">=1.0.0"));
         assert!(is_version_constraint("<2.0.0"));
         assert!(is_version_constraint(">=1.0.0, <2.0.0"));
-        assert!(is_version_constraint("latest"));
-        assert!(is_version_constraint("latest-prerelease"));
         assert!(is_version_constraint("*"));
 
         // Not constraints
@@ -220,10 +218,6 @@ mod tests {
         // Test greater than or equal
         let result = find_best_matching_tag(">=2.0.0", tags.clone()).unwrap();
         assert_eq!(result, "v2.1.0");
-
-        // Test latest
-        let result = find_best_matching_tag("latest", tags.clone()).unwrap();
-        assert_eq!(result, "v2.1.0");
     }
 
     #[test]
@@ -232,9 +226,11 @@ mod tests {
 
         let result = find_best_matching_tag("^3.0.0", tags);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No tag found matching"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No tag found matching")
+        );
     }
 }

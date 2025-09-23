@@ -28,11 +28,11 @@
 //! ├── sources/                    # Bare repositories optimized for worktrees
 //! │   ├── github_owner_repo.git/  # Bare repo with all Git objects
 //! │   └── gitlab_org_project.git/ # URL-parsed directory naming
-//! ├── worktrees/                  # Active worktrees for parallel operations
-//! │   ├── github_owner_repo_v1_0_0/   # Version-specific worktrees
-//! │   ├── github_owner_repo_main/     # Branch-specific worktrees
+//! ├── worktrees/                  # SHA-based worktrees for maximum deduplication
+//! │   ├── github_owner_repo_abc12345/ # First 8 chars of commit SHA
+//! │   ├── github_owner_repo_def67890/ # Each unique commit gets one worktree
 //! │   ├── .state.json             # Persistent worktree registry
-//! │   └── github_owner_repo_sha123/   # Commit-specific worktrees
+//! │   └── github_owner_repo_456789ab/ # Multiple refs to same SHA share worktree
 //! └── .locks/                     # Fine-grained locking infrastructure
 //!     ├── github_owner_repo.lock      # Repository-level locks
 //!     └── worktree-owner_repo-v1.lock # Worktree creation locks
@@ -40,12 +40,14 @@
 //!
 //! # Enhanced Concurrency Architecture
 //!
-//! The v0.3.0 cache implements advanced concurrency controls:
-//! - **Worktree-based parallelism**: Each dependency gets isolated working directory
+//! The v0.3.2+ cache implements SHA-based worktree optimization with advanced concurrency:
+//! - **SHA-based deduplication**: Worktrees keyed by commit SHA, not version reference
+//! - **Centralized resolution**: `VersionResolver` handles batch SHA resolution upfront
+//! - **Maximum reuse**: Multiple tags/branches pointing to same commit share one worktree
 //! - **Instance-level caching**: WorktreeState tracks creation across threads
 //! - **Per-worktree file locking**: Fine-grained locks prevent creation conflicts
 //! - **Direct parallelism control**: `--max-parallel` flag controls concurrency
-//! - **Fetch operation caching**: 5-minute cache prevents redundant network calls
+//! - **Command-instance fetch caching**: Single fetch per repository per command
 //! - **Atomic state transitions**: Pending → Ready state coordination
 //!
 //! ## Locking Strategy
@@ -184,14 +186,14 @@
 //! lockfile management.
 
 use crate::core::error::CcpmError;
-use crate::git::command_builder::GitCommand;
 use crate::git::GitRepo;
+use crate::git::command_builder::GitCommand;
 use crate::utils::fs;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -410,9 +412,14 @@ pub struct Cache {
     /// multiple dependencies target the same repository simultaneously.
     fetch_locks: Arc<DashMap<PathBuf, Arc<Mutex<()>>>>,
 
-    /// Tracks which repositories have been fetched in this command execution.
-    /// This ensures we only fetch once per repository per command.
-    fetched_repos: Arc<RwLock<std::collections::HashSet<PathBuf>>>,
+    /// Command-instance fetch cache to track which repositories have been fetched
+    /// during this command execution. This ensures we only fetch once per repository
+    /// per command instance, dramatically reducing network operations for multi-dependency
+    /// installations.
+    ///
+    /// Contains bare repository paths that have been fetched in this command instance.
+    /// Works in conjunction with `VersionResolver` to minimize Git network operations.
+    fetched_repos: Arc<RwLock<HashSet<PathBuf>>>,
 
     /// Persistent registry of worktrees stored on disk for reuse across
     /// CCPM runs. Tracks last-used timestamps and paths so we can validate
@@ -525,7 +532,7 @@ impl Cache {
             cache_dir,
             worktree_cache: Arc::new(RwLock::new(HashMap::new())),
             fetch_locks: Arc::new(DashMap::new()),
-            fetched_repos: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            fetched_repos: Arc::new(RwLock::new(HashSet::new())),
             worktree_registry: Arc::new(Mutex::new(registry)),
         })
     }
@@ -572,7 +579,7 @@ impl Cache {
             cache_dir,
             worktree_cache: Arc::new(RwLock::new(HashMap::new())),
             fetch_locks: Arc::new(DashMap::new()),
-            fetched_repos: Arc::new(RwLock::new(std::collections::HashSet::new())),
+            fetched_repos: Arc::new(RwLock::new(HashSet::new())),
             worktree_registry: Arc::new(Mutex::new(registry)),
         })
     }
@@ -764,504 +771,7 @@ impl Cache {
         url: &str,
         version: Option<&str>,
     ) -> Result<PathBuf> {
-        self.get_or_clone_source_with_options(name, url, version, false)
-            .await
-    }
-
-    /// Get or clone a source repository with worktree support.
-    ///
-    /// This method creates a worktree from a bare repository for parallel-safe
-    /// access to different versions of the same repository. It implements an advanced
-    /// concurrency control system using per-worktree locking and instance-level caching.
-    ///
-    /// # Concurrency Control
-    ///
-    /// - **Instance-level caching**: Tracks worktree creation state across threads
-    /// - **Per-worktree locking**: Each worktree creation has its own file lock
-    /// - **State coordination**: Uses `WorktreeState::Pending` during creation
-    /// - **Collision avoidance**: Unique worktree paths prevent conflicts
-    ///
-    /// # Parameters
-    ///
-    /// * `name` - The name of the source (used for cache directory naming)
-    /// * `url` - The Git repository URL or local path
-    /// * `version` - Optional specific version/tag/branch to checkout
-    ///
-    /// # Returns
-    /// Gets or creates a Git worktree for safe parallel access to repository resources.
-    ///
-    /// This method provides the core worktree-based parallel processing capability
-    /// introduced in CCPM v0.3.0. It creates isolated worktrees from bare repositories,
-    /// enabling multiple threads to safely access different versions of the same
-    /// repository without conflicts or performance bottlenecks.
-    ///
-    /// # Worktree Architecture
-    ///
-    /// The method implements a sophisticated worktree management system:
-    /// - **Bare repositories**: Shared Git objects storage for all worktrees
-    /// - **Isolated worktrees**: Each version gets its own working directory
-    /// - **Instance-level caching**: Reuses worktrees within the same Cache instance
-    /// - **UUID-based paths**: Prevents filesystem conflicts during parallel operations
-    ///
-    /// # Concurrency Benefits
-    ///
-    /// Unlike traditional Git operations that lock entire repositories:
-    /// - **Parallel checkouts**: Multiple versions can coexist simultaneously
-    /// - **Thread safety**: Each thread gets its own isolated working directory
-    /// - **No lock contention**: Fine-grained locking per worktree, not per repository
-    /// - **Optimal parallelism**: Leverages full CPU concurrency for installation
-    ///
-    /// # Parameters
-    ///
-    /// * `name` - Source identifier used for cache directory naming and locking
-    /// * `url` - Git repository URL (HTTPS, SSH) or local directory path
-    /// * `version` - Optional Git reference (tag, branch, commit, or `None` for default)
-    ///
-    /// # Returns
-    ///
-    /// Returns a [`PathBuf`] to the worktree directory containing the checked-out
-    /// repository at the specified version. This directory can be safely accessed
-    /// by the calling thread without affecting other concurrent operations.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use ccpm::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Create worktrees for different versions in parallel
-    /// let worktree_v1 = cache.get_or_clone_source_worktree(
-    ///     "community",
-    ///     "https://github.com/example/ccpm-community.git",
-    ///     Some("v1.0.0")
-    /// );
-    ///
-    /// let worktree_v2 = cache.get_or_clone_source_worktree(
-    ///     "community",
-    ///     "https://github.com/example/ccpm-community.git",
-    ///     Some("v2.0.0")
-    /// );
-    ///
-    /// // Both can exist simultaneously
-    /// let (path_v1, path_v2) = tokio::try_join!(worktree_v1, worktree_v2)?;
-    ///
-    /// // Access files from different versions safely
-    /// let file_v1 = tokio::fs::read_to_string(path_v1.join("agents/helper.md")).await?;
-    /// let file_v2 = tokio::fs::read_to_string(path_v2.join("agents/helper.md")).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Performance Characteristics
-    ///
-    /// - **First call**: Creates bare repository and initial worktree (slower)
-    /// - **Subsequent calls**: Reuses existing worktree if same version (very fast)
-    /// - **Different versions**: Creates new worktree from shared objects (moderate)
-    /// - **Parallel calls**: All versions can be processed simultaneously
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Git repository URL is invalid or inaccessible
-    /// - Network connectivity issues during clone/fetch operations
-    /// - Authentication failures for private repositories
-    /// - Specified version/tag/branch doesn't exist
-    /// - File system permission or disk space issues
-    /// - Git worktree creation fails due to conflicts
-    ///
-    /// # Integration with Installer
-    ///
-    /// This method is primarily used by the [`crate::installer`] module to enable
-    /// parallel resource installation. Each dependency gets its own worktree,
-    /// allowing CCPM to install multiple resources concurrently without conflicts.
-    pub async fn get_or_clone_source_worktree(
-        &self,
-        name: &str,
-        url: &str,
-        version: Option<&str>,
-    ) -> Result<PathBuf> {
-        self.get_or_clone_source_worktree_with_context(name, url, version, None)
-            .await
-    }
-
-    /// Gets or creates a Git worktree with additional context for debugging and logging.
-    ///
-    /// This is an extended version of `get_or_clone_source_worktree` that accepts
-    /// an optional context parameter for enhanced debugging and progress reporting.
-    /// The context is typically used to identify which dependency is requesting
-    /// the worktree, making parallel operations easier to debug and monitor.
-    ///
-    /// # Context Usage
-    ///
-    /// The context parameter is used for:
-    /// - **Debug logging**: Identifying which dependency triggered worktree creation
-    /// - **Progress reporting**: Showing user-friendly names in progress displays
-    /// - **Error context**: Providing better error messages with dependency names
-    /// - **Performance monitoring**: Tracking per-dependency worktree usage
-    ///
-    /// # Parameters
-    ///
-    /// * `name` - Source identifier used for cache directory naming and locking
-    /// * `url` - Git repository URL (HTTPS, SSH) or local directory path
-    /// * `version` - Optional Git reference (tag, branch, commit, or `None` for default)
-    /// * `context` - Optional context string for debugging (typically dependency name)
-    ///
-    /// # Returns
-    ///
-    /// Returns a [`PathBuf`] to the worktree directory, identical to the main
-    /// worktree method but with enhanced logging and debugging capabilities.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use ccpm::cache::Cache;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache = Cache::new()?;
-    ///
-    /// // Use context to identify the requesting dependency
-    /// let worktree = cache.get_or_clone_source_worktree_with_context(
-    ///     "community",
-    ///     "https://github.com/example/ccpm-community.git",
-    ///     Some("v1.0.0"),
-    ///     Some("ai-helper-agent") // Context for debugging
-    /// ).await?;
-    ///
-    /// println!("Created worktree for ai-helper-agent at: {}", worktree.display());
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Debugging Benefits
-    ///
-    /// When context is provided, log messages and error reports include the
-    /// dependency name, making it easier to:
-    /// - Track which dependencies are causing performance issues
-    /// - Identify failing dependencies in error messages
-    /// - Monitor progress during parallel installation operations
-    /// - Debug worktree creation and caching behavior
-    ///
-    /// # Errors
-    ///
-    /// Returns the same errors as `get_or_clone_source_worktree`, but with
-    /// enhanced error context that includes the provided context parameter
-    /// for easier debugging of dependency-specific issues.
-    pub async fn get_or_clone_source_worktree_with_context(
-        &self,
-        name: &str,
-        url: &str,
-        version: Option<&str>,
-        context: Option<&str>,
-    ) -> Result<PathBuf> {
-        self.get_or_clone_source_worktree_impl(name, url, version, context)
-            .await
-    }
-
-    /// Get or clone a source repository with worktree support and context.
-    ///
-    /// This method creates a worktree from a bare repository for parallel-safe
-    /// access to different versions of the same repository. It implements an advanced
-    /// concurrency control system with per-worktree locking and instance-level caching.
-    ///
-    /// # Concurrency Architecture
-    ///
-    /// This method uses a sophisticated multi-level locking strategy:
-    ///
-    /// 1. **Instance-level cache**: Tracks worktree creation state across threads
-    /// 2. **Per-worktree locks**: File-based locks prevent concurrent creation
-    /// 3. **State coordination**: `WorktreeState::Pending` signals ongoing creation
-    /// 4. **Exponential backoff**: Waiting threads use progressive delays
-    ///
-    /// # Performance Benefits
-    ///
-    /// - **Parallel safety**: Multiple versions can be checked out simultaneously
-    /// - **Cache efficiency**: Reuses existing worktrees when possible
-    /// - **Resource optimization**: No global bottlenecks, fine-grained locking
-    /// - **Collision avoidance**: UUID-based paths prevent concurrent conflicts
-    ///
-    /// # Parameters
-    ///
-    /// * `name` - The name of the source (used for cache directory naming)
-    /// * `url` - The Git repository URL or local path
-    /// * `version` - Optional specific version/tag/branch to checkout
-    /// * `context` - Optional context for logging (e.g., dependency name)
-    ///
-    /// # Returns
-    ///
-    /// Returns the path to a worktree checked out to the requested version
-    async fn get_or_clone_source_worktree_impl(
-        &self,
-        name: &str,
-        url: &str,
-        version: Option<&str>,
-        context: Option<&str>,
-    ) -> Result<PathBuf> {
-        // Check if this is a local path (not a git repository URL)
-        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
-
-        if is_local_path {
-            // For local paths, use the existing behavior (no worktrees needed)
-            // and ignore any version parameters since they don't apply to directories
-            return self.get_or_clone_source(name, url, None).await;
-        }
-
-        self.ensure_cache_dir().await?;
-
-        // Parse URL for cache structure
-        let (owner, repo) =
-            crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
-
-        // Create cache key for worktree lookup
-        // Include cache directory hash to avoid collisions between different cache instances
-        let version_key = version.unwrap_or("HEAD");
-        let mut sanitized_version = version_key.replace(['/', ':', '.'], "_");
-        if sanitized_version.is_empty() {
-            sanitized_version = "default".to_string();
-        }
-        let cache_dir_hash = {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            self.cache_dir.hash(&mut hasher);
-            format!("{:x}", hasher.finish())[..8].to_string() // Use first 8 chars
-        };
-        let cache_key = format!("{cache_dir_hash}:{owner}_{repo}:{version_key}");
-
-        // Check if we already have a worktree for this source and version
-        // Use a loop to handle retries when another thread is creating the worktree
-        let mut should_create_worktree = false;
-        while !should_create_worktree {
-            {
-                let cache_read = self.worktree_cache.read().await;
-                match cache_read.get(&cache_key) {
-                    Some(WorktreeState::Ready(cached_path)) => {
-                        // Verify the worktree still exists on disk
-                        if cached_path.exists() {
-                            let cached_path = cached_path.clone();
-                            drop(cache_read);
-                            self.record_worktree_usage(
-                                &cache_key,
-                                name,
-                                &sanitized_version,
-                                &cached_path,
-                            )
-                            .await?;
-
-                            if let Some(ctx) = context {
-                                tracing::debug!(target: "git", "({}) Reusing cached worktree for {} @ {}",
-                                    ctx, url.split('/').next_back().unwrap_or(url), version_key);
-                            } else {
-                                tracing::debug!(target: "git", "Reusing cached worktree for {} @ {}",
-                                    url.split('/').next_back().unwrap_or(url), version_key);
-                            }
-                            return Ok(cached_path);
-                        }
-                        // Path doesn't exist, fall through to creation
-                        should_create_worktree = true;
-                    }
-                    Some(WorktreeState::Pending) => {
-                        // Another thread is creating it, wait and retry
-                        if let Some(ctx) = context {
-                            tracing::debug!(target: "git", "({}) Waiting for worktree creation for {} @ {}",
-                                ctx, url.split('/').next_back().unwrap_or(url), version_key);
-                        } else {
-                            tracing::debug!(target: "git", "Waiting for worktree creation for {} @ {}",
-                                url.split('/').next_back().unwrap_or(url), version_key);
-                        }
-                        drop(cache_read);
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        // Continue the while loop
-                    }
-                    None => {
-                        // We'll create it
-                        should_create_worktree = true;
-                    }
-                }
-            }
-        }
-
-        // Reserve the cache slot immediately to prevent race conditions
-        let mut reservation_successful = false;
-        while !reservation_successful {
-            let mut cache_write = self.worktree_cache.write().await;
-            // Double-check after acquiring write lock
-            match cache_write.get(&cache_key) {
-                Some(WorktreeState::Ready(cached_path)) if cached_path.exists() => {
-                    // Another thread completed it while we were waiting
-                    return Ok(cached_path.clone());
-                }
-                Some(WorktreeState::Pending) => {
-                    // Another thread is creating it, wait and retry
-                    drop(cache_write);
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    // Continue the while loop
-                }
-                _ => {
-                    // Reserve this slot
-                    cache_write.insert(cache_key.clone(), WorktreeState::Pending);
-                    if let Some(ctx) = context {
-                        tracing::debug!(target: "git", "({}) Reserved worktree slot for {} @ {}",
-                            ctx, url.split('/').next_back().unwrap_or(url), version_key);
-                    } else {
-                        tracing::debug!(target: "git", "Reserved worktree slot for {} @ {}",
-                            url.split('/').next_back().unwrap_or(url), version_key);
-                    }
-                    reservation_successful = true;
-                }
-            }
-        }
-
-        // Use .git suffix for bare repositories
-        let bare_repo_dir = self
-            .cache_dir
-            .join("sources")
-            .join(format!("{owner}_{repo}.git"));
-
-        // Only hold lock for bare repository operations
-        let bare_repo = {
-            // Create bare repo if needed
-            if !bare_repo_dir.exists() {
-                // Initial clone doesn't need fetch lock
-                let lock_name = format!("{owner}_{repo}");
-                let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
-
-                // Ensure parent directory exists
-                if let Some(parent) = bare_repo_dir.parent() {
-                    tokio::fs::create_dir_all(parent)
-                        .await
-                        .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
-                }
-
-                // Re-check after lock
-                if !bare_repo_dir.exists() {
-                    if let Some(ctx) = context {
-                        println!("📦 ({ctx}) Cloning bare repository {url}...");
-                    } else {
-                        println!("📦 Cloning bare repository {url} to cache...");
-                    }
-
-                    let repo =
-                        GitRepo::clone_bare_with_context(url, &bare_repo_dir, context).await?;
-                    Self::configure_connection_pooling(&bare_repo_dir)
-                        .await
-                        .ok();
-
-                    repo
-                } else {
-                    GitRepo::new(&bare_repo_dir)
-                }
-            } else {
-                // Existing repo - use hybrid lock for fetch
-                let repo = GitRepo::new(&bare_repo_dir);
-
-                // Use hybrid locking for fetch operations
-                self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
-
-                repo
-            }
-        };
-
-        // Create a unique worktree for this version
-        // Use a stable ID based on version to enable caching
-        let worktree_id = sanitized_version.clone();
-
-        let worktree_path = self
-            .cache_dir
-            .join("worktrees")
-            .join(format!("{owner}_{repo}_{worktree_id}"));
-
-        // Acquire a per-worktree creation lock to avoid concurrent creation races.
-        // This fine-grained locking strategy allows multiple worktrees to be created
-        // simultaneously as long as they have different owners, repos, or versions.
-        // The lock name includes all three components to ensure maximum parallelism.
-        let worktree_lock_name = format!("worktree-{}_{}-{}", owner, repo, worktree_id);
-        let _worktree_lock = CacheLock::acquire(&self.cache_dir, &worktree_lock_name)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to acquire lock for worktree: {}",
-                    worktree_lock_name
-                )
-            })?;
-
-        // Re-check if this worktree already exists (after acquiring the lock)
-        if worktree_path.exists() {
-            {
-                let mut cache_write = self.worktree_cache.write().await;
-                cache_write.insert(
-                    cache_key.clone(),
-                    WorktreeState::Ready(worktree_path.clone()),
-                );
-            }
-
-            self.record_worktree_usage(&cache_key, name, &sanitized_version, &worktree_path)
-                .await?;
-
-            return Ok(worktree_path);
-        }
-
-        // Proactively prune stale worktrees if the target directory is missing but registered
-        // (helps avoid "missing but already registered worktree" errors under concurrency)
-        if !worktree_path.exists() {
-            let _ = bare_repo.prune_worktrees().await; // ignore errors
-        }
-
-        // Create worktree with the specified version
-        // Use detached HEAD mode to avoid branch conflicts in parallel operations
-        let detached_ref = version.map(|v| {
-            // If it's a branch name, convert to detached HEAD to avoid conflicts
-            if !v.contains('/') && !v.starts_with("v") && v != "HEAD" {
-                format!("{}^{{commit}}", v) // Force detached HEAD
-            } else {
-                v.to_string()
-            }
-        });
-
-        // Create worktree - each has a unique path so no conflicts
-
-        if let Some(ctx) = context {
-            tracing::debug!(target: "git", "({}) Creating worktree: {} @ {}",
-                ctx,
-                url.split('/').next_back().unwrap_or(url),
-                version.unwrap_or("HEAD")
-            );
-        } else {
-            tracing::debug!(target: "git", "Creating worktree: {} @ {}",
-                url.split('/').next_back().unwrap_or(url),
-                version.unwrap_or("HEAD")
-            );
-        }
-
-        // Create the worktree with error handling to clean up Pending state on failure
-        let worktree_result = bare_repo
-            .create_worktree_with_context(&worktree_path, detached_ref.as_deref(), context)
-            .await;
-
-        match worktree_result {
-            Ok(_) => {
-                // Cache the worktree path for future use (mark as Ready)
-                {
-                    let mut cache_write = self.worktree_cache.write().await;
-                    cache_write.insert(
-                        cache_key.clone(),
-                        WorktreeState::Ready(worktree_path.clone()),
-                    );
-                }
-                self.record_worktree_usage(&cache_key, name, &sanitized_version, &worktree_path)
-                    .await?;
-                Ok(worktree_path)
-            }
-            Err(e) => {
-                // Remove the Pending entry so other threads can retry
-                {
-                    let mut cache_write = self.worktree_cache.write().await;
-                    cache_write.remove(&cache_key);
-                }
-                Err(e)
-            }
-        }
+        self.get_or_clone_source_impl(name, url, version).await
     }
 
     /// Clean up a worktree after use (fast version).
@@ -1325,10 +835,262 @@ impl Cache {
         Ok(())
     }
 
+    /// Get or create a worktree for a specific commit SHA.
+    ///
+    /// This method is the cornerstone of CCPM's optimized dependency resolution.
+    /// By using commit SHAs as the primary key for worktrees, we ensure:
+    /// - Maximum worktree reuse (same SHA = same worktree)
+    /// - Deterministic installations (SHA uniquely identifies content)
+    /// - Reduced disk usage (no duplicate worktrees for same commit)
+    ///
+    /// # SHA-Based Caching Strategy
+    ///
+    /// Unlike version-based worktrees that create separate directories for
+    /// "v1.0.0" and "release-1.0" even if they point to the same commit,
+    /// SHA-based worktrees ensure a single worktree per unique commit.
+    ///
+    /// # Parameters
+    ///
+    /// * `name` - Source name from manifest
+    /// * `url` - Git repository URL
+    /// * `sha` - Full 40-character commit SHA (must be pre-resolved)
+    /// * `context` - Optional context for logging
+    ///
+    /// # Returns
+    ///
+    /// Path to the worktree containing the exact commit specified by SHA.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use ccpm::cache::Cache;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let cache = Cache::new()?;
+    ///
+    /// // First resolve version to SHA
+    /// let sha = "abc1234567890def1234567890abcdef12345678";
+    ///
+    /// // Get worktree for that specific commit
+    /// let worktree = cache.get_or_create_worktree_for_sha(
+    ///     "community",
+    ///     "https://github.com/example/repo.git",
+    ///     sha,
+    ///     Some("my-agent")
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_or_create_worktree_for_sha(
+        &self,
+        name: &str,
+        url: &str,
+        sha: &str,
+        context: Option<&str>,
+    ) -> Result<PathBuf> {
+        // Validate SHA format
+        if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(anyhow::anyhow!(
+                "Invalid SHA format: expected 40 hex characters, got '{}'",
+                sha
+            ));
+        }
+
+        // Check if this is a local path
+        let is_local_path = crate::utils::is_local_path(url);
+        if is_local_path {
+            // Local paths don't use worktrees
+            return self.get_or_clone_source(name, url, None).await;
+        }
+
+        self.ensure_cache_dir().await?;
+
+        // Parse URL for cache structure
+        let (owner, repo) =
+            crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
+
+        // Create SHA-based cache key
+        // Using first 8 chars of SHA for directory name (like Git does)
+        let sha_short = &sha[..8];
+        let cache_dir_hash = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            self.cache_dir.hash(&mut hasher);
+            format!("{:x}", hasher.finish())[..8].to_string()
+        };
+        let cache_key = format!("{cache_dir_hash}:{owner}_{repo}:{sha}");
+
+        // Check if we already have a worktree for this SHA
+        let mut should_create_worktree = false;
+        while !should_create_worktree {
+            {
+                let cache_read = self.worktree_cache.read().await;
+                match cache_read.get(&cache_key) {
+                    Some(WorktreeState::Ready(cached_path)) => {
+                        if cached_path.exists() {
+                            let cached_path = cached_path.clone();
+                            drop(cache_read);
+                            self.record_worktree_usage(&cache_key, name, sha_short, &cached_path)
+                                .await?;
+
+                            if let Some(ctx) = context {
+                                tracing::debug!(
+                                    target: "git",
+                                    "({}) Reusing SHA-based worktree for {} @ {}",
+                                    ctx,
+                                    url.split('/').next_back().unwrap_or(url),
+                                    sha_short
+                                );
+                            }
+                            return Ok(cached_path);
+                        }
+                        should_create_worktree = true;
+                    }
+                    Some(WorktreeState::Pending) => {
+                        if let Some(ctx) = context {
+                            tracing::debug!(
+                                target: "git",
+                                "({}) Waiting for SHA worktree creation for {} @ {}",
+                                ctx,
+                                url.split('/').next_back().unwrap_or(url),
+                                sha_short
+                            );
+                        }
+                        drop(cache_read);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    None => {
+                        should_create_worktree = true;
+                    }
+                }
+            }
+        }
+
+        // Reserve the cache slot
+        let mut reservation_successful = false;
+        while !reservation_successful {
+            let mut cache_write = self.worktree_cache.write().await;
+            match cache_write.get(&cache_key) {
+                Some(WorktreeState::Ready(cached_path)) if cached_path.exists() => {
+                    return Ok(cached_path.clone());
+                }
+                Some(WorktreeState::Pending) => {
+                    drop(cache_write);
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                _ => {
+                    cache_write.insert(cache_key.clone(), WorktreeState::Pending);
+                    reservation_successful = true;
+                }
+            }
+        }
+
+        // Get bare repository (fetches if needed)
+        let bare_repo_dir = self
+            .cache_dir
+            .join("sources")
+            .join(format!("{owner}_{repo}.git"));
+
+        if !bare_repo_dir.exists() {
+            let lock_name = format!("{owner}_{repo}");
+            let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
+
+            if let Some(parent) = bare_repo_dir.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+
+            if !bare_repo_dir.exists() {
+                if let Some(ctx) = context {
+                    println!("📦 ({ctx}) Cloning repository {url}...");
+                } else {
+                    println!("📦 Cloning repository {url} to cache...");
+                }
+
+                GitRepo::clone_bare_with_context(url, &bare_repo_dir, context).await?;
+                Self::configure_connection_pooling(&bare_repo_dir)
+                    .await
+                    .ok();
+            }
+        } else {
+            // Fetch to ensure we have the SHA
+            self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
+        }
+
+        let bare_repo = GitRepo::new(&bare_repo_dir);
+
+        // Create worktree path using SHA
+        let worktree_path = self
+            .cache_dir
+            .join("worktrees")
+            .join(format!("{owner}_{repo}_{sha_short}"));
+
+        // Acquire worktree creation lock
+        let worktree_lock_name = format!("worktree-{}-{}-{}", owner, repo, sha_short);
+        let _worktree_lock = CacheLock::acquire(&self.cache_dir, &worktree_lock_name).await?;
+
+        // Re-check after lock
+        if worktree_path.exists() {
+            let mut cache_write = self.worktree_cache.write().await;
+            cache_write.insert(
+                cache_key.clone(),
+                WorktreeState::Ready(worktree_path.clone()),
+            );
+            self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path)
+                .await?;
+            return Ok(worktree_path);
+        }
+
+        // Prune stale worktrees if needed
+        if !worktree_path.exists() {
+            let _ = bare_repo.prune_worktrees().await;
+        }
+
+        // Create worktree at specific SHA
+        if let Some(ctx) = context {
+            tracing::debug!(
+                target: "git",
+                "({}) Creating SHA-based worktree: {} @ {}",
+                ctx,
+                url.split('/').next_back().unwrap_or(url),
+                sha_short
+            );
+        }
+
+        // Lock bare repo for worktree creation
+        let bare_repo_lock_name = format!("bare-repo-{}_{}", owner, repo);
+        let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
+
+        // Create worktree using SHA directly
+        let worktree_result = bare_repo
+            .create_worktree_with_context(&worktree_path, Some(sha), context)
+            .await;
+
+        drop(_bare_repo_lock);
+
+        match worktree_result {
+            Ok(_) => {
+                let mut cache_write = self.worktree_cache.write().await;
+                cache_write.insert(
+                    cache_key.clone(),
+                    WorktreeState::Ready(worktree_path.clone()),
+                );
+                self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path)
+                    .await?;
+                Ok(worktree_path)
+            }
+            Err(e) => {
+                let mut cache_write = self.worktree_cache.write().await;
+                cache_write.remove(&cache_key);
+                Err(e)
+            }
+        }
+    }
+
     /// Get or clone a source repository with options to control cache behavior.
     ///
     /// This method provides the core functionality for repository access with
-    /// additional control over cache behavior.
+    /// additional control over cache behavior. Creates bare repositories that
+    /// can be shared by all operations (resolution, installation, etc).
     ///
     /// # Parameters
     ///
@@ -1339,16 +1101,15 @@ impl Cache {
     ///
     /// # Returns
     ///
-    /// Returns the path to the cached/cloned repository directory
-    pub async fn get_or_clone_source_with_options(
+    /// Returns the path to the cached bare repository directory
+    async fn get_or_clone_source_impl(
         &self,
         name: &str,
         url: &str,
         version: Option<&str>,
-        force_refresh: bool,
     ) -> Result<PathBuf> {
         // Check if this is a local path (not a git repository URL)
-        let is_local_path = url.starts_with('/') || url.starts_with("./") || url.starts_with("../");
+        let is_local_path = crate::utils::is_local_path(url);
 
         if is_local_path {
             // For local paths (directories), validate and return the secure path
@@ -1365,11 +1126,10 @@ impl Cache {
             validate_path_security(&canonical_path, true)?;
 
             // For local paths, versions don't apply. Suppress warning for internal sentinel values.
-            if let Some(ver) = version {
-                if ver != "local" {
+            if let Some(ver) = version
+                && ver != "local" {
                     eprintln!("Warning: Version constraints are ignored for local paths");
                 }
-            }
 
             return Ok(canonical_path);
         }
@@ -1381,14 +1141,14 @@ impl Cache {
             .await
             .with_context(|| format!("Failed to acquire lock for source: {name}"))?;
 
-        // Use the same cache directory structure as SourceManager for consistency
-        // Parse the URL to get owner and repo for the cache path
+        // Use the same cache directory structure as worktrees - bare repos with .git suffix
+        // This ensures we have ONE repository that's shared by all operations
         let (owner, repo) =
             crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
         let source_dir = self
             .cache_dir
             .join("sources")
-            .join(format!("{owner}_{repo}"));
+            .join(format!("{}_{}.git", owner, repo)); // Always use .git suffix for bare repos
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
@@ -1397,36 +1157,77 @@ impl Cache {
                 .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
         }
 
-        if source_dir.exists() && !force_refresh {
-            // Use existing cache - just update to the requested version
-            self.update_source(&source_dir, version).await?;
-        } else if source_dir.exists() && force_refresh {
-            // Force refresh - remove existing and clone fresh
-            tokio::fs::remove_dir_all(&source_dir)
-                .await
-                .with_context(|| {
-                    format!("Failed to remove existing cache directory: {source_dir:?}")
-                })?;
-            self.clone_source(url, &source_dir).await?;
-            if let Some(ver) = version {
-                self.checkout_version(&source_dir, ver).await?;
+        if source_dir.exists() {
+            // Use existing cache - fetch to ensure we have latest refs
+            // Skip fetch for local paths as they don't have remotes
+            // For Git URLs, always fetch to get the latest refs (especially important for branches)
+            if crate::utils::is_git_url(url) {
+                // Check if we've already fetched this repo in this command instance
+                let already_fetched = {
+                    let fetched = self.fetched_repos.read().await;
+                    fetched.contains(&source_dir)
+                };
+
+                if already_fetched {
+                    tracing::debug!(
+                        target: "ccpm::cache",
+                        "Skipping fetch for {} (already fetched in this command)",
+                        name
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "ccpm::cache",
+                        "Fetching updates for {} from {}",
+                        name,
+                        url
+                    );
+                    let repo = crate::git::GitRepo::new(&source_dir);
+                    if let Err(e) = repo.fetch(None).await {
+                        tracing::warn!(
+                            target: "ccpm::cache",
+                            "Failed to fetch updates for {}: {}",
+                            name,
+                            e
+                        );
+                    } else {
+                        // Mark this repo as fetched for this command execution
+                        let mut fetched = self.fetched_repos.write().await;
+                        fetched.insert(source_dir.clone());
+                        tracing::debug!(
+                            target: "ccpm::cache",
+                            "Successfully fetched updates for {}",
+                            name
+                        );
+                    }
+                }
+            } else {
+                tracing::debug!(
+                    target: "ccpm::cache",
+                    "Skipping fetch for local path: {}",
+                    url
+                );
             }
         } else {
-            // Directory doesn't exist - clone fresh
+            // Directory doesn't exist - clone fresh as bare repo
             self.clone_source(url, &source_dir).await?;
-            if let Some(ver) = version {
-                self.checkout_version(&source_dir, ver).await?;
-            }
         }
 
         Ok(source_dir)
     }
 
-    /// Clones a Git repository to the specified target directory.
+    /// Clones a Git repository to the specified target directory as a bare repository.
     ///
     /// This internal method performs the initial clone operation for repositories
-    /// that are not yet present in the cache. It uses the system's Git command
-    /// via the [`GitRepo`] wrapper for maximum compatibility.
+    /// that are not yet present in the cache. It creates a bare repository which
+    /// is optimal for serving and allows multiple worktrees to be created from it.
+    ///
+    /// # Why Bare Repositories
+    ///
+    /// Bare repositories are used because:
+    /// - **No working directory conflicts**: Multiple worktrees can be created safely
+    /// - **Optimized for serving**: Like GitHub/GitLab, designed for fetch operations
+    /// - **Space efficient**: No checkout of files in the main repository
+    /// - **Thread-safe**: Multiple processes can fetch from it simultaneously
     ///
     /// # Authentication
     ///
@@ -1438,7 +1239,7 @@ impl Cache {
     /// # Parameters
     ///
     /// * `url` - Git repository URL to clone from
-    /// * `target` - Local directory path where repository should be cloned
+    /// * `target` - Local directory path where bare repository should be created
     ///
     /// # Errors
     ///
@@ -1448,123 +1249,30 @@ impl Cache {
     /// - Target directory cannot be created or written to
     /// - Network connectivity issues
     /// - Git command is not available in PATH
-    ///
-    /// See [`GitRepo::clone`] for detailed error information.
     async fn clone_source(&self, url: &str, target: &Path) -> Result<()> {
-        println!("📦 Cloning {url} to cache...");
+        println!("📦 Cloning {} to cache...", url);
 
-        GitRepo::clone(url, target)
+        // Clone as a bare repository for better concurrency and worktree support
+        GitRepo::clone_bare(url, target)
             .await
-            .with_context(|| format!("Failed to clone repository from {url}"))?;
+            .with_context(|| format!("Failed to clone repository from {}", url))?;
 
         // Debug: List what was cloned
-        if cfg!(test) {
-            if let Ok(entries) = std::fs::read_dir(target) {
-                eprintln!("DEBUG: Cloned to {}, contents:", target.display());
+        if cfg!(test)
+            && let Ok(entries) = std::fs::read_dir(target) {
+                tracing::debug!(
+                    target: "ccpm::cache",
+                    "Cloned bare repo to {}, contents:",
+                    target.display()
+                );
                 for entry in entries.flatten() {
-                    eprintln!("  - {}", entry.path().display());
+                    tracing::debug!(
+                        target: "ccpm::cache",
+                        "  - {}",
+                        entry.path().display()
+                    );
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    /// Updates an existing cached repository with latest changes from remote.
-    ///
-    /// This method fetches the latest changes from the remote repository without
-    /// modifying the current working directory state. It's equivalent to running
-    /// `git fetch` in the repository.
-    ///
-    /// # Update Strategy
-    ///
-    /// 1. **Fetch updates**: Downloads latest refs and objects from remote
-    /// 2. **Version checkout**: Switches to requested version if provided
-    /// 3. **Preserve local state**: Doesn't modify uncommitted changes (if any)
-    ///
-    /// # Parameters
-    ///
-    /// * `source_dir` - Path to the cached repository directory
-    /// * `version` - Optional version to checkout after fetching updates
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Repository is not a valid Git repository
-    /// - Network issues prevent fetching updates
-    /// - Authentication fails for private repositories
-    /// - Specified version doesn't exist after fetch
-    ///
-    /// # Performance
-    ///
-    /// The fetch operation only downloads new changes since the last update,
-    /// making it much faster than a full clone for subsequent operations.
-    async fn update_source(&self, source_dir: &Path, version: Option<&str>) -> Result<()> {
-        let git_repo = GitRepo::new(source_dir);
-        git_repo
-            .fetch(None)
-            .await
-            .with_context(|| "Failed to fetch updates")?;
-
-        if let Some(ver) = version {
-            self.checkout_version(source_dir, ver).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Checks out a specific version (tag, branch, or commit) in the repository.
-    ///
-    /// This method switches the repository's working directory to the specified
-    /// version. It's equivalent to running `git checkout <version>` in the repository.
-    ///
-    /// # Version Types Supported
-    ///
-    /// - **Tags**: `v1.0.0`, `release-2023` (immutable version markers)
-    /// - **Branches**: `main`, `develop`, `feature/new-feature` (movable refs)
-    /// - **Commits**: `abc123def456` (specific commit hashes)
-    ///
-    /// # Behavior Notes
-    ///
-    /// - **Detached HEAD**: Checking out tags or commits results in detached HEAD state
-    /// - **Branch tracking**: Checking out branches sets up tracking with remote
-    /// - **Clean checkout**: Any local modifications will be preserved or cause conflicts
-    ///
-    /// # Parameters
-    ///
-    /// * `source_dir` - Path to the cached repository directory
-    /// * `version` - Git reference to checkout (tag, branch, or commit)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Version doesn't exist in the repository
-    /// - Repository has uncommitted changes that would conflict
-    /// - Repository is not in a valid state for checkout
-    /// - Git command fails due to repository corruption
-    ///
-    /// The error message provides guidance on checking if the version exists
-    /// as a tag, branch, or commit in the remote repository.
-    ///
-    /// # Examples
-    ///
-    /// Common version patterns:
-    ///
-    /// ```text
-    /// "v1.0.0"           # Semantic version tag
-    /// "main"             # Main development branch
-    /// "develop"          # Development branch
-    /// "abc123"           # Specific commit (short hash)
-    /// "feature/auth"     # Feature branch
-    /// "release/2024"     # Release branch
-    /// ```
-    async fn checkout_version(&self, source_dir: &Path, version: &str) -> Result<()> {
-        let git_repo = GitRepo::new(source_dir);
-        git_repo.checkout(version).await.with_context(|| {
-            format!(
-                "Failed to checkout version '{version}'. Ensure it exists as a tag, branch, or commit"
-            )
-        })?;
 
         Ok(())
     }

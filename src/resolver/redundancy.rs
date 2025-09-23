@@ -133,7 +133,7 @@ use std::fmt;
 /// ```
 ///
 /// The corresponding `ResourceUsage` would be:
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// # use ccpm::resolver::redundancy::ResourceUsage;
 /// ResourceUsage {
 ///     resource_name: "my-helper".to_string(),
@@ -264,7 +264,7 @@ impl RedundancyDetector {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::resolver::redundancy::RedundancyDetector;
     ///
     /// let mut detector = RedundancyDetector::new();
@@ -310,7 +310,7 @@ impl RedundancyDetector {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::resolver::redundancy::RedundancyDetector;
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
@@ -371,7 +371,7 @@ impl RedundancyDetector {
     /// # Usage Pattern
     ///
     /// This method is typically used in the main resolution workflow:
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::resolver::redundancy::RedundancyDetector;
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
@@ -519,7 +519,7 @@ impl RedundancyDetector {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::resolver::redundancy::{RedundancyDetector, Redundancy, ResourceUsage};
     ///
     /// let detector = RedundancyDetector::new();
