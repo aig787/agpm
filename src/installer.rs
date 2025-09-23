@@ -264,14 +264,8 @@ pub async fn install_resource(
             .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
-        // Validate markdown
-        MarkdownFile::parse(&content).with_context(|| {
-            format!(
-                "Invalid markdown file '{}' at {}",
-                entry.name,
-                source_path.display()
-            )
-        })?;
+        // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
+        MarkdownFile::parse_with_context(&content, Some(&source_path.display().to_string()))?;
 
         content
     } else {
@@ -297,13 +291,8 @@ pub async fn install_resource(
             .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
-        MarkdownFile::parse(&content).with_context(|| {
-            format!(
-                "Invalid markdown file '{}' at {}",
-                entry.name,
-                source_path.display()
-            )
-        })?;
+        // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
+        MarkdownFile::parse_with_context(&content, Some(&source_path.display().to_string()))?;
 
         content
     };
@@ -2159,12 +2148,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_resource_invalid_markdown() {
+    async fn test_install_resource_invalid_markdown_frontmatter() {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path();
         let cache = Cache::with_dir(temp_dir.path().join("cache")).unwrap();
 
-        // Create an invalid markdown file
+        // Create a markdown file with invalid frontmatter
         let local_file = temp_dir.path().join("invalid.md");
         std::fs::write(&local_file, "---\ninvalid: yaml: [\n---\nContent").unwrap();
 
@@ -2172,10 +2161,21 @@ mod tests {
         let mut entry = create_test_locked_resource("invalid-test", true);
         entry.path = local_file.to_string_lossy().to_string();
 
-        // Try to install the resource
+        // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid markdown"));
+        assert!(result.is_ok());
+        let (installed, _checksum) = result.unwrap();
+        assert!(installed);
+
+        // Verify the file was installed
+        let dest_path = project_dir.join("agents/invalid-test.md");
+        assert!(dest_path.exists());
+
+        // Content should include the entire file since frontmatter was invalid
+        let installed_content = std::fs::read_to_string(&dest_path).unwrap();
+        assert!(installed_content.contains("---"));
+        assert!(installed_content.contains("invalid: yaml:"));
+        assert!(installed_content.contains("Content"));
     }
 
     #[tokio::test]

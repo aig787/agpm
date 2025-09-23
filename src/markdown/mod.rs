@@ -613,6 +613,116 @@ impl MarkdownDocument {
         Ok(())
     }
 
+    /// Parse a Markdown string that may contain frontmatter with context for warnings.
+    ///
+    /// This is similar to [`parse`](Self::parse) but accepts an optional context string
+    /// that will be included in warning messages when preprocessing is required.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The complete Markdown document as a string
+    /// * `context` - Optional context (e.g., file path) for warning messages
+    ///
+    /// # Returns
+    ///
+    /// Returns a parsed `MarkdownDocument`. If frontmatter parsing fails,
+    /// a warning is emitted and the entire document is treated as content.
+    pub fn parse_with_context(input: &str, context: Option<&str>) -> Result<Self> {
+        // Check for YAML frontmatter (starts with ---)
+        if (input.starts_with("---\n") || input.starts_with("---\r\n"))
+            && let Some(end_idx) = find_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("---").trim_start();
+
+            // Try to parse YAML frontmatter with standard parser first
+            match serde_yaml::from_str::<MarkdownMetadata>(frontmatter) {
+                Ok(metadata) => {
+                    // Standard parsing succeeded
+                    return Ok(Self {
+                        metadata: Some(metadata),
+                        content: content.to_string(),
+                        raw: input.to_string(),
+                    });
+                }
+                Err(err) => {
+                    // Parsing failed - emit warning and treat entire document as content
+                    if let Some(ctx) = context {
+                        eprintln!(
+                            "⚠️  Warning: Unable to parse YAML frontmatter in '{}'. \
+                            The document will be processed without metadata. Error: {}",
+                            ctx, err
+                        );
+                    } else {
+                        eprintln!(
+                            "⚠️  Warning: Unable to parse YAML frontmatter. \
+                            The document will be processed without metadata. Error: {}",
+                            err
+                        );
+                    }
+
+                    // Treat the entire document as content (including the invalid frontmatter)
+                    return Ok(Self {
+                        metadata: None,
+                        content: input.to_string(),
+                        raw: input.to_string(),
+                    });
+                }
+            }
+        }
+
+        // Check for TOML frontmatter (starts with +++)
+        if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
+            && let Some(end_idx) = find_toml_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("+++").trim_start();
+
+            // Try to parse TOML frontmatter
+            match toml::from_str::<MarkdownMetadata>(frontmatter) {
+                Ok(metadata) => {
+                    return Ok(Self {
+                        metadata: Some(metadata),
+                        content: content.to_string(),
+                        raw: input.to_string(),
+                    });
+                }
+                Err(err) => {
+                    // TOML parsing failed - emit warning and treat entire document as content
+                    if let Some(ctx) = context {
+                        eprintln!(
+                            "⚠️  Warning: Unable to parse TOML frontmatter in '{}'. \
+                            The document will be processed without metadata. Error: {}",
+                            ctx, err
+                        );
+                    } else {
+                        eprintln!(
+                            "⚠️  Warning: Unable to parse TOML frontmatter. \
+                            The document will be processed without metadata. Error: {}",
+                            err
+                        );
+                    }
+
+                    // Treat the entire document as content (including the invalid frontmatter)
+                    return Ok(Self {
+                        metadata: None,
+                        content: input.to_string(),
+                        raw: input.to_string(),
+                    });
+                }
+            }
+        }
+
+        // No frontmatter, entire document is content
+        Ok(Self {
+            metadata: None,
+            content: input.to_string(),
+            raw: input.to_string(),
+        })
+    }
+
     /// Parse a Markdown string that may contain frontmatter.
     ///
     /// This is the core parsing method that handles both YAML and TOML
@@ -670,52 +780,7 @@ impl MarkdownDocument {
     /// assert!(doc.metadata.is_none());
     /// ```
     pub fn parse(input: &str) -> Result<Self> {
-        // Check for YAML frontmatter (starts with ---)
-        if (input.starts_with("---\n") || input.starts_with("---\r\n"))
-            && let Some(end_idx) = find_frontmatter_end(input)
-        {
-            let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
-            let frontmatter = &input[skip_size..end_idx];
-            let content = input[end_idx..].trim_start_matches("---").trim_start();
-
-            // Try to parse YAML frontmatter
-            let metadata: MarkdownMetadata =
-                serde_yaml::from_str(frontmatter).with_context(|| {
-                    format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
-                })?;
-
-            return Ok(Self {
-                metadata: Some(metadata),
-                content: content.to_string(),
-                raw: input.to_string(),
-            });
-        }
-
-        // Check for TOML frontmatter (starts with +++)
-        if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
-            && let Some(end_idx) = find_toml_frontmatter_end(input)
-        {
-            let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
-            let frontmatter = &input[skip_size..end_idx];
-            let content = input[end_idx..].trim_start_matches("+++").trim_start();
-
-            // Try to parse TOML frontmatter
-            let metadata: MarkdownMetadata =
-                toml::from_str(frontmatter).context("Failed to parse TOML frontmatter")?;
-
-            return Ok(Self {
-                metadata: Some(metadata),
-                content: content.to_string(),
-                raw: input.to_string(),
-            });
-        }
-
-        // No frontmatter, entire document is content
-        Ok(Self {
-            metadata: None,
-            content: input.to_string(),
-            raw: input.to_string(),
-        })
+        Self::parse_with_context(input, None)
     }
 
     /// Format a document with YAML frontmatter
@@ -1343,5 +1408,65 @@ This is the content."#;
         assert_eq!(doc.content, "Updated content");
         assert!(doc.raw.contains("Updated content"));
         assert!(doc.raw.contains("title: New Title"));
+    }
+
+    #[test]
+    fn test_invalid_frontmatter_with_escaped_newlines() {
+        // Content with invalid YAML frontmatter (literal \n that isn't properly quoted)
+        let input = r#"---
+name: haiku-syntax-tool
+description: Use this agent when you need to fix linting errors, formatting issues, type checking problems, or ensure code adheres to project-specific standards. This agent specializes in enforcing language-specific conventions, project style guides, and maintaining code quality through automated fixes. Examples:\n\n<example>\nContext: The user has just written a new Python function and wants to ensure it meets project standards.\nuser: "I've added a new sync handler function"\nassistant: "Let me review this with the code-standards-enforcer agent to ensure it meets our project standards"\n<commentary>\nSince new code was written, use the Task tool to launch the code-standards-enforcer agent to check for linting, formatting, and type issues according to CLAUDE.md standards.\n</commentary>\n</example>\n\n<example>\nContext: The user encounters linting errors during CI/CD.\nuser: "The CI pipeline is failing due to formatting issues"\nassistant: "I'll use the code-standards-enforcer agent to fix these formatting and linting issues"\n<commentary>\nWhen there are explicit linting or formatting problems, use the code-standards-enforcer agent to automatically fix them according to project standards.\n</commentary>\n</example>\n\n<example>\nContext: The user wants to ensure type hints are correct.\nuser: "Can you check if my type annotations are correct in the API module?"\nassistant: "I'll launch the code-standards-enforcer agent to verify and fix any type annotation issues"\n<commentary>\nFor type checking and annotation verification, use the code-standards-enforcer agent to ensure compliance with project typing standards.\n</commentary>\n</example>
+model: haiku
+---
+
+You are a meticulous code standards enforcement specialist"#;
+
+        // This should succeed but treat the entire document as content (no metadata)
+        let result = MarkdownDocument::parse(input);
+        match result {
+            Ok(doc) => {
+                // Invalid frontmatter means no metadata
+                assert!(doc.metadata.is_none());
+                // The entire document should be treated as content
+                assert!(doc.content.contains("---"));
+                assert!(doc.content.contains("name: haiku-syntax-tool"));
+                assert!(doc.content.contains("description: Use this agent"));
+                assert!(doc.content.contains("model: haiku"));
+                assert!(
+                    doc.content
+                        .contains("meticulous code standards enforcement specialist")
+                );
+            }
+            Err(e) => {
+                panic!("Should not fail, but got error: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_completely_invalid_frontmatter_fallback() {
+        // Test with completely broken YAML
+        let input = r#"---
+name: test
+description: {this is not valid yaml at all
+model: test
+---
+
+Content here"#;
+
+        // This should now succeed but without metadata
+        let result = MarkdownDocument::parse(input);
+        match result {
+            Ok(doc) => {
+                // Should treat entire document as content when frontmatter is invalid
+                assert!(doc.metadata.is_none());
+                assert!(doc.content.contains("---"));
+                assert!(doc.content.contains("name: test"));
+                assert!(doc.content.contains("Content here"));
+            }
+            Err(e) => {
+                panic!("Should not fail, but got error: {}", e);
+            }
+        }
     }
 }

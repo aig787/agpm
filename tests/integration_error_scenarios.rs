@@ -134,7 +134,7 @@ secret-agent = { source = "private", path = "agents/secret.md", version = "v1.0.
     );
 }
 
-/// Test handling of malformed markdown files
+/// Test handling of malformed markdown files - now succeeds with warning
 #[test]
 fn test_malformed_markdown() {
     let project = TestProject::new().unwrap();
@@ -159,15 +159,35 @@ invalid yaml: [ unclosed
         .create_local_resource("agents/broken.md", malformed_content)
         .unwrap();
 
+    // Now malformed markdown should succeed but emit a warning
     let output = project.run_ccpm(&["install"]).unwrap();
-    assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("Invalid markdown")
-            || output.stderr.contains("Frontmatter parsing failed")
-            || output.stderr.contains("YAML error")
-            || output.stderr.contains("Failed to parse"),
-        "Expected markdown parsing error, got: {}",
+        output.success,
+        "Expected command to succeed with warning but it failed: {}",
         output.stderr
+    );
+
+    // Check that a warning was emitted about invalid frontmatter
+    assert!(
+        output
+            .stderr
+            .contains("Warning: Unable to parse YAML frontmatter")
+            || output
+                .stderr
+                .contains("Warning: Unable to parse TOML frontmatter"),
+        "Expected warning about invalid frontmatter, got: {}",
+        output.stderr
+    );
+
+    // Verify the file was installed despite invalid frontmatter
+    // Default installation path is .claude/agents/
+    let installed_path = project
+        .project_path()
+        .join(".claude/agents/broken-agent.md");
+    assert!(
+        installed_path.exists(),
+        "File should be installed despite invalid frontmatter at: {:?}",
+        installed_path
     );
 }
 
