@@ -634,9 +634,10 @@ impl GitRepo {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
                 if let Some(ccpm_err) = e.downcast_ref::<CcpmError>()
-                    && matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. }) {
-                        return e;
-                    }
+                    && matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. })
+                {
+                    return e;
+                }
                 CcpmError::GitCheckoutFailed {
                     reference: ref_name.to_string(),
                     reason: e.to_string(),
@@ -1483,12 +1484,12 @@ impl GitRepo {
                             || error_str.contains("ambiguous")
                             || error_str.contains("invalid")
                             || error_str.contains("unknown revision"))
-                        {
-                            return Err(anyhow::anyhow!(
-                                "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
-                                ref_name
-                            ));
-                        }
+                    {
+                        return Err(anyhow::anyhow!(
+                            "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
+                            ref_name
+                        ));
+                    }
 
                     return Err(e).with_context(|| {
                         format!(
@@ -1574,10 +1575,12 @@ impl GitRepo {
             } else if line == "bare" {
                 // Skip bare repository entry
                 current_worktree = None;
-            } else if line.is_empty() && current_worktree.is_some()
-                && let Some(path) = current_worktree.take() {
-                    worktrees.push(path);
-                }
+            } else if line.is_empty()
+                && current_worktree.is_some()
+                && let Some(path) = current_worktree.take()
+            {
+                worktrees.push(path);
+            }
         }
 
         // Add the last worktree if there is one
@@ -2313,17 +2316,20 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
     }
 
     // Handle SSH URLs like git@github.com:user/repo.git
-    if url.contains('@') && url.contains(':') && !url.starts_with("ssh://")
-        && let Some(colon_pos) = url.find(':') {
-            let path = &url[colon_pos + 1..];
-            let path = path.trim_end_matches(".git");
-            if let Some(slash_pos) = path.find('/') {
-                return Ok((
-                    path[..slash_pos].to_string(),
-                    path[slash_pos + 1..].to_string(),
-                ));
-            }
+    if url.contains('@')
+        && url.contains(':')
+        && !url.starts_with("ssh://")
+        && let Some(colon_pos) = url.find(':')
+    {
+        let path = &url[colon_pos + 1..];
+        let path = path.trim_end_matches(".git");
+        if let Some(slash_pos) = path.find('/') {
+            return Ok((
+                path[..slash_pos].to_string(),
+                path[slash_pos + 1..].to_string(),
+            ));
         }
+    }
 
     // Handle HTTPS URLs
     if url.contains("github.com") || url.contains("gitlab.com") || url.contains("bitbucket.org") {

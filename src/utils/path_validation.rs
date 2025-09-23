@@ -49,15 +49,16 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
     if !path.exists() {
         // If it doesn't exist, try to canonicalize the parent
         if let Some(parent) = path.parent()
-            && parent.exists() {
-                let canonical_parent = parent.canonicalize().with_context(|| {
-                    format!("Failed to canonicalize parent of '{}'", path.display())
-                })?;
+            && parent.exists()
+        {
+            let canonical_parent = parent.canonicalize().with_context(|| {
+                format!("Failed to canonicalize parent of '{}'", path.display())
+            })?;
 
-                if let Some(file_name) = path.file_name() {
-                    return Ok(canonical_parent.join(file_name));
-                }
+            if let Some(file_name) = path.file_name() {
+                return Ok(canonical_parent.join(file_name));
             }
+        }
         return Err(anyhow!("Path does not exist: {}", path.display()));
     }
 
@@ -188,15 +189,16 @@ pub fn validate_resource_path(
     } else {
         // For non-existent files, check parent directory
         if let Some(parent) = full_path.parent()
-            && parent.exists() {
-                let canonical_parent = safe_canonicalize(parent)?;
-                if !canonical_parent.starts_with(&canonical_project) {
-                    return Err(anyhow!(
-                        "Path '{}' escapes project directory",
-                        full_path.display()
-                    ));
-                }
+            && parent.exists()
+        {
+            let canonical_parent = safe_canonicalize(parent)?;
+            if !canonical_parent.starts_with(&canonical_project) {
+                return Err(anyhow!(
+                    "Path '{}' escapes project directory",
+                    full_path.display()
+                ));
             }
+        }
     }
 
     // Check file extension for resource files

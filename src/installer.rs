@@ -534,14 +534,15 @@ pub async fn install_resources_parallel(
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
         if let Some(source_name) = &entry.source
-            && let Some(url) = &entry.url {
-                // Only pre-warm if we have a valid SHA
-                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
-                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
-                }) {
-                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
-                }
+            && let Some(url) = &entry.url
+        {
+            // Only pre-warm if we have a valid SHA
+            if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
+                unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
             }
+        }
     }
 
     // Pre-create all worktrees in parallel
@@ -921,14 +922,15 @@ pub async fn install_resources_parallel_with_progress(
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
         if let Some(source_name) = &entry.source
-            && let Some(url) = &entry.url {
-                // Only pre-warm if we have a valid SHA
-                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
-                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
-                }) {
-                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
-                }
+            && let Some(url) = &entry.url
+        {
+            // Only pre-warm if we have a valid SHA
+            if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
+                unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
             }
+        }
     }
 
     if !unique_worktrees.is_empty() {
@@ -1300,14 +1302,15 @@ pub async fn install_resources(
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
         if let Some(source_name) = &entry.source
-            && let Some(url) = &entry.url {
-                // Only pre-warm if we have a valid SHA
-                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
-                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
-                }) {
-                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
-                }
+            && let Some(url) = &entry.url
+        {
+            // Only pre-warm if we have a valid SHA
+            if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
+                unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
             }
+        }
     }
 
     if !unique_worktrees.is_empty() {
@@ -1553,14 +1556,15 @@ pub async fn install_resources_with_dynamic_progress(
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
         if let Some(source_name) = &entry.source
-            && let Some(url) = &entry.url {
-                // Only pre-warm if we have a valid SHA
-                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
-                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
-                }) {
-                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
-                }
+            && let Some(url) = &entry.url
+        {
+            // Only pre-warm if we have a valid SHA
+            if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
+                unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
             }
+        }
     }
 
     if !unique_worktrees.is_empty() {
@@ -1815,14 +1819,15 @@ pub async fn install_updated_resources(
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &entries_to_install {
         if let Some(source_name) = &entry.source
-            && let Some(url) = &entry.url {
-                // Only pre-warm if we have a valid SHA
-                if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
-                    commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
-                }) {
-                    unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
-                }
+            && let Some(url) = &entry.url
+        {
+            // Only pre-warm if we have a valid SHA
+            if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
+                commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
+            }) {
+                unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
             }
+        }
     }
 
     // Pre-create all worktrees in parallel

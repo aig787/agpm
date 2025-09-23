@@ -266,12 +266,13 @@ pub async fn cleanup_stale_locks(cache_dir: &Path, ttl_seconds: u64) -> Result<u
 
         // Remove if older than TTL
         if let Ok(age) = now.duration_since(modified)
-            && age > ttl_duration {
-                // Try to remove the file (it might be locked by another process)
-                if fs::remove_file(&path).await.is_ok() {
-                    removed_count += 1;
-                }
+            && age > ttl_duration
+        {
+            // Try to remove the file (it might be locked by another process)
+            if fs::remove_file(&path).await.is_ok() {
+                removed_count += 1;
             }
+        }
     }
 
     Ok(removed_count)

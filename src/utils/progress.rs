@@ -197,33 +197,37 @@ impl MultiPhaseProgress {
     /// Update the message of the current phase
     pub fn update_message(&self, message: String) {
         if let Ok(guard) = self.current_bar.lock()
-            && let Some(ref bar) = *guard {
-                bar.set_message(message);
-            }
+            && let Some(ref bar) = *guard
+        {
+            bar.set_message(message);
+        }
     }
 
     /// Update the current message for the active phase
     pub fn update_current_message(&self, message: &str) {
         if let Ok(guard) = self.current_bar.lock()
-            && let Some(ref bar) = *guard {
-                bar.set_message(message.to_string());
-            }
+            && let Some(ref bar) = *guard
+        {
+            bar.set_message(message.to_string());
+        }
     }
 
     /// Increment progress for progress bars
     pub fn increment_progress(&self, delta: u64) {
         if let Ok(guard) = self.current_bar.lock()
-            && let Some(ref bar) = *guard {
-                bar.inc(delta);
-            }
+            && let Some(ref bar) = *guard
+        {
+            bar.inc(delta);
+        }
     }
 
     /// Set progress position for progress bars
     pub fn set_progress(&self, pos: usize) {
         if let Ok(guard) = self.current_bar.lock()
-            && let Some(ref bar) = *guard {
-                bar.set_position(pos as u64);
-            }
+            && let Some(ref bar) = *guard
+        {
+            bar.set_position(pos as u64);
+        }
     }
 
     /// Complete the current phase and show it as a static message
@@ -241,35 +245,37 @@ impl MultiPhaseProgress {
 
         // Complete the current bar/spinner with a message and leave it visible
         if let Ok(mut guard) = self.current_bar.lock()
-            && let Some(bar) = guard.take() {
-                // Disable any animation
-                bar.disable_steady_tick();
+            && let Some(bar) = guard.take()
+        {
+            // Disable any animation
+            bar.disable_steady_tick();
 
-                // Set the final message
-                let final_message = if let Some(msg) = message {
-                    format!("✓ {}", msg)
-                } else {
-                    "✓ Phase complete".to_string()
-                };
+            // Set the final message
+            let final_message = if let Some(msg) = message {
+                format!("✓ {}", msg)
+            } else {
+                "✓ Phase complete".to_string()
+            };
 
-                // Clear the spinner
-                bar.finish_and_clear();
+            // Clear the spinner
+            bar.finish_and_clear();
 
-                // Use suspend to print the completion message outside of the MultiProgress
-                // This ensures it stays visible
-                self.multi.suspend(|| {
-                    println!("{}", final_message);
-                });
-            }
+            // Use suspend to print the completion message outside of the MultiProgress
+            // This ensures it stays visible
+            self.multi.suspend(|| {
+                println!("{}", final_message);
+            });
+        }
     }
 
     /// Clear all progress displays
     pub fn clear(&self) {
         // Clear current bar if any
         if let Ok(mut guard) = self.current_bar.lock()
-            && let Some(bar) = guard.take() {
-                bar.finish_and_clear();
-            }
+            && let Some(bar) = guard.take()
+        {
+            bar.finish_and_clear();
+        }
         self.multi.clear().ok();
     }
 
@@ -371,7 +377,6 @@ mod tests {
         progress.complete_phase(Some("test"));
         progress.clear();
     }
-
 
     #[test]
     fn test_collect_dependency_names() {

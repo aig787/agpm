@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-
 /// Test fixture for creating sample ccpm.toml files
 pub struct ManifestFixture {
     pub content: String,
@@ -103,7 +102,6 @@ agent-from-source2 = { source = "source2", path = "shared.md", version = "v2.0.0
             .to_string(),
         }
     }
-
 }
 
 /// Test fixture for creating sample lockfiles
@@ -194,7 +192,6 @@ installed_at = "agents/my-agent.md"
             .to_string(),
         }
     }
-
 }
 
 /// Test fixture for creating sample markdown files
@@ -294,7 +291,6 @@ if __name__ == "__main__":
             frontmatter: None,
         }
     }
-
 }
 
 #[cfg(test)]

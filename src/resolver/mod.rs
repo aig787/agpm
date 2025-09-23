@@ -1191,10 +1191,12 @@ impl DependencyResolver {
         // Pre-sync all unique sources once to avoid redundant fetches
         let mut sources_to_sync = HashSet::new();
         for (name, dep) in &deps {
-            if deps_to_check.contains(name) && !dep.is_local()
-                && let Some(source_name) = dep.get_source() {
-                    sources_to_sync.insert(source_name.to_string());
-                }
+            if deps_to_check.contains(name)
+                && !dep.is_local()
+                && let Some(source_name) = dep.get_source()
+            {
+                sources_to_sync.insert(source_name.to_string());
+            }
         }
 
         for source_name in sources_to_sync {

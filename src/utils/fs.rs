@@ -545,9 +545,10 @@ fn find_files_recursive(dir: &Path, pattern: &str, files: &mut Vec<PathBuf>) -> 
             find_files_recursive(&path, pattern, files)?;
         } else if path.is_file()
             && let Some(name) = path.file_name()
-                && name.to_string_lossy().contains(pattern) {
-                    files.push(path);
-                }
+            && name.to_string_lossy().contains(pattern)
+        {
+            files.push(path);
+        }
     }
 
     Ok(())

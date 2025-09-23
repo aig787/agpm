@@ -186,7 +186,6 @@ mod cli_tests {
         assert_eq!(config.config_path, Some("/custom/path".to_string()));
     }
 
-
     #[tokio::test]
     async fn test_cli_execute_all_commands() {
         use crate::cli::CliConfig;

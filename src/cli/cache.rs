@@ -324,9 +324,10 @@ impl CacheCommand {
         // Also clean up stale lock files (older than 1 hour)
         let cache_dir = cache.cache_dir();
         if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await
-            && removed > 0 {
-                println!("  Removed {} stale lock files", removed);
-            }
+            && removed > 0
+        {
+            println!("  Removed {} stale lock files", removed);
+        }
 
         cache.clear_all().await?;
 
@@ -473,9 +474,10 @@ impl CacheCommand {
 
             while let Some(entry) = entries.next_entry().await? {
                 if entry.path().is_dir()
-                    && let Some(name) = entry.path().file_name() {
-                        repos.push(name.to_string_lossy().to_string());
-                    }
+                    && let Some(name) = entry.path().file_name()
+                {
+                    repos.push(name.to_string_lossy().to_string());
+                }
             }
 
             if !repos.is_empty() {

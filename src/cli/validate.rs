@@ -512,11 +512,12 @@ impl ValidateCommand {
         // Check for potential warnings (outdated versions)
         for (name, dep) in manifest.agents.iter().chain(manifest.snippets.iter()) {
             if let Some(version) = dep.get_version()
-                && version.starts_with("v0.") {
-                    warnings.push(format!(
-                        "Potentially outdated version for {name}: {version}"
-                    ));
-                }
+                && version.starts_with("v0.")
+            {
+                warnings.push(format!(
+                    "Potentially outdated version for {name}: {version}"
+                ));
+            }
         }
 
         if self.verbose && !self.quiet && matches!(self.format, OutputFormat::Text) {

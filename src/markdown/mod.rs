@@ -672,41 +672,43 @@ impl MarkdownDocument {
     pub fn parse(input: &str) -> Result<Self> {
         // Check for YAML frontmatter (starts with ---)
         if (input.starts_with("---\n") || input.starts_with("---\r\n"))
-            && let Some(end_idx) = find_frontmatter_end(input) {
-                let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
-                let frontmatter = &input[skip_size..end_idx];
-                let content = input[end_idx..].trim_start_matches("---").trim_start();
+            && let Some(end_idx) = find_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("---").trim_start();
 
-                // Try to parse YAML frontmatter
-                let metadata: MarkdownMetadata =
-                    serde_yaml::from_str(frontmatter).with_context(|| {
-                        format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
-                    })?;
+            // Try to parse YAML frontmatter
+            let metadata: MarkdownMetadata =
+                serde_yaml::from_str(frontmatter).with_context(|| {
+                    format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
+                })?;
 
-                return Ok(Self {
-                    metadata: Some(metadata),
-                    content: content.to_string(),
-                    raw: input.to_string(),
-                });
-            }
+            return Ok(Self {
+                metadata: Some(metadata),
+                content: content.to_string(),
+                raw: input.to_string(),
+            });
+        }
 
         // Check for TOML frontmatter (starts with +++)
         if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
-            && let Some(end_idx) = find_toml_frontmatter_end(input) {
-                let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
-                let frontmatter = &input[skip_size..end_idx];
-                let content = input[end_idx..].trim_start_matches("+++").trim_start();
+            && let Some(end_idx) = find_toml_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("+++").trim_start();
 
-                // Try to parse TOML frontmatter
-                let metadata: MarkdownMetadata =
-                    toml::from_str(frontmatter).context("Failed to parse TOML frontmatter")?;
+            // Try to parse TOML frontmatter
+            let metadata: MarkdownMetadata =
+                toml::from_str(frontmatter).context("Failed to parse TOML frontmatter")?;
 
-                return Ok(Self {
-                    metadata: Some(metadata),
-                    content: content.to_string(),
-                    raw: input.to_string(),
-                });
-            }
+            return Ok(Self {
+                metadata: Some(metadata),
+                content: content.to_string(),
+                raw: input.to_string(),
+            });
+        }
 
         // No frontmatter, entire document is content
         Ok(Self {
@@ -856,9 +858,10 @@ impl MarkdownDocument {
     pub fn get_title(&self) -> Option<String> {
         // First check metadata
         if let Some(ref metadata) = self.metadata
-            && let Some(ref title) = metadata.title {
-                return Some(title.clone());
-            }
+            && let Some(ref title) = metadata.title
+        {
+            return Some(title.clone());
+        }
 
         // Try to extract from first # heading
         for line in self.content.lines() {
@@ -920,9 +923,10 @@ impl MarkdownDocument {
     pub fn get_description(&self) -> Option<String> {
         // First check metadata
         if let Some(ref metadata) = self.metadata
-            && let Some(ref desc) = metadata.description {
-                return Some(desc.clone());
-            }
+            && let Some(ref desc) = metadata.description
+        {
+            return Some(desc.clone());
+        }
 
         // Try to extract first non-heading paragraph
         let mut in_paragraph = false;

@@ -1127,9 +1127,10 @@ impl Cache {
 
             // For local paths, versions don't apply. Suppress warning for internal sentinel values.
             if let Some(ver) = version
-                && ver != "local" {
-                    eprintln!("Warning: Version constraints are ignored for local paths");
-                }
+                && ver != "local"
+            {
+                eprintln!("Warning: Version constraints are ignored for local paths");
+            }
 
             return Ok(canonical_path);
         }
@@ -1259,20 +1260,21 @@ impl Cache {
 
         // Debug: List what was cloned
         if cfg!(test)
-            && let Ok(entries) = std::fs::read_dir(target) {
+            && let Ok(entries) = std::fs::read_dir(target)
+        {
+            tracing::debug!(
+                target: "ccpm::cache",
+                "Cloned bare repo to {}, contents:",
+                target.display()
+            );
+            for entry in entries.flatten() {
                 tracing::debug!(
                     target: "ccpm::cache",
-                    "Cloned bare repo to {}, contents:",
-                    target.display()
+                    "  - {}",
+                    entry.path().display()
                 );
-                for entry in entries.flatten() {
-                    tracing::debug!(
-                        target: "ccpm::cache",
-                        "  - {}",
-                        entry.path().display()
-                    );
-                }
             }
+        }
 
         Ok(())
     }

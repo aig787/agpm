@@ -288,9 +288,10 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 
         for cap in re.captures_iter(&path_str) {
             if let Some(var_name) = cap.get(1)
-                && let Ok(value) = std::env::var(var_name.as_str()) {
-                    result = result.replace(&format!("%{}%", var_name.as_str()), &value);
-                }
+                && let Ok(value) = std::env::var(var_name.as_str())
+            {
+                result = result.replace(&format!("%{}%", var_name.as_str()), &value);
+            }
         }
 
         // Also handle Unix-style for compatibility
@@ -1501,7 +1502,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-
     #[test]
     fn test_resolve_path_invalid_env_var() {
         // Test with undefined environment variable
@@ -1635,7 +1635,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn test_normalize_path_separator_edge_cases() {

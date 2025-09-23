@@ -94,9 +94,10 @@ impl VersionComparator {
 
         for version_str in versions {
             if let Ok(version) = Self::parse_version(version_str)
-                && version > current_version {
-                    return Ok(true);
-                }
+                && version > current_version
+            {
+                return Ok(true);
+            }
         }
 
         Ok(false)
@@ -153,9 +154,10 @@ impl VersionComparator {
 
         for version_str in versions {
             if let Ok(version) = Self::parse_version(version_str)
-                && version > current_version {
-                    newer.push(version_str);
-                }
+                && version > current_version
+            {
+                newer.push(version_str);
+            }
         }
 
         // Sort by version descending
@@ -219,9 +221,10 @@ impl VersionComparator {
 
         for version_str in versions {
             if let Ok(version) = Self::parse_version(version_str)
-                && (latest.is_none() || version > latest.as_ref().unwrap().1) {
-                    latest = Some((version_str, version));
-                }
+                && (latest.is_none() || version > latest.as_ref().unwrap().1)
+            {
+                latest = Some((version_str, version));
+            }
         }
 
         Ok(latest.map(|(s, _)| s))

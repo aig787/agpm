@@ -159,9 +159,10 @@ pub fn update_settings_for_hook(name: &str, content: &str, project_root: &Path) 
 
     // Add the hook to settings
     if let Some(hooks) = &mut settings.hooks
-        && let Some(hooks_obj) = hooks.as_object_mut() {
-            hooks_obj.insert(name.to_string(), hook_json);
-        }
+        && let Some(hooks_obj) = hooks.as_object_mut()
+    {
+        hooks_obj.insert(name.to_string(), hook_json);
+    }
 
     settings.save(&settings_path)?;
     Ok(())

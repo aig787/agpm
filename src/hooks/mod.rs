@@ -366,12 +366,13 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     };
 
     if let Some(path) = script_full_path
-        && !path.exists() {
-            return Err(anyhow::anyhow!(
-                "Hook references non-existent script: {}",
-                config.command
-            ));
-        }
+        && !path.exists()
+    {
+        return Err(anyhow::anyhow!(
+            "Hook references non-existent script: {}",
+            config.command
+        ));
+    }
 
     Ok(())
 }

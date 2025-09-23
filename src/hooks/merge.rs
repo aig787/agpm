@@ -123,62 +123,61 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
     let mut ccpm_hooks: HashMap<String, Vec<String>> = HashMap::new();
 
     if let Some(existing) = existing
-        && let Some(obj) = existing.as_object() {
-            for (event_name, matcher_groups) in obj {
-                if let Some(groups) = matcher_groups.as_array() {
-                    let mut user_groups = Vec::new();
+        && let Some(obj) = existing.as_object()
+    {
+        for (event_name, matcher_groups) in obj {
+            if let Some(groups) = matcher_groups.as_array() {
+                let mut user_groups = Vec::new();
 
-                    for group in groups {
-                        if let Some(group_obj) = group.as_object() {
-                            let matcher = group_obj
-                                .get("matcher")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                for group in groups {
+                    if let Some(group_obj) = group.as_object() {
+                        let matcher = group_obj
+                            .get("matcher")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                            if let Some(hooks_array) =
-                                group_obj.get("hooks").and_then(|h| h.as_array())
-                            {
-                                let mut user_hooks_in_group = Vec::new();
+                        if let Some(hooks_array) = group_obj.get("hooks").and_then(|h| h.as_array())
+                        {
+                            let mut user_hooks_in_group = Vec::new();
 
-                                for hook in hooks_array {
-                                    // Check if this is CCPM-managed
-                                    if let Some(ccpm_meta) = hook.get("_ccpm") {
-                                        if let Some(dep_name) = ccpm_meta
-                                            .get("dependency_name")
-                                            .and_then(|n| n.as_str())
-                                        {
-                                            ccpm_hooks
-                                                .entry(dep_name.to_string())
-                                                .or_default()
-                                                .push(event_name.clone());
-                                        }
-                                    } else {
-                                        // User-managed hook
-                                        let hook_cmd: HookCommand =
-                                            serde_json::from_value(hook.clone())
-                                                .context("Failed to parse user hook")?;
-                                        user_hooks_in_group.push(hook_cmd);
+                            for hook in hooks_array {
+                                // Check if this is CCPM-managed
+                                if let Some(ccpm_meta) = hook.get("_ccpm") {
+                                    if let Some(dep_name) =
+                                        ccpm_meta.get("dependency_name").and_then(|n| n.as_str())
+                                    {
+                                        ccpm_hooks
+                                            .entry(dep_name.to_string())
+                                            .or_default()
+                                            .push(event_name.clone());
                                     }
+                                } else {
+                                    // User-managed hook
+                                    let hook_cmd: HookCommand =
+                                        serde_json::from_value(hook.clone())
+                                            .context("Failed to parse user hook")?;
+                                    user_hooks_in_group.push(hook_cmd);
                                 }
+                            }
 
-                                // Only keep the group if it has user hooks
-                                if !user_hooks_in_group.is_empty() {
-                                    user_groups.push(MatcherGroup {
-                                        matcher: matcher.clone(),
-                                        hooks: user_hooks_in_group,
-                                    });
-                                }
+                            // Only keep the group if it has user hooks
+                            if !user_hooks_in_group.is_empty() {
+                                user_groups.push(MatcherGroup {
+                                    matcher: matcher.clone(),
+                                    hooks: user_hooks_in_group,
+                                });
                             }
                         }
                     }
+                }
 
-                    if !user_groups.is_empty() {
-                        user_hooks.insert(event_name.clone(), user_groups);
-                    }
+                if !user_groups.is_empty() {
+                    user_hooks.insert(event_name.clone(), user_groups);
                 }
             }
         }
+    }
 
     Ok((user_hooks, ccpm_hooks))
 }

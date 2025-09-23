@@ -535,21 +535,23 @@ impl ListCommand {
     ) -> bool {
         // Source filter
         if let Some(ref source_filter) = self.source
-            && let Some(dep) = dep {
-                if let Some(source) = dep.get_source() {
-                    if source != source_filter {
-                        return false;
-                    }
-                } else {
-                    return false; // No source but filter specified
+            && let Some(dep) = dep
+        {
+            if let Some(source) = dep.get_source() {
+                if source != source_filter {
+                    return false;
                 }
+            } else {
+                return false; // No source but filter specified
             }
+        }
 
         // Search filter
         if let Some(ref search) = self.search
-            && !name.contains(search) {
-                return false;
-            }
+            && !name.contains(search)
+        {
+            return false;
+        }
 
         true
     }
@@ -827,9 +829,10 @@ impl ListCommand {
 
         // Search filter
         if let Some(ref search) = self.search
-            && !name.contains(search) {
-                return false;
-            }
+            && !name.contains(search)
+        {
+            return false;
+        }
 
         true
     }

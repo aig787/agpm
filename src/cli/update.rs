@@ -395,17 +395,18 @@ impl UpdateCommand {
         ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
             if let Some((_, old_entry)) =
                 ResourceIterator::find_resource_by_name(&existing_lockfile, &new_entry.name)
-                && old_entry.resolved_commit != new_entry.resolved_commit {
-                    let old_version = old_entry
-                        .version
-                        .clone()
-                        .unwrap_or_else(|| "latest".to_string());
-                    let new_version = new_entry
-                        .version
-                        .clone()
-                        .unwrap_or_else(|| "latest".to_string());
-                    updates.push((new_entry.name.clone(), old_version, new_version));
-                }
+                && old_entry.resolved_commit != new_entry.resolved_commit
+            {
+                let old_version = old_entry
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "latest".to_string());
+                let new_version = new_entry
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "latest".to_string());
+                updates.push((new_entry.name.clone(), old_version, new_version));
+            }
         });
 
         // Display results
@@ -556,7 +557,7 @@ mod tests {
             force: false,
             backup: false,
             verbose: false,
-            quiet: true, // Quiet by default for tests
+            quiet: true,       // Quiet by default for tests
             no_progress: true, // No progress bars in tests
             max_parallel: None,
         }
