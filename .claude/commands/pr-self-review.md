@@ -1,13 +1,13 @@
 ---
-allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo build:*), Bash(cargo doc:*), Bash(cargo check:*), Read, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
+allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo nextest:*), Bash(cargo build:*), Bash(cargo doc:*), Bash(cargo check:*), Read, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 description: Perform comprehensive PR review for CCPM project
 argument-hint: [ <commit> | <range> ] [ --quick | --full | --security | --performance ] - e.g., "abc123 --quick" for single commit, "main..HEAD --full" for range
 ---
 
 ## Context
 
-- Changes to review: !`if echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}'); echo "Commit range $RANGE:"; git log --oneline $RANGE; echo ""; git diff --stat $RANGE; elif echo "$ARGUMENTS" | grep -qE '^[^[:space:]]+\.\.[^[:space:]]+(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[^[:space:]]+\.\.[^[:space:]]+'); echo "Commit range $RANGE:"; git log --oneline $RANGE 2>/dev/null || echo "Invalid range: $RANGE"; echo ""; git diff --stat $RANGE 2>/dev/null; elif echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}(\s|$)'; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); echo "Commit $COMMIT:"; git show --stat $COMMIT; else echo "Current diff:"; git diff HEAD; fi`
-- Files changed: !`if echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}\.\.[a-f0-9]{6,40}'); git diff --name-status $RANGE; elif echo "$ARGUMENTS" | grep -qE '^[^[:space:]]+\.\.[^[:space:]]+(\s|$)'; then RANGE=$(echo "$ARGUMENTS" | grep -oE '^[^[:space:]]+\.\.[^[:space:]]+'); git diff --name-status $RANGE 2>/dev/null || echo "Invalid range: $RANGE"; elif echo "$ARGUMENTS" | grep -qE '^[a-f0-9]{6,40}(\s|$)'; then COMMIT=$(echo "$ARGUMENTS" | grep -oE '^[a-f0-9]{6,40}'); git diff-tree --no-commit-id --name-status -r $COMMIT; else git status --short; fi`
+- Arguments provided: $ARGUMENTS
+- Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -5`
 
 ## Your task
@@ -25,20 +25,25 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Include relevant file paths and change summaries in prompts
 
 2. Parse arguments to determine review target and type:
-   - Extract target from start of arguments:
-     * Commit range: Pattern like `abc123..def456` or `main..HEAD` (two refs separated by ..)
-     * Single commit: 6-40 character hex string
-     * No target: Review current working changes
-   - Review targets:
-     * If range provided: Review all changes between the two commits using `git diff <range>` and `git log <range>`
-     * If single commit: Review that specific commit using `git show` and `git diff-tree`
-     * If no target: Review current working changes using `git diff HEAD`
-   - Parse review type from remaining arguments:
+
+   First, analyze the arguments provided: $ARGUMENTS
+
+   **Determine the review target**:
+   - Check if arguments start with a commit range (pattern: `<ref>..<ref>` like `abc123..def456` or `main..HEAD`):
+     * If yes: Use `git log --oneline <range>` and `git diff --stat <range>` to see the changes
+     * Use `git diff --name-status <range>` to list changed files
+   - Check if arguments start with a single commit hash (6-40 character hex string):
+     * If yes: Use `git show --stat <commit>` to see the commit details
+     * Use `git diff-tree --no-commit-id --name-status -r <commit>` to list changed files
+   - If no commit/range specified:
+     * Review current working changes using `git diff HEAD --stat`
+     * Use `git status --short` to see modified files
+
+   **Determine the review type** from remaining arguments after the target:
    - `--quick`: Basic formatting and linting only
-   - `--full`: Complete review with all checks (default)
+   - `--full`: Complete review with all checks (default if no flag specified)
    - `--security`: Focus on security implications
    - `--performance`: Focus on performance analysis
-   - Arguments: $ARGUMENTS
 
 3. Run automated checks based on review type:
 
@@ -46,10 +51,10 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Run these checks IN PARALLEL using multiple tool calls in a single message:
      * `cargo fmt` to fix formatting
      * `cargo clippy -- -D warnings` to catch issues
-     * `cargo test --lib` for basic tests
+     * `cargo nextest run --lib` for basic tests
 
    **Full Review (--full or default)**:
-   - First, run quick checks IN PARALLEL (cargo fmt, clippy, test --lib)
+   - First, run quick checks IN PARALLEL (cargo fmt, clippy, nextest run --lib)
    - Then use the Task tool to delegate to specialized agents IN PARALLEL:
      * Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
      * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and best practices
@@ -63,7 +68,8 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
           subagent_type="rust-expert-standard")
      ```
    - Run full test suite and doc build IN PARALLEL:
-     * `cargo test --all`
+     * `cargo nextest run --all` for parallel test execution
+     * `cargo test --doc` for doctests
      * `cargo doc --no-deps`
    - Check cross-platform compatibility
 
