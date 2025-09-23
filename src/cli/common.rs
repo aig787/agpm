@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::manifest::{find_manifest, Manifest};
+use crate::manifest::{Manifest, find_manifest};
 
 /// Common trait for CLI command execution pattern
 pub trait CommandExecutor: Sized {
@@ -140,10 +140,12 @@ test = "https://github.com/test/repo.git"
 
         let result = CommandContext::from_manifest_path(&manifest_path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse manifest"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse manifest")
+        );
     }
 
     #[test]

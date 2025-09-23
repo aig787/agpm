@@ -9,7 +9,7 @@
 //!
 //! Note: Hooks and permissions are handled separately and stored in `.claude/settings.local.json`
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -376,28 +376,26 @@ pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
-        if path.extension().is_some_and(|ext| ext == "json") {
-            if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-                // Read and parse the MCP server configuration
-                let config: McpServerConfig =
-                    crate::utils::read_json_file(&path).with_context(|| {
-                        format!("Failed to parse MCP server file: {}", path.display())
-                    })?;
+        if path.extension().is_some_and(|ext| ext == "json")
+            && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+        {
+            // Read and parse the MCP server configuration
+            let config: McpServerConfig = crate::utils::read_json_file(&path)
+                .with_context(|| format!("Failed to parse MCP server file: {}", path.display()))?;
 
-                // Add CCPM metadata
-                let mut config_with_metadata = config;
-                if config_with_metadata.ccpm_metadata.is_none() {
-                    config_with_metadata.ccpm_metadata = Some(CcpmMetadata {
-                        managed: true,
-                        source: Some("ccpm".to_string()),
-                        version: None,
-                        installed_at: Utc::now().to_rfc3339(),
-                        dependency_name: Some(name.to_string()),
-                    });
-                }
-
-                ccpm_servers.insert(name.to_string(), config_with_metadata);
+            // Add CCPM metadata
+            let mut config_with_metadata = config;
+            if config_with_metadata.ccpm_metadata.is_none() {
+                config_with_metadata.ccpm_metadata = Some(CcpmMetadata {
+                    managed: true,
+                    source: Some("ccpm".to_string()),
+                    version: None,
+                    installed_at: Utc::now().to_rfc3339(),
+                    dependency_name: Some(name.to_string()),
+                });
             }
+
+            ccpm_servers.insert(name.to_string(), config_with_metadata);
         }
     }
 

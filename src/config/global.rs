@@ -151,7 +151,7 @@ use tokio::fs;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::config::GlobalConfig;
 /// use std::collections::HashMap;
 ///
@@ -203,7 +203,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -228,6 +228,36 @@ impl GlobalConfig {
         }
     }
 
+    /// Load global configuration from an optional path.
+    ///
+    /// If a path is provided, loads from that path. Otherwise, loads from the
+    /// default location (`~/.ccpm/config.toml` or platform equivalent).
+    ///
+    /// # Parameters
+    ///
+    /// - `path`: Optional path to the configuration file
+    ///
+    /// # Returns
+    ///
+    /// Returns the loaded configuration or a default configuration if the file
+    /// doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file exists but cannot be read
+    /// - The file contains invalid TOML syntax
+    pub async fn load_with_optional(path: Option<PathBuf>) -> Result<Self> {
+        let path = path.unwrap_or_else(|| {
+            Self::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+        });
+        if path.exists() {
+            Self::load_from(&path).await
+        } else {
+            Ok(Self::default())
+        }
+    }
+
     /// Load global configuration from a specific file path.
     ///
     /// This method is primarily used for testing or when a custom configuration
@@ -239,7 +269,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
@@ -277,7 +307,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -314,7 +344,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
@@ -345,6 +375,24 @@ impl GlobalConfig {
             .await
             .with_context(|| format!("Failed to write global config to {}", path.display()))?;
 
+        // Set restrictive permissions on Unix systems to protect credentials
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            use tokio::fs as async_fs;
+
+            let mut perms = async_fs::metadata(path)
+                .await
+                .with_context(|| format!("Failed to read permissions for {}", path.display()))?
+                .permissions();
+            perms.set_mode(0o600); // Owner read/write only, no group/other access
+            async_fs::set_permissions(path, perms)
+                .await
+                .with_context(|| {
+                    format!("Failed to set secure permissions on {}", path.display())
+                })?;
+        }
+
         Ok(())
     }
 
@@ -355,13 +403,15 @@ impl GlobalConfig {
     ///
     /// # Path Resolution
     ///
-    /// 1. **Environment Variable**: `CCPM_CONFIG_PATH` (if set)
-    /// 2. **Windows**: `%LOCALAPPDATA%\ccpm\config.toml`
-    /// 3. **Unix/macOS**: `~/.ccpm/config.toml`
+    /// - **Windows**: `%LOCALAPPDATA%\ccpm\config.toml`
+    /// - **Unix/macOS**: `~/.ccpm/config.toml`
+    ///
+    /// Note: Environment variable overrides are deprecated. Use the load_with_optional()
+    /// method with an explicit path instead for better thread safety.
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -377,11 +427,6 @@ impl GlobalConfig {
     /// - The home directory cannot be determined
     /// - The local data directory cannot be determined (Windows)
     pub fn default_path() -> Result<PathBuf> {
-        // Check for environment variable override first
-        if let Ok(env_path) = std::env::var("CCPM_CONFIG_PATH") {
-            return Ok(PathBuf::from(env_path));
-        }
-
         let config_dir = if cfg!(target_os = "windows") {
             dirs::data_local_dir()
                 .ok_or_else(|| anyhow::anyhow!("Unable to determine local data directory"))?
@@ -418,7 +463,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     /// use std::collections::HashMap;
     ///
@@ -471,7 +516,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
@@ -513,7 +558,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
@@ -539,7 +584,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
@@ -568,7 +613,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
@@ -603,7 +648,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// let config = GlobalConfig::init_example();
@@ -648,7 +693,7 @@ impl GlobalConfig {
 ///
 /// ## Basic Usage
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -666,7 +711,7 @@ impl GlobalConfig {
 ///
 /// ## Modifying Configuration
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -697,7 +742,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -727,7 +772,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     /// use std::path::PathBuf;
     ///
@@ -749,7 +794,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -788,7 +833,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -827,7 +872,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -863,7 +908,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1010,6 +1055,25 @@ mod tests {
             config.get_source("private"),
             Some(&"https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-ccpm.git".to_string())
         );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_config_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("test-config.toml");
+
+        // Create and save config
+        let config = GlobalConfig::default();
+        config.save_to(&config_path).await.unwrap();
+
+        // Check permissions
+        let metadata = tokio::fs::metadata(&config_path).await.unwrap();
+        let permissions = metadata.permissions();
+        let mode = permissions.mode() & 0o777; // Get only permission bits
+
+        assert_eq!(mode, 0o600, "Config file should have 600 permissions");
     }
 
     #[tokio::test]

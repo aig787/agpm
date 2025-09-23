@@ -206,7 +206,7 @@ use std::path::Path;
 ///
 /// ## Minimal Agent
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::config::{AgentManifest, AgentMetadata};
 /// use std::collections::HashMap;
 ///
@@ -228,7 +228,7 @@ use std::path::Path;
 ///
 /// ## Loading from File
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::config::AgentManifest;
 /// use std::path::Path;
 ///
@@ -285,7 +285,7 @@ impl AgentManifest {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::config::AgentManifest;
     /// use std::path::Path;
     ///

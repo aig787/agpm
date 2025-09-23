@@ -61,39 +61,22 @@ fn create_test_lockfile() -> String {
     r#"
 version = 1
 
-[[sources]]
-name = "test-source"
-url = "https://github.com/test/repo.git"
-commit = "abc123"
-
 [[agents]]
 name = "test-agent"
-source = "test-source"
-url = "https://github.com/test/repo.git"
-path = "agents/test.md"
-version = "v1.0.0"
-resolved_commit = "abc123"
-checksum = "sha256:test"
+path = "source/agents/test.md"
+checksum = ""
 installed_at = ".claude/agents/test-agent.md"
 
 [[snippets]]
 name = "test-snippet"
-source = "test-source"
-url = "https://github.com/test/repo.git"
-path = "snippets/test.md"
-version = "v1.0.0"
-resolved_commit = "abc123"
-checksum = "sha256:test"
+path = "source/snippets/test.md"
+checksum = ""
 installed_at = ".claude/ccpm/snippets/test-snippet.md"
 
 [[commands]]
 name = "test-command"
-source = "test-source"
-url = "https://github.com/test/repo.git"
-path = "commands/test.md"
-version = "v1.0.0"
-resolved_commit = "abc123"
-checksum = "sha256:test"
+path = "source/commands/test.md"
+checksum = ""
 installed_at = ".claude/commands/test-command.md"
 "#
     .to_string()
@@ -136,7 +119,6 @@ fn test_gitignore_enabled_by_default() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -176,7 +158,6 @@ fn test_gitignore_explicitly_enabled() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -214,7 +195,6 @@ fn test_gitignore_disabled() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -265,7 +245,6 @@ temp/
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -325,7 +304,6 @@ debug/
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -457,7 +435,6 @@ installed_at = ".claude/agents/internal.md"
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -501,7 +478,6 @@ fn test_gitignore_empty_lockfile() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -540,7 +516,6 @@ fn test_gitignore_idempotent() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -557,7 +532,6 @@ fn test_gitignore_idempotent() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -597,7 +571,6 @@ fn test_gitignore_switch_enabled_disabled() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -612,7 +585,6 @@ fn test_gitignore_switch_enabled_disabled() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -638,7 +610,6 @@ fn test_gitignore_switch_enabled_disabled() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
@@ -682,19 +653,22 @@ fn test_gitignore_actually_ignored_by_git() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
 
     // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir
-        .join(".claude/ccpm/snippets/test-snippet.md")
-        .exists());
-    assert!(project_dir
-        .join(".claude/commands/test-command.md")
-        .exists());
+    assert!(
+        project_dir
+            .join(".claude/ccpm/snippets/test-snippet.md")
+            .exists()
+    );
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     // Stage all files for git
     StdCommand::new("git")
@@ -820,19 +794,22 @@ fn test_gitignore_disabled_files_not_ignored_by_git() {
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();
 
     // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir
-        .join(".claude/ccpm/snippets/test-snippet.md")
-        .exists());
-    assert!(project_dir
-        .join(".claude/commands/test-command.md")
-        .exists());
+    assert!(
+        project_dir
+            .join(".claude/ccpm/snippets/test-snippet.md")
+            .exists()
+    );
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     // Stage all files for git
     StdCommand::new("git")
@@ -919,7 +896,6 @@ user-file.txt
     Command::cargo_bin("ccpm")
         .unwrap()
         .arg("install")
-        .arg("--force")
         .arg("--quiet")
         .current_dir(project_dir)
         .assert();

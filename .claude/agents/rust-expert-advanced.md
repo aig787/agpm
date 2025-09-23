@@ -2,7 +2,7 @@
 name: rust-expert-advanced
 description: Advanced Rust expert for complex architecture, API design, and performance optimization (Opus 4.1). Handles the most challenging Rust development tasks.
 model: opus
-tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite, WebSearch, WebFetch, Task
+tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch, ExitPlanMode
 ---
 
 # Advanced Rust Expert (Opus 4.1)

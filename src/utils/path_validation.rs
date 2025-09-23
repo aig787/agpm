@@ -3,7 +3,7 @@
 //! This module provides utilities for safe path handling, validation,
 //! and security checks to prevent path traversal attacks.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::{Component, Path, PathBuf};
 
 /// Validates that a path is safe and within project boundaries.
@@ -48,15 +48,15 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
     // First check if the path exists
     if !path.exists() {
         // If it doesn't exist, try to canonicalize the parent
-        if let Some(parent) = path.parent() {
-            if parent.exists() {
-                let canonical_parent = parent.canonicalize().with_context(|| {
-                    format!("Failed to canonicalize parent of '{}'", path.display())
-                })?;
+        if let Some(parent) = path.parent()
+            && parent.exists()
+        {
+            let canonical_parent = parent.canonicalize().with_context(|| {
+                format!("Failed to canonicalize parent of '{}'", path.display())
+            })?;
 
-                if let Some(file_name) = path.file_name() {
-                    return Ok(canonical_parent.join(file_name));
-                }
+            if let Some(file_name) = path.file_name() {
+                return Ok(canonical_parent.join(file_name));
             }
         }
         return Err(anyhow!("Path does not exist: {}", path.display()));
@@ -188,15 +188,15 @@ pub fn validate_resource_path(
         validate_project_path(&full_path, project_dir)?;
     } else {
         // For non-existent files, check parent directory
-        if let Some(parent) = full_path.parent() {
-            if parent.exists() {
-                let canonical_parent = safe_canonicalize(parent)?;
-                if !canonical_parent.starts_with(&canonical_project) {
-                    return Err(anyhow!(
-                        "Path '{}' escapes project directory",
-                        full_path.display()
-                    ));
-                }
+        if let Some(parent) = full_path.parent()
+            && parent.exists()
+        {
+            let canonical_parent = safe_canonicalize(parent)?;
+            if !canonical_parent.starts_with(&canonical_project) {
+                return Err(anyhow!(
+                    "Path '{}' escapes project directory",
+                    full_path.display()
+                ));
             }
         }
     }

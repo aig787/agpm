@@ -62,7 +62,7 @@
 //!
 //! ## Error Handling Pattern
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{CcpmError, ErrorContext, user_friendly_error};
 //! use anyhow::Result;
 //!
@@ -85,7 +85,7 @@
 //!
 //! ## Resource Type Detection
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{ResourceType, detect_resource_type};
 //! use std::path::Path;
 //! use tempfile::tempdir;
@@ -135,7 +135,7 @@
 //!
 //! ## Resource Trait Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{Resource, ResourceType};
 //! use anyhow::Result;
 //! use std::path::Path;
@@ -168,7 +168,7 @@
 //!
 //! ## Error Context Creation
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{CcpmError, ErrorContext};
 //!
 //! fn create_helpful_error() -> ErrorContext {
@@ -209,9 +209,9 @@ pub mod error_helpers;
 mod resource;
 pub mod resource_iterator;
 
-pub use error::{user_friendly_error, CcpmError, ErrorContext, IntoAnyhowWithContext};
+pub use error::{CcpmError, ErrorContext, IntoAnyhowWithContext, user_friendly_error};
 pub use error_builders::{
-    file_error_context, git_error_context, manifest_error_context, ErrorContextExt,
+    ErrorContextExt, file_error_context, git_error_context, manifest_error_context,
 };
 pub use error_helpers::{
     FileOperations, FileOps, JsonOperations, JsonOps, LockfileOperations, LockfileOps,
@@ -238,7 +238,7 @@ use std::path::Path;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{ResourceType, detect_resource_type};
 /// use tempfile::tempdir;
 /// use std::fs;

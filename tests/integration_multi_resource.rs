@@ -5,88 +5,70 @@ use tracing::debug;
 
 mod common;
 mod fixtures;
-use common::TestGit;
-use fixtures::{path_to_file_url, TestEnvironment};
+use common::TestProject;
 
 #[test]
 fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Initialize test logging
     ccpm::test_utils::init_test_logging(None);
 
-    let env = TestEnvironment::new()?;
-    let repo_dir = env.sources_dir.join("test_repo");
-    fs::create_dir_all(&repo_dir)?;
+    let project = TestProject::new()?;
 
-    // Initialize git repository with file:// URL
-    let git = TestGit::new(&repo_dir);
-    git.init()?;
-    git.config_user()?;
+    // Create a source repository using test utilities
+    let source_repo = project.create_source_repo("test_repo")?;
 
     // Create initial resources and commit (v1.0.0)
-    create_v1_resources(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Initial resources v1.0.0")?;
-    git.tag("v1.0.0")?;
+    create_v1_resources(&source_repo.path)?;
+    source_repo.commit_all("Initial resources v1.0.0")?;
+    source_repo.tag_version("v1.0.0")?;
 
     // Create v1.1.0 with updated snippets
-    update_snippets_v1_1(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Update snippets v1.1.0")?;
-    git.tag("v1.1.0")?;
+    update_snippets_v1_1(&source_repo.path)?;
+    source_repo.commit_all("Update snippets v1.1.0")?;
+    source_repo.tag_version("v1.1.0")?;
 
     // Create v1.2.0 with new scripts
-    update_scripts_v1_2(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Add scripts v1.2.0")?;
-    git.tag("v1.2.0")?;
+    update_scripts_v1_2(&source_repo.path)?;
+    source_repo.commit_all("Add scripts v1.2.0")?;
+    source_repo.tag_version("v1.2.0")?;
 
     // Create v2.0.0 with updated agents
-    update_agents_v2(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Update agents v2.0.0")?;
-    git.tag("v2.0.0")?;
+    update_agents_v2(&source_repo.path)?;
+    source_repo.commit_all("Update agents v2.0.0")?;
+    source_repo.tag_version("v2.0.0")?;
 
     // Create v2.1.0 with updated command and hooks
-    update_command_v2_1(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Update command and add hooks v2.1.0")?;
-    git.tag("v2.1.0")?;
+    update_command_v2_1(&source_repo.path)?;
+    source_repo.commit_all("Update command and add hooks v2.1.0")?;
+    source_repo.tag_version("v2.1.0")?;
 
     // Create v2.2.0 with MCP servers
-    update_mcp_v2_2(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Add MCP servers v2.2.0")?;
-    git.tag("v2.2.0")?;
+    update_mcp_v2_2(&source_repo.path)?;
+    source_repo.commit_all("Add MCP servers v2.2.0")?;
+    source_repo.tag_version("v2.2.0")?;
 
     // Create v3.0.0 with major updates
-    update_major_v3(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Major update v3.0.0")?;
-    git.tag("v3.0.0")?;
+    update_major_v3(&source_repo.path)?;
+    source_repo.commit_all("Major update v3.0.0")?;
+    source_repo.tag_version("v3.0.0")?;
 
     // Create v3.1.0 with additional resources
-    update_additional_v3_1(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Additional resources v3.1.0")?;
-    git.tag("v3.1.0")?;
+    update_additional_v3_1(&source_repo.path)?;
+    source_repo.commit_all("Additional resources v3.1.0")?;
+    source_repo.tag_version("v3.1.0")?;
 
     // Create v3.2.0 with more commands
-    update_commands_v3_2(&repo_dir)?;
-    git.add_all()?;
-    git.commit("More commands v3.2.0")?;
-    git.tag("v3.2.0")?;
+    update_commands_v3_2(&source_repo.path)?;
+    source_repo.commit_all("More commands v3.2.0")?;
+    source_repo.tag_version("v3.2.0")?;
 
     // Create v4.0.0 with breaking changes
-    update_breaking_v4(&repo_dir)?;
-    git.add_all()?;
-    git.commit("Breaking changes v4.0.0")?;
-    git.tag("v4.0.0")?;
+    update_breaking_v4(&source_repo.path)?;
+    source_repo.commit_all("Breaking changes v4.0.0")?;
+    source_repo.tag_version("v4.0.0")?;
 
-    // Create main branch pointing to latest
-    git.create_branch("main")?;
-
-    // Create ccpm.toml with 20 dependencies across 10+ versions
-    let repo_url = path_to_file_url(&repo_dir);
+    // Get the file URL for the bare repository (test utilities handle bare clone automatically)
+    let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest_content = format!(
         r#"[sources]
 test_repo = "{}"
@@ -94,7 +76,7 @@ test_repo = "{}"
 [agents]
 agent-alpha = {{ source = "test_repo", path = "agents/alpha.md", version = "v1.0.0" }}
 agent-beta = {{ source = "test_repo", path = "agents/beta.md", version = "v2.0.0" }}
-agent-gamma = {{ source = "test_repo", path = "agents/gamma.md", version = "main" }}
+agent-gamma = {{ source = "test_repo", path = "agents/gamma.md", version = "v4.0.0" }}
 agent-delta = {{ source = "test_repo", path = "agents/delta.md", version = "v3.1.0" }}
 
 [snippets]
@@ -126,121 +108,139 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
         repo_url
     );
 
-    fs::write(env.project_dir.join("ccpm.toml"), &manifest_content)?;
+    project.write_manifest(&manifest_content)?;
 
     // Log the manifest content and working directory for debugging
     debug!("Generated manifest content:\n{}", manifest_content);
-    debug!("Running ccpm from directory: {:?}", env.project_dir);
+    debug!("Running ccpm from directory: {:?}", project.project_path());
 
     // Run install
-    let mut cmd = env.ccpm_command();
-    cmd.arg("install")
-        .env("CCPM_CACHE_DIR", env.cache_path())
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
 
     // Verify all 20 resources are installed with correct versions
 
     // Check agents (4 resources)
     verify_file_contains(
-        &env.project_dir.join(".claude/agents/agent-alpha.md"),
+        &project.project_path().join(".claude/agents/agent-alpha.md"),
         "Agent Alpha v1.0.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/agents/agent-beta.md"),
+        &project.project_path().join(".claude/agents/agent-beta.md"),
         "Agent Beta v2.0.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/agents/agent-gamma.md"),
+        &project.project_path().join(".claude/agents/agent-gamma.md"),
         "Agent Gamma v4.0.0",
-    )?; // main branch
+    )?; // v4.0.0
     verify_file_contains(
-        &env.project_dir.join(".claude/agents/agent-delta.md"),
+        &project.project_path().join(".claude/agents/agent-delta.md"),
         "Agent Delta v3.1.0",
     )?;
 
     // Check snippets (4 resources)
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/snippets/snippet-one.md"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet-one.md"),
         "Snippet 1 v1.0.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/snippets/snippet-two.md"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet-two.md"),
         "Snippet 2 v1.1.0",
     )?;
     verify_file_contains(
-        &env.project_dir
+        &project
+            .project_path()
             .join(".claude/ccpm/snippets/snippet-three.md"),
         "Snippet 3 v3.0.0",
     )?;
     verify_file_contains(
-        &env.project_dir
+        &project
+            .project_path()
             .join(".claude/ccpm/snippets/snippet-four.md"),
         "Snippet 4 v4.0.0",
     )?;
 
     // Check commands (4 resources)
     verify_file_contains(
-        &env.project_dir.join(".claude/commands/deploy-cmd.md"),
+        &project
+            .project_path()
+            .join(".claude/commands/deploy-cmd.md"),
         "Deploy Command v2.1.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/commands/build-cmd.md"),
+        &project.project_path().join(".claude/commands/build-cmd.md"),
         "Build Command v3.2.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/commands/test-cmd.md"),
+        &project.project_path().join(".claude/commands/test-cmd.md"),
         "Test Command v3.2.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/commands/lint-cmd.md"),
+        &project.project_path().join(".claude/commands/lint-cmd.md"),
         "Lint Command v4.0.0",
     )?;
 
     // Check scripts (3 resources)
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/scripts/build-script.sh"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/scripts/build-script.sh"),
         "Build Script v1.2.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/scripts/test-script.js"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/scripts/test-script.js"),
         "Test Script v2.2.0",
     )?;
     verify_file_contains(
-        &env.project_dir
+        &project
+            .project_path()
             .join(".claude/ccpm/scripts/deploy-script.py"),
         "Deploy Script v3.0.0",
     )?;
 
     // Check hooks (2 resources)
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/hooks/pre-commit.json"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/hooks/pre-commit.json"),
         "Pre-commit hook v2.1.0",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/hooks/post-commit.json"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/hooks/post-commit.json"),
         "Post-commit hook v3.1.0",
     )?;
 
     // Check MCP servers (3 resources)
     verify_file_contains(
-        &env.project_dir
+        &project
+            .project_path()
             .join(".claude/ccpm/mcp-servers/filesystem.json"),
         "\"version\": \"v2.2.0\"",
     )?;
     verify_file_contains(
-        &env.project_dir
+        &project
+            .project_path()
             .join(".claude/ccpm/mcp-servers/postgres.json"),
         "\"version\": \"v3.0.0\"",
     )?;
     verify_file_contains(
-        &env.project_dir.join(".claude/ccpm/mcp-servers/redis.json"),
+        &project
+            .project_path()
+            .join(".claude/ccpm/mcp-servers/redis.json"),
         "\"version\": \"v4.0.0\"",
     )?;
 
     // Verify lockfile was created
-    assert!(env.project_dir.join("ccpm.lock").exists());
-    let lockfile = fs::read_to_string(env.project_dir.join("ccpm.lock"))?;
+    assert!(project.project_path().join("ccpm.lock").exists());
+    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))?;
 
     // Check that lockfile contains all 20 resources
     assert!(lockfile.contains("[[agents]]"));
@@ -285,7 +285,7 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     // Verify all 10+ versions are locked
     let versions = [
         "v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0", "v2.1.0", "v2.2.0", "v3.0.0", "v3.1.0", "v3.2.0",
-        "v4.0.0", "main",
+        "v4.0.0",
     ];
 
     for version in &versions {
@@ -295,6 +295,8 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
             version
         );
     }
+
+    // All versions are now tags, no branch references needed
 
     Ok(())
 }
@@ -530,19 +532,15 @@ fn test_install_with_version_conflicts() -> Result<()> {
     // Initialize test logging
     ccpm::test_utils::init_test_logging(None);
 
-    let env = TestEnvironment::new()?;
-    let repo_dir = env.sources_dir.join("conflict_repo");
-    fs::create_dir_all(&repo_dir)?;
+    let project = TestProject::new()?;
 
-    // Initialize git repository
-    let git = TestGit::new(&repo_dir);
-    git.init()?;
-    git.config_user()?;
+    // Create a source repository using test utilities
+    let source_repo = project.create_source_repo("conflict_repo")?;
 
     // Create resources with dependencies
-    fs::create_dir_all(repo_dir.join("agents"))?;
+    fs::create_dir_all(source_repo.path.join("agents"))?;
     fs::write(
-        repo_dir.join("agents/dependent.md"),
+        source_repo.path.join("agents/dependent.md"),
         r#"---
 dependencies:
   - snippet-base@v1.0.0
@@ -552,28 +550,26 @@ dependencies:
 Requires snippet-base v1.0.0"#,
     )?;
 
-    fs::create_dir_all(repo_dir.join("snippets"))?;
+    fs::create_dir_all(source_repo.path.join("snippets"))?;
     fs::write(
-        repo_dir.join("snippets/base.md"),
+        source_repo.path.join("snippets/base.md"),
         "# Base Snippet v1.0.0\n\nBase functionality",
     )?;
 
-    git.add_all()?;
-    git.commit("Initial with v1.0.0")?;
-    git.tag("v1.0.0")?;
+    source_repo.commit_all("Initial with v1.0.0")?;
+    source_repo.tag_version("v1.0.0")?;
 
     // Update base snippet to v2.0.0
     fs::write(
-        repo_dir.join("snippets/base.md"),
+        source_repo.path.join("snippets/base.md"),
         "# Base Snippet v2.0.0\n\nBreaking changes",
     )?;
 
-    git.add_all()?;
-    git.commit("Update to v2.0.0")?;
-    git.tag("v2.0.0")?;
+    source_repo.commit_all("Update to v2.0.0")?;
+    source_repo.tag_version("v2.0.0")?;
 
-    // Create manifest requesting incompatible versions
-    let repo_url = path_to_file_url(&repo_dir);
+    // Get the file URL for the bare repository (test utilities handle bare clone automatically)
+    let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest_content = format!(
         r#"[sources]
 conflict_repo = "{}"
@@ -587,39 +583,44 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
         repo_url
     );
 
-    fs::write(env.project_dir.join("ccpm.toml"), &manifest_content)?;
+    fs::write(project.project_path().join("ccpm.toml"), &manifest_content)?;
 
     // Log the manifest content and working directory for debugging
     debug!(
         "Generated manifest content for version conflict test:\n{}",
         manifest_content
     );
-    debug!("Running ccpm from directory: {:?}", env.project_dir);
+    debug!("Running ccpm from directory: {:?}", project.project_path());
 
     // Install should succeed but we can check for warnings in future versions
-    let mut cmd = env.ccpm_command();
-    cmd.arg("install")
-        .env("CCPM_CACHE_DIR", env.cache_path())
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
 
     // Verify both are installed with their specified versions
-    assert!(env
-        .project_dir
-        .join(".claude/ccpm/snippets/snippet-base.md")
-        .exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet-base.md")
+            .exists()
+    );
     let snippet_content = fs::read_to_string(
-        env.project_dir
+        project
+            .project_path()
             .join(".claude/ccpm/snippets/snippet-base.md"),
     )?;
     assert!(snippet_content.contains("v2.0.0"));
 
-    assert!(env
-        .project_dir
-        .join(".claude/agents/agent-dependent.md")
-        .exists());
-    let agent_content =
-        fs::read_to_string(env.project_dir.join(".claude/agents/agent-dependent.md"))?;
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent-dependent.md")
+            .exists()
+    );
+    let agent_content = fs::read_to_string(
+        project
+            .project_path()
+            .join(".claude/agents/agent-dependent.md"),
+    )?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));
 
     Ok(())

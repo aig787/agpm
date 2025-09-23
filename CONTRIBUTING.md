@@ -57,9 +57,10 @@ When creating an issue:
 ### Prerequisites
 
 - Rust 1.70 or later
-- Git 2.0 or later
+- Git 2.5 or later (required for worktree support)
 - A GitHub account
 - Your favorite code editor (we recommend VS Code with rust-analyzer)
+- Understanding of async Rust and tokio (for concurrency-related contributions)
 
 ### Setting Up Your Development Environment
 
@@ -80,14 +81,29 @@ When creating an issue:
    # Install rustfmt and clippy
    rustup component add rustfmt clippy
    
+   # Install cargo-nextest for faster parallel test execution
+   cargo install cargo-nextest --locked
+
    # Install cargo-tarpaulin for coverage (optional)
    cargo install cargo-tarpaulin
+
+   # Install additional development tools
+   cargo install cargo-edit  # For managing dependencies
+   cargo install cargo-audit # For security auditing
    ```
 
-4. **Build the project:**
+4. **Build and test the project:**
    ```bash
+   # Build in development mode
    cargo build
-   cargo test
+
+   # Run the full test suite (uses cargo nextest for parallel execution)
+   cargo nextest run
+   cargo test --doc
+
+   # Test worktree functionality specifically
+   cargo nextest run cache
+   cargo nextest run installer
    ```
 
 5. **Set up pre-commit hooks (optional but recommended):**
@@ -97,7 +113,8 @@ When creating an issue:
    #!/bin/sh
    cargo fmt --check
    cargo clippy -- -D warnings
-   cargo test
+   cargo nextest run
+   cargo test --doc
    EOF
    chmod +x .git/hooks/pre-commit
    ```
@@ -126,12 +143,21 @@ When creating an issue:
    
    # Run linter
    cargo clippy -- -D warnings
-   
+
    # Run tests
-   cargo test
-   
+   cargo nextest run
+   cargo test --doc
+
+   # Test parallel functionality specifically
+   cargo nextest run --test-threads 1 cache
+   cargo nextest run installer
+
    # Run tests with coverage (optional)
-   cargo tarpaulin --out html
+   cargo tarpaulin --out html --timeout 300
+
+   # Test on different parallelism levels
+   CCPM_MAX_PARALLEL=1 cargo nextest run
+   CCPM_MAX_PARALLEL=16 cargo nextest run
    ```
 
 4. **Commit your changes:**
@@ -192,7 +218,7 @@ When creating an issue:
 ### Before Submitting
 
 Ensure your PR:
-- [ ] Passes all tests (`cargo test`)
+- [ ] Passes all tests (`cargo nextest run && cargo test --doc`)
 - [ ] Follows code style (`cargo fmt`)
 - [ ] Passes linting (`cargo clippy`)
 - [ ] Includes tests for new functionality
@@ -260,6 +286,10 @@ pub fn resolve_dependencies(manifest: &Manifest) -> Result<Lockfile> {
 - Bug fixes should include a test that would have caught the bug
 - Maintain or improve test coverage (target: 70%+)
 - Test edge cases and error conditions
+- Test parallel and concurrent scenarios for cache and installer changes
+- Ensure tests are parallel-safe (no shared global state)
+- Test worktree functionality across different Git versions
+- Test cross-platform compatibility (especially path handling)
 
 ### Test Organization
 
@@ -287,25 +317,50 @@ mod tests {
 
 ### Integration Tests
 
-Place integration tests in the `tests/` directory:
+Place integration tests in the `tests/` directory. Focus on testing full workflows:
+
 ```rust
-// tests/integration_install.rs
+// tests/integration_parallel_install.rs
 use ccpm::cli;
+use tempfile::TempDir;
+use std::sync::Arc;
 
 #[tokio::test]
-async fn test_install_command() {
-    // Test the full install flow
+async fn test_parallel_install_workflow() {
+    let temp_dir = TempDir::new().unwrap();
+    // Test parallel installation with worktrees
+    // Verify no race conditions or conflicts
+}
+
+#[tokio::test]
+async fn test_worktree_isolation() {
+    // Test that different dependencies from same repo
+    // use isolated worktrees without conflicts
+}
+
+#[tokio::test]
+async fn test_max_parallel_flag() {
+    // Test --max-parallel flag functionality
+    // Verify parallelism is correctly limited
 }
 ```
 
 ### Platform-Specific Testing
 
-Ensure your changes work on:
-- Linux
-- macOS  
-- Windows
+Ensure your changes work across all supported platforms:
+- **Linux** (x86_64, aarch64) - Test with different Git versions
+- **macOS** (Intel, Apple Silicon) - Test with both architectures
+- **Windows** (x86_64) - Test path handling and PowerShell compatibility
 
-Use CI to verify cross-platform compatibility.
+#### Platform-Specific Considerations
+
+- **Path separators**: Use `std::path` consistently
+- **File permissions**: Test executable file handling on Unix
+- **Git worktrees**: Verify worktree paths work on all platforms
+- **Parallelism**: Test resource contention behavior varies by OS
+- **Case sensitivity**: macOS has case-insensitive filesystem by default
+
+Use GitHub Actions CI to verify cross-platform compatibility automatically.
 
 ## Documentation
 
@@ -356,15 +411,26 @@ We value all contributions! Contributors are recognized through:
 
 ### Types of Contributions We Value
 
-- Code contributions (features, bug fixes)
-- Documentation improvements
-- Bug reports with reproducible examples
-- Feature suggestions with use cases
-- Code reviews and feedback
-- Helping others in discussions
-- Testing on different platforms
-- Performance improvements
-- Security vulnerability reports (please report privately first)
+#### Code Contributions
+- **Features**: New functionality, especially around parallel processing
+- **Bug fixes**: Issues with concurrency, caching, or cross-platform compatibility
+- **Performance**: Optimizations for parallel operations and Git worktrees
+- **Security**: Vulnerability fixes and security hardening
+
+#### Non-Code Contributions
+- **Documentation**: User guides, API docs, architecture explanations
+- **Testing**: Platform-specific testing, edge case discovery
+- **Bug reports**: Reproducible examples, especially for parallel operation issues
+- **Feature requests**: Use cases for improved parallelism or caching
+- **Code reviews**: Feedback on concurrency patterns and error handling
+- **Community support**: Helping others in discussions and issues
+
+#### Specialized Areas
+- **Git worktree expertise**: Improvements to worktree management
+- **Async Rust**: Enhancements to parallel processing architecture
+- **Cross-platform testing**: Windows, macOS, Linux compatibility
+- **Performance profiling**: Identifying bottlenecks in parallel operations
+- **Cache optimization**: Improvements to repository caching strategies
 
 ## Additional Resources
 
@@ -435,4 +501,4 @@ Thank you for contributing to CCPM! Your efforts help make package management be
 
 ---
 
-*Last updated: 2024*
+*Last updated: September 2024 - Reflects worktree-based parallel architecture*

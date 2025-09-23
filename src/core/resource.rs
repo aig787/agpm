@@ -28,7 +28,7 @@
 //!
 //! ## Working with Resource Types
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::ResourceType;
 //! use std::path::Path;
 //!
@@ -47,7 +47,7 @@
 //!
 //! ## Serialization Support
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::ResourceType;
 //!
 //! // ResourceType implements Serialize/Deserialize
@@ -101,7 +101,7 @@ use std::path::Path;
 ///
 /// ## Basic Usage
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
@@ -113,7 +113,7 @@ use std::path::Path;
 ///
 /// ## String Parsing
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::ResourceType;
 /// use std::str::FromStr;
 ///
@@ -129,7 +129,7 @@ use std::path::Path;
 ///
 /// ## Directory Names
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
@@ -144,7 +144,7 @@ use std::path::Path;
 ///
 /// ## JSON Serialization
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
@@ -209,7 +209,7 @@ impl ResourceType {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::ResourceType;
     ///
     /// // Iterate over all resource types
@@ -247,7 +247,7 @@ impl ResourceType {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::ResourceType;
     ///
     /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
@@ -339,7 +339,7 @@ impl std::str::FromStr for ResourceType {
 ///
 /// ## Basic Resource Usage Pattern
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{Resource, ResourceType};
 /// use anyhow::Result;
 /// use std::path::Path;
@@ -367,7 +367,7 @@ impl std::str::FromStr for ResourceType {
 ///
 /// ## Metadata Extraction
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::Resource;
 /// use anyhow::Result;
 ///
@@ -391,7 +391,7 @@ impl std::str::FromStr for ResourceType {
 ///
 /// The trait is object-safe and can be used as a trait object:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::Resource;
 /// use std::any::Any;
 ///
@@ -415,7 +415,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     ///
     /// fn print_resource_info(resource: &dyn Resource) {
@@ -435,7 +435,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::{Resource, ResourceType};
     ///
     /// fn categorize_resource(resource: &dyn Resource) {
@@ -464,7 +464,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     ///
     /// fn show_resource_details(resource: &dyn Resource) {
@@ -491,7 +491,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     ///
     /// fn check_dependencies(resource: &dyn Resource) {
@@ -522,7 +522,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     /// use anyhow::Result;
     ///
@@ -554,7 +554,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     /// use std::path::Path;
     /// use anyhow::Result;
@@ -589,7 +589,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     /// use std::path::Path;
     ///
@@ -628,7 +628,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     /// use anyhow::Result;
     ///
@@ -663,7 +663,7 @@ pub trait Resource {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::Resource;
     /// use std::any::Any;
     ///

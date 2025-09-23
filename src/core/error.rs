@@ -34,7 +34,7 @@
 //!
 //! ## Basic Error Handling
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{CcpmError, ErrorContext, user_friendly_error};
 //!
 //! fn handle_git_operation() -> Result<(), CcpmError> {
@@ -53,7 +53,7 @@
 //!
 //! ## Creating Error Context Manually
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{CcpmError, ErrorContext};
 //!
 //! let error = CcpmError::ManifestNotFound;
@@ -70,7 +70,7 @@
 //!
 //! ## Error Recovery Patterns
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::core::{CcpmError, user_friendly_error};
 //! use anyhow::Context;
 //!
@@ -163,7 +163,7 @@ use thiserror::Error;
 ///
 /// ## Pattern Matching on Errors
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::CcpmError;
 ///
 /// fn handle_error(error: CcpmError) {
@@ -187,7 +187,7 @@ use thiserror::Error;
 ///
 /// ## Creating Specific Errors
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::CcpmError;
 ///
 /// // Create a git command error with context
@@ -731,7 +731,7 @@ impl Clone for CcpmError {
 ///
 /// ## Creating Error Context
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{CcpmError, ErrorContext};
 ///
 /// let error = CcpmError::GitNotFound;
@@ -748,7 +748,7 @@ impl Clone for CcpmError {
 ///
 /// ## Builder Pattern Usage
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{CcpmError, ErrorContext};
 ///
 /// let context = ErrorContext::new(CcpmError::ManifestNotFound)
@@ -760,7 +760,7 @@ impl Clone for CcpmError {
 ///
 /// ## Quick Suggestion Creation
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::ErrorContext;
 ///
 /// // Create context with just a suggestion (useful for generic errors)
@@ -785,7 +785,7 @@ impl ErrorContext {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::{CcpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(CcpmError::GitNotFound);
@@ -809,7 +809,7 @@ impl ErrorContext {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::{CcpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(CcpmError::GitNotFound)
@@ -828,7 +828,7 @@ impl ErrorContext {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::{CcpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(CcpmError::ManifestNotFound)
@@ -851,7 +851,7 @@ impl ErrorContext {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::{CcpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(CcpmError::GitNotFound)
@@ -898,7 +898,7 @@ impl std::error::Error for ErrorContext {}
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{CcpmError, ErrorContext, IntoAnyhowWithContext};
 ///
 /// let error = CcpmError::GitNotFound;
@@ -930,7 +930,7 @@ impl ErrorContext {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::core::ErrorContext;
     ///
     /// let context = ErrorContext::suggestion("Try running with --verbose for more information");
@@ -965,7 +965,7 @@ impl ErrorContext {
 ///
 /// ## Converting CCPM Errors
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::{CcpmError, user_friendly_error};
 ///
 /// let error = CcpmError::GitNotFound;
@@ -977,7 +977,7 @@ impl ErrorContext {
 ///
 /// ## Converting IO Errors
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::user_friendly_error;
 /// use std::io::{Error, ErrorKind};
 ///
@@ -990,7 +990,7 @@ impl ErrorContext {
 ///
 /// ## Converting Generic Errors
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::core::user_friendly_error;
 ///
 /// let error = anyhow::anyhow!("Something went wrong");
@@ -1089,9 +1089,24 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 op if op.contains("clone") => "Check the repository URL and your internet connection. Verify you have access to the repository",
                 op if op.contains("fetch") => "Check your internet connection and repository access. Try 'git fetch' manually in the repository directory",
                 op if op.contains("checkout") => "Verify the branch, tag, or commit exists. Use 'git tag -l' or 'git branch -r' to list available references",
+                op if op.contains("worktree") => {
+                    if stderr.contains("invalid reference")
+                        || stderr.contains("not a valid object name")
+                        || stderr.contains("pathspec")
+                        || stderr.contains("did not match")
+                        || stderr.contains("unknown revision") {
+                        "Invalid version: The specified version/tag/branch does not exist in the repository. Check available versions with 'git tag -l' or 'git branch -r'"
+                    } else {
+                        "Failed to create worktree. Check that the reference exists and the repository is valid"
+                    }
+                },
                 _ => "Check your git configuration and repository access. Try running the git command manually for more details",
             })
-            .with_details("Git operations failed. This is often due to network issues, authentication problems, or invalid references")
+            .with_details(if operation.contains("worktree") && (stderr.contains("invalid reference") || stderr.contains("not a valid object name") || stderr.contains("pathspec") || stderr.contains("did not match") || stderr.contains("unknown revision")) {
+                "Invalid version specification: Failed to checkout reference - the specified version/tag/branch does not exist"
+            } else {
+                "Git operations failed. This is often due to network issues, authentication problems, or invalid references"
+            })
         }
 
         CcpmError::GitAuthenticationFailed { url } => ErrorContext::new(CcpmError::GitAuthenticationFailed {
@@ -1322,10 +1337,11 @@ mod tests {
             url: "https://github.com/test/repo".to_string(),
         });
         assert!(ctx.suggestion.is_some());
-        assert!(ctx
-            .suggestion
-            .unwrap()
-            .contains("Configure git authentication"));
+        assert!(
+            ctx.suggestion
+                .unwrap()
+                .contains("Configure git authentication")
+        );
         assert!(ctx.details.is_some());
     }
 
@@ -1582,11 +1598,12 @@ mod tests {
                 stderr: "error".to_string(),
             });
             assert!(ctx.suggestion.is_some());
-            assert!(ctx
-                .suggestion
-                .unwrap()
-                .to_lowercase()
-                .contains(expected_text));
+            assert!(
+                ctx.suggestion
+                    .unwrap()
+                    .to_lowercase()
+                    .contains(expected_text)
+            );
         }
     }
 

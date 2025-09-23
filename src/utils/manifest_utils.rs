@@ -5,7 +5,7 @@
 
 use crate::core::error::ErrorContext;
 use crate::manifest::Manifest;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::Path;
 
 /// Load a project manifest from the standard location

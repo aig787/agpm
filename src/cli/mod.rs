@@ -206,52 +206,6 @@ impl CliConfig {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// Apply this configuration to the process environment.
-    ///
-    /// This method sets environment variables based on the configuration values,
-    /// which are then read by various parts of CCPM during execution. It should
-    /// be called exactly once at the start of CLI execution.
-    ///
-    /// # Environment Variables Set
-    ///
-    /// - `RUST_LOG`: Set to `log_level` if specified
-    /// - `CCPM_NO_PROGRESS`: Set to "1" if `no_progress` is true
-    /// - `CCPM_CONFIG`: Set to `config_path` if specified
-    ///
-    /// # Side Effects
-    ///
-    /// Modifies the process environment, which affects:
-    /// - Logging behavior throughout the application
-    /// - Progress indicator display in long-running operations
-    /// - Configuration file discovery and loading
-    ///
-    /// # Thread Safety
-    ///
-    /// This method is not thread-safe as it modifies global environment state.
-    /// It should only be called from the main thread before spawning other threads.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use ccpm::cli::CliConfig;
-    ///
-    /// let mut config = CliConfig::new();
-    /// config.log_level = Some("debug".to_string());
-    /// config.no_progress = true;
-    /// config.apply_to_env();
-    ///
-    /// // Now RUST_LOG=debug and CCPM_NO_PROGRESS=1 are set
-    /// ```
-    pub fn apply_to_env(&self) {
-        if self.no_progress {
-            std::env::set_var("CCPM_NO_PROGRESS", "1");
-        }
-
-        if let Some(ref path) = self.config_path {
-            std::env::set_var("CCPM_CONFIG", path);
-        }
-    }
 }
 
 /// Main CLI structure for CCPM (Claude Code Package Manager).
@@ -664,17 +618,17 @@ impl Cli {
     ///
     /// - **Testability**: Tests can inject custom configurations
     /// - **Flexibility**: Programmatic usage without CLI parsing
-    /// - **Isolation**: Configuration changes don't affect global state during tests
+    /// - **No Global State**: Configuration passed explicitly, no environment variables
     /// - **Consistency**: Single execution path for all scenarios
     ///
     /// # Arguments
     ///
-    /// * `config` - The configuration to apply before command execution
+    /// * `config` - The configuration to pass to command execution
     ///
     /// # Execution Flow
     ///
-    /// 1. **Environment Setup**: Applies the configuration to process environment
-    /// 2. **Command Matching**: Dispatches to the appropriate subcommand
+    /// 1. **Command Matching**: Dispatches to the appropriate subcommand
+    /// 2. **Config Passing**: Passes configuration to commands that need it
     /// 3. **Async Execution**: Awaits the async command execution
     /// 4. **Error Propagation**: Returns any errors for higher-level handling
     ///
@@ -682,13 +636,6 @@ impl Cli {
     ///
     /// - `Ok(())` if the command completed successfully
     /// - `Err(anyhow::Error)` if the command failed with context for debugging
-    ///
-    /// # Environment Changes
-    ///
-    /// This method may modify the process environment based on the configuration:
-    /// - `RUST_LOG`: Set according to verbosity level
-    /// - `CCPM_NO_PROGRESS`: Set if progress indicators should be disabled
-    /// - `CCPM_CONFIG`: Set if custom configuration path is specified
     ///
     /// # Examples
     ///
@@ -707,19 +654,29 @@ impl Cli {
     /// # });
     /// ```
     pub async fn execute_with_config(self, config: CliConfig) -> Result<()> {
-        // Apply configuration to environment once at the start
-        config.apply_to_env();
-
+        // Pass configuration directly to commands that need it
         match self.command {
             Commands::Init(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Add(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Remove(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
-            Commands::Install(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
-            Commands::Update(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Install(mut cmd) => {
+                // Pass no_progress flag to install command
+                cmd.no_progress = cmd.no_progress || config.no_progress;
+                cmd.execute_with_manifest_path(self.manifest_path).await
+            }
+            Commands::Update(mut cmd) => {
+                // Pass no_progress flag to update command
+                cmd.no_progress = cmd.no_progress || config.no_progress;
+                cmd.execute_with_manifest_path(self.manifest_path).await
+            }
             Commands::List(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Validate(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Cache(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
-            Commands::Config(cmd) => cmd.execute().await,
+            Commands::Config(cmd) => {
+                // Pass config_path to config command if provided
+                let config_path = config.config_path.as_ref().map(PathBuf::from);
+                cmd.execute(config_path).await
+            }
         }
     }
 }

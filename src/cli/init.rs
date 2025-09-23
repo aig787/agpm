@@ -51,7 +51,7 @@
 //!
 //! This command is safe to run and will not overwrite existing files unless `--force` is specified.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Args;
 use colored::Colorize;
 use std::fs;
@@ -240,7 +240,9 @@ impl InitCommand {
 
         println!("\n{}", "Next steps:".cyan());
         println!("  Add dependencies with {}:", "ccpm add".bright_white());
-        println!("    ccpm add agent my-agent --source https://github.com/org/repo.git --path agents/my-agent.md");
+        println!(
+            "    ccpm add agent my-agent --source https://github.com/org/repo.git --path agents/my-agent.md"
+        );
         println!("    ccpm add snippet utils --path ../local/snippets/utils.md");
         println!("\n  Then run {} to install", "ccpm install".bright_white());
 

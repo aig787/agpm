@@ -1,6 +1,10 @@
 # CCPM - Claude Code Package Manager
 
-A Git-based package manager for Claude Code resources that enables reproducible installations using lockfile-based dependency management, similar to Cargo.
+> ⚠️ **Beta Software**: This project is in active development and may contain breaking changes. Use with caution in
+> production environments.
+
+A Git-based package manager for Claude Code resources that enables reproducible installations using lockfile-based
+dependency management, similar to Cargo.
 
 ## Features
 
@@ -9,22 +13,71 @@ A Git-based package manager for Claude Code resources that enables reproducible 
 - 🚀 **No central registry** - Fully decentralized approach
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
-- 🔒 **Secure credential handling** - Separate config for sensitive data
-- ⚡ **Advanced parallel operations** - Git worktrees enable safe concurrent access to different versions
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
-- 🚀 **Performance optimized** - Global semaphore controls Git operations, worktrees eliminate blocking
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 
 ## Quick Start
 
 ### Install CCPM
 
-```bash
-# Via Cargo (all platforms)
-cargo install --git https://github.com/aig787/ccpm.git
+#### Option 1: Install via Cargo (Recommended)
 
-# Or download pre-built binaries (once released)
-# See installation guide for platform-specific instructions
+```bash
+# From crates.io
+cargo install ccpm
+
+# From Git repository (latest development version)
+cargo install --git https://github.com/aig787/ccpm.git
+```
+
+#### Option 2: Pre-built Binaries
+
+**macOS (Apple Silicon)**
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.gz | tar xz -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**macOS (Intel)**
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.gz | tar xz -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Linux (x86_64)**
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.gz | tar xz -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Linux (ARM64/aarch64)**
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.gz | tar xz -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Windows (PowerShell)**
+```powershell
+# Download and extract to a user directory
+$installPath = "$env:USERPROFILE\.ccpm\bin"
+New-Item -ItemType Directory -Force -Path $installPath
+Invoke-WebRequest https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-pc-windows-msvc.zip -OutFile ccpm.zip
+Expand-Archive ccpm.zip -DestinationPath $installPath -Force
+Remove-Item ccpm.zip
+
+# Add to PATH for current session
+$env:PATH += ";$installPath"
+
+# Add to PATH permanently (user-level)
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::User)
 ```
 
 ### Create a Project
@@ -55,21 +108,27 @@ ccpm install
 
 # Use exact lockfile versions (for CI/CD)
 ccpm install --frozen
+
+# Control parallelism (default: max(10, 2 × CPU cores))
+ccpm install --max-parallel 8
+
+# Bypass cache for fresh installation
+ccpm install --no-cache
 ```
 
 ## Core Commands
 
-| Command | Description |
-|---------|-------------|
-| `ccpm init` | Initialize a new project |
-| `ccpm install` | Install dependencies from ccpm.toml |
-| `ccpm update` | Update dependencies within version constraints |
-| `ccpm list` | List installed resources |
-| `ccpm validate` | Validate manifest and dependencies |
-| `ccpm add` | Add sources or dependencies |
-| `ccpm remove` | Remove sources or dependencies |
-| `ccpm config` | Manage global configuration |
-| `ccpm cache` | Manage the Git cache |
+| Command         | Description                                                  |
+|-----------------|--------------------------------------------------------------|
+| `ccpm init`     | Initialize a new project                                     |
+| `ccpm install`  | Install dependencies from ccpm.toml with parallel processing |
+| `ccpm update`   | Update dependencies within version constraints               |
+| `ccpm list`     | List installed resources                                     |
+| `ccpm validate` | Validate manifest and dependencies                           |
+| `ccpm add`      | Add sources or dependencies                                  |
+| `ccpm remove`   | Remove sources or dependencies                               |
+| `ccpm config`   | Manage global configuration                                  |
+| `ccpm cache`    | Manage the Git cache                                         |
 
 Run `ccpm --help` for full command reference.
 
@@ -124,11 +183,28 @@ pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "
 filesystem = { source = "community", path = "mcp/filesystem.json", version = "latest" }
 ```
 
+## Performance Architecture
+
+CCPM v0.3.2+ features a high-performance SHA-based architecture:
+
+### Centralized Version Resolution
+
+- **VersionResolver**: Batch resolution of all dependency versions to commit SHAs
+- **Minimal Git Operations**: Single fetch per repository per command
+- **Upfront Resolution**: All versions resolved before any worktree operations
+
+### SHA-Based Worktree Deduplication
+
+- **Commit-Level Caching**: Worktrees keyed by commit SHA, not version reference
+- **Maximum Reuse**: Multiple tags/branches pointing to same commit share one worktree
+- **Parallel Safety**: Independent worktrees enable conflict-free concurrent operations
+
 ## Versioning
 
-CCPM uses Git-based versioning at the repository level:
+CCPM uses Git-based versioning at the repository level with enhanced constraint support:
 
 - **Git tags** (recommended): `version = "v1.0.0"` or `version = "^1.0.0"`
+- **Semver constraints**: `^1.0`, `~2.1`, `>=1.0.0, <2.0.0`
 - **Branches**: `branch = "main"` (mutable, updates on each install)
 - **Commits**: `rev = "abc123def"` (immutable, exact commit)
 - **Local paths**: No versioning, uses current files

@@ -248,7 +248,7 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let result = GitRepo::clone(source_path.to_str().unwrap(), &target_path, None).await;
+        let result = GitRepo::clone(source_path.to_str().unwrap(), &target_path).await;
 
         assert!(result.is_ok());
         let cloned_repo = result.unwrap();
@@ -282,7 +282,7 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test clone");
 
-        let result = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, Some(&pb)).await;
+        let result = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path).await;
 
         assert!(result.is_ok());
         let repo = result.unwrap();
@@ -298,7 +298,7 @@ mod tests {
         let target_dir = TempDir::new().unwrap();
         let target_path = target_dir.path().join("cloned");
 
-        let result = GitRepo::clone("/non/existent/path", &target_path, None).await;
+        let result = GitRepo::clone("/non/existent/path", &target_path).await;
 
         assert!(result.is_err());
         assert!(!target_path.exists());
@@ -318,7 +318,7 @@ mod tests {
         ];
 
         for url in invalid_urls {
-            let result = GitRepo::clone(url, &target_path, None).await;
+            let result = GitRepo::clone(url, &target_path).await;
             assert!(result.is_err(), "Expected error for URL: {url}");
             if let Err(error) = result {
                 assert!(
@@ -338,7 +338,6 @@ mod tests {
         let result = GitRepo::clone(
             "https://invalid.host.that.does.not.exist.9999/repo.git",
             &target_path,
-            None,
         )
         .await;
 
@@ -369,18 +368,18 @@ mod tests {
         );
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &clone_path)
             .await
             .unwrap();
 
         // Fetch should work (even though there's nothing to fetch)
-        let fetch_result = repo.fetch(None, None).await;
+        let fetch_result = repo.fetch(None).await;
         assert!(fetch_result.is_ok());
 
         // Fetch with progress should also work
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test fetch");
-        let fetch_result = repo.fetch(None, Some(&pb)).await;
+        let fetch_result = repo.fetch(None).await;
         assert!(fetch_result.is_ok());
         pb.finish_with_message("Fetch complete");
     }
@@ -400,7 +399,7 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
@@ -408,7 +407,7 @@ mod tests {
         let pb = crate::utils::progress::ProgressBar::new_spinner();
         pb.set_message("Test fetch");
 
-        let result = repo.fetch(None, Some(&pb)).await;
+        let result = repo.fetch(None).await;
         assert!(result.is_ok());
 
         pb.finish_with_message("Fetch complete");
@@ -438,13 +437,15 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(repo_path);
-        let result = repo.fetch(None, None).await;
+        let result = repo.fetch(None).await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Git operation failed: fetch"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Git operation failed: fetch")
+        );
     }
 
     #[tokio::test]
@@ -923,7 +924,7 @@ mod tests {
         // Try git operations on non-git directory
         let fake_repo = GitRepo { path };
 
-        let result = fake_repo.fetch(None, None).await;
+        let result = fake_repo.fetch(None).await;
         assert!(result.is_err());
 
         let result = fake_repo.get_current_branch().await;
@@ -1065,7 +1066,7 @@ mod tests {
             "file://{}",
             source_path.display().to_string().replace('\\', "/")
         );
-        let result = GitRepo::clone(&source_url, &target_path, None).await;
+        let result = GitRepo::clone(&source_url, &target_path).await;
 
         // Clean up permissions before assertion
         #[cfg(unix)]
@@ -1089,7 +1090,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let target_path = temp_dir.path().join("target");
 
-        let result = GitRepo::clone("", &target_path, None).await;
+        let result = GitRepo::clone("", &target_path).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Failed to clone"));
     }
@@ -1125,7 +1126,7 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(&repo_path);
-        let result = repo.fetch(None, None).await;
+        let result = repo.fetch(None).await;
 
         // Should fetch successfully from local repositories
         assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
@@ -1163,8 +1164,7 @@ mod tests {
             .unwrap();
 
         let repo = GitRepo::new(repo_path);
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
-        let result = repo.fetch(None, Some(&pb)).await;
+        let result = repo.fetch(None).await;
 
         // Should fetch for file:// repositories
         assert!(result.is_ok());
@@ -1185,13 +1185,13 @@ mod tests {
             .unwrap();
 
         // Clone it
-        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(bare_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
         // Fetch with specific auth URL
         let auth_url = format!("file://{}", bare_path.display());
-        let result = repo.fetch(Some(&auth_url), None).await;
+        let result = repo.fetch(Some(&auth_url)).await;
         assert!(result.is_ok(), "Fetch failed: {:?}", result.err());
     }
 
@@ -1205,10 +1205,12 @@ mod tests {
         let result = repo.list_tags().await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Not a git repository"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Not a git repository")
+        );
     }
 
     #[tokio::test]
@@ -1220,10 +1222,12 @@ mod tests {
         let result = repo.list_tags().await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Repository path does not exist"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Repository path does not exist")
+        );
     }
 
     #[tokio::test]
@@ -1241,10 +1245,12 @@ mod tests {
         let bad_file_url = "file:///non/existent/path";
         let result = GitRepo::verify_url(bad_file_url).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Local path does not exist"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Local path does not exist")
+        );
     }
 
     #[tokio::test]
@@ -1252,10 +1258,12 @@ mod tests {
         // Test with invalid remote URL
         let result = GitRepo::verify_url("https://invalid-host-9999.test/repo.git").await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to verify remote repository"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to verify remote repository")
+        );
     }
 
     #[test]
@@ -1425,10 +1433,12 @@ mod tests {
         let result = repo.get_remote_url().await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Git operation failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Git operation failed")
+        );
     }
 
     #[tokio::test]
@@ -1532,9 +1542,8 @@ mod tests {
             .unwrap();
 
         // Clone as bare repository using file:// URL
-        let pb = crate::utils::progress::ProgressBar::new_spinner();
         let file_url = format!("file://{}", source_path.display());
-        let result = GitRepo::clone_bare(&file_url, &bare_path, Some(&pb)).await;
+        let result = GitRepo::clone_bare(&file_url, &bare_path).await;
 
         assert!(result.is_ok(), "Failed to clone bare: {:?}", result.err());
         let bare_repo = result.unwrap();
@@ -1576,7 +1585,6 @@ mod tests {
         let result = GitRepo::clone_bare_with_context(
             source_path.to_str().unwrap(),
             &bare_path,
-            None,
             Some("test-dependency"),
         )
         .await;
@@ -1631,7 +1639,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1660,7 +1668,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1714,7 +1722,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare and create worktree
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1768,7 +1776,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1817,7 +1825,7 @@ mod tests {
             .unwrap();
 
         // Clone as bare
-        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path, None)
+        let bare_repo = GitRepo::clone_bare(source_path.to_str().unwrap(), &bare_path)
             .await
             .unwrap();
 
@@ -1915,10 +1923,12 @@ mod tests {
         let result = repo.get_current_commit().await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to get current commit"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to get current commit")
+        );
     }
 
     #[tokio::test]
@@ -1979,12 +1989,12 @@ mod tests {
             .unwrap();
 
         // Clone the repo
-        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path, None)
+        let repo = GitRepo::clone(origin_path.to_str().unwrap(), &repo_path)
             .await
             .unwrap();
 
         // Fetch to get remote branches
-        repo.fetch(None, None).await.unwrap();
+        repo.fetch(None).await.unwrap();
 
         // Try to checkout the feature branch (should work via remote branch fallback)
         let result = repo.checkout("feature").await;
@@ -2042,5 +2052,203 @@ mod tests {
         assert!(
             error_str.contains("Failed to checkout") || error_str.contains("GitCheckoutFailed")
         );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_to_sha() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Create initial commit
+        std::fs::write(repo_path.join("file.txt"), "content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Get the commit SHA
+        let commit_sha = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let expected_sha = String::from_utf8(commit_sha.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Create a tag
+        Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let repo = GitRepo::new(repo_path);
+
+        // Test resolving HEAD
+        let sha = repo.resolve_to_sha(None).await.unwrap();
+        assert_eq!(sha, expected_sha);
+
+        // Test resolving HEAD explicitly
+        let sha = repo.resolve_to_sha(Some("HEAD")).await.unwrap();
+        assert_eq!(sha, expected_sha);
+
+        // Test resolving a tag
+        let sha = repo.resolve_to_sha(Some("v1.0.0")).await.unwrap();
+        assert_eq!(sha, expected_sha);
+
+        // Test that a full SHA is returned as-is (optimization)
+        let full_sha = "a".repeat(40);
+        let sha = repo.resolve_to_sha(Some(&full_sha)).await.unwrap();
+        assert_eq!(sha, full_sha);
+
+        // Test resolving main/master branch
+        let main_branch = if Command::new("git")
+            .args(["rev-parse", "--verify", "main"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap()
+            .status
+            .success()
+        {
+            "main"
+        } else {
+            "master"
+        };
+        let sha = repo.resolve_to_sha(Some(main_branch)).await.unwrap();
+        assert_eq!(sha, expected_sha);
+
+        // Test error case - non-existent ref
+        let result = repo.resolve_to_sha(Some("nonexistent")).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_to_sha_with_multiple_commits() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Create first commit
+        std::fs::write(repo_path.join("file1.txt"), "content1").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "First commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Tag first commit
+        Command::new("git")
+            .args(["tag", "v1.0.0"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let first_sha = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let first_sha = String::from_utf8(first_sha.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Create second commit
+        std::fs::write(repo_path.join("file2.txt"), "content2").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        // Tag second commit
+        Command::new("git")
+            .args(["tag", "v2.0.0"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+
+        let second_sha = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo_path)
+            .output()
+            .unwrap();
+        let second_sha = String::from_utf8(second_sha.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        let repo = GitRepo::new(repo_path);
+
+        // Test that different tags resolve to different SHAs
+        let sha_v1 = repo.resolve_to_sha(Some("v1.0.0")).await.unwrap();
+        assert_eq!(sha_v1, first_sha);
+
+        let sha_v2 = repo.resolve_to_sha(Some("v2.0.0")).await.unwrap();
+        assert_eq!(sha_v2, second_sha);
+
+        // Test HEAD resolves to latest
+        let sha_head = repo.resolve_to_sha(Some("HEAD")).await.unwrap();
+        assert_eq!(sha_head, second_sha);
+
+        // Test short SHA resolution
+        let short_sha = &first_sha[..7];
+        let resolved = repo.resolve_to_sha(Some(short_sha)).await.unwrap();
+        assert_eq!(resolved, first_sha);
     }
 }

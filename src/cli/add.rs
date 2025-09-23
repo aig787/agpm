@@ -4,7 +4,7 @@
 //! to a CCPM project manifest. It supports both Git repository sources
 //! and various types of resource dependencies (agents, snippets, commands, MCP servers).
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use regex::Regex;
@@ -17,7 +17,7 @@ use crate::cli::resource_ops::{
 };
 use crate::lockfile::LockFile;
 use crate::manifest::{
-    find_manifest_with_optional, DetailedDependency, Manifest, ResourceDependency,
+    DetailedDependency, Manifest, ResourceDependency, find_manifest_with_optional,
 };
 use crate::models::{
     AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
@@ -171,11 +171,15 @@ async fn add_dependency_with_manifest_path(
     manifest_path: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let common = dep_type.common();
-    let (name, dependency) = parse_dependency_spec(&common.spec, &common.name)?;
 
     // Find manifest file
     let manifest_path = find_manifest_with_optional(manifest_path)?;
     let mut manifest = Manifest::load(&manifest_path)?;
+
+    // Parse dependency with manifest context for enhanced version handling.
+    // The manifest context enables proper detection of local vs Git sources
+    // and improves version constraint validation for known sources.
+    let (name, dependency) = parse_dependency_spec(&common.spec, &common.name, Some(&manifest))?;
 
     // Determine the resource type
     let resource_type = dep_type.resource_type();
@@ -233,10 +237,42 @@ async fn add_dependency_with_manifest_path(
     Ok(())
 }
 
-/// Parse a dependency specification string into a name and `ResourceDependency`
+/// Parse a dependency specification string into a name and `ResourceDependency`.
+///
+/// This function parses dependency specifications with enhanced context awareness,
+/// using the manifest to distinguish between local file sources and Git repository
+/// sources for improved version handling and validation.
+///
+/// # Arguments
+///
+/// * `spec` - The dependency specification string (e.g., "source:path@version")
+/// * `custom_name` - Optional custom name for the dependency
+/// * `manifest` - Optional manifest context for source type detection
+///
+/// # Enhanced Features
+///
+/// - **Local path detection**: Recognizes absolute paths, relative paths, and file:// URLs
+/// - **Source type resolution**: Uses manifest context to determine if sources are local vs Git
+/// - **Version defaulting**: Adds "main" version for Git sources when not specified
+/// - **Cross-platform paths**: Handles Windows drive letters and UNC paths correctly
+///
+/// # Supported Formats
+///
+/// - `source:path@version` - Git source with version
+/// - `source:path` - Git source (defaults to "main")
+/// - `/absolute/path` - Local absolute path
+/// - `./relative/path` - Local relative path
+/// - `file:///path` - Local file URL
+/// - `C:\windows\path` - Windows absolute path
+///
+/// # Returns
+///
+/// A tuple of (dependency_name, ResourceDependency) where the dependency
+/// is properly configured based on source type and version requirements.
 fn parse_dependency_spec(
     spec: &str,
     custom_name: &Option<String>,
+    manifest: Option<&Manifest>,
 ) -> Result<(String, ResourceDependency)> {
     // Check if this is a Windows absolute path (e.g., C:\path\to\file)
     // or Unix absolute path (e.g., /path/to/file)
@@ -278,12 +314,38 @@ fn parse_dependency_spec(
                 .to_string()
         });
 
+        // Check if the source is a local path by looking up the source URL in the manifest
+        let source_is_local = if let Some(manifest) = manifest {
+            if let Some(source_url) = manifest.sources.get(&source) {
+                source_url.starts_with('/')
+                    || source_url.starts_with("./")
+                    || source_url.starts_with("../")
+                    || source_url.starts_with("file://")
+                    || (cfg!(windows)
+                        && source_url.len() >= 3
+                        && source_url.chars().nth(1) == Some(':'))
+            } else {
+                // Source not found in manifest - assume it's a Git source for safety
+                false
+            }
+        } else {
+            // No manifest provided - assume it's a Git source for safety
+            false
+        };
+
+        // Add default "main" version for Git sources (not local path sources) when no version is specified
+        let final_version = if version.is_none() && !source_is_local {
+            Some("main".to_string())
+        } else {
+            version
+        };
+
         Ok((
             name,
             ResourceDependency::Detailed(DetailedDependency {
                 source: Some(source),
                 path,
-                version,
+                version: final_version,
                 branch: None,
                 rev: None,
                 command: None,
@@ -480,7 +542,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[test]
     fn test_parse_remote_dependency() {
         let (name, dep) =
-            parse_dependency_spec("official:agents/reviewer.md@v1.0.0", &None).unwrap();
+            parse_dependency_spec("official:agents/reviewer.md@v1.0.0", &None, None).unwrap();
 
         assert_eq!(name, "reviewer");
         if let ResourceDependency::Detailed(detailed) = dep {
@@ -498,9 +560,12 @@ existing-mcp = "../local/mcp-servers/existing.json"
         let test_file = temp_dir.path().join("test.md");
         std::fs::write(&test_file, "# Test").unwrap();
 
-        let (name, dep) =
-            parse_dependency_spec(test_file.to_str().unwrap(), &Some("my-agent".to_string()))
-                .unwrap();
+        let (name, dep) = parse_dependency_spec(
+            test_file.to_str().unwrap(),
+            &Some("my-agent".to_string()),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(name, "my-agent");
         if let ResourceDependency::Simple(path) = dep {
@@ -515,6 +580,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         let (name, _) = parse_dependency_spec(
             "official:snippets/utils.md@v1.0.0",
             &Some("my-utils".to_string()),
+            None,
         )
         .unwrap();
 
@@ -523,12 +589,13 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[test]
     fn test_parse_dependency_without_version() {
-        let (name, dep) = parse_dependency_spec("source:path/to/file.md", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("source:path/to/file.md", &None, None).unwrap();
         assert_eq!(name, "file");
         if let ResourceDependency::Detailed(detailed) = dep {
             assert_eq!(detailed.source.as_deref(), Some("source"));
             assert_eq!(detailed.path, "path/to/file.md");
-            assert!(detailed.version.is_none());
+            // Should get default "main" version for Git sources when no manifest provided
+            assert_eq!(detailed.version.as_deref(), Some("main"));
         } else {
             panic!("Expected detailed dependency");
         }
@@ -536,10 +603,31 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[test]
     fn test_parse_dependency_with_branch() {
-        let (name, dep) = parse_dependency_spec("src:file.md@main", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("src:file.md@main", &None, None).unwrap();
         assert_eq!(name, "file");
         if let ResourceDependency::Detailed(detailed) = dep {
             assert_eq!(detailed.version.as_deref(), Some("main"));
+        } else {
+            panic!("Expected detailed dependency");
+        }
+    }
+
+    #[test]
+    fn test_parse_dependency_local_source_no_default_version() {
+        // Create a test manifest with a local source
+        let mut manifest = Manifest::new();
+        manifest
+            .sources
+            .insert("local-src".to_string(), "/path/to/local".to_string());
+
+        let (name, dep) =
+            parse_dependency_spec("local-src:path/to/file.md", &None, Some(&manifest)).unwrap();
+        assert_eq!(name, "file");
+        if let ResourceDependency::Detailed(detailed) = dep {
+            assert_eq!(detailed.source.as_deref(), Some("local-src"));
+            assert_eq!(detailed.path, "path/to/file.md");
+            // Should NOT get default "main" version for local sources
+            assert!(detailed.version.is_none());
         } else {
             panic!("Expected detailed dependency");
         }
@@ -792,7 +880,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[test]
     fn test_parse_dependency_spec_file_prefix() {
         // Test file: prefix - now correctly treated as local path
-        let (name, dep) = parse_dependency_spec("file:/path/to/agent.md", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("file:/path/to/agent.md", &None, None).unwrap();
         assert_eq!(name, "agent");
         if let ResourceDependency::Simple(path) = dep {
             assert_eq!(path, "/path/to/agent.md"); // Path without file: prefix
@@ -804,7 +892,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[test]
     fn test_parse_dependency_spec_simple_path() {
         // Test simple path when file doesn't exist
-        let (name, dep) = parse_dependency_spec("nonexistent/path.md", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("nonexistent/path.md", &None, None).unwrap();
         assert_eq!(name, "path");
         if let ResourceDependency::Simple(path) = dep {
             assert_eq!(path, "nonexistent/path.md");
@@ -816,7 +904,8 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[test]
     fn test_parse_dependency_spec_custom_name_simple() {
         let (name, dep) =
-            parse_dependency_spec("simple/path.md", &Some("custom-name".to_string())).unwrap();
+            parse_dependency_spec("simple/path.md", &Some("custom-name".to_string()), None)
+                .unwrap();
         assert_eq!(name, "custom-name");
         if let ResourceDependency::Simple(path) = dep {
             assert_eq!(path, "simple/path.md");
@@ -827,7 +916,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[test]
     fn test_parse_dependency_spec_path_without_extension() {
-        let (name, dep) = parse_dependency_spec("source:agents/noext@v1.0", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("source:agents/noext@v1.0", &None, None).unwrap();
         assert_eq!(name, "noext");
         if let ResourceDependency::Detailed(detailed) = dep {
             assert_eq!(detailed.source, Some("source".to_string()));
@@ -840,7 +929,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     #[test]
     fn test_parse_dependency_spec_unknown_fallback() {
-        let (name, dep) = parse_dependency_spec("malformed::", &None).unwrap();
+        let (name, dep) = parse_dependency_spec("malformed::", &None, None).unwrap();
         // The regex captures :: as the path part after the first colon
         assert_eq!(name, ":"); // Path ":" produces ":" as filename
         if let ResourceDependency::Detailed(detailed) = dep {
@@ -906,11 +995,13 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
         let settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path).unwrap();
         assert!(settings.mcp_servers.is_some());
-        assert!(settings
-            .mcp_servers
-            .as_ref()
-            .unwrap()
-            .contains_key("test-mcp"));
+        assert!(
+            settings
+                .mcp_servers
+                .as_ref()
+                .unwrap()
+                .contains_key("test-mcp")
+        );
     }
 
     #[tokio::test]

@@ -11,13 +11,19 @@ build:
 release:
 	cargo build --release
 
-# Run all tests
+# Run all tests (nextest + doc tests)
 test:
-	cargo test
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	cargo nextest run
+	cargo test --doc
 
 # Run tests with verbose output
 test-verbose:
-	RUST_LOG=debug cargo test -- --nocapture
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	RUST_LOG=debug cargo nextest run --nocapture
+	RUST_LOG=debug cargo test --doc -- --nocapture
 
 # Clean build artifacts
 clean:
@@ -40,7 +46,8 @@ check: fmt-check lint test
 
 # Run tests with coverage (requires cargo-tarpaulin)
 coverage:
-	@command -v cargo-tarpaulin >/dev/null 2>&1 || { echo "Installing cargo-tarpaulin..."; cargo install cargo-tarpaulin; }
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-tarpaulin >/dev/null 2>&1 || { echo "Installing cargo-tarpaulin..."; cargo binstall cargo-tarpaulin --secure; }
 	cargo tarpaulin --exclude-files "*/test_utils/*" --out html --output-dir target/coverage
 
 # Install the binary locally
@@ -57,8 +64,10 @@ run-debug:
 
 # Watch for changes and rebuild (requires cargo-watch)
 watch:
-	@command -v cargo-watch >/dev/null 2>&1 || { echo "Installing cargo-watch..."; cargo install cargo-watch; }
-	cargo watch -x build -x test
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-watch >/dev/null 2>&1 || { echo "Installing cargo-watch..."; cargo binstall cargo-watch --secure; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	cargo watch -x build -x "nextest run" -x "test --doc"
 
 # Detect current platform
 UNAME_S := $(shell uname -s)
@@ -83,7 +92,8 @@ endif
 
 # Cross-compilation setup
 cross-setup:
-	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo install cargo-zigbuild; }
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo binstall cargo-zigbuild --secure; }
 	@command -v zig >/dev/null 2>&1 || { echo "Please install Zig from https://ziglang.org/download/"; exit 1; }
 	@echo "Ensuring Rust targets are installed..."
 	@for target in $(CROSS_TARGETS); do \
@@ -128,7 +138,8 @@ cross-all: cross-setup
 
 # Individual cross-compilation targets
 cross-windows:
-	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo install cargo-zigbuild; }
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo binstall cargo-zigbuild --secure; }
 	@command -v zig >/dev/null 2>&1 || { echo "Please install Zig from https://ziglang.org/download/"; exit 1; }
 	@rustup target list --installed | grep -q "x86_64-pc-windows-gnullvm" || { \
 		echo "Installing target: x86_64-pc-windows-gnullvm..."; \
@@ -138,7 +149,8 @@ cross-windows:
 	@echo "Windows binary built at: target/x86_64-pc-windows-gnullvm/release/ccpm.exe"
 
 cross-linux:
-	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo install cargo-zigbuild; }
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo binstall cargo-zigbuild --secure; }
 	@command -v zig >/dev/null 2>&1 || { echo "Please install Zig from https://ziglang.org/download/"; exit 1; }
 	@rustup target list --installed | grep -q "x86_64-unknown-linux-gnu" || { \
 		echo "Installing target: x86_64-unknown-linux-gnu..."; \
@@ -148,7 +160,8 @@ cross-linux:
 	@echo "Linux binary built at: target/x86_64-unknown-linux-gnu/release/ccpm"
 
 cross-macos:
-	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo install cargo-zigbuild; }
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-zigbuild >/dev/null 2>&1 || { echo "Installing cargo-zigbuild..."; cargo binstall cargo-zigbuild --secure; }
 	@command -v zig >/dev/null 2>&1 || { echo "Please install Zig from https://ziglang.org/download/"; exit 1; }
 	@rustup target list --installed | grep -q "x86_64-apple-darwin" || { \
 		echo "Installing target: x86_64-apple-darwin..."; \

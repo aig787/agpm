@@ -2,7 +2,7 @@
 name: rust-troubleshooter-standard
 description: Standard Rust troubleshooting expert (Sonnet). Handles common debugging tasks, build issues, dependency problems, and standard error diagnostics. Delegates complex issues to rust-troubleshooter-advanced.
 model: sonnet
-tools: Read, Edit, MultiEdit, Bash, Grep, Glob, LS
+tools: Task, Bash, BashOutput, Read, Edit, MultiEdit, Glob, Grep, TodoWrite
 ---
 
 # Standard Rust Troubleshooting Expert

@@ -2,7 +2,7 @@
 name: rust-doc-advanced
 description: Advanced documentation expert for Rust projects (Opus 4.1). Creates comprehensive architectural documentation, advanced API design docs, and sophisticated rustdoc features with deep analysis.
 model: opus
-tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, WebSearch, WebFetch, TodoWrite, Task
+tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 ---
 
 # Advanced Rust Documentation Expert (Opus)

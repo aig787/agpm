@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Read, Edit, MultiEdit, Grep, Task
+allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo:*), Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 description: Review changes and update README.md to stay current with implementation
 argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only report needed updates
 ---
@@ -12,7 +12,7 @@ argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only r
 
 ## Your task
 
-Review the current changes and ensure README.md and all documentation files accurately reflect the project's current state.
+Review the current changes and ensure README.md, all documentation files, and Claude Code saved prompts accurately reflect the project's current state.
 
 **CRITICAL**: When comprehensive documentation updates are needed, use the Task tool to delegate to specialized agents instead of making extensive edits directly.
 
@@ -30,7 +30,7 @@ Review the current changes and ensure README.md and all documentation files accu
    - Changes to installation or usage instructions
    - Performance improvements or architecture changes
 
-3. Read the current README.md and related documentation files:
+3. Read the current README.md, related documentation files, and Claude Code saved prompts:
 
    **Files to check**:
    - **README.md**: Main landing page and overview
@@ -46,6 +46,12 @@ Review the current changes and ensure README.md and all documentation files accu
    - **CONTRIBUTING.md**: Development guidelines
    - **CLAUDE.md**: AI context and project overview
 
+   **Claude Code saved prompts to check**:
+   - **.claude/*.md**: Saved custom prompts (agents, snippets, commands, scripts)
+   - Check if prompts reference outdated commands or features
+   - Verify prompt metadata and frontmatter is accurate
+   - Ensure tool allowlists match current capabilities
+
    **Critical sections to check**:
    - **Features list**: New capabilities or removed features
    - **Resource Types**: New resource types (agents, snippets, scripts, hooks, MCP servers)
@@ -57,7 +63,7 @@ Review the current changes and ensure README.md and all documentation files accu
    - **Platform Support**: Changes to cross-platform behavior
    - **Dependencies**: New or removed dependencies
 
-4. Based on the changes, determine what documentation updates are needed:
+4. Based on the changes, determine what documentation and prompt updates are needed:
 
    **Types of updates to make**:
    - Add documentation for new features or commands
@@ -68,6 +74,9 @@ Review the current changes and ensure README.md and all documentation files accu
    - Add or update resource type descriptions
    - Update performance claims if improvements were made
    - Fix any inaccuracies introduced by recent changes
+   - Update saved prompts that reference changed functionality
+   - Adjust prompt tool allowlists if tools have changed
+   - Fix prompt metadata or frontmatter if format has changed
    
    **For comprehensive documentation improvements, delegate to specialized agents using Task:**
    - Use Task with subagent_type="rust-doc-standard" or "rust-doc-advanced":
@@ -94,6 +103,7 @@ Review the current changes and ensure README.md and all documentation files accu
    - **docs/troubleshooting.md**: Error solutions, platform issues
    - **docs/faq.md**: Common questions and answers
    - **docs/command-reference.md**: Command syntax and options
+   - **.claude/*.md**: Custom saved prompts that may need updating
 
 5. Apply updates based on mode:
 

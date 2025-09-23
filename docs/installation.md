@@ -4,12 +4,12 @@ This guide covers all installation methods for CCPM across different platforms.
 
 ## Requirements
 
-- **Git 2.0 or later** (required for repository operations)
+- **Git 2.5 or later** (required for worktree support and repository operations)
 - **Rust 1.70 or later** (only for building from source)
 - **Platform Support:**
-  - Windows 10/11 (x86_64)
-  - macOS 10.15+ (x86_64, aarch64)
-  - Linux (x86_64, aarch64) - glibc 2.17+
+  - Windows 10/11 (x86_64) - PowerShell 5.0+
+  - macOS 10.15+ (x86_64, aarch64) - supports both Intel and Apple Silicon
+  - Linux (x86_64, aarch64) - glibc 2.17+ or musl
 
 ## Quick Install
 
@@ -18,11 +18,14 @@ This guide covers all installation methods for CCPM across different platforms.
 If you have Rust installed, this is the easiest method:
 
 ```bash
-# Install from crates.io (published via automated releases)
+# Install latest stable version from crates.io
 cargo install ccpm
 
-# Install from GitHub (latest development)
+# Install latest development version from GitHub
 cargo install --git https://github.com/aig787/ccpm.git
+
+# Install specific version
+cargo install ccpm --version 0.3.0
 ```
 
 ### Pre-built Binaries
@@ -107,11 +110,16 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
 git clone https://github.com/aig787/ccpm.git
 cd ccpm
 
-# Build in release mode
+# Build in release mode with optimizations
 cargo build --release
 
-# Run tests
-cargo test
+# Run the full test suite (uses cargo nextest for faster parallel testing)
+cargo nextest run
+cargo test --doc
+
+# Check code formatting and linting
+cargo fmt --check
+cargo clippy -- -D warnings
 
 # Install locally
 cargo install --path .
@@ -161,20 +169,30 @@ cargo build --target aarch64-unknown-linux-gnu --release
 After installation, verify CCPM is working:
 
 ```bash
-# Check version
+# Check version and verify installation
 ccpm --version
 
-# Show help
+# Show help and available commands
 ccpm --help
+
+# Test Git worktree support (requires Git 2.5+)
+git --version
 
 # Initialize a test project
 ccpm init
+
+# Test parallel installation capabilities
+ccpm install --help | grep max-parallel
 ```
 
 ## Updating CCPM
 
 ### Via Cargo
 ```bash
+# Update to latest stable version
+cargo install ccpm --force
+
+# Update to latest development version
 cargo install --git https://github.com/aig787/ccpm.git --force
 ```
 

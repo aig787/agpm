@@ -2,7 +2,7 @@
 name: rust-test-standard
 description: Fast test failure fixer (Sonnet). Handles assertion failures, missing imports, test setup issues. Delegates complex refactoring to rust-expert-advanced.
 model: sonnet
-tools: Read, Edit, MultiEdit, Bash, Grep
+tools: Task, Bash, BashOutput, Read, Edit, MultiEdit, Glob, Grep, TodoWrite
 ---
 
 # Rust Test Fixing Specialist

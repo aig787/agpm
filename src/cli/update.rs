@@ -2,8 +2,8 @@
 //!
 //! This module provides the `update` command which updates installed dependencies
 //! to their latest compatible versions while respecting version constraints defined
-//! in the manifest. The command is similar to `install` but focuses on updating
-//! existing installations rather than fresh installs.
+//! in the manifest. The command leverages the new installer architecture for
+//! efficient parallel updates with worktree-based isolation.
 //!
 //! # Features
 //!
@@ -12,7 +12,8 @@
 //! - **Dry Run Mode**: Preview changes without actually updating
 //! - **Dependency Resolution**: Ensures all dependencies remain compatible
 //! - **Lockfile Updates**: Updates the lockfile with new resolved versions
-//! - **Parallel Operations**: Updates multiple dependencies concurrently
+//! - **Worktree-Based Parallel Operations**: Uses Git worktrees for safe concurrent updates
+//! - **Multi-Phase Progress**: Shows detailed progress with phase transitions during updates
 //!
 //! # Examples
 //!
@@ -73,107 +74,143 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::cache::Cache;
-use crate::installer::{install_updated_resources, update_gitignore};
+use crate::core::ResourceIterator;
+use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
-use crate::manifest::{find_manifest_with_optional, Manifest};
+use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
-use crate::utils::progress::ProgressBar;
 
-/// Command to update Claude Code resources within version constraints.
+/// Command-line arguments for the update command.
 ///
-/// This command updates installed dependencies to their latest compatible versions
-/// while respecting the version constraints defined in the manifest. It can update
-/// all dependencies or only specific ones.
+/// This structure defines all command-line options available for the update
+/// command, providing fine-grained control over the update process.
 ///
-/// # Update Strategy
+/// # Common Usage Patterns
 ///
-/// The command uses the following strategy:
-/// 1. Load current manifest and lockfile
-/// 2. Identify dependencies that can be updated within constraints
-/// 3. Resolve new versions ensuring compatibility
-/// 4. Update resource files and lockfile
-/// 5. Report changes made
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use ccpm::cli::update::UpdateCommand;
-///
-/// // Update all dependencies
-/// let cmd = UpdateCommand {
-///     dependencies: vec![],
-///     dry_run: false,
-///     check: false,
-///     force: false,
-///     backup: false,
-///     verbose: false,
-///     quiet: false,
-/// };
-///
-/// // Update specific dependencies with dry run
-/// let cmd = UpdateCommand {
-///     dependencies: vec!["my-agent".to_string(), "utils".to_string()],
-///     dry_run: true,
-///     check: false,
-///     force: false,
-///     backup: true,
-///     verbose: true,
-///     quiet: false,
-/// };
+/// ## Update All Dependencies
+/// Update all dependencies to their latest compatible versions:
+/// ```bash
+/// ccpm update
 /// ```
-#[derive(Args)]
+///
+/// ## Selective Updates
+/// Update only specific dependencies:
+/// ```bash
+/// ccpm update my-agent utils-snippet
+/// ```
+///
+/// ## Preview Updates
+/// Check what would be updated without making changes:
+/// ```bash
+/// ccpm update --dry-run
+/// ```
+///
+/// ## Force Updates
+/// Update ignoring version constraints:
+/// ```bash
+/// ccpm update --force
+/// ```
+///
+/// # Options
+///
+/// - `dependencies`: Optional list of specific dependencies to update
+/// - `--dry-run`: Preview updates without applying changes
+/// - `--check`: Show available updates in minimal format
+/// - `--force`: Ignore version constraints (dangerous)
+/// - `--backup`: Create lockfile backup before updating
+/// - `--verbose`: Show detailed update progress
+/// - `--quiet`: Suppress all output except errors
+///
+/// # Behavior Notes
+///
+/// 1. **Without Arguments**: Updates all dependencies in manifest
+/// 2. **With Specific Dependencies**: Only updates named dependencies
+/// 3. **Version Constraints**: Respects constraints unless --force is used
+/// 4. **Lockfile Required**: Requires existing lockfile (run install first)
+/// 5. **Atomic Updates**: Either all updates succeed or none are applied
+///
+/// # Exit Codes
+///
+/// - `0`: Updates completed successfully or no updates available
+/// - `1`: Error occurred (missing files, network issues, etc.)
+///
+/// # Implementation Details
+///
+/// The update process involves several phases:
+/// 1. Manifest and lockfile loading
+/// 2. Dependency analysis and version checking
+/// 3. Constraint validation (unless forced)
+/// 4. Resource downloading and verification
+/// 5. Lockfile and file system updates
+///
+/// All operations are designed to be atomic when possible, with rollback
+/// support through the backup option.
+#[derive(Debug, Args)]
 pub struct UpdateCommand {
-    /// Specific dependencies to update (updates all if not specified)
+    /// Specific dependencies to update.
     ///
-    /// When provided, only the named dependencies will be considered for updates.
-    /// Dependency names should match those defined in the manifest.
-    /// If empty, all dependencies will be checked for updates.
-    dependencies: Vec<String>,
+    /// If provided, only these dependencies will be updated. Otherwise,
+    /// all dependencies in the manifest are considered for updates.
+    ///
+    /// Example: `ccpm update my-agent utils-snippet`
+    #[arg(value_name = "DEPENDENCY")]
+    pub dependencies: Vec<String>,
 
-    /// Dry run - show what would be updated without making changes
+    /// Preview updates without applying changes.
     ///
-    /// In dry run mode, the command will analyze and display what updates
-    /// are available without actually modifying any files. This is useful
-    /// for previewing changes before applying them.
-    #[arg(long)]
-    dry_run: bool,
+    /// Shows a detailed list of what would be updated, including version
+    /// changes and affected files, but doesn't modify anything.
+    #[arg(long, conflicts_with = "check")]
+    pub dry_run: bool,
 
-    /// Check what would be updated without making any changes
+    /// Check for available updates without applying.
     ///
-    /// Similar to dry run but with more concise output focused on
-    /// availability of updates rather than detailed change information.
-    #[arg(long)]
-    check: bool,
+    /// Similar to --dry-run but with minimal output, suitable for scripts
+    /// and automated checks.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub check: bool,
 
-    /// Force update ignoring version constraints
+    /// Ignore version constraints when updating.
     ///
-    /// When enabled, ignores version constraints in the manifest and
-    /// updates to the latest available versions. Use with caution as
-    /// this may introduce breaking changes.
+    /// WARNING: This may break compatibility with your code if dependencies
+    /// introduce breaking changes. Use with caution.
     #[arg(long)]
-    force: bool,
+    pub force: bool,
 
-    /// Create backup of lockfile before updating
+    /// Create a backup of the lockfile before updating.
     ///
-    /// Creates a backup copy of the lockfile (ccpm.lock.backup) before
-    /// making any changes. This allows easy rollback if the update
-    /// causes issues.
+    /// The backup is saved as `ccpm.lock.backup` and can be restored
+    /// manually if the update causes issues.
     #[arg(long)]
-    backup: bool,
+    pub backup: bool,
 
-    /// Verbose output showing detailed progress
+    /// Show detailed progress information during update.
     ///
-    /// Enables detailed progress information including individual
-    /// dependency processing steps and resolution details.
+    /// Displays additional information about each phase of the update process,
+    /// including Git operations, dependency resolution, and file operations.
     #[arg(long)]
-    verbose: bool,
+    pub verbose: bool,
 
-    /// Quiet output with minimal messages
+    /// Suppress all output except errors.
     ///
-    /// Suppresses most output except for errors and final summary.
-    /// Mutually exclusive with verbose mode.
-    #[arg(long)]
-    quiet: bool,
+    /// Useful for automated scripts and CI/CD pipelines where only
+    /// error conditions need to be reported.
+    #[arg(long, short)]
+    pub quiet: bool,
+
+    /// Maximum number of parallel operations.
+    ///
+    /// Controls how many Git operations and file copies can run concurrently.
+    /// Higher values may improve performance on fast networks and systems with
+    /// many CPU cores, but may also increase resource usage.
+    ///
+    /// Default: max(10, 2 × CPU cores)
+    #[arg(long, value_name = "NUMBER")]
+    pub max_parallel: Option<usize>,
+
+    /// Disable progress bars (for programmatic use, not exposed as CLI arg)
+    #[arg(skip)]
+    pub no_progress: bool,
 }
 
 impl UpdateCommand {
@@ -250,6 +287,10 @@ impl UpdateCommand {
     }
 
     pub async fn execute_from_path(self, manifest_path: PathBuf) -> Result<()> {
+        use crate::installer::{ResourceFilter, install_resources};
+        use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
+        use std::sync::Arc;
+
         // For consistency with execute(), require the manifest to exist
         if !manifest_path.exists() {
             return Err(anyhow::anyhow!(
@@ -259,6 +300,7 @@ impl UpdateCommand {
         }
 
         let project_dir = manifest_path.parent().unwrap();
+        let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet && !self.no_progress));
 
         // Load manifest
         let manifest = Manifest::load(&manifest_path).with_context(|| {
@@ -274,13 +316,9 @@ impl UpdateCommand {
         let existing_lockfile = if lockfile_path.exists() {
             LockFile::load(&lockfile_path)?
         } else {
-            if !self.quiet {
-                println!("⚠️  No lockfile found.");
-                println!("📦 Performing fresh install");
-            }
-            // Perform a fresh install using the install command
-            if !self.quiet {
-                println!("Running fresh install...");
+            if !self.quiet && !self.no_progress {
+                println!("⚠️  No lockfile found");
+                println!("ℹ️  Performing fresh install");
             }
 
             // Use the install command to do the actual installation
@@ -290,7 +328,7 @@ impl UpdateCommand {
                 crate::cli::install::InstallCommand::new()
             };
 
-            return install_cmd.execute_from_path(manifest_path).await;
+            return install_cmd.execute_from_path(Some(&manifest_path)).await;
         };
 
         // Create backup if requested
@@ -299,8 +337,8 @@ impl UpdateCommand {
             tokio::fs::copy(&lockfile_path, &backup_path)
                 .await
                 .with_context(|| format!("Failed to create backup at {}", backup_path.display()))?;
-            if !self.quiet {
-                println!("💾 Created backup: {}", backup_path.display());
+            if !self.quiet && !self.no_progress {
+                println!("ℹ️  Created backup: {}", backup_path.display());
             }
         }
 
@@ -311,109 +349,78 @@ impl UpdateCommand {
             Some(self.dependencies.clone())
         };
 
-        if !self.quiet {
-            println!("🔄 Updating dependencies...");
+        // Count total dependencies for tracking
+        let total_deps = ResourceIterator::count_manifest_dependencies(&manifest);
+
+        // Start syncing sources phase (if we have remote deps)
+        let has_remote_deps = manifest
+            .all_dependencies()
+            .iter()
+            .any(|(_, dep)| dep.get_source().is_some());
+
+        if !self.quiet && !self.no_progress && has_remote_deps {
+            multi_phase.start_phase(InstallationPhase::SyncingSources, None);
         }
 
-        // Create progress bar (only if not quiet)
-        let pb = if self.quiet {
-            None
-        } else {
-            let pb = ProgressBar::new_spinner();
-            pb.set_message("Checking for updates");
-            Some(pb)
-        };
+        // Initialize cache for both resolution and installation
+        let cache = Cache::new()?;
 
         // Resolve updated dependencies
-        let mut resolver = DependencyResolver::new(manifest.clone())?;
+        let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())?;
 
         // Sync sources
-        if let Some(ref pb) = pb {
-            pb.set_message("Syncing sources");
-        }
-        if self.verbose && !self.quiet {
-            println!("🔄 Updating dependencies");
-        }
-        resolver.source_manager.sync_all(pb.as_ref()).await?;
-        if let Some(ref pb) = pb {
-            pb.set_message("Updating dependencies");
+        resolver.source_manager.sync_all().await?;
+
+        // Complete syncing phase if it was started
+        if !self.quiet && !self.no_progress && has_remote_deps {
+            multi_phase.complete_phase(Some("Sources synced"));
         }
 
-        if self.verbose && !self.quiet {
-            println!("🔍 Checking for updates");
-            println!("📡 Resolving dependencies");
-            println!("📥 Fetching latest versions");
+        // Start resolving phase
+        if !self.quiet && !self.no_progress && total_deps > 0 {
+            multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
         }
 
-        let new_lockfile = resolver
-            .update(&existing_lockfile, deps_to_update.clone(), pb.as_ref())
+        let mut new_lockfile = resolver
+            .update(&existing_lockfile, deps_to_update.clone())
             .await?;
 
-        if let Some(pb) = pb {
-            pb.finish_with_message("Update check complete");
+        // Complete resolving phase
+        if !self.quiet && !self.no_progress && total_deps > 0 {
+            multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
         }
 
         // Compare lockfiles to see what changed
         let mut updates = Vec::new();
-
-        // Check agents
-        for new_entry in &new_lockfile.agents {
-            if let Some(old_entry) = existing_lockfile
-                .agents
-                .iter()
-                .find(|e| e.name == new_entry.name)
+        ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
+            if let Some((_, old_entry)) =
+                ResourceIterator::find_resource_by_name(&existing_lockfile, &new_entry.name)
+                && old_entry.resolved_commit != new_entry.resolved_commit
             {
-                if old_entry.resolved_commit != new_entry.resolved_commit {
-                    updates.push((
-                        new_entry.name.clone(),
-                        old_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string()),
-                        new_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string()),
-                    ));
-                }
+                let old_version = old_entry
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "latest".to_string());
+                let new_version = new_entry
+                    .version
+                    .clone()
+                    .unwrap_or_else(|| "latest".to_string());
+                updates.push((new_entry.name.clone(), old_version, new_version));
             }
-        }
-
-        // Check snippets
-        for new_entry in &new_lockfile.snippets {
-            if let Some(old_entry) = existing_lockfile
-                .snippets
-                .iter()
-                .find(|e| e.name == new_entry.name)
-            {
-                if old_entry.resolved_commit != new_entry.resolved_commit {
-                    updates.push((
-                        new_entry.name.clone(),
-                        old_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string()),
-                        new_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string()),
-                    ));
-                }
-            }
-        }
+        });
 
         // Display results
         if updates.is_empty() {
-            if !self.quiet {
-                println!("\n✅ All dependencies are up to date!");
+            if !self.quiet && !self.no_progress {
+                println!("✓ All dependencies are up to date!");
             }
         } else {
-            if !self.quiet {
-                if self.check {
-                    println!("\n📦 Updates available:");
-                } else {
-                    println!("\n📦 Found {} update(s):", updates.len());
-                }
+            if !self.quiet && !self.no_progress {
+                println!("✓ Found {} update(s)", updates.len());
+            }
+
+            if !self.quiet && !self.no_progress {
+                println!(); // Add spacing
                 for (name, old_ver, new_ver) in &updates {
                     println!(
                         "  {} {} → {}",
@@ -425,48 +432,84 @@ impl UpdateCommand {
             }
 
             if self.dry_run || self.check {
-                if !self.quiet {
+                if !self.quiet && !self.no_progress {
+                    println!(); // Add spacing
                     if self.check {
-                        println!("\n{}", "Check mode - no changes made".yellow());
+                        println!("{}", "Check mode - no changes made".yellow());
                     } else {
-                        println!("\n{} {}", "Would update".green(), "(dry run)".yellow());
+                        println!("{} {}", "Would update".green(), "(dry run)".yellow());
                     }
                 }
             } else {
                 // Save updated lockfile with error handling and rollback
                 match new_lockfile.save(&lockfile_path) {
                     Ok(()) => {
-                        if !self.quiet {
-                            println!("\n✅ Updated lockfile");
+                        // Lockfile saved successfully (no progress needed for this quick operation)
+
+                        // Install all updated resources using main installation function
+                        if !self.quiet && !self.no_progress && !updates.is_empty() {
+                            multi_phase.start_phase(
+                                InstallationPhase::Installing,
+                                Some(&format!("({} resources)", updates.len())),
+                            );
                         }
 
-                        // Install the updated resources
-                        if !self.quiet {
-                            println!("📦 Installing updated resources...");
-                        }
-
-                        // Initialize cache
-                        let cache = Cache::new()?;
-
-                        // Install all updated resources
-                        let install_count = install_updated_resources(
-                            &updates,
+                        let (install_count, checksums) = install_resources(
+                            ResourceFilter::Updated(updates.clone()),
                             &new_lockfile,
                             &manifest,
                             project_dir,
-                            &cache,
-                            self.quiet,
+                            cache,
+                            false,             // don't force refresh for updates
+                            self.max_parallel, // use provided or default concurrency
+                            if self.quiet || self.no_progress {
+                                None
+                            } else {
+                                Some(multi_phase.clone())
+                            },
                         )
                         .await?;
 
-                        if !self.quiet && install_count > 0 {
-                            println!("✅ Updated {install_count} resources");
+                        // Update lockfile with checksums
+                        for (name, checksum) in checksums {
+                            new_lockfile.update_resource_checksum(&name, &checksum);
                         }
+
+                        // Complete installation phase
+                        if install_count > 0 && !self.quiet && !self.no_progress {
+                            multi_phase.complete_phase(Some(&format!(
+                                "Updated {} resources",
+                                install_count
+                            )));
+                        }
+
+                        // Start finalizing phase
+                        if !self.quiet && !self.no_progress && install_count > 0 {
+                            multi_phase.start_phase(InstallationPhase::Finalizing, None);
+                        }
+
+                        // Save the updated lockfile again with checksums
+                        new_lockfile.save(&lockfile_path)?;
 
                         // Update .gitignore if enabled
                         let gitignore_enabled = manifest.target.gitignore;
+                        if gitignore_enabled {
+                            update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
+                        }
 
-                        update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
+                        // Complete finalizing phase
+                        if !self.quiet && !self.no_progress && install_count > 0 {
+                            multi_phase.complete_phase(Some("Update finalized"));
+                        }
+
+                        // Clear the multi-phase display before final message
+                        if !self.quiet && !self.no_progress {
+                            multi_phase.clear();
+                        }
+
+                        if !self.quiet && !self.no_progress && install_count > 0 {
+                            println!("\n✓ Updated {} resources", install_count);
+                        }
                     }
                     Err(e) => {
                         if self.backup {
@@ -476,11 +519,13 @@ impl UpdateCommand {
                                 if let Err(restore_err) =
                                     tokio::fs::copy(&backup_path, &lockfile_path).await
                                 {
-                                    eprintln!("❌ Update failed: {e}");
-                                    eprintln!("❌ Failed to restore backup: {restore_err}");
-                                } else if !self.quiet {
-                                    eprintln!("❌ Update failed: {e}");
-                                    eprintln!("🔄 Rolling back to previous lockfile");
+                                    if !self.quiet && !self.no_progress {
+                                        eprintln!("✗ Update failed: {}", e);
+                                        eprintln!("✗ Failed to restore backup: {}", restore_err);
+                                    }
+                                } else if !self.quiet && !self.no_progress {
+                                    eprintln!("✗ Update failed: {}", e);
+                                    println!("ℹ️  Rolled back to previous lockfile");
                                 }
                             }
                         }
@@ -512,7 +557,9 @@ mod tests {
             force: false,
             backup: false,
             verbose: false,
-            quiet: true, // Quiet by default for tests
+            quiet: true,       // Quiet by default for tests
+            no_progress: true, // No progress bars in tests
+            max_parallel: None,
         }
     }
 
@@ -1027,6 +1074,8 @@ mod tests {
             backup: false,
             verbose: false,
             quiet: false,
+            no_progress: false,
+            max_parallel: None,
         };
 
         assert!(cmd.dependencies.is_empty());
@@ -1048,6 +1097,8 @@ mod tests {
             backup: true,
             verbose: true,
             quiet: true,
+            no_progress: true,
+            max_parallel: Some(4),
         };
 
         assert_eq!(cmd.dependencies.len(), 2);

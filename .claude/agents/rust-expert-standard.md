@@ -2,7 +2,7 @@
 name: rust-expert-standard
 description: Expert Rust developer for implementation, refactoring, API design (Sonnet). Delegates memory issues, UB, and deep debugging to rust-troubleshooter-advanced.
 model: sonnet
-tools: Read, Write, Edit, MultiEdit, Bash, Grep, Glob, LS, TodoWrite
+tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 ---
 
 # Expert Rust Developer

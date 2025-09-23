@@ -21,15 +21,27 @@ pub enum HookEvent {
     /// Triggered after a tool has been executed by Claude
     #[serde(rename = "PostToolUse")]
     PostToolUse,
+    /// Triggered when Claude needs permission or input is idle
+    #[serde(rename = "Notification")]
+    Notification,
     /// Triggered when the user submits a prompt
     #[serde(rename = "UserPromptSubmit")]
     UserPromptSubmit,
-    /// Triggered when Claude receives a user prompt
-    #[serde(rename = "UserPromptReceive")]
-    UserPromptReceive,
-    /// Triggered when the user receives an assistant response
-    #[serde(rename = "AssistantResponseReceive")]
-    AssistantResponseReceive,
+    /// Triggered when main Claude Code agent finishes responding
+    #[serde(rename = "Stop")]
+    Stop,
+    /// Triggered when a subagent (Task tool) finishes responding
+    #[serde(rename = "SubagentStop")]
+    SubagentStop,
+    /// Triggered before compact operation
+    #[serde(rename = "PreCompact")]
+    PreCompact,
+    /// Triggered when starting/resuming a session
+    #[serde(rename = "SessionStart")]
+    SessionStart,
+    /// Triggered when session ends
+    #[serde(rename = "SessionEnd")]
+    SessionEnd,
 }
 
 /// Hook configuration as stored in JSON files
@@ -71,21 +83,68 @@ pub struct HookCommand {
 /// Metadata for CCPM-managed hooks
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CcpmHookMetadata {
+    /// Whether this hook is managed by CCPM (true) or manually configured (false)
     pub managed: bool,
+    /// Name of the dependency that installed this hook
     pub dependency_name: String,
+    /// Source repository name where this hook originated
     pub source: String,
+    /// Version constraint or resolved version of the hook dependency
     pub version: String,
+    /// ISO 8601 timestamp when this hook was installed
     pub installed_at: String,
 }
 
-/// A matcher group containing multiple hooks
+/// A matcher group containing multiple hooks with the same regex pattern.
+///
+/// In Claude Code's settings.local.json, hooks are organized into matcher groups
+/// where multiple hook commands can share the same regex pattern for tool matching.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatcherGroup {
+    /// Regex pattern that determines which tools this group applies to
     pub matcher: String,
+    /// List of hook commands to execute when the matcher pattern matches
     pub hooks: Vec<HookCommand>,
 }
 
-/// Load hook configurations from a directory
+/// Load hook configurations from a directory containing JSON files.
+///
+/// Scans the specified directory for `.json` files and parses each one as a
+/// [`HookConfig`]. The filename (without extension) becomes the hook name in
+/// the returned map.
+///
+/// # Arguments
+///
+/// * `hooks_dir` - Directory path containing hook JSON configuration files
+///
+/// # Returns
+///
+/// A HashMap mapping hook names to their configurations. If the directory
+/// doesn't exist, returns an empty map.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Directory reading fails due to permissions or I/O errors
+/// - Any JSON file cannot be read or parsed
+/// - A filename is invalid or cannot be converted to a string
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::hooks::load_hook_configs;
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let hooks_dir = Path::new(".claude/ccpm/hooks");
+/// let configs = load_hook_configs(hooks_dir)?;
+///
+/// for (name, config) in configs {
+///     println!("Loaded hook '{}' with {} events", name, config.events.len());
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>> {
     let mut configs = HashMap::new();
 
@@ -118,7 +177,7 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
 }
 
 // Re-export commonly used merge functions
-pub use merge::{apply_hooks_to_settings, merge_hooks_advanced, MergeResult};
+pub use merge::{MergeResult, apply_hooks_to_settings, merge_hooks_advanced};
 
 /// Install hooks from manifest to .claude/settings.local.json
 ///
@@ -227,7 +286,53 @@ pub async fn install_hooks(
     Ok(locked_hooks)
 }
 
-/// Validate a hook configuration
+/// Validate a hook configuration for correctness and safety.
+///
+/// Performs comprehensive validation of a hook configuration including:
+/// - Event list validation (must have at least one event)
+/// - Regex pattern syntax validation for the matcher
+/// - Hook type validation (only "command" type is supported)
+/// - Script existence validation for CCPM-managed scripts
+///
+/// # Arguments
+///
+/// * `config` - The hook configuration to validate
+/// * `script_path` - Path to the hook file (used to resolve relative script paths)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the configuration is valid.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - No events are specified
+/// - The matcher regex pattern is invalid
+/// - Unsupported hook type is used (only "command" is supported)
+/// - Referenced script file doesn't exist (for CCPM-managed scripts)
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::hooks::{validate_hook_config, HookConfig, HookEvent};
+/// use std::path::Path;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// let config = HookConfig {
+///     events: vec![HookEvent::PreToolUse],
+///     matcher: "Bash|Write".to_string(),
+///     hook_type: "command".to_string(),
+///     command: "echo 'validation'".to_string(),
+///     timeout: Some(5000),
+///     description: None,
+/// };
+///
+/// let hook_file = Path::new(".claude/ccpm/hooks/test.json");
+/// validate_hook_config(&config, hook_file)?;
+/// println!("Hook configuration is valid!");
+/// # Ok(())
+/// # }
+/// ```
 pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<()> {
     // Validate events
     if config.events.is_empty() {
@@ -260,13 +365,13 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
         None
     };
 
-    if let Some(path) = script_full_path {
-        if !path.exists() {
-            return Err(anyhow::anyhow!(
-                "Hook references non-existent script: {}",
-                config.command
-            ));
-        }
+    if let Some(path) = script_full_path
+        && !path.exists()
+    {
+        return Err(anyhow::anyhow!(
+            "Hook references non-existent script: {}",
+            config.command
+        ));
     }
 
     Ok(())
@@ -284,12 +389,13 @@ mod tests {
         let events = vec![
             (HookEvent::PreToolUse, r#""PreToolUse""#),
             (HookEvent::PostToolUse, r#""PostToolUse""#),
+            (HookEvent::Notification, r#""Notification""#),
             (HookEvent::UserPromptSubmit, r#""UserPromptSubmit""#),
-            (HookEvent::UserPromptReceive, r#""UserPromptReceive""#),
-            (
-                HookEvent::AssistantResponseReceive,
-                r#""AssistantResponseReceive""#,
-            ),
+            (HookEvent::Stop, r#""Stop""#),
+            (HookEvent::SubagentStop, r#""SubagentStop""#),
+            (HookEvent::PreCompact, r#""PreCompact""#),
+            (HookEvent::SessionStart, r#""SessionStart""#),
+            (HookEvent::SessionEnd, r#""SessionEnd""#),
         ];
 
         for (event, expected) in events {
@@ -460,10 +566,12 @@ mod tests {
 
         let result = load_hook_configs(&hooks_dir);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse hook config"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse hook config")
+        );
     }
 
     #[test]
@@ -481,10 +589,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("at least one event"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("at least one event")
+        );
     }
 
     #[test]
@@ -502,10 +612,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid regex pattern"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid regex pattern")
+        );
     }
 
     #[test]
@@ -523,10 +635,12 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Only 'command' hook type"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Only 'command' hook type")
+        );
     }
 
     #[test]
@@ -587,10 +701,12 @@ mod tests {
             .join("test.json");
         let result = validate_hook_config(&config, &hook_path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("non-existent script"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("non-existent script")
+        );
     }
 
     #[test]

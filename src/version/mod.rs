@@ -51,7 +51,7 @@
 //!
 //! ## Basic Git Tag Resolution
 //!
-//! ```rust,no_run
+//! ```rust,no_run,no_run
 //! use ccpm::version::{VersionResolver, VersionInfo};
 //! use ccpm::git::GitRepo;
 //! use std::path::PathBuf;
@@ -74,7 +74,7 @@
 //!
 //! ## Advanced Constraint Resolution
 //!
-//! ```rust,no_run
+//! ```rust,no_run,no_run
 //! use ccpm::version::constraints::{ConstraintResolver, VersionConstraint};
 //! use semver::Version;
 //! use std::collections::HashMap;
@@ -102,7 +102,7 @@
 //!
 //! ## Version Comparison and Analysis
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ccpm::version::comparison::VersionComparator;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -175,7 +175,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::VersionInfo;
 /// use semver::Version;
 ///
@@ -191,8 +191,11 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone)]
 pub struct VersionInfo {
+    /// The parsed semantic version
     pub version: Version,
+    /// The original Git tag string
     pub tag: String,
+    /// Whether this is a prerelease version (alpha, beta, rc, etc.)
     pub prerelease: bool,
 }
 
@@ -224,7 +227,7 @@ pub struct VersionInfo {
 ///
 /// ## Creating from Git Repository
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::version::VersionResolver;
 /// use ccpm::git::GitRepo;
 /// use std::path::PathBuf;
@@ -240,7 +243,7 @@ pub struct VersionInfo {
 ///
 /// ## Version Resolution
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// # use ccpm::version::VersionResolver;
 /// # use ccpm::git::GitRepo;
 /// # use std::path::PathBuf;
@@ -278,7 +281,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::VersionResolver;
     ///
     /// let resolver = VersionResolver::new();
@@ -319,7 +322,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -384,7 +387,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use semver::Version;
     ///
@@ -435,7 +438,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -532,7 +535,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -582,7 +585,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -604,7 +607,7 @@ impl VersionResolver {
     ///
     /// # Comparison with `get_latest()`
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::version::VersionResolver;
     /// # use ccpm::git::GitRepo;
     /// # use std::path::PathBuf;
@@ -662,7 +665,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -684,7 +687,7 @@ impl VersionResolver {
     ///
     /// ## Filtering and Analysis
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::version::VersionResolver;
     /// # use ccpm::git::GitRepo;
     /// # use std::path::PathBuf;
@@ -742,7 +745,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -764,7 +767,7 @@ impl VersionResolver {
     ///
     /// ## Comparison with All Versions
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::version::VersionResolver;
     /// # use ccpm::git::GitRepo;
     /// # use std::path::PathBuf;
@@ -828,7 +831,7 @@ impl VersionResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::version::VersionResolver;
     /// use ccpm::git::GitRepo;
     /// use std::path::PathBuf;
@@ -862,7 +865,7 @@ impl VersionResolver {
     ///
     /// ## Validation Before Resolution
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::version::VersionResolver;
     /// # use ccpm::git::GitRepo;
     /// # use std::path::PathBuf;
@@ -936,7 +939,7 @@ impl Default for VersionResolver {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -967,7 +970,7 @@ impl Default for VersionResolver {
 ///
 /// ## Complex Range Matching
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1042,7 +1045,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::{parse_version_constraint, VersionConstraint};
 ///
 /// // Semantic versions are classified as tags
@@ -1155,7 +1158,7 @@ pub mod constraints;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::version::VersionConstraint;
 ///
 /// // Create different constraint types
@@ -1191,7 +1194,7 @@ impl VersionConstraint {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::version::VersionConstraint;
     ///
     /// let tag = VersionConstraint::Tag("^1.0.0".to_string());

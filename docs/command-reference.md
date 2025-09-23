@@ -43,15 +43,17 @@ ccpm init --force
 
 ### `ccpm install`
 
-Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`.
+Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
 ccpm install [OPTIONS]
 
 Options:
+  -f, --force                    Force re-download of sources even if cached
+      --no-lock                  Don't write lockfile after installation
       --frozen                   Use exact lockfile versions without updates
       --no-cache                 Bypass cache and fetch directly from sources
-      --max-parallel <NUMBER>    Maximum parallel operations (default: 4)
+      --max-parallel <NUMBER>    Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>     Path to ccpm.toml (default: ./ccpm.toml)
   -h, --help                     Print help information
 ```
@@ -64,11 +66,17 @@ ccpm install
 # Use exact lockfile versions (CI/production)
 ccpm install --frozen
 
+# Force re-download from sources
+ccpm install --force
+
+# Install without creating lockfile
+ccpm install --no-lock
+
 # Bypass cache for fresh fetch
 ccpm install --no-cache
 
-# Limit parallelism
-ccpm install --max-parallel 2
+# Control parallelism (default: max(10, 2 × CPU cores))
+ccpm install --max-parallel 8
 
 # Use custom manifest path
 ccpm install --manifest-path ./configs/ccpm.toml
@@ -86,7 +94,7 @@ Arguments:
 
 Options:
       --dry-run               Preview changes without applying
-      --max-parallel <NUMBER> Maximum parallel operations (default: 4)
+      --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
   -h, --help                  Print help information
 ```
@@ -102,8 +110,8 @@ ccpm update rust-expert
 # Preview changes
 ccpm update --dry-run
 
-# Update with limited parallelism
-ccpm update --max-parallel 2
+# Update with custom parallelism
+ccpm update --max-parallel 6
 ```
 
 ### `ccpm list`
@@ -331,7 +339,7 @@ ccpm config remove-source old-private
 
 ### `ccpm cache`
 
-Manage the global Git repository cache in `~/.ccpm/cache/`.
+Manage the global Git repository cache in `~/.ccpm/cache/`. The cache uses SHA-based worktrees for optimal deduplication and performance.
 
 #### Cache Information
 
@@ -379,7 +387,7 @@ ccpm cache list
 
 ## Resource Types
 
-CCPM manages six types of resources:
+CCPM manages six types of resources with optimized parallel installation:
 
 ### Direct Installation Resources
 
@@ -392,6 +400,13 @@ CCPM manages six types of resources:
 
 - **Hooks**: Event-based automation (installed to `.claude/ccpm/hooks/`, merged into `.claude/settings.local.json`)
 - **MCP Servers**: Model Context Protocol servers (installed to `.claude/ccpm/mcp-servers/`, merged into `.mcp.json`)
+
+### Parallel Installation Features
+
+- **Worktree-based processing**: Each resource uses an isolated Git worktree for safe concurrent installation
+- **Configurable concurrency**: Use `--max-parallel` to control the number of simultaneous operations
+- **Real-time progress**: Multi-phase progress tracking shows installation status across all parallel operations
+- **Instance-level optimization**: Worktrees are cached and reused within a single command for maximum efficiency
 
 ## Version Constraints
 
@@ -427,6 +442,43 @@ ai-tools = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
 ```
 
+## Parallelism Control
+
+CCPM v0.3.0 introduces advanced parallelism control for optimal performance:
+
+### --max-parallel Flag
+
+Available on `install` and `update` commands to control concurrent operations:
+
+- **Default**: `max(10, 2 × CPU cores)` - Automatically scales with system capacity
+- **Range**: 1 to 100 parallel operations
+- **Use Cases**:
+  - High-performance systems: Increase for faster operations
+  - Limited bandwidth: Reduce to avoid overwhelming network
+  - CI/CD environments: Tune based on available resources
+
+**Examples:**
+```bash
+# Use default parallelism (recommended)
+ccpm install
+
+# High-performance system with fast network
+ccpm install --max-parallel 20
+
+# Limited bandwidth or shared resources
+ccpm install --max-parallel 3
+
+# Single-threaded operation (debugging)
+ccpm install --max-parallel 1
+```
+
+### Performance Characteristics
+
+- **Worktree-Based**: Uses Git worktrees for parallel-safe repository access
+- **Instance Caching**: Per-command fetch cache reduces redundant network operations
+- **Smart Batching**: Dependencies from same source share operations where possible
+- **Memory Efficient**: Each parallel operation uses minimal memory overhead
+
 ## Environment Variables
 
 CCPM respects these environment variables:
@@ -434,6 +486,7 @@ CCPM respects these environment variables:
 - `CCPM_CONFIG` - Path to custom global config file
 - `CCPM_CACHE_DIR` - Override cache directory
 - `CCPM_NO_PROGRESS` - Disable progress bars
+- `CCPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
 - `RUST_LOG` - Set logging level (debug, info, warn, error)
 
 ## Exit Codes

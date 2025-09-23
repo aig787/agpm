@@ -60,48 +60,70 @@ echo ""
 echo "→ Adding source repository (local path)"
 ccpm add source local-deps "$DEPS_DIR"
 
-# IMPORTANT: This script uses only ccpm commands to manage dependencies
-# We do not manually edit the ccpm.toml file - all dependencies are added
-# via the 'ccpm add dep' subcommands to ensure proper manifest structure
-
-# Add agents
+# Add the ccpm-community GitHub repository
 echo ""
-echo "→ Adding agents to manifest"
+echo "→ Adding ccpm-community GitHub repository"
+ccpm add source community "https://github.com/aig787/ccpm-community.git"
+
+# Add 2 of each resource type via commands
+echo ""
+echo "→ Adding 2 agents via command"
 ccpm add dep agent local-deps:agents/rust-haiku.md --name rust-haiku
 ccpm add dep agent local-deps:agents/javascript-haiku.md --name javascript-haiku
 
-# Add snippets  
 echo ""
-echo "→ Adding snippets to manifest"
+echo "→ Adding 2 snippets via command"
 ccpm add dep snippet local-deps:snippets/error-analysis.md --name error-analysis
 ccpm add dep snippet local-deps:snippets/unit-test-creation.md --name unit-tests
-ccpm add dep snippet local-deps:snippets/security-review.md --name security-review
-ccpm add dep snippet local-deps:snippets/rest-api-endpoint.md --name rest-api
-ccpm add dep snippet local-deps:snippets/test-coverage.md --name test-coverage
 
-# Add commands
 echo ""
-echo "→ Adding commands to manifest"
+echo "→ Adding 2 commands via command"
 ccpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
 ccpm add dep command local-deps:commands/format-json.md --name format-json
 
-# Add scripts
 echo ""
-echo "→ Adding scripts to manifest"
+echo "→ Adding 2 scripts via command"
 ccpm add dep script local-deps:scripts/build.sh --name build
 ccpm add dep script local-deps:scripts/test.js --name test
 
-# Add hooks
 echo ""
-echo "→ Adding hooks to manifest"
+echo "→ Adding 2 hooks via command"
 ccpm add dep hook local-deps:hooks/pre-tool-use.json --name pre-tool-use
 ccpm add dep hook local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
 
-# Add MCP servers
 echo ""
-echo "→ Adding MCP servers to manifest"
+echo "→ Adding 2 MCP servers via command"
 ccpm add dep mcp-server local-deps:mcp-servers/filesystem.json --name filesystem
 ccpm add dep mcp-server local-deps:mcp-servers/fetch.json --name fetch
+
+echo ""
+echo "→ Adding remaining resources directly to ccpm.toml"
+cat >> ccpm.toml << 'EOF'
+
+[agents]
+# Additional agents from ccpm-community
+api-designer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md" }
+backend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md" }
+frontend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md" }
+python-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md" }
+rust-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md" }
+javascript-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md" }
+database-administrator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md" }
+code-reviewer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md" }
+test-automator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md" }
+security-auditor = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md" }
+devops-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md" }
+cloud-architect = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md" }
+documentation-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md" }
+ml-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md" }
+multi-agent-coordinator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md" }
+
+[snippets]
+# Additional snippets
+security-review = { source = "local-deps", path = "snippets/security-review.md" }
+rest-api = { source = "local-deps", path = "snippets/rest-api-endpoint.md" }
+test-coverage = { source = "local-deps", path = "snippets/test-coverage.md" }
+EOF
 
 
 # Show the generated manifest
@@ -124,6 +146,11 @@ echo ""
 echo "→ Listing installed resources"
 ccpm list
 
+# Update dependencies
+echo ""
+echo "→ Updating dependencies with CCPM"
+ccpm update
+
 # Show final structure
 echo ""
 echo "→ Final project structure:"
@@ -135,7 +162,7 @@ echo -e "${GREEN}║           Setup Complete! 🎉               ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
 echo ""
 echo "Your Claude Code project '$PROJECT_NAME' is ready with:"
-echo "  • 2 agents"
+echo "  • 17 agents (2 local + 15 from ccpm-community)"
 echo "  • 5 snippets"
 echo "  • 2 commands"
 echo "  • 2 scripts"

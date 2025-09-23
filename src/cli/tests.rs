@@ -186,50 +186,6 @@ mod cli_tests {
         assert_eq!(config.config_path, Some("/custom/path".to_string()));
     }
 
-    // NOTE: This test explicitly tests CliConfig's apply_to_env functionality
-    // It uses std::env::set_var to test that the config correctly sets environment variables
-    // If this test becomes flaky, run with: cargo test -- --test-threads=1
-    #[test]
-    fn test_cli_config_apply_to_env() {
-        use crate::cli::CliConfig;
-
-        // Save original env vars
-        let orig_rust_log = std::env::var("RUST_LOG").ok();
-        let orig_no_progress = std::env::var("CCPM_NO_PROGRESS").ok();
-        let orig_config = std::env::var("CCPM_CONFIG").ok();
-
-        // Test applying config with all values
-        // Note: RUST_LOG is no longer set by apply_to_env, it's handled in main.rs
-        let config = CliConfig {
-            log_level: Some("debug".to_string()),
-            no_progress: true,
-            config_path: Some("/test/path".to_string()),
-        };
-        config.apply_to_env();
-
-        // RUST_LOG should not be modified by apply_to_env anymore
-        assert_eq!(std::env::var("CCPM_NO_PROGRESS").unwrap(), "1");
-        assert_eq!(std::env::var("CCPM_CONFIG").unwrap(), "/test/path");
-
-        // Test applying config with no values doesn't crash
-        let config = CliConfig::new();
-        config.apply_to_env(); // Should not panic
-
-        // Restore original env vars
-        match orig_rust_log {
-            Some(val) => std::env::set_var("RUST_LOG", val),
-            None => std::env::remove_var("RUST_LOG"),
-        }
-        match orig_no_progress {
-            Some(val) => std::env::set_var("CCPM_NO_PROGRESS", val),
-            None => std::env::remove_var("CCPM_NO_PROGRESS"),
-        }
-        match orig_config {
-            Some(val) => std::env::set_var("CCPM_CONFIG", val),
-            None => std::env::remove_var("CCPM_CONFIG"),
-        }
-    }
-
     #[tokio::test]
     async fn test_cli_execute_all_commands() {
         use crate::cli::CliConfig;

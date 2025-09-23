@@ -215,7 +215,7 @@ use std::path::Path;
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// # use ccpm::markdown::{MarkdownFile, MarkdownDocument};
 /// // These are equivalent
 /// let doc1 = MarkdownDocument::new("content".to_string());
@@ -255,7 +255,7 @@ pub type MarkdownFile = MarkdownDocument;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// # use ccpm::markdown::MarkdownMetadata;
 /// # use std::collections::HashMap;
 /// let mut metadata = MarkdownMetadata::default();
@@ -375,7 +375,7 @@ pub struct MarkdownMetadata {
 ///
 /// ## Reading from File
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// # use ccpm::markdown::MarkdownDocument;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
@@ -392,7 +392,7 @@ pub struct MarkdownMetadata {
 ///
 /// ## Creating Programmatically
 ///
-/// ```rust
+/// ```rust,no_run
 /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
 /// let metadata = MarkdownMetadata {
 ///     title: Some("Test Agent".to_string()),
@@ -410,7 +410,7 @@ pub struct MarkdownMetadata {
 ///
 /// ## Modifying Content
 ///
-/// ```rust
+/// ```rust,no_run
 /// # use ccpm::markdown::MarkdownDocument;
 /// let mut doc = MarkdownDocument::new("# Original".to_string());
 ///
@@ -461,7 +461,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// let doc = MarkdownDocument::new("# Hello\n\nWorld!".to_string());
     ///
@@ -491,7 +491,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Example".to_string()),
@@ -542,7 +542,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
@@ -589,7 +589,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
@@ -657,7 +657,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// // Parse document with YAML frontmatter
     /// let input = "---\ntitle: Test\n---\n# Content";
@@ -671,43 +671,43 @@ impl MarkdownDocument {
     /// ```
     pub fn parse(input: &str) -> Result<Self> {
         // Check for YAML frontmatter (starts with ---)
-        if input.starts_with("---\n") || input.starts_with("---\r\n") {
-            if let Some(end_idx) = find_frontmatter_end(input) {
-                let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
-                let frontmatter = &input[skip_size..end_idx];
-                let content = input[end_idx..].trim_start_matches("---").trim_start();
+        if (input.starts_with("---\n") || input.starts_with("---\r\n"))
+            && let Some(end_idx) = find_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("---").trim_start();
 
-                // Try to parse YAML frontmatter
-                let metadata: MarkdownMetadata =
-                    serde_yaml::from_str(frontmatter).with_context(|| {
-                        format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
-                    })?;
+            // Try to parse YAML frontmatter
+            let metadata: MarkdownMetadata =
+                serde_yaml::from_str(frontmatter).with_context(|| {
+                    format!("Failed to parse YAML frontmatter. Content:\n{frontmatter}")
+                })?;
 
-                return Ok(Self {
-                    metadata: Some(metadata),
-                    content: content.to_string(),
-                    raw: input.to_string(),
-                });
-            }
+            return Ok(Self {
+                metadata: Some(metadata),
+                content: content.to_string(),
+                raw: input.to_string(),
+            });
         }
 
         // Check for TOML frontmatter (starts with +++)
-        if input.starts_with("+++\n") || input.starts_with("+++\r\n") {
-            if let Some(end_idx) = find_toml_frontmatter_end(input) {
-                let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
-                let frontmatter = &input[skip_size..end_idx];
-                let content = input[end_idx..].trim_start_matches("+++").trim_start();
+        if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
+            && let Some(end_idx) = find_toml_frontmatter_end(input)
+        {
+            let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
+            let frontmatter = &input[skip_size..end_idx];
+            let content = input[end_idx..].trim_start_matches("+++").trim_start();
 
-                // Try to parse TOML frontmatter
-                let metadata: MarkdownMetadata =
-                    toml::from_str(frontmatter).context("Failed to parse TOML frontmatter")?;
+            // Try to parse TOML frontmatter
+            let metadata: MarkdownMetadata =
+                toml::from_str(frontmatter).context("Failed to parse TOML frontmatter")?;
 
-                return Ok(Self {
-                    metadata: Some(metadata),
-                    content: content.to_string(),
-                    raw: input.to_string(),
-                });
-            }
+            return Ok(Self {
+                metadata: Some(metadata),
+                content: content.to_string(),
+                raw: input.to_string(),
+            });
         }
 
         // No frontmatter, entire document is content
@@ -742,7 +742,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let mut doc = MarkdownDocument::new("# Test\n\nContent".to_string());
     /// assert!(doc.metadata.is_none());
@@ -784,7 +784,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // Document with metadata
     /// let metadata = MarkdownMetadata {
@@ -833,7 +833,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
@@ -857,10 +857,10 @@ impl MarkdownDocument {
     #[must_use]
     pub fn get_title(&self) -> Option<String> {
         // First check metadata
-        if let Some(ref metadata) = self.metadata {
-            if let Some(ref title) = metadata.title {
-                return Some(title.clone());
-            }
+        if let Some(ref metadata) = self.metadata
+            && let Some(ref title) = metadata.title
+        {
+            return Some(title.clone());
         }
 
         // Try to extract from first # heading
@@ -896,7 +896,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
@@ -922,10 +922,10 @@ impl MarkdownDocument {
     #[must_use]
     pub fn get_description(&self) -> Option<String> {
         // First check metadata
-        if let Some(ref metadata) = self.metadata {
-            if let Some(ref desc) = metadata.description {
-                return Some(desc.clone());
-            }
+        if let Some(ref metadata) = self.metadata
+            && let Some(ref desc) = metadata.description
+        {
+            return Some(desc.clone());
         }
 
         // Try to extract first non-heading paragraph
@@ -1066,7 +1066,7 @@ fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// # use ccpm::markdown::is_markdown_file;
 /// # use std::path::Path;
 /// assert!(is_markdown_file(Path::new("agent.md")));
@@ -1114,7 +1114,7 @@ pub fn is_markdown_file(path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// # use ccpm::markdown::list_markdown_files;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {

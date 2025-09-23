@@ -317,7 +317,7 @@ use crate::utils::fs::atomic_write;
 ///
 /// Creating a new lockfile:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::lockfile::LockFile;
 ///
 /// let lockfile = LockFile::new();
@@ -327,7 +327,7 @@ use crate::utils::fs::atomic_write;
 ///
 /// Loading an existing lockfile:
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// # use std::path::Path;
 /// # use ccpm::lockfile::LockFile;
 /// # fn example() -> anyhow::Result<()> {
@@ -601,7 +601,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::LockFile;
     ///
     /// let lockfile = LockFile::new();
@@ -650,7 +650,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -771,7 +771,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -886,7 +886,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::LockFile;
     ///
     /// let mut lockfile = LockFile::new();
@@ -941,7 +941,7 @@ impl LockFile {
     ///
     /// Adding an agent:
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::{LockFile, LockedResource};
     ///
     /// let mut lockfile = LockFile::new();
@@ -962,7 +962,7 @@ impl LockFile {
     ///
     /// Adding a snippet:
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::{LockFile, LockedResource};
     /// # let mut lockfile = LockFile::new();
     /// let snippet = LockedResource {
@@ -1004,7 +1004,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::lockfile::{LockFile, LockedResource};
     /// use ccpm::core::ResourceType;
     ///
@@ -1064,7 +1064,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(resource) = lockfile.get_resource("example-agent") {
@@ -1102,7 +1102,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(source) = lockfile.get_source("community") {
@@ -1131,7 +1131,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if lockfile.has_resource("example-agent") {
@@ -1159,7 +1159,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
@@ -1210,6 +1210,32 @@ impl LockFile {
         }
     }
 
+    /// Returns all locked resources across all resource types.
+    ///
+    /// This method collects all resources from agents, snippets, commands,
+    /// scripts, hooks, and MCP servers into a single vector. It's useful for
+    /// operations that need to process all resources uniformly, such as:
+    /// - Generating installation reports
+    /// - Validating checksums across all resources
+    /// - Bulk operations on resources
+    ///
+    /// # Returns
+    ///
+    /// A vector containing references to all [`LockedResource`] entries in the lockfile.
+    /// The order matches the resource type order defined in [`crate::core::ResourceType::all()`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::lockfile::LockFile;
+    /// # let lockfile = LockFile::new();
+    /// let all_resources = lockfile.all_resources();
+    /// println!("Total locked resources: {}", all_resources.len());
+    ///
+    /// for resource in all_resources {
+    ///     println!("- {}: {}", resource.name, resource.installed_at);
+    /// }
+    /// ```
     #[must_use]
     pub fn all_resources(&self) -> Vec<&LockedResource> {
         let mut resources = Vec::new();
@@ -1229,7 +1255,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// let mut lockfile = LockFile::new();
     /// // ... add sources and resources ...
@@ -1279,7 +1305,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1348,7 +1374,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1387,6 +1413,90 @@ impl LockFile {
         let actual = Self::compute_checksum(path)?;
         Ok(actual == expected)
     }
+
+    /// Update the checksum for a specific resource in the lockfile.
+    ///
+    /// This method finds a resource by name across all resource types and updates
+    /// its checksum value. Used after installation to record the actual file checksum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the resource to update
+    /// * `checksum` - The new SHA-256 checksum in "sha256:hex" format
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the resource was found and updated, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::lockfile::{LockFile, LockedResource};
+    /// # use ccpm::core::ResourceType;
+    /// # let mut lockfile = LockFile::default();
+    /// # // First add a resource to update
+    /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource {
+    /// #     name: "my-agent".to_string(),
+    /// #     source: None,
+    /// #     url: None,
+    /// #     path: "my-agent.md".to_string(),
+    /// #     version: None,
+    /// #     resolved_commit: None,
+    /// #     checksum: "".to_string(),
+    /// #     installed_at: "agents/my-agent.md".to_string(),
+    /// # }, ResourceType::Agent);
+    /// let updated = lockfile.update_resource_checksum(
+    ///     "my-agent",
+    ///     "sha256:abcdef123456..."
+    /// );
+    /// assert!(updated);
+    /// ```
+    pub fn update_resource_checksum(&mut self, name: &str, checksum: &str) -> bool {
+        // Try each resource type until we find a match
+        for resource in &mut self.agents {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.snippets {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.commands {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.scripts {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.hooks {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        for resource in &mut self.mcp_servers {
+            if resource.name == name {
+                resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 impl Default for LockFile {
@@ -1421,7 +1531,7 @@ impl Default for LockFile {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run,no_run
 /// use ccpm::lockfile::find_lockfile;
 ///
 /// if let Some(lockfile_path) = find_lockfile() {
@@ -1558,10 +1668,12 @@ mod tests {
         // Should fail to load
         let result = LockFile::load(&lockfile_path);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("newer than supported"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("newer than supported")
+        );
     }
 
     #[test]

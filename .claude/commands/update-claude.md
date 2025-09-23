@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(cargo tree:*), Read, Edit, MultiEdit, Grep, LS, Task
+allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo tree:*), Bash(cargo:*), Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 description: Review changes and update CLAUDE.md to reflect current architecture and implementation
 argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only report needed updates
 ---

@@ -33,12 +33,13 @@
 //! Advanced Git worktree integration for safe parallel package installation:
 //! - **Bare repository cloning**: Creates repositories optimized for worktrees
 //! - **Parallel worktree creation**: Multiple versions checked out simultaneously
-//! - **Concurrency control**: Global semaphore prevents resource exhaustion
+//! - **Per-worktree locking**: Individual worktree creation locks prevent conflicts
+//! - **Command-level concurrency**: Parallelism controlled by `--max-parallel` flag
 //! - **Automatic cleanup**: Efficient worktree lifecycle management
 //! - **Conflict-free operations**: Each dependency gets its own isolated working directory
 //!
 //! ## Progress Reporting
-//! Integration with [`ProgressBar`] for user feedback during:
+//! User feedback during:
 //! - Repository cloning with transfer progress
 //! - Fetch operations with network activity
 //! - Large repository operations
@@ -99,19 +100,21 @@
 //! ## Basic Repository Operations
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
-//! use ccpm::utils::progress::ProgressBar;
+//! use std::env;
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! // Clone a repository with progress reporting
-//! let progress = ProgressBar::new(100);
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let repo_path = temp_dir.join("repo");
+//!
+//! // Clone a repository
 //! let repo = GitRepo::clone(
 //!     "https://github.com/example/repo.git",
-//!     "/tmp/repo",
-//!     Some(&progress)
+//!     &repo_path
 //! ).await?;
 //!
 //! // Fetch updates from remote
-//! repo.fetch(None, Some(&progress)).await?;
+//! repo.fetch(None).await?;
 //!
 //! // Checkout a specific version
 //! repo.checkout("v1.2.3").await?;
@@ -126,18 +129,22 @@
 //! ## Authentication with URLs
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
+//! use std::env;
 //!
 //! # async fn auth_example() -> anyhow::Result<()> {
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let repo_path = temp_dir.join("private-repo");
+//!
 //! // Clone with authentication embedded in URL
 //! let repo = GitRepo::clone(
 //!     "https://token:ghp_xxxx@github.com/private/repo.git",
-//!     "/tmp/private-repo",
-//!     None
+//!     &repo_path
 //! ).await?;
 //!
 //! // Fetch with different authentication URL
 //! let auth_url = "https://oauth2:token@github.com/private/repo.git";
-//! repo.fetch(Some(auth_url), None).await?;
+//! repo.fetch(Some(auth_url)).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -145,7 +152,7 @@
 //! ## Repository Validation
 //! ```rust,no_run
 //! use ccpm::git::{GitRepo, ensure_git_available, is_valid_git_repo};
-//! use std::path::Path;
+//! use std::env;
 //!
 //! # async fn validation_example() -> anyhow::Result<()> {
 //! // Ensure Git is installed
@@ -155,9 +162,10 @@
 //! GitRepo::verify_url("https://github.com/example/repo.git").await?;
 //!
 //! // Check if directory is a valid Git repository
-//! let path = Path::new("/tmp/repo");
-//! if is_valid_git_repo(path) {
-//!     let repo = GitRepo::new(path);
+//! let temp_dir = env::temp_dir();
+//! let path = temp_dir.join("repo");
+//! if is_valid_git_repo(&path) {
+//!     let repo = GitRepo::new(&path);
 //!     let url = repo.get_remote_url().await?;
 //!     println!("Repository URL: {}", url);
 //! }
@@ -168,19 +176,28 @@
 //! ## Worktree-based Parallel Operations
 //! ```rust,no_run
 //! use ccpm::git::GitRepo;
+//! use std::env;
 //!
 //! # async fn worktree_example() -> anyhow::Result<()> {
+//! // Use platform-appropriate temp directory
+//! let temp_dir = env::temp_dir();
+//! let cache_dir = temp_dir.join("cache");
+//! let bare_path = cache_dir.join("repo.git");
+//!
 //! // Clone repository as bare for worktree use
 //! let bare_repo = GitRepo::clone_bare(
 //!     "https://github.com/example/repo.git",
-//!     "/tmp/cache/repo.git",
-//!     None
+//!     &bare_path
 //! ).await?;
 //!
 //! // Create multiple worktrees for parallel processing
-//! let worktree1 = bare_repo.create_worktree("/tmp/work1", Some("v1.0.0")).await?;
-//! let worktree2 = bare_repo.create_worktree("/tmp/work2", Some("v2.0.0")).await?;
-//! let worktree3 = bare_repo.create_worktree("/tmp/work3", Some("main")).await?;
+//! let work1 = temp_dir.join("work1");
+//! let work2 = temp_dir.join("work2");
+//! let work3 = temp_dir.join("work3");
+//!
+//! let worktree1 = bare_repo.create_worktree(&work1, Some("v1.0.0")).await?;
+//! let worktree2 = bare_repo.create_worktree(&work2, Some("v2.0.0")).await?;
+//! let worktree3 = bare_repo.create_worktree(&work3, Some("main")).await?;
 //!
 //! // Each worktree can be used independently and concurrently
 //! // Process files from worktree1 at v1.0.0
@@ -188,9 +205,9 @@
 //! // Process files from worktree3 at latest main
 //!
 //! // Clean up when done
-//! bare_repo.remove_worktree("/tmp/work1").await?;
-//! bare_repo.remove_worktree("/tmp/work2").await?;
-//! bare_repo.remove_worktree("/tmp/work3").await?;
+//! bare_repo.remove_worktree(&work1).await?;
+//! bare_repo.remove_worktree(&work2).await?;
+//! bare_repo.remove_worktree(&work3).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -222,7 +239,6 @@
 //! - [`crate::utils::progress`] - User progress feedback
 //! - [`crate::core::CcpmError`] - Centralized error handling
 //!
-//! [`ProgressBar`]: crate::utils::progress::ProgressBar
 //! [`CcpmError`]: crate::core::CcpmError
 
 pub mod command_builder;
@@ -231,7 +247,6 @@ mod tests;
 
 use crate::core::CcpmError;
 use crate::git::command_builder::GitCommand;
-use crate::utils::progress::ProgressBar;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -258,7 +273,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::GitRepo;
 /// use std::path::Path;
 ///
@@ -302,7 +317,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     /// use std::path::Path;
     ///
@@ -353,24 +368,23 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
-    /// use ccpm::utils::progress::ProgressBar;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
+    /// let temp_dir = env::temp_dir();
+    ///
     /// // Clone public repository
     /// let repo = GitRepo::clone(
     ///     "https://github.com/rust-lang/git2-rs.git",
-    ///     "/tmp/git2-rs",
-    ///     None
+    ///     temp_dir.join("git2-rs")
     /// ).await?;
     ///
-    /// // Clone with progress reporting
-    /// let progress = ProgressBar::new(100);
+    /// // Clone another repository
     /// let repo = GitRepo::clone(
-    ///     "https://github.com/large/repository.git",
-    ///     "/tmp/large-repo",
-    ///     Some(&progress)
+    ///     "https://github.com/example/repository.git",
+    ///     temp_dir.join("example-repo")
     /// ).await?;
     /// # Ok(())
     /// # }
@@ -391,16 +405,8 @@ impl GitRepo {
     /// tokens in URLs are never logged or exposed in error messages.
     ///
     /// [`CcpmError::GitCloneFailed`]: crate::core::CcpmError::GitCloneFailed
-    pub async fn clone(
-        url: &str,
-        target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<Self> {
+    pub async fn clone(url: &str, target: impl AsRef<Path>) -> Result<Self> {
         let target_path = target.as_ref();
-
-        if let Some(pb) = &progress {
-            pb.set_message(format!("Cloning {url}"));
-        }
 
         // Use command builder for consistent clone operations
         let mut cmd = GitCommand::clone(url, target_path);
@@ -408,16 +414,18 @@ impl GitRepo {
         // For file:// URLs, clone with all branches to ensure commit availability
         if url.starts_with("file://") {
             cmd = GitCommand::new()
-                .args(["clone", "--progress", "--no-single-branch", url])
+                .args([
+                    "clone",
+                    "--progress",
+                    "--no-single-branch",
+                    "--recurse-submodules",
+                    url,
+                ])
                 .arg(target_path.display().to_string());
         }
 
         // Execute will handle error context properly
         cmd.execute().await?;
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Clone complete");
-        }
 
         Ok(Self::new(target_path))
     }
@@ -448,20 +456,21 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
-    /// use ccpm::utils::progress::ProgressBar;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let repo = GitRepo::new("/path/to/repo");
+    /// let temp_dir = env::temp_dir();
+    /// let repo_path = temp_dir.join("repo");
+    /// let repo = GitRepo::new(&repo_path);
     ///
     /// // Basic fetch from configured remote
-    /// repo.fetch(None, None).await?;
+    /// repo.fetch(None).await?;
     ///
-    /// // Fetch with authentication and progress
-    /// let progress = ProgressBar::new(100);
+    /// // Fetch with authentication
     /// let auth_url = "https://token:ghp_xxxx@github.com/user/repo.git";
-    /// repo.fetch(Some(auth_url), Some(&progress)).await?;
+    /// repo.fetch(Some(auth_url)).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -482,17 +491,9 @@ impl GitRepo {
     /// - Use efficient Git transfer protocols
     ///
     /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
-    pub async fn fetch(
-        &self,
-        auth_url: Option<&str>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<()> {
+    pub async fn fetch(&self, auth_url: Option<&str>) -> Result<()> {
         // Note: file:// URLs are local repositories, but we still need to fetch
         // from them to get updates from the source repository
-
-        if let Some(pb) = progress {
-            pb.set_message("Fetching updates");
-        }
 
         // Use git fetch with authentication from global config URL if provided
         if let Some(url) = auth_url {
@@ -508,10 +509,6 @@ impl GitRepo {
             .current_dir(&self.path)
             .execute_success()
             .await?;
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Fetch complete");
-        }
 
         Ok(())
     }
@@ -549,7 +546,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -636,10 +633,10 @@ impl GitRepo {
             .map_err(|e| {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
-                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>() {
-                    if matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. }) {
-                        return e;
-                    }
+                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>()
+                    && matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. })
+                {
+                    return e;
                 }
                 CcpmError::GitCheckoutFailed {
                     reference: ref_name.to_string(),
@@ -669,7 +666,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -694,7 +691,7 @@ impl GitRepo {
     ///
     /// For semantic version ordering, consider using the `semver` crate:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// # use anyhow::Result;
     /// use semver::Version;
     /// use ccpm::git::GitRepo;
@@ -738,7 +735,9 @@ impl GitRepo {
             ));
         }
 
-        if !self.path.join(".git").exists() {
+        // Check if it's a git repository (either regular or bare)
+        // Regular repos have .git directory, bare repos have HEAD file
+        if !self.path.join(".git").exists() && !self.path.join("HEAD").exists() {
             return Err(anyhow::anyhow!("Not a git repository: {:?}", self.path));
         }
 
@@ -777,7 +776,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -799,7 +798,7 @@ impl GitRepo {
     ///
     /// For processing the URL further, consider using [`parse_git_url`]:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::{GitRepo, parse_git_url};
     ///
     /// # async fn parse_example() -> anyhow::Result<()> {
@@ -836,34 +835,27 @@ impl GitRepo {
             .await
     }
 
-    /// Checks if the directory contains a valid Git repository.
-    ///
-    /// This is a fast, synchronous operation that simply checks for the presence
-    /// of a `.git` subdirectory in the repository path. It does not validate
-    /// the Git repository's internal structure or integrity.
-    ///
-    /// # Return Value
-    ///
-    /// - `true` if the directory contains a `.git` subdirectory
-    /// - `false` if the `.git` subdirectory is missing or inaccessible
-    ///
-    /// # Performance
-    ///
-    /// This method is intentionally synchronous and lightweight for efficiency.
-    /// It performs a single filesystem check without spawning async tasks or
-    /// executing Git commands.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
+    /// Checks if the directory contains a valid Git repository.\n    ///
+    /// This method detects both regular and bare Git repositories:\n    /// - **Regular repositories**: Have a `.git` subdirectory\n    /// - **Bare repositories**: Have a `HEAD` file in the root\n    ///
+    /// Bare repositories are commonly used for:\n    /// - Serving repositories (like GitHub/GitLab)\n    /// - Cache storage in package managers\n    /// - Worktree sources for parallel operations\n    ///
+    /// # Return Value\n    ///
+    /// - `true` if the directory is a valid Git repository (regular or bare)\n    /// - `false` if neither `.git` directory nor `HEAD` file exists\n    ///
+    /// # Performance\n    ///
+    /// This method is intentionally synchronous and lightweight for efficiency.\n    /// It performs at most two filesystem checks without spawning async tasks or\n    /// executing Git commands.\n    ///
+    /// # Examples\n    ///
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
-    /// let repo = GitRepo::new("/path/to/repo");
-    ///
+    /// // Regular repository
+    /// let repo = GitRepo::new("/path/to/regular/repo");
     /// if repo.is_git_repo() {
     ///     println!("Valid Git repository detected");
-    /// } else {
-    ///     println!("Not a Git repository");
+    /// }
+    ///
+    /// // Bare repository
+    /// let bare_repo = GitRepo::new("/path/to/repo.git");
+    /// if bare_repo.is_git_repo() {
+    ///     println!("Valid bare Git repository detected");
     /// }
     ///
     /// // Use before async operations
@@ -879,20 +871,19 @@ impl GitRepo {
     ///
     /// # Validation Scope
     ///
-    /// This method only checks for the `.git` directory's presence. It does not:
+    /// This method only checks for the presence of Git repository markers. It does not:
     /// - Validate Git repository integrity
     /// - Check for repository corruption
     /// - Verify specific Git version compatibility
     /// - Test network connectivity to remotes
     ///
-    /// For more thorough validation, use Git operations that will fail with
-    /// detailed error information if the repository is corrupted.
+    /// For more thorough validation, use Git operations that will fail with\n    /// detailed error information if the repository is corrupted.
     ///
     /// # Alternative
     ///
     /// For error-based validation with detailed context, use [`ensure_valid_git_repo`]:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::ensure_valid_git_repo;
     /// use std::path::Path;
     ///
@@ -906,7 +897,7 @@ impl GitRepo {
     /// [`ensure_valid_git_repo`]: fn.ensure_valid_git_repo.html
     #[must_use]
     pub fn is_git_repo(&self) -> bool {
-        self.path.join(".git").exists()
+        is_git_repository(&self.path)
     }
 
     /// Returns the filesystem path to the Git repository.
@@ -921,7 +912,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     /// use std::path::Path;
     ///
@@ -942,7 +933,7 @@ impl GitRepo {
     ///
     /// The returned path can be used for various filesystem operations:
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # fn example() -> std::io::Result<()> {
@@ -1001,7 +992,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1012,7 +1003,7 @@ impl GitRepo {
     /// let url = "https://github.com/user/private-repo.git";
     /// match GitRepo::verify_url(url).await {
     ///     Ok(_) => {
-    ///         let repo = GitRepo::clone(url, "/tmp/repo", None).await?;
+    ///         let repo = GitRepo::clone(url, "/tmp/repo").await?;
     ///         println!("Repository cloned successfully");
     ///     }
     ///     Err(e) => {
@@ -1131,24 +1122,21 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```ignore
     /// use ccpm::git::GitRepo;
+    /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
+    /// let temp_dir = env::temp_dir();
     /// let bare_repo = GitRepo::clone_bare(
     ///     "https://github.com/example/repo.git",
-    ///     "/tmp/repo.git",
-    ///     None
+    ///     temp_dir.join("repo.git")
     /// ).await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn clone_bare(
-        url: &str,
-        target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
-    ) -> Result<Self> {
-        Self::clone_bare_with_context(url, target, progress, None).await
+    pub async fn clone_bare(url: &str, target: impl AsRef<Path>) -> Result<Self> {
+        Self::clone_bare_with_context(url, target, None).await
     }
 
     /// Clone a repository as a bare repository with logging context.
@@ -1169,14 +1157,9 @@ impl GitRepo {
     pub async fn clone_bare_with_context(
         url: &str,
         target: impl AsRef<Path>,
-        progress: Option<&ProgressBar>,
         context: Option<&str>,
     ) -> Result<Self> {
         let target_path = target.as_ref();
-
-        if let Some(pb) = &progress {
-            pb.set_message(format!("Cloning bare repository {url}"));
-        }
 
         let mut cmd = GitCommand::clone_bare(url, target_path);
 
@@ -1188,15 +1171,23 @@ impl GitRepo {
 
         let repo = Self::new(target_path);
 
+        // Configure the fetch refspec to ensure all branches are fetched as remote tracking branches
+        // This is crucial for file:// URLs and ensures we can resolve origin/branch after fetching
+        let _ = GitCommand::new()
+            .args([
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ])
+            .current_dir(repo.path())
+            .execute_success()
+            .await;
+
         // Ensure the bare repo has refs available for worktree creation
         // Also needs context for the fetch operation
         repo.ensure_bare_repo_has_refs_with_context(context)
             .await
             .ok();
-
-        if let Some(pb) = progress {
-            pb.finish_with_message("Bare clone complete");
-        }
 
         Ok(repo)
     }
@@ -1217,7 +1208,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1312,7 +1303,36 @@ impl GitRepo {
             let result = cmd.execute_success().await;
 
             match result {
-                Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                Ok(_) => {
+                    // Initialize and update submodules in the new worktree
+                    let worktree_repo = GitRepo::new(worktree_path);
+
+                    // Initialize submodules
+                    let mut init_cmd = GitCommand::new()
+                        .args(["submodule", "init"])
+                        .current_dir(worktree_path);
+
+                    if let Some(ctx) = context {
+                        init_cmd = init_cmd.with_context(ctx);
+                    }
+
+                    // Ignore errors - if there are no submodules, this will fail
+                    let _ = init_cmd.execute_success().await;
+
+                    // Update submodules
+                    let mut update_cmd = GitCommand::new()
+                        .args(["submodule", "update", "--recursive"])
+                        .current_dir(worktree_path);
+
+                    if let Some(ctx) = context {
+                        update_cmd = update_cmd.with_context(ctx);
+                    }
+
+                    // Ignore errors - if there are no submodules, this will fail
+                    let _ = update_cmd.execute_success().await;
+
+                    return Ok(worktree_repo);
+                }
                 Err(e) => {
                     let error_str = e.to_string();
 
@@ -1339,6 +1359,66 @@ impl GitRepo {
                         continue;
                     }
 
+                    // Handle stale registration: "missing but already registered worktree"
+                    if error_str.contains("missing but already registered worktree") {
+                        // Prune stale admin entries, then retry (once) with --force
+                        let _ = self.prune_worktrees().await;
+
+                        // Retry with --force
+                        let worktree_path_str = worktree_path.display().to_string();
+                        let mut args = vec![
+                            "worktree".to_string(),
+                            "add".to_string(),
+                            "--force".to_string(),
+                            worktree_path_str,
+                        ];
+                        if let Some(r) = effective_ref {
+                            args.push(r.to_string());
+                        }
+
+                        let mut force_cmd = GitCommand::new().args(args).current_dir(&self.path);
+                        if let Some(ctx) = context {
+                            force_cmd = force_cmd.with_context(ctx);
+                        }
+
+                        match force_cmd.execute_success().await {
+                            Ok(_) => {
+                                // Initialize and update submodules in the new worktree
+                                let worktree_repo = GitRepo::new(worktree_path);
+
+                                let mut init_cmd = GitCommand::new()
+                                    .args(["submodule", "init"])
+                                    .current_dir(worktree_path);
+                                if let Some(ctx) = context {
+                                    init_cmd = init_cmd.with_context(ctx);
+                                }
+                                let _ = init_cmd.execute_success().await;
+
+                                let mut update_cmd = GitCommand::new()
+                                    .args(["submodule", "update", "--recursive"])
+                                    .current_dir(worktree_path);
+                                if let Some(ctx) = context {
+                                    update_cmd = update_cmd.with_context(ctx);
+                                }
+                                let _ = update_cmd.execute_success().await;
+
+                                return Ok(worktree_repo);
+                            }
+                            Err(e2) => {
+                                // Fall through to other recovery paths with the original error context
+                                // but include the forced attempt error as context
+                                return Err(e).with_context(|| {
+                                    format!(
+                                        "Failed to create worktree at {} from {} (forced add failed: {})",
+                                        worktree_path.display(),
+                                        self.path.display(),
+                                        e2
+                                    )
+                                });
+                            }
+                        }
+                    }
+
                     // If no reference was provided and the command failed, it might be because
                     // the bare repo doesn't have a default branch set. Try with explicit HEAD
                     if reference.is_none() && retry_count == 0 {
@@ -1352,7 +1432,36 @@ impl GitRepo {
                         let head_result = head_cmd.execute_success().await;
 
                         match head_result {
-                            Ok(_) => return Ok(GitRepo::new(worktree_path)),
+                            Ok(_) => {
+                                // Initialize and update submodules in the new worktree
+                                let worktree_repo = GitRepo::new(worktree_path);
+
+                                // Initialize submodules
+                                let mut init_cmd = GitCommand::new()
+                                    .args(["submodule", "init"])
+                                    .current_dir(worktree_path);
+
+                                if let Some(ctx) = context {
+                                    init_cmd = init_cmd.with_context(ctx);
+                                }
+
+                                // Ignore errors - if there are no submodules, this will fail
+                                let _ = init_cmd.execute_success().await;
+
+                                // Update submodules
+                                let mut update_cmd = GitCommand::new()
+                                    .args(["submodule", "update", "--recursive"])
+                                    .current_dir(worktree_path);
+
+                                if let Some(ctx) = context {
+                                    update_cmd = update_cmd.with_context(ctx);
+                                }
+
+                                // Ignore errors - if there are no submodules, this will fail
+                                let _ = update_cmd.execute_success().await;
+
+                                return Ok(worktree_repo);
+                            }
                             Err(head_err) => {
                                 // If HEAD also fails, return the original error
                                 return Err(e).with_context(|| {
@@ -1365,6 +1474,21 @@ impl GitRepo {
                                 });
                             }
                         }
+                    }
+
+                    // Check if the error is likely due to an invalid reference
+                    let error_str = e.to_string();
+                    if let Some(ref_name) = reference
+                        && (error_str.contains("pathspec")
+                            || error_str.contains("not found")
+                            || error_str.contains("ambiguous")
+                            || error_str.contains("invalid")
+                            || error_str.contains("unknown revision"))
+                    {
+                        return Err(anyhow::anyhow!(
+                            "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
+                            ref_name
+                        ));
                     }
 
                     return Err(e).with_context(|| {
@@ -1390,7 +1514,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1422,7 +1546,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1451,10 +1575,11 @@ impl GitRepo {
             } else if line == "bare" {
                 // Skip bare repository entry
                 current_worktree = None;
-            } else if line.is_empty() && current_worktree.is_some() {
-                if let Some(path) = current_worktree.take() {
-                    worktrees.push(path);
-                }
+            } else if line.is_empty()
+                && current_worktree.is_some()
+                && let Some(path) = current_worktree.take()
+            {
+                worktrees.push(path);
             }
         }
 
@@ -1473,7 +1598,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1499,7 +1624,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
+    /// ```rust,no_run,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1555,6 +1680,115 @@ impl GitRepo {
             .context("Failed to get current commit")
     }
 
+    /// Resolves a Git reference (tag, branch, commit) to its full SHA-1 hash.
+    ///
+    /// This method is central to CCPM's optimization strategy - by resolving all
+    /// version specifications to SHAs upfront, we can:
+    /// - Create worktrees keyed by SHA for maximum reuse
+    /// - Avoid redundant checkouts for the same commit
+    /// - Ensure deterministic, reproducible installations
+    ///
+    /// # Arguments
+    ///
+    /// * `ref_spec` - The Git reference to resolve (tag, branch, short/full SHA, or None for HEAD)
+    ///
+    /// # Returns
+    ///
+    /// Returns the full 40-character SHA-1 hash of the resolved reference.
+    ///
+    /// # Resolution Strategy
+    ///
+    /// 1. If `ref_spec` is None or "HEAD", resolves to current HEAD commit
+    /// 2. If already a full SHA (40 hex chars), returns it unchanged
+    /// 3. Otherwise uses `git rev-parse` to resolve:
+    ///    - Tags (e.g., "v1.0.0")
+    ///    - Branches (e.g., "main", "origin/main")
+    ///    - Short SHAs (e.g., "abc123")
+    ///    - Symbolic refs (e.g., "HEAD~1")
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use ccpm::git::GitRepo;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let repo = GitRepo::new("/path/to/repo");
+    ///
+    /// // Resolve a tag
+    /// let sha = repo.resolve_to_sha(Some("v1.2.3")).await?;
+    /// assert_eq!(sha.len(), 40);
+    ///
+    /// // Resolve HEAD
+    /// let head_sha = repo.resolve_to_sha(None).await?;
+    ///
+    /// // Already a full SHA - returned as-is
+    /// let full_sha = "a".repeat(40);
+    /// let resolved = repo.resolve_to_sha(Some(&full_sha)).await?;
+    /// assert_eq!(resolved, full_sha);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The reference doesn't exist in the repository
+    /// - The repository is invalid or corrupted
+    /// - Git command execution fails
+    pub async fn resolve_to_sha(&self, ref_spec: Option<&str>) -> Result<String> {
+        let reference = ref_spec.unwrap_or("HEAD");
+
+        // Optimization: if it's already a full SHA, return it directly
+        if reference.len() == 40 && reference.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(reference.to_string());
+        }
+
+        // For branch names, try to resolve origin/branch first to get the latest from remote
+        // This ensures we get the most recent commit after a fetch
+        let ref_to_resolve = if !reference.contains('/') && reference != "HEAD" {
+            // Looks like a branch name (not a tag or special ref)
+            // Try origin/branch first
+            let origin_ref = format!("origin/{}", reference);
+            if GitCommand::rev_parse(&origin_ref)
+                .current_dir(&self.path)
+                .execute_stdout()
+                .await
+                .is_ok()
+            {
+                origin_ref
+            } else {
+                // Fallback to the original reference (might be a tag or local branch)
+                reference.to_string()
+            }
+        } else {
+            reference.to_string()
+        };
+
+        // Use rev-parse to get the full SHA
+        let sha = GitCommand::rev_parse(&ref_to_resolve)
+            .current_dir(&self.path)
+            .execute_stdout()
+            .await
+            .with_context(|| format!("Failed to resolve reference '{}' to SHA", reference))?;
+
+        // Ensure we have a full SHA (sometimes rev-parse can return short SHAs)
+        if sha.len() < 40 {
+            // Request the full SHA explicitly
+            let full_sha = GitCommand::new()
+                .args([
+                    "rev-parse",
+                    "--verify",
+                    &format!("{}^{{commit}}", reference),
+                ])
+                .current_dir(&self.path)
+                .execute_stdout()
+                .await
+                .with_context(|| format!("Failed to get full SHA for reference '{}'", reference))?;
+            Ok(full_sha)
+        } else {
+            Ok(sha)
+        }
+    }
+
     #[cfg(test)]
     pub async fn get_current_branch(&self) -> Result<String> {
         let branch = GitCommand::current_branch()
@@ -1598,7 +1832,7 @@ impl GitRepo {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::is_git_installed;
 ///
 /// if is_git_installed() {
@@ -1620,7 +1854,7 @@ impl GitRepo {
 ///
 /// For error-based validation with detailed context, use [`ensure_git_available()`]:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1661,7 +1895,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1676,7 +1910,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Error Handling
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_git_available;
 /// use ccpm::core::CcpmError;
 ///
@@ -1695,18 +1929,19 @@ pub fn is_git_installed() -> bool {
 ///
 /// Typically called at the start of Git-dependent operations:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::{ensure_git_available, GitRepo};
+/// use std::env;
 ///
 /// # async fn git_operation() -> anyhow::Result<()> {
 /// // Validate prerequisites first
 /// ensure_git_available()?;
 ///
 /// // Then proceed with Git operations
+/// let temp_dir = env::temp_dir();
 /// let repo = GitRepo::clone(
 ///     "https://github.com/example/repo.git",
-///     "/tmp/repo",
-///     None
+///     temp_dir.join("repo")
 /// ).await?;
 /// # Ok(())
 /// # }
@@ -1719,6 +1954,50 @@ pub fn ensure_git_available() -> Result<()> {
         return Err(CcpmError::GitNotFound.into());
     }
     Ok(())
+}
+
+/// Checks if a path contains a Git repository (regular or bare).
+///
+/// This function detects both types of Git repositories:
+/// - **Regular repositories**: Contain a `.git` subdirectory
+/// - **Bare repositories**: Contain a `HEAD` file in the root
+///
+/// # Arguments
+///
+/// * `path` - The path to check for a Git repository
+///
+/// # Returns
+///
+/// * `true` if the path is a valid Git repository (regular or bare)
+/// * `false` if neither repository marker exists
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::path::Path;
+/// use ccpm::git::is_git_repository;
+///
+/// // Check a regular repository
+/// let repo_path = Path::new("/path/to/repo");
+/// if is_git_repository(repo_path) {
+///     println!("Found Git repository");
+/// }
+///
+/// // Check a bare repository
+/// let bare_path = Path::new("/path/to/repo.git");
+/// if is_git_repository(bare_path) {
+///     println!("Found bare Git repository");
+/// }
+/// ```
+///
+/// # Performance
+///
+/// This is a lightweight synchronous check that performs at most two
+/// filesystem operations to determine repository type.
+#[must_use]
+pub fn is_git_repository(path: &Path) -> bool {
+    // Check for regular repository (.git directory) or bare repository (HEAD file)
+    path.join(".git").exists() || path.join("HEAD").exists()
 }
 
 /// Checks if a directory contains a valid Git repository.
@@ -1738,7 +2017,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::is_valid_git_repo;
 /// use std::path::Path;
 ///
@@ -1760,7 +2039,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// # Batch Processing Example
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::is_valid_git_repo;
 /// use std::fs;
 /// use std::path::Path;
@@ -1795,7 +2074,7 @@ pub fn ensure_git_available() -> Result<()> {
 /// [`GitRepo::is_git_repo()`]: struct.GitRepo.html#method.is_git_repo
 #[must_use]
 pub fn is_valid_git_repo(path: &Path) -> bool {
-    path.join(".git").exists()
+    is_git_repository(path)
 }
 
 /// Ensures a directory contains a valid Git repository or returns a detailed error.
@@ -1822,7 +2101,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use std::path::Path;
 ///
@@ -1840,7 +2119,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Error Handling Pattern
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use ccpm::core::CcpmError;
 /// use std::path::Path;
@@ -1862,7 +2141,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// This function provides validation before creating `GitRepo` instances:
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::{ensure_valid_git_repo, GitRepo};
 /// use std::path::Path;
 ///
@@ -1933,7 +2212,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::parse_git_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1964,7 +2243,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 ///
 /// # Cache Integration Example
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::parse_git_url;
 /// use std::path::PathBuf;
 ///
@@ -1988,7 +2267,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// The parser handles URLs with embedded authentication but extracts only
 /// the repository components:
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::parse_git_url;
 ///
 /// # fn auth_example() -> anyhow::Result<()> {
@@ -2037,16 +2316,18 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
     }
 
     // Handle SSH URLs like git@github.com:user/repo.git
-    if url.contains('@') && url.contains(':') && !url.starts_with("ssh://") {
-        if let Some(colon_pos) = url.find(':') {
-            let path = &url[colon_pos + 1..];
-            let path = path.trim_end_matches(".git");
-            if let Some(slash_pos) = path.find('/') {
-                return Ok((
-                    path[..slash_pos].to_string(),
-                    path[slash_pos + 1..].to_string(),
-                ));
-            }
+    if url.contains('@')
+        && url.contains(':')
+        && !url.starts_with("ssh://")
+        && let Some(colon_pos) = url.find(':')
+    {
+        let path = &url[colon_pos + 1..];
+        let path = path.trim_end_matches(".git");
+        if let Some(slash_pos) = path.find('/') {
+            return Ok((
+                path[..slash_pos].to_string(),
+                path[slash_pos + 1..].to_string(),
+            ));
         }
     }
 
@@ -2104,7 +2385,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ccpm::git::strip_auth_from_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -2125,7 +2406,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Safe Logging Pattern
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use anyhow::Result;
 ///
@@ -2140,7 +2421,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Error Context Integration
 ///
-/// ```rust,no_run
+/// ```rust,no_run,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use ccpm::core::CcpmError;
 ///

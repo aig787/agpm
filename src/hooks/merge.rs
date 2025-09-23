@@ -122,60 +122,58 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
     let mut user_hooks: HashMap<String, Vec<MatcherGroup>> = HashMap::new();
     let mut ccpm_hooks: HashMap<String, Vec<String>> = HashMap::new();
 
-    if let Some(existing) = existing {
-        if let Some(obj) = existing.as_object() {
-            for (event_name, matcher_groups) in obj {
-                if let Some(groups) = matcher_groups.as_array() {
-                    let mut user_groups = Vec::new();
+    if let Some(existing) = existing
+        && let Some(obj) = existing.as_object()
+    {
+        for (event_name, matcher_groups) in obj {
+            if let Some(groups) = matcher_groups.as_array() {
+                let mut user_groups = Vec::new();
 
-                    for group in groups {
-                        if let Some(group_obj) = group.as_object() {
-                            let matcher = group_obj
-                                .get("matcher")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                for group in groups {
+                    if let Some(group_obj) = group.as_object() {
+                        let matcher = group_obj
+                            .get("matcher")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                            if let Some(hooks_array) =
-                                group_obj.get("hooks").and_then(|h| h.as_array())
-                            {
-                                let mut user_hooks_in_group = Vec::new();
+                        if let Some(hooks_array) = group_obj.get("hooks").and_then(|h| h.as_array())
+                        {
+                            let mut user_hooks_in_group = Vec::new();
 
-                                for hook in hooks_array {
-                                    // Check if this is CCPM-managed
-                                    if let Some(ccpm_meta) = hook.get("_ccpm") {
-                                        if let Some(dep_name) = ccpm_meta
-                                            .get("dependency_name")
-                                            .and_then(|n| n.as_str())
-                                        {
-                                            ccpm_hooks
-                                                .entry(dep_name.to_string())
-                                                .or_default()
-                                                .push(event_name.clone());
-                                        }
-                                    } else {
-                                        // User-managed hook
-                                        let hook_cmd: HookCommand =
-                                            serde_json::from_value(hook.clone())
-                                                .context("Failed to parse user hook")?;
-                                        user_hooks_in_group.push(hook_cmd);
+                            for hook in hooks_array {
+                                // Check if this is CCPM-managed
+                                if let Some(ccpm_meta) = hook.get("_ccpm") {
+                                    if let Some(dep_name) =
+                                        ccpm_meta.get("dependency_name").and_then(|n| n.as_str())
+                                    {
+                                        ccpm_hooks
+                                            .entry(dep_name.to_string())
+                                            .or_default()
+                                            .push(event_name.clone());
                                     }
+                                } else {
+                                    // User-managed hook
+                                    let hook_cmd: HookCommand =
+                                        serde_json::from_value(hook.clone())
+                                            .context("Failed to parse user hook")?;
+                                    user_hooks_in_group.push(hook_cmd);
                                 }
+                            }
 
-                                // Only keep the group if it has user hooks
-                                if !user_hooks_in_group.is_empty() {
-                                    user_groups.push(MatcherGroup {
-                                        matcher: matcher.clone(),
-                                        hooks: user_hooks_in_group,
-                                    });
-                                }
+                            // Only keep the group if it has user hooks
+                            if !user_hooks_in_group.is_empty() {
+                                user_groups.push(MatcherGroup {
+                                    matcher: matcher.clone(),
+                                    hooks: user_hooks_in_group,
+                                });
                             }
                         }
                     }
+                }
 
-                    if !user_groups.is_empty() {
-                        user_hooks.insert(event_name.clone(), user_groups);
-                    }
+                if !user_groups.is_empty() {
+                    user_hooks.insert(event_name.clone(), user_groups);
                 }
             }
         }
@@ -218,9 +216,13 @@ fn event_to_string(event: &HookEvent) -> String {
     match event {
         HookEvent::PreToolUse => "PreToolUse".to_string(),
         HookEvent::PostToolUse => "PostToolUse".to_string(),
+        HookEvent::Notification => "Notification".to_string(),
         HookEvent::UserPromptSubmit => "UserPromptSubmit".to_string(),
-        HookEvent::UserPromptReceive => "UserPromptReceive".to_string(),
-        HookEvent::AssistantResponseReceive => "AssistantResponseReceive".to_string(),
+        HookEvent::Stop => "Stop".to_string(),
+        HookEvent::SubagentStop => "SubagentStop".to_string(),
+        HookEvent::PreCompact => "PreCompact".to_string(),
+        HookEvent::SessionStart => "SessionStart".to_string(),
+        HookEvent::SessionEnd => "SessionEnd".to_string(),
     }
 }
 
@@ -446,7 +448,6 @@ mod tests {
             }]
         });
 
-        // Updated CCPM hook
         let mut ccpm_hooks = HashMap::new();
         ccpm_hooks.insert(
             "security-hook".to_string(),
@@ -561,9 +562,11 @@ mod tests {
         assert_eq!(pre_tool.len(), 1);
 
         // The "Write" matcher group should be gone
-        assert!(!pre_tool
-            .iter()
-            .any(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Write")));
+        assert!(
+            !pre_tool
+                .iter()
+                .any(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Write"))
+        );
     }
 
     #[test]
@@ -1010,7 +1013,7 @@ mod tests {
 
         let post_group = post_tool[0].as_object().unwrap();
         let post_hooks = post_group.get("hooks").unwrap().as_array().unwrap();
-        assert_eq!(post_hooks.len(), 1); // Updated logger
+        assert_eq!(post_hooks.len(), 1);
         assert_eq!(
             post_hooks[0].get("command").unwrap().as_str().unwrap(),
             "new-logging.sh"
