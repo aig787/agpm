@@ -659,12 +659,16 @@ fn test_gitignore_actually_ignored_by_git() {
 
     // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir
-        .join(".claude/ccpm/snippets/test-snippet.md")
-        .exists());
-    assert!(project_dir
-        .join(".claude/commands/test-command.md")
-        .exists());
+    assert!(
+        project_dir
+            .join(".claude/ccpm/snippets/test-snippet.md")
+            .exists()
+    );
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     // Stage all files for git
     StdCommand::new("git")
@@ -796,12 +800,16 @@ fn test_gitignore_disabled_files_not_ignored_by_git() {
 
     // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir
-        .join(".claude/ccpm/snippets/test-snippet.md")
-        .exists());
-    assert!(project_dir
-        .join(".claude/commands/test-command.md")
-        .exists());
+    assert!(
+        project_dir
+            .join(".claude/ccpm/snippets/test-snippet.md")
+            .exists()
+    );
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     // Stage all files for git
     StdCommand::new("git")

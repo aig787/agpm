@@ -5,27 +5,22 @@ use anyhow::Result;
 use std::{fs, time::Duration};
 use tokio::time::Instant;
 
-mod fixtures;
-use fixtures::{MarkdownFixture, TestEnvironment};
+mod common;
+use common::TestProject;
 
 /// Test instance-level cache reuse across multiple operations
 #[tokio::test]
 async fn test_instance_cache_reuse() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new()?;
 
     // Create test source with multiple agents
-    let official_files = vec![
-        MarkdownFixture::agent("agent-1"),
-        MarkdownFixture::agent("agent-2"),
-        MarkdownFixture::agent("agent-3"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/cache-test.git",
-            official_files,
-        )
-        .unwrap();
+    let source_repo = project.create_source_repo("official")?;
+    source_repo.add_resource("agents", "agent-1", "# Agent 1\n\nTest agent 1")?;
+    source_repo.add_resource("agents", "agent-2", "# Agent 2\n\nTest agent 2")?;
+    source_repo.add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3")?;
+    source_repo.commit_all("Add test agents")?;
+    source_repo.tag_version("v1.0.0")?;
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     let manifest_content = format!(
         r#"
@@ -37,32 +32,24 @@ agent1 = {{ source = "official", path = "agents/agent-1.md", version = "v1.0.0" 
 agent2 = {{ source = "official", path = "agents/agent-2.md", version = "v1.0.0" }}
 agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" }}
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content)?;
 
     // First install - should populate cache
     let start = Instant::now();
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("4")
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
     let first_duration = start.elapsed();
 
     // Remove installed files but keep cache
-    fs::remove_dir_all(env.project_path().join(".claude")).unwrap();
+    fs::remove_dir_all(project.project_path().join(".claude"))?;
 
     // Second install - should reuse cached worktrees
     let start = Instant::now();
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("4")
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
     let second_duration = start.elapsed();
 
     // Second install should be faster due to cache reuse
@@ -75,9 +62,24 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
     );
 
     // Verify all files were installed correctly
-    assert!(env.project_path().join(".claude/agents/agent1.md").exists());
-    assert!(env.project_path().join(".claude/agents/agent2.md").exists());
-    assert!(env.project_path().join(".claude/agents/agent3.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent1.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent2.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent3.md")
+            .exists()
+    );
 
     Ok(())
 }
@@ -85,21 +87,28 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
 /// Test fetch caching prevents redundant network operations
 #[tokio::test]
 async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new()?;
 
     // Create test source with multiple dependencies from same repo
-    let official_files = vec![
-        MarkdownFixture::agent("fetch-agent-1"),
-        MarkdownFixture::agent("fetch-agent-2"),
-        MarkdownFixture::snippet("fetch-snippet-1"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/fetch-test.git",
-            official_files,
-        )
-        .unwrap();
+    let source_repo = project.create_source_repo("official")?;
+    source_repo.add_resource(
+        "agents",
+        "fetch-agent-1",
+        "# Fetch Agent 1\n\nTest fetch agent 1",
+    )?;
+    source_repo.add_resource(
+        "agents",
+        "fetch-agent-2",
+        "# Fetch Agent 2\n\nTest fetch agent 2",
+    )?;
+    source_repo.add_resource(
+        "snippets",
+        "fetch-snippet-1",
+        "# Fetch Snippet 1\n\nTest fetch snippet 1",
+    )?;
+    source_repo.commit_all("Add test resources")?;
+    source_repo.tag_version("v1.0.0")?;
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     let manifest_content = format!(
         r#"
@@ -113,20 +122,15 @@ agent2 = {{ source = "official", path = "agents/fetch-agent-2.md", version = "v1
 [snippets]
 snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version = "v1.0.0" }}
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content)?;
 
     // Install with high parallelism - should use fetch caching
     let start = Instant::now();
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("8")
-        .arg("--verbose")
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install", "--verbose"])?;
+    output.assert_success();
     let duration = start.elapsed();
 
     // Should complete reasonably quickly with fetch caching
@@ -137,12 +141,24 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
     );
 
     // Verify all resources installed
-    assert!(env.project_path().join(".claude/agents/agent1.md").exists());
-    assert!(env.project_path().join(".claude/agents/agent2.md").exists());
-    assert!(env
-        .project_path()
-        .join(".claude/ccpm/snippets/snippet1.md")
-        .exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent1.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent2.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet1.md")
+            .exists()
+    );
 
     Ok(())
 }
@@ -150,24 +166,20 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
 /// Test cache behavior under high concurrency
 #[tokio::test]
 async fn test_cache_high_concurrency() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new()?;
 
     // Create large number of dependencies to stress test caching
-    let mut official_files = Vec::new();
+    let source_repo = project.create_source_repo("official")?;
     for i in 0..20 {
-        official_files.push(MarkdownFixture::agent(&format!(
-            "concurrent-agent-{:02}",
-            i
-        )));
+        source_repo.add_resource(
+            "agents",
+            &format!("concurrent-agent-{:02}", i),
+            &format!("# Concurrent Agent {:02}\n\nTest concurrent agent {}", i, i),
+        )?;
     }
-
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/concurrent-test.git",
-            official_files,
-        )
-        .unwrap();
+    source_repo.commit_all("Add concurrent test agents")?;
+    source_repo.tag_version("v1.0.0")?;
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     let mut manifest_content = format!(
         r#"
@@ -176,7 +188,7 @@ official = "{}"
 
 [agents]
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
     // Add 20 agent dependencies
@@ -187,23 +199,19 @@ official = "{}"
         ));
     }
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content)?;
 
     // Install with maximum parallelism
     let start = Instant::now();
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("20") // High concurrency
-        .assert()
-        .success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
     let duration = start.elapsed();
 
     println!("High concurrency install took: {:?}", duration);
 
     // Verify all agents were installed
     for i in 0..20 {
-        let agent_path = env
+        let agent_path = project
             .project_path()
             .join(format!(".claude/agents/agent{:02}.md", i));
         assert!(agent_path.exists(), "Agent {} should be installed", i);
@@ -215,19 +223,22 @@ official = "{}"
 /// Test cache persistence across command invocations
 #[tokio::test]
 async fn test_cache_persistence() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new()?;
 
-    let official_files = vec![
-        MarkdownFixture::agent("persistent-agent"),
-        MarkdownFixture::snippet("persistent-snippet"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/persistent-test.git",
-            official_files,
-        )
-        .unwrap();
+    let source_repo = project.create_source_repo("official")?;
+    source_repo.add_resource(
+        "agents",
+        "persistent-agent",
+        "# Persistent Agent\n\nTest persistent agent",
+    )?;
+    source_repo.add_resource(
+        "snippets",
+        "persistent-snippet",
+        "# Persistent Snippet\n\nTest persistent snippet",
+    )?;
+    source_repo.commit_all("Add persistent test resources")?;
+    source_repo.tag_version("v1.0.0")?;
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     let manifest_content = format!(
         r#"
@@ -240,26 +251,36 @@ agent = {{ source = "official", path = "agents/persistent-agent.md", version = "
 [snippets]
 snippet = {{ source = "official", path = "snippets/persistent-snippet.md", version = "v1.0.0" }}
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content)?;
 
     // First command: install
-    env.ccpm_command().arg("install").assert().success();
+    let output = project.run_ccpm(&["install"])?;
+    output.assert_success();
 
     // Second command: update (should reuse cache)
-    env.ccpm_command().arg("update").assert().success();
+    let output = project.run_ccpm(&["update"])?;
+    output.assert_success();
 
     // Third command: list (should work with cached data)
-    env.ccpm_command().arg("list").assert().success();
+    let output = project.run_ccpm(&["list"])?;
+    output.assert_success();
 
     // Verify final state
-    assert!(env.project_path().join(".claude/agents/agent.md").exists());
-    assert!(env
-        .project_path()
-        .join(".claude/ccpm/snippets/snippet.md")
-        .exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet.md")
+            .exists()
+    );
 
     Ok(())
 }

@@ -92,6 +92,20 @@ impl TestGit {
         Ok(())
     }
 
+    /// Set the HEAD to point to a branch (making it the default branch)
+    pub fn set_head(&self, branch_name: &str) -> Result<()> {
+        Command::new("git")
+            .args([
+                "symbolic-ref",
+                "HEAD",
+                &format!("refs/heads/{}", branch_name),
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .context(format!("Failed to set HEAD to branch: {}", branch_name))?;
+        Ok(())
+    }
+
     /// Get the current commit hash
     pub fn get_commit_hash(&self) -> Result<String> {
         let output = Command::new("git")
@@ -101,6 +115,20 @@ impl TestGit {
             .context("Failed to get commit hash")?;
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Clone current repository to a bare repository
+    pub fn clone_to_bare(&self, target_path: &Path) -> Result<()> {
+        Command::new("git")
+            .args([
+                "clone",
+                "--bare",
+                self.repo_path.to_str().unwrap(),
+                target_path.to_str().unwrap(),
+            ])
+            .output()
+            .context("Failed to create bare repository")?;
+        Ok(())
     }
 }
 
@@ -182,15 +210,30 @@ impl TestProject {
 
     /// Run a CCPM command in the project directory
     pub fn run_ccpm(&self, args: &[&str]) -> Result<CommandOutput> {
+        self.run_ccpm_with_env(args, &[])
+    }
+
+    /// Run a CCPM command with custom environment variables
+    pub fn run_ccpm_with_env(
+        &self,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+    ) -> Result<CommandOutput> {
         let ccpm_binary = env!("CARGO_BIN_EXE_ccpm");
-        let output = Command::new(ccpm_binary)
-            .args(args)
+        let mut cmd = Command::new(ccpm_binary);
+
+        cmd.args(args)
             .current_dir(&self.project_dir)
             .env("CCPM_CACHE_DIR", &self.cache_dir)
             .env("CCPM_TEST_MODE", "true")
-            .env("NO_COLOR", "1")
-            .output()
-            .context("Failed to run ccpm command")?;
+            .env("NO_COLOR", "1");
+
+        // Add custom environment variables
+        for (key, value) in env_vars {
+            cmd.env(key, value);
+        }
+
+        let output = cmd.output().context("Failed to run ccpm command")?;
 
         Ok(CommandOutput {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -251,6 +294,44 @@ impl TestSourceRepo {
     pub fn file_url(&self) -> String {
         let path_str = self.path.display().to_string().replace('\\', "/");
         format!("file://{}", path_str)
+    }
+
+    /// Clone this repository to a bare repository for reliable serving
+    /// Returns the path to the new bare repository
+    pub fn to_bare_repo(&self, target_path: &Path) -> Result<PathBuf> {
+        let output = Command::new("git")
+            .args([
+                "clone",
+                "--bare",
+                self.path.to_str().unwrap(),
+                target_path.to_str().unwrap(),
+            ])
+            .output()
+            .context("Failed to create bare repository")?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to create bare repository: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Ok(target_path.to_path_buf())
+    }
+
+    /// Get a file:// URL for a bare clone of this repository
+    /// Creates the bare repo in the parent's sources directory
+    pub fn bare_file_url(&self, sources_dir: &Path) -> Result<String> {
+        let bare_name = format!(
+            "{}.git",
+            self.path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("repo")
+        );
+        let bare_path = sources_dir.join(bare_name);
+        self.to_bare_repo(&bare_path)?;
+        let path_str = bare_path.display().to_string().replace('\\', "/");
+        Ok(format!("file://{}", path_str))
     }
 }
 

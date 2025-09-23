@@ -68,8 +68,8 @@ fn test_using_test_source_repo_helper() -> Result<()> {
     source_repo.commit_all("Add custom agent")?;
     source_repo.tag_version("v1.1.0")?;
 
-    // Get the file URL for the repository
-    let repo_url = source_repo.file_url();
+    // Get the file URL for the bare repository (handles bare clone automatically)
+    let repo_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest using the test repository
     let manifest_content = format!(

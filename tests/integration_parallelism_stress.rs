@@ -5,28 +5,30 @@ use anyhow::Result;
 use std::{fs, time::Duration};
 use tokio::time::Instant;
 
+mod common;
 mod fixtures;
-use fixtures::{MarkdownFixture, TestEnvironment};
+use common::TestProject;
 
 /// Test system stability with very high --max-parallel values
 #[tokio::test]
 async fn test_extreme_parallelism() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new().unwrap();
 
     // Create moderate number of dependencies
-    let mut official_files = Vec::new();
+    let official_repo = project.create_source_repo("official").unwrap();
     for i in 0..10 {
-        official_files.push(MarkdownFixture::agent(&format!("extreme-agent-{:02}", i)));
+        official_repo
+            .add_resource(
+                "agents",
+                &format!("extreme-agent-{:02}", i),
+                &format!("# Extreme Agent {:02}\n\nA test agent", i),
+            )
+            .unwrap();
     }
+    official_repo.commit_all("Initial commit").unwrap();
+    official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/extreme-test.git",
-            official_files,
-        )
-        .unwrap();
-
+    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -34,7 +36,7 @@ official = "{}"
 
 [agents]
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
     for i in 0..10 {
@@ -44,22 +46,22 @@ official = "{}"
         ));
     }
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content).unwrap();
 
     // Test with extremely high parallelism (should be throttled by system)
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("100") // Much higher than available work
-        .assert()
-        .success();
+    let output = project
+        .run_ccpm(&["install", "--max-parallel", "100"])
+        .unwrap();
+    assert!(output.success);
 
     // Verify all agents installed correctly despite high parallelism
     for i in 0..10 {
-        assert!(env
-            .project_path()
-            .join(format!(".claude/agents/agent{:02}.md", i))
-            .exists());
+        assert!(
+            project
+                .project_path()
+                .join(format!(".claude/agents/agent{:02}.md", i))
+                .exists()
+        );
     }
 
     Ok(())
@@ -68,21 +70,26 @@ official = "{}"
 /// Test rapid sequential operations with caching
 #[tokio::test]
 async fn test_rapid_sequential_operations() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new().unwrap();
 
-    let official_files = vec![
-        MarkdownFixture::agent("rapid-agent-1"),
-        MarkdownFixture::agent("rapid-agent-2"),
-        MarkdownFixture::snippet("rapid-snippet"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/rapid-test.git",
-            official_files,
+    let official_repo = project.create_source_repo("official").unwrap();
+    official_repo
+        .add_resource("agents", "rapid-agent-1", "# Rapid Agent 1\n\nA test agent")
+        .unwrap();
+    official_repo
+        .add_resource("agents", "rapid-agent-2", "# Rapid Agent 2\n\nA test agent")
+        .unwrap();
+    official_repo
+        .add_resource(
+            "snippets",
+            "rapid-snippet",
+            "# Rapid Snippet\n\nA test snippet",
         )
         .unwrap();
+    official_repo.commit_all("Initial commit").unwrap();
+    official_repo.tag_version("v1.0.0").unwrap();
 
+    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let manifest_content = format!(
         r#"
 [sources]
@@ -95,10 +102,10 @@ agent2 = {{ source = "official", path = "agents/rapid-agent-2.md", version = "v1
 [snippets]
 snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = "v1.0.0" }}
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content).unwrap();
 
     // Rapid sequence of operations
     let operations = [
@@ -111,11 +118,8 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 
     let start = Instant::now();
     for operation in operations {
-        let mut cmd = env.ccpm_command();
-        for arg in operation {
-            cmd.arg(arg);
-        }
-        cmd.assert().success();
+        let output = project.run_ccpm(&operation).unwrap();
+        assert!(output.success);
     }
     let total_duration = start.elapsed();
 
@@ -127,12 +131,24 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
     );
 
     // Verify final state
-    assert!(env.project_path().join(".claude/agents/agent1.md").exists());
-    assert!(env.project_path().join(".claude/agents/agent2.md").exists());
-    assert!(env
-        .project_path()
-        .join(".claude/ccpm/snippets/snippet.md")
-        .exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent1.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent2.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/ccpm/snippets/snippet.md")
+            .exists()
+    );
 
     Ok(())
 }
@@ -140,21 +156,22 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 /// Test mixed parallelism levels across operations
 #[tokio::test]
 async fn test_mixed_parallelism_levels() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new().unwrap();
 
-    let mut official_files = Vec::new();
+    let official_repo = project.create_source_repo("official").unwrap();
     for i in 0..8 {
-        official_files.push(MarkdownFixture::agent(&format!("mixed-agent-{:02}", i)));
+        official_repo
+            .add_resource(
+                "agents",
+                &format!("mixed-agent-{:02}", i),
+                &format!("# Mixed Agent {:02}\n\nA test agent", i),
+            )
+            .unwrap();
     }
+    official_repo.commit_all("Initial commit").unwrap();
+    official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/mixed-test.git",
-            official_files,
-        )
-        .unwrap();
-
+    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -162,7 +179,7 @@ official = "{}"
 
 [agents]
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
     for i in 0..8 {
@@ -172,32 +189,32 @@ official = "{}"
         ));
     }
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content).unwrap();
 
     // Test various parallelism levels
     let parallelism_levels = [1, 2, 4, 8];
 
     for &level in &parallelism_levels {
         // Clean slate for each test
-        let _ = fs::remove_dir_all(env.project_path().join(".claude"));
+        let _ = fs::remove_dir_all(project.project_path().join(".claude"));
 
         let start = Instant::now();
-        env.ccpm_command()
-            .arg("install")
-            .arg("--max-parallel")
-            .arg(level.to_string())
-            .assert()
-            .success();
+        let output = project
+            .run_ccpm(&["install", "--max-parallel", &level.to_string()])
+            .unwrap();
+        assert!(output.success);
         let duration = start.elapsed();
 
         println!("Parallelism level {}: {:?}", level, duration);
 
         // Verify installation
         for i in 0..8 {
-            assert!(env
-                .project_path()
-                .join(format!(".claude/agents/agent{:02}.md", i))
-                .exists());
+            assert!(
+                project
+                    .project_path()
+                    .join(format!(".claude/agents/agent{:02}.md", i))
+                    .exists()
+            );
         }
     }
 
@@ -207,25 +224,23 @@ official = "{}"
 /// Test parallelism with resource contention
 #[tokio::test]
 async fn test_parallelism_resource_contention() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new().unwrap();
 
-    // Create dependencies that all target the same source repository
-    let mut official_files = Vec::new();
+    // Create a single source repository with many agents
+    let official_repo = project.create_source_repo("official").unwrap();
     for i in 0..15 {
-        official_files.push(MarkdownFixture::agent(&format!(
-            "contention-agent-{:02}",
-            i
-        )));
+        official_repo
+            .add_resource(
+                "agents",
+                &format!("contention-agent-{:02}", i),
+                &format!("# Contention Agent {:02}\n\nA test agent", i),
+            )
+            .unwrap();
     }
+    official_repo.commit_all("Initial commit").unwrap();
+    official_repo.tag_version("v1.0.0").unwrap();
 
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/contention-test.git",
-            official_files,
-        )
-        .unwrap();
-
+    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let mut manifest_content = format!(
         r#"
 [sources]
@@ -233,7 +248,7 @@ official = "{}"
 
 [agents]
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
     // All dependencies from same source - tests fetch caching and worktree management
@@ -244,16 +259,14 @@ official = "{}"
         ));
     }
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content).unwrap();
 
     // High parallelism with single source should work efficiently
     let start = Instant::now();
-    env.ccpm_command()
-        .arg("install")
-        .arg("--max-parallel")
-        .arg("10")
-        .assert()
-        .success();
+    let output = project
+        .run_ccpm(&["install", "--max-parallel", "10"])
+        .unwrap();
+    assert!(output.success);
     let duration = start.elapsed();
 
     // Should complete efficiently despite resource contention
@@ -265,10 +278,12 @@ official = "{}"
 
     // Verify all installations
     for i in 0..15 {
-        assert!(env
-            .project_path()
-            .join(format!(".claude/agents/agent{:02}.md", i))
-            .exists());
+        assert!(
+            project
+                .project_path()
+                .join(format!(".claude/agents/agent{:02}.md", i))
+                .exists()
+        );
     }
 
     Ok(())
@@ -277,20 +292,19 @@ official = "{}"
 /// Test system graceful handling of parallelism limits
 #[tokio::test]
 async fn test_parallelism_graceful_limits() -> Result<()> {
-    let env = TestEnvironment::new().unwrap();
+    let project = TestProject::new().unwrap();
 
-    let official_files = vec![
-        MarkdownFixture::agent("limit-agent-1"),
-        MarkdownFixture::agent("limit-agent-2"),
-    ];
-    let source_path = env
-        .add_mock_source(
-            "official",
-            "https://github.com/example/limit-test.git",
-            official_files,
-        )
+    let official_repo = project.create_source_repo("official").unwrap();
+    official_repo
+        .add_resource("agents", "limit-agent-1", "# Limit Agent 1\n\nA test agent")
         .unwrap();
+    official_repo
+        .add_resource("agents", "limit-agent-2", "# Limit Agent 2\n\nA test agent")
+        .unwrap();
+    official_repo.commit_all("Initial commit").unwrap();
+    official_repo.tag_version("v1.0.0").unwrap();
 
+    let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let manifest_content = format!(
         r#"
 [sources]
@@ -300,10 +314,10 @@ official = "{}"
 agent1 = {{ source = "official", path = "agents/limit-agent-1.md", version = "v1.0.0" }}
 agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1.0.0" }}
 "#,
-        fixtures::path_to_file_url(&source_path)
+        source_url
     );
 
-    fs::write(env.project_path().join("ccpm.toml"), manifest_content).unwrap();
+    project.write_manifest(&manifest_content).unwrap();
 
     // Test various edge cases that should be handled gracefully
     let test_cases = [
@@ -315,24 +329,32 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
 
     for (max_parallel, description) in test_cases {
         // Clean for each test
-        let _ = fs::remove_dir_all(env.project_path().join(".claude"));
+        let _ = fs::remove_dir_all(project.project_path().join(".claude"));
 
-        env.ccpm_command()
-            .arg("install")
-            .arg("--max-parallel")
-            .arg(max_parallel)
-            .assert()
-            .success();
+        let output = project
+            .run_ccpm(&["install", "--max-parallel", max_parallel])
+            .unwrap();
+        assert!(
+            output.success,
+            "Failed with {}: {}",
+            max_parallel, description
+        );
 
         // Verify installation regardless of parallelism setting
         assert!(
-            env.project_path().join(".claude/agents/agent1.md").exists(),
+            project
+                .project_path()
+                .join(".claude/agents/agent1.md")
+                .exists(),
             "Failed with {}: {}",
             max_parallel,
             description
         );
         assert!(
-            env.project_path().join(".claude/agents/agent2.md").exists(),
+            project
+                .project_path()
+                .join(".claude/agents/agent2.md")
+                .exists(),
             "Failed with {}: {}",
             max_parallel,
             description

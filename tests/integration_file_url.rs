@@ -6,7 +6,13 @@ use tempfile::TempDir;
 mod common;
 mod fixtures;
 use common::TestGit;
-use fixtures::path_to_file_url;
+
+/// Convert a path to a file:// URL string, properly handling Windows paths
+fn path_to_file_url(path: &std::path::Path) -> String {
+    // Convert backslashes to forward slashes for Windows paths in URLs
+    let path_str = path.display().to_string().replace('\\', "/");
+    format!("file://{path_str}")
+}
 
 /// Test that file:// URLs don't modify the source repository's working directory
 #[test]

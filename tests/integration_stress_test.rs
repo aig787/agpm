@@ -3,7 +3,7 @@
 use anyhow::Result;
 use ccpm::cache::Cache;
 use ccpm::git::command_builder::GitCommand;
-use ccpm::installer::{install_resources, ResourceFilter};
+use ccpm::installer::{ResourceFilter, install_resources};
 use ccpm::lockfile::{LockFile, LockedResource};
 use ccpm::manifest::Manifest;
 use ccpm::test_utils::init_test_logging;
@@ -594,21 +594,66 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     // All available agents from the setup_project.sh script
     let community_agents = [
-        ("api-designer", "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md"),
-        ("backend-developer", "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md"),
-        ("frontend-developer", "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md"),
-        ("python-pro", "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md"),
-        ("rust-engineer", "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md"),
-        ("javascript-pro", "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md"),
-        ("database-administrator", "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md"),
-        ("code-reviewer", "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md"),
-        ("test-automator", "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md"),
-        ("security-auditor", "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md"),
-        ("devops-engineer", "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md"),
-        ("cloud-architect", "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md"),
-        ("documentation-engineer", "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md"),
-        ("ml-engineer", "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md"),
-        ("multi-agent-coordinator", "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md"),
+        (
+            "api-designer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md",
+        ),
+        (
+            "backend-developer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md",
+        ),
+        (
+            "frontend-developer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md",
+        ),
+        (
+            "python-pro",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md",
+        ),
+        (
+            "rust-engineer",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md",
+        ),
+        (
+            "javascript-pro",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md",
+        ),
+        (
+            "database-administrator",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md",
+        ),
+        (
+            "code-reviewer",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md",
+        ),
+        (
+            "test-automator",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md",
+        ),
+        (
+            "security-auditor",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md",
+        ),
+        (
+            "devops-engineer",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md",
+        ),
+        (
+            "cloud-architect",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md",
+        ),
+        (
+            "documentation-engineer",
+            "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md",
+        ),
+        (
+            "ml-engineer",
+            "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md",
+        ),
+        (
+            "multi-agent-coordinator",
+            "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md",
+        ),
     ];
 
     for (name, path) in community_agents.iter() {
@@ -705,21 +750,66 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
 
     // The 15 agents available in ccpm-community
     let community_agents = [
-        ("api-designer", "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md"),
-        ("backend-developer", "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md"),
-        ("frontend-developer", "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md"),
-        ("python-pro", "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md"),
-        ("rust-engineer", "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md"),
-        ("javascript-pro", "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md"),
-        ("database-administrator", "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md"),
-        ("code-reviewer", "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md"),
-        ("test-automator", "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md"),
-        ("security-auditor", "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md"),
-        ("devops-engineer", "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md"),
-        ("cloud-architect", "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md"),
-        ("documentation-engineer", "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md"),
-        ("ml-engineer", "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md"),
-        ("multi-agent-coordinator", "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md"),
+        (
+            "api-designer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md",
+        ),
+        (
+            "backend-developer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md",
+        ),
+        (
+            "frontend-developer",
+            "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md",
+        ),
+        (
+            "python-pro",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md",
+        ),
+        (
+            "rust-engineer",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md",
+        ),
+        (
+            "javascript-pro",
+            "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md",
+        ),
+        (
+            "database-administrator",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md",
+        ),
+        (
+            "code-reviewer",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md",
+        ),
+        (
+            "test-automator",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md",
+        ),
+        (
+            "security-auditor",
+            "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md",
+        ),
+        (
+            "devops-engineer",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md",
+        ),
+        (
+            "cloud-architect",
+            "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md",
+        ),
+        (
+            "documentation-engineer",
+            "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md",
+        ),
+        (
+            "ml-engineer",
+            "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md",
+        ),
+        (
+            "multi-agent-coordinator",
+            "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md",
+        ),
     ];
 
     // Create 500 dependencies by cycling through the available agents
