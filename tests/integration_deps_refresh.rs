@@ -592,6 +592,12 @@ fn test_update_network_failure() {
     let project = TestProject::new().unwrap();
 
     // Create manifest with non-existent file:// URLs to simulate network failure
+    // Note: file:// URLs must use forward slashes even on Windows
+    let sources_path = project
+        .sources_path()
+        .display()
+        .to_string()
+        .replace('\\', "/");
     let manifest_content = format!(
         r#"
 [sources]
@@ -605,10 +611,9 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 [snippets]
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#,
-        project.sources_path().display(),
-        project.sources_path().display()
+        sources_path, sources_path
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(manifest_content.trim()).unwrap();
 
     // Create lockfile with non-existent URLs
     let lockfile_content = format!(
@@ -622,7 +627,7 @@ url = "file://{}/nonexistent.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 "#,
-        project.sources_path().display()
+        sources_path
     );
     fs::write(
         project.project_path().join("ccpm.lock"),
