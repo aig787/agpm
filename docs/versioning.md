@@ -47,17 +47,29 @@ CCPM follows standard semver conventions used by Cargo and npm:
 ### Examples
 
 ```toml
-# Semver ranges
+# Semver ranges (enhanced constraint support)
 agent3 = { source = "community", path = "agents/agent3.md", version = "^1.2.0" }  # 1.2.0, 1.3.0, etc. (not 2.0.0)
 agent4 = { source = "community", path = "agents/agent4.md", version = "~1.2.0" }  # 1.2.0, 1.2.1, etc. (not 1.3.0)
 agent5 = { source = "community", path = "agents/agent5.md", version = ">=1.0.0" } # At least 1.0.0
-agent6 = { source = "community", path = "agents/agent6.md", version = ">=1.0.0, <2.0.0" } # Range
+agent6 = { source = "community", path = "agents/agent6.md", version = ">=1.0.0, <2.0.0" } # Complex range
+
+# Multiple constraints with AND logic
+agent7 = { source = "community", path = "agents/agent7.md", version = ">=1.2.0, <2.0.0, !=1.5.0" } # Exclude specific version
 
 # Special keywords
 latest-agent = { source = "community", path = "agents/latest.md", version = "latest" }
 beta-agent = { source = "community", path = "agents/beta.md", version = "latest-prerelease" }
 any-agent = { source = "community", path = "agents/any.md", version = "*" }
 ```
+
+### Enhanced Constraint Support
+
+CCPM v0.3.2+ includes improved constraint parsing and resolution:
+
+- **Complex ranges**: Support for multiple constraints with AND logic
+- **Intelligent tag matching**: Better handling of tag prefixes (v1.0.0 vs 1.0.0)
+- **Validation**: Robust constraint validation before resolution
+- **Performance optimization**: Batch resolution minimizes repository operations
 
 ## Version Reference Types
 
@@ -132,13 +144,24 @@ direct-agent = { path = "../agents/my-agent.md" }
 
 ## Version Resolution
 
-When CCPM installs dependencies, it follows this resolution process:
+CCPM v0.3.2+ uses a centralized, high-performance version resolution system with the VersionResolver module:
 
-1. **Parse Version Constraint**: Interpret the version specification (tag, range, branch, etc.)
-2. **Fetch Repository Metadata**: Get list of tags/branches from the Git repository
-3. **Match Versions**: Find all versions that satisfy the constraint
-4. **Select Best Match**: Choose the highest version that satisfies constraints
-5. **Lock Version**: Record the exact commit hash in `ccpm.lock`
+### Centralized Resolution Process
+
+1. **Collection Phase**: VersionResolver gathers all unique (source, version) pairs from all dependencies
+2. **Deduplication**: Identical version requirements are automatically deduplicated for efficiency
+3. **Batch Resolution**: Single operation per repository resolves all required versions to commit SHAs
+4. **Constraint Matching**: Enhanced semver engine finds best matching tags for complex constraints
+5. **SHA Validation**: All resolved SHAs are validated as 40-character hexadecimal strings
+6. **Worktree Optimization**: SHA-based worktree creation maximizes reuse for identical commits
+7. **Lock Generation**: Record exact commit SHAs and resolved references in `ccpm.lock`
+
+### Enhanced Performance Benefits
+
+- **Minimal Git Operations**: Single fetch per repository per command execution
+- **Maximum Deduplication**: Multiple dependencies with same resolved SHA share one worktree
+- **Parallel Safety**: Independent SHA-based worktrees enable conflict-free concurrent operations
+- **Command-Instance Caching**: Repository fetch operations cached within single command execution
 
 ### Version Selection Examples
 
@@ -154,22 +177,27 @@ Given available tags: `v1.0.0`, `v1.1.0`, `v1.2.0`, `v2.0.0`
 
 ## Lockfile and Reproducibility
 
-The `ccpm.lock` file ensures reproducible installations by recording:
+The `ccpm.lock` file ensures reproducible installations by recording exact resolution results from the VersionResolver:
 
 ```toml
 [[agents]]
 name = "example-agent"
 source = "community"
 path = "agents/example.md"
-version = "v1.0.0"                    # Original constraint
-resolved_commit = "abc123def..."      # Exact commit hash
-resolved_version = "v1.0.0"           # Actual tag/version used
+version = "^1.0.0"                    # Original constraint from ccpm.toml
+resolved_commit = "abc123def456..."   # Exact commit SHA (40 characters)
+resolved_version = "v1.2.3"          # Actual tag that satisfied constraint
 ```
 
-Key points:
-- **Original constraint** (`version`): What was requested in `ccpm.toml`
-- **Resolved commit** (`resolved_commit`): Exact Git commit hash
-- **Resolved version** (`resolved_version`): The tag/branch that was resolved
+### Enhanced Lockfile Information
+
+With the centralized VersionResolver, the lockfile provides:
+
+- **Original constraint** (`version`): What was requested in `ccpm.toml` (e.g., `^1.0.0`)
+- **Resolved commit** (`resolved_commit`): Exact Git commit SHA determined by VersionResolver
+- **Resolved version** (`resolved_version`): The specific tag/branch that satisfied the constraint
+- **SHA-based reproducibility**: Same SHA always produces identical installations
+- **Worktree optimization data**: Enables efficient cache reuse on subsequent installs
 
 ## Common Scenarios
 

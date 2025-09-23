@@ -1,10 +1,10 @@
 # update-all
 
-Update all project documentation sequentially.
+Update all project documentation in parallel.
 
 ## Description
 
-This command runs a comprehensive documentation update by executing three commands in sequence:
+This command runs a comprehensive documentation update by executing three commands in parallel:
 - `update-docstrings` - Reviews and updates Rust docstrings based on code changes (uses `rust-doc-standard` or `rust-doc-advanced`)
 - `update-docs` - Updates the project documentation files (README.md and docs/) with potential use of `rust-doc-standard`/`advanced`
 - `update-claude` - Updates the CLAUDE.md file with current project context (may use `rust-doc-*` and `rust-expert-*` agents)
@@ -17,11 +17,11 @@ This command runs a comprehensive documentation update by executing three comman
 
 ## Your Task
 
-Execute the documentation update tasks by loading and running the instructions from each command file:
+Execute the documentation update tasks by loading and running the instructions from each command file IN PARALLEL:
 
 1. **Update Rust docstrings** - Load `.claude/commands/update-docstrings.md` and execute the task described there to review and update Rust docstrings based on recent code changes
 
-2. **Update project documentation** - Load `.claude/commands/update-docs.md` and execute the task described there to update README.md and docs/ files with current project information  
+2. **Update project documentation** - Load `.claude/commands/update-docs.md` and execute the task described there to update README.md and docs/ files with current project information
 
 3. **Update CLAUDE.md** - Load `.claude/commands/update-claude.md` and execute the task described there to update the CLAUDE.md file with latest project context and architecture
 
@@ -31,7 +31,7 @@ For each command, you should:
 - Use the allowed tools specified in the frontmatter
 - Execute any Task invocations or other operations as instructed in that file
 
-**IMPORTANT**: These must be run sequentially (one after another) rather than in parallel, as the Task tool may encounter issues when multiple Task invocations are run simultaneously.
+**IMPORTANT**: You MUST run all three tasks IN PARALLEL by sending a single message with multiple Task tool invocations. This ensures maximum efficiency and faster completion of the documentation update process.
 
 ## Notes
 

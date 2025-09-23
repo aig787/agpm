@@ -300,6 +300,44 @@ By default, installed files are gitignored. To commit them:
 gitignore = false  # Don't create .gitignore
 ```
 
+## Performance Features
+
+CCPM v0.3.2+ includes significant performance optimizations:
+
+### Centralized Version Resolution
+- **Batch processing**: All version constraints resolved in a single operation per repository
+- **Automatic deduplication**: Identical version requirements processed only once
+- **Minimal Git operations**: Single fetch per repository per command
+
+### SHA-Based Worktree Optimization
+- **Maximum reuse**: Multiple dependencies with same commit SHA share one worktree
+- **Parallel safety**: Independent worktrees enable conflict-free concurrent operations
+- **Smart caching**: Command-instance caching prevents redundant network operations
+
+### Controlling Parallelism
+```bash
+# Control number of parallel operations (default: max(10, 2 × CPU cores))
+ccpm install --max-parallel 8
+
+# Use all available cores
+ccpm install --max-parallel 0
+
+# Single-threaded execution for debugging
+ccpm install --max-parallel 1
+```
+
+### Cache Management
+```bash
+# View cache statistics
+ccpm cache list
+
+# Clean old cache entries
+ccpm cache clean
+
+# Bypass cache for fresh installation
+ccpm install --no-cache
+```
+
 ## Best Practices
 
 1. **Always commit ccpm.lock** for reproducible builds

@@ -42,10 +42,13 @@ ccpm/
 - Preserves exact commit hashes
 - Tracks installation metadata
 
-**resolver**: Dependency resolution engine
-- Version constraint matching
-- Conflict detection
-- Parallel resolution for performance
+**resolver**: Dependency resolution engine with SHA-based optimization
+- DependencyResolver: Main entry point for dependency resolution
+- VersionResolver: Centralized batch version-to-SHA resolution
+- Version constraint matching with upfront resolution (semver ranges: ^1.0, ~2.1)
+- Conflict detection and parallel resolution for performance
+- Command-instance caching to minimize network operations
+- Two-phase operation: collection then batch SHA resolution
 
 **cache**: Advanced Git repository cache with worktree management
 - Instance-level caching with WorktreeState tracking
@@ -54,9 +57,19 @@ ccpm/
 - Incremental updates with fetch operation deduplication
 
 **git**: Git command wrapper
-- Uses system git binary
-- Supports authentication
+- Uses system git binary for maximum compatibility
+- Supports authentication (SSH keys, tokens)
 - Handles platform differences
+- Enhanced with bare repository detection
+
+**resolver/version_resolver**: Centralized SHA resolution engine
+- VersionResolver: High-performance batch resolution of all dependency versions to commit SHAs
+- Deduplication of identical (source, version) pairs for optimal efficiency
+- Command-instance caching to minimize network operations
+- Enhanced semver constraint support (^1.0, ~2.1, >=1.0.0, <2.0.0) with intelligent tag matching
+- Two-phase operation: collection phase gathers all unique dependencies, resolution phase batch processes
+- ResolvedVersion tracking with both SHA and resolved reference information
+- Single fetch per repository per command execution
 
 ## Design Decisions
 
@@ -108,14 +121,17 @@ Separates project manifest from global config:
 6. **Merge configurations** - Update settings files
 7. **Generate lockfile** - Record exact versions
 
-### Dependency Resolution
+### Dependency Resolution (Centralized SHA-Based)
 
-1. **Parse constraints** - Interpret version specs
-2. **Fetch metadata** - Get tags/branches from Git
-3. **Match versions** - Find satisfying versions
-4. **Detect conflicts** - Check compatibility
-5. **Select best** - Choose highest valid version
-6. **Lock commits** - Record exact hashes
+1. **Parse constraints** - Interpret version specs (tags, branches, semver constraints, exact commits)
+2. **Collect unique versions** - VersionResolver deduplicates (source, version) pairs across all dependencies
+3. **Batch resolution** - Single operation per repository resolves all required versions to commit SHAs
+4. **Constraint resolution** - Enhanced semver matching finds best tags for constraints (^1.0, ~2.1, >=1.0.0, <2.0.0)
+5. **Fetch optimization** - Command-instance caching prevents redundant network operations
+6. **SHA validation** - Validate all resolved SHAs are valid 40-character hex strings
+7. **Conflict detection** - Check compatibility across all resolved dependencies
+8. **Worktree optimization** - SHA-based worktree creation maximizes reuse for identical commits
+9. **Lock generation** - Record exact SHAs and resolved references in ccpm.lock
 
 ## File Locking
 
@@ -137,21 +153,22 @@ CCPM uses file locking to prevent corruption during concurrent operations:
 
 ### Cache Structure
 
-CCPM v0.3.0 introduces an advanced caching architecture using Git worktrees for parallel-safe operations:
+CCPM v0.3.2+ uses a sophisticated SHA-based caching architecture with centralized version resolution:
 
 ```
 ~/.ccpm/cache/
 ├── sources/                 # Bare repositories (shared storage)
-│   ├── github_org1_repo1.git/
-│   ├── github_org2_repo2.git/
-│   └── gitlab_org3_repo3.git/
-├── worktrees/              # UUID-based temporary worktrees
-│   ├── github_org1_repo1_uuid-a1b2c3/
-│   ├── github_org1_repo1_uuid-d4e5f6/
-│   └── github_org2_repo2_uuid-g7h8i9/
-└── .locks/                 # Per-worktree file locks
-    ├── github_org1_repo1.lock
-    └── github_org2_repo2.lock
+│   ├── github_org1_repo1.git/         # Single bare repo per source
+│   ├── github_org2_repo2.git/         # Optimized for worktree creation
+│   └── gitlab_org3_repo3.git/         # All Git objects stored here
+├── worktrees/              # SHA-based worktrees (maximum deduplication)
+│   ├── github_org1_repo1_abc12345/    # First 8 chars of commit SHA
+│   ├── github_org1_repo1_def67890/    # Different SHA = different worktree
+│   ├── github_org1_repo1_abc12345/    # Same SHA = shared worktree (reused)
+│   └── github_org2_repo2_456789ab/    # Cross-repository SHA uniqueness
+└── .locks/                 # Per-repository file locks
+    ├── github_org1_repo1.lock         # Repository-level locking
+    └── github_org2_repo2.lock         # Not per-worktree for efficiency
 ```
 
 ### Worktree Architecture Benefits
@@ -164,14 +181,18 @@ CCPM v0.3.0 introduces an advanced caching architecture using Git worktrees for 
 
 ### Cache Operations
 
-- **Initial clone** - Clone as bare repository with `--bare` flag for worktree support
-- **Worktree creation** - Generate UUID-based temporary worktrees for each operation
-- **Instance-level caching** - WorktreeState enum tracks creation status (Pending/Ready)
-- **Fetch caching** - Per-command instance cache prevents redundant network operations
-- **Parallel access** - Multiple worktrees enable safe concurrent operations
-- **Fast cleanup** - Simple directory removal without Git commands
-- **Updates** - Incremental fetch to bare repository, shared across all worktrees
-- **Bypass** - `--no-cache` flag for fresh clones
+- **Centralized Version Resolution** - VersionResolver handles batch SHA resolution before any worktree operations
+- **Initial clone** - Clone as bare repository with `--bare` flag for optimal worktree support
+- **SHA-based worktree naming** - Worktrees named by first 8 chars of commit SHA for maximum deduplication
+- **Two-phase operation** - Collection phase followed by batch resolution phase
+- **Instance-level caching** - WorktreeState enum tracks creation status (Pending/Ready) within single command
+- **Command-instance fetch caching** - Single fetch per repository per command execution
+- **Intelligent deduplication** - Multiple references (tags/branches) to same commit share one worktree
+- **Parallel access** - Independent worktrees enable safe concurrent operations with zero conflicts
+- **Enhanced constraint matching** - Support for complex semver ranges (^1.0, ~2.1, >=1.0.0, <2.0.0)
+- **Fast cleanup** - Simple directory removal without complex Git state management
+- **Incremental updates** - Fetch to bare repository, shared across all worktrees
+- **Cache bypass** - `--no-cache` flag for fresh clones when needed
 
 ## Security Model
 

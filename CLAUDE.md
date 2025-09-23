@@ -8,7 +8,7 @@ CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Cod
 
 ## Architecture
 
-- **Language**: Rust with async/await (Tokio)
+- **Language**: Rust 2024 edition with async/await (Tokio)
 - **Distribution**: Git-based, no central registry
 - **Resources**: Markdown (.md), JSON (.json), executables (.sh/.js/.py)
 - **Patterns**: Glob patterns for bulk installation (`agents/*.md`)
@@ -33,7 +33,11 @@ src/
 ├── mcp/         # MCP server management
 ├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
-├── resolver/    # Dependency resolution
+├── resolver/    # Dependency + version resolution
+│   ├── mod.rs          # Core dependency resolution logic
+│   ├── redundancy.rs   # Redundant dependency detection
+│   ├── version_resolution.rs  # Version constraint handling
+│   └── version_resolver.rs    # Centralized SHA resolution
 ├── source/      # Source repository management
 ├── test_utils/  # Test infrastructure
 ├── utils/       # Cross-platform utilities + progress management
@@ -63,12 +67,14 @@ src/
 
 - `/commit`: Git commit with conventional messages
 - `/lint`: Format and clippy (--all-targets)
-- `/pr-self-review`: PR analysis
-- `/update-all`: Update all docs
+- `/pr-self-review`: PR analysis with commit range support
+- `/update-all`: Update all docs in parallel
 - `/update-claude`: Update CLAUDE.md (max 20k chars)
 - `/update-docstrings`: Update Rust docstrings
 - `/update-docs`: Update README and docs/
-- `/execute`: Execute saved commands (new)
+- `/execute`: Execute saved commands
+- `/checkpoint`: Create development checkpoints with git stash
+- `/squash`: Interactive commit squashing with code analysis
 
 ## CLI Commands
 
@@ -91,14 +97,16 @@ src/
 
 ## Dependencies
 
-Main: clap, tokio, toml, serde, anyhow, thiserror, colored, dirs, indicatif, tempfile, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell
+Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber, indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell, dashmap (v6.1)
 
 Dev: assert_cmd, predicates, serial_test
 
 ## Testing
 
 - **Uses cargo nextest** for faster, parallel test execution
+- **Auto-installs tools**: Makefile uses cargo-binstall for faster tool installation
 - Run tests: `cargo nextest run` (integration/unit tests) + `cargo test --doc` (doctests)
+- **Doc tests timing**: Doc tests can take up to 10 minutes to complete due to 432+ tests
 - Parallel-safe tests (no WorkingDirGuard)
 - Never use `std::env::set_var` (causes races)
 - Each test gets own temp directory
@@ -124,12 +132,27 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Atomic operations** (temp file + rename)
 - **Async I/O** with tokio::fs
 - **System git** command (no git2 library)
-- **Git worktrees** for parallel-safe operations
+- **SHA-based worktrees** (v0.3.2+): One worktree per unique commit
+- **Centralized VersionResolver**: Batch SHA resolution with automatic deduplication
+- **Upfront SHA resolution**: All versions resolved before any checkouts
 - **Direct concurrency control**: Command parallelism via --max-parallel + per-worktree locking
 - **Instance-level caching** with WorktreeState enum (Pending/Ready)
 - **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
-- **Fetch operation caching** (per-command instance to reduce redundancy)
+- **Single fetch per repo per command**: Command-instance fetch tracking
 - **Enhanced dependency parsing** with manifest context for better local vs Git detection
+
+## Resolver Architecture
+
+The resolver uses a sophisticated two-phase approach:
+
+1. **Collection Phase**: `VersionResolver` gathers all unique (source, version) pairs
+2. **Resolution Phase**: Batch resolves versions to SHAs, with automatic deduplication
+
+Key benefits:
+- Minimizes Git operations through batching
+- Enables parallel resolution across different sources
+- Automatic deduplication of identical commit references
+- Supports semver constraint resolution (`^1.0`, `~2.1`, etc.)
 
 
 
@@ -142,26 +165,32 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 
 
 
-## Worktree Architecture
+## Optimized Worktree Architecture
 
-Cache uses Git worktrees with advanced concurrency control:
+Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ```
 ~/.ccpm/cache/
 ├── sources/        # Bare repositories (.git suffix)
 │   └── github_owner_repo.git/
-├── worktrees/      # Temporary worktrees (UUID-based)
-│   └── github_owner_repo_uuid/
+├── worktrees/      # SHA-based worktrees (deduplicated)
+│   └── github_owner_repo_abc12345/  # First 8 chars of commit SHA
 └── .locks/         # File-based locks for safety
 ```
 
-- **Bare repos**: Cloned once, shared by all worktrees
-- **Worktrees**: Each dependency gets isolated working directory
+### SHA-Based Resolution (v0.3.2+)
+
+- **Centralized `VersionResolver`**: Batch resolves all versions to SHAs upfront
+- **Two-phase resolution**: Collection phase → Resolution phase for efficiency
+- **Single clone per repo**: Bare repository shared by all operations
+- **Single fetch per command**: Command-instance fetch caching prevents redundant network ops
+- **SHA resolution upfront**: All versions resolved to commits before any checkout
+- **SHA-keyed worktrees**: One worktree per unique commit (not per version)
+- **Maximum reuse**: Tags/branches pointing to same commit share one worktree
 - **Instance-level cache**: WorktreeState (Pending/Ready) tracks creation status
-- **Per-worktree locks**: Fine-grained locking instead of global bottlenecks
-- **UUID paths**: Prevents conflicts in parallel operations
-- **Fetch caching**: Per-command cache prevents redundant network operations
-- **Fast cleanup**: Directory removal without Git commands
+- **Per-worktree locks**: Fine-grained locking for parallel operations
+- **Version constraint resolution**: Supports semver constraints like "^1.0", "~2.1"
+- **Automatic deduplication**: Multiple refs to same commit automatically share resources
 
 ## Key Requirements
 

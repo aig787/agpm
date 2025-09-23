@@ -43,7 +43,7 @@ ccpm init --force
 
 ### `ccpm install`
 
-Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`.
+Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
 ccpm install [OPTIONS]
@@ -339,7 +339,7 @@ ccpm config remove-source old-private
 
 ### `ccpm cache`
 
-Manage the global Git repository cache in `~/.ccpm/cache/`.
+Manage the global Git repository cache in `~/.ccpm/cache/`. The cache uses SHA-based worktrees for optimal deduplication and performance.
 
 #### Cache Information
 

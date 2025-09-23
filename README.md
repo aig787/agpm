@@ -10,11 +10,11 @@ A Git-based package manager for Claude Code resources that enables reproducible 
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🔒 **Secure credential handling** - Separate config for sensitive data
-- ⚡ **Worktree-based parallel operations** - Git worktrees enable safe concurrent access to different repository versions
+- ⚡ **SHA-based worktree optimization** - Centralized version resolution with maximum deduplication for optimal performance
 - 🚀 **Configurable parallelism** - User-controlled concurrency with `--max-parallel` flag (default: max(10, 2 × CPU cores))
 - 📊 **Enhanced progress tracking** - Multi-phase progress reporting with real-time installation updates
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
-- 🚀 **Performance optimized** - Command-level parallelism (max(10, 2×CPU cores)), per-command fetch caching
+- 🔧 **Centralized version resolution** - VersionResolver handles batch SHA resolution for minimal Git operations
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 
 ## Quick Start
@@ -132,11 +132,26 @@ pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "
 filesystem = { source = "community", path = "mcp/filesystem.json", version = "latest" }
 ```
 
+## Performance Architecture
+
+CCPM v0.3.2+ features a high-performance SHA-based architecture:
+
+### Centralized Version Resolution
+- **VersionResolver**: Batch resolution of all dependency versions to commit SHAs
+- **Minimal Git Operations**: Single fetch per repository per command
+- **Upfront Resolution**: All versions resolved before any worktree operations
+
+### SHA-Based Worktree Deduplication
+- **Commit-Level Caching**: Worktrees keyed by commit SHA, not version reference
+- **Maximum Reuse**: Multiple tags/branches pointing to same commit share one worktree
+- **Parallel Safety**: Independent worktrees enable conflict-free concurrent operations
+
 ## Versioning
 
-CCPM uses Git-based versioning at the repository level:
+CCPM uses Git-based versioning at the repository level with enhanced constraint support:
 
 - **Git tags** (recommended): `version = "v1.0.0"` or `version = "^1.0.0"`
+- **Semver constraints**: `^1.0`, `~2.1`, `>=1.0.0, <2.0.0`
 - **Branches**: `branch = "main"` (mutable, updates on each install)
 - **Commits**: `rev = "abc123def"` (immutable, exact commit)
 - **Local paths**: No versioning, uses current files

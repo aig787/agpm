@@ -359,6 +359,62 @@ echo $NUMBER_OF_PROCESSORS  # Windows
 ccpm install --max-parallel 1
 ```
 
+## SHA-Based Optimization Issues
+
+CCPM v0.3.2+ uses centralized version resolution and SHA-based worktrees for optimal performance. Here are common issues:
+
+### Version Resolution Failures
+
+```bash
+# Check if version constraint is valid
+ccpm validate --resolve
+
+# Debug version resolution
+RUST_LOG="ccpm::resolver::version_resolver=debug" ccpm install
+
+# Check available tags in repository
+git ls-remote --tags https://github.com/org/repo.git
+```
+
+### SHA Collision or Invalid SHA
+
+```bash
+# Clean resolved SHA cache
+ccpm cache clean --all
+
+# Force fresh resolution
+ccpm install --no-cache
+
+# Verify repository integrity
+ccpm cache list
+```
+
+### Worktree Deduplication Issues
+
+```bash
+# Check if worktrees are being reused properly
+ls ~/.ccpm/cache/worktrees/
+
+# View worktree reuse in logs
+RUST_LOG="ccpm::cache=debug" ccpm install
+
+# Clean stale SHA-based worktrees
+ccpm cache clean --worktrees
+```
+
+### Constraint Resolution Problems
+
+```bash
+# Test constraint manually
+ccpm validate --resolve
+
+# Check for complex constraints that might fail
+# Example: version = ">=1.0.0, <2.0.0, !=1.5.0"
+
+# Simplify constraints temporarily
+# Change complex constraint to exact version for testing
+```
+
 ## Performance Issues
 
 ### Slow Installation
