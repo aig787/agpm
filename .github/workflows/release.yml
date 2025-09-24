@@ -4,12 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version_bump:
-        description: 'Version bump override (leave empty to auto-detect from commits)'
-        required: false
-        default: ''
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
         type: choice
         options:
-          - ''
           - 'patch'
           - 'minor'
           - 'major'
@@ -33,9 +32,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     outputs:
-      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
-      new-release-version: ${{ steps.semantic.outputs.new-release-version }}
-      new-release-git-tag: ${{ steps.semantic.outputs.new-release-git-tag }}
+      new-release-published: ${{ steps.release.outputs.new-release-published }}
+      new-release-version: ${{ steps.release.outputs.new-release-version }}
+      new-release-git-tag: ${{ steps.release.outputs.new-release-git-tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,15 +47,10 @@ jobs:
         with:
           node-version: 'lts/*'
 
-      - name: Install semantic-release and plugins
+      - name: Install release tools
         run: |
           npm install -g \
-            semantic-release \
-            @semantic-release/commit-analyzer \
-            @semantic-release/release-notes-generator \
-            @semantic-release/github \
-            @semantic-release/git \
-            @semantic-release-cargo/semantic-release-cargo \
+            conventional-changelog-cli \
             conventional-changelog-conventionalcommits
 
       - name: Install Rust
@@ -70,57 +64,84 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Run semantic-release
-        id: semantic
+      - name: Create Release
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          # Configure branch based on input
-          BRANCH="main"
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse version components (handle prerelease versions)
+          BASE_VERSION=${CURRENT_VERSION%%-*}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+
+          # Calculate new version based on bump type
+          case "${{ github.event.inputs.version_bump }}" in
+            "major")
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            "minor")
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            "patch")
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          # Handle prerelease suffix if needed
+          PRERELEASE_SUFFIX=""
           if [ "${{ github.event.inputs.prerelease }}" = "beta" ]; then
-            BRANCH="beta"
-            # Create beta branch if it doesn't exist
-            git checkout -B beta
+            PRERELEASE_SUFFIX="-beta.0"
           elif [ "${{ github.event.inputs.prerelease }}" = "alpha" ]; then
-            BRANCH="alpha"
-            # Create alpha branch if it doesn't exist
-            git checkout -B alpha
+            PRERELEASE_SUFFIX="-alpha.0"
           fi
-          
-          # Handle version bump override
-          if [ "${{ github.event.inputs.version_bump }}" != "" ]; then
-            echo "📌 Version bump override: ${{ github.event.inputs.version_bump }}"
-            
-            # Create a temporary commit with the appropriate type to force the desired bump
-            case "${{ github.event.inputs.version_bump }}" in
-              "major")
-                git commit --allow-empty -m $'feat!: Manual release triggered with major version bump\n\nBREAKING CHANGE: Manual major version bump requested by release workflow'
-                ;;
-              "minor")
-                git commit --allow-empty -m "feat: Manual release triggered with minor version bump"
-                ;;
-              "patch")
-                git commit --allow-empty -m "fix: Manual release triggered with patch version bump"
-                ;;
-            esac
-          fi
-          
-          # Run semantic-release
-          npx semantic-release --branches $BRANCH 2>&1 | tee semantic-release.log
-          
-          # Parse the output to extract version info
-          if grep -q "Published release" semantic-release.log; then
-            VERSION=$(grep -oP 'Published release \K[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?' semantic-release.log | head -1)
-            echo "new-release-published=true" >> $GITHUB_OUTPUT
-            echo "new-release-version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "new-release-git-tag=v${VERSION}" >> $GITHUB_OUTPUT
-            echo "✅ Released version ${VERSION}"
-          else
-            echo "new-release-published=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Semantic-release did not create a release. This might happen if there are no changes since the last release."
-            echo "To force a release, ensure you have at least one commit with a conventional commit message."
-          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}${PRERELEASE_SUFFIX}"
+          echo "New version: $NEW_VERSION"
+
+          # Generate changelog for the new version
+          echo "Generating changelog..."
+          npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s --release-count 1
+
+          # Extract just the new release notes (between first two ## headers)
+          RELEASE_NOTES=$(awk '/^##[^#]/{if(++count==1)next; if(count==2)exit} count==1' CHANGELOG.md)
+
+          # Update Cargo.toml with new version
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
+
+          # Update Cargo.lock
+          cargo update --workspace
+
+          # Commit version changes
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "chore(release): ${NEW_VERSION} [skip ci]"
+
+          # Create git tag
+          git tag "v${NEW_VERSION}"
+
+          # Push changes
+          git push origin HEAD:${{ github.ref_name }}
+          git push origin "v${NEW_VERSION}"
+
+          # Publish to crates.io
+          cargo publish --token "${CARGO_REGISTRY_TOKEN}" || echo "Crates.io publish failed (may already be published)"
+
+          # Create GitHub release
+          gh release create "v${NEW_VERSION}" \
+            --title "v${NEW_VERSION}" \
+            --notes "${RELEASE_NOTES}" \
+            $([[ "$PRERELEASE_SUFFIX" != "" ]] && echo "--prerelease" || echo "")
+
+          echo "new-release-published=true" >> $GITHUB_OUTPUT
+          echo "new-release-version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "new-release-git-tag=v${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "✅ Released version ${NEW_VERSION}"
 
   build-binaries:
     name: Build Release Binaries
