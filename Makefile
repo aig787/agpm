@@ -170,6 +170,23 @@ cross-macos:
 	cargo zigbuild --release --target x86_64-apple-darwin
 	@echo "macOS binary built at: target/x86_64-apple-darwin/release/ccpm"
 
+# Install cargo-dist for distribution tasks
+dist-setup:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v dist >/dev/null 2>&1 || { echo "Installing cargo-dist..."; cargo binstall cargo-dist --secure; }
+
+# Test cargo-dist configuration
+dist-plan:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v dist >/dev/null 2>&1 || { echo "Installing cargo-dist..."; cargo binstall cargo-dist --secure; }
+	dist plan
+
+# Generate cargo-dist artifacts locally
+dist-build:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v dist >/dev/null 2>&1 || { echo "Installing cargo-dist..."; cargo binstall cargo-dist --secure; }
+	dist build
+
 # Display help
 help:
 	@echo "CCPM Makefile Commands:"
@@ -189,4 +206,7 @@ help:
 	@echo "  make cross-windows - Cross-compile for Windows"
 	@echo "  make cross-linux   - Cross-compile for Linux"
 	@echo "  make cross-macos   - Cross-compile for macOS"
+	@echo "  make dist-setup    - Install cargo-dist tool"
+	@echo "  make dist-plan     - Test cargo-dist configuration"
+	@echo "  make dist-build    - Generate cargo-dist artifacts locally"
 	@echo "  make help          - Show this help message"
