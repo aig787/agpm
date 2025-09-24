@@ -20,22 +20,37 @@ dependency management, similar to Cargo.
 
 ### Install CCPM
 
-#### Option 1: Install via Cargo (Recommended)
+#### Option 1: Quick Install (Recommended)
+
+**Unix/Linux/macOS:**
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 | iex
+```
+
+#### Option 2: Install via Cargo
 
 ```bash
-# From crates.io
+# From crates.io (build from source)
 cargo install ccpm
+
+# From pre-built binaries (faster)
+cargo binstall ccpm
 
 # From Git repository (latest development version)
 cargo install --git https://github.com/aig787/ccpm.git
 ```
 
-#### Option 2: Pre-built Binaries
+#### Option 3: Manual Download
 
 **macOS (Apple Silicon)**
 ```bash
 mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.gz | tar xz -C ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
 echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -43,7 +58,7 @@ source ~/.zshrc
 **macOS (Intel)**
 ```bash
 mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.gz | tar xz -C ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
 echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -51,7 +66,7 @@ source ~/.zshrc
 **Linux (x86_64)**
 ```bash
 mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.gz | tar xz -C ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
 echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -59,7 +74,7 @@ source ~/.bashrc
 **Linux (ARM64/aarch64)**
 ```bash
 mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.gz | tar xz -C ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
 echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
