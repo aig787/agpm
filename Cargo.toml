@@ -69,6 +69,10 @@ install-updater = false
 install-path = "CARGO_HOME"
 # Whether CI should trigger releases with dispatches instead of tag pushes
 dispatch-releases = true
+# Publish to crates.io on release
+publish-to = ["crates"]
+# Use git cliff for changelog generation
+changelog = "cliff"
 
 # cargo-binstall metadata for binary installation
 [package.metadata.binstall]
