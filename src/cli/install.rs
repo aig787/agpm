@@ -489,15 +489,9 @@ impl InstallCommand {
 
         // Handle hooks if present
         if !lockfile.hooks.is_empty() {
+            // Actually install and configure hooks
+            crate::hooks::install_hooks(&manifest, actual_project_dir).await?;
             hook_count = lockfile.hooks.len();
-            if !self.quiet {
-                if hook_count == 1 {
-                    println!("✓ Configured 1 hook");
-                } else {
-                    println!("✓ Configured {} hooks", hook_count);
-                }
-            }
-            // TODO: Implement actual hook configuration when the API is available
         }
 
         // Handle MCP servers if present
@@ -542,7 +536,7 @@ impl InstallCommand {
             && !self.no_progress
             && (installed_count > 0 || hook_count > 0 || server_count > 0)
         {
-            multi_phase.complete_phase(Some("Installation finalized"));
+            multi_phase.complete_phase(Some("Installation complete!"));
         }
 
         // Return the installation error if there was one
@@ -550,16 +544,18 @@ impl InstallCommand {
             return Err(error);
         }
 
-        // Clear the multi-phase display before final message
+        // Clear the multi-phase display
         if !self.quiet && !self.no_progress {
             multi_phase.clear();
         }
 
-        if installed_count > 0 || total_deps > 0 {
-            if !self.quiet {
-                println!("\nInstallation complete!");
-            }
-        } else if !self.quiet {
+        // Only show message if no progress was shown and there's nothing installed
+        if self.no_progress
+            && !self.quiet
+            && installed_count == 0
+            && hook_count == 0
+            && server_count == 0
+        {
             println!("\nNo dependencies to install");
         }
 

@@ -1,6 +1,5 @@
 {
   "events": ["UserPromptSubmit"],
-  "matcher": ".*",
   "type": "command",
   "command": ".claude/ccpm/scripts/test.js",
   "timeout": 10000,
