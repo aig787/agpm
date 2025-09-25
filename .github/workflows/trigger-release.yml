@@ -28,6 +28,7 @@ on:
 
 permissions:
   contents: write
+  actions: write  # Required to trigger workflow_dispatch
 
 jobs:
   create-release-tag:
