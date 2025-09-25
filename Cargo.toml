@@ -67,6 +67,8 @@ pr-run-mode = "plan"
 install-updater = false
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
+# Whether CI should trigger releases with dispatches instead of tag pushes
+dispatch-releases = true
 
 # cargo-binstall metadata for binary installation
 [package.metadata.binstall]

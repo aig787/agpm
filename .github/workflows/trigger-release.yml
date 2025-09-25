@@ -54,8 +54,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create Release Tag
+      - name: Create Release Tag and Trigger Workflow
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Check if manual tag is provided
           if [ -n "${{ github.event.inputs.manual_tag }}" ]; then
@@ -136,14 +138,15 @@ jobs:
           git add Cargo.toml Cargo.lock
           git commit -m "chore(release): ${NEW_VERSION}" || echo "No changes to commit"
 
-          # Create git tag - this will trigger the cargo-dist release workflow
-          git tag "$TAG" -m "Release ${NEW_VERSION}"
-
-          # Push changes and tag
+          # Push the commit to main
           git push origin HEAD:${{ github.ref_name }}
-          git push origin "$TAG"
 
           echo "new-version=${NEW_VERSION}" >> $GITHUB_OUTPUT
           echo "new-tag=$TAG" >> $GITHUB_OUTPUT
-          echo "✅ Created release tag $TAG"
-          echo "The cargo-dist workflow will now automatically build and publish binaries"
+
+          # Trigger the release workflow using workflow dispatch
+          echo "✅ Triggering release workflow for $TAG"
+          gh workflow run release.yml -f tag="$TAG"
+
+          echo "🚀 Release workflow triggered successfully!"
+          echo "Check the Actions tab for the release progress"
