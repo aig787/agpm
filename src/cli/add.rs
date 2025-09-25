@@ -13,7 +13,7 @@ use std::path::Path;
 use crate::cache::Cache;
 use crate::cli::resource_ops::{
     create_lock_entry, fetch_resource_content, get_resource_target_path, install_resource_file,
-    update_settings_for_hook, update_settings_for_mcp_server, validate_resource_content,
+    update_settings_for_mcp_server, validate_resource_content,
 };
 use crate::lockfile::LockFile;
 use crate::manifest::{
@@ -450,11 +450,11 @@ async fn install_single_dependency(
 
     lockfile.save(&lockfile_path)?;
 
-    // Step 5: Update settings.local.json if needed (hooks and MCP servers)
-    if resource_type == "hook" {
-        update_settings_for_hook(name, &content, project_root)?;
-    } else if resource_type == "mcp-server" {
+    // Step 5: Update settings.local.json if needed
+    if resource_type == "mcp-server" {
         update_settings_for_mcp_server(name, &content, project_root)?;
+    } else if resource_type == "hook" {
+        crate::hooks::install_hooks(manifest, project_root).await?;
     }
 
     println!(

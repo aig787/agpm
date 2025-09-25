@@ -1423,7 +1423,9 @@ pub async fn install_resources(
     let final_count = *installed_count.lock().await;
 
     // Complete installation phase successfully
-    if let Some(ref pm) = progress {
+    if let Some(ref pm) = progress
+        && final_count > 0
+    {
         pm.complete_phase(Some(&format!("Installed {} resources", final_count)));
     }
 

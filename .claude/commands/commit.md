@@ -1,7 +1,7 @@
 ---
 allowed-tools: Task, Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(git show:*), Read, Glob, Grep, TodoWrite
 description: Create well-formatted git commits following project conventions - supports single or multiple logically grouped commits
-argument-hint: [ --multi | --co-authored | --contributed | --no-attribution | --include-untracked ] [ paths... ] [ message ] - e.g., "--multi" for multiple commits or "tests/" for specific paths
+argument-hint: [ --multi[=N] | --co-authored | --contributed | --no-attribution | --include-untracked ] [ paths... ] [ message ] - e.g., "--multi" or "--multi=3" for multiple commits or "tests/" for specific paths
 ---
 
 ## Context
@@ -32,14 +32,21 @@ Based on the changes shown above, create git commits following these guidelines:
 ## Commit Mode Selection
 
 1. Check for `--multi` flag to determine commit mode:
-   - **Multi-commit mode (`--multi`)**: Analyze changes and create multiple logically grouped commits
+   - **Multi-commit mode (`--multi` or `--multi=N`)**: Analyze changes and create multiple logically grouped commits
+     - `--multi`: Automatically determine optimal number of commits based on change analysis
+     - `--multi=N`: Target exactly N commits (where N is a positive integer)
    - **Single-commit mode (default)**: Create a single commit with all changes
 
 ### Multi-Commit Mode Process
 
 If `--multi` flag is present:
 
-1. **Analyze all changes** to identify logical groupings:
+1. **Parse the multi-commit target**:
+   - If `--multi=N` format is used, extract the target number N
+   - If just `--multi`, use automatic grouping based on change analysis
+   - Validate that N is a positive integer if provided
+
+2. **Analyze all changes** to identify logical groupings:
    - Group by module/component (e.g., cli, resolver, cache, tests)
    - Group by type of change (feat, fix, docs, test, refactor)
    - Consider dependencies between changes
@@ -53,7 +60,15 @@ If `--multi` flag is present:
    - Refactoring should typically be separate from feature changes
    - Test additions/updates can be grouped with the feature they test or separate
 
-2. **Present grouping analysis** to user:
+3. **Create logical groupings based on target**:
+   - **For `--multi` (automatic)**: Create optimal number of groups based on natural logical boundaries
+   - **For `--multi=N` (targeted)**:
+     - If N is larger than natural groups: Split larger groups into smaller logical units
+     - If N is smaller than natural groups: Combine related groups while maintaining logical coherence
+     - Always prioritize logical coherence over exact count matching
+     - Warn user if target count would create illogical groupings
+
+4. **Present grouping analysis** to user:
    ```
    Suggested commit groups:
    1. feat(resolver): add centralized version resolver
@@ -68,12 +83,12 @@ If `--multi` flag is present:
       - tests/integration_version_resolver.rs
    ```
 
-3. **Get user confirmation** for the grouping:
+5. **Get user confirmation** for the grouping:
    - Ask if they want to proceed with suggested groups
    - Allow them to adjust grouping if needed
    - Option to combine or split groups
 
-4. **Create commits sequentially**:
+6. **Create commits sequentially**:
    - For each group, stage only the relevant files
    - Generate appropriate commit message for each group
    - Apply attribution rules to each commit
@@ -137,17 +152,19 @@ If no `--multi` flag, proceed with standard single commit process:
 
 ### Multi-Commit Examples
 
-- `/commit --multi` - analyzes all changes and creates multiple logical commits
+- `/commit --multi` - analyzes all changes and creates optimal number of logical commits
+- `/commit --multi=3` - creates exactly 3 commits based on logical groupings
 - `/commit --multi --co-authored` - creates multiple commits with co-author attribution
-- `/commit --multi --no-attribution` - creates multiple commits without attribution
+- `/commit --multi=2 --no-attribution` - creates 2 commits without attribution
 - `/commit --multi --include-untracked` - creates multiple commits including untracked files
+- `/commit --multi=4 --co-authored` - creates 4 commits with co-author attribution
 
 ### Multi-Commit Workflow Example
 
 ```
-User: /commit --multi
+User: /commit --multi=3
 
-Claude: Analyzing changes to identify logical commit groups...
+Claude: Analyzing changes to create 3 logical commit groups...
 
 Suggested commit groups:
 
@@ -166,7 +183,7 @@ Suggested commit groups:
    - src/resolver/mod.rs
    - src/resolver/version_resolution.rs
 
-Would you like to proceed with these 3 separate commits? (yes/no/adjust)
+These 3 commits match your target count. Would you like to proceed? (yes/no/adjust)
 
 User: yes
 

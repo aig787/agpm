@@ -139,35 +139,6 @@ pub fn install_resource_file(target_path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Updates settings.local.json with hook configuration
-pub fn update_settings_for_hook(name: &str, content: &str, project_root: &Path) -> Result<()> {
-    // Parse hook content as JSON
-    let hook_json: serde_json::Value =
-        serde_json::from_str(content).context("Failed to parse hook content as JSON")?;
-
-    // Update .claude/settings.local.json with the hook
-    let claude_dir = project_root.join(".claude");
-    let settings_path = claude_dir.join("settings.local.json");
-    ensure_dir(&claude_dir)?;
-
-    let mut settings = ClaudeSettings::load_or_default(&settings_path)?;
-
-    // Initialize hooks if None
-    if settings.hooks.is_none() {
-        settings.hooks = Some(serde_json::json!({}));
-    }
-
-    // Add the hook to settings
-    if let Some(hooks) = &mut settings.hooks
-        && let Some(hooks_obj) = hooks.as_object_mut()
-    {
-        hooks_obj.insert(name.to_string(), hook_json);
-    }
-
-    settings.save(&settings_path)?;
-    Ok(())
-}
-
 /// Updates settings.local.json with MCP server configuration
 pub fn update_settings_for_mcp_server(
     name: &str,

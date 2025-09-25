@@ -2,10 +2,8 @@
 //!
 //! This module handles Claude Code hook configurations, including:
 //! - Installing hook JSON files to `.claude/ccpm/hooks/`
-//! - Merging hook configurations into `settings.local.json`
+//! - Converting them to Claude Code format in `settings.local.json`
 //! - Managing hook lifecycle and dependencies
-
-pub mod merge;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -42,6 +40,9 @@ pub enum HookEvent {
     /// Triggered when session ends
     #[serde(rename = "SessionEnd")]
     SessionEnd,
+    /// Unknown or future hook event type
+    #[serde(untagged)]
+    Other(String),
 }
 
 /// Hook configuration as stored in JSON files
@@ -49,8 +50,9 @@ pub enum HookEvent {
 pub struct HookConfig {
     /// Events this hook should trigger on
     pub events: Vec<HookEvent>,
-    /// Regex matcher pattern for tools or commands
-    pub matcher: String,
+    /// Regex matcher pattern for tools or commands (optional, only needed for tool-triggered events)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<String>,
     /// Type of hook (usually "command")
     #[serde(rename = "type")]
     pub hook_type: String,
@@ -176,15 +178,117 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
     Ok(configs)
 }
 
-// Re-export commonly used merge functions
-pub use merge::{MergeResult, apply_hooks_to_settings, merge_hooks_advanced};
+/// Convert CCPM hook configs to Claude Code format
+///
+/// Transforms hooks from the CCPM format to the format expected by Claude Code.
+/// Groups hooks by event type and handles optional matchers correctly.
+fn convert_to_claude_format(
+    hook_configs: HashMap<String, HookConfig>,
+) -> Result<serde_json::Value> {
+    use serde_json::{Map, Value, json};
+
+    let mut events_map: Map<String, Value> = Map::new();
+
+    for (_name, config) in hook_configs {
+        for event in &config.events {
+            let event_name = event_to_string(event);
+
+            // Create the hook object in Claude format
+            let hook_obj = json!({
+                "type": config.hook_type,
+                "command": config.command,
+                "timeout": config.timeout
+            });
+
+            // Get or create the event array
+            let event_array = events_map.entry(event_name).or_insert_with(|| json!([]));
+            let event_vec = event_array.as_array_mut().unwrap();
+
+            if let Some(ref matcher) = config.matcher {
+                // Tool-triggered event with matcher
+                // Find existing matcher group or create new one
+                let mut found_group = false;
+                for group in event_vec.iter_mut() {
+                    if let Some(group_matcher) = group.get("matcher").and_then(|m| m.as_str())
+                        && group_matcher == matcher
+                    {
+                        // Add to existing matcher group
+                        if let Some(hooks_array) =
+                            group.get_mut("hooks").and_then(|h| h.as_array_mut())
+                        {
+                            hooks_array.push(hook_obj.clone());
+                            found_group = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !found_group {
+                    // Create new matcher group
+                    event_vec.push(json!({
+                        "matcher": matcher,
+                        "hooks": [hook_obj]
+                    }));
+                }
+            } else {
+                // Session event without matcher - add to first group or create new one
+                if let Some(first_group) = event_vec.first_mut() {
+                    // Add to existing group if it has no matcher
+                    if !first_group.as_object().unwrap().contains_key("matcher") {
+                        if let Some(hooks_array) =
+                            first_group.get_mut("hooks").and_then(|h| h.as_array_mut())
+                        {
+                            // Check for duplicates before adding
+                            let hook_exists = hooks_array.iter().any(|existing_hook| {
+                                existing_hook.get("command") == hook_obj.get("command")
+                                    && existing_hook.get("type") == hook_obj.get("type")
+                            });
+                            if !hook_exists {
+                                hooks_array.push(hook_obj);
+                            }
+                        }
+                    } else {
+                        // Create new group for session events
+                        event_vec.push(json!({
+                            "hooks": [hook_obj]
+                        }));
+                    }
+                } else {
+                    // Create first group for session events
+                    event_vec.push(json!({
+                        "hooks": [hook_obj]
+                    }));
+                }
+            }
+        }
+    }
+
+    Ok(Value::Object(events_map))
+}
+
+/// Convert event enum to string
+fn event_to_string(event: &HookEvent) -> String {
+    match event {
+        HookEvent::PreToolUse => "PreToolUse".to_string(),
+        HookEvent::PostToolUse => "PostToolUse".to_string(),
+        HookEvent::Notification => "Notification".to_string(),
+        HookEvent::UserPromptSubmit => "UserPromptSubmit".to_string(),
+        HookEvent::Stop => "Stop".to_string(),
+        HookEvent::SubagentStop => "SubagentStop".to_string(),
+        HookEvent::PreCompact => "PreCompact".to_string(),
+        HookEvent::SessionStart => "SessionStart".to_string(),
+        HookEvent::SessionEnd => "SessionEnd".to_string(),
+        HookEvent::Other(event_name) => event_name.clone(),
+    }
+}
 
 /// Install hooks from manifest to .claude/settings.local.json
 ///
 /// This function:
 /// 1. Loads hook JSON files from .claude/ccpm/hooks/
-/// 2. Merges them into .claude/settings.local.json
-/// 3. Preserves user-managed hooks
+/// 2. Converts them to Claude Code format
+/// 3. Updates .claude/settings.local.json with proper event-based structure
+/// 4. Can be called from both `add` and `install` commands
 pub async fn install_hooks(
     manifest: &crate::manifest::Manifest,
     project_root: &Path,
@@ -204,45 +308,50 @@ pub async fn install_hooks(
     // Load hook configurations from JSON files
     let hook_configs = load_hook_configs(&hooks_dir)?;
 
-    // Build source info for hooks
-    let mut source_info = HashMap::new();
-    for (name, dep) in &manifest.hooks {
-        match dep {
-            crate::manifest::ResourceDependency::Detailed(detailed) => {
-                if let Some(source) = &detailed.source {
-                    let version = detailed
-                        .version
-                        .as_ref()
-                        .or(detailed.branch.as_ref())
-                        .or(detailed.rev.as_ref())
-                        .cloned()
-                        .unwrap_or_else(|| "latest".to_string());
-                    source_info.insert(name.clone(), (source.clone(), version));
-                }
-            }
-            crate::manifest::ResourceDependency::Simple(_) => {
-                // Local dependencies don't have source info
-                source_info.insert(name.clone(), ("local".to_string(), "latest".to_string()));
-            }
-        }
-    }
-
     // Load existing settings
     let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
 
-    // Merge hooks
-    let merge_result = merge_hooks_advanced(settings.hooks.as_ref(), hook_configs, &source_info)?;
+    // Convert hooks to Claude Code format
+    let claude_hooks = convert_to_claude_format(hook_configs)?;
 
-    // Apply merged hooks to settings
-    apply_hooks_to_settings(&mut settings, merge_result.hooks)?;
+    // Compare with existing hooks to detect changes
+    let hooks_changed = match &settings.hooks {
+        Some(existing_hooks) => existing_hooks != &claude_hooks,
+        None => claude_hooks.as_object().is_none_or(|obj| !obj.is_empty()),
+    };
 
-    // Save updated settings
-    settings.save(&settings_path)?;
+    if hooks_changed {
+        // Count actual configured hooks (after deduplication)
+        let configured_count = claude_hooks
+            .as_object()
+            .map(|events| {
+                events
+                    .values()
+                    .filter_map(|event_groups| event_groups.as_array())
+                    .map(|groups| {
+                        groups
+                            .iter()
+                            .filter_map(|group| group.get("hooks")?.as_array())
+                            .map(|hooks| hooks.len())
+                            .sum::<usize>()
+                    })
+                    .sum::<usize>()
+            })
+            .unwrap_or(0);
 
-    println!(
-        "✓ Configured {} hook(s) in .claude/settings.local.json",
-        manifest.hooks.len()
-    );
+        // Update settings with hooks (replaces existing hooks completely)
+        settings.hooks = Some(claude_hooks);
+
+        // Save updated settings
+        settings.save(&settings_path)?;
+
+        if configured_count > 0 {
+            println!(
+                "✓ Configured {} hook(s) in .claude/settings.local.json",
+                configured_count
+            );
+        }
+    }
 
     // Build locked entries for the lockfile
     let locked_hooks: Vec<crate::lockfile::LockedResource> = manifest
@@ -320,7 +429,7 @@ pub async fn install_hooks(
 /// # fn example() -> anyhow::Result<()> {
 /// let config = HookConfig {
 ///     events: vec![HookEvent::PreToolUse],
-///     matcher: "Bash|Write".to_string(),
+///     matcher: Some("Bash|Write".to_string()),
 ///     hook_type: "command".to_string(),
 ///     command: "echo 'validation'".to_string(),
 ///     timeout: Some(5000),
@@ -339,9 +448,11 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
         return Err(anyhow::anyhow!("Hook must specify at least one event"));
     }
 
-    // Validate matcher regex
-    regex::Regex::new(&config.matcher)
-        .with_context(|| format!("Invalid regex pattern in matcher: {}", config.matcher))?;
+    // Validate matcher regex if present
+    if let Some(ref matcher) = config.matcher {
+        regex::Regex::new(matcher)
+            .with_context(|| format!("Invalid regex pattern in matcher: {}", matcher))?;
+    }
 
     // Validate hook type
     if config.hook_type != "command" {
@@ -396,6 +507,10 @@ mod tests {
             (HookEvent::PreCompact, r#""PreCompact""#),
             (HookEvent::SessionStart, r#""SessionStart""#),
             (HookEvent::SessionEnd, r#""SessionEnd""#),
+            (
+                HookEvent::Other("CustomEvent".to_string()),
+                r#""CustomEvent""#,
+            ),
         ];
 
         for (event, expected) in events {
@@ -410,7 +525,7 @@ mod tests {
     fn test_hook_config_serialization() {
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse, HookEvent::PostToolUse],
-            matcher: "Bash|Write".to_string(),
+            matcher: Some("Bash|Write".to_string()),
             hook_type: "command".to_string(),
             command: ".claude/ccpm/scripts/security-check.sh".to_string(),
             timeout: Some(5000),
@@ -421,7 +536,7 @@ mod tests {
         let parsed: HookConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.events.len(), 2);
-        assert_eq!(parsed.matcher, "Bash|Write");
+        assert_eq!(parsed.matcher, Some("Bash|Write".to_string()));
         assert_eq!(parsed.timeout, Some(5000));
         assert_eq!(parsed.description, Some("Security validation".to_string()));
     }
@@ -431,7 +546,7 @@ mod tests {
         // Test minimal config without optional fields
         let config = HookConfig {
             events: vec![HookEvent::UserPromptSubmit],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: "echo 'test'".to_string(),
             timeout: None,
@@ -502,7 +617,7 @@ mod tests {
         // Create multiple hook configs
         let config1 = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: "test1.sh".to_string(),
             timeout: None,
@@ -511,7 +626,7 @@ mod tests {
 
         let config2 = HookConfig {
             events: vec![HookEvent::PostToolUse],
-            matcher: "Write".to_string(),
+            matcher: Some("Write".to_string()),
             hook_type: "command".to_string(),
             command: "test2.sh".to_string(),
             timeout: Some(1000),
@@ -580,7 +695,7 @@ mod tests {
 
         let config = HookConfig {
             events: vec![], // Empty events
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: None,
@@ -603,7 +718,7 @@ mod tests {
 
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: "[invalid regex".to_string(), // Invalid regex
+            matcher: Some("[invalid regex".to_string()), // Invalid regex
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: None,
@@ -626,7 +741,7 @@ mod tests {
 
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "webhook".to_string(), // Unsupported type
             command: "test.sh".to_string(),
             timeout: None,
@@ -659,7 +774,7 @@ mod tests {
 
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: ".claude/ccpm/scripts/test.sh".to_string(),
             timeout: None,
@@ -685,7 +800,7 @@ mod tests {
 
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: ".claude/ccpm/scripts/nonexistent.sh".to_string(),
             timeout: None,
@@ -716,7 +831,7 @@ mod tests {
         // Test with a command that doesn't start with .claude/ccpm/scripts/
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: "/usr/bin/echo".to_string(), // Absolute path not in .claude
             timeout: None,
@@ -746,7 +861,7 @@ mod tests {
         // Create a hook JSON file
         let hook_config = HookConfig {
             events: vec![HookEvent::PreToolUse],
-            matcher: "Bash".to_string(),
+            matcher: Some("Bash".to_string()),
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: Some(5000),
@@ -800,7 +915,7 @@ mod tests {
         // Create a hook JSON file
         let hook_config = HookConfig {
             events: vec![HookEvent::UserPromptSubmit],
-            matcher: ".*".to_string(),
+            matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
             command: "echo 'prompt submitted'".to_string(),
             timeout: None,
@@ -892,5 +1007,378 @@ mod tests {
 
         let locked = &result[0];
         assert_eq!(locked.version, Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_session_start() {
+        // Test SessionStart hook without matcher
+        let mut hook_configs = HashMap::new();
+        hook_configs.insert(
+            "session-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::SessionStart],
+                matcher: None, // No matcher for session events
+                hook_type: "command".to_string(),
+                command: "echo 'session started'".to_string(),
+                timeout: Some(1000),
+                description: Some("Session start hook".to_string()),
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let expected = serde_json::json!({
+            "SessionStart": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo 'session started'",
+                            "timeout": 1000
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_with_matcher() {
+        // Test PreToolUse hook with matcher
+        let mut hook_configs = HashMap::new();
+        hook_configs.insert(
+            "tool-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse],
+                matcher: Some("Bash|Write".to_string()),
+                hook_type: "command".to_string(),
+                command: "echo 'before tool use'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let expected = serde_json::json!({
+            "PreToolUse": [
+                {
+                    "matcher": "Bash|Write",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo 'before tool use'",
+                            "timeout": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_multiple_events() {
+        // Test hook with multiple events
+        let mut hook_configs = HashMap::new();
+        hook_configs.insert(
+            "multi-event-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse, HookEvent::PostToolUse],
+                matcher: Some(".*".to_string()),
+                hook_type: "command".to_string(),
+                command: "echo 'tool event'".to_string(),
+                timeout: Some(5000),
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+
+        // Should appear in both events
+        assert!(result.get("PreToolUse").is_some());
+        assert!(result.get("PostToolUse").is_some());
+
+        let pre_tool = result.get("PreToolUse").unwrap().as_array().unwrap();
+        let post_tool = result.get("PostToolUse").unwrap().as_array().unwrap();
+
+        assert_eq!(pre_tool.len(), 1);
+        assert_eq!(post_tool.len(), 1);
+
+        // Both should have the matcher
+        assert_eq!(pre_tool[0].get("matcher").unwrap().as_str().unwrap(), ".*");
+        assert_eq!(post_tool[0].get("matcher").unwrap().as_str().unwrap(), ".*");
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_deduplication() {
+        // Test deduplication of identical session hooks
+        let mut hook_configs = HashMap::new();
+
+        // Add two identical SessionStart hooks
+        hook_configs.insert(
+            "hook1".to_string(),
+            HookConfig {
+                events: vec![HookEvent::SessionStart],
+                matcher: None,
+                hook_type: "command".to_string(),
+                command: "ccpm update".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+        hook_configs.insert(
+            "hook2".to_string(),
+            HookConfig {
+                events: vec![HookEvent::SessionStart],
+                matcher: None,
+                hook_type: "command".to_string(),
+                command: "ccpm update".to_string(), // Same command
+                timeout: None,
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let session_start = result.get("SessionStart").unwrap().as_array().unwrap();
+
+        // Should have only one group
+        assert_eq!(session_start.len(), 1);
+
+        // That group should have only one hook (deduplicated)
+        let hooks = session_start[0].get("hooks").unwrap().as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(
+            hooks[0].get("command").unwrap().as_str().unwrap(),
+            "ccpm update"
+        );
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_different_matchers() {
+        // Test hooks with different matchers should be in separate groups
+        let mut hook_configs = HashMap::new();
+
+        hook_configs.insert(
+            "bash-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse],
+                matcher: Some("Bash".to_string()),
+                hook_type: "command".to_string(),
+                command: "echo 'bash tool'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+        hook_configs.insert(
+            "write-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse],
+                matcher: Some("Write".to_string()),
+                hook_type: "command".to_string(),
+                command: "echo 'write tool'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let pre_tool = result.get("PreToolUse").unwrap().as_array().unwrap();
+
+        // Should have two separate groups
+        assert_eq!(pre_tool.len(), 2);
+
+        // Find the groups by matcher
+        let bash_group = pre_tool
+            .iter()
+            .find(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Bash"))
+            .unwrap();
+        let write_group = pre_tool
+            .iter()
+            .find(|g| g.get("matcher").and_then(|m| m.as_str()) == Some("Write"))
+            .unwrap();
+
+        assert!(bash_group.get("hooks").unwrap().as_array().unwrap().len() == 1);
+        assert!(write_group.get("hooks").unwrap().as_array().unwrap().len() == 1);
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_same_matcher() {
+        // Test hooks with same matcher should be in same group
+        let mut hook_configs = HashMap::new();
+
+        hook_configs.insert(
+            "hook1".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse],
+                matcher: Some("Bash".to_string()),
+                hook_type: "command".to_string(),
+                command: "echo 'first'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+        hook_configs.insert(
+            "hook2".to_string(),
+            HookConfig {
+                events: vec![HookEvent::PreToolUse],
+                matcher: Some("Bash".to_string()), // Same matcher
+                hook_type: "command".to_string(),
+                command: "echo 'second'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let pre_tool = result.get("PreToolUse").unwrap().as_array().unwrap();
+
+        // Should have only one group
+        assert_eq!(pre_tool.len(), 1);
+
+        // That group should have both hooks
+        let hooks = pre_tool[0].get("hooks").unwrap().as_array().unwrap();
+        assert_eq!(hooks.len(), 2);
+        assert_eq!(
+            pre_tool[0].get("matcher").unwrap().as_str().unwrap(),
+            "Bash"
+        );
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_empty() {
+        // Test empty hook configs
+        let hook_configs = HashMap::new();
+        let result = convert_to_claude_format(hook_configs).unwrap();
+
+        assert_eq!(result.as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_convert_to_claude_format_other_event() {
+        // Test unknown/future event type
+        let mut hook_configs = HashMap::new();
+        hook_configs.insert(
+            "future-hook".to_string(),
+            HookConfig {
+                events: vec![HookEvent::Other("FutureEvent".to_string())],
+                matcher: None,
+                hook_type: "command".to_string(),
+                command: "echo 'future event'".to_string(),
+                timeout: None,
+                description: None,
+            },
+        );
+
+        let result = convert_to_claude_format(hook_configs).unwrap();
+        let expected = serde_json::json!({
+            "FutureEvent": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "echo 'future event'",
+                            "timeout": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_hook_event_other_serialization() {
+        // Test that Other variant serializes/deserializes correctly
+        let other_event = HookEvent::Other("CustomEvent".to_string());
+        let json = serde_json::to_string(&other_event).unwrap();
+        assert_eq!(json, r#""CustomEvent""#);
+
+        let parsed: HookEvent = serde_json::from_str(&json).unwrap();
+        if let HookEvent::Other(event_name) = parsed {
+            assert_eq!(event_name, "CustomEvent");
+        } else {
+            panic!("Expected Other variant");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_hook_format_sessionstart_debug() {
+        let temp = tempdir().unwrap();
+        let hooks_dir = temp.path().join(".claude/ccmp/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        // Create a hook JSON file that mimics the problematic "ccpm-update" hook
+        let hook_config = HookConfig {
+            events: vec![HookEvent::SessionStart],
+            matcher: Some(".*".to_string()),
+            hook_type: "command".to_string(),
+            command: "ccpm update".to_string(),
+            timeout: None,
+            description: Some("Update CCPM packages".to_string()),
+        };
+
+        fs::write(
+            hooks_dir.join("ccpm-update.json"),
+            serde_json::to_string_pretty(&hook_config).unwrap(),
+        )
+        .unwrap();
+
+        // Create a manifest with this hook
+        let mut manifest = crate::manifest::Manifest::default();
+        manifest.hooks.insert(
+            "ccpm-update".to_string(),
+            crate::manifest::ResourceDependency::Simple(
+                ".claude/ccpm/hooks/ccpm-update.json".to_string(),
+            ),
+        );
+        manifest.target.hooks = ".claude/ccmp/hooks".to_string();
+
+        let result = install_hooks(&manifest, temp.path()).await.unwrap();
+        assert_eq!(result.len(), 1);
+
+        // Check that the settings.local.json was created with the correct format
+        let settings_path = temp.path().join(".claude/settings.local.json");
+        assert!(settings_path.exists());
+
+        let settings: crate::mcp::ClaudeSettings =
+            crate::utils::read_json_file(&settings_path).unwrap();
+
+        // Print the hooks structure for debugging
+        println!("Generated hooks: {:#?}", settings.hooks);
+
+        // The hooks should be in the correct Claude Code format
+        if let Some(hooks_value) = settings.hooks {
+            let hooks_obj = hooks_value.as_object().unwrap();
+
+            // Should have SessionStart event
+            assert!(hooks_obj.contains_key("SessionStart"));
+
+            let session_start = hooks_obj.get("SessionStart").unwrap().as_array().unwrap();
+            assert_eq!(session_start.len(), 1);
+
+            let matcher_group = session_start[0].as_object().unwrap();
+            assert_eq!(
+                matcher_group.get("matcher").unwrap().as_str().unwrap(),
+                ".*"
+            );
+
+            let hooks_array = matcher_group.get("hooks").unwrap().as_array().unwrap();
+            assert_eq!(hooks_array.len(), 1);
+
+            let hook = hooks_array[0].as_object().unwrap();
+            assert_eq!(hook.get("type").unwrap().as_str().unwrap(), "command");
+            assert_eq!(
+                hook.get("command").unwrap().as_str().unwrap(),
+                "ccpm update"
+            );
+
+            // Should NOT have the problematic format where hook name is a top-level key
+            assert!(!hooks_obj.contains_key("ccpm-update"));
+        } else {
+            panic!("No hooks were generated");
+        }
     }
 }
