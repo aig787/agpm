@@ -1,0 +1,77 @@
+name: Update Release Notes with Changelog
+run-name: "Update release notes for ${{ fromJson(inputs.plan).tag || github.ref_name }}"
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: 'dist plan from the plan job'
+        required: true
+        type: string
+
+jobs:
+  update-notes:
+    name: Update Release Notes with Changelog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJson(inputs.plan).tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install git-cliff
+        run: |
+          cargo binstall --no-confirm git-cliff
+
+      - name: Generate changelog
+        run: |
+          # Generate changelog for this release using git-cliff
+          git-cliff --config cliff.toml --tag "${{ fromJson(inputs.plan).tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
+          echo "Generated changelog for ${{ fromJson(inputs.plan).tag }}:"
+          cat $RUNNER_TEMP/changelog.md
+
+      - name: Update GitHub Release Notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "${{ fromJson(inputs.plan).tag }}"
+        run: |
+          echo "Updating release notes for $TAG..."
+
+          # Wait a moment for the release to be fully created
+          sleep 5
+
+          # Get the existing release notes from cargo-dist
+          echo "Fetching existing release notes..."
+          gh release view "$TAG" --json body -q .body > $RUNNER_TEMP/existing-notes.md
+
+          # Combine cargo-dist notes with our changelog
+          echo "Combining release notes..."
+          {
+            # Keep the cargo-dist generated content
+            cat $RUNNER_TEMP/existing-notes.md
+
+            # Add a separator
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Changelog"
+            echo ""
+
+            # Append the git-cliff generated changelog
+            cat $RUNNER_TEMP/changelog.md
+          } > $RUNNER_TEMP/combined-notes.md
+
+          # Update the release with combined notes
+          gh release edit "$TAG" \
+            --notes-file "$RUNNER_TEMP/combined-notes.md"
+
+          echo "✅ Release notes updated successfully with appended changelog!"

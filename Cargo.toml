@@ -69,6 +69,8 @@ install-updater = false
 install-path = "CARGO_HOME"
 # Whether CI should trigger releases with dispatches instead of tag pushes
 dispatch-releases = true
+# Custom jobs to run after hosting artifacts
+post-announce-jobs = ["./update-release-notes", "./publish-crates"]
 
 # cargo-binstall metadata for binary installation
 [package.metadata.binstall]

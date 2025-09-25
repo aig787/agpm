@@ -270,50 +270,17 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-      - name: Install git-cliff
-        run: |
-          cargo install git-cliff || true
-      - name: Generate changelog
-        run: |
-          # Generate changelog for this release using git-cliff
-          git-cliff --config cliff.toml --tag "${{ needs.plan.outputs.tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
-          echo "Generated changelog:"
-          cat $RUNNER_TEMP/changelog.md
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
+          ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
           RELEASE_COMMIT: "${{ github.sha }}"
         run: |
-          # Use git-cliff generated changelog as release notes
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/changelog.md" artifacts/*
+          # Write and read notes from a file to avoid quoting breaking things
+          echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
-  # Publish to crates.io after successful release
-  publish-crates:
-    needs:
-      - plan
-      - host
-    # Only publish if we successfully created a release and it's not a dry-run
-    if: ${{ needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
-    runs-on: "ubuntu-22.04"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          echo "📦 Publishing to crates.io..."
-          cargo publish --no-verify --token "$CARGO_REGISTRY_TOKEN" || {
-            echo "⚠️ Failed to publish to crates.io. This might be expected for re-releases or if the version already exists."
-            exit 0
-          }
-          echo "✅ Successfully published to crates.io!"
+          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
   announce:
     needs:
@@ -331,3 +298,21 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  custom-update-release-notes:
+    needs:
+      - plan
+      - announce
+    uses: ./.github/workflows/update-release-notes.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
+
+  custom-publish-crates:
+    needs:
+      - plan
+      - announce
+    uses: ./.github/workflows/publish-crates.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
