@@ -134,7 +134,7 @@ jobs:
 
           # Commit version changes
           git add Cargo.toml Cargo.lock
-          git commit -m "chore(release): ${NEW_VERSION} [skip ci]" || echo "No changes to commit"
+          git commit -m "chore(release): ${NEW_VERSION}" || echo "No changes to commit"
 
           # Create git tag - this will trigger the cargo-dist release workflow
           git tag "$TAG" -m "Release ${NEW_VERSION}"
