@@ -2,11 +2,8 @@
 # https://git-cliff.org/docs/configuration
 
 [changelog]
-# Template for the changelog header
-header = """
-# Changelog\n
-All notable changes to CCPM will be documented in this file.\n
-"""
+# Template for the changelog header (empty for release notes)
+header = ""
 # Template for the changelog body
 body = """
 {% if version %}\

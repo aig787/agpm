@@ -45,10 +45,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install git-cliff
+        run: |
+          cargo install git-cliff || true
 
       - name: Configure Git
         run: |
@@ -151,3 +152,5 @@ jobs:
 
           echo "🚀 Release workflow triggered successfully!"
           echo "Check the Actions tab for the release progress"
+          echo ""
+          echo "Note: Release notes will be generated automatically from commit history"
