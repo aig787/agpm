@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version_bump:
-        description: 'Version bump type'
-        required: true
+        description: 'Version bump type (ignored if manual_tag is set)'
+        required: false
         default: 'patch'
         type: choice
         options:
@@ -13,7 +13,7 @@ on:
           - 'minor'
           - 'major'
       prerelease:
-        description: 'Create a prerelease version'
+        description: 'Create a prerelease version (ignored if manual_tag is set)'
         required: false
         default: 'none'
         type: choice
@@ -21,6 +21,10 @@ on:
           - 'none'
           - 'beta'
           - 'alpha'
+      manual_tag:
+        description: 'Manual tag to create (e.g., v1.2.3) - overrides version bump'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -53,56 +57,74 @@ jobs:
       - name: Create Release Tag
         id: release
         run: |
-          # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "Current version: $CURRENT_VERSION"
+          # Check if manual tag is provided
+          if [ -n "${{ github.event.inputs.manual_tag }}" ]; then
+            # Use manual tag
+            TAG="${{ github.event.inputs.manual_tag }}"
 
-          # Parse version components (handle prerelease versions)
-          BASE_VERSION=${CURRENT_VERSION%%-*}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-
-          # Calculate new version based on bump type
-          case "${{ github.event.inputs.version_bump }}" in
-            "major")
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            "minor")
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            "patch")
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-
-          # Handle prerelease suffix if needed
-          PRERELEASE_SUFFIX=""
-          if [ "${{ github.event.inputs.prerelease }}" = "beta" ]; then
-            # Check if we're already in a beta
-            if [[ "$CURRENT_VERSION" == *"-beta."* ]]; then
-              # Increment beta number
-              BETA_NUM=$(echo "$CURRENT_VERSION" | grep -oP 'beta\.\K[0-9]+')
-              BETA_NUM=$((BETA_NUM + 1))
-              PRERELEASE_SUFFIX="-beta.${BETA_NUM}"
+            # Strip 'v' prefix if present to get version
+            if [[ "$TAG" == v* ]]; then
+              NEW_VERSION="${TAG:1}"
             else
-              PRERELEASE_SUFFIX="-beta.0"
+              NEW_VERSION="$TAG"
+              TAG="v$TAG"
             fi
-          elif [ "${{ github.event.inputs.prerelease }}" = "alpha" ]; then
-            # Check if we're already in an alpha
-            if [[ "$CURRENT_VERSION" == *"-alpha."* ]]; then
-              # Increment alpha number
-              ALPHA_NUM=$(echo "$CURRENT_VERSION" | grep -oP 'alpha\.\K[0-9]+')
-              ALPHA_NUM=$((ALPHA_NUM + 1))
-              PRERELEASE_SUFFIX="-alpha.${ALPHA_NUM}"
-            else
-              PRERELEASE_SUFFIX="-alpha.0"
+
+            echo "Using manual tag: $TAG"
+            echo "Version: $NEW_VERSION"
+          else
+            # Get current version from Cargo.toml
+            CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "Current version: $CURRENT_VERSION"
+
+            # Parse version components (handle prerelease versions)
+            BASE_VERSION=${CURRENT_VERSION%%-*}
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+
+            # Calculate new version based on bump type
+            case "${{ github.event.inputs.version_bump }}" in
+              "major")
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              "minor")
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              "patch")
+                PATCH=$((PATCH + 1))
+                ;;
+            esac
+
+            # Handle prerelease suffix if needed
+            PRERELEASE_SUFFIX=""
+            if [ "${{ github.event.inputs.prerelease }}" = "beta" ]; then
+              # Check if we're already in a beta
+              if [[ "$CURRENT_VERSION" == *"-beta."* ]]; then
+                # Increment beta number
+                BETA_NUM=$(echo "$CURRENT_VERSION" | grep -oP 'beta\.\K[0-9]+')
+                BETA_NUM=$((BETA_NUM + 1))
+                PRERELEASE_SUFFIX="-beta.${BETA_NUM}"
+              else
+                PRERELEASE_SUFFIX="-beta.0"
+              fi
+            elif [ "${{ github.event.inputs.prerelease }}" = "alpha" ]; then
+              # Check if we're already in an alpha
+              if [[ "$CURRENT_VERSION" == *"-alpha."* ]]; then
+                # Increment alpha number
+                ALPHA_NUM=$(echo "$CURRENT_VERSION" | grep -oP 'alpha\.\K[0-9]+')
+                ALPHA_NUM=$((ALPHA_NUM + 1))
+                PRERELEASE_SUFFIX="-alpha.${ALPHA_NUM}"
+              else
+                PRERELEASE_SUFFIX="-alpha.0"
+              fi
             fi
+
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}${PRERELEASE_SUFFIX}"
+            TAG="v${NEW_VERSION}"
+            echo "New version: $NEW_VERSION"
           fi
-
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}${PRERELEASE_SUFFIX}"
-          echo "New version: $NEW_VERSION"
 
           # Update Cargo.toml with new version
           sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
@@ -115,13 +137,13 @@ jobs:
           git commit -m "chore(release): ${NEW_VERSION} [skip ci]" || echo "No changes to commit"
 
           # Create git tag - this will trigger the cargo-dist release workflow
-          git tag "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git tag "$TAG" -m "Release ${NEW_VERSION}"
 
           # Push changes and tag
           git push origin HEAD:${{ github.ref_name }}
-          git push origin "v${NEW_VERSION}"
+          git push origin "$TAG"
 
           echo "new-version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "new-tag=v${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "✅ Created release tag v${NEW_VERSION}"
+          echo "new-tag=$TAG" >> $GITHUB_OUTPUT
+          echo "✅ Created release tag $TAG"
           echo "The cargo-dist workflow will now automatically build and publish binaries"
