@@ -306,7 +306,6 @@ jobs:
     uses: ./.github/workflows/update-release-notes.yml
     with:
       plan: ${{ needs.plan.outputs.val }}
-      tag: ${{ needs.plan.outputs.tag }}
     secrets: inherit
 
   custom-publish-crates:
@@ -316,5 +315,4 @@ jobs:
     uses: ./.github/workflows/publish-crates.yml
     with:
       plan: ${{ needs.plan.outputs.val }}
-      tag: ${{ needs.plan.outputs.tag }}
     secrets: inherit

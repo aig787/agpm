@@ -1,15 +1,11 @@
 name: Update Release Notes with Changelog
-run-name: "Update release notes for ${{ inputs.tag || github.ref_name }}"
+run-name: "Update release notes for ${{ fromJson(inputs.plan).announcement_tag || github.ref_name }}"
 
 on:
   workflow_call:
     inputs:
       plan:
         description: 'dist plan from the plan job'
-        required: true
-        type: string
-      tag:
-        description: 'Release tag'
         required: true
         type: string
 
@@ -22,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ fromJson(inputs.plan).announcement_tag }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -39,14 +35,14 @@ jobs:
       - name: Generate changelog
         run: |
           # Generate changelog for this release using git-cliff
-          git-cliff --config cliff.toml --tag "${{ inputs.tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
-          echo "Generated changelog for ${{ inputs.tag }}:"
+          git-cliff --config cliff.toml --tag "${{ fromJson(inputs.plan).announcement_tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
+          echo "Generated changelog for ${{ fromJson(inputs.plan).announcement_tag }}:"
           cat $RUNNER_TEMP/changelog.md
 
       - name: Update GitHub Release Notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: "${{ inputs.tag }}"
+          TAG: "${{ fromJson(inputs.plan).announcement_tag }}"
         run: |
           echo "Updating release notes for $TAG..."
 

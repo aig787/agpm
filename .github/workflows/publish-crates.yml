@@ -1,15 +1,11 @@
 name: Publish to crates.io
-run-name: "Publish to crates.io (${{ inputs.tag || github.ref_name }})"
+run-name: "Publish to crates.io (${{ fromJson(inputs.plan).announcement_tag || github.ref_name }})"
 
 on:
   workflow_call:
     inputs:
       plan:
         description: 'dist plan from the plan job'
-        required: true
-        type: string
-      tag:
-        description: 'Release tag'
         required: true
         type: string
 
@@ -20,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ fromJson(inputs.plan).announcement_tag }}
           persist-credentials: false
 
       - name: Install Rust
@@ -38,7 +34,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          echo "📦 Publishing to crates.io for tag ${{ inputs.tag }}..."
+          echo "📦 Publishing to crates.io for tag ${{ fromJson(inputs.plan).announcement_tag }}..."
           cargo publish --no-verify --token "$CARGO_REGISTRY_TOKEN" || {
             echo "⚠️ Failed to publish to crates.io. This might be expected for re-releases or if the version already exists."
             exit 0
