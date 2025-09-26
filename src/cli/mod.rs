@@ -29,6 +29,7 @@
 //! ## System Management
 //! - `cache` - Manage the global Git repository cache
 //! - `config` - Manage global configuration settings
+//! - `upgrade` - Upgrade CCPM to newer versions with backup support
 //!
 //! # Command Usage Patterns
 //!
@@ -61,6 +62,11 @@
 //!
 //! # Configure global settings
 //! ccpm config add-source private https://oauth2:TOKEN@github.com/org/private.git
+//!
+//! # Check for and install CCPM updates
+//! ccpm upgrade --check     # Check for updates
+//! ccpm upgrade             # Upgrade to latest
+//! ccpm upgrade --rollback  # Restore previous version
 //! ```
 //!
 //! # Global vs Project Configuration
@@ -114,6 +120,7 @@ mod list;
 mod remove;
 mod resource_ops;
 mod update;
+pub mod upgrade;
 pub mod validate;
 
 #[cfg(test)]
@@ -238,16 +245,16 @@ impl CliConfig {
 /// ccpm --config ./custom.toml validate
 ///
 /// # Global options work with any subcommand
-/// ccpm --verbose mcp list
+/// ccpm --verbose install
 /// ccpm --quiet cache clean
 /// ```
 ///
 /// # Subcommand Structure
 ///
 /// Commands are organized by functionality:
-/// - **Project management**: `install`, `update`, `add`
+/// - **Project management**: `install`, `update`, `add`, `remove`
 /// - **Information**: `list`, `validate`
-/// - **System**: `cache`, `mcp`
+/// - **System**: `cache`, `config`, `upgrade`
 ///
 /// # Integration Points
 ///
@@ -412,7 +419,7 @@ pub struct Cli {
 /// ## System Management
 /// - [`Cache`](Commands::Cache): Manage Git repository cache
 /// - [`Config`](Commands::Config): Manage global configuration
-/// - [`Mcp`](Commands::Mcp): Manage MCP server configurations
+/// - [`Upgrade`](Commands::Upgrade): Self-update CCPM to newer versions
 ///
 /// # Command Execution
 ///
@@ -438,7 +445,7 @@ pub struct Cli {
 ///
 /// # System management
 /// ccpm cache info              # Show cache information
-/// ccpm mcp list               # List MCP servers
+/// ccpm config show             # Show configuration
 /// ```
 #[derive(Subcommand)]
 enum Commands {
@@ -486,6 +493,15 @@ enum Commands {
     ///
     /// See [`update::UpdateCommand`] for detailed options and behavior.
     Update(update::UpdateCommand),
+
+    /// Upgrade CCPM to the latest version.
+    ///
+    /// Downloads and installs the latest version of CCPM from GitHub releases.
+    /// Supports checking for updates, upgrading to specific versions, and
+    /// rolling back to previous versions if needed.
+    ///
+    /// See [`upgrade::UpgradeArgs`] for detailed options and behavior.
+    Upgrade(upgrade::UpgradeArgs),
 
     /// List installed Claude Code resources.
     ///
@@ -669,6 +685,7 @@ impl Cli {
                 cmd.no_progress = cmd.no_progress || config.no_progress;
                 cmd.execute_with_manifest_path(self.manifest_path).await
             }
+            Commands::Upgrade(cmd) => upgrade::execute(cmd).await,
             Commands::List(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Validate(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Cache(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,

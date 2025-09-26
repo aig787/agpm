@@ -122,6 +122,7 @@
 //! # }
 //! ```
 
+use crate::upgrade::config::UpgradeConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -176,7 +177,7 @@ pub struct GlobalConfig {
     /// # Authentication URL Formats
     ///
     /// - `https://oauth2:token@github.com/owner/repo.git` - GitHub personal access token
-    /// - `https://gitlab-ci-token:token@gitlab.com/group/repo.git` - GitLab deploy token  
+    /// - `https://gitlab-ci-token:token@gitlab.com/group/repo.git` - GitLab deploy token
     /// - `git@github.com:owner/repo.git` - SSH authentication
     /// - `https://user:pass@server.com/repo.git` - Basic auth (not recommended)
     ///
@@ -187,6 +188,21 @@ pub struct GlobalConfig {
     /// - Authentication details should use tokens rather than passwords when possible
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub sources: HashMap<String, String>,
+
+    /// Upgrade configuration settings.
+    ///
+    /// Controls the behavior of the self-upgrade functionality including
+    /// update checks, backup preferences, and verification settings.
+    #[serde(default, skip_serializing_if = "is_default_upgrade_config")]
+    pub upgrade: UpgradeConfig,
+}
+
+fn is_default_upgrade_config(config: &UpgradeConfig) -> bool {
+    // Skip serializing if it's the default config
+    !config.check_on_startup
+        && config.check_interval == 86400
+        && config.auto_backup
+        && config.verify_checksum
 }
 
 impl GlobalConfig {
@@ -671,7 +687,10 @@ impl GlobalConfig {
             "https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-ccpm.git".to_string(),
         );
 
-        Self { sources }
+        Self {
+            sources,
+            upgrade: UpgradeConfig::default(),
+        }
     }
 }
 
