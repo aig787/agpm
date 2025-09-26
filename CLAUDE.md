@@ -80,6 +80,7 @@ src/
 
 - `install [--frozen] [--no-cache] [--max-parallel N]` - Install from ccpm.toml
 - `update [dep]` - Update dependencies
+- `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update CCPM
 - `list` - List installed resources
 - `validate [--check-lock] [--resolve]` - Validate manifest
 - `cache [clean|list]` - Manage cache
@@ -94,12 +95,14 @@ src/
 - Test on Windows, macOS, Linux
 - `cargo fmt && cargo clippy && cargo nextest run && cargo test --doc`
 - Handle paths cross-platform
+- **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
+- **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use `ignore` for examples that won't compile
 
 ## Dependencies
 
 Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber, indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell, dashmap (v6.1)
 
-Dev: assert_cmd, predicates, serial_test
+Dev: assert_cmd, predicates
 
 ## Testing
 
@@ -107,7 +110,7 @@ Dev: assert_cmd, predicates, serial_test
 - **Auto-installs tools**: Makefile uses cargo-binstall for faster tool installation
 - Run tests: `cargo nextest run` (integration/unit tests) + `cargo test --doc` (doctests)
 - **Doc tests timing**: Doc tests can take up to 10 minutes to complete due to 432+ tests
-- Parallel-safe tests (no WorkingDirGuard)
+- **All tests must be parallel-safe** - no serial_test usage
 - Never use `std::env::set_var` (causes races)
 - Each test gets own temp directory
 - Use `tokio::fs` in async tests
