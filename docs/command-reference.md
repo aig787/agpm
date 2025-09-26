@@ -8,10 +8,13 @@ This document provides detailed information about all CCPM commands and their op
 ccpm [OPTIONS] <COMMAND>
 
 Options:
-  -v, --verbose           Enable verbose output
-  -q, --quiet             Suppress non-error output
-  -h, --help              Print help information
-  -V, --version           Print version information
+  -v, --verbose              Enable verbose output
+  -q, --quiet                Suppress non-error output
+      --config <PATH>        Path to custom global configuration file
+      --manifest-path <PATH> Path to the manifest file (ccpm.toml)
+      --no-progress          Disable progress bars and spinners
+  -h, --help                 Print help information
+  -V, --version              Print version information
 ```
 
 ## Commands
@@ -336,6 +339,60 @@ ccpm config list-sources
 # Remove a source
 ccpm config remove-source old-private
 ```
+
+### `ccpm upgrade`
+
+Self-update CCPM to the latest version or a specific version. Includes automatic backup and rollback capabilities with built-in security features.
+
+```bash
+ccpm upgrade [OPTIONS] [VERSION]
+
+Arguments:
+  [VERSION]    Target version to upgrade to (e.g., "0.4.0" or "v0.4.0")
+
+Options:
+      --check       Check for updates without installing
+  -s, --status      Show current version and latest available
+  -f, --force       Force upgrade even if already on latest version
+      --rollback    Rollback to previous version from backup
+      --no-backup   Skip creating a backup before upgrade
+  -h, --help        Print help information
+```
+
+**Examples:**
+```bash
+# Upgrade to latest version
+ccpm upgrade
+
+# Check for available updates
+ccpm upgrade --check
+
+# Show current and latest version
+ccpm upgrade --status
+
+# Upgrade to specific version
+ccpm upgrade 0.4.0
+
+# Force reinstall latest version
+ccpm upgrade --force
+
+# Rollback to previous version
+ccpm upgrade --rollback
+
+# Upgrade without creating backup
+ccpm upgrade --no-backup
+```
+
+#### Security Features
+
+The upgrade command implements multiple security measures to ensure safe updates:
+
+- **Checksum Verification**: All downloads are automatically verified against checksums from GitHub releases
+- **GitHub Integration**: Only downloads binaries from official CCPM GitHub releases
+- **HTTPS Downloads**: Uses secure HTTPS connections for all network operations
+- **Atomic Operations**: Minimizes vulnerability windows during binary replacement
+- **Permission Preservation**: Maintains original file permissions and ownership
+- **Backup Protection**: Creates backups with appropriate permissions before any modifications
 
 ### `ccpm cache`
 

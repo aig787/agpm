@@ -150,6 +150,7 @@ pub mod mcp;
 // Supporting modules
 pub mod installer;
 pub mod models;
+pub mod upgrade;
 pub mod utils;
 pub mod version;
 

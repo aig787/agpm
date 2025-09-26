@@ -138,6 +138,7 @@ ccpm install --no-cache
 | `ccpm init`     | Initialize a new project                                     |
 | `ccpm install`  | Install dependencies from ccpm.toml with parallel processing |
 | `ccpm update`   | Update dependencies within version constraints               |
+| `ccpm upgrade`  | Self-update CCPM to the latest version                       |
 | `ccpm list`     | List installed resources                                     |
 | `ccpm validate` | Validate manifest and dependencies                           |
 | `ccpm add`      | Add sources or dependencies                                  |
