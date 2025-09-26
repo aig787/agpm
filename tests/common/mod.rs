@@ -315,6 +315,22 @@ impl TestSourceRepo {
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
+
+        // Verify the bare repository is ready by listing tags
+        // This ensures git has finished writing all references
+        let verify_output = Command::new("git")
+            .args(["tag", "-l"])
+            .current_dir(target_path)
+            .output()
+            .context("Failed to verify bare repository")?;
+
+        if !verify_output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Bare repository verification failed: {}",
+                String::from_utf8_lossy(&verify_output.stderr)
+            ));
+        }
+
         Ok(target_path.to_path_buf())
     }
 

@@ -381,7 +381,7 @@ pub fn remove_dir_all(path: &Path) -> Result<()> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::utils::fs::normalize_path;
 /// use std::path::{Path, PathBuf};
 ///

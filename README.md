@@ -101,6 +101,7 @@ See the [Command Reference](docs/command-reference.md#add-dependency) for all su
 | `ccpm init`     | Initialize a new project                                     |
 | `ccpm install`  | Install dependencies from ccpm.toml with parallel processing |
 | `ccpm update`   | Update dependencies within version constraints               |
+| `ccpm outdated` | Check for available updates to installed dependencies        |
 | `ccpm upgrade`  | Self-update CCPM to the latest version                       |
 | `ccpm list`     | List installed resources                                     |
 | `ccpm validate` | Validate manifest and dependencies                           |

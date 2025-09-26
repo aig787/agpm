@@ -88,6 +88,16 @@ CCPM uses semantic versioning constraints like Cargo:
 - `latest` - Latest stable tag
 - `*` - Any version
 
+### How do I check for available updates?
+```bash
+ccpm outdated            # Check all dependencies for updates
+ccpm outdated agent-name # Check specific dependency
+ccpm outdated --check    # Exit with error code if updates available (for CI)
+ccpm outdated --format json # JSON output for scripting
+```
+
+The `outdated` command shows current versions, latest available, and whether updates are compatible with your version constraints.
+
 ### How do I update dependencies?
 ```bash
 ccpm update              # Update all to latest compatible versions

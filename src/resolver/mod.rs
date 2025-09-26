@@ -253,6 +253,7 @@ pub mod version_resolver;
 
 use crate::cache::Cache;
 use crate::core::CcpmError;
+use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::source::SourceManager;
@@ -560,6 +561,44 @@ impl DependencyResolver {
             .context("Failed to sync sources")?;
 
         Ok(())
+    }
+
+    /// Get available versions (tags) for a repository.
+    ///
+    /// Lists all tags from a Git repository, which typically represent available versions.
+    /// This is useful for checking what versions are available for updates.
+    ///
+    /// # Arguments
+    ///
+    /// * `repo_path` - Path to the Git repository (typically in the cache directory)
+    ///
+    /// # Returns
+    ///
+    /// A vector of version strings (tag names) available in the repository.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run,ignore
+    /// use ccpm::resolver::DependencyResolver;
+    /// use ccpm::cache::Cache;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let cache = Cache::new()?;
+    /// let repo_path = cache.get_repo_path("community");
+    /// let resolver = DependencyResolver::new(manifest, cache, 10)?;
+    ///
+    /// let versions = resolver.get_available_versions(&repo_path).await?;
+    /// for version in versions {
+    ///     println!("Available: {}", version);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_available_versions(&self, repo_path: &Path) -> Result<Vec<String>> {
+        let repo = GitRepo::new(repo_path);
+        repo.list_tags()
+            .await
+            .with_context(|| format!("Failed to list tags from repository at {:?}", repo_path))
     }
 
     /// Creates worktrees for all resolved SHAs in parallel.

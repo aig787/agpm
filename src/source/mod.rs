@@ -421,7 +421,7 @@ impl Source {
 /// # Examples
 ///
 /// ## Basic Usage
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::source::{Source, SourceManager};
 /// use anyhow::Result;
 ///
@@ -444,7 +444,7 @@ impl Source {
 /// ```
 ///
 /// ## Loading from Manifest
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::source::SourceManager;
 /// use ccpm::manifest::Manifest;
 /// use std::path::Path;
@@ -508,7 +508,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -569,7 +569,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
@@ -624,7 +624,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
@@ -669,7 +669,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     /// use ccpm::manifest::Manifest;
     /// use std::path::{Path, PathBuf};
@@ -709,7 +709,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -755,7 +755,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -800,7 +800,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -830,7 +830,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -856,7 +856,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -883,7 +883,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -912,7 +912,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -995,7 +995,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ## Basic Synchronization
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1014,7 +1014,7 @@ impl SourceManager {
     /// ```
     ///
     /// ## Synchronization with Progress
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     /// use indicatif::ProgressBar;
     ///
@@ -1189,7 +1189,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ## Direct Repository Access
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1206,7 +1206,7 @@ impl SourceManager {
     /// ```
     ///
     /// ## Local Repository Access
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::SourceManager;
     /// use std::env;
     ///
@@ -1365,7 +1365,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1412,7 +1412,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1463,7 +1463,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1509,7 +1509,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -1570,7 +1570,7 @@ impl SourceManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {

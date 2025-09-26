@@ -108,6 +108,30 @@ ccpm add source community https://github.com/aig787/ccpm-community.git
 ccpm add dep agent community:agents/helper.md --name my-agent
 ```
 
+### Checking for Updates
+
+Before updating, check what updates are available:
+
+```bash
+# Check all dependencies for available updates
+ccpm outdated
+
+# Check specific dependencies
+ccpm outdated my-agent other-agent
+
+# Use in CI to fail if updates are available
+ccpm outdated --check
+
+# Get JSON output for automation
+ccpm outdated --format json
+```
+
+The `outdated` command shows:
+- Current version from your lockfile
+- Latest available version in the repository
+- Compatible updates within your version constraints
+- Major updates that would require constraint changes
+
 ### Updating Dependencies
 
 Update all dependencies within version constraints:
@@ -346,7 +370,8 @@ ccpm install --no-cache
 4. **Use --frozen in production**: `ccpm install --frozen`
 5. **Keep secrets in global config**, never in `ccpm.toml`
 6. **Document custom sources** with comments
-7. **Test updates locally** before committing
+7. **Check for outdated dependencies** regularly: `ccpm outdated`
+8. **Test updates locally** before committing
 
 ## Troubleshooting
 

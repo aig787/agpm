@@ -117,6 +117,90 @@ ccpm update --dry-run
 ccpm update --max-parallel 6
 ```
 
+### `ccpm outdated`
+
+Check for available updates to installed dependencies. Analyzes the lockfile against available versions in Git repositories to identify dependencies with newer versions available.
+
+```bash
+ccpm outdated [OPTIONS] [DEPENDENCIES]...
+
+Arguments:
+  [DEPENDENCIES]...    Check specific dependencies (default: check all)
+
+Options:
+      --format <FORMAT>       Output format: table, json (default: table)
+      --check                 Exit with error code 1 if updates are available
+      --no-fetch             Use cached repository data without fetching updates
+      --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
+      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --no-progress          Disable progress bars and spinners
+  -h, --help                  Print help information
+```
+
+**Examples:**
+```bash
+# Check all dependencies for updates
+ccpm outdated
+
+# Check specific dependencies
+ccpm outdated rust-expert my-agent
+
+# Use in CI - exit with error if outdated
+ccpm outdated --check
+
+# Use cached data without fetching
+ccpm outdated --no-fetch
+
+# JSON output for scripting
+ccpm outdated --format json
+
+# Control parallelism
+ccpm outdated --max-parallel 5
+```
+
+**Output Information:**
+
+The command displays:
+- **Current**: The version currently installed (from lockfile)
+- **Latest**: The newest version that satisfies the manifest's version constraint
+- **Available**: The absolute newest version available in the repository
+- **Type**: The resource type (agent, snippet, command, script, hook, mcp-server)
+
+**Version Analysis:**
+
+The outdated command performs sophisticated version comparison:
+1. **Compatible Updates**: Versions that satisfy the current version constraint in ccpm.toml
+2. **Major Updates**: Newer versions that exceed the constraint (require manual manifest update)
+3. **Up-to-date**: Dependencies already on the latest compatible version
+
+**JSON Output Format:**
+
+When using `--format json`, the output includes:
+```json
+{
+  "outdated": [
+    {
+      "name": "my-agent",
+      "type": "agent",
+      "source": "community",
+      "current": "v1.0.0",
+      "latest": "v1.2.0",
+      "latest_available": "v2.1.0",
+      "constraint": "^1.0.0",
+      "has_update": true,
+      "has_major_update": true
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "outdated": 2,
+    "with_updates": 1,
+    "with_major_updates": 1,
+    "up_to_date": 3
+  }
+}
+```
+
 ### `ccpm list`
 
 List installed resources from `ccpm.lock`.

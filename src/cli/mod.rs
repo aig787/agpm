@@ -22,8 +22,9 @@
 //! - `install` - Install dependencies from the manifest
 //! - `update` - Update dependencies within version constraints
 //!
-//! ## Information and Inspection  
+//! ## Information and Inspection
 //! - `list` - List installed resources from the lockfile
+//! - `outdated` - Check for available updates to dependencies
 //! - `validate` - Validate project configuration and dependencies
 //!
 //! ## System Management
@@ -51,6 +52,9 @@
 //!
 //! ## Maintenance Operations
 //! ```bash
+//! # Check for available updates
+//! ccpm outdated
+//!
 //! # Validate project configuration
 //! ccpm validate --resolve --sources
 //!
@@ -117,9 +121,18 @@ mod config;
 mod init;
 mod install;
 mod list;
+mod outdated;
 mod remove;
 mod resource_ops;
 mod update;
+/// Self-update functionality for upgrading CCPM to newer versions.
+///
+/// This module provides the `upgrade` command which enables CCPM to update itself
+/// by downloading and installing new versions from GitHub releases. It includes
+/// safety features like automatic backups and rollback capabilities.
+///
+/// The upgrade functionality is implemented as a separate public module to allow
+/// both CLI usage and programmatic access to the self-update features.
 pub mod upgrade;
 pub mod validate;
 
@@ -441,6 +454,7 @@ pub struct Cli {
 ///
 /// # Information and validation
 /// ccpm list                    # Show installed resources
+/// ccpm outdated                # Check for available updates
 /// ccpm validate --resolve      # Comprehensive validation
 ///
 /// # System management
@@ -493,6 +507,15 @@ enum Commands {
     ///
     /// See [`update::UpdateCommand`] for detailed options and behavior.
     Update(update::UpdateCommand),
+
+    /// Check for available updates to installed dependencies.
+    ///
+    /// Compares installed versions from the lockfile against available versions
+    /// in source repositories. Reports both compatible updates (within version
+    /// constraints) and major updates that exceed current constraints.
+    ///
+    /// See [`outdated::OutdatedCommand`] for detailed options and behavior.
+    Outdated(outdated::OutdatedCommand),
 
     /// Upgrade CCPM to the latest version.
     ///
@@ -682,6 +705,11 @@ impl Cli {
             }
             Commands::Update(mut cmd) => {
                 // Pass no_progress flag to update command
+                cmd.no_progress = cmd.no_progress || config.no_progress;
+                cmd.execute_with_manifest_path(self.manifest_path).await
+            }
+            Commands::Outdated(mut cmd) => {
+                // Pass no_progress flag to outdated command
                 cmd.no_progress = cmd.no_progress || config.no_progress;
                 cmd.execute_with_manifest_path(self.manifest_path).await
             }

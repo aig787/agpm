@@ -219,7 +219,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -285,7 +285,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
@@ -323,7 +323,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -360,7 +360,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
@@ -427,7 +427,7 @@ impl GlobalConfig {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfig;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -712,7 +712,7 @@ impl GlobalConfig {
 ///
 /// ## Basic Usage
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -730,7 +730,7 @@ impl GlobalConfig {
 ///
 /// ## Modifying Configuration
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -761,7 +761,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -813,7 +813,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -852,7 +852,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -891,7 +891,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -927,7 +927,7 @@ impl GlobalConfigManager {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {

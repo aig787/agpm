@@ -1251,7 +1251,7 @@ impl Manifest {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::manifest::Manifest;
     /// use std::path::Path;
     ///
@@ -1736,6 +1736,31 @@ impl Manifest {
             .or_else(|| self.commands.get(name))
     }
 
+    /// Find a dependency by name from any section (alias for get_dependency).
+    ///
+    /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
+    /// with the specified name, returning the first match found.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    ///
+    /// let mut manifest = Manifest::new();
+    /// manifest.add_dependency(
+    ///     "helper".to_string(),
+    ///     ResourceDependency::Simple("../helper.md".to_string()),
+    ///     true  // is_agent
+    /// );
+    ///
+    /// if let Some(dep) = manifest.find_dependency("helper") {
+    ///     println!("Found dependency: {}", dep.get_path());
+    /// }
+    /// ```
+    pub fn find_dependency(&self, name: &str) -> Option<&ResourceDependency> {
+        self.get_dependency(name)
+    }
+
     /// Add or update a source repository in the `[sources]` section.
     ///
     /// Sources map convenient names to Git repository URLs. These names can
@@ -2118,7 +2143,7 @@ impl ResourceDependency {
     /// If both `version` and `git` fields are present in a detailed dependency,
     /// the `git` field takes precedence:
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// let dep = ResourceDependency::Detailed(DetailedDependency {
@@ -2390,7 +2415,7 @@ fn expand_url(url: &str) -> Result<String> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::manifest::find_manifest;
 ///
 /// // Find manifest from current directory
@@ -2453,7 +2478,7 @@ pub fn find_manifest() -> Result<PathBuf> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::manifest::find_manifest_with_optional;
 /// use std::path::PathBuf;
 ///
@@ -2501,7 +2526,7 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::manifest::find_manifest_from;
 /// use std::path::PathBuf;
 ///

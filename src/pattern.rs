@@ -169,7 +169,7 @@ impl PatternMatcher {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
@@ -417,7 +417,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
@@ -475,7 +475,7 @@ impl PatternResolver {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///

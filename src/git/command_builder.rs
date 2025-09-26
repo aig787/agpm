@@ -775,15 +775,32 @@ impl GitCommand {
     /// ```
     pub fn clone_bare(url: &str, target: impl AsRef<Path>) -> Self {
         let mut cmd = Self::new();
-        cmd.args.extend(vec![
+        let mut args = vec![
             "clone".to_string(),
             "--bare".to_string(),
             "--progress".to_string(),
-            "--filter=blob:none".to_string(),
+        ];
+
+        // Only use partial clone for remote repositories
+        // Local repositories (file://, absolute paths, relative paths) need full clones
+        // to work properly with worktrees, especially when they're bare repositories
+        let is_local = url.starts_with("file://")
+            || url.starts_with("/")
+            || url.starts_with(".")
+            || url.starts_with("~")
+            || (url.len() > 1 && url.chars().nth(1) == Some(':')); // Windows paths like C:
+
+        if !is_local {
+            args.push("--filter=blob:none".to_string());
+        }
+
+        args.extend(vec![
             "--recurse-submodules".to_string(),
             url.to_string(),
             target.as_ref().display().to_string(),
         ]);
+
+        cmd.args.extend(args);
         cmd
     }
 

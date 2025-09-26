@@ -12,9 +12,9 @@
 //! ## Core Components
 //!
 //! - **[`SelfUpdater`]**: The main updater that handles GitHub release fetching and binary replacement
-//! - **[`BackupManager`]**: Creates and manages backups of the current binary before upgrades
+//! - **[`backup::BackupManager`]**: Creates and manages backups of the current binary before upgrades
 //! - **[`VersionChecker`]**: Provides version comparison and caching for update checks
-//! - **[`UpgradeConfig`]**: Configuration options for controlling upgrade behavior
+//! - **[`config::UpgradeConfig`]**: Configuration options for controlling upgrade behavior
 //!
 //! ## Update Process Flow
 //!
@@ -125,10 +125,31 @@
 //! - Includes comprehensive logging for debugging
 //! - Designed for minimal external dependencies
 
+/// Backup management for CCPM binary upgrades.
+///
+/// The backup module provides functionality to create, manage, and restore backups
+/// of the CCPM binary during upgrade operations. This ensures safe upgrades with
+/// the ability to rollback if issues occur.
 pub mod backup;
+/// Configuration structures for upgrade behavior.
+///
+/// Defines configuration options that control how CCPM handles self-updates,
+/// including backup settings, version checking preferences, and security options.
 pub mod config;
+/// Core self-update implementation.
+///
+/// Contains the main SelfUpdater struct that handles downloading and installing
+/// CCPM updates from GitHub releases with proper version management and safety checks.
 pub mod self_updater;
+/// Download verification and integrity checking.
+///
+/// Provides checksum verification and integrity validation for downloaded
+/// CCPM binaries to ensure secure and reliable upgrades.
 pub mod verification;
+/// Version checking and comparison utilities.
+///
+/// Handles checking for available CCPM updates, comparing versions, and
+/// maintaining update check caches to avoid unnecessary network requests.
 pub mod version_check;
 
 #[cfg(test)]

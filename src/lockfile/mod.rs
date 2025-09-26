@@ -327,7 +327,7 @@ use crate::utils::fs::atomic_write;
 ///
 /// Loading an existing lockfile:
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// # use std::path::Path;
 /// # use ccpm::lockfile::LockFile;
 /// # fn example() -> anyhow::Result<()> {
@@ -650,7 +650,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1305,7 +1305,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1374,7 +1374,7 @@ impl LockFile {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use std::path::Path;
     /// use ccpm::lockfile::LockFile;
     ///
@@ -1531,7 +1531,7 @@ impl Default for LockFile {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::lockfile::find_lockfile;
 ///
 /// if let Some(lockfile_path) = find_lockfile() {

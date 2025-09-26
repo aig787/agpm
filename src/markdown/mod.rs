@@ -375,7 +375,7 @@ pub struct MarkdownMetadata {
 ///
 /// ## Reading from File
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// # use ccpm::markdown::MarkdownDocument;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
@@ -542,7 +542,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
@@ -589,7 +589,7 @@ impl MarkdownDocument {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// # use ccpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
@@ -1179,7 +1179,7 @@ pub fn is_markdown_file(path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// # use ccpm::markdown::list_markdown_files;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {

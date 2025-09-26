@@ -273,7 +273,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::GitRepo;
 /// use std::path::Path;
 ///
@@ -317,7 +317,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     /// use std::path::Path;
     ///
@@ -456,7 +456,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     /// use std::env;
     ///
@@ -546,7 +546,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -666,7 +666,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -691,7 +691,7 @@ impl GitRepo {
     ///
     /// For semantic version ordering, consider using the `semver` crate:
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// # use anyhow::Result;
     /// use semver::Version;
     /// use ccpm::git::GitRepo;
@@ -776,7 +776,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -798,7 +798,7 @@ impl GitRepo {
     ///
     /// For processing the URL further, consider using [`parse_git_url`]:
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::{GitRepo, parse_git_url};
     ///
     /// # async fn parse_example() -> anyhow::Result<()> {
@@ -883,7 +883,7 @@ impl GitRepo {
     ///
     /// For error-based validation with detailed context, use [`ensure_valid_git_repo`]:
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::ensure_valid_git_repo;
     /// use std::path::Path;
     ///
@@ -933,7 +933,7 @@ impl GitRepo {
     ///
     /// The returned path can be used for various filesystem operations:
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # fn example() -> std::io::Result<()> {
@@ -1208,7 +1208,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1514,7 +1514,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1546,7 +1546,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1598,7 +1598,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1624,7 +1624,7 @@ impl GitRepo {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run,no_run
+    /// ```rust,no_run
     /// use ccpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1854,7 +1854,7 @@ impl GitRepo {
 ///
 /// For error-based validation with detailed context, use [`ensure_git_available()`]:
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1895,7 +1895,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1910,7 +1910,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// # Error Handling
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::ensure_git_available;
 /// use ccpm::core::CcpmError;
 ///
@@ -1929,7 +1929,7 @@ pub fn is_git_installed() -> bool {
 ///
 /// Typically called at the start of Git-dependent operations:
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::{ensure_git_available, GitRepo};
 /// use std::env;
 ///
@@ -2039,7 +2039,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 ///
 /// # Batch Processing Example
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::is_valid_git_repo;
 /// use std::fs;
 /// use std::path::Path;
@@ -2101,7 +2101,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Examples
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use std::path::Path;
 ///
@@ -2119,7 +2119,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// # Error Handling Pattern
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::ensure_valid_git_repo;
 /// use ccpm::core::CcpmError;
 /// use std::path::Path;
@@ -2141,7 +2141,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 ///
 /// This function provides validation before creating `GitRepo` instances:
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::{ensure_valid_git_repo, GitRepo};
 /// use std::path::Path;
 ///
@@ -2243,7 +2243,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 ///
 /// # Cache Integration Example
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::parse_git_url;
 /// use std::path::PathBuf;
 ///
@@ -2406,7 +2406,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Safe Logging Pattern
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use anyhow::Result;
 ///
@@ -2421,7 +2421,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 ///
 /// # Error Context Integration
 ///
-/// ```rust,no_run,no_run
+/// ```rust,no_run
 /// use ccpm::git::strip_auth_from_url;
 /// use ccpm::core::CcpmError;
 ///
