@@ -20,80 +20,23 @@ dependency management, similar to Cargo.
 
 ### Install CCPM
 
-#### Option 1: Quick Install (Recommended)
-
-**Unix/Linux/macOS:**
+**Using installer script (Recommended):**
 ```bash
+# Unix/Linux/macOS
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
-```
 
-**Windows (PowerShell):**
-```powershell
+# Windows PowerShell
 irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 | iex
 ```
 
-#### Option 2: Install via Cargo
-
+**Using Cargo:**
 ```bash
-# From crates.io (build from source)
-cargo install ccpm
-
-# From pre-built binaries (faster)
-cargo binstall ccpm
-
-# From Git repository (latest development version)
-cargo install --git https://github.com/aig787/ccpm.git
+cargo install ccpm                                    # From crates.io
+cargo binstall ccpm                                   # Pre-built binaries (faster)
+cargo install --git https://github.com/aig787/ccpm.git  # Latest development
 ```
 
-#### Option 3: Manual Download
-
-**macOS (Apple Silicon)**
-```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**macOS (Intel)**
-```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**Linux (x86_64)**
-```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Linux (ARM64/aarch64)**
-```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Windows (PowerShell)**
-```powershell
-# Download and extract to a user directory
-$installPath = "$env:USERPROFILE\.ccpm\bin"
-New-Item -ItemType Directory -Force -Path $installPath
-Invoke-WebRequest https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-pc-windows-msvc.zip -OutFile ccpm.zip
-Expand-Archive ccpm.zip -DestinationPath $installPath -Force
-Remove-Item ccpm.zip
-
-# Add to PATH for current session
-$env:PATH += ";$installPath"
-
-# Add to PATH permanently (user-level)
-[Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::User)
-```
+For more installation options, see the [Installation Guide](docs/installation.md).
 
 ### Create a Project
 
@@ -130,6 +73,26 @@ ccpm install --max-parallel 8
 # Bypass cache for fresh installation
 ccpm install --no-cache
 ```
+
+### Adding Dependencies
+
+```bash
+# Add a Git source repository
+ccpm add source community https://github.com/aig787/ccpm-community.git
+
+# Add dependencies from Git sources
+ccpm add dep agent community:agents/rust-expert.md@v1.0.0
+ccpm add dep snippet community:snippets/react.md --name react-utils
+
+# Add local file dependencies
+ccpm add dep agent ./local-agents/helper.md --name my-helper
+ccpm add dep script ../shared/scripts/build.sh
+
+# Add pattern dependencies (bulk installation)
+ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+```
+
+See the [Command Reference](docs/command-reference.md#add-dependency) for all supported dependency formats.
 
 ## Core Commands
 
@@ -272,7 +235,7 @@ MIT License - see [LICENSE.md](LICENSE.md) for details.
 
 - 🐛 [Issue Tracker](https://github.com/aig787/ccpm/issues)
 - 💬 [Discussions](https://github.com/aig787/ccpm/discussions)
-- 📖 [Documentation](docs/)
+- 📖 [Documentation](docs/user-guide.md)
 
 ---
 

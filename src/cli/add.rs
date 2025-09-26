@@ -245,30 +245,148 @@ async fn add_dependency_with_manifest_path(
 ///
 /// # Arguments
 ///
-/// * `spec` - The dependency specification string (e.g., "source:path@version")
+/// * `spec` - The dependency specification string (see format details below)
 /// * `custom_name` - Optional custom name for the dependency
 /// * `manifest` - Optional manifest context for source type detection
 ///
-/// # Enhanced Features
+/// # Dependency Specification Format
 ///
-/// - **Local path detection**: Recognizes absolute paths, relative paths, and file:// URLs
-/// - **Source type resolution**: Uses manifest context to determine if sources are local vs Git
-/// - **Version defaulting**: Adds "main" version for Git sources when not specified
-/// - **Cross-platform paths**: Handles Windows drive letters and UNC paths correctly
+/// The dependency spec string supports multiple formats to accommodate both
+/// Git-based and local file dependencies:
 ///
-/// # Supported Formats
+/// ## Remote Dependencies (Git repositories)
 ///
-/// - `source:path@version` - Git source with version
-/// - `source:path` - Git source (defaults to "main")
-/// - `/absolute/path` - Local absolute path
-/// - `./relative/path` - Local relative path
-/// - `file:///path` - Local file URL
-/// - `C:\windows\path` - Windows absolute path
+/// ### Format: `source:path@version`
+/// - `source`: Name of a Git source defined in the manifest's `[sources]` section
+/// - `path`: Path to the file within the repository (e.g., `agents/reviewer.md`)
+/// - `version`: Git ref (tag, branch, or commit SHA) - optional, defaults to "main"
+///
+/// #### Examples:
+/// ```text
+/// # With explicit version
+/// official:agents/reviewer.md@v1.0.0
+/// community:snippets/utils.md@feature-branch
+/// myrepo:commands/deploy.md@abc123f
+///
+/// # Without version (defaults to "main" for Git sources)
+/// official:agents/reviewer.md
+/// community:snippets/utils.md
+/// ```
+///
+/// ## Local Dependencies
+///
+/// ### Absolute paths
+/// ```text
+/// # Unix/Linux/macOS
+/// /home/user/resources/agent.md
+/// /usr/local/share/ccpm/snippets/helper.md
+///
+/// # Windows
+/// C:\Users\name\resources\agent.md
+/// \\server\share\resources\command.md
+/// ```
+///
+/// ### Relative paths
+/// ```text
+/// ./agents/local-agent.md
+/// ../shared-resources/snippet.md
+/// ../../company-resources/hooks/pre-commit.json
+/// ```
+///
+/// ### File URLs
+/// ```text
+/// file:///home/user/resources/agent.md
+/// file://C:/Users/name/resources/agent.md
+/// ```
+///
+/// ## Pattern Dependencies (Glob patterns)
+///
+/// Pattern dependencies use the same format as single files but with glob patterns
+/// in the path component:
+///
+/// ```text
+/// # All markdown files in agents directory
+/// community:agents/*.md@v1.0.0
+///
+/// # All review-related agents recursively
+/// official:agents/**/review*.md@v2.0.0
+///
+/// # All Python snippets
+/// community:snippets/python/*.md
+///
+/// # Local patterns
+/// ./agents/*.md
+/// ../resources/**/*.json
+/// ```
+///
+/// ## Automatic Name Derivation
+///
+/// If no custom name is provided via `--name`, the dependency name is automatically
+/// derived from the file path:
+///
+/// - `agents/reviewer.md` → name: "reviewer"
+/// - `snippets/python/utils.md` → name: "utils"
+/// - `/path/to/helper.md` → name: "helper"
+/// - `commands/deploy.sh` → name: "deploy"
+///
+/// For pattern dependencies, you should typically provide a custom name:
+/// ```bash
+/// ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+/// ```
+///
+/// ## Version Handling
+///
+/// - **Git sources**: If no version specified, defaults to "main"
+/// - **Local sources**: Version field is not applicable and will be `None`
+/// - **Version formats**: Tags (v1.0.0), branches (main, develop), commits (abc123f)
+///
+/// ## Source Detection
+///
+/// The function automatically detects whether a source refers to a Git repository
+/// or a local directory by examining the source URL in the manifest:
+///
+/// - Git sources: `https://`, `git://`, `git@`, etc.
+/// - Local sources: `/absolute/path`, `./relative/path`, `../relative/path`, `file://`
 ///
 /// # Returns
 ///
-/// A tuple of (dependency_name, ResourceDependency) where the dependency
-/// is properly configured based on source type and version requirements.
+/// A tuple of `(dependency_name, ResourceDependency)` where:
+/// - `dependency_name`: The resolved name for the dependency
+/// - `ResourceDependency`: Either `Simple` (for local paths) or `Detailed` (for Git sources)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The regex pattern for parsing fails to compile
+/// - The spec string is malformed
+///
+/// # Examples
+///
+/// ```ignore
+/// // Parse a remote dependency with version
+/// let (name, dep) = parse_dependency_spec(
+///     "official:agents/reviewer.md@v1.0.0",
+///     &None,
+///     None
+/// ).unwrap();
+/// assert_eq!(name, "reviewer");
+///
+/// // Parse a local file dependency
+/// let (name, dep) = parse_dependency_spec(
+///     "./local/agent.md",
+///     &Some("my-agent".to_string()),
+///     None
+/// ).unwrap();
+/// assert_eq!(name, "my-agent");
+///
+/// // Parse with manifest context for better source detection
+/// let manifest = Manifest::load(Path::new("ccpm.toml")).unwrap();
+/// let (name, dep) = parse_dependency_spec(
+///     "community:snippets/helper.md",
+///     &None,
+///     Some(&manifest)
+/// ).unwrap();
+/// ```
 fn parse_dependency_spec(
     spec: &str,
     custom_name: &Option<String>,

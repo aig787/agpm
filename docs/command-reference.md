@@ -196,39 +196,78 @@ Options:
 #### Add Dependency
 
 ```bash
-ccpm add dep <RESOURCE_TYPE> <SOURCE>:<PATH> [OPTIONS]
+ccpm add dep <RESOURCE_TYPE> <SPEC> [OPTIONS]
 
 Arguments:
   <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server
-  <SOURCE>:<PATH>  Source name and file path (e.g., community:agents/rust.md)
+  <SPEC>           Dependency specification (see formats below)
 
 Options:
       --name <NAME>           Dependency name (default: derived from path)
-      --version <VERSION>     Version constraint (default: latest)
-      --branch <BRANCH>       Git branch to track
-      --rev <COMMIT>          Specific commit hash
-      --target <PATH>         Custom installation path
+  -f, --force                 Force overwrite if dependency exists
       --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
   -h, --help                  Print help information
 ```
 
+**Dependency Specification Formats:**
+
+The `<SPEC>` argument supports multiple formats for different source types:
+
+1. **Git Repository Dependencies** - `source:path[@version]`
+   - `source`: Name of a Git source defined in `[sources]` section
+   - `path`: Path to file(s) within the repository
+   - `version`: Optional Git ref (tag/branch/commit), defaults to "main"
+
+2. **Local File Dependencies** - Direct file paths
+   - Absolute paths: `/home/user/agents/local.md`, `C:\Users\name\agent.md`
+   - Relative paths: `./agents/local.md`, `../shared/snippet.md`
+   - File URLs: `file:///home/user/script.sh`
+
+3. **Pattern Dependencies** - Using glob patterns
+   - `source:agents/*.md@v1.0.0` - All .md files in agents directory
+   - `source:snippets/**/*.md` - All .md files recursively
+   - `./local/**/*.json` - All JSON files from local directory
+
 **Examples:**
 ```bash
-# Add a source repository
+# Add a source repository first
 ccpm add source community https://github.com/aig787/ccpm-community.git
 
-# Add an agent dependency
-ccpm add dep agent community:agents/rust-expert.md --name rust-expert --version "v1.0.0"
+# Git repository dependencies
+ccpm add dep agent community:agents/rust-expert.md@v1.0.0
+ccpm add dep agent community:agents/rust-expert.md  # Uses "main" branch
+ccpm add dep snippet community:snippets/react.md@feature-branch
 
-# Add a snippet with custom name
-ccpm add dep snippet tools:snippets/react.md --name react-utils
+# Local file dependencies
+ccpm add dep agent ./local-agents/helper.md --name my-helper
+ccpm add dep script /usr/local/scripts/build.sh
+ccpm add dep hook ../shared/hooks/pre-commit.json
 
-# Add script tracking a branch
-ccpm add dep script local:scripts/build.sh --branch main
+# Pattern dependencies (bulk installation)
+ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+ccpm add dep snippet "community:snippets/**/*.md" --name all-snippets
+ccpm add dep script "./scripts/*.sh" --name local-scripts
 
-# Add hook with custom target
-ccpm add dep hook security:hooks/pre-commit.json --target custom/hooks/security.json
+# Windows paths
+ccpm add dep agent C:\Resources\agents\windows.md
+ccpm add dep script "file://C:/Users/name/scripts/build.ps1"
+
+# Custom names (recommended for patterns)
+ccpm add dep agent community:agents/reviewer.md --name code-reviewer
+ccpm add dep snippet "community:snippets/python/*.md" --name python-utils
+
+# Force overwrite existing dependency
+ccpm add dep agent community:agents/new-version.md --name existing-agent --force
 ```
+
+**Name Derivation:**
+
+If `--name` is not provided, the dependency name is automatically derived from the file path:
+- `agents/reviewer.md` → name: "reviewer"
+- `snippets/utils.md` → name: "utils"
+- `/path/to/helper.md` → name: "helper"
+
+For pattern dependencies, you should typically provide a custom name since multiple files will be installed.
 
 ### `ccpm remove`
 

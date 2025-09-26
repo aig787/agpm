@@ -28,25 +28,70 @@ cargo install --git https://github.com/aig787/ccpm.git
 cargo install ccpm --version 0.3.0
 ```
 
-### Pre-built Binaries
+### Installer Scripts (Recommended)
 
-CCPM provides automated releases with pre-built binaries for all major platforms:
+The easiest way to install CCPM is using the automated installer scripts:
 
+**Unix/Linux/macOS:**
 ```bash
-# macOS (Intel)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-macos.tar.gz | tar xz
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
+```
 
-# macOS (Apple Silicon)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-macos.tar.gz | tar xz
+**Windows (PowerShell):**
+```powershell
+irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 | iex
+```
 
-# Linux (x86_64)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-linux.tar.gz | tar xz
+### Manual Download
 
-# Linux (ARM64)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-linux.tar.gz | tar xz
+Download and install pre-built binaries directly from GitHub releases:
 
-# Windows (x86_64)
-# Download: https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-windows.zip
+#### macOS (Apple Silicon)
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### macOS (Intel)
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### Linux (x86_64)
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### Linux (ARM64/aarch64)
+```bash
+mkdir -p ~/.ccpm/bin
+curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
+echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### Windows (PowerShell)
+```powershell
+# Download and extract to a user directory
+$installPath = "$env:USERPROFILE\.ccpm\bin"
+New-Item -ItemType Directory -Force -Path $installPath
+Invoke-WebRequest https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-pc-windows-msvc.zip -OutFile ccpm.zip
+Expand-Archive ccpm.zip -DestinationPath $installPath -Force
+Remove-Item ccpm.zip
+
+# Add to PATH for current session
+$env:PATH += ";$installPath"
+
+# Add to PATH permanently (user-level)
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::User)
 ```
 
 ## Platform-Specific Installation

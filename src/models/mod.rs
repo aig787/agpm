@@ -12,17 +12,28 @@ use serde::{Deserialize, Serialize};
 pub struct DependencySpec {
     /// Dependency specification string
     ///
-    /// Specifies the dependency using one of the supported formats:
-    /// - `source:path@version` for remote dependencies with version
-    /// - `source:path` for remote dependencies with latest version
-    /// - `file:path` for explicit local file dependencies
-    /// - `path` for local file dependencies (if file exists)
+    /// Format: `source:path[@version]` for Git sources or `path` for local files
+    ///
+    /// Git dependency formats:
+    /// • `source:path@version` - Git source with specific version
+    /// • `source:path` - Git source (defaults to "main")
+    ///
+    /// Local dependency formats:
+    /// • `/absolute/path/file.md` - Absolute path
+    /// • `./relative/path/file.md` - Relative path
+    /// • `file:///path/to/file.md` - File URL
+    /// • `C:\Windows\path\file.md` - Windows path
+    ///
+    /// Pattern formats (using glob patterns):
+    /// • `source:agents/*.md@v1.0` - All .md files in agents/
+    /// • `source:agents/**/review*.md` - All review files recursively
+    /// • `./local/**/*.json` - All JSON files recursively
     ///
     /// Examples:
-    /// - `official:agents/reviewer.md@v1.0.0`
-    /// - `community:snippets/utils.md`
-    /// - `file:../local/agent.md`
-    /// - `./agents/local-agent.md`
+    /// • `official:agents/reviewer.md@v1.0.0`
+    /// • `community:snippets/utils.md`
+    /// • `./agents/local-agent.md`
+    /// • `../shared/resources/hook.json`
     #[arg(value_name = "SPEC")]
     pub spec: String,
 
