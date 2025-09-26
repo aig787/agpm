@@ -1,11 +1,15 @@
 name: Update Release Notes with Changelog
-run-name: "Update release notes for ${{ fromJson(inputs.plan).tag || github.ref_name }}"
+run-name: "Update release notes for ${{ inputs.tag || github.ref_name }}"
 
 on:
   workflow_call:
     inputs:
       plan:
         description: 'dist plan from the plan job'
+        required: true
+        type: string
+      tag:
+        description: 'Release tag'
         required: true
         type: string
 
@@ -18,31 +22,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ fromJson(inputs.plan).tag }}
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install git-cliff
-        run: |
-          cargo binstall --no-confirm git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
 
       - name: Generate changelog
         run: |
           # Generate changelog for this release using git-cliff
-          git-cliff --config cliff.toml --tag "${{ fromJson(inputs.plan).tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
-          echo "Generated changelog for ${{ fromJson(inputs.plan).tag }}:"
+          git-cliff --config cliff.toml --tag "${{ inputs.tag }}" --strip all --current > $RUNNER_TEMP/changelog.md
+          echo "Generated changelog for ${{ inputs.tag }}:"
           cat $RUNNER_TEMP/changelog.md
 
       - name: Update GitHub Release Notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: "${{ fromJson(inputs.plan).tag }}"
+          TAG: "${{ inputs.tag }}"
         run: |
           echo "Updating release notes for $TAG..."
 

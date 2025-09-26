@@ -47,12 +47,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
-      - name: Install git-cliff
-        run: |
-          cargo binstall --no-confirm git-cliff
+      - uses: Swatinem/rust-cache@v2
 
       - name: Configure Git
         run: |
