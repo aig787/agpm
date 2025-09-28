@@ -174,6 +174,29 @@ pub struct InstallCommand {
     #[arg(short, long)]
     quiet: bool,
 
+    /// Force installation even if lockfile is stale
+    ///
+    /// Bypasses lockfile staleness checks and continues with installation
+    /// even if the lockfile appears corrupted or out-of-sync with the manifest.
+    /// This can be useful for recovery from lockfile corruption, but may
+    /// result in unexpected dependency versions being installed.
+    ///
+    /// Use with caution - consider deleting ccpm.lock and running a clean
+    /// install instead.
+    #[arg(long)]
+    force: bool,
+
+    /// Regenerate lockfile from scratch
+    ///
+    /// Deletes the existing lockfile (if any) and performs a fresh resolution
+    /// of all dependencies. This is useful when the lockfile is corrupted or
+    /// when you want to update all dependencies to their latest compatible
+    /// versions within constraints.
+    ///
+    /// This is safer than --force as it performs proper dependency resolution.
+    #[arg(long)]
+    regenerate: bool,
+
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
@@ -205,6 +228,8 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         }
     }
@@ -231,6 +256,8 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: true,
+            force: false,
+            regenerate: false,
             no_progress: true,
         }
     }
@@ -330,6 +357,41 @@ impl InstallCommand {
         }
 
         let manifest = Manifest::load(&manifest_path)?;
+
+        // Handle lockfile regeneration
+        let lockfile_path = manifest_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("ccpm.lock");
+        if self.regenerate && lockfile_path.exists() {
+            if !self.quiet {
+                println!("🗑️  Removing existing lockfile for regeneration");
+            }
+            std::fs::remove_file(&lockfile_path).with_context(|| {
+                format!(
+                    "Failed to remove existing lockfile: {}",
+                    lockfile_path.display()
+                )
+            })?;
+        }
+
+        // Check for lockfile staleness unless --force, --regenerate, or --frozen is used (only if lockfile exists)
+        if !self.force && !self.regenerate && !self.frozen {
+            // Only check staleness if lockfile exists
+            if lockfile_path.exists() {
+                // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
+                let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+                let is_tty = atty::is(atty::Stream::Stdin);
+                let allow_prompt = !self.quiet && !is_ci && is_tty;
+
+                if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)?
+                {
+                    return Err(anyhow::anyhow!(
+                        "Installation cancelled due to stale lockfile"
+                    ));
+                }
+            }
+        }
         let total_deps = manifest.all_dependencies().len();
 
         // Initialize multi-phase progress for all progress tracking
@@ -621,6 +683,8 @@ mod tests {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         };
 
@@ -744,6 +808,8 @@ Body",
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         };
 

@@ -311,8 +311,20 @@ impl UpdateCommand {
             )
         })?;
 
-        // Load existing lockfile or perform fresh install if missing
+        // Check for lockfile staleness unless --force is used
         let lockfile_path = project_dir.join("ccpm.lock");
+        if !self.force && lockfile_path.exists() {
+            // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
+            let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+            let is_tty = atty::is(atty::Stream::Stdin);
+            let allow_prompt = !self.quiet && !is_ci && is_tty;
+
+            if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)? {
+                return Err(anyhow::anyhow!("Update cancelled due to stale lockfile"));
+            }
+        }
+
+        // Load existing lockfile or perform fresh install if missing
         let existing_lockfile = if lockfile_path.exists() {
             LockFile::load(&lockfile_path)?
         } else {
