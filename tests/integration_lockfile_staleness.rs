@@ -375,6 +375,9 @@ fn test_install_detects_duplicate_entries() -> Result<()> {
     source_repo.add_resource("agents", "test-agent", "# Test Agent")?;
     source_repo.commit_all("Add agent")?;
 
+    // Create and set main branch for the test repo
+    source_repo.git.create_branch("main")?;
+
     // Create manifest
     let manifest = format!(
         r#"[sources]
@@ -438,6 +441,9 @@ fn test_install_allows_branch_references() -> Result<()> {
     let source_repo = project.create_source_repo("test-source")?;
     source_repo.add_resource("agents", "test-agent", "# Test Agent v1")?;
     source_repo.commit_all("Initial commit")?;
+
+    // Create and set main branch for the test repo
+    source_repo.git.create_branch("main")?;
 
     // Get the bare URL for stable file:// serving
     let bare_url = source_repo.bare_file_url(project.sources_path())?;
