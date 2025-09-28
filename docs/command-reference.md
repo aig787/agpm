@@ -52,7 +52,8 @@ Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Uses cent
 ccpm install [OPTIONS]
 
 Options:
-  -f, --force                    Force re-download of sources even if cached
+  -f, --force                    Bypass lockfile staleness checks and force installation
+      --regenerate               Delete and regenerate the lockfile from scratch
       --no-lock                  Don't write lockfile after installation
       --frozen                   Use exact lockfile versions without updates
       --no-cache                 Bypass cache and fetch directly from sources
@@ -69,8 +70,11 @@ ccpm install
 # Use exact lockfile versions (CI/production)
 ccpm install --frozen
 
-# Force re-download from sources
+# Bypass lockfile staleness checks (useful when you know lockfile is safe)
 ccpm install --force
+
+# Regenerate lockfile from scratch (removes and recreates)
+ccpm install --regenerate
 
 # Install without creating lockfile
 ccpm install --no-lock
@@ -96,6 +100,7 @@ Arguments:
   [DEPENDENCY]    Update specific dependency (default: update all)
 
 Options:
+  -f, --force                 Bypass lockfile staleness checks and force update
       --dry-run               Preview changes without applying
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)

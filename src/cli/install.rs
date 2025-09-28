@@ -174,6 +174,29 @@ pub struct InstallCommand {
     #[arg(short, long)]
     quiet: bool,
 
+    /// Force installation even if lockfile is stale
+    ///
+    /// Bypasses lockfile staleness checks and continues with installation
+    /// even if the lockfile appears corrupted or out-of-sync with the manifest.
+    /// This can be useful for recovery from lockfile corruption, but may
+    /// result in unexpected dependency versions being installed.
+    ///
+    /// Use with caution - consider deleting ccpm.lock and running a clean
+    /// install instead.
+    #[arg(long)]
+    force: bool,
+
+    /// Regenerate lockfile from scratch
+    ///
+    /// Deletes the existing lockfile (if any) and performs a fresh resolution
+    /// of all dependencies. This is useful when the lockfile is corrupted or
+    /// when you want to update all dependencies to their latest compatible
+    /// versions within constraints.
+    ///
+    /// This is safer than --force as it performs proper dependency resolution.
+    #[arg(long)]
+    regenerate: bool,
+
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
@@ -205,6 +228,8 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         }
     }
@@ -231,6 +256,8 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: true,
+            force: false,
+            regenerate: false,
             no_progress: true,
         }
     }
@@ -330,6 +357,41 @@ impl InstallCommand {
         }
 
         let manifest = Manifest::load(&manifest_path)?;
+
+        // Handle lockfile regeneration
+        let lockfile_path = manifest_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("ccpm.lock");
+        if self.regenerate && lockfile_path.exists() {
+            if !self.quiet {
+                println!("🗑️  Removing existing lockfile for regeneration");
+            }
+            std::fs::remove_file(&lockfile_path).with_context(|| {
+                format!(
+                    "Failed to remove existing lockfile: {}",
+                    lockfile_path.display()
+                )
+            })?;
+        }
+
+        // Check for lockfile staleness unless --force, --regenerate, or --frozen is used (only if lockfile exists)
+        if !self.force && !self.regenerate && !self.frozen {
+            // Only check staleness if lockfile exists
+            if lockfile_path.exists() {
+                // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
+                let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
+                let is_tty = is_terminal::IsTerminal::is_terminal(&std::io::stdin());
+                let allow_prompt = !self.quiet && !is_ci && is_tty;
+
+                if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)?
+                {
+                    return Err(anyhow::anyhow!(
+                        "Installation cancelled due to stale lockfile"
+                    ));
+                }
+            }
+        }
         let total_deps = manifest.all_dependencies().len();
 
         // Initialize multi-phase progress for all progress tracking
@@ -425,6 +487,14 @@ impl InstallCommand {
 
             result
         };
+
+        // Check for tag movement if we have both old and new lockfiles
+        if !self.frozen && !self.regenerate && lockfile_path.exists() {
+            // Load the old lockfile for comparison
+            if let Ok(old_lockfile) = LockFile::load(&lockfile_path) {
+                detect_tag_movement(&old_lockfile, &lockfile, self.quiet);
+            }
+        }
 
         let total_resources = ResourceIterator::count_total_resources(&lockfile);
 
@@ -563,6 +633,124 @@ impl InstallCommand {
     }
 }
 
+/// Detects if any tags have moved between the old and new lockfiles.
+///
+/// Tags in Git are supposed to be immutable, so if a tag points to a different
+/// commit than before, this is potentially problematic and worth warning about.
+///
+/// Branches are expected to move, so we don't warn about those.
+fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: bool) {
+    use crate::core::ResourceType;
+
+    // Helper function to check if a version looks like a tag (not a branch or SHA)
+    fn is_tag_like(version: &str) -> bool {
+        // Skip if it looks like a SHA
+        if version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit()) {
+            return false;
+        }
+
+        // Skip if it's a known branch name
+        if matches!(
+            version,
+            "main" | "master" | "develop" | "dev" | "staging" | "production" | "HEAD"
+        ) || version.starts_with("release/")
+            || version.starts_with("feature/")
+            || version.starts_with("hotfix/")
+            || version.starts_with("bugfix/")
+        {
+            return false;
+        }
+
+        // Likely a tag if it starts with 'v' or looks like a version
+        version.starts_with('v')
+            || version.starts_with("release-")
+            || version.parse::<semver::Version>().is_ok()
+            || version.contains('.') // Likely a version number
+    }
+
+    // Helper to check resources of a specific type
+    fn check_resources(
+        old_resources: &[crate::lockfile::LockedResource],
+        new_resources: &[crate::lockfile::LockedResource],
+        resource_type: ResourceType,
+        quiet: bool,
+    ) {
+        for new_resource in new_resources {
+            // Skip if no version or resolved commit
+            let Some(ref new_version) = new_resource.version else {
+                continue;
+            };
+            let Some(ref new_commit) = new_resource.resolved_commit else {
+                continue;
+            };
+
+            // Skip if not a tag
+            if !is_tag_like(new_version) {
+                continue;
+            }
+
+            // Find the corresponding old resource
+            if let Some(old_resource) = old_resources.iter().find(|r| r.name == new_resource.name)
+                && let (Some(old_version), Some(old_commit)) =
+                    (&old_resource.version, &old_resource.resolved_commit)
+            {
+                // Check if the same tag now points to a different commit
+                if old_version == new_version && old_commit != new_commit && !quiet {
+                    eprintln!(
+                        "⚠️  Warning: Tag '{}' for {} '{}' has moved from {} to {}",
+                        new_version,
+                        resource_type,
+                        new_resource.name,
+                        &old_commit[..8.min(old_commit.len())],
+                        &new_commit[..8.min(new_commit.len())]
+                    );
+                    eprintln!(
+                        "   Tags should be immutable. This may indicate the upstream repository force-pushed the tag."
+                    );
+                }
+            }
+        }
+    }
+
+    // Check all resource types
+    check_resources(
+        &old_lockfile.agents,
+        &new_lockfile.agents,
+        ResourceType::Agent,
+        quiet,
+    );
+    check_resources(
+        &old_lockfile.snippets,
+        &new_lockfile.snippets,
+        ResourceType::Snippet,
+        quiet,
+    );
+    check_resources(
+        &old_lockfile.commands,
+        &new_lockfile.commands,
+        ResourceType::Command,
+        quiet,
+    );
+    check_resources(
+        &old_lockfile.scripts,
+        &new_lockfile.scripts,
+        ResourceType::Script,
+        quiet,
+    );
+    check_resources(
+        &old_lockfile.hooks,
+        &new_lockfile.hooks,
+        ResourceType::Hook,
+        quiet,
+    );
+    check_resources(
+        &old_lockfile.mcp_servers,
+        &new_lockfile.mcp_servers,
+        ResourceType::McpServer,
+        quiet,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,6 +809,8 @@ mod tests {
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         };
 
@@ -744,6 +934,8 @@ Body",
             no_cache: false,
             max_parallel: None,
             quiet: false,
+            force: false,
+            regenerate: false,
             no_progress: false,
         };
 

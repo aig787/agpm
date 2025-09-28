@@ -941,17 +941,75 @@ impl DependencyResolver {
                 // Pattern dependencies resolve to multiple resources
                 let entries = self.resolve_pattern_dependency(name, dep).await?;
 
-                // Add each resolved entry to the appropriate resource type
+                // Add each resolved entry to the appropriate resource type with deduplication
+                let resource_type = self.get_resource_type(name);
                 for entry in entries {
-                    let resource_type = self.get_resource_type(name);
                     match resource_type.as_str() {
-                        "agent" => lockfile.agents.push(entry),
-                        "snippet" => lockfile.snippets.push(entry),
-                        "command" => lockfile.commands.push(entry),
-                        "script" => lockfile.scripts.push(entry),
-                        "hook" => lockfile.hooks.push(entry),
-                        "mcp-server" => lockfile.mcp_servers.push(entry),
-                        _ => lockfile.snippets.push(entry), // Default fallback
+                        "agent" => {
+                            if let Some(existing) =
+                                lockfile.agents.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.agents.push(entry);
+                            }
+                        }
+                        "snippet" => {
+                            if let Some(existing) =
+                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.snippets.push(entry);
+                            }
+                        }
+                        "command" => {
+                            if let Some(existing) =
+                                lockfile.commands.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.commands.push(entry);
+                            }
+                        }
+                        "script" => {
+                            if let Some(existing) =
+                                lockfile.scripts.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.scripts.push(entry);
+                            }
+                        }
+                        "hook" => {
+                            if let Some(existing) =
+                                lockfile.hooks.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.hooks.push(entry);
+                            }
+                        }
+                        "mcp-server" => {
+                            if let Some(existing) = lockfile
+                                .mcp_servers
+                                .iter_mut()
+                                .find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.mcp_servers.push(entry);
+                            }
+                        }
+                        _ => {
+                            if let Some(existing) =
+                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.snippets.push(entry);
+                            }
+                        }
                     }
                 }
             } else {
@@ -1301,11 +1359,18 @@ impl DependencyResolver {
                 let filename = format!("{}.{}", resource_name, extension);
                 let installed_at = format!("{}/{}", target_dir, filename);
 
+                // Construct full relative path from base_path and matched_path
+                let full_relative_path = if base_path == Path::new(".") {
+                    matched_path.to_string_lossy().to_string()
+                } else {
+                    format!("{}/{}", base_path.display(), matched_path.display())
+                };
+
                 resources.push(LockedResource {
                     name: resource_name.clone(),
                     source: None,
                     url: None,
-                    path: matched_path.to_string_lossy().to_string(),
+                    path: full_relative_path,
                     version: None,
                     resolved_commit: None,
                     checksum: String::new(),
@@ -1583,10 +1648,89 @@ impl DependencyResolver {
                 continue;
             }
 
-            let entry = self.resolve_dependency(&name, &dep).await?;
+            // Check if this is a pattern dependency
+            if dep.is_pattern() {
+                // Pattern dependencies resolve to multiple resources
+                let entries = self.resolve_pattern_dependency(&name, &dep).await?;
 
-            // Use the helper method to add or update the entry
-            self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
+                // Add each resolved entry to the appropriate resource type with deduplication
+                let resource_type = self.get_resource_type(&name);
+                for entry in entries {
+                    match resource_type.as_str() {
+                        "agent" => {
+                            if let Some(existing) =
+                                lockfile.agents.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.agents.push(entry);
+                            }
+                        }
+                        "snippet" => {
+                            if let Some(existing) =
+                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.snippets.push(entry);
+                            }
+                        }
+                        "command" => {
+                            if let Some(existing) =
+                                lockfile.commands.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.commands.push(entry);
+                            }
+                        }
+                        "script" => {
+                            if let Some(existing) =
+                                lockfile.scripts.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.scripts.push(entry);
+                            }
+                        }
+                        "hook" => {
+                            if let Some(existing) =
+                                lockfile.hooks.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.hooks.push(entry);
+                            }
+                        }
+                        "mcp-server" => {
+                            if let Some(existing) = lockfile
+                                .mcp_servers
+                                .iter_mut()
+                                .find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.mcp_servers.push(entry);
+                            }
+                        }
+                        _ => {
+                            if let Some(existing) =
+                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.snippets.push(entry);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Regular single dependency
+                let entry = self.resolve_dependency(&name, &dep).await?;
+
+                // Use the helper method to add or update the entry
+                self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
+            }
         }
 
         // Progress bar completion is handled by the caller

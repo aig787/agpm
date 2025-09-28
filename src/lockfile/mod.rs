@@ -294,7 +294,195 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::manifest::ResourceDependency;
 use crate::utils::fs::atomic_write;
+
+/// Reasons why a lockfile might be considered stale.
+///
+/// This enum describes various conditions that indicate a lockfile is
+/// out-of-sync with the manifest and needs to be regenerated to prevent
+/// installation errors or inconsistencies.
+///
+/// # Display Format
+///
+/// Each variant implements `Display` to provide user-friendly error messages
+/// that explain the problem and suggest solutions.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use ccpm::lockfile::StalenessReason;
+/// use ccpm::core::ResourceType;
+///
+/// let reason = StalenessReason::MissingDependency {
+///     name: "my-agent".to_string(),
+///     resource_type: ResourceType::Agent,
+/// };
+///
+/// println!("{}", reason);
+/// // Output: "Dependency 'my-agent' (agent) is in manifest but missing from lockfile"
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum StalenessReason {
+    /// A dependency exists in the manifest but not in the lockfile.
+    MissingDependency {
+        /// Name of the missing dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+    },
+
+    /// A dependency exists in the lockfile but not in the manifest.
+    RemovedDependency {
+        /// Name of the removed dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+    },
+
+    /// A dependency has a different version constraint in the manifest.
+    VersionChanged {
+        /// Name of the dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+        /// Previous version constraint from lockfile
+        old_version: String,
+        /// New version constraint from manifest
+        new_version: String,
+    },
+
+    /// A dependency has a different source path in the manifest.
+    PathChanged {
+        /// Name of the dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+        /// Previous path from lockfile
+        old_path: String,
+        /// New path from manifest
+        new_path: String,
+    },
+
+    /// A dependency references a different source repository in the manifest.
+    SourceChanged {
+        /// Name of the dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+        /// Previous source name from lockfile
+        old_source: String,
+        /// New source name from manifest
+        new_source: String,
+    },
+
+    /// A source repository has a different URL in the manifest.
+    SourceUrlChanged {
+        /// Name of the source repository
+        name: String,
+        /// Previous URL from lockfile
+        old_url: String,
+        /// New URL from manifest
+        new_url: String,
+    },
+
+    /// Multiple entries exist for the same dependency (lockfile corruption).
+    DuplicateEntries {
+        /// Name of the duplicated dependency
+        name: String,
+        /// Type of resource (agent, snippet, etc.)
+        resource_type: crate::core::ResourceType,
+        /// Number of duplicate entries found
+        count: usize,
+    },
+}
+
+impl std::fmt::Display for StalenessReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StalenessReason::MissingDependency {
+                name,
+                resource_type,
+            } => {
+                write!(
+                    f,
+                    "Dependency '{}' ({}) is in manifest but missing from lockfile",
+                    name, resource_type
+                )
+            }
+            StalenessReason::RemovedDependency {
+                name,
+                resource_type,
+            } => {
+                write!(
+                    f,
+                    "Dependency '{}' ({}) is in lockfile but removed from manifest",
+                    name, resource_type
+                )
+            }
+            StalenessReason::VersionChanged {
+                name,
+                resource_type,
+                old_version,
+                new_version,
+            } => {
+                write!(
+                    f,
+                    "Dependency '{}' ({}) version changed from '{}' to '{}'",
+                    name, resource_type, old_version, new_version
+                )
+            }
+            StalenessReason::PathChanged {
+                name,
+                resource_type,
+                old_path,
+                new_path,
+            } => {
+                write!(
+                    f,
+                    "Dependency '{}' ({}) path changed from '{}' to '{}'",
+                    name, resource_type, old_path, new_path
+                )
+            }
+            StalenessReason::SourceChanged {
+                name,
+                resource_type,
+                old_source,
+                new_source,
+            } => {
+                write!(
+                    f,
+                    "Dependency '{}' ({}) source changed from '{}' to '{}'",
+                    name, resource_type, old_source, new_source
+                )
+            }
+            StalenessReason::SourceUrlChanged {
+                name,
+                old_url,
+                new_url,
+            } => {
+                write!(
+                    f,
+                    "Source '{}' URL changed from '{}' to '{}'",
+                    name, old_url, new_url
+                )
+            }
+            StalenessReason::DuplicateEntries {
+                name,
+                resource_type,
+                count,
+            } => {
+                write!(
+                    f,
+                    "Found {} duplicate entries for dependency '{}' ({})",
+                    count, name, resource_type
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for StalenessReason {}
 
 /// The main lockfile structure representing a complete `ccpm.lock` file.
 ///
@@ -1414,6 +1602,313 @@ impl LockFile {
         Ok(actual == expected)
     }
 
+    /// Validate the lockfile against a manifest to detect staleness.
+    ///
+    /// Checks if the lockfile is consistent with the current manifest and detects
+    /// common staleness indicators that require lockfile regeneration. This prevents
+    /// installation issues caused by stale or corrupted lockfiles.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest` - The current project manifest to validate against
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(None)` - Lockfile is valid and up-to-date
+    /// * `Ok(Some(StalenessReason))` - Lockfile is stale and needs regeneration
+    /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use std::path::Path;
+    /// # use ccpm::lockfile::LockFile;
+    /// # use ccpm::manifest::Manifest;
+    /// # fn example() -> anyhow::Result<()> {
+    /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    ///
+    /// match lockfile.validate_against_manifest(&manifest)? {
+    ///     None => println!("Lockfile is up-to-date"),
+    ///     Some(reason) => {
+    ///         println!("Lockfile is stale: {}", reason);
+    ///         println!("Run 'ccpm install' to regenerate it");
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Staleness Detection
+    ///
+    /// The method checks for several staleness indicators:
+    /// - **Missing dependencies**: Manifest has deps not in lockfile
+    /// - **Removed dependencies**: Lockfile has deps not in manifest
+    /// - **Version changes**: Same dependency with different version constraint
+    /// - **Path changes**: Same dependency with different source path
+    /// - **Source changes**: Same dependency from different source repository
+    /// - **Duplicate entries**: Multiple entries for the same dependency
+    /// - **Source mismatches**: Source URLs changed in manifest
+    pub fn validate_against_manifest(
+        &self,
+        manifest: &crate::manifest::Manifest,
+    ) -> Result<Option<StalenessReason>> {
+        // Check for duplicate entries within the lockfile
+        if let Some(reason) = self.detect_duplicate_entries()? {
+            return Ok(Some(reason));
+        }
+
+        // Check each resource type individually to avoid HashMap key issues
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.agents,
+            &self.agents,
+            crate::core::ResourceType::Agent,
+        )? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.snippets,
+            &self.snippets,
+            crate::core::ResourceType::Snippet,
+        )? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.commands,
+            &self.commands,
+            crate::core::ResourceType::Command,
+        )? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.scripts,
+            &self.scripts,
+            crate::core::ResourceType::Script,
+        )? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.hooks,
+            &self.hooks,
+            crate::core::ResourceType::Hook,
+        )? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.check_resource_type_staleness(
+            &manifest.mcp_servers,
+            &self.mcp_servers,
+            crate::core::ResourceType::McpServer,
+        )? {
+            return Ok(Some(reason));
+        }
+
+        // Check source URL changes
+        for (source_name, manifest_url) in &manifest.sources {
+            if let Some(locked_source) = self.get_source(source_name)
+                && &locked_source.url != manifest_url
+            {
+                return Ok(Some(StalenessReason::SourceUrlChanged {
+                    name: source_name.clone(),
+                    old_url: locked_source.url.clone(),
+                    new_url: manifest_url.clone(),
+                }));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Check staleness for a specific resource type.
+    fn check_resource_type_staleness(
+        &self,
+        manifest_resources: &std::collections::HashMap<String, ResourceDependency>,
+        lockfile_resources: &[LockedResource],
+        resource_type: crate::core::ResourceType,
+    ) -> Result<Option<StalenessReason>> {
+        // Check for missing dependencies (in manifest but not lockfile)
+        for (name, dep) in manifest_resources {
+            // Check if this is a pattern dependency
+            if self.is_pattern_dependency(dep) {
+                // For pattern dependencies, verify that lockfile contains matching expanded entries
+                let has_pattern_matches = lockfile_resources
+                    .iter()
+                    .any(|locked| self.could_be_from_pattern_expansion(locked, dep));
+
+                if !has_pattern_matches {
+                    return Ok(Some(StalenessReason::MissingDependency {
+                        name: name.clone(),
+                        resource_type,
+                    }));
+                }
+                // Skip individual name matching and version checking for patterns
+                continue;
+            }
+
+            if !lockfile_resources.iter().any(|r| &r.name == name) {
+                return Ok(Some(StalenessReason::MissingDependency {
+                    name: name.clone(),
+                    resource_type,
+                }));
+            }
+
+            // Check for version/path changes
+            if let Some(locked) = lockfile_resources.iter().find(|r| &r.name == name)
+                && let Some(reason) = self.check_dependency_changes(locked, dep, resource_type)?
+            {
+                return Ok(Some(reason));
+            }
+        }
+
+        // Check for removed dependencies (in lockfile but not manifest)
+        for locked in lockfile_resources {
+            if !manifest_resources.contains_key(&locked.name) {
+                // Check if this lockfile entry might be from a pattern expansion
+                // If any manifest dependency is a pattern with matching source/version,
+                // don't flag this as removed
+                let is_pattern_match = manifest_resources.values().any(|dep| {
+                    self.is_pattern_dependency(dep)
+                        && self.could_be_from_pattern_expansion(locked, dep)
+                });
+
+                if !is_pattern_match {
+                    return Ok(Some(StalenessReason::RemovedDependency {
+                        name: locked.name.clone(),
+                        resource_type,
+                    }));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Detect duplicate entries within the lockfile itself.
+    ///
+    /// Scans all resource arrays for duplicate entries with the same name,
+    /// which indicates lockfile corruption or staleness from previous versions.
+    fn detect_duplicate_entries(&self) -> Result<Option<StalenessReason>> {
+        use std::collections::HashMap;
+
+        // Check each resource type for duplicates
+        for resource_type in crate::core::ResourceType::all() {
+            let resources = self.get_resources(*resource_type);
+            let mut seen_names = HashMap::new();
+
+            for resource in resources {
+                if let Some(_first_index) = seen_names.get(&resource.name) {
+                    return Ok(Some(StalenessReason::DuplicateEntries {
+                        name: resource.name.clone(),
+                        resource_type: *resource_type,
+                        count: resources.iter().filter(|r| r.name == resource.name).count(),
+                    }));
+                }
+                seen_names.insert(&resource.name, 0);
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Check if a dependency uses a glob pattern.
+    /// Pattern dependencies contain glob characters: *, ?, [, or {
+    fn is_pattern_dependency(&self, dep: &ResourceDependency) -> bool {
+        let path = dep.get_path();
+        path.contains('*') || path.contains('?') || path.contains('[') || path.contains('{')
+    }
+
+    /// Check if a locked resource could be from a pattern expansion.
+    /// This checks if the source and version match a pattern dependency.
+    fn could_be_from_pattern_expansion(
+        &self,
+        locked: &LockedResource,
+        pattern_dep: &ResourceDependency,
+    ) -> bool {
+        // Check if source matches
+        let pattern_source = pattern_dep.get_source().map(|s| s.to_string());
+        if locked.source != pattern_source {
+            return false;
+        }
+
+        // Check if version matches
+        let pattern_version = pattern_dep.get_version().map(|v| v.to_string());
+        if locked.version != pattern_version {
+            return false;
+        }
+
+        // If both source and version match, this could be from the pattern expansion
+        true
+    }
+
+    /// Check if a locked resource has changes compared to manifest dependency.
+    fn check_dependency_changes(
+        &self,
+        locked: &LockedResource,
+        manifest_dep: &ResourceDependency,
+        resource_type: crate::core::ResourceType,
+    ) -> Result<Option<StalenessReason>> {
+        // Check version constraint changes
+        if let (Some(locked_version), Some(manifest_version)) =
+            (&locked.version, manifest_dep.get_version())
+        {
+            // Check for explicit version changes
+            if locked_version != manifest_version {
+                return Ok(Some(StalenessReason::VersionChanged {
+                    name: locked.name.clone(),
+                    resource_type,
+                    old_version: locked_version.clone(),
+                    new_version: manifest_version.to_string(),
+                }));
+            }
+
+            // Note: Tag movement detection would require fetching from the repository
+            // to check if the tag now points to a different commit. Without fetching,
+            // we can't know if a tag has been moved (which would be problematic since
+            // tags should be immutable). This could be implemented in the future with
+            // a --check-updates flag that does a fetch first.
+            //
+            // Branch movement is expected behavior, so we don't check for it.
+        }
+
+        // Check path changes (for remote dependencies)
+        if let (Some(locked_source), Some(manifest_source)) =
+            (&locked.source, manifest_dep.get_source())
+        {
+            if locked.path != manifest_dep.get_path() {
+                return Ok(Some(StalenessReason::PathChanged {
+                    name: locked.name.clone(),
+                    resource_type,
+                    old_path: locked.path.clone(),
+                    new_path: manifest_dep.get_path().to_string(),
+                }));
+            }
+
+            // Check source changes
+            if locked_source != manifest_source {
+                return Ok(Some(StalenessReason::SourceChanged {
+                    name: locked.name.clone(),
+                    resource_type,
+                    old_source: locked_source.clone(),
+                    new_source: manifest_source.to_string(),
+                }));
+            }
+        }
+
+        // Check local path changes
+        if locked.source.is_none()
+            && manifest_dep.get_source().is_none()
+            && locked.path != manifest_dep.get_path()
+        {
+            return Ok(Some(StalenessReason::PathChanged {
+                name: locked.name.clone(),
+                resource_type,
+                old_path: locked.path.clone(),
+                new_path: manifest_dep.get_path().to_string(),
+            }));
+        }
+
+        Ok(None)
+    }
+
     /// Update the checksum for a specific resource in the lockfile.
     ///
     /// This method finds a resource by name across all resource types and updates
@@ -1506,6 +2001,142 @@ impl Default for LockFile {
     /// It creates a fresh lockfile with no sources or resources.
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Check if the lockfile is stale and prompt for regeneration.
+///
+/// This function performs comprehensive staleness detection and provides
+/// user-friendly error messages with clear action steps. It's designed to
+/// be called at the start of install/update operations to prevent issues
+/// from corrupted or outdated lockfiles.
+///
+/// # Arguments
+///
+/// * `lockfile_path` - Path to the lockfile to validate
+/// * `manifest_path` - Path to the manifest to validate against
+/// * `allow_prompt` - Whether to show interactive prompts (false for CI/scripts)
+///
+/// # Returns
+///
+/// * `Ok(true)` - Lockfile is valid or user chose to continue
+/// * `Ok(false)` - Lockfile is stale and user chose to abort
+/// * `Err(anyhow::Error)` - IO error or validation failed
+///
+/// # Behavior
+///
+/// 1. Load both lockfile and manifest
+/// 2. Validate lockfile against manifest
+/// 3. If stale, show detailed error message
+/// 4. If `allow_prompt`, ask user whether to regenerate
+/// 5. Return decision for caller to handle
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::path::Path;
+/// use ccpm::lockfile::check_staleness;
+///
+/// # fn example() -> anyhow::Result<()> {
+/// match check_staleness(
+///     Path::new("ccpm.lock"),
+///     Path::new("ccpm.toml"),
+///     true  // allow prompts
+/// )? {
+///     true => println!("Proceeding with operation"),
+///     false => {
+///         println!("Operation cancelled by user");
+///         std::process::exit(1);
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Error Messages
+///
+/// The function provides detailed, actionable error messages:
+///
+/// ```text
+/// Error: Lockfile is stale and needs regeneration
+///
+/// Reason: Found 127 duplicate entries for dependency 'utils' (command)
+///
+/// This usually happens when:
+/// - Lockfile was corrupted during a previous operation
+/// - Multiple ccpm processes ran simultaneously
+/// - Pattern dependencies resolved incorrectly
+///
+/// To fix this issue:
+/// - Delete ccpm.lock and run 'ccpm install' to regenerate
+/// - Or run 'ccpm install --regenerate' to regenerate automatically
+///
+/// Continue anyway? (y/N):
+/// ```
+pub fn check_staleness(
+    lockfile_path: &Path,
+    manifest_path: &Path,
+    allow_prompt: bool,
+) -> Result<bool> {
+    // Load lockfile (returns empty if doesn't exist, which is fine)
+    let lockfile = LockFile::load(lockfile_path)?;
+
+    // Load manifest
+    let manifest = crate::manifest::Manifest::load(manifest_path)?;
+
+    // Check for staleness
+    match lockfile.validate_against_manifest(&manifest)? {
+        None => Ok(true), // Lockfile is valid
+        Some(reason) => {
+            // Show detailed error message
+            eprintln!("Error: Lockfile is stale and needs regeneration\n");
+            eprintln!("Reason: {}\n", reason);
+
+            eprintln!("This usually happens when:");
+            match &reason {
+                StalenessReason::DuplicateEntries { .. } => {
+                    eprintln!("- Lockfile was corrupted during a previous operation");
+                    eprintln!("- Multiple ccpm processes ran simultaneously");
+                    eprintln!("- Pattern dependencies resolved incorrectly");
+                }
+                StalenessReason::MissingDependency { .. }
+                | StalenessReason::RemovedDependency { .. } => {
+                    eprintln!("- Dependencies were added or removed from ccpm.toml");
+                    eprintln!("- Lockfile is from an older version of the manifest");
+                }
+                StalenessReason::VersionChanged { .. }
+                | StalenessReason::PathChanged { .. }
+                | StalenessReason::SourceChanged { .. } => {
+                    eprintln!("- Dependency constraints were modified in ccpm.toml");
+                    eprintln!("- Resource paths or sources were changed");
+                }
+                StalenessReason::SourceUrlChanged { .. } => {
+                    eprintln!("- Source repository URLs were updated in ccpm.toml");
+                    eprintln!("- Repository was moved or renamed");
+                }
+            }
+
+            eprintln!("\nTo fix this issue:");
+            eprintln!("- Delete ccpm.lock and run 'ccpm install' to regenerate");
+            eprintln!("- Or run 'ccpm install --regenerate' to regenerate automatically");
+            eprintln!("- Or run 'ccpm install --force' to ignore this check");
+
+            if allow_prompt {
+                eprint!("\nContinue anyway? (y/N): ");
+                use std::io::{self, Write};
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                let input = input.trim().to_lowercase();
+
+                Ok(input == "y" || input == "yes")
+            } else {
+                eprintln!("\nOperation cancelled due to stale lockfile.");
+                eprintln!("Run with --force to bypass this check, or regenerate the lockfile.");
+                Ok(false)
+            }
+        }
     }
 }
 
@@ -1641,6 +2272,92 @@ mod tests {
             "sha256:abcdef"
         );
     }
+
+    #[test]
+    fn test_staleness_reason_display() {
+        use crate::core::ResourceType;
+
+        // Test MissingDependency
+        let reason = StalenessReason::MissingDependency {
+            name: "my-agent".to_string(),
+            resource_type: ResourceType::Agent,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-agent' (agent) is in manifest but missing from lockfile"
+        );
+
+        // Test RemovedDependency
+        let reason = StalenessReason::RemovedDependency {
+            name: "old-snippet".to_string(),
+            resource_type: ResourceType::Snippet,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'old-snippet' (snippet) is in lockfile but removed from manifest"
+        );
+
+        // Test VersionChanged
+        let reason = StalenessReason::VersionChanged {
+            name: "my-command".to_string(),
+            resource_type: ResourceType::Command,
+            old_version: "v1.0.0".to_string(),
+            new_version: "v2.0.0".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-command' (command) version changed from 'v1.0.0' to 'v2.0.0'"
+        );
+
+        // Test PathChanged
+        let reason = StalenessReason::PathChanged {
+            name: "my-script".to_string(),
+            resource_type: ResourceType::Script,
+            old_path: "scripts/old.sh".to_string(),
+            new_path: "scripts/new.sh".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-script' (script) path changed from 'scripts/old.sh' to 'scripts/new.sh'"
+        );
+
+        // Test SourceChanged
+        let reason = StalenessReason::SourceChanged {
+            name: "my-hook".to_string(),
+            resource_type: ResourceType::Hook,
+            old_source: "community".to_string(),
+            new_source: "official".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-hook' (hook) source changed from 'community' to 'official'"
+        );
+
+        // Test SourceUrlChanged
+        let reason = StalenessReason::SourceUrlChanged {
+            name: "community".to_string(),
+            old_url: "https://github.com/old/repo.git".to_string(),
+            new_url: "https://github.com/new/repo.git".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Source 'community' URL changed from 'https://github.com/old/repo.git' to 'https://github.com/new/repo.git'"
+        );
+
+        // Test DuplicateEntries
+        let reason = StalenessReason::DuplicateEntries {
+            name: "dup-agent".to_string(),
+            resource_type: ResourceType::Agent,
+            count: 3,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Found 3 duplicate entries for dependency 'dup-agent' (agent)"
+        );
+    }
+
+    // Note: Complex staleness checking integration tests are in tests/integration_lockfile_staleness.rs
+    // These unit tests focus on the display formatting of StalenessReason variants
 
     #[test]
     fn test_lockfile_empty_file() {

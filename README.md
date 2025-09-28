@@ -8,9 +8,10 @@ dependency management, similar to Cargo.
 
 ## Features
 
-- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo/npm
+- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo/npm with staleness detection
 - 🌐 **Git-based distribution** - Install from any Git repository (GitHub, GitLab, Bitbucket)
 - 🚀 **No central registry** - Fully decentralized approach
+- 🔒 **Lockfile staleness detection** - Automatic detection of outdated or inconsistent lockfiles
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
@@ -66,6 +67,12 @@ ccpm install
 
 # Use exact lockfile versions (for CI/CD)
 ccpm install --frozen
+
+# Force installation when lockfile is stale
+ccpm install --force
+
+# Regenerate lockfile from scratch
+ccpm install --regenerate
 
 # Control parallelism (default: max(10, 2 × CPU cores))
 ccpm install --max-parallel 8

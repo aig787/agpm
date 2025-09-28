@@ -225,6 +225,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
         .current_dir(&project_dir)
         .env("CCPM_CACHE_DIR", cache_dir.display().to_string())
         .arg("install")
+        .arg("--regenerate")
         .assert()
         .success();
 

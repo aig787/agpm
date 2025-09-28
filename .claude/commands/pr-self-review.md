@@ -29,6 +29,11 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    First, analyze the arguments provided: $ARGUMENTS
 
    **Determine the review target**:
+   - Check if arguments contain the DIFF keyword (for staged but uncommitted changes):
+     * DIFF represents the current staged changes (as shown by `git diff --cached`)
+     * For ranges like `HEAD..DIFF`: Compare HEAD to staged changes using `git diff --cached HEAD --stat`
+     * For ranges like `HEAD~2..DIFF`: Compare HEAD~2 to staged changes using `git diff --cached HEAD~2 --stat`
+     * Use `git diff --cached --name-status` to list staged files
    - Check if arguments start with a commit range (pattern: `<ref>..<ref>` like `abc123..def456` or `main..HEAD`):
      * If yes: Use `git log --oneline <range>` and `git diff --stat <range>` to see the changes
      * Use `git diff --name-status <range>` to list changed files
@@ -149,3 +154,6 @@ Examples of usage:
 - `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456
 - `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main
 - `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range
+- `/pr-review HEAD..DIFF` - review the most recent commit plus staged changes
+- `/pr-review HEAD~2..DIFF` - review the last 2 commits plus staged changes
+- `/pr-review DIFF --quick` - quick review of just the staged changes

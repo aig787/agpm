@@ -565,6 +565,24 @@ version = "v1.0.0"
 resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
+
+[[agents]]
+name = "helper"
+source = "community"
+path = "agents/helper.md"
+version = "v1.0.0"
+resolved_commit = "def456789abcdef123456789abcdef123456789ab"
+checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+installed_at = "agents/helper.md"
+
+[[snippets]]
+name = "utils"
+source = "official"
+path = "snippets/utils.md"
+version = "v1.0.0"
+resolved_commit = "abc123456789abcdef123456789abcdef12345678"
+checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+installed_at = "snippets/utils.md"
 "#
     );
     fs::write(
@@ -615,7 +633,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(manifest_content.trim()).unwrap();
 
-    // Create lockfile with non-existent URLs
+    // Create lockfile with non-existent URLs and matching resources
     let lockfile_content = format!(
         r#"
 # Auto-generated lockfile - DO NOT EDIT
@@ -626,8 +644,41 @@ name = "official"
 url = "file://{}/nonexistent.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
+
+[[sources]]
+name = "community"
+url = "file://{}/also-nonexistent.git"
+commit = "def456789abcdef123456789abcdef123456789ab"
+fetched_at = "2024-01-01T00:00:00Z"
+
+[[agents]]
+name = "my-agent"
+source = "official"
+path = "agents/my-agent.md"
+version = "v1.0.0"
+resolved_commit = "abc123456789abcdef123456789abcdef12345678"
+checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+installed_at = "agents/my-agent.md"
+
+[[agents]]
+name = "helper"
+source = "community"
+path = "agents/helper.md"
+version = "v1.0.0"
+resolved_commit = "def456789abcdef123456789abcdef123456789ab"
+checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+installed_at = "agents/helper.md"
+
+[[snippets]]
+name = "utils"
+source = "official"
+path = "snippets/utils.md"
+version = "v1.0.0"
+resolved_commit = "abc123456789abcdef123456789abcdef12345678"
+checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+installed_at = "snippets/utils.md"
 "#,
-        sources_path
+        sources_path, sources_path
     );
     fs::write(
         project.project_path().join("ccpm.lock"),
