@@ -272,7 +272,6 @@ pub struct UpgradeArgs {
     /// # Post-Rollback
     ///
     /// After successful rollback:
-    /// - You may need to restart your terminal session
     /// - Previous version functionality is restored
     /// - Version cache is not automatically cleared
     /// - Future upgrades will work normally
@@ -434,13 +433,8 @@ pub struct UpgradeArgs {
 /// - Colored output for different message types (success, warning, error)
 /// - Progress indicators for long-running operations
 /// - Clear error messages with suggested resolution steps
-/// - Post-operation instructions (e.g., restart terminal)
 pub async fn execute(args: UpgradeArgs) -> Result<()> {
     let _config = GlobalConfig::load().await?;
-    let cache_dir = GlobalConfig::default_path()?
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get parent directory"))?
-        .join("cache");
 
     // Get the current executable path
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
@@ -451,7 +445,7 @@ pub async fn execute(args: UpgradeArgs) -> Result<()> {
     }
 
     let updater = SelfUpdater::new().force(args.force);
-    let version_checker = VersionChecker::new(cache_dir.clone());
+    let version_checker = VersionChecker::new().await?;
 
     // Handle status check
     if args.status {
@@ -489,10 +483,6 @@ async fn handle_rollback(current_exe: &std::path::Path) -> Result<()> {
         .context("Failed to restore from backup")?;
 
     println!("{}", "Successfully rolled back to previous version".green());
-    println!(
-        "{}",
-        "Note: You may need to restart your terminal for changes to take effect.".yellow()
-    );
 
     Ok(())
 }
@@ -500,22 +490,12 @@ async fn handle_rollback(current_exe: &std::path::Path) -> Result<()> {
 async fn show_status(updater: &SelfUpdater, version_checker: &VersionChecker) -> Result<()> {
     let current_version = updater.current_version();
 
-    // Check cache first
-    let latest_version = if let Some(cached) = version_checker.get_cached_version().await? {
-        Some(cached)
-    } else {
-        // Fetch from GitHub
-        match updater.check_for_update().await {
-            Ok(version) => {
-                if let Some(ref v) = version {
-                    version_checker.save_version(v.clone()).await?;
-                }
-                version
-            }
-            Err(e) => {
-                debug!("Failed to check for updates: {}", e);
-                None
-            }
+    // Use the new check_now method which handles caching internally
+    let latest_version = match version_checker.check_now().await {
+        Ok(version) => version,
+        Err(e) => {
+            debug!("Failed to check for updates: {}", e);
+            None
         }
     };
 
@@ -528,9 +508,9 @@ async fn show_status(updater: &SelfUpdater, version_checker: &VersionChecker) ->
 async fn check_for_updates(updater: &SelfUpdater, version_checker: &VersionChecker) -> Result<()> {
     println!("{}", "Checking for updates...".cyan());
 
-    match updater.check_for_update().await {
+    // Use check_now which bypasses the cache and saves the result
+    match version_checker.check_now().await {
         Ok(Some(latest_version)) => {
-            version_checker.save_version(latest_version.clone()).await?;
             println!(
                 "{}",
                 format!(
@@ -600,11 +580,6 @@ async fn perform_upgrade(
             version_checker.clear_cache().await?;
 
             println!("{}", "Upgrade completed successfully!".green());
-            println!(
-                "{}",
-                "Please restart your terminal or run `exec $SHELL` for changes to take effect."
-                    .yellow()
-            );
 
             // Clean up backup after successful upgrade
             if let Some(manager) = backup_manager

@@ -487,6 +487,29 @@ Updating configurations... █████████████████�
 - **Parallel Operation Insights**: Visualization of concurrency patterns and bottlenecks
 - **Resource Usage Monitoring**: Track disk space, network bandwidth, and CPU utilization
 
+## Self-Update Architecture
+
+CCPM implements its own self-update mechanism to handle platform-specific release archives from GitHub.
+
+### Archive Format Support
+- **Unix systems**: `.tar.xz` archives with binary extraction from nested directories
+- **Windows**: `.zip` archives with direct binary extraction
+- **Platform detection**: Automatic selection based on OS and architecture
+
+### Update Process
+1. **Version check**: Query GitHub API for latest release information
+2. **Download**: Fetch platform-appropriate archive from GitHub releases
+3. **Extraction**: Handle archive format-specific extraction
+   - tar.xz: Uses system `tar` command for reliable xz decompression
+   - zip: Native Rust extraction using the `zip` crate
+4. **Binary replacement**: Atomic replacement with retry logic for Windows file locking
+
+### Safety Features
+- **Backup management**: Optional backup creation before updates
+- **Rollback support**: Restore from backup on failure
+- **Force mode**: Allow re-installation for recovery scenarios
+- **Version validation**: Semantic version comparison to prevent downgrades
+
 ## Dependencies
 
 Key dependencies and their purposes in CCPM's architecture:
@@ -515,6 +538,8 @@ Key dependencies and their purposes in CCPM's architecture:
 - **walkdir** - Recursive directory traversal
 - **sha2** + **hex** - Content checksumming for integrity verification
 - **shellexpand** - Environment variable expansion in paths
+- **reqwest** - HTTP client for GitHub API interactions and release downloads
+- **zip** - Archive extraction for Windows self-update packages
 
 ### Testing Infrastructure
 - **assert_cmd** - CLI testing framework

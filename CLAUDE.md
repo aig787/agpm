@@ -80,6 +80,7 @@ src/
 
 - `install [--frozen] [--no-cache] [--max-parallel N]` - Install from ccpm.toml
 - `update [dep]` - Update dependencies
+- `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
 - `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update CCPM
 - `list` - List installed resources
 - `validate [--check-lock] [--resolve]` - Validate manifest

@@ -119,7 +119,7 @@
 //!
 //! # Implementation Notes
 //!
-//! - Uses the `self_update` crate for GitHub integration
+//! - Direct GitHub API integration for fetching releases
 //! - Implements async/await for non-blocking operations
 //! - Supports semver version parsing and comparison
 //! - Includes comprehensive logging for debugging
@@ -155,6 +155,6 @@ pub mod version_check;
 #[cfg(test)]
 mod tests;
 
-pub use self_updater::SelfUpdater;
+pub use self_updater::{ChecksumPolicy, SelfUpdater};
 pub use verification::ChecksumVerifier;
 pub use version_check::VersionChecker;

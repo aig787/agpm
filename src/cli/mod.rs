@@ -693,6 +693,12 @@ impl Cli {
     /// # });
     /// ```
     pub async fn execute_with_config(self, config: CliConfig) -> Result<()> {
+        // Check for updates automatically (non-blocking, best-effort)
+        // Skip for the upgrade command itself to avoid recursion
+        if !matches!(self.command, Commands::Upgrade(_)) {
+            Self::check_for_updates_if_needed().await;
+        }
+
         // Pass configuration directly to commands that need it
         match self.command {
             Commands::Init(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
@@ -723,5 +729,39 @@ impl Cli {
                 cmd.execute(config_path).await
             }
         }
+    }
+
+    /// Check for CCPM updates automatically based on configuration.
+    ///
+    /// This method performs a non-blocking, best-effort check for updates.
+    /// It respects the user's configuration for automatic update checking
+    /// and uses intelligent caching to avoid excessive GitHub API calls.
+    ///
+    /// The check is designed to be unobtrusive:
+    /// - Runs asynchronously without blocking the main command
+    /// - Fails silently if there are network issues
+    /// - Respects user preferences for update intervals
+    /// - Shows notification only when appropriate
+    async fn check_for_updates_if_needed() {
+        use crate::upgrade::VersionChecker;
+
+        // Spawn the check in a background task so it doesn't block
+        tokio::spawn(async {
+            // Create version checker
+            let checker = match VersionChecker::new().await {
+                Ok(c) => c,
+                Err(_) => return, // Silently fail if can't create checker
+            };
+
+            // Check for updates based on configuration
+            if let Ok(Some(latest_version)) = checker.check_for_updates_if_needed().await {
+                // Display notification to user
+                VersionChecker::display_update_notification(&latest_version);
+            }
+        });
+
+        // Give the check a small amount of time to complete
+        // This prevents the main command from exiting before the check can display
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }

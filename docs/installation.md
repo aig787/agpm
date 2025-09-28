@@ -145,8 +145,8 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
 - Git 2.0 or later
 - Platform-specific requirements:
   - **Windows**: MSVC Build Tools or Visual Studio
-  - **macOS**: Xcode Command Line Tools
-  - **Linux**: gcc or clang, pkg-config
+  - **macOS**: Xcode Command Line Tools, tar (included in macOS)
+  - **Linux**: gcc or clang, pkg-config, tar with xz support (usually pre-installed)
 
 ### Build Instructions
 

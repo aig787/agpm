@@ -510,9 +510,9 @@ ccpm upgrade --no-backup
 
 The upgrade command implements multiple security measures to ensure safe updates:
 
-- **Checksum Verification**: All downloads are automatically verified against checksums from GitHub releases
 - **GitHub Integration**: Only downloads binaries from official CCPM GitHub releases
 - **HTTPS Downloads**: Uses secure HTTPS connections for all network operations
+- **Platform-Specific Archives**: Downloads appropriate archive format for your platform (.tar.xz for Unix, .zip for Windows)
 - **Atomic Operations**: Minimizes vulnerability windows during binary replacement
 - **Permission Preservation**: Maintains original file permissions and ownership
 - **Backup Protection**: Creates backups with appropriate permissions before any modifications
