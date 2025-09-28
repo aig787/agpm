@@ -316,7 +316,7 @@ impl UpdateCommand {
         if !self.force && lockfile_path.exists() {
             // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
             let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-            let is_tty = atty::is(atty::Stream::Stdin);
+            let is_tty = is_terminal::IsTerminal::is_terminal(&std::io::stdin());
             let allow_prompt = !self.quiet && !is_ci && is_tty;
 
             if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)? {

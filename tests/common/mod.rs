@@ -117,6 +117,11 @@ impl TestGit {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
+    /// Get the HEAD SHA (alias for get_commit_hash for compatibility)
+    pub fn get_head_sha(&self) -> Result<String> {
+        self.get_commit_hash()
+    }
+
     /// Clone current repository to a bare repository
     pub fn clone_to_bare(&self, target_path: &Path) -> Result<()> {
         Command::new("git")
@@ -181,6 +186,21 @@ impl TestProject {
         fs::write(&manifest_path, content)
             .with_context(|| format!("Failed to write manifest to {:?}", manifest_path))?;
         Ok(())
+    }
+
+    /// Write a lockfile to the project directory
+    pub fn write_lockfile(&self, content: &str) -> Result<()> {
+        let lockfile_path = self.project_dir.join("ccpm.lock");
+        fs::write(&lockfile_path, content)
+            .with_context(|| format!("Failed to write lockfile to {:?}", lockfile_path))?;
+        Ok(())
+    }
+
+    /// Read the lockfile from the project directory
+    pub fn read_lockfile(&self) -> Result<String> {
+        let lockfile_path = self.project_dir.join("ccpm.lock");
+        fs::read_to_string(&lockfile_path)
+            .with_context(|| format!("Failed to read lockfile from {:?}", lockfile_path))
     }
 
     /// Create a local resource file

@@ -395,17 +395,6 @@ pub enum StalenessReason {
         /// Number of duplicate entries found
         count: usize,
     },
-
-    /// A Git tag or branch may have moved to a different commit since the lockfile was created.
-    /// This requires re-resolving the tag to check if it points to a newer commit.
-    TagMayHaveMoved {
-        /// Name of the dependency
-        name: String,
-        /// Type of resource (agent, snippet, etc.)
-        resource_type: crate::core::ResourceType,
-        /// Version that may have moved (e.g., "update-yaml", "main")
-        version: String,
-    },
 }
 
 impl std::fmt::Display for StalenessReason {
@@ -487,17 +476,6 @@ impl std::fmt::Display for StalenessReason {
                     f,
                     "Found {} duplicate entries for dependency '{}' ({})",
                     count, name, resource_type
-                )
-            }
-            StalenessReason::TagMayHaveMoved {
-                name,
-                resource_type,
-                version,
-            } => {
-                write!(
-                    f,
-                    "Dependency '{}' ({}) uses tag/branch '{}' which may have moved to a newer commit",
-                    name, resource_type, version
                 )
             }
         }
@@ -1871,18 +1849,24 @@ impl LockFile {
         // Check version constraint changes
         if let (Some(locked_version), Some(manifest_version)) =
             (&locked.version, manifest_dep.get_version())
-            && locked_version != manifest_version
         {
-            return Ok(Some(StalenessReason::VersionChanged {
-                name: locked.name.clone(),
-                resource_type,
-                old_version: locked_version.clone(),
-                new_version: manifest_version.to_string(),
-            }));
-            // TODO: Add tag movement detection when combined with cache age or explicit flag
-            // For now, we only detect explicit version string changes
-            // In the future, we could check if non-SHA versions (tags/branches) have moved
-            // by comparing against last fetch time or using a --check-updates flag
+            // Check for explicit version changes
+            if locked_version != manifest_version {
+                return Ok(Some(StalenessReason::VersionChanged {
+                    name: locked.name.clone(),
+                    resource_type,
+                    old_version: locked_version.clone(),
+                    new_version: manifest_version.to_string(),
+                }));
+            }
+
+            // Note: Tag movement detection would require fetching from the repository
+            // to check if the tag now points to a different commit. Without fetching,
+            // we can't know if a tag has been moved (which would be problematic since
+            // tags should be immutable). This could be implemented in the future with
+            // a --check-updates flag that does a fetch first.
+            //
+            // Branch movement is expected behavior, so we don't check for it.
         }
 
         // Check path changes (for remote dependencies)
@@ -2130,10 +2114,6 @@ pub fn check_staleness(
                     eprintln!("- Source repository URLs were updated in ccpm.toml");
                     eprintln!("- Repository was moved or renamed");
                 }
-                StalenessReason::TagMayHaveMoved { .. } => {
-                    eprintln!("- A Git tag or branch has moved to a newer commit");
-                    eprintln!("- Repository maintainers updated the tag to point to new code");
-                }
             }
 
             eprintln!("\nTo fix this issue:");
@@ -2292,6 +2272,92 @@ mod tests {
             "sha256:abcdef"
         );
     }
+
+    #[test]
+    fn test_staleness_reason_display() {
+        use crate::core::ResourceType;
+
+        // Test MissingDependency
+        let reason = StalenessReason::MissingDependency {
+            name: "my-agent".to_string(),
+            resource_type: ResourceType::Agent,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-agent' (agent) is in manifest but missing from lockfile"
+        );
+
+        // Test RemovedDependency
+        let reason = StalenessReason::RemovedDependency {
+            name: "old-snippet".to_string(),
+            resource_type: ResourceType::Snippet,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'old-snippet' (snippet) is in lockfile but removed from manifest"
+        );
+
+        // Test VersionChanged
+        let reason = StalenessReason::VersionChanged {
+            name: "my-command".to_string(),
+            resource_type: ResourceType::Command,
+            old_version: "v1.0.0".to_string(),
+            new_version: "v2.0.0".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-command' (command) version changed from 'v1.0.0' to 'v2.0.0'"
+        );
+
+        // Test PathChanged
+        let reason = StalenessReason::PathChanged {
+            name: "my-script".to_string(),
+            resource_type: ResourceType::Script,
+            old_path: "scripts/old.sh".to_string(),
+            new_path: "scripts/new.sh".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-script' (script) path changed from 'scripts/old.sh' to 'scripts/new.sh'"
+        );
+
+        // Test SourceChanged
+        let reason = StalenessReason::SourceChanged {
+            name: "my-hook".to_string(),
+            resource_type: ResourceType::Hook,
+            old_source: "community".to_string(),
+            new_source: "official".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Dependency 'my-hook' (hook) source changed from 'community' to 'official'"
+        );
+
+        // Test SourceUrlChanged
+        let reason = StalenessReason::SourceUrlChanged {
+            name: "community".to_string(),
+            old_url: "https://github.com/old/repo.git".to_string(),
+            new_url: "https://github.com/new/repo.git".to_string(),
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Source 'community' URL changed from 'https://github.com/old/repo.git' to 'https://github.com/new/repo.git'"
+        );
+
+        // Test DuplicateEntries
+        let reason = StalenessReason::DuplicateEntries {
+            name: "dup-agent".to_string(),
+            resource_type: ResourceType::Agent,
+            count: 3,
+        };
+        assert_eq!(
+            reason.to_string(),
+            "Found 3 duplicate entries for dependency 'dup-agent' (agent)"
+        );
+    }
+
+    // Note: Complex staleness checking integration tests are in tests/integration_lockfile_staleness.rs
+    // These unit tests focus on the display formatting of StalenessReason variants
 
     #[test]
     fn test_lockfile_empty_file() {
