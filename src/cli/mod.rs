@@ -24,6 +24,7 @@
 //!
 //! ## Information and Inspection
 //! - `list` - List installed resources from the lockfile
+//! - `tree` - Display dependency tree for installed resources
 //! - `outdated` - Check for available updates to dependencies
 //! - `validate` - Validate project configuration and dependencies
 //!
@@ -123,7 +124,7 @@ mod install;
 mod list;
 mod outdated;
 mod remove;
-mod resource_ops;
+mod tree;
 mod update;
 /// Self-update functionality for upgrading CCPM to newer versions.
 ///
@@ -427,6 +428,7 @@ pub struct Cli {
 ///
 /// ## Information & Validation
 /// - [`List`](Commands::List): Display installed resources
+/// - [`Tree`](Commands::Tree): Display dependency tree
 /// - [`Validate`](Commands::Validate): Verify project configuration
 ///
 /// ## System Management
@@ -534,6 +536,15 @@ enum Commands {
     ///
     /// See [`list::ListCommand`] for detailed options and behavior.
     List(list::ListCommand),
+
+    /// Display dependency tree for installed resources.
+    ///
+    /// Shows dependencies and their transitive dependencies in a hierarchical
+    /// tree format, similar to `cargo tree`. Helps visualize the dependency
+    /// graph and identify duplicate or redundant dependencies.
+    ///
+    /// See [`tree::TreeCommand`] for detailed options and behavior.
+    Tree(tree::TreeCommand),
 
     /// Validate CCPM project configuration and dependencies.
     ///
@@ -721,6 +732,7 @@ impl Cli {
             }
             Commands::Upgrade(cmd) => upgrade::execute(cmd).await,
             Commands::List(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
+            Commands::Tree(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Validate(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Cache(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Config(cmd) => {

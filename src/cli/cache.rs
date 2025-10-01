@@ -968,13 +968,11 @@ mod tests {
                 LockedSource {
                     name: "manifest-source".to_string(),
                     url: "https://github.com/test/repo.git".to_string(),
-                    commit: "abc123".to_string(),
                     fetched_at: chrono::Utc::now().to_string(),
                 },
                 LockedSource {
                     name: "lockfile-only".to_string(),
                     url: "https://github.com/test/other.git".to_string(),
-                    commit: "def456".to_string(),
                     fetched_at: chrono::Utc::now().to_string(),
                 },
             ],

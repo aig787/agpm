@@ -301,6 +301,112 @@ review-agents = { source = "community", path = "agents/**/review*.md", version =
 python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
 ```
 
+## Transitive Dependencies
+
+Resources can declare their own dependencies, and CCPM will automatically resolve the entire dependency tree.
+
+### Declaring Dependencies
+
+**In Markdown files (.md)**, use YAML frontmatter:
+```markdown
+---
+title: My Agent
+description: Helper agent with dependencies
+dependencies:
+  agents:
+    - path: agents/utils.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/helpers.md
+---
+
+# Agent content here
+```
+
+**In JSON files (.json)**, use a top-level field:
+```json
+{
+  "events": ["SessionStart"],
+  "type": "command",
+  "command": "echo 'Starting'",
+  "dependencies": {
+    "commands": [
+      {"path": "commands/setup.md", "version": "v1.0.0"}
+    ]
+  }
+}
+```
+
+### How It Works
+
+1. **Automatic Discovery**: When installing resources, CCPM scans their contents for dependency declarations
+2. **Graph Building**: All dependencies (direct and transitive) are collected into a dependency graph
+3. **Cycle Detection**: Circular dependencies are detected and reported as errors
+4. **Topological Ordering**: Dependencies are installed before their dependents
+5. **Version Resolution**: Conflicts are automatically resolved using the highest compatible version
+
+### Dependency Inheritance
+
+Transitive dependencies inherit properties from their parent:
+- **Source**: Always inherits from the parent resource's source
+- **Version**: Defaults to parent's version if not specified
+
+### Example
+
+```toml
+# ccpm.toml
+[sources]
+community = "https://github.com/aig787/ccpm-community.git"
+
+[commands]
+deploy = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
+```
+
+If `deploy.md` declares:
+```markdown
+---
+dependencies:
+  agents:
+    - path: agents/deploy-helper.md
+  snippets:
+    - path: snippets/aws-utils.md
+      version: v2.0.0
+---
+```
+
+Running `ccpm install` will automatically install:
+1. `deploy.md` (direct dependency)
+2. `agents/deploy-helper.md` (transitive, inherits v1.0.0)
+3. `snippets/aws-utils.md` (transitive, uses v2.0.0)
+
+### Lockfile Tracking
+
+Transitive dependencies are tracked in `ccpm.lock`:
+```toml
+[[commands]]
+name = "deploy"
+path = "commands/deploy.md"
+version = "v1.0.0"
+dependencies = [
+    "agents/deploy-helper@v1.0.0",
+    "snippets/aws-utils@v2.0.0"
+]
+```
+
+### Conflict Resolution
+
+When multiple resources depend on different versions of the same resource:
+- CCPM automatically selects the highest compatible version
+- Conflicts are logged for transparency
+- No manual intervention required
+
+Example:
+```text
+Agent A requires utils.md v1.0.0
+Agent B requires utils.md v2.0.0
+→ Resolved: Using utils.md v2.0.0
+```
+
 ## Resource Organization
 
 ### Default Locations

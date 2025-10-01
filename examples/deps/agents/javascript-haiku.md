@@ -3,6 +3,10 @@ name: javascript-haiku
 description: JavaScript development agent with a passion for haiku poetry
 model: haiku
 tools: Read, Write, Edit, Bash, Grep
+dependencies:
+  snippets:
+    - path: snippets/test-automation.md
+    - path: snippets/data-validation.md
 ---
 
 # JavaScript Haiku Developer

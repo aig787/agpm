@@ -272,7 +272,7 @@ impl UpdateCommand {
     /// };
     /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
-    /// # });
+    /// # }));
     /// ```
     /// Execute the update command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
@@ -595,7 +595,7 @@ mod tests {
         let mut agents = HashMap::new();
         agents.insert(
             "test-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("test-source".to_string()),
                 path: "agents/test-agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -605,7 +605,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         Manifest {
@@ -628,7 +629,6 @@ mod tests {
             sources: vec![LockedSource {
                 name: "test-source".to_string(),
                 url: "file:///tmp/test-repo".to_string(),
-                commit: "abc123456789".to_string(),
                 fetched_at: "2023-01-01T00:00:00Z".to_string(),
             }],
             agents: vec![LockedResource {
@@ -640,6 +640,8 @@ mod tests {
                 resolved_commit: Some("abc123456789".to_string()),
                 checksum: "sha256:test123".to_string(),
                 installed_at: "agents/test-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }],
             snippets: vec![],
             mcp_servers: vec![],

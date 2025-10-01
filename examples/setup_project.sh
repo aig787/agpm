@@ -11,9 +11,10 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     CCPM Example Project Setup Script      ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║          CCPM Example Project Setup Script                         ║${NC}"
+echo -e "${BLUE}║        Demonstrating Transitive Dependency Resolution              ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # Get project name from argument or use default
@@ -65,21 +66,28 @@ echo ""
 echo "→ Adding ccpm-community GitHub repository"
 ccpm add source community "https://github.com/aig787/ccpm-community.git"
 
-# Add 2 of each resource type via commands
+# Add resources with transitive dependencies via commands
 echo ""
-echo "→ Adding 2 agents via command"
+echo -e "${YELLOW}→ Adding commands (which have transitive dependencies)${NC}"
+echo "  - git-auto-commit depends on: rust-haiku agent, commit-message snippet"
+echo "  - format-json depends on: javascript-haiku agent, data-validation snippet"
+ccpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
+ccpm add dep command local-deps:commands/format-json.md --name format-json
+
+echo ""
+echo -e "${YELLOW}→ Adding agents (which also have dependencies)${NC}"
+echo "  - rust-haiku depends on: error-analysis, unit-test-creation snippets"
+echo "  - javascript-haiku depends on: test-automation, data-validation snippets"
 ccpm add dep agent local-deps:agents/rust-haiku.md --name rust-haiku
 ccpm add dep agent local-deps:agents/javascript-haiku.md --name javascript-haiku
 
 echo ""
-echo "→ Adding 2 snippets via command"
+echo -e "${YELLOW}→ Adding base snippets (dependencies of other resources)${NC}"
 ccpm add dep snippet local-deps:snippets/error-analysis.md --name error-analysis
 ccpm add dep snippet local-deps:snippets/unit-test-creation.md --name unit-tests
-
-echo ""
-echo "→ Adding 2 commands via command"
-ccpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
-ccpm add dep command local-deps:commands/format-json.md --name format-json
+ccpm add dep snippet local-deps:snippets/commit-message.md --name commit-message
+ccpm add dep snippet local-deps:snippets/data-validation.md --name data-validation
+ccpm add dep snippet local-deps:snippets/test-automation.md --name test-automation
 
 echo ""
 echo "→ Adding 2 scripts via command"
@@ -151,23 +159,20 @@ echo ""
 echo "→ Updating dependencies with CCPM"
 ccpm update
 
+
+echo ""
+echo -e "${GREEN}╔════════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║                    Setup Complete! 🎉                              ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo "Your Claude Code project '$PROJECT_NAME' is ready:"
+echo ""
+ccpm tree
+
 # Show final structure
 echo ""
 echo "→ Final project structure:"
 tree -a -L 4
-
-echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║           Setup Complete! 🎉               ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
-echo ""
-echo "Your Claude Code project '$PROJECT_NAME' is ready with:"
-echo "  • 17 agents (2 local + 15 from ccpm-community)"
-echo "  • 5 snippets"
-echo "  • 2 commands"
-echo "  • 2 scripts"
-echo "  • 2 hooks"
-echo "  • 2 MCP servers"
 
 echo ""
 echo "Project location: $PROJECT_DIR"

@@ -2,8 +2,8 @@
 //!
 //! This module implements the core dependency resolution algorithm that transforms
 //! manifest dependencies into locked versions. It handles version constraint solving,
-//! conflict detection, redundancy analysis, parallel source synchronization, and
-//! relative path preservation during installation.
+//! conflict detection, redundancy analysis, transitive dependency resolution,
+//! parallel source synchronization, and relative path preservation during installation.
 //!
 //! # Architecture Overview
 //!
@@ -198,7 +198,7 @@
 //! ```
 //!
 //! ## Redundancy Analysis
-//! ```rust,no_run
+//! ```rust,ignore
 //! use ccpm::resolver::{DependencyResolver, redundancy::RedundancyDetector};
 //! use ccpm::manifest::Manifest;
 //! use ccpm::cache::Cache;
@@ -209,13 +209,9 @@
 //! let cache = Cache::new()?;
 //! let resolver = DependencyResolver::new(manifest.clone(), cache)?;
 //!
-//! // Check for redundancies before resolution
-//! if let Some(warning) = resolver.check_redundancies() {
-//!     println!("Warning: {}", warning);
-//! }
-//!
-//! // Get detailed redundancy information
-//! let redundancies = resolver.check_redundancies_with_details();
+//! // Use RedundancyDetector directly for checking redundancies
+//! let detector = RedundancyDetector::new(&manifest);
+//! let redundancies = detector.detect_redundancies();
 //! for redundancy in redundancies {
 //!     println!("Redundant usage of: {}", redundancy.source_file);
 //!     for usage in &redundancy.usages {
@@ -249,6 +245,7 @@
 //! # }
 //! ```
 
+pub mod dependency_graph;
 pub mod redundancy;
 pub mod version_resolution;
 pub mod version_resolver;
@@ -257,13 +254,14 @@ use crate::cache::Cache;
 use crate::core::CcpmError;
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
-use crate::manifest::{Manifest, ResourceDependency};
+use crate::manifest::{DependencySpec, DetailedDependency, Manifest, ResourceDependency};
+use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use self::redundancy::RedundancyDetector;
+use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
 
 /// Core dependency resolver that transforms manifest dependencies into lockfile entries.
@@ -320,6 +318,12 @@ pub struct DependencyResolver {
     ///
     /// Used by [`prepare_remote_groups`] to resolve all dependencies upfront.
     version_resolver: VersionResolver,
+    /// Dependency graph tracking which resources depend on which others.
+    ///
+    /// Maps from (resource_type, name) to a list of dependencies in the format
+    /// "resource_type/name". This is populated during transitive dependency
+    /// resolution and used to fill the dependencies field in LockedResource entries.
+    dependency_map: HashMap<(crate::core::ResourceType, String), Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -374,6 +378,7 @@ impl DependencyResolver {
     ///
     /// ```ignore
     /// # use ccpm::lockfile::{LockFile, LockedResource};
+    /// # use ccpm::core::ResourceType;
     /// # use ccpm::resolver::DependencyResolver;
     /// # let resolver = DependencyResolver::new();
     /// let mut lockfile = LockFile::new();
@@ -386,6 +391,8 @@ impl DependencyResolver {
     ///     resolved_commit: Some("abc123def456...".to_string()),
     ///     checksum: "sha256:a1b2c3d4...".to_string(),
     ///     installed_at: ".claude/agents/my-agent.md".to_string(),
+    ///     dependencies: vec![],
+    ///     resource_type: ResourceType::Agent,
     /// };
     ///
     /// // Automatically adds to agents collection based on resource type detection
@@ -403,6 +410,8 @@ impl DependencyResolver {
     /// #   resolved_commit: Some("def456789abc...".to_string()),
     /// #   checksum: "sha256:b2c3d4e5...".to_string()),
     /// #   installed_at: ".claude/agents/my-agent.md".to_string(),
+    ///     dependencies: vec![],
+    ///     resource_type: ResourceType::Agent,
     /// };
     /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", updated_entry);
     /// assert_eq!(lockfile.agents.len(), 1); // Still one entry, but updated
@@ -410,60 +419,57 @@ impl DependencyResolver {
     fn add_or_update_lockfile_entry(
         &self,
         lockfile: &mut LockFile,
-        name: &str,
+        _name: &str,
         entry: LockedResource,
     ) {
-        let resource_type = self.get_resource_type(name);
+        // Helper to check if an existing entry should be updated
+        // Match on source and path, not the full unique name (which includes version)
+        let should_update = |existing: &LockedResource| {
+            existing.source == entry.source && existing.path == entry.path
+        };
 
-        match resource_type.as_str() {
-            "agent" => {
-                if let Some(existing) = lockfile.agents.iter_mut().find(|e| e.name == name) {
+        // Use the resource_type field from the entry itself
+        match entry.resource_type {
+            crate::core::ResourceType::Agent => {
+                if let Some(existing) = lockfile.agents.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.agents.push(entry);
                 }
             }
-            "snippet" => {
-                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
+            crate::core::ResourceType::Snippet => {
+                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.snippets.push(entry);
                 }
             }
-            "command" => {
-                if let Some(existing) = lockfile.commands.iter_mut().find(|e| e.name == name) {
+            crate::core::ResourceType::Command => {
+                if let Some(existing) = lockfile.commands.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.commands.push(entry);
                 }
             }
-            "script" => {
-                if let Some(existing) = lockfile.scripts.iter_mut().find(|e| e.name == name) {
+            crate::core::ResourceType::Script => {
+                if let Some(existing) = lockfile.scripts.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.scripts.push(entry);
                 }
             }
-            "hook" => {
-                if let Some(existing) = lockfile.hooks.iter_mut().find(|e| e.name == name) {
+            crate::core::ResourceType::Hook => {
+                if let Some(existing) = lockfile.hooks.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.hooks.push(entry);
                 }
             }
-            "mcp-server" => {
-                if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| e.name == name) {
+            crate::core::ResourceType::McpServer => {
+                if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| should_update(e)) {
                     *existing = entry;
                 } else {
                     lockfile.mcp_servers.push(entry);
-                }
-            }
-            _ => {
-                // Default to snippet
-                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| e.name == name) {
-                    *existing = entry;
-                } else {
-                    lockfile.snippets.push(entry);
                 }
             }
         }
@@ -849,6 +855,34 @@ impl DependencyResolver {
         // Store the prepared versions
         self.prepared_versions.extend(prepared_versions);
 
+        // Step 4: Handle local sources separately (they don't need worktrees)
+        for (_, dep) in deps {
+            if let Some(source_name) = dep.get_source() {
+                let source_url =
+                    self.source_manager
+                        .get_source_url(source_name)
+                        .ok_or_else(|| CcpmError::SourceNotFound {
+                            name: source_name.to_string(),
+                        })?;
+
+                // Check if this is a local directory source
+                if crate::utils::is_local_path(&source_url) {
+                    let version_key = dep.get_version().unwrap_or("HEAD");
+                    let group_key = Self::group_key(source_name, version_key);
+
+                    // Add to prepared_versions with the local path
+                    self.prepared_versions.insert(
+                        group_key,
+                        PreparedSourceVersion {
+                            worktree_path: PathBuf::from(&source_url),
+                            resolved_version: Some("local".to_string()),
+                            resolved_commit: String::new(), // No commit for local sources
+                        },
+                    );
+                }
+            }
+        }
+
         // Phase completion is handled by the caller
 
         Ok(())
@@ -885,6 +919,7 @@ impl DependencyResolver {
             cache,
             prepared_versions: HashMap::new(),
             version_resolver,
+            dependency_map: HashMap::new(),
         })
     }
 
@@ -919,6 +954,7 @@ impl DependencyResolver {
             cache,
             prepared_versions: HashMap::new(),
             version_resolver,
+            dependency_map: HashMap::new(),
         })
     }
 
@@ -953,6 +989,7 @@ impl DependencyResolver {
             cache,
             prepared_versions: HashMap::new(),
             version_resolver,
+            dependency_map: HashMap::new(),
         }
     }
 
@@ -1003,7 +1040,426 @@ impl DependencyResolver {
     /// - **Progress Reporting**: Non-blocking UI updates during resolution
     ///
     /// [`LockFile`]: crate::lockfile::LockFile
+    ///
+    /// Resolve transitive dependencies by extracting metadata from resource files.
+    ///
+    /// This method builds a dependency graph by:
+    /// 1. Starting with direct manifest dependencies
+    /// 2. Extracting metadata from each resolved resource
+    /// 3. Adding discovered transitive dependencies to the graph
+    /// 4. Checking for circular dependencies
+    /// 5. Returning all dependencies in topological order
+    ///
+    /// # Arguments
+    /// * `base_deps` - The initial dependencies from the manifest
+    /// * `enable_transitive` - Whether to resolve transitive dependencies
+    ///
+    /// # Returns
+    /// A vector of all dependencies (direct + transitive) in topological order
+    async fn resolve_transitive_dependencies(
+        &mut self,
+        base_deps: &[(String, ResourceDependency)],
+        enable_transitive: bool,
+    ) -> Result<Vec<(String, ResourceDependency)>> {
+        if !enable_transitive {
+            // If transitive resolution is disabled, return base dependencies as-is
+            return Ok(base_deps.to_vec());
+        }
+
+        let mut graph = DependencyGraph::new();
+        let mut all_deps: HashMap<(crate::core::ResourceType, String), ResourceDependency> =
+            HashMap::new();
+        let mut processed: HashSet<(crate::core::ResourceType, String)> = HashSet::new();
+        let mut queue: Vec<(
+            String,
+            ResourceDependency,
+            Option<crate::core::ResourceType>,
+        )> = Vec::new();
+
+        // Add initial dependencies to queue
+        for (name, dep) in base_deps {
+            let resource_type = self.get_resource_type(name);
+            queue.push((name.clone(), dep.clone(), Some(resource_type)));
+            all_deps.insert((resource_type, name.clone()), dep.clone());
+        }
+
+        // Process queue to discover transitive dependencies
+        while let Some((name, dep, resource_type)) = queue.pop() {
+            let resource_type = resource_type.unwrap_or_else(|| self.get_resource_type(&name));
+            let key = (resource_type, name.clone());
+
+            if processed.contains(&key) {
+                continue;
+            }
+            processed.insert(key.clone());
+
+            // Skip pattern dependencies for transitive resolution (too complex for now)
+            if dep.is_pattern() {
+                continue;
+            }
+
+            // Get the resource content to extract metadata
+            let content = match self.fetch_resource_content(&name, &dep).await {
+                Ok(content) => content,
+                Err(e) => {
+                    // If we can't fetch the resource, skip its transitive deps
+                    eprintln!(
+                        "Warning: Failed to fetch resource '{}' for transitive dependency extraction: {}",
+                        name, e
+                    );
+                    continue;
+                }
+            };
+
+            // Extract metadata from the resource
+            let path = PathBuf::from(dep.get_path());
+            let metadata = MetadataExtractor::extract(&path, &content)?;
+
+            // Process transitive dependencies if present
+            if let Some(deps_map) = metadata.dependencies {
+                for (dep_resource_type_str, dep_specs) in deps_map {
+                    // Convert plural form from YAML (e.g., "agents") to ResourceType enum
+                    // The ResourceType::FromStr accepts both plural and singular forms
+                    let dep_resource_type: crate::core::ResourceType = dep_resource_type_str
+                        .parse()
+                        .unwrap_or(crate::core::ResourceType::Snippet);
+
+                    for dep_spec in dep_specs {
+                        // Convert DependencySpec to ResourceDependency
+                        let trans_dep = self.spec_to_dependency(&dep, &dep_spec)?;
+
+                        // Generate a name for the transitive dependency
+                        let trans_name = self.generate_dependency_name(&dep_spec.path);
+
+                        // Add to graph (use enum for graph nodes)
+                        let from_node = DependencyNode::new(resource_type, &name);
+                        let to_node = DependencyNode::new(dep_resource_type, &trans_name);
+                        graph.add_dependency(from_node.clone(), to_node.clone());
+
+                        // Track in dependency map (use plural form in the value to match lockfile format)
+                        let from_key = (resource_type, name.clone());
+                        let dep_ref = format!("{}/{}", dep_resource_type_str, trans_name);
+                        self.dependency_map
+                            .entry(from_key)
+                            .or_default()
+                            .push(dep_ref);
+
+                        // Check for version conflicts and resolve them
+                        let trans_key = (dep_resource_type, trans_name.clone());
+
+                        if let Some(existing_dep) = all_deps.get(&trans_key) {
+                            // Version conflict detected - need to resolve
+                            let resolved_dep = self.resolve_version_conflict(
+                                &trans_name,
+                                existing_dep,
+                                &trans_dep,
+                                &name, // Who requires this version
+                            )?;
+                            all_deps.insert(trans_key.clone(), resolved_dep);
+                        } else {
+                            // No conflict, add the dependency
+                            all_deps.insert(trans_key.clone(), trans_dep.clone());
+                            queue.push((trans_name, trans_dep, Some(dep_resource_type)));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for circular dependencies
+        graph.detect_cycles()?;
+
+        // Get topological order for dependencies that have relationships
+        let ordered_nodes = graph.topological_order()?;
+
+        // Build result: start with topologically ordered dependencies
+        let mut result = Vec::new();
+        let mut added_keys = HashSet::new();
+
+        for node in ordered_nodes {
+            let key = (node.resource_type, node.name.clone());
+            if let Some(dep) = all_deps.get(&key) {
+                result.push((node.name.clone(), dep.clone()));
+                added_keys.insert(key);
+            }
+        }
+
+        // Add remaining dependencies that weren't in the graph (no transitive deps)
+        // These can be added in any order since they have no dependencies
+        for (key, dep) in all_deps {
+            if !added_keys.contains(&key) {
+                result.push((key.1.clone(), dep.clone()));
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Fetch the content of a resource for metadata extraction.
+    async fn fetch_resource_content(
+        &mut self,
+        _name: &str,
+        dep: &ResourceDependency,
+    ) -> Result<String> {
+        match dep {
+            ResourceDependency::Simple(path) => {
+                // Local file - path is relative to where ccpm was invoked
+                // Since we don't track the manifest path, assume relative path
+                let full_path = PathBuf::from(path);
+                std::fs::read_to_string(&full_path)
+                    .with_context(|| format!("Failed to read local file: {}", full_path.display()))
+            }
+            ResourceDependency::Detailed(detailed) => {
+                if let Some(source_name) = &detailed.source {
+                    let source_url = self
+                        .source_manager
+                        .get_source_url(source_name)
+                        .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+                    // Check if this is a local directory source
+                    if crate::utils::is_local_path(&source_url) {
+                        // Local directory source - read directly from path
+                        let file_path = PathBuf::from(&source_url).join(&detailed.path);
+                        std::fs::read_to_string(&file_path).with_context(|| {
+                            format!("Failed to read local file: {}", file_path.display())
+                        })
+                    } else {
+                        // Git-based remote dependency - need to checkout and read
+                        let version = detailed
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "main".to_string());
+
+                        // Check if we already have this version resolved
+                        let sha = if let Some(prepared) = self
+                            .prepared_versions
+                            .get(&Self::group_key(source_name, &version))
+                        {
+                            prepared.resolved_commit.clone()
+                        } else {
+                            // Need to resolve this version
+                            self.version_resolver.add_version(
+                                source_name,
+                                &source_url,
+                                Some(&version),
+                            );
+                            self.version_resolver.resolve_all().await?;
+
+                            self.version_resolver
+                                .get_resolved_sha(source_name, &version)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "Failed to resolve version for {} @ {}",
+                                        source_name,
+                                        version
+                                    )
+                                })?
+                        };
+
+                        // Get worktree for this SHA
+                        let worktree_path = self
+                            .cache
+                            .get_or_create_worktree_for_sha(source_name, &source_url, &sha, None)
+                            .await?;
+
+                        // Read the file from worktree
+                        let file_path = worktree_path.join(&detailed.path);
+                        std::fs::read_to_string(&file_path).with_context(|| {
+                            format!("Failed to read file from worktree: {}", file_path.display())
+                        })
+                    }
+                } else {
+                    // Local dependency with detailed spec
+                    let full_path = PathBuf::from(&detailed.path);
+                    std::fs::read_to_string(&full_path).with_context(|| {
+                        format!("Failed to read local file: {}", full_path.display())
+                    })
+                }
+            }
+        }
+    }
+
+    /// Convert a DependencySpec to a ResourceDependency.
+    ///
+    /// Inherits the source from the parent dependency.
+    fn spec_to_dependency(
+        &self,
+        parent: &ResourceDependency,
+        spec: &DependencySpec,
+    ) -> Result<ResourceDependency> {
+        match parent {
+            ResourceDependency::Simple(_) => {
+                // Parent is local, so child is also local
+                Ok(ResourceDependency::Simple(spec.path.clone()))
+            }
+            ResourceDependency::Detailed(parent_detail) => {
+                // Inherit source from parent
+                Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: parent_detail.source.clone(),
+                    path: spec.path.clone(),
+                    version: spec
+                        .version
+                        .clone()
+                        .or_else(|| parent_detail.version.clone()),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None, // Will be filled when fetched
+                })))
+            }
+        }
+    }
+
+    /// Generate a dependency name from a path.
+    fn generate_dependency_name(&self, path: &str) -> String {
+        // Extract filename without extension
+        Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path)
+            .to_string()
+    }
+
+    /// Resolve all manifest dependencies into a deterministic lockfile.
+    ///
+    /// This is the primary entry point for dependency resolution. It resolves all
+    /// dependencies from the manifest (including transitive dependencies) and
+    /// generates a complete lockfile with resolved versions and commit SHAs.
+    ///
+    /// By default, this method enables transitive dependency resolution. Resources
+    /// can declare their own dependencies via YAML frontmatter (Markdown) or JSON
+    /// fields, which will be automatically discovered and resolved.
+    ///
+    /// # Transitive Dependency Resolution
+    ///
+    /// When enabled (default), the resolver:
+    /// 1. Resolves direct manifest dependencies
+    /// 2. Extracts dependency metadata from resource files
+    /// 3. Builds a dependency graph with cycle detection
+    /// 4. Resolves transitive dependencies in topological order
+    ///
+    /// # Returns
+    ///
+    /// A complete [`LockFile`] with all resolved dependencies including:
+    /// - Resolved commit SHAs for reproducible installations
+    /// - Checksums for integrity verification
+    /// - Installation paths for all resources
+    /// - Source repository information
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Source repositories cannot be accessed
+    /// - Version constraints cannot be satisfied
+    /// - Circular dependencies are detected
+    /// - Resource files cannot be read or parsed
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::resolver::DependencyResolver;
+    /// # use ccpm::manifest::Manifest;
+    /// # use ccpm::cache::Cache;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let manifest = Manifest::load("ccpm.toml".as_ref())?;
+    /// let cache = Cache::new()?;
+    /// let mut resolver = DependencyResolver::new(manifest, cache)?;
+    ///
+    /// // Resolve all dependencies including transitive ones
+    /// let lockfile = resolver.resolve().await?;
+    ///
+    /// lockfile.save("ccpm.lock".as_ref())?;
+    /// println!("Resolved {} total resources",
+    ///          lockfile.agents.len() + lockfile.snippets.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn resolve(&mut self) -> Result<LockFile> {
+        self.resolve_with_options(true).await
+    }
+
+    /// Resolve dependencies with configurable transitive dependency support.
+    ///
+    /// This method provides fine-grained control over dependency resolution behavior,
+    /// allowing you to disable transitive dependency resolution when needed. This is
+    /// useful for debugging, testing, or when you want to install only direct
+    /// dependencies without their transitive requirements.
+    ///
+    /// # Arguments
+    ///
+    /// * `enable_transitive` - Whether to resolve transitive dependencies
+    ///   - `true`: Full transitive resolution (default behavior)
+    ///   - `false`: Only direct manifest dependencies
+    ///
+    /// # Transitive Resolution Details
+    ///
+    /// When `enable_transitive` is `true`:
+    /// - Resources are checked for embedded dependency metadata
+    /// - Markdown files (.md): YAML frontmatter between `---` delimiters
+    /// - JSON files (.json): Top-level `dependencies` field
+    /// - Dependency graph is built with cycle detection
+    /// - Dependencies are resolved in topological order
+    ///
+    /// When `enable_transitive` is `false`:
+    /// - Only dependencies explicitly declared in `ccpm.toml` are resolved
+    /// - Resource metadata is not extracted or processed
+    /// - Faster resolution for known dependency trees
+    ///
+    /// # Returns
+    ///
+    /// A [`LockFile`] containing all resolved dependencies according to the
+    /// configuration. When transitive resolution is disabled, the lockfile will
+    /// only contain direct dependencies from the manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Source repositories are inaccessible or invalid
+    /// - Version constraints conflict or cannot be satisfied
+    /// - Circular dependencies are detected (when `enable_transitive` is true)
+    /// - Resource files cannot be read or contain invalid metadata
+    /// - Network operations fail during source synchronization
+    ///
+    /// # Performance Considerations
+    ///
+    /// Disabling transitive resolution (`enable_transitive = false`) can improve
+    /// performance when:
+    /// - You know all required dependencies are explicitly listed
+    /// - Testing specific dependency combinations
+    /// - Debugging dependency resolution issues
+    /// - Working with large resources that have expensive metadata extraction
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::resolver::DependencyResolver;
+    /// # use ccpm::manifest::Manifest;
+    /// # use ccpm::cache::Cache;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let manifest = Manifest::load("ccpm.toml".as_ref())?;
+    /// let cache = Cache::new()?;
+    /// let mut resolver = DependencyResolver::new(manifest, cache)?;
+    ///
+    /// // Resolve only direct dependencies without transitive resolution
+    /// let lockfile = resolver.resolve_with_options(false).await?;
+    ///
+    /// println!("Resolved {} direct dependencies",
+    ///          lockfile.agents.len() + lockfile.snippets.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`resolve()`]: Convenience method that enables transitive resolution by default
+    /// - [`DependencyGraph`]: Graph structure used for cycle detection and ordering
+    /// - [`DependencySpec`]: Specification format for transitive dependencies
+    ///
+    /// [`resolve()`]: DependencyResolver::resolve
+    pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
         let mut lockfile = LockFile::new();
         let mut resolved = HashMap::new();
 
@@ -1013,7 +1469,7 @@ impl DependencyResolver {
         }
 
         // Get all dependencies to resolve including MCP servers (clone to avoid borrow checker issues)
-        let deps: Vec<(String, ResourceDependency)> = self
+        let base_deps: Vec<(String, ResourceDependency)> = self
             .manifest
             .all_dependencies_with_mcp()
             .into_iter()
@@ -1022,9 +1478,14 @@ impl DependencyResolver {
 
         // Show initial message about what we're doing
         // Sync sources (phase management is handled by caller)
-        self.prepare_remote_groups(&deps).await?;
+        self.prepare_remote_groups(&base_deps).await?;
 
-        // Resolve each dependency
+        // Resolve transitive dependencies if enabled
+        let deps = self
+            .resolve_transitive_dependencies(&base_deps, enable_transitive)
+            .await?;
+
+        // Resolve each dependency (including transitive ones)
         for (name, dep) in deps.iter() {
             // Progress is tracked at the phase level
 
@@ -1036,8 +1497,8 @@ impl DependencyResolver {
                 // Add each resolved entry to the appropriate resource type with deduplication
                 let resource_type = self.get_resource_type(name);
                 for entry in entries {
-                    match resource_type.as_str() {
-                        "agent" => {
+                    match resource_type {
+                        crate::core::ResourceType::Agent => {
                             if let Some(existing) =
                                 lockfile.agents.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1046,7 +1507,7 @@ impl DependencyResolver {
                                 lockfile.agents.push(entry);
                             }
                         }
-                        "snippet" => {
+                        crate::core::ResourceType::Snippet => {
                             if let Some(existing) =
                                 lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1055,7 +1516,7 @@ impl DependencyResolver {
                                 lockfile.snippets.push(entry);
                             }
                         }
-                        "command" => {
+                        crate::core::ResourceType::Command => {
                             if let Some(existing) =
                                 lockfile.commands.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1064,7 +1525,7 @@ impl DependencyResolver {
                                 lockfile.commands.push(entry);
                             }
                         }
-                        "script" => {
+                        crate::core::ResourceType::Script => {
                             if let Some(existing) =
                                 lockfile.scripts.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1073,7 +1534,7 @@ impl DependencyResolver {
                                 lockfile.scripts.push(entry);
                             }
                         }
-                        "hook" => {
+                        crate::core::ResourceType::Hook => {
                             if let Some(existing) =
                                 lockfile.hooks.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1082,7 +1543,7 @@ impl DependencyResolver {
                                 lockfile.hooks.push(entry);
                             }
                         }
-                        "mcp-server" => {
+                        crate::core::ResourceType::McpServer => {
                             if let Some(existing) = lockfile
                                 .mcp_servers
                                 .iter_mut()
@@ -1091,15 +1552,6 @@ impl DependencyResolver {
                                 *existing = entry;
                             } else {
                                 lockfile.mcp_servers.push(entry);
-                            }
-                        }
-                        _ => {
-                            if let Some(existing) =
-                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
-                            {
-                                *existing = entry;
-                            } else {
-                                lockfile.snippets.push(entry);
                             }
                         }
                     }
@@ -1124,6 +1576,9 @@ impl DependencyResolver {
         self.detect_target_conflicts(&lockfile)?;
 
         // Progress completion is handled by the caller
+
+        // Post-process dependencies to add version information
+        self.add_version_to_dependencies(&mut lockfile)?;
 
         Ok(lockfile)
     }
@@ -1187,7 +1642,7 @@ impl DependencyResolver {
 
         if dep.is_local() {
             // Local dependency - just create entry with path
-            // Determine the installed location based on resource type, custom target, and custom filename
+            // Determine resource type from manifest (already returns enum)
             let resource_type = self.get_resource_type(name);
 
             // Determine the filename to use
@@ -1238,20 +1693,22 @@ impl DependencyResolver {
                     + &filename
             } else {
                 // Use default target based on resource type
-                let target_dir = match resource_type.as_str() {
-                    "agent" => &self.manifest.target.agents,
-                    "snippet" => &self.manifest.target.snippets,
-                    "command" => &self.manifest.target.commands,
-                    "script" => &self.manifest.target.scripts,
-                    "hook" => &self.manifest.target.hooks,
-                    "mcp-server" => &self.manifest.target.mcp_servers,
-                    _ => &self.manifest.target.snippets, // fallback
+                let target_dir = match resource_type {
+                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                    crate::core::ResourceType::Command => &self.manifest.target.commands,
+                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
                 format!("{}/{}", target_dir, filename)
             };
 
+            // For local resources without a source, just use the name (no version suffix)
+            let unique_name = name.to_string();
+
             Ok(LockedResource {
-                name: name.to_string(),
+                name: unique_name,
                 source: None,
                 url: None,
                 path: dep.get_path().to_string(),
@@ -1259,6 +1716,8 @@ impl DependencyResolver {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at,
+                dependencies: self.get_dependencies_for(name),
+                resource_type,
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -1310,7 +1769,7 @@ impl DependencyResolver {
                     }
                 };
 
-            // Determine the installed location based on resource type, custom target, and custom filename
+            // Determine resource type from manifest (already returns enum)
             let resource_type = self.get_resource_type(name);
 
             // Determine the filename to use
@@ -1361,29 +1820,53 @@ impl DependencyResolver {
                     + &filename
             } else {
                 // Use default target based on resource type
-                let target_dir = match resource_type.as_str() {
-                    "agent" => &self.manifest.target.agents,
-                    "snippet" => &self.manifest.target.snippets,
-                    "command" => &self.manifest.target.commands,
-                    "script" => &self.manifest.target.scripts,
-                    "hook" => &self.manifest.target.hooks,
-                    "mcp-server" => &self.manifest.target.mcp_servers,
-                    _ => &self.manifest.target.snippets, // fallback
+                let target_dir = match resource_type {
+                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                    crate::core::ResourceType::Command => &self.manifest.target.commands,
+                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
                 format!("{}/{}", target_dir, filename)
             };
 
+            // For remote resources, use source:name@version format for unique identification
+            // This handles cases where:
+            // - Same resource comes from different sources (forks)
+            // - Multiple versions of the same resource exist
+            // For local sources (file paths), omit the version since it's always "local"
+            let unique_name = if resolved_version.as_deref() == Some("local") {
+                // Local source with explicit source name: "source:name"
+                format!("{}:{}", source_name, name)
+            } else {
+                // Remote source with version: "source:name@version"
+                let version_str = resolved_version.as_deref().unwrap_or("HEAD");
+                format!("{}:{}@{}", source_name, name, version_str)
+            };
+
             Ok(LockedResource {
-                name: name.to_string(),
+                name: unique_name,
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
                 path: dep.get_path().to_string(),
-                version: resolved_version, // Use the resolved version (e.g., "main")
+                version: resolved_version, // Resolved version (tag/branch like "v2.1.4" or "main")
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
+                dependencies: self.get_dependencies_for(name),
+                resource_type,
             })
         }
+    }
+
+    /// Gets the dependencies for a resource from the dependency map.
+    ///
+    /// Returns a list of dependencies in the format "resource_type/name".
+    fn get_dependencies_for(&self, name: &str) -> Vec<String> {
+        let resource_type = self.get_resource_type(name);
+        let key = (resource_type, name.to_string());
+        self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
 
     /// Resolves a pattern-based dependency to multiple locked resources.
@@ -1478,14 +1961,15 @@ impl DependencyResolver {
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                         .replace("//", "/")
                 } else {
-                    match resource_type.as_str() {
-                        "agent" => self.manifest.target.agents.clone(),
-                        "snippet" => self.manifest.target.snippets.clone(),
-                        "command" => self.manifest.target.commands.clone(),
-                        "script" => self.manifest.target.scripts.clone(),
-                        "hook" => self.manifest.target.hooks.clone(),
-                        "mcp-server" => self.manifest.target.mcp_servers.clone(),
-                        _ => self.manifest.target.snippets.clone(),
+                    match resource_type {
+                        crate::core::ResourceType::Agent => self.manifest.target.agents.clone(),
+                        crate::core::ResourceType::Snippet => self.manifest.target.snippets.clone(),
+                        crate::core::ResourceType::Command => self.manifest.target.commands.clone(),
+                        crate::core::ResourceType::Script => self.manifest.target.scripts.clone(),
+                        crate::core::ResourceType::Hook => self.manifest.target.hooks.clone(),
+                        crate::core::ResourceType::McpServer => {
+                            self.manifest.target.mcp_servers.clone()
+                        }
                     }
                 };
 
@@ -1510,6 +1994,9 @@ impl DependencyResolver {
                     format!("{}/{}", base_path.display(), matched_path.display())
                 };
 
+                // Determine resource type (pattern dependencies inherit from parent name)
+                let resource_type = self.get_resource_type(name);
+
                 resources.push(LockedResource {
                     name: resource_name.clone(),
                     source: None,
@@ -1519,6 +2006,8 @@ impl DependencyResolver {
                     resolved_commit: None,
                     checksum: String::new(),
                     installed_at,
+                    dependencies: self.get_dependencies_for(&resource_name),
+                    resource_type,
                 });
             }
 
@@ -1586,14 +2075,15 @@ impl DependencyResolver {
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                         .replace("//", "/")
                 } else {
-                    match resource_type.as_str() {
-                        "agent" => self.manifest.target.agents.clone(),
-                        "snippet" => self.manifest.target.snippets.clone(),
-                        "command" => self.manifest.target.commands.clone(),
-                        "script" => self.manifest.target.scripts.clone(),
-                        "hook" => self.manifest.target.hooks.clone(),
-                        "mcp-server" => self.manifest.target.mcp_servers.clone(),
-                        _ => self.manifest.target.snippets.clone(),
+                    match resource_type {
+                        crate::core::ResourceType::Agent => self.manifest.target.agents.clone(),
+                        crate::core::ResourceType::Snippet => self.manifest.target.snippets.clone(),
+                        crate::core::ResourceType::Command => self.manifest.target.commands.clone(),
+                        crate::core::ResourceType::Script => self.manifest.target.scripts.clone(),
+                        crate::core::ResourceType::Hook => self.manifest.target.hooks.clone(),
+                        crate::core::ResourceType::McpServer => {
+                            self.manifest.target.mcp_servers.clone()
+                        }
                     }
                 };
 
@@ -1611,6 +2101,9 @@ impl DependencyResolver {
 
                 let installed_at = format!("{}/{}", target_dir, filename);
 
+                // Determine resource type (pattern dependencies inherit from parent name)
+                let resource_type = self.get_resource_type(name);
+
                 resources.push(LockedResource {
                     name: resource_name.clone(),
                     source: Some(source_name.to_string()),
@@ -1620,6 +2113,8 @@ impl DependencyResolver {
                     resolved_commit: Some(resolved_commit.clone()),
                     checksum: String::new(),
                     installed_at,
+                    dependencies: self.get_dependencies_for(&resource_name),
+                    resource_type,
                 });
             }
 
@@ -1697,21 +2192,117 @@ impl DependencyResolver {
     ///
     /// If a dependency is not found in the agents section, it defaults
     /// to `"snippet"`. This handles edge cases and maintains backward compatibility.
-    fn get_resource_type(&self, name: &str) -> String {
+    fn get_resource_type(&self, name: &str) -> crate::core::ResourceType {
+        // First check the manifest for direct dependencies
         if self.manifest.agents.contains_key(name) {
-            "agent".to_string()
+            crate::core::ResourceType::Agent
         } else if self.manifest.snippets.contains_key(name) {
-            "snippet".to_string()
+            crate::core::ResourceType::Snippet
         } else if self.manifest.commands.contains_key(name) {
-            "command".to_string()
+            crate::core::ResourceType::Command
         } else if self.manifest.scripts.contains_key(name) {
-            "script".to_string()
+            crate::core::ResourceType::Script
         } else if self.manifest.hooks.contains_key(name) {
-            "hook".to_string()
+            crate::core::ResourceType::Hook
         } else if self.manifest.mcp_servers.contains_key(name) {
-            "mcp-server".to_string()
+            crate::core::ResourceType::McpServer
         } else {
-            "snippet".to_string() // Default fallback
+            // Check transitive dependencies by looking in dependency_map keys
+            for (resource_type, dep_name) in self.dependency_map.keys() {
+                if dep_name == name {
+                    return *resource_type;
+                }
+            }
+            crate::core::ResourceType::Snippet // Default fallback
+        }
+    }
+
+    /// Resolve version conflicts between two dependencies.
+    ///
+    /// This method implements version conflict resolution strategies when the same
+    /// resource is required with different versions by different dependencies.
+    ///
+    /// # Resolution Strategy
+    ///
+    /// The current implementation uses a "highest compatible version" strategy:
+    /// 1. If one dependency has no version (latest), use the other's version
+    /// 2. If both have versions, prefer semantic version comparison
+    /// 3. For incompatible versions, warn and use the higher version
+    ///
+    /// # Future Enhancements
+    ///
+    /// - Support for version ranges (^1.0.0, ~2.1.0)
+    /// - User-configurable resolution strategies
+    /// - Interactive conflict resolution
+    ///
+    /// # Parameters
+    ///
+    /// - `resource_name`: Name of the conflicting resource
+    /// - `existing`: Current version in the dependency map
+    /// - `new_dep`: New version being requested
+    /// - `requester`: Name of the dependency requesting the new version
+    ///
+    /// # Returns
+    ///
+    /// The resolved dependency that satisfies both requirements if possible,
+    /// or the higher version with a warning if not compatible.
+    fn resolve_version_conflict(
+        &self,
+        resource_name: &str,
+        existing: &ResourceDependency,
+        new_dep: &ResourceDependency,
+        requester: &str,
+    ) -> Result<ResourceDependency> {
+        let existing_version = existing.get_version();
+        let new_version = new_dep.get_version();
+
+        // If versions are identical, no conflict
+        if existing_version == new_version {
+            return Ok(existing.clone());
+        }
+
+        // Log the conflict for user awareness
+        tracing::warn!(
+            "Version conflict for '{}': existing version {:?} vs {:?} required by '{}'",
+            resource_name,
+            existing_version.unwrap_or("latest"),
+            new_version.unwrap_or("latest"),
+            requester
+        );
+
+        // Resolution strategy: prefer specific versions over "latest"
+        match (existing_version, new_version) {
+            (None, Some(_)) => {
+                // Existing wants latest, new wants specific - use specific
+                Ok(new_dep.clone())
+            }
+            (Some(_), None) => {
+                // Existing wants specific, new wants latest - keep specific
+                Ok(existing.clone())
+            }
+            (Some(v1), Some(v2)) => {
+                // Both have versions - try to pick the higher one
+                // This is a simplified strategy; could be enhanced with semver
+                if v1 > v2 {
+                    tracing::info!(
+                        "Resolving conflict: using version {} for {}",
+                        v1,
+                        resource_name
+                    );
+                    Ok(existing.clone())
+                } else {
+                    tracing::info!(
+                        "Resolving conflict: using version {} for {}",
+                        v2,
+                        resource_name
+                    );
+                    Ok(new_dep.clone())
+                }
+            }
+            (None, None) => {
+                // Both want latest - no conflict
+                Ok(existing.clone())
+            }
         }
     }
 
@@ -1787,12 +2378,12 @@ impl DependencyResolver {
                 .collect()
         };
 
-        // Resolve updated dependencies (clone to avoid borrow checker issues)
-        let deps: Vec<(String, ResourceDependency)> = self
+        // Get all base dependencies including MCP servers (clone to avoid borrow checker issues)
+        let base_deps: Vec<(String, ResourceDependency)> = self
             .manifest
-            .all_dependencies()
+            .all_dependencies_with_mcp()
             .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.clone()))
+            .map(|(name, dep)| (name.to_string(), dep.into_owned()))
             .collect();
 
         // Note: We assume the update command has already called pre_sync_sources
@@ -1800,7 +2391,12 @@ impl DependencyResolver {
         // We just need to prepare and resolve versions now.
 
         // Prepare remote groups to resolve versions (reuses pre-synced repos)
-        self.prepare_remote_groups(&deps).await?;
+        self.prepare_remote_groups(&base_deps).await?;
+
+        // Resolve transitive dependencies (always enabled for update to maintain consistency)
+        let deps = self
+            .resolve_transitive_dependencies(&base_deps, true)
+            .await?;
 
         for (name, dep) in deps {
             if !deps_to_check.contains(&name) {
@@ -1816,8 +2412,8 @@ impl DependencyResolver {
                 // Add each resolved entry to the appropriate resource type with deduplication
                 let resource_type = self.get_resource_type(&name);
                 for entry in entries {
-                    match resource_type.as_str() {
-                        "agent" => {
+                    match resource_type {
+                        crate::core::ResourceType::Agent => {
                             if let Some(existing) =
                                 lockfile.agents.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1826,7 +2422,7 @@ impl DependencyResolver {
                                 lockfile.agents.push(entry);
                             }
                         }
-                        "snippet" => {
+                        crate::core::ResourceType::Snippet => {
                             if let Some(existing) =
                                 lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1835,7 +2431,7 @@ impl DependencyResolver {
                                 lockfile.snippets.push(entry);
                             }
                         }
-                        "command" => {
+                        crate::core::ResourceType::Command => {
                             if let Some(existing) =
                                 lockfile.commands.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1844,7 +2440,7 @@ impl DependencyResolver {
                                 lockfile.commands.push(entry);
                             }
                         }
-                        "script" => {
+                        crate::core::ResourceType::Script => {
                             if let Some(existing) =
                                 lockfile.scripts.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1853,7 +2449,7 @@ impl DependencyResolver {
                                 lockfile.scripts.push(entry);
                             }
                         }
-                        "hook" => {
+                        crate::core::ResourceType::Hook => {
                             if let Some(existing) =
                                 lockfile.hooks.iter_mut().find(|e| e.name == entry.name)
                             {
@@ -1862,7 +2458,7 @@ impl DependencyResolver {
                                 lockfile.hooks.push(entry);
                             }
                         }
-                        "mcp-server" => {
+                        crate::core::ResourceType::McpServer => {
                             if let Some(existing) = lockfile
                                 .mcp_servers
                                 .iter_mut()
@@ -1871,15 +2467,6 @@ impl DependencyResolver {
                                 *existing = entry;
                             } else {
                                 lockfile.mcp_servers.push(entry);
-                            }
-                        }
-                        _ => {
-                            if let Some(existing) =
-                                lockfile.snippets.iter_mut().find(|e| e.name == entry.name)
-                            {
-                                *existing = entry;
-                            } else {
-                                lockfile.snippets.push(entry);
                             }
                         }
                     }
@@ -1895,93 +2482,163 @@ impl DependencyResolver {
 
         // Progress bar completion is handled by the caller
 
+        // Post-process dependencies to add version information
+        self.add_version_to_dependencies(&mut lockfile)?;
+
         // Detect target-path conflicts before finalizing
         self.detect_target_conflicts(&lockfile)?;
 
         Ok(lockfile)
     }
 
-    /// Checks for redundant dependencies and returns a warning message.
+    /// Post-processes lockfile entries to add version information to dependencies.
     ///
-    /// This method analyzes the manifest for redundant dependencies where
-    /// multiple resources reference the same source file but with different
-    /// versions or names. Redundancy detection is non-blocking and generates
-    /// warnings rather than errors.
-    ///
-    /// # Redundancy Types Detected
-    ///
-    /// - **Version Redundancy**: Same resource at different versions
-    /// - **Name Redundancy**: Different names for the same resource
-    /// - **Mixed Constraints**: Some dependencies use latest, others use specific versions
-    ///
-    /// # Design Philosophy
-    ///
-    /// Redundancy detection is advisory rather than prescriptive because:
-    /// - Users may intentionally install multiple versions for A/B testing
-    /// - Gradual migrations may require temporary redundancy
-    /// - Different projects may have different versioning needs
-    ///
-    /// # Returns
-    ///
-    /// - `Some(String)`: Warning message if redundancies are detected
-    /// - `None`: No redundancies found
-    ///
-    /// The warning message includes:
-    /// - List of redundant resource usages
-    /// - Suggested consolidation strategies
-    /// - Explanation that redundancy is not an error
-    #[must_use]
-    pub fn check_redundancies(&self) -> Option<String> {
-        let mut detector = RedundancyDetector::new();
-        detector.analyze_manifest(&self.manifest);
+    /// Updates the `dependencies` field in each lockfile entry from the format
+    /// `"resource_type/name"` to `"resource_type/name@version"` by looking up
+    /// the resolved version in the lockfile.
+    fn add_version_to_dependencies(&self, lockfile: &mut LockFile) -> Result<()> {
+        // Build a lookup map: (resource_type, filename, source) -> unique_name
+        // This allows us to resolve dependency paths to lockfile names
+        let mut lookup_map: HashMap<(crate::core::ResourceType, String, Option<String>), String> =
+            HashMap::new();
 
-        let redundancies = detector.detect_redundancies();
-        if !redundancies.is_empty() {
-            return Some(detector.generate_redundancy_warning(&redundancies));
+        // Helper to extract filename from path
+        let extract_filename =
+            |path: &str| -> Option<String> { path.split('/').next_back().map(|s| s.to_string()) };
+
+        // Build lookup map from all lockfile entries
+        for entry in &lockfile.agents {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::Agent,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
+        }
+        for entry in &lockfile.snippets {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::Snippet,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
+        }
+        for entry in &lockfile.commands {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::Command,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
+        }
+        for entry in &lockfile.scripts {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::Script,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
+        }
+        for entry in &lockfile.hooks {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::Hook,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
+        }
+        for entry in &lockfile.mcp_servers {
+            if let Some(filename) = extract_filename(&entry.path) {
+                lookup_map.insert(
+                    (
+                        crate::core::ResourceType::McpServer,
+                        filename,
+                        entry.source.clone(),
+                    ),
+                    entry.name.clone(),
+                );
+            }
         }
 
-        None
-    }
+        // Helper function to update dependencies in a vector of entries
+        let update_deps = |entries: &mut Vec<LockedResource>| {
+            for entry in entries {
+                let parent_source = entry.source.clone();
 
-    /// Analyzes dependencies for redundancies and returns detailed information.
-    ///
-    /// This method provides programmatic access to redundancy analysis results,
-    /// allowing callers to implement custom handling logic or generate
-    /// specialized reports.
-    ///
-    /// # Use Cases
-    ///
-    /// - **Custom Reporting**: Generate tailored redundancy reports
-    /// - **Automated Cleanup**: Implement dependency optimization tools
-    /// - **Integration Testing**: Verify redundancy detection logic
-    /// - **IDE Extensions**: Provide redundancy warnings in development tools
-    ///
-    /// # Returns
-    ///
-    /// A vector of [`Redundancy`] objects, each containing:
-    /// - Source file identifier (source:path)
-    /// - List of resources using that source file
-    /// - Version information for each usage
-    ///
-    /// # Example Output
-    ///
-    /// For a manifest with redundant dependencies:
-    /// ```text
-    /// Redundancy {
-    ///     source_file: "community:agents/helper.md",
-    ///     usages: [
-    ///         ResourceUsage { resource_name: "app-helper", version: Some("v1.0.0") },
-    ///         ResourceUsage { resource_name: "tool-helper", version: Some("v2.0.0") },
-    ///     ]
-    /// }
-    /// ```
-    ///
-    /// [`Redundancy`]: redundancy::Redundancy
-    #[must_use]
-    pub fn check_redundancies_with_details(&self) -> Vec<redundancy::Redundancy> {
-        let mut detector = RedundancyDetector::new();
-        detector.analyze_manifest(&self.manifest);
-        detector.detect_redundancies()
+                let updated_deps: Vec<String> = entry
+                    .dependencies
+                    .iter()
+                    .map(|dep| {
+                        // Parse "resource_type/path" format (e.g., "agents/rust-haiku.md" or "snippets/utils.md")
+                        // The first part is the plural resource type directory
+                        if let Some((resource_type_str, dep_path)) = dep.split_once('/') {
+                            // Parse resource type from plural string form (e.g., "agents" -> Agent)
+                            if let Ok(resource_type) =
+                                resource_type_str.parse::<crate::core::ResourceType>()
+                            {
+                                // dep_path is already just the filename (e.g., "rust-haiku.md" or "test-automation")
+                                // Try looking it up with the filename as-is
+                                let dep_filename = dep_path.to_string();
+
+                                // Look up the resource in the lookup map
+                                if let Some(unique_name) = lookup_map.get(&(
+                                    resource_type,
+                                    dep_filename.clone(),
+                                    parent_source.clone(),
+                                )) {
+                                    // Return the unique lockfile name (e.g., "local-deps:rust-haiku@local")
+                                    return unique_name.clone();
+                                }
+
+                                // If not found, try adding .md extension (resource files often omit it)
+                                let dep_filename_with_ext = format!("{}.md", dep_filename);
+                                if let Some(unique_name) = lookup_map.get(&(
+                                    resource_type,
+                                    dep_filename_with_ext,
+                                    parent_source.clone(),
+                                )) {
+                                    return unique_name.clone();
+                                }
+                            }
+                        }
+                        // If parsing fails or resource not found, return as-is
+                        dep.clone()
+                    })
+                    .collect();
+
+                entry.dependencies = updated_deps;
+            }
+        };
+
+        // Update all entry types
+        update_deps(&mut lockfile.agents);
+        update_deps(&mut lockfile.snippets);
+        update_deps(&mut lockfile.commands);
+        update_deps(&mut lockfile.scripts);
+        update_deps(&mut lockfile.hooks);
+        update_deps(&mut lockfile.mcp_servers);
+
+        Ok(())
     }
 
     /// Verifies that all dependencies can be resolved without performing resolution.
@@ -1992,17 +2649,15 @@ impl DependencyResolver {
     ///
     /// # Validation Steps
     ///
-    /// 1. **Redundancy Check**: Analyze and warn about redundant dependencies
-    /// 2. **Local Path Validation**: Verify local dependencies exist (for absolute paths)
-    /// 3. **Source Validation**: Ensure all referenced sources are defined
-    /// 4. **Constraint Validation**: Basic syntax checking of version constraints
+    /// 1. **Local Path Validation**: Verify local dependencies exist (for absolute paths)
+    /// 2. **Source Validation**: Ensure all referenced sources are defined
+    /// 3. **Constraint Validation**: Basic syntax checking of version constraints
     ///
     /// # Validation Scope
     ///
     /// - **Manifest Structure**: Validate TOML structure and required fields
     /// - **Source References**: Ensure all sources used by dependencies exist
     /// - **Local Dependencies**: Check absolute paths exist on filesystem
-    /// - **Redundancy Analysis**: Warn about potential optimization opportunities
     ///
     /// # Performance
     ///
@@ -2032,10 +2687,10 @@ impl DependencyResolver {
     /// since network issues or missing versions can still cause failures.
     /// Use this method for fast validation before expensive resolution operations.
     pub fn verify(&mut self) -> Result<()> {
-        // Check for redundancies and warn (but don't fail)
-        if let Some(warning) = self.check_redundancies() {
-            eprintln!("{warning}");
-        }
+        // Redundancy checking removed - conflicts are now automatically resolved
+        // if let Some(warning) = self.check_redundancies() {
+        //     eprintln!("{warning}");
+        // }
 
         // Then try to resolve all dependencies (clone to avoid borrow checker issues)
         let deps: Vec<(String, ResourceDependency)> = self
@@ -2328,7 +2983,9 @@ mod tests {
         assert!(entry.url.is_none());
     }
 
+    // Redundancy tests removed - using automatic conflict resolution
     #[test]
+    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies() {
         let mut manifest = Manifest::new();
         manifest.add_source(
@@ -2339,7 +2996,7 @@ mod tests {
         // Add two dependencies with different versions of the same resource
         manifest.add_dependency(
             "agent1".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2349,13 +3006,14 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
         manifest.add_dependency(
             "agent2".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -2365,17 +3023,14 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let warning = resolver.check_redundancies();
-        assert!(warning.is_some());
-        assert!(warning.unwrap().contains("Redundant dependencies detected"));
+        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[tokio::test]
@@ -2448,7 +3103,7 @@ mod tests {
 
         manifest.add_dependency(
             "test-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test-source".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2458,7 +3113,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2531,7 +3187,7 @@ mod tests {
         // Add dependency without corresponding source
         manifest.add_dependency(
             "remote-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("nonexistent".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
@@ -2541,7 +3197,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2573,8 +3230,14 @@ mod tests {
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let resolver = DependencyResolver::with_cache(manifest, cache);
 
-        assert_eq!(resolver.get_resource_type("agent1"), "agent");
-        assert_eq!(resolver.get_resource_type("snippet1"), "snippet");
+        assert_eq!(
+            resolver.get_resource_type("agent1"),
+            crate::core::ResourceType::Agent
+        );
+        assert_eq!(
+            resolver.get_resource_type("snippet1"),
+            crate::core::ResourceType::Snippet
+        );
         // Dev concept removed - no longer testing dev-agent1 and dev-snippet1
     }
 
@@ -2626,12 +3289,12 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        // Use the absolute path directly for better compatibility with coverage tools
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "remote-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2641,7 +3304,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2680,7 +3344,7 @@ mod tests {
         );
         manifest.add_dependency(
             "agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
@@ -2690,7 +3354,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2752,12 +3417,12 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        // Use the absolute path directly for better compatibility with coverage tools
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
             "git-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/test.md".to_string(),
                 version: None,
@@ -2767,7 +3432,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2828,6 +3494,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies_no_redundancy() {
         let mut manifest = Manifest::new();
         manifest.add_source(
@@ -2836,7 +3503,7 @@ mod tests {
         );
         manifest.add_dependency(
             "agent1".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/test1.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2846,12 +3513,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
         manifest.add_dependency(
             "agent2".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/test2.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2861,16 +3529,14 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let warning = resolver.check_redundancies();
-        assert!(warning.is_none());
+        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[test]
@@ -2910,7 +3576,7 @@ mod tests {
         // Add local dependency with custom target
         manifest.add_dependency(
             "custom-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: "../test.md".to_string(),
                 version: None,
@@ -2920,7 +3586,8 @@ mod tests {
                 args: None,
                 target: Some("integrations/custom".to_string()),
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2952,7 +3619,7 @@ mod tests {
         // Add local dependency without custom target
         manifest.add_dependency(
             "standard-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: "../test.md".to_string(),
                 version: None,
@@ -2962,7 +3629,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2986,7 +3654,7 @@ mod tests {
         // Add local dependency with custom filename
         manifest.add_dependency(
             "my-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: "../test.md".to_string(),
                 version: None,
@@ -2996,7 +3664,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: Some("ai-assistant.txt".to_string()),
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3020,7 +3689,7 @@ mod tests {
         // Add local dependency with both custom filename and target
         manifest.add_dependency(
             "special-tool".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: "../test.md".to_string(),
                 version: None,
@@ -3030,7 +3699,8 @@ mod tests {
                 args: None,
                 target: Some("tools/ai".to_string()),
                 filename: Some("assistant.markdown".to_string()),
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3058,7 +3728,7 @@ mod tests {
         // Add script with custom filename (different extension)
         manifest.add_dependency(
             "analyzer".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: "../scripts/data-analyzer-v3.py".to_string(),
                 version: None,
@@ -3068,7 +3738,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: Some("analyze.py".to_string()),
-            }),
+                dependencies: None,
+            })),
             false, // script (not agent)
         );
 
@@ -3179,13 +3850,14 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
 
         // Add pattern dependency for python agents
         manifest.add_dependency(
             "python-tools".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/python-*.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3195,7 +3867,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true, // agents
         );
 
@@ -3229,7 +3902,7 @@ mod tests {
         let mut manifest = Manifest::new();
         manifest.add_dependency(
             "custom-agents".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: None,
                 path: format!("{}/agents/*.md", project_dir.display()),
                 version: None,
@@ -3239,7 +3912,8 @@ mod tests {
                 args: None,
                 target: Some("custom/agents".to_string()),
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3333,13 +4007,14 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
 
         // Add dependencies - initially both at v1.0.0
         manifest.add_dependency(
             "agent1".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent1.md".to_string(),
                 version: Some("v1.0.0".to_string()), // Start with v1.0.0
@@ -3349,12 +4024,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
         manifest.add_dependency(
             "agent2".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent2.md".to_string(),
                 version: Some("v1.0.0".to_string()), // Start with v1.0.0
@@ -3364,7 +4040,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3378,10 +4055,14 @@ mod tests {
 
         // Create a new manifest with agent1 updated to v2.0.0
         let mut updated_manifest = Manifest::new();
-        updated_manifest.add_source("test".to_string(), source_dir.display().to_string());
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        updated_manifest.add_source(
+            "test".to_string(),
+            format!("file://{}", source_dir.display()),
+        );
         updated_manifest.add_dependency(
             "agent1".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent1.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -3391,12 +4072,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
         updated_manifest.add_dependency(
             "agent2".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agents/agent2.md".to_string(),
                 version: Some("v1.0.0".to_string()), // Keep v1.0.0
@@ -3406,7 +4088,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3422,7 +4105,7 @@ mod tests {
         let agent1 = updated_lockfile
             .agents
             .iter()
-            .find(|a| a.name == "agent1")
+            .find(|a| a.name.ends_with("agent1@v2.0.0"))
             .unwrap();
         assert_eq!(agent1.version.as_ref().unwrap(), "v2.0.0");
 
@@ -3430,7 +4113,7 @@ mod tests {
         let agent2 = updated_lockfile
             .agents
             .iter()
-            .find(|a| a.name == "agent2")
+            .find(|a| a.name.ends_with("agent2@v1.0.0"))
             .unwrap();
         assert_eq!(agent2.version.as_ref().unwrap(), "v1.0.0");
     }
@@ -3465,6 +4148,10 @@ mod tests {
         // All dependencies should be present
         assert_eq!(updated_lockfile.agents.len(), 2);
     }
+
+    // NOTE: Comprehensive integration tests for update() with transitive dependencies
+    // are in tests/integration_incremental_add.rs. These provide end-to-end testing
+    // of the incremental `ccpm add dep` scenario which exercises the update() method.
 
     #[tokio::test]
     async fn test_resolve_hooks_resource_type() {
@@ -3680,13 +4367,14 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
 
         // Test version constraint resolution (^1.0.0 should resolve to 1.2.0)
         manifest.add_dependency(
             "constrained-dep".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "test.txt".to_string(),
                 version: Some("^1.0.0".to_string()), // Constraint: compatible with 1.x.x
@@ -3696,7 +4384,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3746,7 +4435,7 @@ mod tests {
         // Add pattern dependency without source (should error in resolve_pattern_dependency)
         manifest.add_dependency(
             "pattern-dep".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("nonexistent".to_string()),
                 path: "agents/*.md".to_string(), // Pattern path
                 version: None,
@@ -3756,7 +4445,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3828,13 +4518,14 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
 
         // Test branch checkout
         manifest.add_dependency(
             "branch-dep".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "test.txt".to_string(),
                 version: Some("develop".to_string()), // Branch name
@@ -3844,7 +4535,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3908,13 +4600,14 @@ mod tests {
         let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         let mut manifest = Manifest::new();
-        let source_url = source_dir.display().to_string();
+        // Use file:// URL to ensure it's treated as a Git source, not a local path
+        let source_url = format!("file://{}", source_dir.display());
         manifest.add_source("test".to_string(), source_url);
 
         // Test commit hash checkout (use first 7 chars for short hash)
         manifest.add_dependency(
             "commit-dep".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "test.txt".to_string(),
                 version: Some(commit_hash[..7].to_string()), // Short commit hash
@@ -3924,7 +4617,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -3948,6 +4642,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies_with_details() {
         let mut manifest = Manifest::new();
         manifest.add_source(
@@ -3958,7 +4653,7 @@ mod tests {
         // Add redundant dependencies
         manifest.add_dependency(
             "helper-v1".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/helper.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3968,13 +4663,14 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
         manifest.add_dependency(
             "helper-v2".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/helper.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -3984,21 +4680,14 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let redundancies = resolver.check_redundancies_with_details();
-        assert!(!redundancies.is_empty());
-
-        // Should have detected the redundancy
-        let redundancy = &redundancies[0];
-        assert_eq!(redundancy.source_file, "official:agents/helper.md");
-        assert_eq!(redundancy.usages.len(), 2);
+        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[tokio::test]

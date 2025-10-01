@@ -311,7 +311,7 @@ impl ListCommand {
     /// };
     /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
-    /// # });
+    /// # }));
     /// ```
     /// Execute the list command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
@@ -692,7 +692,7 @@ impl ListCommand {
     /// Output in simple format
     fn output_simple(&self, items: &[ListItem]) {
         for item in items {
-            println!("{} ({})", item.name, item.resource_type);
+            println!("{} ({}))", item.name, item.resource_type);
         }
     }
 
@@ -798,7 +798,7 @@ impl ListCommand {
             println!(
                 "    {} {} {} {}",
                 item.name.bright_white(),
-                format!("({source})").bright_black(),
+                format!("({source}))").bright_black(),
                 version.yellow(),
                 commit_info.bright_black()
             );
@@ -896,7 +896,7 @@ mod tests {
         // Add agents
         manifest.agents.insert(
             "code-reviewer".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/reviewer.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -906,7 +906,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         manifest.agents.insert(
@@ -917,7 +918,7 @@ mod tests {
         // Add snippets
         manifest.snippets.insert(
             "utils".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "snippets/utils.md".to_string(),
                 version: Some("v1.2.0".to_string()),
@@ -927,7 +928,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         manifest.snippets.insert(
@@ -945,14 +947,12 @@ mod tests {
         lockfile.sources.push(LockedSource {
             name: "official".to_string(),
             url: "https://github.com/example/official.git".to_string(),
-            commit: "abc123def456".to_string(),
             fetched_at: "2024-01-01T00:00:00Z".to_string(),
         });
 
         lockfile.sources.push(LockedSource {
             name: "community".to_string(),
             url: "https://github.com/example/community.git".to_string(),
-            commit: "def456ghi789".to_string(),
             fetched_at: "2024-01-01T00:00:00Z".to_string(),
         });
 
@@ -966,6 +966,8 @@ mod tests {
             resolved_commit: Some("abc123def456".to_string()),
             checksum: "sha256:abc123".to_string(),
             installed_at: "agents/code-reviewer.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         lockfile.agents.push(LockedResource {
@@ -977,6 +979,8 @@ mod tests {
             resolved_commit: None,
             checksum: "sha256:def456".to_string(),
             installed_at: "agents/local-helper.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         // Add snippets
@@ -989,6 +993,8 @@ mod tests {
             resolved_commit: Some("def456ghi789".to_string()),
             checksum: "sha256:ghi789".to_string(),
             installed_at: "snippets/utils.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Snippet,
         });
 
         lockfile
@@ -1307,7 +1313,7 @@ mod tests {
             ..create_default_command()
         };
 
-        let dep_with_source = ResourceDependency::Detailed(DetailedDependency {
+        let dep_with_source = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -1317,19 +1323,22 @@ mod tests {
             args: None,
             target: None,
             filename: None,
-        });
+            dependencies: None,
+        }));
 
-        let dep_with_different_source = ResourceDependency::Detailed(DetailedDependency {
-            source: Some("community".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("v1.0.0".to_string()),
-            command: None,
-            branch: None,
-            rev: None,
-            args: None,
-            target: None,
-            filename: None,
-        });
+        let dep_with_different_source =
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                command: None,
+                branch: None,
+                rev: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
 
@@ -1366,6 +1375,8 @@ mod tests {
             resolved_commit: None,
             checksum: "abc123".to_string(),
             installed_at: "test.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         };
 
         let entry_with_different_source = LockedResource {
@@ -1377,6 +1388,8 @@ mod tests {
             resolved_commit: None,
             checksum: "abc123".to_string(),
             installed_at: "test.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         };
 
         let entry_without_source = LockedResource {
@@ -1388,6 +1401,8 @@ mod tests {
             resolved_commit: None,
             checksum: "abc123".to_string(),
             installed_at: "test.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1411,6 +1426,8 @@ mod tests {
             resolved_commit: None,
             checksum: "abc123".to_string(),
             installed_at: "test.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1582,6 +1599,8 @@ mod tests {
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:def456".to_string(),
             installed_at: "agents/test-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

@@ -18,6 +18,9 @@ dependency management, similar to Cargo.
 - ⚠️ **Path conflict detection** - Prevents multiple dependencies from overwriting the same file
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
+- 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
+- 🛡️ **Circular dependency detection** - Prevents circular references with comprehensive error reporting
+- 🧩 **Intelligent conflict resolution** - Automatic version resolution with transparent logging
 
 ## Quick Start
 
@@ -108,7 +111,121 @@ ccpm add dep script ../shared/scripts/build.sh
 ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
 ```
 
+### Dependency Validation
+
+CCPM provides comprehensive validation and automatic conflict resolution:
+
+```bash
+# Basic manifest validation
+ccpm validate
+
+# Full validation with all checks
+ccpm validate --resolve --sources --paths --check-lock
+
+# JSON output for CI/CD integration
+ccpm validate --format json
+```
+
+#### Transitive Dependencies and Conflict Resolution
+
+CCPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare dependencies in their metadata, and CCPM automatically resolves the entire dependency tree.
+
+**What is a Conflict?**
+
+A conflict occurs when the same resource (same source and path) is required at different versions:
+- **Direct conflict**: Your manifest requires `helper.md@v1.0.0` and `helper.md@v2.0.0`
+- **Transitive conflict**: Agent A depends on `helper.md@v1.0.0`, Agent B depends on `helper.md@v2.0.0`
+
+**Automatic Resolution Strategy:**
+
+When conflicts are detected, CCPM automatically resolves them:
+1. **Specific over "latest"**: If one version is specific and another is "latest", use the specific version
+2. **Higher version**: When both are specific versions, use the higher version
+3. **Transparent logging**: All conflict resolutions are logged for visibility
+
+**Example Conflict Resolution:**
+```text
+Direct dependencies:
+  - app-agent requires helper.md v1.0.0
+  - tool-agent requires helper.md v2.0.0
+→ Resolved: Using helper.md v2.0.0 (higher version)
+
+Transitive dependencies:
+  - agent-a → depends on → helper.md v1.5.0
+  - agent-b → depends on → helper.md v2.0.0
+→ Resolved: Using helper.md v2.0.0 (higher version)
+```
+
+**Circular Dependencies:**
+
+CCPM detects and prevents circular dependencies in the dependency graph:
+```text
+Error: Circular dependency detected: A → B → C → A
+```
+
+**No Conflicts:**
+
+When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph and installs resources in topological order (dependencies before dependents).
+
 See the [Command Reference](docs/command-reference.md#add-dependency) for all supported dependency formats.
+
+### Declaring Dependencies in Resource Files
+
+Resources can declare their own dependencies within their files, creating a complete dependency graph:
+
+**Markdown files (.md)** use YAML frontmatter:
+```markdown
+---
+title: My Agent
+description: An example agent with dependencies
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/utils.md
+      version: v2.0.0
+---
+
+# Agent content here
+```
+
+**JSON files (.json)** use a top-level `dependencies` field:
+```json
+{
+  "events": ["SessionStart"],
+  "type": "command",
+  "command": "echo 'Starting session'",
+  "dependencies": {
+    "commands": [
+      {
+        "path": "commands/setup.md",
+        "version": "v1.0.0"
+      }
+    ]
+  }
+}
+```
+
+**Key Features:**
+- Dependencies inherit the source from their parent resource
+- Version is optional - defaults to parent's version if not specified
+- Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
+- Graph-based resolution with topological ordering ensures correct installation order
+- Circular dependency detection prevents infinite loops
+
+**Lockfile Format:**
+
+Dependencies are tracked in `ccpm.lock` using the format `resource_type/name@version`:
+```toml
+[[commands]]
+name = "my-command"
+path = "commands/my-command.md"
+dependencies = [
+    "agents/helper@v1.0.0",
+    "snippets/utils@v2.0.0"
+]
+```
 
 ## Core Commands
 

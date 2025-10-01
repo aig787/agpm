@@ -105,6 +105,8 @@ installed_at = "snippets/utils.md"
 
     let output = project.run_ccpm(&["update"]).unwrap();
     assert!(output.success);
+    eprintln!("=== STDOUT ===\n{}", output.stdout);
+    eprintln!("=== STDERR ===\n{}", output.stderr);
     assert!(output.stdout.contains("Found"));
     assert!(output.stdout.contains("update(s)"));
     assert!(output.stdout.contains("Updated"));

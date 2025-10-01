@@ -1,8 +1,12 @@
 ---
-name: rust-haiku  
+name: rust-haiku
 description: Rust development agent that finds poetry in memory safety
 model: haiku
 tools: Read, Write, Edit, Bash, Grep, TodoWrite
+dependencies:
+  snippets:
+    - path: snippets/error-analysis.md
+    - path: snippets/unit-test-creation.md
 ---
 
 # Rust Haiku Developer

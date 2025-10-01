@@ -53,6 +53,7 @@
 
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 /// Type alias for complex installation result tuples to improve code readability.
 ///
@@ -177,6 +178,7 @@ use std::fs;
 /// use ccpm::installer::install_resource;
 /// use ccpm::lockfile::LockedResource;
 /// use ccpm::cache::Cache;
+/// use ccpm::core::ResourceType;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -190,6 +192,8 @@ use std::fs;
 ///     resolved_commit: Some("abc123".to_string()),
 ///     checksum: "sha256:...".to_string(),
 ///     installed_at: ".claude/agents/example.md".to_string(),
+///     dependencies: vec![],
+///     resource_type: ResourceType::Agent,
 /// };
 ///
 /// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
@@ -238,44 +242,55 @@ pub async fn install_resource(
     };
 
     let new_content = if let Some(source_name) = &entry.source {
-        // Remote resource - use cache (with optional force refresh)
         let url = entry
             .url
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Remote resource {} has no URL", entry.name))?;
+            .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
 
-        // Always use SHA-based worktree creation
-        // The resolver should have already resolved all versions to SHAs
-        let sha = entry
+        // Check if this is a local directory source (no SHA or empty SHA)
+        let is_local_source = entry
             .resolved_commit
             .as_deref()
-            .filter(|commit| *commit != "local")
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+            .map(|commit| commit.is_empty())
+            .unwrap_or(true);
+
+        let cache_dir = if is_local_source {
+            // Local directory source - use the URL as the path directly
+            PathBuf::from(url)
+        } else {
+            // Git-based resource - use SHA-based worktree creation
+            let sha = entry
+                .resolved_commit
+                .as_deref()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+                        entry.name
+                    )
+                })?;
+
+            // Validate SHA format
+            if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow::anyhow!(
+                    "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
+                    sha,
                     entry.name
-                )
-            })?;
+                ));
+            }
 
-        // Validate SHA format
-        if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(anyhow::anyhow!(
-                "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
-                sha,
-                entry.name
-            ));
-        }
-
-        let mut cache_dir = cache
-            .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
-            .await?;
-
-        if force_refresh {
-            let _ = cache.cleanup_worktree(&cache_dir).await;
-            cache_dir = cache
+            let mut cache_dir = cache
                 .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
                 .await?;
-        }
+
+            if force_refresh {
+                let _ = cache.cleanup_worktree(&cache_dir).await;
+                cache_dir = cache
+                    .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
+                    .await?;
+            }
+
+            cache_dir
+        };
 
         // Read the content from the source
         let source_path = cache_dir.join(&entry.path);
@@ -374,6 +389,7 @@ pub async fn install_resource(
 /// use ccpm::installer::install_resource_with_progress;
 /// use ccpm::lockfile::LockedResource;
 /// use ccpm::cache::Cache;
+/// use ccpm::core::ResourceType;
 /// use ccpm::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
@@ -389,6 +405,8 @@ pub async fn install_resource(
 ///     resolved_commit: Some("abc123".to_string()),
 ///     checksum: "sha256:...".to_string(),
 ///     installed_at: ".claude/agents/example.md".to_string(),
+///     dependencies: vec![],
+///     resource_type: ResourceType::Agent,
 /// };
 ///
 /// let (installed, checksum) = install_resource_with_progress(
@@ -2539,6 +2557,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at: String::new(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }
         } else {
             LockedResource {
@@ -2550,6 +2570,8 @@ mod tests {
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:test".to_string(),
                 installed_at: String::new(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }
         }
     }

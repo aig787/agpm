@@ -111,6 +111,7 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - DRY principles and code clarity
    - Comprehensive error handling
    - Cross-platform compatibility
+   - Unnecessary renames (e.g., `thing()` → `get_thing()` without justification)
 
    **Architecture**:
    - Module structure alignment with CLAUDE.md

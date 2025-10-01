@@ -374,6 +374,8 @@ pub async fn install_hooks(
                         resolved_commit: None,
                         checksum: String::new(),
                         installed_at: installed_path,
+                        dependencies: Vec::new(),
+                        resource_type: crate::core::ResourceType::Hook,
                     }
                 }
                 crate::manifest::ResourceDependency::Simple(path) => {
@@ -386,6 +388,8 @@ pub async fn install_hooks(
                         resolved_commit: None,
                         checksum: String::new(),
                         installed_at: installed_path,
+                        dependencies: Vec::new(),
+                        resource_type: crate::core::ResourceType::Hook,
                     }
                 }
             }
@@ -878,17 +882,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::default();
         manifest.hooks.insert(
             "test-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("community".to_string()),
-                path: "hooks/test-hook.json".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("community".to_string()),
+                    path: "hooks/test-hook.json".to_string(),
+                    version: Some("v1.0.0".to_string()),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
         manifest.target.hooks = ".claude/ccpm/hooks".to_string();
 
@@ -957,17 +964,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::default();
         manifest.hooks.insert(
             "branch-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("upstream".to_string()),
-                path: "hooks/branch.json".to_string(),
-                version: None,
-                branch: Some("main".to_string()),
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("upstream".to_string()),
+                    path: "hooks/branch.json".to_string(),
+                    version: None,
+                    branch: Some("main".to_string()),
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
         manifest.target.hooks = ".claude/ccpm/hooks".to_string();
 
@@ -988,17 +998,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::default();
         manifest.hooks.insert(
             "rev-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("upstream".to_string()),
-                path: "hooks/rev.json".to_string(),
-                version: None,
-                branch: None,
-                rev: Some("abc123".to_string()),
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("upstream".to_string()),
+                    path: "hooks/rev.json".to_string(),
+                    version: None,
+                    branch: None,
+                    rev: Some("abc123".to_string()),
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
         manifest.target.hooks = ".claude/ccpm/hooks".to_string();
 

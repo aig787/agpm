@@ -382,6 +382,8 @@ mod tests {
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:abc".to_string(),
             installed_at: ".claude/agents/test-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -393,6 +395,8 @@ mod tests {
             resolved_commit: Some("def456".to_string()),
             checksum: "sha256:def".to_string(),
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Snippet,
         });
 
         lockfile
@@ -418,6 +422,8 @@ mod tests {
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:abc1".to_string(),
             installed_at: ".claude/agents/agent1.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         lockfile.agents.push(LockedResource {
@@ -429,6 +435,8 @@ mod tests {
             resolved_commit: Some("def456".to_string()),
             checksum: "sha256:def2".to_string(),
             installed_at: ".claude/agents/agent2.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         // Add commands from source1
@@ -441,6 +449,8 @@ mod tests {
             resolved_commit: Some("ghi789".to_string()),
             checksum: "sha256:ghi3".to_string(),
             installed_at: ".claude/commands/command1.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Command,
         });
 
         // Add scripts
@@ -453,6 +463,8 @@ mod tests {
             resolved_commit: Some("jkl012".to_string()),
             checksum: "sha256:jkl4".to_string(),
             installed_at: ".claude/ccpm/scripts/script1.sh".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Script,
         });
 
         // Add hooks
@@ -465,6 +477,8 @@ mod tests {
             resolved_commit: Some("mno345".to_string()),
             checksum: "sha256:mno5".to_string(),
             installed_at: ".claude/ccpm/hooks/hook1.json".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Hook,
         });
 
         // Add MCP servers
@@ -477,6 +491,8 @@ mod tests {
             resolved_commit: Some("pqr678".to_string()),
             checksum: "sha256:pqr6".to_string(),
             installed_at: ".claude/ccpm/mcp-servers/mcp1.json".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::McpServer,
         });
 
         // Add resource without source
@@ -489,6 +505,8 @@ mod tests {
             resolved_commit: None,
             checksum: "sha256:local".to_string(),
             installed_at: ".claude/ccpm/snippets/local-snippet.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Snippet,
         });
 
         lockfile
@@ -527,6 +545,8 @@ mod tests {
             resolved_commit: Some("xyz789".to_string()),
             checksum: "sha256:xyz".to_string(),
             installed_at: ".claude/agents/new-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         // Verify the agent was added
@@ -974,6 +994,8 @@ mod tests {
             resolved_commit: None,
             checksum: "sha256:local".to_string(),
             installed_at: ".claude/agents/local-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

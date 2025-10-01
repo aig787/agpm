@@ -51,6 +51,8 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                 resolved_commit: None,
                 checksum: format!("sha256:r{}a{}", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
+                dependencies: vec![],
+                resource_type: ccpm::core::ResourceType::Agent,
             });
             total_agents += 1;
         }
@@ -319,6 +321,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 resolved_commit: None,
                 checksum: format!("sha256:r{}a{}v1", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
+                dependencies: vec![],
+                resource_type: ccpm::core::ResourceType::Agent,
             });
             total_agents += 1;
         }
@@ -366,6 +370,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 resolved_commit: None,
                 checksum: format!("sha256:r{}a{}v2", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
+                dependencies: vec![],
+                resource_type: ccpm::core::ResourceType::Agent,
             });
         }
     }
@@ -481,6 +487,8 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 resolved_commit: None,
                 checksum: format!("sha256:lr{}a{}", repo_idx, i),
                 installed_at: format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i),
+                dependencies: vec![],
+                resource_type: ccpm::core::ResourceType::Agent,
             });
             total_resources += 1;
         }
@@ -510,6 +518,8 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
             resolved_commit: None,
             checksum: format!("sha256:community_{}", idx),
             installed_at: format!(".claude/agents/community_agent_{}.md", idx),
+            dependencies: vec![],
+            resource_type: ccpm::core::ResourceType::Agent,
         });
         total_resources += 1;
     }
@@ -666,6 +676,8 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
             resolved_commit: None,
             checksum: format!("sha256:community_{}", name),
             installed_at: format!(".claude/agents/{}.md", name),
+            dependencies: vec![],
+            resource_type: ccpm::core::ResourceType::Agent,
         });
     }
 
@@ -832,6 +844,8 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
             resolved_commit: Some("main".to_string()), // Will be resolved during installation
             checksum: "sha256:placeholder".to_string(), // Will be computed during installation
             installed_at: format!(".claude/agents/{}", unique_filename),
+            dependencies: vec![],
+            resource_type: ccpm::core::ResourceType::Agent,
         };
 
         lockfile.agents.push(resource);

@@ -48,8 +48,10 @@
 //!   - "code-review"
 //!   - "quality"
 //! dependencies:
-//!   - "syntax-checker"
-//!   - "security-scanner"
+//!   agents:
+//!     - path: agents/syntax-checker.md
+//!   snippets:
+//!     - path: snippets/security-scanner.md
 //! ---
 //!
 //! # Python Code Reviewer
@@ -69,7 +71,6 @@
 //! author = "Community Contributors"
 //! type = "snippet"
 //! tags = ["javascript", "utilities", "helpers"]
-//! dependencies = []
 //! +++
 //!
 //! # JavaScript Snippet Collection
@@ -94,7 +95,7 @@
 //! | author | string | Author name or organization | No |
 //! | type | string | Resource type ("agent" or "snippet") | No |
 //! | tags | array | Tags for categorization | No |
-//! | dependencies | array | List of required dependencies | No |
+//! | dependencies | object | Structured dependencies by resource type | No |
 //!
 //! Additional custom fields are preserved in the extra map.
 //!
@@ -207,6 +208,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use crate::manifest::DependencySpec;
+
 /// Type alias for [`MarkdownDocument`] for backward compatibility.
 ///
 /// This alias exists to provide a consistent naming convention and maintain
@@ -240,7 +243,7 @@ pub type MarkdownFile = MarkdownDocument;
 /// - `author`: Creator or maintainer information
 /// - `resource_type`: Type classification ("agent" or "snippet")
 /// - `tags`: Categorization labels for filtering and discovery
-/// - `dependencies`: List of other resources this one requires
+/// - `dependencies`: Structured dependencies for transitive resolution
 ///
 /// # Custom Fields
 ///
@@ -262,7 +265,8 @@ pub type MarkdownFile = MarkdownDocument;
 /// metadata.title = Some("Python Linter".to_string());
 /// metadata.version = Some("2.0.1".to_string());
 /// metadata.tags = vec!["python".to_string(), "linting".to_string()];
-/// metadata.dependencies = vec!["pylint-config".to_string()];
+/// // Dependencies can be set as a JSON value for the structured format
+/// // This is typically parsed from frontmatter rather than set programmatically
 ///
 /// // Custom fields via extra map
 /// let mut extra = HashMap::new();
@@ -321,13 +325,23 @@ pub struct MarkdownMetadata {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub resource_type: Option<String>,
 
-    /// List of dependencies this resource requires.
+    /// Dependencies for this resource.
     ///
-    /// Dependencies are resolved during installation to ensure all required
-    /// resources are available. Dependency names should match the names
-    /// defined in the manifest.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<String>,
+    /// This field uses the structured transitive dependency format where
+    /// dependencies are organized by resource type (agents, snippets, etc.).
+    /// Each resource type maps to a list of dependency specifications.
+    ///
+    /// Example:
+    /// ```yaml
+    /// dependencies:
+    ///   agents:
+    ///     - path: agents/helper.md
+    ///       version: v1.0.0
+    ///   snippets:
+    ///     - path: snippets/utils.md
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
 
     /// Additional custom metadata fields.
     ///

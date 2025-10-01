@@ -1789,7 +1789,6 @@ impl GitRepo {
         }
     }
 
-    #[cfg(test)]
     pub async fn get_current_branch(&self) -> Result<String> {
         let branch = GitCommand::current_branch()
             .current_dir(&self.path)
@@ -1803,6 +1802,37 @@ impl GitRepo {
         } else {
             Ok(branch)
         }
+    }
+
+    /// Gets the default branch name for the repository.
+    ///
+    /// For bare repositories, this queries `refs/remotes/origin/HEAD` to find
+    /// the default branch. For non-bare repositories, it returns the current branch.
+    ///
+    /// # Returns
+    ///
+    /// The default branch name (e.g., "main", "master") without the "refs/heads/" prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Git commands fail or the default branch cannot be determined.
+    pub async fn get_default_branch(&self) -> Result<String> {
+        // Try to get the symbolic ref for origin/HEAD (works for bare repos)
+        let result = GitCommand::new()
+            .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
+            .current_dir(&self.path)
+            .execute_stdout()
+            .await;
+
+        if let Ok(symbolic_ref) = result {
+            // Parse "refs/remotes/origin/main" -> "main"
+            if let Some(branch) = symbolic_ref.strip_prefix("refs/remotes/origin/") {
+                return Ok(branch.to_string());
+            }
+        }
+
+        // Fallback: try to get current branch (for non-bare repos)
+        self.get_current_branch().await
     }
 }
 

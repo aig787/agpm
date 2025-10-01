@@ -7,6 +7,11 @@ tags:
   - git
   - automation
   - productivity
+dependencies:
+  agents:
+    - path: agents/rust-haiku.md
+  snippets:
+    - path: snippets/commit-message.md
 ---
 
 # Git Auto Commit

@@ -294,7 +294,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::manifest::ResourceDependency;
 use crate::utils::fs::atomic_write;
 
 /// Reasons why a lockfile might be considered stale.
@@ -324,7 +323,8 @@ use crate::utils::fs::atomic_write;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum StalenessReason {
-    /// A dependency exists in the manifest but not in the lockfile.
+    /// A dependency is in the manifest but not in the lockfile.
+    /// This indicates the lockfile is incomplete and needs regeneration.
     MissingDependency {
         /// Name of the missing dependency
         name: String,
@@ -332,27 +332,19 @@ pub enum StalenessReason {
         resource_type: crate::core::ResourceType,
     },
 
-    /// A dependency exists in the lockfile but not in the manifest.
-    RemovedDependency {
-        /// Name of the removed dependency
-        name: String,
-        /// Type of resource (agent, snippet, etc.)
-        resource_type: crate::core::ResourceType,
-    },
-
-    /// A dependency has a different version constraint in the manifest.
+    /// A dependency's version constraint has changed in the manifest.
     VersionChanged {
         /// Name of the dependency
         name: String,
         /// Type of resource (agent, snippet, etc.)
         resource_type: crate::core::ResourceType,
-        /// Previous version constraint from lockfile
+        /// Previous version from lockfile
         old_version: String,
-        /// New version constraint from manifest
+        /// New version from manifest
         new_version: String,
     },
 
-    /// A dependency has a different source path in the manifest.
+    /// A dependency's path has changed in the manifest.
     PathChanged {
         /// Name of the dependency
         name: String,
@@ -364,19 +356,8 @@ pub enum StalenessReason {
         new_path: String,
     },
 
-    /// A dependency references a different source repository in the manifest.
-    SourceChanged {
-        /// Name of the dependency
-        name: String,
-        /// Type of resource (agent, snippet, etc.)
-        resource_type: crate::core::ResourceType,
-        /// Previous source name from lockfile
-        old_source: String,
-        /// New source name from manifest
-        new_source: String,
-    },
-
     /// A source repository has a different URL in the manifest.
+    /// This is a security concern as it could point to a different repository.
     SourceUrlChanged {
         /// Name of the source repository
         name: String,
@@ -410,16 +391,6 @@ impl std::fmt::Display for StalenessReason {
                     name, resource_type
                 )
             }
-            StalenessReason::RemovedDependency {
-                name,
-                resource_type,
-            } => {
-                write!(
-                    f,
-                    "Dependency '{}' ({}) is in lockfile but removed from manifest",
-                    name, resource_type
-                )
-            }
             StalenessReason::VersionChanged {
                 name,
                 resource_type,
@@ -444,18 +415,6 @@ impl std::fmt::Display for StalenessReason {
                     name, resource_type, old_path, new_path
                 )
             }
-            StalenessReason::SourceChanged {
-                name,
-                resource_type,
-                old_source,
-                new_source,
-            } => {
-                write!(
-                    f,
-                    "Dependency '{}' ({}) source changed from '{}' to '{}'",
-                    name, resource_type, old_source, new_source
-                )
-            }
             StalenessReason::SourceUrlChanged {
                 name,
                 old_url,
@@ -463,7 +422,7 @@ impl std::fmt::Display for StalenessReason {
             } => {
                 write!(
                     f,
-                    "Source '{}' URL changed from '{}' to '{}'",
+                    "Source repository '{}' URL changed from '{}' to '{}'",
                     name, old_url, new_url
                 )
             }
@@ -643,13 +602,6 @@ pub struct LockedSource {
     /// for cloning and fetching the repository.
     pub url: String,
 
-    /// Resolved commit hash (40 characters).
-    ///
-    /// This is the exact SHA-1 commit hash that was resolved during
-    /// dependency resolution. It ensures all installations use identical
-    /// source content regardless of new commits to the repository.
-    pub commit: String,
-
     /// Timestamp of last successful fetch in RFC 3339 format.
     ///
     /// Records when the repository was last fetched from the remote.
@@ -772,6 +724,31 @@ pub struct LockedResource {
     ///
     /// Examples: "agents/example-agent.md", "snippets/util-snippet.md"
     pub installed_at: String,
+
+    /// Dependencies of this resource.
+    ///
+    /// Lists the direct dependencies that this resource requires, including
+    /// both manifest dependencies and transitive dependencies discovered from
+    /// the resource file itself. Each dependency is identified by its resource
+    /// type and name (e.g., "agents/helper-agent", "snippets/utils").
+    ///
+    /// This field enables dependency graph analysis and ensures all required
+    /// resources are installed. It follows the same model as Cargo.lock where
+    /// each package lists its dependencies.
+    ///
+    /// Always included in TOML serialization, even when empty, to match Cargo.lock format.
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+
+    /// Resource type (agent, snippet, command, etc.)
+    ///
+    /// This field is populated during deserialization based on which TOML section
+    /// the resource came from ([[agents]], [[snippets]], etc.) and is used internally
+    /// for determining the correct lockfile section when adding/updating entries.
+    ///
+    /// It is never serialized to the lockfile - the section header provides this information.
+    #[serde(skip)]
+    pub resource_type: crate::core::ResourceType,
 }
 
 impl LockFile {
@@ -885,7 +862,7 @@ impl LockFile {
             return Ok(Self::new());
         }
 
-        let lockfile: Self = toml::from_str(&content)
+        let mut lockfile: Self = toml::from_str(&content)
             .map_err(|e| crate::core::CcpmError::LockfileParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
@@ -900,6 +877,26 @@ impl LockFile {
                     path.display()
                 )
             })?;
+
+        // Set resource_type on each resource based on which section it's in
+        for resource in &mut lockfile.agents {
+            resource.resource_type = crate::core::ResourceType::Agent;
+        }
+        for resource in &mut lockfile.snippets {
+            resource.resource_type = crate::core::ResourceType::Snippet;
+        }
+        for resource in &mut lockfile.commands {
+            resource.resource_type = crate::core::ResourceType::Command;
+        }
+        for resource in &mut lockfile.scripts {
+            resource.resource_type = crate::core::ResourceType::Script;
+        }
+        for resource in &mut lockfile.hooks {
+            resource.resource_type = crate::core::ResourceType::Hook;
+        }
+        for resource in &mut lockfile.mcp_servers {
+            resource.resource_type = crate::core::ResourceType::McpServer;
+        }
 
         // Check version compatibility
         if lockfile.version > Self::CURRENT_VERSION {
@@ -1003,7 +1000,6 @@ impl LockFile {
                 content.push_str("[[sources]]\n");
                 content.push_str(&format!("name = {:?}\n", source.name));
                 content.push_str(&format!("url = {:?}\n", source.url));
-                content.push_str(&format!("commit = {:?}\n", source.commit));
                 content.push_str(&format!("fetched_at = {:?}\n\n", source.fetched_at));
             }
         }
@@ -1028,7 +1024,18 @@ impl LockFile {
                         content.push_str(&format!("resolved_commit = {commit:?}\n"));
                     }
                     content.push_str(&format!("checksum = {:?}\n", resource.checksum));
-                    content.push_str(&format!("installed_at = {:?}\n\n", resource.installed_at));
+                    content.push_str(&format!("installed_at = {:?}\n", resource.installed_at));
+                    // Always include dependencies field, even if empty (matches Cargo.lock format)
+                    content.push_str("dependencies = [");
+                    if !resource.dependencies.is_empty() {
+                        content.push('\n');
+                        for dep in &resource.dependencies {
+                            content.push_str(&format!("    {:?},\n", dep));
+                        }
+                        content.push_str("]\n\n");
+                    } else {
+                        content.push_str("]\n\n");
+                    }
                 }
             };
 
@@ -1092,14 +1099,13 @@ impl LockFile {
     ///
     /// The `fetched_at` timestamp is always recorded in UTC to ensure consistency
     /// across different time zones and systems.
-    pub fn add_source(&mut self, name: String, url: String, commit: String) {
+    pub fn add_source(&mut self, name: String, url: String, _commit: String) {
         // Remove existing entry if present
         self.sources.retain(|s| s.name != name);
 
         self.sources.push(LockedSource {
             name,
             url,
-            commit,
             fetched_at: chrono::Utc::now().to_rfc3339(),
         });
     }
@@ -1131,6 +1137,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use ccpm::lockfile::{LockFile, LockedResource};
+    /// use ccpm::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
     /// let resource = LockedResource {
@@ -1142,6 +1149,8 @@ impl LockFile {
     ///     resolved_commit: Some("a1b2c3d...".to_string()),
     ///     checksum: "sha256:abcdef...".to_string(),
     ///     installed_at: "agents/example-agent.md".to_string(),
+    ///     dependencies: vec![],
+    ///     resource_type: ResourceType::Agent,
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1152,6 +1161,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// # use ccpm::lockfile::{LockFile, LockedResource};
+    /// # use ccpm::core::ResourceType;
     /// # let mut lockfile = LockFile::new();
     /// let snippet = LockedResource {
     ///     name: "util-snippet".to_string(),
@@ -1162,6 +1172,8 @@ impl LockFile {
     ///     resolved_commit: None,
     ///     checksum: "sha256:fedcba...".to_string(),
     ///     installed_at: "snippets/util-snippet.md".to_string(),
+    ///     dependencies: vec![],
+    ///     resource_type: ResourceType::Snippet,
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1206,6 +1218,8 @@ impl LockFile {
     ///     resolved_commit: Some("a1b2c3d...".to_string()),
     ///     checksum: "sha256:abcdef...".to_string(),
     ///     installed_at: ".claude/commands/build-command.md".to_string(),
+    ///     dependencies: vec![],
+    ///     resource_type: ResourceType::Command,
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -1264,8 +1278,8 @@ impl LockFile {
     ///
     /// # Search Order
     ///
-    /// The method searches agents first, then snippets, then commands. If multiple
-    /// resource types have the same name, the first match in this order will be returned.
+    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
+    /// If multiple resource types have the same name, the first match will be returned.
     #[must_use]
     pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
         self.agents
@@ -1273,6 +1287,9 @@ impl LockFile {
             .find(|r| r.name == name)
             .or_else(|| self.snippets.iter().find(|r| r.name == name))
             .or_else(|| self.commands.iter().find(|r| r.name == name))
+            .or_else(|| self.scripts.iter().find(|r| r.name == name))
+            .or_else(|| self.hooks.iter().find(|r| r.name == name))
+            .or_else(|| self.mcp_servers.iter().find(|r| r.name == name))
     }
 
     /// Get a locked source repository by name.
@@ -1295,7 +1312,7 @@ impl LockFile {
     /// # let lockfile = LockFile::new();
     /// if let Some(source) = lockfile.get_source("community") {
     ///     println!("Source URL: {}", source.url);
-    ///     println!("Last commit: {}", source.commit);
+    ///     println!("Fetched at: {}", source.fetched_at);
     /// }
     /// ```
     #[must_use]
@@ -1611,12 +1628,27 @@ impl LockFile {
     /// # Arguments
     ///
     /// * `manifest` - The current project manifest to validate against
+    /// * `strict` - Enable strict mode for CI/production (checks missing deps, version/path changes)
     ///
     /// # Returns
     ///
     /// * `Ok(None)` - Lockfile is valid and up-to-date
     /// * `Ok(Some(StalenessReason))` - Lockfile is stale and needs regeneration
     /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
+    ///
+    /// # Strict vs Lenient Mode
+    ///
+    /// **Strict Mode (CI/Production)**: Enabled with `strict = true`
+    /// - Fails if manifest dependencies are missing from lockfile
+    /// - Fails if dependency versions have changed
+    /// - Fails if dependency paths have changed
+    /// - Ensures reproducible installations
+    ///
+    /// **Lenient Mode (Development)**: Enabled with `strict = false`
+    /// - Allows missing dependencies (installed additively)
+    /// - Allows version/path changes (require explicit `ccpm update`)
+    /// - Extra lockfile entries are allowed (for transitive dependencies)
+    /// - More user-friendly for iterative development
     ///
     /// # Examples
     ///
@@ -1628,11 +1660,21 @@ impl LockFile {
     /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
     /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
     ///
-    /// match lockfile.validate_against_manifest(&manifest)? {
+    /// // Lenient mode for development
+    /// match lockfile.validate_against_manifest(&manifest, false)? {
     ///     None => println!("Lockfile is up-to-date"),
     ///     Some(reason) => {
     ///         println!("Lockfile is stale: {}", reason);
     ///         println!("Run 'ccpm install' to regenerate it");
+    ///     }
+    /// }
+    ///
+    /// // Strict mode for CI
+    /// match lockfile.validate_against_manifest(&manifest, true)? {
+    ///     None => println!("Lockfile is valid"),
+    ///     Some(reason) => {
+    ///         eprintln!("ERROR: {}", reason);
+    ///         std::process::exit(1);
     ///     }
     /// }
     /// # Ok(())
@@ -1642,67 +1684,26 @@ impl LockFile {
     /// # Staleness Detection
     ///
     /// The method checks for several staleness indicators:
-    /// - **Missing dependencies**: Manifest has deps not in lockfile
-    /// - **Removed dependencies**: Lockfile has deps not in manifest
-    /// - **Version changes**: Same dependency with different version constraint
-    /// - **Path changes**: Same dependency with different source path
-    /// - **Source changes**: Same dependency from different source repository
-    /// - **Duplicate entries**: Multiple entries for the same dependency
-    /// - **Source mismatches**: Source URLs changed in manifest
+    /// - **Duplicate entries**: Multiple entries for the same dependency (always checked)
+    /// - **Source URL changes**: Source URLs changed in manifest (always checked)
+    /// - **Missing dependencies**: Manifest has deps not in lockfile (strict mode only)
+    /// - **Version changes**: Same dependency with different version constraint (strict mode only)
+    /// - **Path changes**: Same dependency with different source path (strict mode only)
     pub fn validate_against_manifest(
         &self,
         manifest: &crate::manifest::Manifest,
+        strict: bool,
     ) -> Result<Option<StalenessReason>> {
-        // Check for duplicate entries within the lockfile
+        // Always check for critical issues:
+        // 1. Corruption (duplicate entries)
+        // 2. Security concerns (source URL changes)
+
+        // Check for duplicate entries within the lockfile (corruption)
         if let Some(reason) = self.detect_duplicate_entries()? {
             return Ok(Some(reason));
         }
 
-        // Check each resource type individually to avoid HashMap key issues
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.agents,
-            &self.agents,
-            crate::core::ResourceType::Agent,
-        )? {
-            return Ok(Some(reason));
-        }
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.snippets,
-            &self.snippets,
-            crate::core::ResourceType::Snippet,
-        )? {
-            return Ok(Some(reason));
-        }
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.commands,
-            &self.commands,
-            crate::core::ResourceType::Command,
-        )? {
-            return Ok(Some(reason));
-        }
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.scripts,
-            &self.scripts,
-            crate::core::ResourceType::Script,
-        )? {
-            return Ok(Some(reason));
-        }
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.hooks,
-            &self.hooks,
-            crate::core::ResourceType::Hook,
-        )? {
-            return Ok(Some(reason));
-        }
-        if let Some(reason) = self.check_resource_type_staleness(
-            &manifest.mcp_servers,
-            &self.mcp_servers,
-            crate::core::ResourceType::McpServer,
-        )? {
-            return Ok(Some(reason));
-        }
-
-        // Check source URL changes
+        // Check source URL changes (security concern - different repository)
         for (source_name, manifest_url) in &manifest.sources {
             if let Some(locked_source) = self.get_source(source_name)
                 && &locked_source.url != manifest_url
@@ -1715,69 +1716,60 @@ impl LockFile {
             }
         }
 
-        Ok(None)
-    }
+        // In strict mode (CI), also check for missing dependencies, version changes, and path changes
+        if strict {
+            // For each resource type, check if all manifest dependencies exist in lockfile
+            for resource_type in crate::core::ResourceType::all() {
+                if let Some(manifest_deps) = manifest.get_dependencies(*resource_type) {
+                    for (name, dep) in manifest_deps {
+                        // Find matching resource in lockfile
+                        let locked_resource = self.get_resource(name);
 
-    /// Check staleness for a specific resource type.
-    fn check_resource_type_staleness(
-        &self,
-        manifest_resources: &std::collections::HashMap<String, ResourceDependency>,
-        lockfile_resources: &[LockedResource],
-        resource_type: crate::core::ResourceType,
-    ) -> Result<Option<StalenessReason>> {
-        // Check for missing dependencies (in manifest but not lockfile)
-        for (name, dep) in manifest_resources {
-            // Check if this is a pattern dependency
-            if self.is_pattern_dependency(dep) {
-                // For pattern dependencies, verify that lockfile contains matching expanded entries
-                let has_pattern_matches = lockfile_resources
-                    .iter()
-                    .any(|locked| self.could_be_from_pattern_expansion(locked, dep));
+                        if locked_resource.is_none() {
+                            // Dependency is in manifest but not in lockfile
+                            return Ok(Some(StalenessReason::MissingDependency {
+                                name: name.clone(),
+                                resource_type: *resource_type,
+                            }));
+                        }
 
-                if !has_pattern_matches {
-                    return Ok(Some(StalenessReason::MissingDependency {
-                        name: name.clone(),
-                        resource_type,
-                    }));
-                }
-                // Skip individual name matching and version checking for patterns
-                continue;
-            }
+                        // Check for version changes
+                        if let Some(locked) = locked_resource {
+                            if let Some(manifest_version) = dep.get_version()
+                                && let Some(locked_version) = &locked.version
+                                && manifest_version != locked_version
+                            {
+                                return Ok(Some(StalenessReason::VersionChanged {
+                                    name: name.clone(),
+                                    resource_type: *resource_type,
+                                    old_version: locked_version.clone(),
+                                    new_version: manifest_version.to_string(),
+                                }));
+                            }
 
-            if !lockfile_resources.iter().any(|r| &r.name == name) {
-                return Ok(Some(StalenessReason::MissingDependency {
-                    name: name.clone(),
-                    resource_type,
-                }));
-            }
-
-            // Check for version/path changes
-            if let Some(locked) = lockfile_resources.iter().find(|r| &r.name == name)
-                && let Some(reason) = self.check_dependency_changes(locked, dep, resource_type)?
-            {
-                return Ok(Some(reason));
-            }
-        }
-
-        // Check for removed dependencies (in lockfile but not manifest)
-        for locked in lockfile_resources {
-            if !manifest_resources.contains_key(&locked.name) {
-                // Check if this lockfile entry might be from a pattern expansion
-                // If any manifest dependency is a pattern with matching source/version,
-                // don't flag this as removed
-                let is_pattern_match = manifest_resources.values().any(|dep| {
-                    self.is_pattern_dependency(dep)
-                        && self.could_be_from_pattern_expansion(locked, dep)
-                });
-
-                if !is_pattern_match {
-                    return Ok(Some(StalenessReason::RemovedDependency {
-                        name: locked.name.clone(),
-                        resource_type,
-                    }));
+                            // Check for path changes
+                            if dep.get_path() != locked.path {
+                                return Ok(Some(StalenessReason::PathChanged {
+                                    name: name.clone(),
+                                    resource_type: *resource_type,
+                                    old_path: locked.path.clone(),
+                                    new_path: dep.get_path().to_string(),
+                                }));
+                            }
+                        }
+                    }
                 }
             }
         }
+
+        // In lenient mode, the lockfile is NOT considered stale for:
+        // - Missing dependencies (will be installed additively)
+        // - Version changes (require explicit `ccpm update`)
+        // - Path changes (require explicit `ccpm update`)
+        // - Extra entries (could be transitive dependencies)
+        //
+        // This makes the tool less aggressive and more user-friendly,
+        // matching the behavior of npm/yarn/cargo.
 
         Ok(None)
     }
@@ -1804,106 +1796,6 @@ impl LockFile {
                 }
                 seen_names.insert(&resource.name, 0);
             }
-        }
-
-        Ok(None)
-    }
-
-    /// Check if a dependency uses a glob pattern.
-    /// Pattern dependencies contain glob characters: *, ?, [, or {
-    fn is_pattern_dependency(&self, dep: &ResourceDependency) -> bool {
-        let path = dep.get_path();
-        path.contains('*') || path.contains('?') || path.contains('[') || path.contains('{')
-    }
-
-    /// Check if a locked resource could be from a pattern expansion.
-    /// This checks if the source and version match a pattern dependency.
-    fn could_be_from_pattern_expansion(
-        &self,
-        locked: &LockedResource,
-        pattern_dep: &ResourceDependency,
-    ) -> bool {
-        // Check if source matches
-        let pattern_source = pattern_dep.get_source().map(|s| s.to_string());
-        if locked.source != pattern_source {
-            return false;
-        }
-
-        // Check if version matches
-        let pattern_version = pattern_dep.get_version().map(|v| v.to_string());
-        if locked.version != pattern_version {
-            return false;
-        }
-
-        // If both source and version match, this could be from the pattern expansion
-        true
-    }
-
-    /// Check if a locked resource has changes compared to manifest dependency.
-    fn check_dependency_changes(
-        &self,
-        locked: &LockedResource,
-        manifest_dep: &ResourceDependency,
-        resource_type: crate::core::ResourceType,
-    ) -> Result<Option<StalenessReason>> {
-        // Check version constraint changes
-        if let (Some(locked_version), Some(manifest_version)) =
-            (&locked.version, manifest_dep.get_version())
-        {
-            // Check for explicit version changes
-            if locked_version != manifest_version {
-                return Ok(Some(StalenessReason::VersionChanged {
-                    name: locked.name.clone(),
-                    resource_type,
-                    old_version: locked_version.clone(),
-                    new_version: manifest_version.to_string(),
-                }));
-            }
-
-            // Note: Tag movement detection would require fetching from the repository
-            // to check if the tag now points to a different commit. Without fetching,
-            // we can't know if a tag has been moved (which would be problematic since
-            // tags should be immutable). This could be implemented in the future with
-            // a --check-updates flag that does a fetch first.
-            //
-            // Branch movement is expected behavior, so we don't check for it.
-        }
-
-        // Check path changes (for remote dependencies)
-        if let (Some(locked_source), Some(manifest_source)) =
-            (&locked.source, manifest_dep.get_source())
-        {
-            if locked.path != manifest_dep.get_path() {
-                return Ok(Some(StalenessReason::PathChanged {
-                    name: locked.name.clone(),
-                    resource_type,
-                    old_path: locked.path.clone(),
-                    new_path: manifest_dep.get_path().to_string(),
-                }));
-            }
-
-            // Check source changes
-            if locked_source != manifest_source {
-                return Ok(Some(StalenessReason::SourceChanged {
-                    name: locked.name.clone(),
-                    resource_type,
-                    old_source: locked_source.clone(),
-                    new_source: manifest_source.to_string(),
-                }));
-            }
-        }
-
-        // Check local path changes
-        if locked.source.is_none()
-            && manifest_dep.get_source().is_none()
-            && locked.path != manifest_dep.get_path()
-        {
-            return Ok(Some(StalenessReason::PathChanged {
-                name: locked.name.clone(),
-                resource_type,
-                old_path: locked.path.clone(),
-                new_path: manifest_dep.get_path().to_string(),
-            }));
         }
 
         Ok(None)
@@ -1939,6 +1831,8 @@ impl LockFile {
     /// #     resolved_commit: None,
     /// #     checksum: "".to_string(),
     /// #     installed_at: "agents/my-agent.md".to_string(),
+    /// #     dependencies: vec![],
+    /// #     resource_type: ResourceType::Agent,
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2084,8 +1978,8 @@ pub fn check_staleness(
     // Load manifest
     let manifest = crate::manifest::Manifest::load(manifest_path)?;
 
-    // Check for staleness
-    match lockfile.validate_against_manifest(&manifest)? {
+    // Check for staleness (use strict mode when not allowing prompts, i.e., in CI)
+    match lockfile.validate_against_manifest(&manifest, !allow_prompt)? {
         None => Ok(true), // Lockfile is valid
         Some(reason) => {
             // Show detailed error message
@@ -2099,20 +1993,21 @@ pub fn check_staleness(
                     eprintln!("- Multiple ccpm processes ran simultaneously");
                     eprintln!("- Pattern dependencies resolved incorrectly");
                 }
-                StalenessReason::MissingDependency { .. }
-                | StalenessReason::RemovedDependency { .. } => {
-                    eprintln!("- Dependencies were added or removed from ccpm.toml");
-                    eprintln!("- Lockfile is from an older version of the manifest");
-                }
-                StalenessReason::VersionChanged { .. }
-                | StalenessReason::PathChanged { .. }
-                | StalenessReason::SourceChanged { .. } => {
-                    eprintln!("- Dependency constraints were modified in ccpm.toml");
-                    eprintln!("- Resource paths or sources were changed");
-                }
                 StalenessReason::SourceUrlChanged { .. } => {
                     eprintln!("- Source repository URLs were updated in ccpm.toml");
                     eprintln!("- Repository was moved or renamed");
+                }
+                StalenessReason::MissingDependency { .. } => {
+                    eprintln!("- Dependencies were added to ccpm.toml");
+                    eprintln!("- Lockfile was manually edited");
+                }
+                StalenessReason::VersionChanged { .. } => {
+                    eprintln!("- Dependency versions were changed in ccpm.toml");
+                    eprintln!("- Version constraints were updated");
+                }
+                StalenessReason::PathChanged { .. } => {
+                    eprintln!("- Dependency paths were changed in ccpm.toml");
+                    eprintln!("- Resources were moved in the source repository");
                 }
             }
 
@@ -2253,6 +2148,8 @@ mod tests {
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:abcdef".to_string(),
                 installed_at: "agents/test-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             },
             true,
         );
@@ -2266,7 +2163,10 @@ mod tests {
         assert_eq!(loaded.version, LockFile::CURRENT_VERSION);
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.agents.len(), 1);
-        assert_eq!(loaded.get_source("official").unwrap().commit, "abc123");
+        assert_eq!(
+            loaded.get_source("official").unwrap().url,
+            "https://github.com/example-org/ccpm-official.git"
+        );
         assert_eq!(
             loaded.get_resource("test-agent").unwrap().checksum,
             "sha256:abcdef"
@@ -2277,62 +2177,6 @@ mod tests {
     fn test_staleness_reason_display() {
         use crate::core::ResourceType;
 
-        // Test MissingDependency
-        let reason = StalenessReason::MissingDependency {
-            name: "my-agent".to_string(),
-            resource_type: ResourceType::Agent,
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Dependency 'my-agent' (agent) is in manifest but missing from lockfile"
-        );
-
-        // Test RemovedDependency
-        let reason = StalenessReason::RemovedDependency {
-            name: "old-snippet".to_string(),
-            resource_type: ResourceType::Snippet,
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Dependency 'old-snippet' (snippet) is in lockfile but removed from manifest"
-        );
-
-        // Test VersionChanged
-        let reason = StalenessReason::VersionChanged {
-            name: "my-command".to_string(),
-            resource_type: ResourceType::Command,
-            old_version: "v1.0.0".to_string(),
-            new_version: "v2.0.0".to_string(),
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Dependency 'my-command' (command) version changed from 'v1.0.0' to 'v2.0.0'"
-        );
-
-        // Test PathChanged
-        let reason = StalenessReason::PathChanged {
-            name: "my-script".to_string(),
-            resource_type: ResourceType::Script,
-            old_path: "scripts/old.sh".to_string(),
-            new_path: "scripts/new.sh".to_string(),
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Dependency 'my-script' (script) path changed from 'scripts/old.sh' to 'scripts/new.sh'"
-        );
-
-        // Test SourceChanged
-        let reason = StalenessReason::SourceChanged {
-            name: "my-hook".to_string(),
-            resource_type: ResourceType::Hook,
-            old_source: "community".to_string(),
-            new_source: "official".to_string(),
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Dependency 'my-hook' (hook) source changed from 'community' to 'official'"
-        );
-
         // Test SourceUrlChanged
         let reason = StalenessReason::SourceUrlChanged {
             name: "community".to_string(),
@@ -2341,7 +2185,7 @@ mod tests {
         };
         assert_eq!(
             reason.to_string(),
-            "Source 'community' URL changed from 'https://github.com/old/repo.git' to 'https://github.com/new/repo.git'"
+            "Source repository 'community' URL changed from 'https://github.com/old/repo.git' to 'https://github.com/new/repo.git'"
         );
 
         // Test DuplicateEntries
@@ -2409,6 +2253,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:111".to_string(),
                 installed_at: "agents/agent1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             },
             true, // is_agent
         );
@@ -2424,6 +2270,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:222".to_string(),
                 installed_at: "snippets/snippet1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Snippet,
             },
             false, // is_agent
         );
@@ -2439,6 +2287,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:333".to_string(),
                 installed_at: "agents/dev-agent1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             },
             true, // is_agent
         );
@@ -2488,6 +2338,8 @@ mod tests {
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:cmd123".to_string(),
                 installed_at: ".claude/commands/build.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Command,
             },
             crate::core::ResourceType::Command,
         );
@@ -2516,6 +2368,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:a1".to_string(),
                 installed_at: "agents/agent1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             },
             true,
         );
@@ -2531,6 +2385,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:s1".to_string(),
                 installed_at: "snippets/snippet1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Snippet,
             },
             false,
         );
@@ -2546,6 +2402,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:c1".to_string(),
                 installed_at: ".claude/commands/command1.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Command,
             },
             crate::core::ResourceType::Command,
         );
@@ -2579,6 +2437,8 @@ mod tests {
                 resolved_commit: Some("def456".to_string()),
                 checksum: "sha256:deploy123".to_string(),
                 installed_at: ".claude/commands/deploy.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Command,
             },
             crate::core::ResourceType::Command,
         );
@@ -2613,6 +2473,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:agent".to_string(),
                 installed_at: "agents/helper.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             },
             true,
         );
@@ -2628,6 +2490,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: "sha256:command".to_string(),
                 installed_at: ".claude/commands/helper.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Command,
             },
             crate::core::ResourceType::Command,
         );

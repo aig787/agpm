@@ -8,12 +8,14 @@
 //! # Features
 //!
 //! - **Dependency Resolution**: Resolves all dependencies defined in the manifest
+//! - **Transitive Dependencies**: Automatically discovers and installs dependencies declared in resource files
 //! - **Lockfile Management**: Generates and maintains `ccpm.lock` for reproducible builds
 //! - **Worktree-Based Parallel Installation**: Uses Git worktrees for safe concurrent resource installation
 //! - **Multi-Phase Progress Tracking**: Shows detailed progress with phase transitions and real-time updates
 //! - **Resource Validation**: Validates markdown files and content during installation
 //! - **Cache Support**: Advanced cache with instance-level optimizations and worktree management
 //! - **Concurrency Control**: User-configurable parallelism via `--max-parallel` flag
+//! - **Cycle Detection**: Prevents circular dependency loops in transitive dependency graphs
 //!
 //! # Examples
 //!
@@ -42,22 +44,32 @@
 //! ccpm install --no-cache
 //! ```
 //!
+//! Install only direct dependencies (skip transitive):
+//! ```bash
+//! ccpm install --no-transitive
+//! ```
+//!
 //! # Installation Process
 //!
 //! 1. **Manifest Loading**: Reads `ccpm.toml` to understand dependencies
-//! 2. **Dependency Resolution**: Resolves versions and creates dependency graph
-//! 3. **Worktree Preparation**: Pre-creates Git worktrees for optimal parallel access
-//! 4. **Parallel Resource Installation**: Installs resources concurrently using isolated worktrees
-//! 5. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
-//! 6. **Configuration Updates**: Updates hooks and MCP server configurations as needed
-//! 7. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
-//! 8. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
+//! 2. **Source Synchronization**: Clones/fetches Git repositories for all sources
+//! 3. **Dependency Resolution**: Resolves versions and creates dependency graph
+//! 4. **Transitive Discovery**: Extracts dependencies from resource files (YAML/JSON metadata)
+//! 5. **Cycle Detection**: Validates dependency graph for circular references
+//! 6. **Worktree Preparation**: Pre-creates Git worktrees for optimal parallel access
+//! 7. **Parallel Resource Installation**: Installs resources concurrently using isolated worktrees
+//! 8. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
+//! 9. **Configuration Updates**: Updates hooks and MCP server configurations as needed
+//! 10. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
+//! 11. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
 //!
 //! # Error Conditions
 //!
 //! - No manifest file found in project
 //! - Invalid manifest syntax or structure
 //! - Dependency resolution conflicts
+//! - Circular dependency loops detected
+//! - Invalid transitive dependency metadata (malformed YAML/JSON)
 //! - Network or Git access issues
 //! - File system permissions or disk space issues
 //! - Invalid resource file format
@@ -196,11 +208,21 @@ pub struct InstallCommand {
     ///
     /// This is safer than --force as it performs proper dependency resolution.
     #[arg(long)]
-    regenerate: bool,
+    pub regenerate: bool,
 
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
+
+    /// Don't resolve transitive dependencies
+    ///
+    /// When enabled, only direct dependencies from the manifest will be installed.
+    /// Transitive dependencies declared within resource files (via YAML frontmatter
+    /// or JSON fields) will be ignored. This can be useful for faster installations
+    /// when you know transitive dependencies are already satisfied or for debugging
+    /// dependency issues.
+    #[arg(long)]
+    no_transitive: bool,
 }
 
 impl InstallCommand {
@@ -232,6 +254,7 @@ impl InstallCommand {
             force: false,
             regenerate: false,
             no_progress: false,
+            no_transitive: false,
         }
     }
 
@@ -260,6 +283,7 @@ impl InstallCommand {
             force: false,
             regenerate: false,
             no_progress: true,
+            no_transitive: false,
         }
     }
 
@@ -479,7 +503,7 @@ impl InstallCommand {
             }
 
             // Fresh resolution
-            let result = resolver.resolve().await?;
+            let result = resolver.resolve_with_options(!self.no_transitive).await?;
 
             // Complete resolving phase
             if !self.quiet && !self.no_progress && total_deps > 0 {
@@ -834,6 +858,7 @@ mod tests {
             force: false,
             regenerate: false,
             no_progress: false,
+            no_transitive: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -856,7 +881,7 @@ This is a test agent.",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "local-agent".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "local-agent.md".into(),
                 version: None,
@@ -866,7 +891,8 @@ This is a test agent.",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -914,7 +940,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "test-agent".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "test-agent.md".into(),
                 version: None,
@@ -924,7 +950,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -941,6 +968,8 @@ Body",
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at: ".claude/agents/test-agent.md".into(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -959,6 +988,7 @@ Body",
             force: false,
             regenerate: false,
             no_progress: false,
+            no_transitive: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -974,7 +1004,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "missing".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "missing.md".into(),
                 version: None,
@@ -984,7 +1014,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1010,7 +1041,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.snippets.insert(
             "single".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "single-snippet.md".into(),
                 version: None,
@@ -1020,7 +1051,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1048,7 +1080,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.commands.insert(
             "cmd".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "single-command.md".into(),
                 version: None,
@@ -1058,7 +1090,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1088,7 +1121,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "summary".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "summary-agent.md".into(),
                 version: None,
@@ -1098,11 +1131,12 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.add_mcp_server(
             "test-mcp".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "mcp/test-mcp.json".into(),
                 version: None,
@@ -1112,7 +1146,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 

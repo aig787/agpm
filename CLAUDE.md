@@ -4,7 +4,9 @@
 
 ## Overview
 
-CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands, scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (ccpm.toml + ccpm.lock) like Cargo for reproducible installations from Git repositories.
+CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
+scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (ccpm.toml + ccpm.lock) like Cargo for
+reproducible installations from Git repositories.
 
 ## Architecture
 
@@ -28,16 +30,20 @@ src/
 ├── hooks/       # Claude Code hooks
 ├── installer.rs # Parallel resource installation + artifact cleanup
 ├── lockfile/    # ccpm.lock management + staleness detection
-├── manifest/    # ccpm.toml parsing
+├── manifest/    # ccpm.toml parsing + transitive dependencies
+│   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
+├── metadata/    # Metadata extraction from resource files
+│   └── extractor.rs  # YAML frontmatter and JSON field extraction
 ├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
 ├── resolver/    # Dependency + version resolution
-│   ├── mod.rs          # Core resolution + relative path handling
-│   ├── redundancy.rs   # Redundant dependency detection
-│   ├── version_resolution.rs  # Version constraint handling
-│   └── version_resolver.rs    # Centralized SHA resolution
+│   ├── mod.rs                # Core resolution logic with transitive support + relative path handling
+│   ├── dependency_graph.rs   # Graph-based transitive dependency resolution
+│   ├── redundancy.rs         # Advanced redundancy detection (version, cross-source, transitive)
+│   ├── version_resolution.rs # Version constraint handling
+│   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
 ├── test_utils/  # Test infrastructure
 ├── upgrade/     # Self-update functionality
@@ -56,6 +62,7 @@ src/
 ## Rust Agents
 
 ### Standard (Fast)
+
 - `rust-expert-standard`: Implementation, refactoring
 - `rust-linting-standard`: Formatting, clippy
 - `rust-doc-standard`: Documentation
@@ -63,6 +70,7 @@ src/
 - `rust-troubleshooter-standard`: Debugging
 
 ### Advanced (Complex)
+
 - `rust-expert-advanced`: Architecture, optimization
 - `rust-linting-advanced`: Complex refactoring
 - `rust-doc-advanced`: Architectural docs
@@ -105,11 +113,14 @@ src/
 - `cargo fmt && cargo clippy && cargo nextest run && cargo test --doc`
 - Handle paths cross-platform
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
-- **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use `ignore` for examples that won't compile
+- **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
+  `ignore` for examples that won't compile
 
 ## Dependencies
 
-Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber, indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell, dashmap (v6.1)
+Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
+indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell,
+dashmap (v6.1)
 
 Dev: assert_cmd, predicates
 
@@ -118,15 +129,16 @@ Dev: assert_cmd, predicates
 - **Uses cargo nextest** for faster, parallel test execution
 - **Auto-installs tools**: Makefile uses cargo-binstall for faster tool installation
 - Run tests: `cargo nextest run` (integration/unit tests) + `cargo test --doc` (doctests)
-- **Doc tests timing**: Doc tests can take up to 10 minutes to complete due to 432+ tests
 - **All tests must be parallel-safe** - no serial_test usage
 - Never use `std::env::set_var` (causes races)
 - Each test gets own temp directory
 - Use `tokio::fs` in async tests
 - Default parallelism: max(10, 2 × CPU cores)
 - 70% coverage target
-- **IMPORTANT**: When running commands via Bash tool, they run in NON-TTY mode. The user sees TTY mode with spinners. Test both modes.
+- **IMPORTANT**: When running commands via Bash tool, they run in NON-TTY mode. The user sees TTY mode with spinners.
+  Test both modes.
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
+- **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
 
 ## Build & CI
 
@@ -136,7 +148,6 @@ cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --do
 ```
 
 GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
-
 
 ## Key Design Decisions
 
@@ -157,6 +168,8 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
 - **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
 - **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
+- **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
+- **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
 
 ## Breaking Changes (v0.3.18+)
 
@@ -168,18 +181,79 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 
 ## Resolver Architecture
 
-The resolver uses a sophisticated two-phase approach:
+The resolver uses a sophisticated multi-phase approach with transitive dependency support:
 
 1. **Collection Phase**: `VersionResolver` gathers all unique (source, version) pairs
 2. **Resolution Phase**: Batch resolves versions to SHAs, with automatic deduplication
+3. **Transitive Phase**: Extracts and resolves dependencies declared in resource files
 
 Key benefits:
+
 - Minimizes Git operations through batching
 - Enables parallel resolution across different sources
 - Automatic deduplication of identical commit references
 - Supports semver constraint resolution (`^1.0`, `~2.1`, etc.)
+- Graph-based transitive dependency resolution with cycle detection
 
+### Transitive Dependencies
 
+Resources can declare dependencies within their files:
+
+**Markdown files** (YAML frontmatter):
+
+```yaml
+---
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/utils.md
+---
+```
+
+**JSON files** (top-level field):
+
+```json
+{
+  "dependencies": {
+    "commands": [
+      {
+        "path": "commands/deploy.md",
+        "version": "v2.0.0"
+      }
+    ]
+  }
+}
+```
+
+**Key Features**:
+
+- Graph-based resolution with topological ordering
+- Cycle detection prevents infinite loops
+- Version inheritance when not specified
+- Same-source dependency model (inherits parent's source)
+- Parallel resolution for maximum efficiency
+
+### Redundancy Detection
+
+The `resolver::redundancy` module provides advanced conflict detection:
+
+**Types Detected**:
+
+- **Version Redundancy**: Same resource with different versions
+- **Cross-Source Redundancy**: Same path from multiple sources
+- **Transitive Redundancy**: Conflicts through dependency chains
+
+**Non-Blocking Design**: Warnings only, allows A/B testing and migrations
+
+**API**:
+
+- `RedundancyDetector::detect_redundancies()` - All redundancy types
+- `RedundancyDetector::detect_cross_source_redundancies()` - Cross-source only
+- `RedundancyDetector::check_transitive_redundancies_with_map()` - Transitive conflicts
+
+**Usage**: `ccpm validate --check-redundancies`
 
 ## Windows Path Gotchas
 
@@ -187,8 +261,6 @@ Key benefits:
 - file:// URLs use forward slashes
 - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
 - Test on real Windows (not WSL)
-
-
 
 ## Optimized Worktree Architecture
 

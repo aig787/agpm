@@ -12,7 +12,6 @@
 //! - **Source Accessibility**: Tests if source repositories are reachable
 //! - **Path Validation**: Checks if local file dependencies exist
 //! - **Lockfile Consistency**: Compares manifest and lockfile for consistency
-//! - **Redundancy Detection**: Identifies duplicate resource usage
 //! - **Multiple Output Formats**: Text and JSON output formats
 //! - **Strict Mode**: Treats warnings as errors for CI environments
 //!
@@ -25,7 +24,7 @@
 //!
 //! Comprehensive validation with all checks:
 //! ```bash
-//! ccpm validate --resolve --sources --paths --check-lock --check-redundancies
+//! ccpm validate --resolve --sources --paths --check-lock
 //! ```
 //!
 //! JSON output for automation:
@@ -122,7 +121,6 @@ use crate::resolver::DependencyResolver;
 ///     check_lock: false,
 ///     sources: false,
 ///     paths: false,
-///     check_redundancies: false,
 ///     format: OutputFormat::Text,
 ///     verbose: false,
 ///     quiet: false,
@@ -136,7 +134,6 @@ use crate::resolver::DependencyResolver;
 ///     check_lock: true,
 ///     sources: true,
 ///     paths: true,
-///     check_redundancies: true,
 ///     format: OutputFormat::Json,
 ///     verbose: false,
 ///     quiet: true,
@@ -182,14 +179,6 @@ pub struct ValidateCommand {
     /// source) point to existing files on the file system.
     #[arg(long)]
     pub paths: bool,
-
-    /// Check for redundant dependencies (multiple versions of same source file)
-    ///
-    /// Detects cases where multiple dependencies reference the same
-    /// source file with different versions, which may indicate
-    /// unintended duplication or version conflicts.
-    #[arg(long)]
-    pub check_redundancies: bool,
 
     /// Output format: text or json
     ///
@@ -288,7 +277,6 @@ impl ValidateCommand {
     /// 3. Source accessibility (if `--sources`)
     /// 4. Local path validation (if `--paths`)
     /// 5. Lockfile consistency (if `--check-lock`)
-    /// 6. Redundancy detection (if `--check-redundancies`)
     ///
     /// # Returns
     ///
@@ -311,7 +299,6 @@ impl ValidateCommand {
     ///     check_lock: true,
     ///     sources: false,
     ///     paths: true,
-    ///     check_redundancies: false,
     ///     format: OutputFormat::Text,
     ///     verbose: true,
     ///     quiet: false,
@@ -319,7 +306,7 @@ impl ValidateCommand {
     /// };
     /// // cmd.execute().await?;
     /// # Ok::<(), anyhow::Error>(())
-    /// # });
+    /// # }));
     /// ```
     pub async fn execute(self) -> Result<()> {
         self.execute_with_manifest_path(None).await
@@ -352,7 +339,6 @@ impl ValidateCommand {
     ///     file: None,
     ///     check_lock: false,
     ///     resolve: false,
-    ///     check_redundancies: false,
     ///     format: OutputFormat::Text,
     ///     json: false,
     ///     paths: false,
@@ -638,72 +624,6 @@ impl ValidateCommand {
             }
         }
 
-        // Check for redundancies
-        if self.check_redundancies {
-            if self.verbose && !self.quiet {
-                println!("\n🔍 Checking for redundant dependencies...");
-            }
-
-            let cache = Cache::new()?;
-            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
-            let resolver = match resolver_result {
-                Ok(resolver) => resolver,
-                Err(e) => {
-                    let error_msg = format!("Failed to initialize resolver: {e}");
-                    errors.push(error_msg.clone());
-
-                    if matches!(self.format, OutputFormat::Json) {
-                        validation_results.valid = false;
-                        validation_results.errors = errors;
-                        validation_results.warnings = warnings;
-                        println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                        return Err(e);
-                    } else if !self.quiet {
-                        println!("{} {}", "✗".red(), error_msg);
-                    }
-                    return Err(e);
-                }
-            };
-
-            let redundancies = resolver.check_redundancies_with_details();
-            if redundancies.is_empty() {
-                if !self.quiet {
-                    println!("✓ No redundant dependencies detected");
-                }
-            } else {
-                // Redundancies are warnings, not errors
-                let warning_msg = format!(
-                    "Redundant dependencies detected: {} resource(s) using different versions of the same source file",
-                    redundancies.len()
-                );
-
-                if !self.quiet {
-                    println!("{} {}", "⚠".yellow(), warning_msg);
-                    println!();
-
-                    for redundancy in &redundancies {
-                        println!("  Multiple versions of '{}':", redundancy.source_file);
-                        for usage in &redundancy.usages {
-                            println!(
-                                "    - '{}' uses version {}",
-                                usage.resource_name,
-                                usage.version.as_deref().unwrap_or("latest")
-                            );
-                        }
-                    }
-
-                    println!();
-                    println!(
-                        "{} This is not an error. Each resource will be installed independently.",
-                        "Note:".blue()
-                    );
-                    println!("  Consider using the same version for consistency if appropriate.");
-                }
-
-                warnings.push(warning_msg);
-            }
-        }
-
         // Check local file paths
         if self.paths {
             if self.verbose && !self.quiet {
@@ -818,7 +738,7 @@ impl ValidateCommand {
                                     missing.len()
                                 );
                                 for (name, type_) in missing {
-                                    println!("  - {name} ({type_})");
+                                    println!("  - {name} ({type_}))");
                                 }
                                 println!("\nRun 'ccpm install' to update the lockfile");
                             }
@@ -976,7 +896,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1006,7 +925,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1026,17 +944,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_dependency(
             "test".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("nonexistent".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("nonexistent".to_string()),
+                    path: "test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -1047,7 +968,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1077,7 +997,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -1101,17 +1020,20 @@ mod tests {
         );
         manifest.add_dependency(
             "test-agent".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("test".to_string()),
+                    path: "test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -1122,7 +1044,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true, // Make quiet to avoid output
@@ -1154,7 +1075,6 @@ mod tests {
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true,
@@ -1186,6 +1106,8 @@ mod tests {
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:dummy".to_string(),
             installed_at: "agents/extra-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
 
@@ -1195,7 +1117,6 @@ mod tests {
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true,
@@ -1222,7 +1143,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true,
@@ -1253,7 +1173,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true, // Enable verbose output
             quiet: false,
@@ -1277,17 +1196,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_dependency(
             "local-test".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: None,
-                path: "./local/test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: None,
+                    path: "./local/test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -1298,7 +1220,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: true, // Check local paths
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1331,7 +1252,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1351,17 +1271,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_dependency(
             "test".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("nonexistent".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("nonexistent".to_string()),
+                    path: "test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -1372,7 +1295,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json, // JSON format for errors
             verbose: false,
             quiet: true,
@@ -1404,7 +1326,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: true,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1424,7 +1345,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: true,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1456,7 +1376,6 @@ mod tests {
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1480,6 +1399,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at: "agents/test.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1494,7 +1415,6 @@ mod tests {
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1503,66 +1423,6 @@ mod tests {
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_validate_check_redundancies() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-
-        // Create manifest with potential redundancies
-        let mut manifest = crate::manifest::Manifest::new();
-        manifest.sources.insert(
-            "source1".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_dependency(
-            "agent1".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("source1".to_string()),
-                path: "same.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.add_dependency(
-            "agent2".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("source1".to_string()),
-                path: "same.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.save(&manifest_path).unwrap();
-
-        let cmd = ValidateCommand {
-            file: None,
-            resolve: false,
-            check_lock: false,
-            sources: false,
-            paths: false,
-            check_redundancies: true,
-            format: OutputFormat::Text,
-            verbose: false,
-            quiet: false,
-            strict: false,
-        };
-
-        let result = cmd.execute_from_path(manifest_path).await;
-        assert!(result.is_ok()); // Should succeed with warning about redundancy
     }
 
     #[tokio::test]
@@ -1579,7 +1439,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true,
             quiet: false,
@@ -1606,7 +1465,6 @@ mod tests {
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1654,7 +1512,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true, // Enable quiet
@@ -1676,7 +1533,7 @@ mod tests {
 
         manifest.agents.insert(
             "test".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "test.md".to_string(),
                 version: None,
@@ -1686,7 +1543,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1696,7 +1554,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json, // JSON output
             verbose: false,
             quiet: false,
@@ -1738,7 +1595,6 @@ mod tests {
             check_lock: false,
             sources: true, // Check sources
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1762,7 +1618,7 @@ mod tests {
 
         manifest.agents.insert(
             "test".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: temp.path().join("test.md").to_str().unwrap().to_string(),
                 version: None,
@@ -1772,7 +1628,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1785,7 +1642,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: true, // Check paths
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1809,7 +1665,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json, // Test JSON output for no manifest found
             verbose: false,
             quiet: false,
@@ -1832,7 +1687,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false, // Not quiet - should print error message
@@ -1855,7 +1709,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true, // Quiet mode - should not print
@@ -1878,7 +1731,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: false,
@@ -1901,7 +1753,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1927,7 +1778,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -1953,7 +1803,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -1974,17 +1823,20 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_dependency(
             "test".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("nonexistent".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("nonexistent".to_string()),
+                    path: "test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -1995,7 +1847,6 @@ mod tests {
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2032,15 +1883,13 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
             strict: false,
         };
 
-        // This should not error on version conflict during manifest loading
-        // but may be detected during redundancy checks
+        // Version conflicts are automatically resolved during installation
         let result = cmd.execute_from_path(manifest_path).await;
         // Version conflicts are typically warnings, not errors
         assert!(result.is_ok());
@@ -2060,17 +1909,20 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         );
         manifest.add_dependency(
             "old-agent".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "old.md".to_string(),
-                version: Some("v0.1.0".to_string()), // This should trigger warning
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("test".to_string()),
+                    path: "old.md".to_string(),
+                    version: Some("v0.1.0".to_string()), // This should trigger warning
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -2081,7 +1933,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2106,17 +1957,20 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         );
         manifest.add_dependency(
             "failing-agent".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("test".to_string()),
+                    path: "test.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.save(&manifest_path).unwrap();
@@ -2127,7 +1981,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -2153,32 +2006,38 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         );
         manifest.add_dependency(
             "my-agent".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agent.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("test".to_string()),
+                    path: "agent.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             true,
         );
         manifest.add_dependency(
             "utils".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "utils.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: Some("test".to_string()),
+                    path: "utils.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
             false,
         );
         manifest.save(&manifest_path).unwrap();
@@ -2189,7 +2048,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2232,7 +2090,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: true,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2275,7 +2132,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: true,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -2285,48 +2141,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let result = cmd.execute_from_path(manifest_path).await;
         // This tests lines 586-590, 621-625 (JSON source accessibility error)
         let _ = result;
-    }
-
-    #[tokio::test]
-    async fn test_validate_check_redundancies_with_resolver_error() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-
-        // Create a manifest that might cause resolver initialization to fail
-        let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_dependency(
-            "broken-dependency".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("nonexistent-source".to_string()),
-                path: "test.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.save(&manifest_path).unwrap();
-
-        let cmd = ValidateCommand {
-            file: None,
-            resolve: false,
-            check_lock: false,
-            sources: false,
-            paths: false,
-            check_redundancies: true,
-            format: OutputFormat::Json,
-            verbose: false,
-            quiet: true,
-            strict: false,
-        };
-
-        let result = cmd.execute_from_path(manifest_path).await;
-        // This tests lines 644-658 (resolver initialization error for redundancy check)
-        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -2340,33 +2154,39 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         // Add local snippet
         manifest.snippets.insert(
             "local-snippet".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: None,
-                path: "./snippets/local.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: None,
+                    path: "./snippets/local.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
 
         // Add local command
         manifest.commands.insert(
             "local-command".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: None,
-                path: "./commands/deploy.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: None,
+                    path: "./commands/deploy.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
 
         manifest.save(&manifest_path).unwrap();
@@ -2383,7 +2203,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: true, // Check paths for all resource types
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2404,17 +2223,20 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let mut manifest = crate::manifest::Manifest::new();
         manifest.snippets.insert(
             "missing-snippet".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: None,
-                path: "./missing/snippet.md".to_string(),
-                version: None,
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
+            crate::manifest::ResourceDependency::Detailed(Box::new(
+                crate::manifest::DetailedDependency {
+                    source: None,
+                    path: "./missing/snippet.md".to_string(),
+                    version: None,
+                    command: None,
+                    branch: None,
+                    rev: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                },
+            )),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -2424,7 +2246,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: true,
-            check_redundancies: false,
             format: OutputFormat::Json, // Test JSON output for missing paths
             verbose: false,
             quiet: true,
@@ -2451,7 +2272,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true, // Test verbose mode with lockfile check
             quiet: false,
@@ -2482,7 +2302,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -2524,7 +2343,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2557,6 +2375,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:dummy".to_string(),
             installed_at: "agents/extra-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2566,7 +2386,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -2593,7 +2412,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: true,
@@ -2620,7 +2438,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false, // Not quiet - should print error message
@@ -2647,7 +2464,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2688,7 +2504,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true, // Verbose mode to show summary
             quiet: false,
@@ -2698,113 +2513,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
         // This tests lines 484-490 (verbose mode summary output)
-    }
-
-    #[tokio::test]
-    async fn test_validate_check_redundancies_with_verbose() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-
-        // Create manifest with redundant dependencies
-        let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_dependency(
-            "agent1".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "same.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.add_dependency(
-            "agent2".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "same.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.save(&manifest_path).unwrap();
-
-        let cmd = ValidateCommand {
-            file: None,
-            resolve: false,
-            check_lock: false,
-            sources: false,
-            paths: false,
-            check_redundancies: true,
-            format: OutputFormat::Text,
-            verbose: true, // Verbose mode
-            quiet: false,
-            strict: false,
-        };
-
-        let result = cmd.execute_from_path(manifest_path).await;
-        assert!(result.is_ok()); // Redundancies are warnings
-        // This tests lines 637-638 (verbose mode for redundancy check)
-    }
-
-    #[tokio::test]
-    async fn test_validate_check_redundancies_no_redundancies() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-
-        // Create manifest with no redundant dependencies
-        let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_dependency(
-            "unique-agent".to_string(),
-            crate::manifest::ResourceDependency::Detailed(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "unique.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                command: None,
-                branch: None,
-                rev: None,
-                args: None,
-                target: None,
-                filename: None,
-            }),
-            true,
-        );
-        manifest.save(&manifest_path).unwrap();
-
-        let cmd = ValidateCommand {
-            file: None,
-            resolve: false,
-            check_lock: false,
-            sources: false,
-            paths: false,
-            check_redundancies: true,
-            format: OutputFormat::Text,
-            verbose: false,
-            quiet: false,
-            strict: false,
-        };
-
-        let result = cmd.execute_from_path(manifest_path).await;
-        assert!(result.is_ok());
-        // This tests lines 662-664 (no redundancies found message)
     }
 
     #[tokio::test]
@@ -2831,7 +2539,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: true,
             paths: true,
-            check_redundancies: true,
             format: OutputFormat::Text,
             verbose: true,
             quiet: false,
@@ -2857,7 +2564,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2885,7 +2591,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: true,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2929,7 +2634,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -2940,7 +2644,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         assert!(!cmd.check_lock);
         assert!(!cmd.sources);
         assert!(!cmd.paths);
-        assert!(!cmd.check_redundancies);
         assert_eq!(cmd.format, OutputFormat::Text);
         assert!(!cmd.verbose);
         assert!(!cmd.quiet);
@@ -2961,7 +2664,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: false,
@@ -2986,7 +2688,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true,
             quiet: false,
@@ -3011,7 +2712,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: true,
@@ -3037,7 +2737,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3066,7 +2765,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: true, // Enable path checking
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3099,7 +2797,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: true,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3128,7 +2825,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true, // Enable lockfile checking
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3164,6 +2860,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
             installed_at: "agents/lockfile-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3173,7 +2871,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3202,7 +2899,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3226,7 +2922,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         );
         manifest.agents.insert(
             "old-agent".to_string(),
-            ResourceDependency::Detailed(crate::manifest::DetailedDependency {
+            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
                 source: Some("test".to_string()),
                 path: "agent.md".to_string(),
                 version: Some("v0.1.0".to_string()),
@@ -3236,7 +2932,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -3246,7 +2943,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3271,7 +2967,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: false,
@@ -3293,7 +2988,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Json,
             verbose: false,
             quiet: false,
@@ -3315,7 +3009,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3359,6 +3052,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resolved_commit: None,
             checksum: "sha256:dummy".to_string(),
             installed_at: "agents/agent1.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3368,7 +3063,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: true,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3391,7 +3085,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3416,7 +3109,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3438,7 +3130,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: false,
             quiet: false,
@@ -3475,7 +3166,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             check_lock: false,
             sources: false,
             paths: false,
-            check_redundancies: false,
             format: OutputFormat::Text,
             verbose: true,
             quiet: false,

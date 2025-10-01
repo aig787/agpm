@@ -38,8 +38,9 @@
 //! ## Resource Management
 //! - [`lockfile`] - Lockfile generation, parsing, and validation (ccpm.lock)
 //! - [`manifest`] - Manifest parsing and validation (ccpm.toml)
-//! - [`pattern`] - Pattern-based dependency resolution using glob patterns
 //! - [`markdown`] - Markdown file operations and frontmatter extraction
+//! - [`metadata`] - Extraction of transitive dependencies from resource files
+//! - [`pattern`] - Pattern-based dependency resolution using glob patterns
 //!
 //! ## Resource Types
 //! - [`hooks`] - Claude Code hook configuration and settings.local.json management
@@ -141,6 +142,7 @@ pub mod source;
 pub mod lockfile;
 pub mod manifest;
 pub mod markdown;
+pub mod metadata;
 pub mod pattern;
 
 // Resource types

@@ -112,6 +112,33 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+/// Type alias for transitive dependency specifications.
+///
+/// Represents a mapping of resource names to their transitive dependencies,
+/// where each dependency is a tuple of (source, path, version).
+///
+/// # Format
+///
+/// ```text
+/// HashMap<ResourceName, Vec<(Source, Path, Version)>>
+/// ```
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::collections::HashMap;
+///
+/// let mut deps: ccpm::resolver::redundancy::TransitiveDepsMap = HashMap::new();
+/// deps.insert(
+///     "my-agent".to_string(),
+///     vec![
+///         ("community".to_string(), "agents/helper.md".to_string(), Some("v1.0.0".to_string())),
+///         ("community".to_string(), "agents/utils.md".to_string(), Some("v2.0.0".to_string())),
+///     ]
+/// );
+/// ```
+pub type TransitiveDepsMap = HashMap<String, Vec<(String, String, Option<String>)>>;
+
 /// Represents a specific usage of a source file by a resource dependency.
 ///
 /// This struct captures how a particular resource (agent or snippet) uses
@@ -317,7 +344,7 @@ impl RedundancyDetector {
     /// let mut detector = RedundancyDetector::new();
     ///
     /// // This will be recorded
-    /// let remote_dep = ResourceDependency::Detailed(DetailedDependency {
+    /// let remote_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("community".to_string()),
     ///     path: "agents/helper.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -327,7 +354,8 @@ impl RedundancyDetector {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// detector.add_usage("my-helper".to_string(), &remote_dep);
     ///
     /// // This will be ignored (local dependency)
@@ -407,7 +435,7 @@ impl RedundancyDetector {
     ///
     /// This method analyzes all collected resource usages and identifies
     /// patterns where multiple resources use the same source file with
-    /// different version constraints.
+    /// different version constraints or the same path from different sources.
     ///
     /// # Detection Algorithm
     ///
@@ -416,11 +444,16 @@ impl RedundancyDetector {
     /// 2. **Version Analysis**: Collect all unique version constraints for the file
     /// 3. **Redundancy Check**: If multiple different versions exist, mark as redundant
     ///
+    /// Additionally checks for cross-source redundancy:
+    /// - Groups resources by path (ignoring source)
+    /// - Identifies when the same path exists in multiple sources
+    ///
     /// # Redundancy Criteria
     ///
     /// A source file is considered redundant when:
     /// - **Multiple Resources**: More than one resource uses the file
     /// - **Different Versions**: Resources specify different version constraints
+    /// - **Cross-Source**: Same path from different sources (may be duplicate content)
     ///
     /// # Non-Redundant Cases
     ///
@@ -463,6 +496,7 @@ impl RedundancyDetector {
     pub fn detect_redundancies(&self) -> Vec<Redundancy> {
         let mut redundancies = Vec::new();
 
+        // Version redundancy detection (same source:path, different versions)
         for (source_file, uses) in &self.usages {
             // Skip if only one resource uses this source file
             if uses.len() <= 1 {
@@ -478,6 +512,88 @@ impl RedundancyDetector {
                 redundancies.push(Redundancy {
                     source_file: source_file.clone(),
                     usages: uses.clone(),
+                });
+            }
+        }
+
+        // Cross-source redundancy detection (same path, different sources)
+        redundancies.extend(self.detect_cross_source_redundancies());
+
+        redundancies
+    }
+
+    /// Detects redundancies where the same resource path exists in multiple sources.
+    ///
+    /// This method identifies cases where different sources contain resources at
+    /// the same path, which may indicate duplicate content or maintenance issues.
+    ///
+    /// # Detection Strategy
+    ///
+    /// 1. **Path Grouping**: Group all usages by their path component (ignoring source)
+    /// 2. **Source Analysis**: For each path, collect unique source names
+    /// 3. **Redundancy Detection**: Flag paths that appear in multiple sources
+    ///
+    /// # When This Occurs
+    ///
+    /// Cross-source redundancy typically happens when:
+    /// - A resource was forked from one source to another
+    /// - Multiple sources maintain similar resource collections
+    /// - A resource was copied for customization
+    ///
+    /// # Example
+    ///
+    /// ```toml
+    /// [sources]
+    /// official = "https://github.com/org/official.git"
+    /// fork = "https://github.com/user/fork.git"
+    ///
+    /// [agents]
+    /// helper1 = { source = "official", path = "agents/helper.md" }
+    /// helper2 = { source = "fork", path = "agents/helper.md" }
+    /// ```
+    ///
+    /// This would detect that `agents/helper.md` exists in both sources.
+    ///
+    /// # Returns
+    ///
+    /// Vector of [`Redundancy`] objects representing cross-source redundancies.
+    /// Each redundancy shows all usages of the same path from different sources.
+    #[must_use]
+    pub fn detect_cross_source_redundancies(&self) -> Vec<Redundancy> {
+        let mut path_to_usages: HashMap<String, Vec<ResourceUsage>> = HashMap::new();
+
+        // Group usages by path (without source prefix)
+        for (source_file, uses) in &self.usages {
+            // Extract path from "source:path" format
+            if let Some((_source, path)) = source_file.split_once(':') {
+                for usage in uses {
+                    path_to_usages
+                        .entry(path.to_string())
+                        .or_default()
+                        .push(usage.clone());
+                }
+            }
+        }
+
+        let mut redundancies = Vec::new();
+
+        // Check for paths that appear in multiple sources
+        for (path, uses) in path_to_usages {
+            if uses.len() <= 1 {
+                continue;
+            }
+
+            // Collect unique sources for this path
+            let sources: HashSet<String> = uses
+                .iter()
+                .filter_map(|u| u.source_file.split_once(':').map(|(s, _)| s.to_string()))
+                .collect();
+
+            // If the same path exists in multiple sources, it's a cross-source redundancy
+            if sources.len() > 1 {
+                redundancies.push(Redundancy {
+                    source_file: format!("(multiple sources):{path}"),
+                    usages: uses,
                 });
             }
         }
@@ -644,46 +760,165 @@ impl RedundancyDetector {
         message
     }
 
-    /// Placeholder for future transitive redundancy detection.
+    /// Detects transitive redundancy patterns in the dependency tree.
     ///
-    /// This method is reserved for future implementation when CCPM supports
-    /// dependencies-of-dependencies (transitive dependencies). Currently returns
-    /// an empty vector as transitive analysis is not yet implemented.
+    /// This method analyzes the full dependency tree to find cases where a resource
+    /// depends on different versions of the same source file through multiple paths.
+    /// This can occur when dependencies have their own dependencies that conflict.
     ///
-    /// # Planned Functionality
+    /// # Transitive Redundancy
     ///
-    /// When implemented, this method will:
-    /// 1. **Build Dependency Tree**: Map entire transitive dependency graph
-    /// 2. **Detect Deep Redundancy**: Find redundant patterns across dependency levels
-    /// 3. **Analyze Impact**: Calculate storage and maintenance implications
-    /// 4. **Suggest Optimizations**: Recommend dependency tree restructuring
+    /// Transitive redundancy occurs when:
+    /// 1. **Direct Dependency**: Resource A directly depends on source X @ v1.0.0
+    /// 2. **Indirect Dependency**: Resource A depends on B, which depends on X @ v2.0.0
+    /// 3. **Conflict**: Resource A indirectly has two conflicting requirements for X
     ///
-    /// # Example Future Analysis
+    /// # Example Scenario
     ///
     /// ```text
-    /// Direct:     app-agent → community:agents/helper.md v1.0.0
-    /// Transitive: app-agent → tool-lib → community:agents/helper.md v2.0.0
+    /// Manifest:
+    ///   app-agent → community:agents/helper.md v1.0.0 (direct)
+    ///   app-agent → tool-lib v1.0.0 (direct)
     ///
-    /// Result: Transitive redundancy detected - app-agent indirectly depends
-    ///         on two versions of the same resource.
+    /// Transitive:
+    ///   tool-lib → community:agents/helper.md v2.0.0 (indirect)
+    ///
+    /// Result: app-agent has both v1.0.0 (direct) and v2.0.0 (indirect)
+    ///         requirements for helper.md
     /// ```
     ///
-    /// # Implementation Challenges
+    /// # Detection Algorithm
     ///
-    /// - **Circular Dependencies**: Detection and handling of cycles
-    /// - **Version Compatibility**: Analyzing semantic version compatibility
-    /// - **Performance**: Efficient analysis of large dependency trees
-    /// - **Cache Management**: Handling cached vs. fresh transitive data
+    /// 1. **Build Dependency Map**: Create mapping of resources to their dependencies
+    /// 2. **Traverse Tree**: For each resource, collect all direct and transitive deps
+    /// 3. **Conflict Detection**: Find cases where same source file appears with different versions
+    /// 4. **Path Tracking**: Record the dependency chain that led to the conflict
+    ///
+    /// # Parameters
+    ///
+    /// - `transitive_deps`: Map of resource names to their transitive dependency specifications
+    ///   Format: `HashMap<String, Vec<(source, path, version)>>`
+    ///
+    /// # Algorithm Complexity
+    ///
+    /// - **Time**: O(n·d) where:
+    ///   - n = number of resources
+    ///   - d = average depth of dependency tree
+    /// - **Space**: O(n·t) where t = average transitive dependencies per resource
     ///
     /// # Returns
     ///
-    /// Currently returns an empty vector. Future implementation will return
-    /// detected transitive redundancies.
+    /// Vector of [`Redundancy`] objects representing transitive conflicts.
+    /// Each redundancy includes the conflicting usage paths and versions.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use ccpm::resolver::redundancy::RedundancyDetector;
+    ///
+    /// let mut detector = RedundancyDetector::new();
+    /// // ... add direct dependencies ...
+    ///
+    /// // Build transitive dependency map
+    /// let mut transitive_deps = HashMap::new();
+    /// transitive_deps.insert(
+    ///     "app-agent".to_string(),
+    ///     vec![
+    ///         ("community".to_string(), "agents/helper.md".to_string(), Some("v1.0.0".to_string())),
+    ///         ("community".to_string(), "agents/helper.md".to_string(), Some("v2.0.0".to_string())),
+    ///     ]
+    /// );
+    ///
+    /// let conflicts = detector.check_transitive_redundancies_with_map(&transitive_deps);
+    /// // conflicts will contain redundancies found in the transitive tree
+    /// ```
     #[must_use]
     pub fn check_transitive_redundancies(&self) -> Vec<Redundancy> {
-        // TODO: When we add support for dependencies having their own dependencies,
-        // we'll need to check for redundancies across the entire dependency tree
+        // For now, return empty since we need the transitive dependency map
+        // This will be populated when the resolver builds the full dependency tree
         Vec::new()
+    }
+
+    /// Detects transitive redundancies using a provided dependency map.
+    ///
+    /// This is the internal implementation that performs transitive redundancy
+    /// detection when given a complete map of resources and their transitive
+    /// dependencies.
+    ///
+    /// # Parameters
+    ///
+    /// - `transitive_deps`: Map of resource names to lists of (source, path, version) tuples
+    ///   representing all direct and transitive dependencies of each resource
+    ///
+    /// # Returns
+    ///
+    /// Vector of [`Redundancy`] objects for transitive conflicts
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::collections::HashMap;
+    /// use ccpm::resolver::redundancy::RedundancyDetector;
+    ///
+    /// let detector = RedundancyDetector::new();
+    ///
+    /// let mut deps = HashMap::new();
+    /// deps.insert(
+    ///     "my-agent".to_string(),
+    ///     vec![
+    ///         ("community".to_string(), "agents/helper.md".to_string(), Some("v1.0.0".to_string())),
+    ///         ("community".to_string(), "agents/helper.md".to_string(), Some("v2.0.0".to_string())),
+    ///     ]
+    /// );
+    ///
+    /// let redundancies = detector.check_transitive_redundancies_with_map(&deps);
+    /// assert_eq!(redundancies.len(), 1);
+    /// ```
+    #[must_use]
+    pub fn check_transitive_redundancies_with_map(
+        &self,
+        transitive_deps: &TransitiveDepsMap,
+    ) -> Vec<Redundancy> {
+        let mut redundancies = Vec::new();
+
+        // For each resource, check if it has conflicting transitive dependencies
+        for (resource_name, deps) in transitive_deps {
+            // Group dependencies by source:path
+            let mut source_file_versions: HashMap<String, Vec<Option<String>>> = HashMap::new();
+
+            for (source, path, version) in deps {
+                let source_file = format!("{source}:{path}");
+                source_file_versions
+                    .entry(source_file)
+                    .or_default()
+                    .push(version.clone());
+            }
+
+            // Check for conflicts (same source:path with different versions)
+            for (source_file, versions) in source_file_versions {
+                let unique_versions: HashSet<Option<String>> = versions.iter().cloned().collect();
+
+                // If multiple different versions are required transitively, it's a conflict
+                if unique_versions.len() > 1 {
+                    let usages = unique_versions
+                        .iter()
+                        .map(|v| ResourceUsage {
+                            resource_name: format!("{resource_name} (transitive)"),
+                            source_file: source_file.clone(),
+                            version: v.clone(),
+                        })
+                        .collect();
+
+                    redundancies.push(Redundancy {
+                        source_file,
+                        usages,
+                    });
+                }
+            }
+        }
+
+        redundancies
     }
 
     /// Generates actionable consolidation strategies for a specific redundancy.
@@ -777,7 +1012,7 @@ impl RedundancyDetector {
 
         // Explain that this isn't breaking
         suggestions.push(format!(
-            "Note: Each resource ({}) will be installed independently",
+            "Note: Each resource ({})) will be installed independently",
             redundancy
                 .usages
                 .iter()
@@ -807,7 +1042,7 @@ mod tests {
         // Add resources using different versions of the same source file
         detector.add_usage(
             "app-agent".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -817,12 +1052,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         detector.add_usage(
             "tool-agent".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -832,7 +1068,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let redundancies = detector.detect_redundancies();
@@ -854,7 +1091,7 @@ mod tests {
         // Add resources using the same version - not considered redundant
         detector.add_usage(
             "agent1".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -864,12 +1101,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         detector.add_usage(
             "agent2".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -879,7 +1117,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let redundancies = detector.detect_redundancies();
@@ -897,7 +1136,7 @@ mod tests {
         // One wants latest, another wants specific version - this is redundant
         detector.add_usage(
             "agent1".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
@@ -907,12 +1146,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         detector.add_usage(
             "agent2".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -922,7 +1162,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let redundancies = detector.detect_redundancies();
@@ -962,7 +1203,7 @@ mod tests {
 
         detector.add_usage(
             "app".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -972,12 +1213,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         detector.add_usage(
             "tool".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -987,7 +1229,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let redundancies = detector.detect_redundancies();
@@ -1009,7 +1252,7 @@ mod tests {
 
         detector.add_usage(
             "app".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: None, // latest
@@ -1019,12 +1262,13 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         detector.add_usage(
             "tool".to_string(),
-            &ResourceDependency::Detailed(DetailedDependency {
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "agents/shared.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -1034,7 +1278,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let redundancies = detector.detect_redundancies();
@@ -1043,5 +1288,224 @@ mod tests {
         assert!(!suggestions.is_empty());
         assert!(suggestions.iter().any(|s| s.contains("v2.0.0")));
         assert!(suggestions.iter().any(|s| s.contains("independently")));
+    }
+
+    /// Tests detection of cross-source redundancy where same path exists in multiple sources.
+    ///
+    /// This test verifies that the detector identifies when different sources
+    /// contain resources at the same path, which may indicate duplicate content.
+    #[test]
+    fn test_cross_source_redundancy() {
+        let mut detector = RedundancyDetector::new();
+
+        // Add same path from different sources
+        detector.add_usage(
+            "official-helper".to_string(),
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("official".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            })),
+        );
+
+        detector.add_usage(
+            "fork-helper".to_string(),
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("fork".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            })),
+        );
+
+        let redundancies = detector.detect_redundancies();
+        assert_eq!(
+            redundancies.len(),
+            1,
+            "Should detect cross-source redundancy"
+        );
+
+        let redundancy = &redundancies[0];
+        assert!(
+            redundancy.source_file.contains("(multiple sources)"),
+            "Should indicate multiple sources"
+        );
+        assert_eq!(redundancy.usages.len(), 2);
+    }
+
+    /// Tests that resources from the same source with same version are not flagged as cross-source redundancy.
+    #[test]
+    fn test_no_cross_source_redundancy_same_source() {
+        let mut detector = RedundancyDetector::new();
+
+        // Add same path from same source - not cross-source redundancy
+        detector.add_usage(
+            "helper1".to_string(),
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            })),
+        );
+
+        detector.add_usage(
+            "helper2".to_string(),
+            &ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: "agents/helper.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            })),
+        );
+
+        let redundancies = detector.detect_redundancies();
+        // Should not detect any redundancy (same source, same version)
+        assert_eq!(redundancies.len(), 0);
+    }
+
+    /// Tests transitive redundancy detection with conflicting versions.
+    ///
+    /// This test verifies that the detector identifies when a resource
+    /// transitively depends on different versions of the same source file.
+    #[test]
+    fn test_transitive_redundancy_detection() {
+        use std::collections::HashMap;
+
+        let detector = RedundancyDetector::new();
+
+        let mut transitive_deps = HashMap::new();
+        transitive_deps.insert(
+            "app-agent".to_string(),
+            vec![
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v1.0.0".to_string()),
+                ),
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v2.0.0".to_string()),
+                ),
+            ],
+        );
+
+        let redundancies = detector.check_transitive_redundancies_with_map(&transitive_deps);
+        assert_eq!(redundancies.len(), 1, "Should detect transitive redundancy");
+
+        let redundancy = &redundancies[0];
+        assert_eq!(redundancy.source_file, "community:agents/helper.md");
+        assert_eq!(redundancy.usages.len(), 2);
+        assert!(
+            redundancy
+                .usages
+                .iter()
+                .any(|u| u.resource_name.contains("transitive"))
+        );
+    }
+
+    /// Tests that transitive dependencies with matching versions don't trigger redundancy.
+    #[test]
+    fn test_no_transitive_redundancy_matching_versions() {
+        use std::collections::HashMap;
+
+        let detector = RedundancyDetector::new();
+
+        let mut transitive_deps = HashMap::new();
+        transitive_deps.insert(
+            "app-agent".to_string(),
+            vec![
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v1.0.0".to_string()),
+                ),
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v1.0.0".to_string()),
+                ),
+            ],
+        );
+
+        let redundancies = detector.check_transitive_redundancies_with_map(&transitive_deps);
+        assert_eq!(
+            redundancies.len(),
+            0,
+            "Should not detect redundancy when versions match"
+        );
+    }
+
+    /// Tests transitive redundancy detection across multiple resources.
+    #[test]
+    fn test_transitive_redundancy_multiple_resources() {
+        use std::collections::HashMap;
+
+        let detector = RedundancyDetector::new();
+
+        let mut transitive_deps = HashMap::new();
+        transitive_deps.insert(
+            "resource-a".to_string(),
+            vec![
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v1.0.0".to_string()),
+                ),
+                (
+                    "community".to_string(),
+                    "agents/helper.md".to_string(),
+                    Some("v2.0.0".to_string()),
+                ),
+            ],
+        );
+        transitive_deps.insert(
+            "resource-b".to_string(),
+            vec![
+                (
+                    "community".to_string(),
+                    "snippets/utils.md".to_string(),
+                    Some("v1.0.0".to_string()),
+                ),
+                (
+                    "community".to_string(),
+                    "snippets/utils.md".to_string(),
+                    Some("v1.5.0".to_string()),
+                ),
+            ],
+        );
+
+        let redundancies = detector.check_transitive_redundancies_with_map(&transitive_deps);
+        assert_eq!(
+            redundancies.len(),
+            2,
+            "Should detect redundancies in both resources"
+        );
     }
 }

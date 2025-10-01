@@ -154,7 +154,7 @@ use std::path::Path;
 /// let parsed: ResourceType = serde_json::from_str("\"snippet\"").unwrap();
 /// assert_eq!(parsed, ResourceType::Snippet);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceType {
     /// AI assistant configurations and prompts
@@ -168,6 +168,7 @@ pub enum ResourceType {
     ///
     /// Snippets contain reusable code fragments, configuration examples, or
     /// documentation templates that can be shared across projects.
+    #[default]
     Snippet,
 
     /// Claude Code commands
@@ -300,12 +301,12 @@ impl std::str::FromStr for ResourceType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "agent" => Ok(ResourceType::Agent),
-            "snippet" => Ok(ResourceType::Snippet),
-            "command" => Ok(ResourceType::Command),
-            "mcp-server" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
-            "script" => Ok(ResourceType::Script),
-            "hook" => Ok(ResourceType::Hook),
+            "agent" | "agents" => Ok(ResourceType::Agent),
+            "snippet" | "snippets" => Ok(ResourceType::Snippet),
+            "command" | "commands" => Ok(ResourceType::Command),
+            "mcp-server" | "mcp-servers" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
+            "script" | "scripts" => Ok(ResourceType::Script),
+            "hook" | "hooks" => Ok(ResourceType::Hook),
             _ => Err(crate::core::CcpmError::InvalidResourceType {
                 resource_type: s.to_string(),
             }),

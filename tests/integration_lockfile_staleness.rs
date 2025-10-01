@@ -224,7 +224,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     Ok(())
 }
 
-/// Test that removed dependency is detected
+/// Test that extra lockfile entries are allowed (for transitive dependencies)
 #[test]
 fn test_install_detects_removed_dependency() -> Result<()> {
     let project = TestProject::new()?;
@@ -253,7 +253,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
-    // Remove agent-two from manifest
+    // Remove agent-two from manifest (simulating it becoming only a transitive dependency)
     let manifest_one_agent = format!(
         r#"[sources]
 test-source = "{}"
@@ -265,10 +265,18 @@ agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "
     );
     project.write_manifest(&manifest_one_agent)?;
 
-    // Try to install with lockfile containing removed dependency in CI mode
+    // Try to install with lockfile containing extra entry in CI mode
+    // This should succeed now - extra entries are allowed for transitive dependencies
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
-    assert!(output.stderr.contains("removed from manifest"));
+    assert!(
+        output.success,
+        "Install should succeed with extra lockfile entries for transitive deps: {}",
+        output.stderr
+    );
+    assert!(
+        !output.stderr.contains("stale"),
+        "Should not report lockfile as stale"
+    );
 
     Ok(())
 }
@@ -360,7 +368,11 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     // Try to install with outdated lockfile in CI mode
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
     assert!(!output.success);
-    assert!(output.stderr.contains("Source 'test-source' URL changed"));
+    assert!(
+        output
+            .stderr
+            .contains("Source repository 'test-source' URL changed")
+    );
 
     Ok(())
 }
