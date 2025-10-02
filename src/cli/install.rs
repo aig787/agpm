@@ -51,6 +51,7 @@
 //! 5. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
 //! 6. **Configuration Updates**: Updates hooks and MCP server configurations as needed
 //! 7. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
+//! 8. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
 //!
 //! # Error Conditions
 //!
@@ -489,12 +490,17 @@ impl InstallCommand {
         };
 
         // Check for tag movement if we have both old and new lockfiles
-        if !self.frozen && !self.regenerate && lockfile_path.exists() {
+        let old_lockfile = if !self.frozen && !self.regenerate && lockfile_path.exists() {
             // Load the old lockfile for comparison
-            if let Ok(old_lockfile) = LockFile::load(&lockfile_path) {
-                detect_tag_movement(&old_lockfile, &lockfile, self.quiet);
+            if let Ok(old) = LockFile::load(&lockfile_path) {
+                detect_tag_movement(&old, &lockfile, self.quiet);
+                Some(old)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         let total_resources = ResourceIterator::count_total_resources(&lockfile);
 
@@ -578,6 +584,22 @@ impl InstallCommand {
                     println!("✓ Configured {} MCP servers", server_count);
                 }
             }
+        }
+
+        // Clean up removed or moved artifacts AFTER successful installation
+        // This ensures we don't delete old files if installation fails
+        if installation_error.is_none()
+            && let Some(old) = old_lockfile
+            && let Ok(removed) =
+                crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
+                    .await
+            && !removed.is_empty()
+            && !self.quiet
+        {
+            println!(
+                "🗑️  Cleaned up {} moved or removed artifact(s)",
+                removed.len()
+            );
         }
 
         // Start finalizing phase

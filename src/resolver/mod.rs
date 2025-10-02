@@ -2,7 +2,8 @@
 //!
 //! This module implements the core dependency resolution algorithm that transforms
 //! manifest dependencies into locked versions. It handles version constraint solving,
-//! conflict detection, redundancy analysis, and parallel source synchronization.
+//! conflict detection, redundancy analysis, parallel source synchronization, and
+//! relative path preservation during installation.
 //!
 //! # Architecture Overview
 //!
@@ -16,9 +17,9 @@
 //!
 //! ## Phase 2: Version Resolution (`resolve` or `update`)
 //! - **Purpose**: Resolve versions to commit SHAs using cached repositories
-//! - **Operations**: Parse dependencies, resolve constraints, detect conflicts, create worktrees
+//! - **Operations**: Parse dependencies, resolve constraints, detect conflicts, create worktrees, preserve paths
 //! - **Benefits**: Fast local operations, no network I/O, deterministic behavior
-//! - **Result**: Locked dependencies ready for installation
+//! - **Result**: Locked dependencies ready for installation with preserved directory structure
 //!
 //! This two-phase approach replaces the previous three-phase model and provides better
 //! separation of concerns between network operations and dependency resolution logic.
@@ -54,8 +55,9 @@
 //! 2. **SHA-based Worktree Creation**: Create worktrees keyed by commit SHA for maximum deduplication
 //! 3. **Conflict Detection**: Check for path conflicts and incompatible versions
 //! 4. **Redundancy Analysis**: Identify duplicate resources across sources
-//! 5. **Resource Installation**: Copy resources to target locations with checksums
-//! 6. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs
+//! 5. **Path Processing**: Preserve directory structure via [`extract_relative_path`] for resources from Git sources
+//! 6. **Resource Installation**: Copy resources to target locations with checksums
+//! 7. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs and preserved paths
 //!
 //! This separation ensures all network operations complete in phase 1, while phase 2
 //! operates entirely on cached data for fast, deterministic resolution.
@@ -465,6 +467,96 @@ impl DependencyResolver {
                 }
             }
         }
+    }
+
+    /// Detects conflicts where multiple dependencies resolve to the same installation path.
+    ///
+    /// This method validates that no two dependencies will overwrite each other during
+    /// installation. It builds a map of all resolved `installed_at` paths and checks for
+    /// collisions across all resource types.
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The lockfile containing all resolved dependencies
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if no conflicts are detected, or an error describing the conflicts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Two or more dependencies resolve to the same `installed_at` path
+    /// - The error message lists all conflicting dependency names and the shared path
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// // This would cause a conflict error:
+    /// // [agents]
+    /// // v1 = { source = "repo", path = "agents/example.md", version = "v1.0" }
+    /// // v2 = { source = "repo", path = "agents/example.md", version = "v2.0" }
+    /// // Both resolve to .claude/agents/example.md
+    /// ```
+    fn detect_target_conflicts(&self, lockfile: &LockFile) -> Result<()> {
+        use std::collections::HashMap;
+
+        // Map of installed_at path -> list of dependency names
+        let mut path_map: HashMap<String, Vec<String>> = HashMap::new();
+
+        // Collect all resources from lockfile
+        let all_resources: Vec<(&str, &LockedResource)> = lockfile
+            .agents
+            .iter()
+            .map(|r| (r.name.as_str(), r))
+            .chain(lockfile.snippets.iter().map(|r| (r.name.as_str(), r)))
+            .chain(lockfile.commands.iter().map(|r| (r.name.as_str(), r)))
+            .chain(lockfile.scripts.iter().map(|r| (r.name.as_str(), r)))
+            .chain(lockfile.hooks.iter().map(|r| (r.name.as_str(), r)))
+            .chain(lockfile.mcp_servers.iter().map(|r| (r.name.as_str(), r)))
+            .collect();
+
+        // Build the path map
+        for (name, resource) in all_resources {
+            path_map
+                .entry(resource.installed_at.clone())
+                .or_default()
+                .push(name.to_string());
+        }
+
+        // Find conflicts (paths with multiple dependencies)
+        let conflicts: Vec<_> = path_map
+            .iter()
+            .filter(|(_, names)| names.len() > 1)
+            .collect();
+
+        if !conflicts.is_empty() {
+            // Build a detailed error message
+            let mut error_msg = String::from(
+                "Target path conflicts detected:\n\n\
+                 Multiple dependencies resolve to the same installation path.\n\
+                 This would cause files to overwrite each other.\n\n",
+            );
+
+            for (path, names) in conflicts {
+                error_msg.push_str(&format!(
+                    "  Path: {}\n  Conflicts: {}\n\n",
+                    path,
+                    names.join(", ")
+                ));
+            }
+
+            error_msg.push_str(
+                "To resolve:\n\
+                 1. Use different dependency names for different versions\n\
+                 2. Use custom 'target' field to specify different installation paths\n\
+                 3. Ensure pattern dependencies don't overlap with single-file dependencies",
+            );
+
+            return Err(anyhow::anyhow!(error_msg));
+        }
+
+        Ok(())
     }
 
     /// Pre-syncs all sources needed for the given dependencies.
@@ -1028,6 +1120,9 @@ impl DependencyResolver {
             self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
         }
 
+        // Detect target-path conflicts before finalizing
+        self.detect_target_conflicts(&lockfile)?;
+
         // Progress completion is handled by the caller
 
         Ok(lockfile)
@@ -1043,13 +1138,15 @@ impl DependencyResolver {
     /// For local dependencies:
     /// 1. Validate the path format
     /// 2. Determine installation location based on resource type
-    /// 3. Create entry with relative path (no source sync required)
+    /// 3. Preserve relative directory structure from source path
+    /// 4. Create entry with relative path (no source sync required)
     ///
     /// For remote dependencies:
     /// 1. Validate source exists in manifest or global config
     /// 2. Synchronize source repository (clone or fetch)
     /// 3. Resolve version constraint to specific commit
-    /// 4. Create entry with resolved commit and source information
+    /// 4. Preserve relative directory structure from dependency path
+    /// 5. Create entry with resolved commit and source information
     ///
     /// # Parameters
     ///
@@ -1098,32 +1195,47 @@ impl DependencyResolver {
                 // Use custom filename as-is (includes extension)
                 custom_filename.to_string()
             } else {
-                // Use default filename based on dependency name and resource type
-                let extension = match resource_type.as_str() {
-                    "hook" | "mcp-server" => "json",
-                    "script" => {
-                        // Scripts maintain their original extension
-                        let path = dep.get_path();
-                        Path::new(path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("sh")
-                    }
-                    _ => "md",
-                };
-                format!("{}.{}", name, extension)
+                // Extract relative path from the dependency path to preserve directory structure
+                let dep_path = Path::new(dep.get_path());
+                let relative_path = extract_relative_path(dep_path, &resource_type);
+
+                // If a relative path exists, preserve it; otherwise use dependency name
+                if relative_path.as_os_str().is_empty() || relative_path == dep_path {
+                    // No relative path preserved, use default filename
+                    let extension = match resource_type.as_str() {
+                        "hook" | "mcp-server" => "json",
+                        "script" => {
+                            // Scripts maintain their original extension
+                            dep_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("sh")
+                        }
+                        _ => "md",
+                    };
+                    format!("{}.{}", name, extension)
+                } else {
+                    // Preserve the relative path structure
+                    relative_path.to_string_lossy().to_string()
+                }
             };
 
             // Determine the target directory
             let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Use custom target relative to .claude directory
-                let custom_path = format!(
-                    ".claude/{}",
-                    custom_target
-                        .trim_start_matches(".claude/")
-                        .trim_start_matches('/')
-                );
-                format!("{}/{}", custom_path, filename)
+                // Custom target is relative to the default resource directory
+                let base_target = match resource_type.as_str() {
+                    "agent" => &self.manifest.target.agents,
+                    "snippet" => &self.manifest.target.snippets,
+                    "command" => &self.manifest.target.commands,
+                    "script" => &self.manifest.target.scripts,
+                    "hook" => &self.manifest.target.hooks,
+                    "mcp-server" => &self.manifest.target.mcp_servers,
+                    _ => &self.manifest.target.snippets,
+                };
+                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    .replace("//", "/")
+                    + "/"
+                    + &filename
             } else {
                 // Use default target based on resource type
                 let target_dir = match resource_type.as_str() {
@@ -1206,32 +1318,47 @@ impl DependencyResolver {
                 // Use custom filename as-is (includes extension)
                 custom_filename.to_string()
             } else {
-                // Use default filename based on dependency name and resource type
-                let extension = match resource_type.as_str() {
-                    "hook" | "mcp-server" => "json",
-                    "script" => {
-                        // Scripts maintain their original extension
-                        let path = dep.get_path();
-                        Path::new(path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("sh")
-                    }
-                    _ => "md",
-                };
-                format!("{}.{}", name, extension)
+                // Extract relative path from the dependency path to preserve directory structure
+                let dep_path = Path::new(dep.get_path());
+                let relative_path = extract_relative_path(dep_path, &resource_type);
+
+                // If a relative path exists, preserve it; otherwise use dependency name
+                if relative_path.as_os_str().is_empty() || relative_path == dep_path {
+                    // No relative path preserved, use default filename
+                    let extension = match resource_type.as_str() {
+                        "hook" | "mcp-server" => "json",
+                        "script" => {
+                            // Scripts maintain their original extension
+                            dep_path
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("sh")
+                        }
+                        _ => "md",
+                    };
+                    format!("{}.{}", name, extension)
+                } else {
+                    // Preserve the relative path structure
+                    relative_path.to_string_lossy().to_string()
+                }
             };
 
             // Determine the target directory
             let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Use custom target relative to .claude directory
-                let custom_path = format!(
-                    ".claude/{}",
-                    custom_target
-                        .trim_start_matches(".claude/")
-                        .trim_start_matches('/')
-                );
-                format!("{}/{}", custom_path, filename)
+                // Custom target is relative to the default resource directory
+                let base_target = match resource_type.as_str() {
+                    "agent" => &self.manifest.target.agents,
+                    "snippet" => &self.manifest.target.snippets,
+                    "command" => &self.manifest.target.commands,
+                    "script" => &self.manifest.target.scripts,
+                    "hook" => &self.manifest.target.hooks,
+                    "mcp-server" => &self.manifest.target.mcp_servers,
+                    _ => &self.manifest.target.snippets,
+                };
+                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    .replace("//", "/")
+                    + "/"
+                    + &filename
             } else {
                 // Use default target based on resource type
                 let target_dir = match resource_type.as_str() {
@@ -1269,7 +1396,8 @@ impl DependencyResolver {
     /// 1. Sync the source repository
     /// 2. Checkout the specified version (if any)
     /// 3. Search for files matching the pattern
-    /// 4. Create a locked resource for each match
+    /// 4. Preserve relative directory structure for each matched file
+    /// 5. Create a locked resource for each match
     ///
     /// # Parameters
     ///
@@ -1332,14 +1460,23 @@ impl DependencyResolver {
             for matched_path in matches {
                 let resource_name = crate::pattern::extract_resource_name(&matched_path);
 
+                // Extract relative path to preserve directory structure
+                let relative_path = extract_relative_path(&matched_path, &resource_type);
+
                 // Determine the target directory
                 let target_dir = if let Some(custom_target) = dep.get_target() {
-                    format!(
-                        ".claude/{}",
-                        custom_target
-                            .trim_start_matches(".claude/")
-                            .trim_start_matches('/')
-                    )
+                    // Custom target is relative to the default resource directory
+                    let base_target = match resource_type.as_str() {
+                        "agent" => &self.manifest.target.agents,
+                        "snippet" => &self.manifest.target.snippets,
+                        "command" => &self.manifest.target.commands,
+                        "script" => &self.manifest.target.scripts,
+                        "hook" => &self.manifest.target.hooks,
+                        "mcp-server" => &self.manifest.target.mcp_servers,
+                        _ => &self.manifest.target.snippets,
+                    };
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
                 } else {
                     match resource_type.as_str() {
                         "agent" => self.manifest.target.agents.clone(),
@@ -1352,11 +1489,18 @@ impl DependencyResolver {
                     }
                 };
 
-                let extension = matched_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("md");
-                let filename = format!("{}.{}", resource_name, extension);
+                // Use relative path if it exists, otherwise use resource name
+                let filename =
+                    if relative_path.as_os_str().is_empty() || relative_path == matched_path {
+                        let extension = matched_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("md");
+                        format!("{}.{}", resource_name, extension)
+                    } else {
+                        relative_path.to_string_lossy().to_string()
+                    };
+
                 let installed_at = format!("{}/{}", target_dir, filename);
 
                 // Construct full relative path from base_path and matched_path
@@ -1424,14 +1568,23 @@ impl DependencyResolver {
             for matched_path in matches {
                 let resource_name = crate::pattern::extract_resource_name(&matched_path);
 
+                // Extract relative path to preserve directory structure
+                let relative_path = extract_relative_path(&matched_path, &resource_type);
+
                 // Determine the target directory
                 let target_dir = if let Some(custom_target) = dep.get_target() {
-                    format!(
-                        ".claude/{}",
-                        custom_target
-                            .trim_start_matches(".claude/")
-                            .trim_start_matches('/')
-                    )
+                    // Custom target is relative to the default resource directory
+                    let base_target = match resource_type.as_str() {
+                        "agent" => &self.manifest.target.agents,
+                        "snippet" => &self.manifest.target.snippets,
+                        "command" => &self.manifest.target.commands,
+                        "script" => &self.manifest.target.scripts,
+                        "hook" => &self.manifest.target.hooks,
+                        "mcp-server" => &self.manifest.target.mcp_servers,
+                        _ => &self.manifest.target.snippets,
+                    };
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
                 } else {
                     match resource_type.as_str() {
                         "agent" => self.manifest.target.agents.clone(),
@@ -1444,11 +1597,18 @@ impl DependencyResolver {
                     }
                 };
 
-                let extension = matched_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("md");
-                let filename = format!("{}.{}", resource_name, extension);
+                // Use relative path if it exists, otherwise use resource name
+                let filename =
+                    if relative_path.as_os_str().is_empty() || relative_path == matched_path {
+                        let extension = matched_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("md");
+                        format!("{}.{}", resource_name, extension)
+                    } else {
+                        relative_path.to_string_lossy().to_string()
+                    };
+
                 let installed_at = format!("{}/{}", target_dir, filename);
 
                 resources.push(LockedResource {
@@ -1735,6 +1895,9 @@ impl DependencyResolver {
 
         // Progress bar completion is handled by the caller
 
+        // Detect target-path conflicts before finalizing
+        self.detect_target_conflicts(&lockfile)?;
+
         Ok(lockfile)
     }
 
@@ -1912,6 +2075,219 @@ impl DependencyResolver {
 
         Ok(())
     }
+}
+
+/// Extracts the relative path from a resource by removing the resource type directory prefix.
+///
+/// This function preserves directory structure when installing resources from Git sources
+/// by intelligently stripping the resource type directory (e.g., "agents/", "snippets/")
+/// from source repository paths. This allows subdirectories within a resource category
+/// to be maintained in the installation target, enabling organized source repositories
+/// to retain their structure.
+///
+/// # Path Processing Strategy
+///
+/// The function implements a **prefix-aware extraction** algorithm:
+/// 1. Converts the resource type string to its expected directory name (e.g., "agent" → "agents")
+/// 2. Checks if the path starts with this directory name as its first component
+/// 3. If matched, returns the path with the first component stripped
+/// 4. If not matched, returns the original path unchanged
+///
+/// This approach ensures that:
+/// - Nested directories within a category are preserved (e.g., `agents/ai/helper.md` → `ai/helper.md`)
+/// - Paths without the expected prefix remain unchanged (backwards compatibility)
+/// - Cross-platform path handling works correctly (Windows and Unix separators)
+///
+/// # Arguments
+///
+/// * `path` - The original resource path from the dependency specification (e.g., from a Git repository)
+/// * `resource_type` - The resource type string: `"agent"`, `"snippet"`, `"command"`, `"script"`, `"hook"`, or `"mcp-server"`
+///
+/// # Returns
+///
+/// A [`PathBuf`] containing:
+/// - The path with the resource type prefix removed (if the prefix matched)
+/// - The original path unchanged (if no prefix matched)
+///
+/// # Resource Type Mapping
+///
+/// | Input Type   | Expected Directory | Example Input Path      | Example Output Path    |
+/// |--------------|-------------------|-------------------------|------------------------|
+/// | `"agent"`    | `agents/`         | `agents/ai/helper.md`   | `ai/helper.md`         |
+/// | `"snippet"`  | `snippets/`       | `snippets/tools/fmt.md` | `tools/fmt.md`         |
+/// | `"command"`  | `commands/`       | `commands/build.md`     | `build.md`             |
+/// | `"script"`   | `scripts/`        | `scripts/test.sh`       | `test.sh`              |
+/// | `"hook"`     | `hooks/`          | `hooks/pre-commit.json` | `pre-commit.json`      |
+/// | `"mcp-server"` | `mcp-servers/`  | `mcp-servers/db.json`   | `db.json`              |
+///
+/// # Examples
+///
+/// ## Basic Path Extraction
+///
+/// ```no_run
+/// use std::path::{Path, PathBuf};
+/// # use ccpm::resolver::extract_relative_path;
+///
+/// // Resource type prefix is removed
+/// let path = Path::new("snippets/directives/thing.md");
+/// let result = extract_relative_path(path, "snippet");
+/// assert_eq!(result, PathBuf::from("directives/thing.md"));
+///
+/// // No matching prefix - path unchanged
+/// let path = Path::new("directives/thing.md");
+/// let result = extract_relative_path(path, "snippet");
+/// assert_eq!(result, PathBuf::from("directives/thing.md"));
+///
+/// // Works with deeply nested directories
+/// let path = Path::new("agents/ai/helper.md");
+/// let result = extract_relative_path(path, "agent");
+/// assert_eq!(result, PathBuf::from("ai/helper.md"));
+/// ```
+///
+/// ## Preserving Directory Structure
+///
+/// ```no_run
+/// # use std::path::{Path, PathBuf};
+/// # use ccpm::resolver::extract_relative_path;
+///
+/// // Multi-level nested directories are fully preserved
+/// let path = Path::new("agents/languages/rust/expert.md");
+/// let result = extract_relative_path(path, "agent");
+/// assert_eq!(result, PathBuf::from("languages/rust/expert.md"));
+/// // This will install to: .claude/agents/languages/rust/expert.md
+/// ```
+///
+/// ## Pattern Matching Use Case
+///
+/// When used with glob patterns like `agents/**/*.md`, this function ensures each
+/// matched file preserves its subdirectory structure:
+///
+/// ```no_run
+/// # use std::path::{Path, PathBuf};
+/// # use ccpm::resolver::extract_relative_path;
+///
+/// // Example: glob pattern "agents/**/*.md" matches these paths
+/// let matched_paths = vec![
+///     "agents/rust/expert.md",
+///     "agents/rust/testing.md",
+///     "agents/python/async.md",
+///     "agents/go/concurrency.md",
+/// ];
+///
+/// for path_str in matched_paths {
+///     let path = Path::new(path_str);
+///     let relative = extract_relative_path(path, "agent");
+///     // Produces: "rust/expert.md", "rust/testing.md", "python/async.md", "go/concurrency.md"
+///     // Each installs to: .claude/agents/<relative_path>
+/// }
+/// ```
+///
+/// ## Integration with Custom Targets
+///
+/// Custom targets work in conjunction with relative path extraction:
+///
+/// ```toml
+/// # In ccpm.toml
+/// [agents]
+/// # Path: agents/rust/expert.md → extract → rust/expert.md
+/// # Target: custom → combined → custom/rust/expert.md
+/// # Final: .claude/agents/custom/rust/expert.md
+/// rust-agents = {
+///     source = "community",
+///     path = "agents/rust/*.md",
+///     target = "custom",
+///     version = "v1.0.0"
+/// }
+/// ```
+///
+/// # Use Cases
+///
+/// ## Organized Source Repository
+///
+/// For a source repository with categorized resources:
+/// ```text
+/// ccpm-community/
+/// ├── agents/
+/// │   ├── languages/
+/// │   │   ├── rust/
+/// │   │   │   ├── expert.md
+/// │   │   │   └── testing.md
+/// │   │   └── python/
+/// │   │       └── async.md
+/// │   └── tools/
+/// │       └── git-helper.md
+/// └── snippets/
+///     ├── directives/
+///     │   └── custom.md
+///     └── templates/
+///         └── api.md
+/// ```
+///
+/// After installation, the structure is preserved:
+/// ```text
+/// .claude/
+/// ├── agents/
+/// │   ├── languages/
+/// │   │   ├── rust/
+/// │   │   │   ├── expert.md
+/// │   │   │   └── testing.md
+/// │   │   └── python/
+/// │   │       └── async.md
+/// │   └── tools/
+/// │       └── git-helper.md
+/// └── snippets/
+///     ├── directives/
+///     │   └── custom.md
+///     └── templates/
+///         └── api.md
+/// ```
+///
+/// ## Pattern-Based Installation
+///
+/// Bulk installation with patterns preserves organization:
+/// ```toml
+/// [agents]
+/// # Installs all Rust agents with subdirectory structure intact
+/// rust-tools = { source = "community", path = "agents/languages/rust/**/*.md", version = "v1.0.0" }
+/// # Results in: .claude/agents/<files from rust/ and subdirectories>
+/// ```
+///
+/// # Implementation Notes
+///
+/// - Uses path component analysis for cross-platform compatibility
+/// - Only examines the first path component to determine prefix match
+/// - Empty paths or invalid components are handled gracefully
+/// - Unknown resource types cause the path to be returned unchanged
+/// - Works with both absolute and relative paths from source repositories
+///
+/// # Version History
+///
+/// - **v0.3.18**: Introduced to support relative path preservation during installation
+/// - Works in conjunction with updated lockfile `installed_at` path generation
+pub fn extract_relative_path(path: &Path, resource_type: &str) -> PathBuf {
+    // Convert resource type to expected directory name
+    let expected_prefix = match resource_type {
+        "agent" => "agents",
+        "snippet" => "snippets",
+        "command" => "commands",
+        "script" => "scripts",
+        "hook" => "hooks",
+        "mcp-server" => "mcp-servers",
+        _ => return path.to_path_buf(),
+    };
+
+    // Check if path starts with the expected prefix
+    let components: Vec<_> = path.components().collect();
+    if let Some(first) = components.first()
+        && let std::path::Component::Normal(name) = first
+        && name.to_str() == Some(expected_prefix)
+    {
+        // Skip the first component and collect the rest
+        let remaining: PathBuf = components[1..].iter().collect();
+        return remaining;
+    }
+
+    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -2557,11 +2933,15 @@ mod tests {
 
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "custom-agent");
-        // Verify the custom target is used in installed_at
-        assert!(agent.installed_at.contains(".claude/integrations/custom"));
+        // Verify the custom target is relative to the default agents directory
+        assert!(
+            agent
+                .installed_at
+                .contains(".claude/agents/integrations/custom")
+        );
         assert_eq!(
             agent.installed_at,
-            ".claude/integrations/custom/custom-agent.md"
+            ".claude/agents/integrations/custom/custom-agent.md"
         );
     }
 
@@ -2664,7 +3044,11 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "special-tool");
         // Verify both custom target and filename are used
-        assert_eq!(agent.installed_at, ".claude/tools/ai/assistant.markdown");
+        // Custom target is relative to default agents directory
+        assert_eq!(
+            agent.installed_at,
+            ".claude/agents/tools/ai/assistant.markdown"
+        );
     }
 
     #[tokio::test]
@@ -2867,9 +3251,14 @@ mod tests {
         let lockfile = resolver.resolve().await.unwrap();
 
         // Verify agents were resolved with custom target
+        // Custom target is relative to default agents directory
         assert_eq!(lockfile.agents.len(), 2);
         for agent in &lockfile.agents {
-            assert!(agent.installed_at.starts_with(".claude/custom/agents/"));
+            assert!(
+                agent
+                    .installed_at
+                    .starts_with(".claude/agents/custom/agents/")
+            );
         }
 
         let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();

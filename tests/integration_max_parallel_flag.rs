@@ -54,22 +54,23 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
         assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
 
         // Verify installation worked
+        // Files use basename from path, not dependency name
         assert!(
             project
                 .project_path()
-                .join(".claude/agents/agent1.md")
+                .join(".claude/agents/test-agent-1.md")
                 .exists()
         );
         assert!(
             project
                 .project_path()
-                .join(".claude/agents/agent2.md")
+                .join(".claude/agents/test-agent-2.md")
                 .exists()
         );
         assert!(
             project
                 .project_path()
-                .join(".claude/agents/agent3.md")
+                .join(".claude/agents/test-agent-3.md")
                 .exists()
         );
 
@@ -133,10 +134,11 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
     assert!(output.success);
     assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
 
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent.md")
+            .join(".claude/agents/test-agent.md")
             .exists()
     );
 }

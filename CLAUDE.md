@@ -20,28 +20,36 @@ CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Cod
 
 ```
 src/
-├── cli/         # Command implementations
+├── cli/         # Command implementations (install, update, outdated, upgrade, etc.)
 ├── cache/       # Instance-level caching + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
-├── installer.rs # Parallel resource installation
-├── lockfile/    # ccpm.lock management
+├── installer.rs # Parallel resource installation + artifact cleanup
+├── lockfile/    # ccpm.lock management + staleness detection
 ├── manifest/    # ccpm.toml parsing
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
 ├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
 ├── resolver/    # Dependency + version resolution
-│   ├── mod.rs          # Core dependency resolution logic
+│   ├── mod.rs          # Core resolution + relative path handling
 │   ├── redundancy.rs   # Redundant dependency detection
 │   ├── version_resolution.rs  # Version constraint handling
 │   └── version_resolver.rs    # Centralized SHA resolution
 ├── source/      # Source repository management
 ├── test_utils/  # Test infrastructure
+├── upgrade/     # Self-update functionality
+│   ├── mod.rs          # Upgrade orchestration
+│   ├── self_updater.rs # Binary update logic
+│   ├── version_check.rs # Version comparison
+│   ├── backup.rs       # Backup management
+│   ├── config.rs       # Update configuration
+│   ├── verification.rs # Checksum verification
+│   └── tests.rs        # Upgrade tests
 ├── utils/       # Cross-platform utilities + progress management
-├── version/     # Version constraints
+├── version/     # Version constraints + semver parsing
 └── tests/       # Integration tests
 ```
 
@@ -144,6 +152,19 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
 - **Single fetch per repo per command**: Command-instance fetch tracking
 - **Enhanced dependency parsing** with manifest context for better local vs Git detection
+- **Lockfile staleness detection** (v0.3.17): Automatic detection and handling of stale lockfiles
+- **Self-update capability** (v0.3.15+): Platform-specific binary updates with backup/rollback
+- **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
+- **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
+- **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
+
+## Breaking Changes (v0.3.18+)
+
+### Custom Target Behavior
+- **Old**: Custom targets were relative to project root
+- **New**: Custom targets are relative to default resource directory (e.g., `.claude/agents/`)
+- **Migration**: Update custom targets to use paths relative to resource directory, not project root
+- **Rationale**: Prevents naming conflicts between different resource types
 
 ## Resolver Architecture
 
@@ -215,13 +236,20 @@ community = "https://github.com/aig787/ccpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
 [agents]
-# Single file dependency
+# Single file dependency - installs as .claude/agents/example.md (basename from path)
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 local-agent = { path = "../local-agents/helper.md" }  # Direct local path
+
+# Nested paths preserve directory structure (v0.3.18+)
+# "agents/ai/gpt.md" → ".claude/agents/ai/gpt.md" (preserves ai/ subdirectory)
+ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }
 
 # Pattern-based dependencies (glob patterns in path field)
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # All AI agents
 review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }  # All review agents recursively
+
+# Custom target (v0.3.18+ BREAKING: relative to .claude/agents/, not project root)
+special = { source = "community", path = "agents/special.md", target = "custom/special.md" }
 
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
@@ -255,7 +283,16 @@ path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example-agent.md"
+installed_at = ".claude/agents/example.md"  # Uses basename from path (v0.3.18+)
+
+[[agents]]
+name = "ai-helper"
+source = "community"
+path = "agents/ai/gpt.md"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirectory structure
 # Similar format for snippets, commands, scripts, hooks, mcp-servers
 ```
 

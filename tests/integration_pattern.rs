@@ -79,21 +79,22 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
     assert!(output.success);
 
     // Verify that all AI agents were installed
+    // With relative path preservation, subdirectory structure is maintained
     let ai_agents_dir = project.project_path().join(".claude/agents");
     assert!(
-        ai_agents_dir.join("assistant.md").exists(),
+        ai_agents_dir.join("ai/assistant.md").exists(),
         "AI assistant not installed"
     );
     assert!(
-        ai_agents_dir.join("analyzer.md").exists(),
+        ai_agents_dir.join("ai/analyzer.md").exists(),
         "AI analyzer not installed"
     );
     assert!(
-        ai_agents_dir.join("generator.md").exists(),
+        ai_agents_dir.join("ai/generator.md").exists(),
         "AI generator not installed"
     );
 
-    // Verify review agents were installed
+    // Verify review agents were installed (no subdirectory)
     assert!(
         ai_agents_dir.join("reviewer.md").exists(),
         "Reviewer not installed"
@@ -170,7 +171,10 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
     assert!(output.success);
 
     // Verify custom installation path
-    let custom_dir = project.project_path().join(".claude/tools/utilities");
+    // Custom target is relative to default snippets directory
+    let custom_dir = project
+        .project_path()
+        .join(".claude/ccpm/snippets/tools/utilities");
     assert!(
         custom_dir.join("util1.md").exists(),
         "util1 not installed to custom path"

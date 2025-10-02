@@ -64,8 +64,12 @@ The manifest defines your project's dependencies:
 community = "https://github.com/aig787/ccpm-community.git"
 
 [agents]
-# Install AI agents
+# Install AI agents - path preservation maintains directory structure
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+# → Installed as: .claude/agents/example.md
+
+nested = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
+# → Installed as: .claude/agents/ai/helper.md (preserves ai/ subdirectory)
 ```
 
 ### Lockfile (ccpm.lock)
@@ -276,33 +280,44 @@ When updating dependencies:
 
 ## Pattern Matching
 
-Install multiple resources using glob patterns:
+Install multiple resources using glob patterns. Each matched file preserves its source directory structure:
 
 ```toml
 [agents]
-# All markdown files in agents/ai/
+# All markdown files in agents/ai/ - each preserves its path
+# agents/ai/assistant.md → .claude/agents/ai/assistant.md
+# agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
-# All review agents recursively
+# All review agents recursively - nested structure maintained
+# agents/code/review-expert.md → .claude/agents/code/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/security/review-scanner.md
 review-agents = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
 
 [snippets]
-# All Python snippets
-python = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
+# All Python snippets - directory structure preserved
+# snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
+# snippets/python/django/models.md → .claude/ccpm/snippets/python/django/models.md
+python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
 ```
 
 ## Resource Organization
 
 ### Default Locations
 
-Resources are installed to these default locations:
+Resources are installed to these default locations, with source directory structure preserved:
 
-- Agents: `.claude/agents/`
-- Snippets: `.claude/ccpm/snippets/`
-- Commands: `.claude/commands/`
-- Scripts: `.claude/ccpm/scripts/`
+- Agents: `.claude/agents/` (e.g., `agents/ai/helper.md` → `.claude/agents/ai/helper.md`)
+- Snippets: `.claude/ccpm/snippets/` (e.g., `snippets/react/hooks.md` → `.claude/ccpm/snippets/react/hooks.md`)
+- Commands: `.claude/commands/` (e.g., `commands/build/deploy.md` → `.claude/commands/build/deploy.md`)
+- Scripts: `.claude/ccpm/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/ccpm/scripts/ci/test.sh`)
 - Hooks: `.claude/ccpm/hooks/`
 - MCP Servers: `.claude/ccpm/mcp-servers/`
+
+**Path Preservation**: The relative directory structure from the source repository is maintained during installation. This means:
+- `agents/example.md` → `.claude/agents/example.md`
+- `agents/ai/code-reviewer.md` → `.claude/agents/ai/code-reviewer.md`
+- `agents/specialized/rust/expert.md` → `.claude/agents/specialized/rust/expert.md`
 
 ### Custom Locations
 
@@ -361,6 +376,39 @@ ccpm cache clean
 # Bypass cache for fresh installation
 ccpm install --no-cache
 ```
+
+### Automatic Artifact Cleanup
+
+CCPM automatically removes old resource files when:
+- A dependency is removed from the manifest
+- A resource's path changes in the manifest
+- A resource is renamed
+
+**Example:**
+```toml
+# Initial ccpm.toml
+[agents]
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+# Installed as: .claude/agents/helper.md
+```
+
+After updating the path:
+```toml
+# Updated ccpm.toml
+[agents]
+helper = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
+# Now installed as: .claude/agents/ai/helper.md
+```
+
+When you run `ccpm install`:
+1. The old file at `.claude/agents/helper.md` is automatically removed
+2. The new file is installed at `.claude/agents/ai/helper.md`
+3. Empty parent directories are cleaned up (`.claude/agents/` only if empty)
+
+**Benefits:**
+- No manual cleanup required
+- Prevents stale files from accumulating
+- Maintains clean project structure
 
 ## Best Practices
 

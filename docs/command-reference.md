@@ -476,7 +476,7 @@ Self-update CCPM to the latest version or a specific version. Includes automatic
 ccpm upgrade [OPTIONS] [VERSION]
 
 Arguments:
-  [VERSION]    Target version to upgrade to (e.g., "0.4.0" or "v0.4.0")
+  [VERSION]    Target version to upgrade to (e.g., "0.3.18" or "v0.3.18")
 
 Options:
       --check       Check for updates without installing
@@ -499,7 +499,7 @@ ccpm upgrade --check
 ccpm upgrade --status
 
 # Upgrade to specific version
-ccpm upgrade 0.4.0
+ccpm upgrade 0.3.18
 
 # Force reinstall latest version
 ccpm upgrade --force

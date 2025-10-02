@@ -14,6 +14,8 @@ dependency management, similar to Cargo.
 - 🔒 **Lockfile staleness detection** - Automatic detection of outdated or inconsistent lockfiles
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
+- 🧹 **Automatic artifact cleanup** - Old files removed when paths change
+- ⚠️ **Path conflict detection** - Prevents multiple dependencies from overwriting the same file
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 
@@ -22,6 +24,7 @@ dependency management, similar to Cargo.
 ### Install CCPM
 
 **Using installer script (Recommended):**
+
 ```bash
 # Unix/Linux/macOS
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
@@ -31,6 +34,7 @@ irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 |
 ```
 
 **Using Cargo:**
+
 ```bash
 cargo install ccpm                                    # From crates.io
 cargo binstall ccpm                                   # Pre-built binaries (faster)
@@ -53,9 +57,14 @@ ccpm init
 community = "https://github.com/aig787/ccpm-community.git"
 
 [agents]
+# Single file - installed at .claude/agents/example.md
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 
+# Nested path - installed at .claude/agents/ai/assistant.md (preserves structure)
+ai-assistant = { source = "community", path = "agents/ai/assistant.md", version = "v1.0.0" }
+
 [snippets]
+# Pattern - each file preserves its source directory structure
 react-utils = { source = "community", path = "snippets/react/*.md", version = "^1.0.0" }
 ```
 
@@ -151,14 +160,23 @@ community = "https://github.com/aig787/ccpm-community.git"
 local = "./local-resources"
 
 [agents]
-# Single file
+# Single file - installed at .claude/agents/rust-expert.md
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 
-# Pattern matching - install multiple files
+# Nested path - installed at .claude/agents/ai/code-reviewer.md (preserves structure)
+code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
+
+# Pattern matching - each file preserves its source directory structure
+# agents/ai/assistant.md → .claude/agents/ai/assistant.md
+# agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
 
 [snippets]
+# Single file - installed at .claude/ccpm/snippets/react-hooks.md
 react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "~1.2.0" }
+
+# Nested pattern - snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
+python-tools = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [scripts]
 build = { source = "local", path = "scripts/build.sh" }
