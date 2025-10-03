@@ -41,7 +41,6 @@ src/
 ├── resolver/    # Dependency + version resolution
 │   ├── mod.rs                # Core resolution logic with transitive support + relative path handling
 │   ├── dependency_graph.rs   # Graph-based transitive dependency resolution
-│   ├── redundancy.rs         # Advanced redundancy detection (version, cross-source, transitive)
 │   ├── version_resolution.rs # Version constraint handling
 │   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
@@ -234,26 +233,6 @@ dependencies:
 - Version inheritance when not specified
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
-
-### Redundancy Detection
-
-The `resolver::redundancy` module provides advanced conflict detection:
-
-**Types Detected**:
-
-- **Version Redundancy**: Same resource with different versions
-- **Cross-Source Redundancy**: Same path from multiple sources
-- **Transitive Redundancy**: Conflicts through dependency chains
-
-**Non-Blocking Design**: Warnings only, allows A/B testing and migrations
-
-**API**:
-
-- `RedundancyDetector::detect_redundancies()` - All redundancy types
-- `RedundancyDetector::detect_cross_source_redundancies()` - Cross-source only
-- `RedundancyDetector::check_transitive_redundancies_with_map()` - Transitive conflicts
-
-**Usage**: `ccpm validate --check-redundancies`
 
 ## Windows Path Gotchas
 

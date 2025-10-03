@@ -13,26 +13,48 @@ use std::fmt;
 /// Represents a dependency node in the graph.
 ///
 /// Each node represents a unique resource that can be installed.
+/// Nodes are distinguished by name, resource type, and source to prevent
+/// false cycle detection when the same resource name appears in multiple sources.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DependencyNode {
     /// Resource type: Agent, Snippet, Command, etc.
     pub resource_type: crate::core::ResourceType,
     /// Dependency name as specified in the manifest.
     pub name: String,
+    /// Source name (e.g., "community", "local"). None for direct path dependencies.
+    pub source: Option<String>,
 }
 
 impl DependencyNode {
-    /// Create a new dependency node.
+    /// Create a new dependency node without a source.
     pub fn new(resource_type: crate::core::ResourceType, name: impl Into<String>) -> Self {
         Self {
             resource_type,
             name: name.into(),
+            source: None,
+        }
+    }
+
+    /// Create a new dependency node with a source.
+    pub fn with_source(
+        resource_type: crate::core::ResourceType,
+        name: impl Into<String>,
+        source: Option<String>,
+    ) -> Self {
+        Self {
+            resource_type,
+            name: name.into(),
+            source,
         }
     }
 
     /// Get a display name for this node.
     pub fn display_name(&self) -> String {
-        format!("{}/{}", self.resource_type, self.name)
+        if let Some(ref source) = self.source {
+            format!("{}/{}@{}", self.resource_type, self.name, source)
+        } else {
+            format!("{}/{}", self.resource_type, self.name)
+        }
     }
 }
 
@@ -483,5 +505,90 @@ mod tests {
 
         assert_eq!(graph.edge_count(), 1); // Should only have one edge
         assert_eq!(graph.node_count(), 2);
+    }
+
+    #[test]
+    fn test_cross_source_no_false_cycle() {
+        let mut graph = DependencyGraph::new();
+
+        // Same resource name "helper" from two different sources should NOT create a cycle
+        // sourceA: A -> helper@sourceA
+        // sourceB: B -> helper@sourceB
+        graph.add_dependency(
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "A",
+                Some("sourceA".to_string()),
+            ),
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "helper",
+                Some("sourceA".to_string()),
+            ),
+        );
+        graph.add_dependency(
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "B",
+                Some("sourceB".to_string()),
+            ),
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "helper",
+                Some("sourceB".to_string()),
+            ),
+        );
+
+        // Should have 4 distinct nodes (A@sourceA, helper@sourceA, B@sourceB, helper@sourceB)
+        assert_eq!(graph.node_count(), 4);
+        assert_eq!(graph.edge_count(), 2);
+
+        // Should NOT detect a cycle
+        assert!(graph.detect_cycles().is_ok());
+
+        // Topological order should succeed
+        let order = graph.topological_order().unwrap();
+        assert_eq!(order.len(), 4);
+    }
+
+    #[test]
+    fn test_cross_source_real_cycle() {
+        let mut graph = DependencyGraph::new();
+
+        // Same source, real cycle: A -> B -> A (both from sourceX)
+        graph.add_dependency(
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "A",
+                Some("sourceX".to_string()),
+            ),
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "B",
+                Some("sourceX".to_string()),
+            ),
+        );
+        graph.add_dependency(
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "B",
+                Some("sourceX".to_string()),
+            ),
+            DependencyNode::with_source(
+                crate::core::ResourceType::Agent,
+                "A",
+                Some("sourceX".to_string()),
+            ),
+        );
+
+        // Should detect a cycle
+        let result = graph.detect_cycles();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
     }
 }
