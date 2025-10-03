@@ -1056,10 +1056,24 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         .with_details("TOML parsing errors are usually caused by syntax issues like missing quotes or mismatched brackets");
     }
 
-    // Generic error
-    ErrorContext::new(CcpmError::Other {
-        message: error.to_string(),
-    })
+    // Generic error - include the full error chain for better diagnostics
+    let mut message = error.to_string();
+
+    // Append error chain if available
+    let chain: Vec<String> = error
+        .chain()
+        .skip(1) // Skip the root cause which is already in to_string()
+        .map(|e| e.to_string())
+        .collect();
+
+    if !chain.is_empty() {
+        message.push_str("\n\nCaused by:");
+        for (i, cause) in chain.iter().enumerate() {
+            message.push_str(&format!("\n  {}: {}", i + 1, cause));
+        }
+    }
+
+    ErrorContext::new(CcpmError::Other { message })
 }
 
 /// Create appropriate [`ErrorContext`] with suggestions for specific CCPM errors

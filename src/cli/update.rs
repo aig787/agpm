@@ -414,9 +414,13 @@ impl UpdateCommand {
         // Compare lockfiles to see what changed
         let mut updates = Vec::new();
         ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
-            if let Some((_, old_entry)) =
-                ResourceIterator::find_resource_by_name(&existing_lockfile, &new_entry.name)
-                && old_entry.resolved_commit != new_entry.resolved_commit
+            // Use (name, source) pair for correct matching when multiple sources
+            // provide resources with the same name
+            if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
+                &existing_lockfile,
+                &new_entry.name,
+                new_entry.source.as_deref(),
+            ) && old_entry.resolved_commit != new_entry.resolved_commit
             {
                 let old_version = old_entry
                     .version
@@ -426,7 +430,12 @@ impl UpdateCommand {
                     .version
                     .clone()
                     .unwrap_or_else(|| "latest".to_string());
-                updates.push((new_entry.name.clone(), old_version, new_version));
+                updates.push((
+                    new_entry.name.clone(),
+                    new_entry.source.clone(),
+                    old_version,
+                    new_version,
+                ));
             }
         });
 
@@ -442,7 +451,7 @@ impl UpdateCommand {
 
             if !self.quiet && !self.no_progress {
                 println!(); // Add spacing
-                for (name, old_ver, new_ver) in &updates {
+                for (name, _source, old_ver, new_ver) in &updates {
                     println!(
                         "  {} {} → {}",
                         name.cyan(),

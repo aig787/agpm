@@ -54,7 +54,6 @@
 //! - `--sources`: Source repository accessibility
 //! - `--paths`: Local file path existence
 //! - `--check-lock`: Lockfile consistency with manifest
-//! - `--check-redundancies`: Duplicate resource detection
 //!
 //! # Output Formats
 //!
@@ -492,17 +491,6 @@ impl ValidateCommand {
             warnings.push("No dependencies defined in manifest".to_string());
             if !self.quiet && matches!(self.format, OutputFormat::Text) {
                 println!("⚠ Warning: No dependencies defined");
-            }
-        }
-
-        // Check for potential warnings (outdated versions)
-        for (name, dep) in manifest.agents.iter().chain(manifest.snippets.iter()) {
-            if let Some(version) = dep.get_version()
-                && version.starts_with("v0.")
-            {
-                warnings.push(format!(
-                    "Potentially outdated version for {name}: {version}"
-                ));
             }
         }
 
@@ -1941,7 +1929,6 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
-        // This tests lines 475-478 (outdated version warning)
     }
 
     #[tokio::test]

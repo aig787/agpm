@@ -311,12 +311,12 @@ impl TreeCommand {
         let connector = if is_last { "└── " } else { "├── " };
 
         // Format node display: type/name version (source)
-        let type_str = format!("{}", node.resource_type).yellow();
-        let name_str = node.name.bright_white().bold();
+        let type_str = format!("{}", node.resource_type).bright_black();
+        let name_str = node.name.cyan();
         let version_str = node
             .version
             .as_deref()
-            .map(|v| format!(" {}", v.green()))
+            .map(|v| format!(" {}", v.bright_black()))
             .unwrap_or_default();
         let source_str = node
             .source
@@ -553,23 +553,51 @@ impl<'a> TreeBuilder<'a> {
                 }
             }
 
-            // Now identify roots: resources that are NOT dependencies of anything else
-            let mut all_dependencies = HashSet::new();
-            for node in nodes.values() {
-                for dep_id in &node.dependencies {
-                    all_dependencies.insert(dep_id.clone());
-                }
-            }
+            // Determine if any resource type filters are active
+            let has_type_filter = cmd.agents
+                || cmd.snippets
+                || cmd.commands
+                || cmd.scripts
+                || cmd.hooks
+                || cmd.mcp_servers;
 
-            // Roots are nodes that are not in the dependencies set
-            for (node_id, node) in &nodes {
-                if !all_dependencies.contains(node_id) {
-                    // Apply resource type filter
+            if has_type_filter {
+                // When filtering by resource type, show ALL resources of that type as roots
+                // (don't exclude dependencies)
+                for node in nodes.values() {
                     if cmd.should_show_resource_type(node.resource_type) {
                         roots.push(node.clone());
                     }
                 }
+            } else {
+                // Normal mode: identify roots as resources that are NOT dependencies of anything else
+                // Build a set of all dependency IDs (already in singular "type/name" format)
+                let mut all_dependencies = HashSet::new();
+                for resource_type in ResourceType::all() {
+                    for resource in self.lockfile.get_resources(*resource_type) {
+                        for dep_id in &resource.dependencies {
+                            // Dependencies are already in singular form (e.g., "agent/foo")
+                            all_dependencies.insert(dep_id.clone());
+                        }
+                    }
+                }
+
+                // Roots are nodes that are not in the dependencies set
+                // All IDs use singular "type/name" format
+                for node in nodes.values() {
+                    let simple_id = format!("{}/{}", node.resource_type, node.name);
+                    if !all_dependencies.contains(&simple_id) {
+                        roots.push(node.clone());
+                    }
+                }
             }
+
+            // Sort roots by resource type, then by name
+            roots.sort_by(|a, b| {
+                a.resource_type
+                    .cmp(&b.resource_type)
+                    .then_with(|| a.name.cmp(&b.name))
+            });
         }
 
         // Filter to only duplicates if requested
@@ -603,12 +631,37 @@ impl<'a> TreeBuilder<'a> {
         // We want just "name" for display
         let display_name = Self::extract_display_name(&resource.name);
 
+        // Convert dependencies to use the node ID format
+        // Pass parent resource's source to correctly resolve dependencies from the same source
+        let dependency_node_ids: Vec<String> = resource
+            .dependencies
+            .iter()
+            .filter_map(|dep_id| {
+                // Find the resource for this dependency (prefer same source as parent)
+                if let Some(dep_resource) =
+                    self.find_resource_by_id(dep_id, resource.source.as_deref())
+                {
+                    // Build a temporary node to get its ID in the same format used by tree.nodes
+                    let dep_node = TreeNode {
+                        name: Self::extract_display_name(&dep_resource.name),
+                        resource_type: dep_resource.resource_type,
+                        version: dep_resource.version.clone(),
+                        source: dep_resource.source.clone(),
+                        dependencies: vec![], // Don't need dependencies for ID generation
+                    };
+                    Some(self.node_id(&dep_node))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         Ok(TreeNode {
             name: display_name,
             resource_type: resource.resource_type,
             version: resource.version.clone(),
             source: resource.source.clone(),
-            dependencies: resource.dependencies.clone(),
+            dependencies: dependency_node_ids,
         })
     }
 
@@ -647,8 +700,10 @@ impl<'a> TreeBuilder<'a> {
                 continue; // Already processed
             }
 
-            // Find the dependency in lockfile
-            if let Some(dep_resource) = self.find_resource_by_id(dep_node_id) {
+            // Find the dependency in lockfile (prefer same source as parent)
+            if let Some(dep_resource) =
+                self.find_resource_by_id(dep_node_id, node.source.as_deref())
+            {
                 let dep_node = self.build_node(dep_resource, cmd)?;
                 let actual_dep_node_id = self.node_id(&dep_node);
 
@@ -660,19 +715,35 @@ impl<'a> TreeBuilder<'a> {
         Ok(())
     }
 
-    fn find_resource_by_id(&self, id: &str) -> Option<&LockedResource> {
-        // ID format matches the lockfile's unique name field:
-        // - "source:name@version" (e.g., "community:api-designer@main")
-        // - "source:name" (e.g., "local-deps:rust-haiku" for local sources)
-        // - "name" (e.g., "rust-haiku" for resources without a source)
-        //
-        // Simply search for a resource where the name field matches the ID
+    fn find_resource_by_id(
+        &self,
+        id: &str,
+        preferred_source: Option<&str>,
+    ) -> Option<&LockedResource> {
+        // Dependencies in the lockfile use singular "type/name" format (e.g., "snippet/test-automation")
+        // Parse the type/name format
+        let (type_str, name) = id.split_once('/')?;
+        let resource_type = type_str.parse::<ResourceType>().ok()?;
 
-        for resource_type in ResourceType::all() {
-            for resource in self.lockfile.get_resources(*resource_type) {
-                if resource.name == id {
+        // Find the resource by matching the display name extracted from the unique name
+        // Prefer resources from the same source as the parent (transitive deps should be same-source)
+        let resources = self.lockfile.get_resources(resource_type);
+
+        // First try to find a match with the preferred source
+        if let Some(source) = preferred_source {
+            for resource in resources {
+                let display_name = Self::extract_display_name(&resource.name);
+                if display_name == name && resource.source.as_deref() == Some(source) {
                     return Some(resource);
                 }
+            }
+        }
+
+        // Fall back to any match if no preferred source match found
+        for resource in resources {
+            let display_name = Self::extract_display_name(&resource.name);
+            if display_name == name {
+                return Some(resource);
             }
         }
 

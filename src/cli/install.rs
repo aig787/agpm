@@ -389,9 +389,6 @@ impl InstallCommand {
             .unwrap_or_else(|| Path::new("."))
             .join("ccpm.lock");
         if self.regenerate && lockfile_path.exists() {
-            if !self.quiet {
-                println!("🗑️  Removing existing lockfile for regeneration");
-            }
             std::fs::remove_file(&lockfile_path).with_context(|| {
                 format!(
                     "Failed to remove existing lockfile: {}",

@@ -659,10 +659,12 @@ pub struct LockedSource {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockedResource {
-    /// Unique resource name within its type (agents or snippets).
+    /// Resource name from the manifest.
     ///
     /// This corresponds to keys in the `[agents]` or `[snippets]` sections
-    /// of the manifest and must be unique within each resource type.
+    /// of the manifest. Resources are uniquely identified by the combination
+    /// of (name, source), allowing multiple sources to provide resources with
+    /// the same name.
     pub name: String,
 
     /// Source repository name for remote resources.
@@ -1251,9 +1253,13 @@ impl LockFile {
 
     /// Get a locked resource by name, searching across all resource types.
     ///
-    /// Searches for a resource with the given name in the agents, snippets, and
-    /// commands collections. Since resource names must be unique within their type,
-    /// this method returns the first match found.
+    /// Searches for a resource with the given name in the agents, snippets, commands,
+    /// scripts, hooks, and mcp-servers collections. This method returns the first match found,
+    /// which is suitable when resource names are unique or when the source doesn't matter.
+    ///
+    /// **Note**: When multiple resources have the same name from different sources (common with
+    /// transitive dependencies), this method returns the first match based on search order.
+    /// For precise lookups that distinguish between sources, use [`Self::get_resource_by_source`].
     ///
     /// # Arguments
     ///
@@ -1261,7 +1267,7 @@ impl LockFile {
     ///
     /// # Returns
     ///
-    /// * `Some(&LockedResource)` - Reference to the found resource
+    /// * `Some(&LockedResource)` - Reference to the first matching resource
     /// * `None` - No resource with that name exists
     ///
     /// # Examples
@@ -1269,6 +1275,7 @@ impl LockFile {
     /// ```rust,no_run
     /// # use ccpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
+    /// // Simple lookup when resource names are unique
     /// if let Some(resource) = lockfile.get_resource("example-agent") {
     ///     println!("Found resource: {}", resource.installed_at);
     /// } else {
@@ -1279,9 +1286,15 @@ impl LockFile {
     /// # Search Order
     ///
     /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
-    /// If multiple resource types have the same name, the first match will be returned.
+    /// If multiple resource types or sources have the same name, the first match will be returned.
+    ///
+    /// # See Also
+    ///
+    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Precise lookup with source filtering for handling same-named resources from different sources
     #[must_use]
     pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
+        // Simple name matching - may return first of multiple resources with same name
+        // For precise matching when duplicates exist, use get_resource_by_source()
         self.agents
             .iter()
             .find(|r| r.name == name)
@@ -1290,6 +1303,67 @@ impl LockFile {
             .or_else(|| self.scripts.iter().find(|r| r.name == name))
             .or_else(|| self.hooks.iter().find(|r| r.name == name))
             .or_else(|| self.mcp_servers.iter().find(|r| r.name == name))
+    }
+
+    /// Get a locked resource by name and source.
+    ///
+    /// This method provides precise resource lookup when multiple resources share the same name
+    /// but come from different sources. This commonly occurs with transitive dependencies where
+    /// different dependency chains pull in the same resource name from different repositories.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Resource name to search for
+    /// * `source` - Optional source name to match (None matches resources without a source, e.g., local resources)
+    ///
+    /// # Returns
+    ///
+    /// First matching resource with the specified name and source, or None if not found.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::lockfile::LockFile;
+    /// # let lockfile = LockFile::new();
+    /// // When multiple resources have the same name from different sources
+    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("community")) {
+    ///     println!("Found helper from community source: {}", resource.installed_at);
+    /// }
+    ///
+    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("internal")) {
+    ///     println!("Found helper from internal source: {}", resource.installed_at);
+    /// }
+    ///
+    /// // Match local resources (no source)
+    /// if let Some(resource) = lockfile.get_resource_by_source("local-helper", None) {
+    ///     println!("Found local resource: {}", resource.installed_at);
+    /// }
+    /// ```
+    ///
+    /// # Search Order
+    ///
+    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
+    /// Only resources matching both the name AND source are returned.
+    ///
+    /// # See Also
+    ///
+    /// * [`get_resource`](Self::get_resource) - Simple name-based lookup without source filtering
+    #[must_use]
+    pub fn get_resource_by_source(
+        &self,
+        name: &str,
+        source: Option<&str>,
+    ) -> Option<&LockedResource> {
+        let matches = |r: &&LockedResource| r.name == name && r.source.as_deref() == source;
+
+        self.agents
+            .iter()
+            .find(matches)
+            .or_else(|| self.snippets.iter().find(matches))
+            .or_else(|| self.commands.iter().find(matches))
+            .or_else(|| self.scripts.iter().find(matches))
+            .or_else(|| self.hooks.iter().find(matches))
+            .or_else(|| self.mcp_servers.iter().find(matches))
     }
 
     /// Get a locked source repository by name.

@@ -241,6 +241,12 @@ impl ResourceIterator {
     }
 
     /// Find a resource by name across all resource types
+    ///
+    /// # Warning
+    /// This method only matches by name and may return the wrong resource
+    /// when multiple sources provide resources with the same name.
+    /// Consider using [`find_resource_by_name_and_source`] instead when
+    /// source information is available.
     pub fn find_resource_by_name<'a>(
         lockfile: &'a LockFile,
         name: &str,
@@ -250,6 +256,35 @@ impl ResourceIterator {
                 .get_lockfile_entries(lockfile)
                 .iter()
                 .find(|e| e.name == name)
+            {
+                return Some((*resource_type, entry));
+            }
+        }
+        None
+    }
+
+    /// Find a resource by name and source across all resource types
+    ///
+    /// This method matches resources using both name and source, which correctly
+    /// handles cases where multiple sources provide resources with the same name.
+    ///
+    /// # Arguments
+    /// * `lockfile` - The lockfile to search
+    /// * `name` - The resource name to match
+    /// * `source` - The source name to match (None for local resources)
+    ///
+    /// # Returns
+    /// The resource type and locked resource entry if found
+    pub fn find_resource_by_name_and_source<'a>(
+        lockfile: &'a LockFile,
+        name: &str,
+        source: Option<&str>,
+    ) -> Option<(ResourceType, &'a LockedResource)> {
+        for resource_type in ResourceType::all().iter() {
+            if let Some(entry) = resource_type
+                .get_lockfile_entries(lockfile)
+                .iter()
+                .find(|e| e.name == name && e.source.as_deref() == source)
             {
                 return Some((*resource_type, entry));
             }

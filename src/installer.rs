@@ -1119,8 +1119,8 @@ pub async fn install_resources_parallel_with_progress(
 /// use ccpm::installer::ResourceFilter;
 ///
 /// let updates = vec![
-///     ("agent1".to_string(), "v1.0.0".to_string(), "v1.1.0".to_string()),
-///     ("tool2".to_string(), "v2.1.0".to_string(), "v2.2.0".to_string()),
+///     ("agent1".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
+///     ("tool2".to_string(), Some("community".to_string()), "v2.1.0".to_string(), "v2.2.0".to_string()),
 /// ];
 /// let filter = ResourceFilter::Updated(updates);
 /// // This will install only agent1 and tool2
@@ -1148,9 +1148,10 @@ pub enum ResourceFilter {
     /// This option processes only the resources specified in the update list,
     /// allowing for efficient incremental updates. Each tuple contains:
     /// - Resource name
+    /// - Source name (None for local resources)
     /// - Old version (for tracking)
     /// - New version (to install)
-    Updated(Vec<(String, String, String)>),
+    Updated(Vec<(String, Option<String>, String, String)>),
 }
 
 /// Resource installation function supporting multiple progress configurations.
@@ -1261,7 +1262,7 @@ pub enum ResourceFilter {
 /// # let manifest = Manifest::default();
 /// # let project_dir = Path::new(".");
 /// # let cache = Cache::new()?;
-/// let updates = vec![("agent1".to_string(), "v1.0".to_string(), "v1.1".to_string())];
+/// let updates = vec![("agent1".to_string(), None, "v1.0".to_string(), "v1.1".to_string())];
 ///
 /// let (count, _checksums) = install_resources(
 ///     ResourceFilter::Updated(updates),
@@ -1301,9 +1302,13 @@ pub async fn install_resources(
         ResourceFilter::Updated(ref updates) => {
             // Collect only the updated entries
             let mut entries = Vec::new();
-            for (name, _, _) in updates {
+            for (name, source, _, _) in updates {
                 if let Some((resource_type, entry)) =
-                    ResourceIterator::find_resource_by_name(lockfile, name)
+                    ResourceIterator::find_resource_by_name_and_source(
+                        lockfile,
+                        name,
+                        source.as_deref(),
+                    )
                 {
                     let target_dir = resource_type.get_target_dir(&manifest.target);
                     entries.push((entry.clone(), target_dir.to_string()));
@@ -1753,9 +1758,9 @@ pub async fn install_resources_with_dynamic_progress(
 ///
 /// // Define which resources to update
 /// let updates = vec![
-///     ("ai-agent".to_string(), "v1.0.0".to_string(), "v1.1.0".to_string()),
-///     ("helper-tool".to_string(), "v2.0.0".to_string(), "v2.1.0".to_string()),
-///     ("data-processor".to_string(), "v1.5.0".to_string(), "v1.6.0".to_string()),
+///     ("ai-agent".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
+///     ("helper-tool".to_string(), Some("community".to_string()), "v2.0.0".to_string(), "v2.1.0".to_string()),
+///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
 /// let count = install_updated_resources(
@@ -1809,7 +1814,7 @@ pub async fn install_resources_with_dynamic_progress(
 /// The function uses atomic error handling - if any resource fails, the entire
 /// operation fails and detailed error information is provided.
 pub async fn install_updated_resources(
-    updates: &[(String, String, String)], // (name, old_version, new_version)
+    updates: &[(String, Option<String>, String, String)], // (name, source, old_version, new_version)
     lockfile: &LockFile,
     manifest: &Manifest,
     project_dir: &Path,
@@ -1825,9 +1830,9 @@ pub async fn install_updated_resources(
 
     // Collect all entries to install
     let mut entries_to_install = Vec::new();
-    for (name, _, _) in updates {
+    for (name, source, _, _) in updates {
         if let Some((resource_type, entry)) =
-            ResourceIterator::find_resource_by_name(lockfile, name)
+            ResourceIterator::find_resource_by_name_and_source(lockfile, name, source.as_deref())
         {
             let target_dir = resource_type.get_target_dir(&manifest.target);
             entries_to_install.push((entry.clone(), target_dir.to_string()));
@@ -2822,6 +2827,7 @@ mod tests {
         // Define updates (only agent is updated)
         let updates = vec![(
             "test-agent".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v1.1.0".to_string(),
         )];
@@ -2867,6 +2873,7 @@ mod tests {
 
         let updates = vec![(
             "test-command".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v2.0.0".to_string(),
         )];
@@ -3077,6 +3084,7 @@ mod tests {
         // Try to update a resource that doesn't exist
         let updates = vec![(
             "non-existent".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v2.0.0".to_string(),
         )];

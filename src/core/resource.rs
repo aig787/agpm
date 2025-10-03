@@ -154,7 +154,9 @@ use std::path::Path;
 /// let parsed: ResourceType = serde_json::from_str("\"snippet\"").unwrap();
 /// assert_eq!(parsed, ResourceType::Snippet);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum ResourceType {
     /// AI assistant configurations and prompts
@@ -230,6 +232,29 @@ impl ResourceType {
             ResourceType::Script,
             ResourceType::Hook,
         ]
+    }
+
+    /// Get the plural form of the resource type.
+    ///
+    /// Returns the plural form used in lockfile dependency references and TOML sections.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ccpm::core::ResourceType;
+    ///
+    /// assert_eq!(ResourceType::Agent.to_plural(), "agents");
+    /// assert_eq!(ResourceType::McpServer.to_plural(), "mcp-servers");
+    /// ```
+    pub const fn to_plural(&self) -> &'static str {
+        match self {
+            ResourceType::Agent => "agents",
+            ResourceType::Snippet => "snippets",
+            ResourceType::Command => "commands",
+            ResourceType::Script => "scripts",
+            ResourceType::Hook => "hooks",
+            ResourceType::McpServer => "mcp-servers",
+        }
     }
 
     /// Get the default installation directory name for this resource type
