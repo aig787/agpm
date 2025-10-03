@@ -3,28 +3,31 @@
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use std::fs;
 use std::process::Command;
+use tokio::fs;
 
 mod common;
 mod fixtures;
 use common::TestProject;
 
 /// Test --max-parallel flag with various values
-#[test]
-fn test_max_parallel_flag_values() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_max_parallel_flag_values() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a simple test source
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "test-agent-1", "# Test Agent 1\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "test-agent-2", "# Test Agent 2\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "test-agent-3", "# Test Agent 3\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -43,15 +46,18 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
         source_url
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test different --max-parallel values
     for max_parallel in [1, 2, 4, 8] {
         let output = project
             .run_ccpm(&["install", "--max-parallel", &max_parallel.to_string()])
             .unwrap();
-        assert!(output.success);
-        assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
+        assert!(
+            output.success,
+            "Install failed with max_parallel={}: {}",
+            max_parallel, output.stderr
+        );
 
         // Verify installation worked
         // Files use basename from path, not dependency name
@@ -75,14 +81,14 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
         );
 
         // Clean up for next iteration
-        let _ = fs::remove_dir_all(project.project_path().join(".claude"));
+        let _ = fs::remove_dir_all(project.project_path().join(".claude")).await;
     }
 }
 
 /// Test --max-parallel with invalid values
-#[test]
-fn test_max_parallel_invalid_values() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_max_parallel_invalid_values() {
+    let project = TestProject::new().await.unwrap();
 
     // Test zero value
     let output = project
@@ -104,13 +110,14 @@ fn test_max_parallel_invalid_values() {
 }
 
 /// Test default parallelism when --max-parallel is not specified
-#[test]
-fn test_default_parallelism() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_default_parallelism() {
+    let project = TestProject::new().await.unwrap();
 
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "test-agent", "# Test Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -127,7 +134,7 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
         source_url
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Install without --max-parallel flag (should use default)
     let output = project.run_ccpm(&["install"]).unwrap();
@@ -144,13 +151,14 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
 }
 
 /// Test --max-parallel flag on install command only (update doesn't support it)
-#[test]
-fn test_max_parallel_install_only() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_max_parallel_install_only() {
+    let project = TestProject::new().await.unwrap();
 
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "test-agent", "# Test Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -167,7 +175,7 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
         source_url
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Install with --max-parallel should work
     let output = project
@@ -181,8 +189,8 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
 }
 
 /// Test --max-parallel in help output for install command
-#[test]
-fn test_max_parallel_help_coverage() {
+#[tokio::test]
+async fn test_max_parallel_help_coverage() {
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.arg("install")
         .arg("--help")

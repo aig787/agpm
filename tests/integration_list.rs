@@ -1,5 +1,5 @@
 use predicates::prelude::*;
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -7,13 +7,13 @@ use common::TestProject;
 use fixtures::ManifestFixture;
 
 /// Test listing installed resources from lockfile
-#[test]
-fn test_list_installed_resources() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_installed_resources() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile with resources
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -58,7 +58,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
     output
@@ -69,11 +71,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test listing with no lockfile
-#[test]
-fn test_list_no_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_no_lockfile() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
     output.assert_success();
@@ -86,9 +88,9 @@ fn test_list_no_lockfile() {
 }
 
 /// Test listing without project
-#[test]
-fn test_list_without_project() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_without_project() {
+    let project = TestProject::new().await.unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -100,11 +102,11 @@ fn test_list_without_project() {
 }
 
 /// Test list with table format
-#[test]
-fn test_list_table_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_table_format() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -119,7 +121,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--format", "table"]).unwrap();
     output
@@ -132,11 +136,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test list with JSON format
-#[test]
-fn test_list_json_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_json_format() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -151,7 +155,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--format", "json"]).unwrap();
     assert!(output.success);
@@ -163,11 +169,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test list with YAML format
-#[test]
-fn test_list_yaml_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_yaml_format() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -182,7 +188,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--format", "yaml"]).unwrap();
     assert!(output.success);
@@ -193,11 +201,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test list with compact format
-#[test]
-fn test_list_compact_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_compact_format() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -242,7 +250,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--format", "compact"]).unwrap();
     output
@@ -253,11 +263,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test filtering by resource type - agents only
-#[test]
-fn test_list_agents_only() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_agents_only() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -302,7 +312,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--type", "agents"]).unwrap();
     assert!(output.success);
@@ -312,11 +324,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test filtering by resource type - snippets only
-#[test]
-fn test_list_snippets_only() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_snippets_only() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -361,7 +373,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--type", "snippets"]).unwrap();
     assert!(output.success);
@@ -371,11 +385,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test filtering by source
-#[test]
-fn test_list_filter_by_source() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_filter_by_source() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -420,7 +434,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--source", "official"]).unwrap();
     assert!(output.success);
@@ -430,11 +446,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test listing with search/filter by name
-#[test]
-fn test_list_search_by_name() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_search_by_name() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -479,7 +495,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--search", "agent"]).unwrap();
     assert!(output.success);
@@ -488,11 +506,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test listing with detailed/verbose output
-#[test]
-fn test_list_detailed() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_detailed() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -537,7 +555,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--detailed"]).unwrap();
     assert!(output.success);
@@ -547,11 +567,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test listing installed files (show actual file paths)
-#[test]
-fn test_list_installed_files() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_installed_files() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -596,17 +616,25 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Create some installed files to match lockfile
     let agents_dir = project.project_path().join("agents");
     let snippets_dir = project.project_path().join("snippets");
-    fs::create_dir_all(&agents_dir).unwrap();
-    fs::create_dir_all(&snippets_dir).unwrap();
+    fs::create_dir_all(&agents_dir).await.unwrap();
+    fs::create_dir_all(&snippets_dir).await.unwrap();
 
-    fs::write(agents_dir.join("my-agent.md"), "# My Agent").unwrap();
-    fs::write(agents_dir.join("helper.md"), "# Helper Agent").unwrap();
-    fs::write(snippets_dir.join("utils.md"), "# Utils Snippet").unwrap();
+    fs::write(agents_dir.join("my-agent.md"), "# My Agent")
+        .await
+        .unwrap();
+    fs::write(agents_dir.join("helper.md"), "# Helper Agent")
+        .await
+        .unwrap();
+    fs::write(snippets_dir.join("utils.md"), "# Utils Snippet")
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--files"]).unwrap();
     assert!(output.success);
@@ -616,11 +644,11 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test listing with sorting options
-#[test]
-fn test_list_sorted_by_name() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_sorted_by_name() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -635,7 +663,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--sort", "name"]).unwrap();
     assert!(output.success);
@@ -643,11 +673,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test listing sorted by version
-#[test]
-fn test_list_sorted_by_version() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_sorted_by_version() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -662,7 +692,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--sort", "version"]).unwrap();
     assert!(output.success);
@@ -670,11 +702,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test listing sorted by source
-#[test]
-fn test_list_sorted_by_source() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_sorted_by_source() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -689,7 +721,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--sort", "source"]).unwrap();
     assert!(output.success);
@@ -697,11 +731,11 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test list with local dependencies
-#[test]
-fn test_list_local_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_local_dependencies() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::with_local().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create lockfile with local dependencies
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -736,7 +770,9 @@ version = "local"
 checksum = "sha256:local987654321fedcba987654321fedcba987654321fedcba"
 installed_at = "snippets/local-utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
     assert!(output.success);
@@ -746,8 +782,8 @@ installed_at = "snippets/local-utils.md"
 }
 
 /// Test list help command
-#[test]
-fn test_list_help() {
+#[tokio::test]
+async fn test_list_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
     cmd.arg("list")
         .arg("--help")
@@ -765,21 +801,23 @@ fn test_list_help() {
 }
 
 /// Test list with empty project (no dependencies)
-#[test]
-fn test_list_empty_project() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_empty_project() {
+    let project = TestProject::new().await.unwrap();
 
     // Create minimal manifest with no dependencies
     let minimal_manifest = r#"[sources]
 official = "https://github.com/example-org/ccpm-official.git"
 "#;
-    project.write_manifest(minimal_manifest).unwrap();
+    project.write_manifest(minimal_manifest).await.unwrap();
 
     // Create empty lockfile
     let empty_lockfile = r#"# Auto-generated lockfile - DO NOT EDIT
 version = 1
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), empty_lockfile).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), empty_lockfile)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
     assert!(output.success);
@@ -791,17 +829,18 @@ version = 1
 }
 
 /// Test list with corrupted lockfile
-#[test]
-fn test_list_corrupted_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_corrupted_lockfile() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
     fs::write(
         project.project_path().join("ccpm.lock"),
         "corrupted content",
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["list"]).unwrap();
@@ -815,11 +854,11 @@ fn test_list_corrupted_lockfile() {
 }
 
 /// Test list with invalid format option
-#[test]
-fn test_list_invalid_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_list_invalid_format() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create basic lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -834,7 +873,9 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["list", "--format", "invalid"]).unwrap();
     assert!(!output.success);

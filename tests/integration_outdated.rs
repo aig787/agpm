@@ -1,4 +1,4 @@
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -6,13 +6,13 @@ use common::TestProject;
 use fixtures::ManifestFixture;
 
 /// Test outdated command with up-to-date dependencies
-#[test]
-fn test_outdated_all_up_to_date() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_all_up_to_date() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile with up-to-date resources
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -34,7 +34,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Run outdated command
     let output = project.run_ccpm(&["outdated", "--no-fetch"]).unwrap();
@@ -44,9 +46,9 @@ resource_type = "agent"
 }
 
 /// Test outdated command with outdated dependencies
-#[test]
-fn test_outdated_with_updates_available() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_with_updates_available() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with version constraints
     let manifest_content = r#"[sources]
@@ -55,7 +57,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create mock lockfile with older version
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -77,7 +79,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Note: In a real test, we'd need to mock the Git repository to return available versions
     // For now, this test would need actual network access or mocked Git operations
@@ -85,11 +89,11 @@ resource_type = "agent"
 }
 
 /// Test outdated command with no lockfile
-#[test]
-fn test_outdated_no_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_no_lockfile() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without lockfile");
@@ -101,9 +105,9 @@ fn test_outdated_no_lockfile() {
 }
 
 /// Test outdated command without project
-#[test]
-fn test_outdated_without_project() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_without_project() {
+    let project = TestProject::new().await.unwrap();
 
     let output = project.run_ccpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without project");
@@ -115,13 +119,13 @@ fn test_outdated_without_project() {
 }
 
 /// Test outdated command with JSON format
-#[test]
-fn test_outdated_json_format() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_json_format() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -143,7 +147,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Run outdated command with JSON format
     let output = project
@@ -165,13 +171,13 @@ resource_type = "agent"
 }
 
 /// Test outdated command with --check flag
-#[test]
-fn test_outdated_check_flag() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_check_flag() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create mock lockfile with all up-to-date
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -193,7 +199,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Run outdated command with --check flag
     let output = project
@@ -205,9 +213,9 @@ resource_type = "agent"
 }
 
 /// Test outdated command with specific dependencies
-#[test]
-fn test_outdated_specific_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_outdated_specific_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with multiple dependencies
     let manifest_content = r#"[sources]
@@ -217,7 +225,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
 helper = { source = "official", path = "agents/helper.md", version = "^1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -249,7 +257,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/helper.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Run outdated command for specific dependency
     let output = project

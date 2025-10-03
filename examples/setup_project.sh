@@ -56,9 +56,9 @@ echo ""
 echo "→ Initial project structure:"
 tree -a -L 4
 
-# Add the local-deps source using local path
+# Add the local-deps source (local directory)
 echo ""
-echo "→ Adding source repository (local path)"
+echo "→ Adding local-deps source (local directory)"
 ccpm add source local-deps "$DEPS_DIR"
 
 # Add the ccpm-community GitHub repository
@@ -66,7 +66,7 @@ echo ""
 echo "→ Adding ccpm-community GitHub repository"
 ccpm add source community "https://github.com/aig787/ccpm-community.git"
 
-# Add resources with transitive dependencies via commands
+# Add resources with transitive dependencies via commands (using local source)
 echo ""
 echo -e "${YELLOW}→ Adding commands (which have transitive dependencies)${NC}"
 echo "  - git-auto-commit depends on: rust-haiku agent, commit-message snippet"
@@ -110,24 +110,24 @@ cat >> ccpm.toml << 'EOF'
 
 [agents]
 # Additional agents from ccpm-community
-api-designer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md" }
-backend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md" }
-frontend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md" }
-python-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md" }
-rust-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md" }
-javascript-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md" }
-database-administrator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md" }
-code-reviewer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md" }
-test-automator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md" }
-security-auditor = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md" }
-devops-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md" }
-cloud-architect = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md" }
-documentation-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md" }
-ml-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md" }
-multi-agent-coordinator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md" }
+api-designer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
+backend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md", version = "^v0.0.1" }
+frontend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md", version = "=v0.0.1" }
+python-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md", version = "v0.0.1" }
+rust-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md", version = "v0.0.1" }
+javascript-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md", version = "v0.0.1" }
+database-administrator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md", version = "v0.0.1" }
+code-reviewer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md", version = "v0.0.1" }
+test-automator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md", version = "v0.0.1" }
+security-auditor = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md", version = "v0.0.1" }
+devops-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md", version = "v0.0.1" }
+cloud-architect = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md", version = "v0.0.1" }
+documentation-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md", version = "v0.0.1" }
+ml-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md", version = "v0.0.1" }
+multi-agent-coordinator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md", version = "v0.0.1" }
 
 [snippets]
-# Additional snippets
+# Additional snippets (using local source)
 security-review = { source = "local-deps", path = "snippets/security-review.md" }
 rest-api = { source = "local-deps", path = "snippets/rest-api-endpoint.md" }
 test-coverage = { source = "local-deps", path = "snippets/test-coverage.md" }
@@ -147,6 +147,8 @@ ccpm validate
 # Install dependencies
 echo ""
 echo "→ Installing dependencies with CCPM"
+# Remove lockfile since we appended to the manifest
+rm -f ccpm.lock
 ccpm install
 
 # List installed resources
@@ -156,7 +158,7 @@ ccpm list
 
 # Update dependencies
 echo ""
-echo "→ Updating dependencies with CCPM"
+echo "→ Updating dependathies with CCPM"
 ccpm update
 
 

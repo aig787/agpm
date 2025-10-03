@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::fs;
 use std::path::{Path, PathBuf};
+use tokio::fs;
 mod common;
 mod fixtures;
 use common::TestProject;
@@ -8,32 +8,34 @@ use fixtures::MarkdownFixture;
 
 /// Extension trait for MarkdownFixture to write to disk
 trait MarkdownFixtureExt {
-    fn write_to(&self, dir: &Path) -> Result<PathBuf>;
+    async fn write_to(&self, dir: &Path) -> Result<PathBuf>;
 }
 
 impl MarkdownFixtureExt for MarkdownFixture {
-    fn write_to(&self, dir: &Path) -> Result<PathBuf> {
+    async fn write_to(&self, dir: &Path) -> Result<PathBuf> {
         let file_path = dir.join(&self.path);
         if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).await?;
         }
-        fs::write(&file_path, &self.content)?;
+        fs::write(&file_path, &self.content).await?;
         Ok(file_path)
     }
 }
 
 /// Test path handling on Windows vs Unix
-#[test]
-fn test_path_separators() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_path_separators() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source with both files first
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "windows-agent", "# Windows Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "unix-agent", "# Unix Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -72,13 +74,16 @@ local-snippet = {{ path = "./snippets/local.md" }}
         )
     };
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create local snippet file with platform-appropriate path
     let snippets_dir = project.project_path().join("snippets");
-    fs::create_dir_all(&snippets_dir).unwrap();
+    fs::create_dir_all(&snippets_dir).await.unwrap();
     let local_snippet = MarkdownFixture::snippet("local");
-    local_snippet.write_to(project.project_path()).unwrap();
+    local_snippet
+        .write_to(project.project_path())
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -87,9 +92,9 @@ local-snippet = {{ path = "./snippets/local.md" }}
 
 /// Test handling of long paths (Windows limitation)
 #[cfg(windows)]
-#[test]
-fn test_long_paths_windows() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_long_paths_windows() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a long but valid name for Windows (avoid exceeding practical limits)
     // Full path includes temp dir + project dir + .claude/agents/ + filename
@@ -97,7 +102,7 @@ fn test_long_paths_windows() {
     let long_name = "a".repeat(100);
 
     // Add mock source
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource(
             "agents",
@@ -121,7 +126,7 @@ official = "{}"
         source_path_str, long_name, long_name
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
     assert!(output.success); // Should handle long paths gracefully
@@ -130,18 +135,20 @@ official = "{}"
 
 /// Test case conflict detection universally
 /// We reject case conflicts on all platforms to ensure manifest portability
-#[test]
-fn test_case_conflict_detection() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_case_conflict_detection() {
+    let project = TestProject::new().await.unwrap();
 
     // Create consistent repository content across all platforms
     // Use different filenames that won't conflict on any filesystem
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "myagent-lower", "# MyAgent Lower\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "MyAgent-upper", "# MyAgent Upper\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -163,7 +170,7 @@ MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Pass explicit manifest path to avoid path resolution issues
     let manifest_path = project.project_path().join("ccpm.toml");
@@ -184,9 +191,9 @@ MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v
 }
 
 /// Test home directory expansion across platforms
-#[test]
-fn test_home_directory_expansion() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_home_directory_expansion() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with home directory reference
     let manifest_content = if cfg!(windows) {
@@ -213,7 +220,7 @@ home-snippet = { path = "~/Documents/snippets/home.md" }
 "#
     };
 
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success); // Home directory expansion should work and validation should pass
@@ -221,9 +228,9 @@ home-snippet = { path = "~/Documents/snippets/home.md" }
 }
 
 /// Test different line ending handling
-#[test]
-fn test_line_endings() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_line_endings() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with different line endings
     let manifest_content = if cfg!(windows) {
@@ -232,7 +239,7 @@ fn test_line_endings() {
         "[sources]\nofficial = \"https://github.com/example-org/ccpm-official.git\"\n\n[agents]\ntest-agent = { source = \"official\", path = \"agents/test.md\", version = \"v1.0.0\" }\n"
     };
 
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -240,14 +247,15 @@ fn test_line_endings() {
 }
 
 /// Test git command handling across platforms
-#[test]
-fn test_git_command_platform() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_git_command_platform() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a mock source to avoid network access
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "test-agent", "# Test Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -264,7 +272,7 @@ test-agent = {{ source = "official", path = "agents/test-agent.md", version = "v
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // This test verifies that git commands work on all platforms
     // The specific git executable name might differ (git vs git.exe)
@@ -293,16 +301,17 @@ test-agent = {{ source = "official", path = "agents/test-agent.md", version = "v
 
 /// Test permission handling across platforms
 #[cfg(unix)]
-#[test]
-fn test_unix_permissions() {
+#[tokio::test]
+async fn test_unix_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create a mock source repository
-    let test_repo = project.create_source_repo("test-source").unwrap();
+    let test_repo = project.create_source_repo("test-source").await.unwrap();
     test_repo
         .add_resource("snippets", "example", "# Example Snippet\n\nA test snippet")
+        .await
         .unwrap();
     test_repo.commit_all("Initial commit").unwrap();
     test_repo.tag_version("v1.0.0").unwrap();
@@ -317,19 +326,19 @@ test = "{source_url}"
 remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create a parent directory with restricted permissions
     let parent_dir = project.project_path().join("restricted_parent");
-    fs::create_dir_all(&parent_dir).unwrap();
+    fs::create_dir_all(&parent_dir).await.unwrap();
 
     // Create a path to a cache directory that doesn't exist yet
     let restricted_cache = parent_dir.join("cache");
 
     // Now set the parent directory to read-only so cache creation will fail
-    let mut perms = fs::metadata(&parent_dir).unwrap().permissions();
+    let mut perms = fs::metadata(&parent_dir).await.unwrap().permissions();
     perms.set_mode(0o555); // Read and execute only, no write
-    fs::set_permissions(&parent_dir, perms).unwrap();
+    fs::set_permissions(&parent_dir, perms).await.unwrap();
 
     let output = project
         .run_ccpm_with_env(
@@ -347,16 +356,16 @@ remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1
     );
 
     // Restore permissions for cleanup
-    let mut perms = fs::metadata(&parent_dir).unwrap().permissions();
+    let mut perms = fs::metadata(&parent_dir).await.unwrap().permissions();
     perms.set_mode(0o755);
-    fs::set_permissions(&parent_dir, perms).unwrap();
+    fs::set_permissions(&parent_dir, perms).await.unwrap();
 }
 
 /// Test Windows-specific drive letters and UNC paths
 #[cfg(windows)]
-#[test]
-fn test_windows_drive_letters() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_windows_drive_letters() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with absolute Windows paths
     let manifest_content = format!(
@@ -376,12 +385,14 @@ relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
             .replace("\\", "\\\\")
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create the relative snippet file
     let snippets_dir = project.project_path().join("snippets");
-    fs::create_dir_all(&snippets_dir).unwrap();
-    fs::write(snippets_dir.join("relative.md"), "# Relative snippet").unwrap();
+    fs::create_dir_all(&snippets_dir).await.unwrap();
+    fs::write(snippets_dir.join("relative.md"), "# Relative snippet")
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
     assert!(!output.success); // Absolute paths likely don't exist
@@ -404,18 +415,19 @@ relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
 }
 
 /// Test concurrent access handling (file locking)
-#[test]
-fn test_concurrent_operations() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_concurrent_operations() {
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repository
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource(
             "agents",
             "concurrent-agent",
             "# Concurrent Agent\n\nA test agent",
         )
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -431,7 +443,7 @@ concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", 
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test basic validation first to ensure the setup is correct
     let output = project.run_ccpm(&["validate"]).unwrap();
@@ -468,9 +480,9 @@ concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", 
 }
 
 /// Test Unicode filename handling
-#[test]
-fn test_unicode_filenames() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_unicode_filenames() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with Unicode characters (keys need to be quoted in TOML)
     let manifest_content = r#"
@@ -482,7 +494,7 @@ fn test_unicode_filenames() {
 "émoji-agent" = { source = "官方", path = "agents/🚀emoji.md", version = "v1.0.0" }
 "#;
 
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success); // Should handle Unicode gracefully
@@ -491,15 +503,15 @@ fn test_unicode_filenames() {
 
 /// Test handling of symlinks (Unix) vs junctions (Windows)
 #[cfg(unix)]
-#[test]
-fn test_symlink_handling() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_symlink_handling() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a symlink to test handling
     // Use project cache path as temp space
     let target_dir = project.cache_path().join("target");
     let link_dir = project.cache_path().join("link");
-    fs::create_dir_all(&target_dir).unwrap();
+    fs::create_dir_all(&target_dir).await.unwrap();
 
     std::os::unix::fs::symlink(&target_dir, &link_dir).unwrap();
 
@@ -512,10 +524,12 @@ symlink-snippet = {{ path = "{}/snippet.md" }}
         link_dir.to_str().unwrap()
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create file in target directory
-    fs::write(target_dir.join("snippet.md"), "# Symlinked snippet").unwrap();
+    fs::write(target_dir.join("snippet.md"), "# Symlinked snippet")
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Should follow symlinks
@@ -523,9 +537,9 @@ symlink-snippet = {{ path = "{}/snippet.md" }}
 }
 
 /// Test shell command differences across platforms
-#[test]
-fn test_shell_compatibility() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_shell_compatibility() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = r#"
 [sources]
 official = "https://github.com/example-org/ccpm-official.git"
@@ -533,7 +547,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Test that commands work regardless of shell (bash, zsh, cmd, PowerShell)
     let output = project.run_ccpm(&["--help"]).unwrap();
@@ -546,18 +560,19 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test platform-specific temporary directory handling
-#[test]
-fn test_temp_directory_platform() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_temp_directory_platform() {
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repository
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource(
             "agents",
             "temp-test-agent",
             "# Temp Test Agent\n\nA test agent",
         )
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -573,7 +588,7 @@ temp-test-agent = {{ source = "official", path = "agents/temp-test-agent.md", ve
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test that temp directories are created in platform-appropriate locations
     // For now, we just test that validation succeeds as this validates the manifest structure

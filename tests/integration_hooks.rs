@@ -1,20 +1,20 @@
 use anyhow::Result;
 use serde_json::Value;
-use std::fs;
+use tokio::fs;
 
 mod common;
 use common::TestProject;
 
 #[tokio::test]
 async fn test_hooks_install_and_format() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create hook source repository
-    let source_repo = project.create_source_repo("hooks")?;
+    let source_repo = project.create_source_repo("hooks").await?;
 
     // Create hooks directory and add hooks directly (not using add_resource since it adds .md)
     let hooks_dir = source_repo.path.join("hooks");
-    fs::create_dir_all(&hooks_dir)?;
+    fs::create_dir_all(&hooks_dir).await?;
 
     // Create SessionStart hook (no matcher)
     let session_hook = serde_json::json!({
@@ -26,7 +26,8 @@ async fn test_hooks_install_and_format() -> Result<()> {
     fs::write(
         hooks_dir.join("session-start.json"),
         serde_json::to_string_pretty(&session_hook)?,
-    )?;
+    )
+    .await?;
 
     // Create PreToolUse hook (with matcher)
     let pre_tool_hook = serde_json::json!({
@@ -40,7 +41,8 @@ async fn test_hooks_install_and_format() -> Result<()> {
     fs::write(
         hooks_dir.join("pre-tool-use.json"),
         serde_json::to_string_pretty(&pre_tool_hook)?,
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Add test hooks")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -57,7 +59,7 @@ tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Run install
     let output = project.run_ccpm(&["install"])?;
@@ -66,7 +68,7 @@ tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
 
     // Check settings.local.json has correct format
     let settings_path = project.project_path().join(".claude/settings.local.json");
-    let settings_content = fs::read_to_string(&settings_path)?;
+    let settings_content = fs::read_to_string(&settings_path).await?;
     let settings: Value = serde_json::from_str(&settings_content)?;
 
     // Verify structure
@@ -131,14 +133,14 @@ tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
 
 #[tokio::test]
 async fn test_hooks_deduplication() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create hook source repository
-    let source_repo = project.create_source_repo("hooks")?;
+    let source_repo = project.create_source_repo("hooks").await?;
 
     // Create hooks directory and add identical hooks
     let hooks_dir = source_repo.path.join("hooks");
-    fs::create_dir_all(&hooks_dir)?;
+    fs::create_dir_all(&hooks_dir).await?;
 
     // Create identical SessionStart hook
     let session_hook = serde_json::json!({
@@ -150,11 +152,13 @@ async fn test_hooks_deduplication() -> Result<()> {
     fs::write(
         hooks_dir.join("hook1.json"),
         serde_json::to_string_pretty(&session_hook)?,
-    )?;
+    )
+    .await?;
     fs::write(
         hooks_dir.join("hook2.json"),
         serde_json::to_string_pretty(&session_hook)?,
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Add duplicate hooks")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -171,7 +175,7 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Run install
     let output = project.run_ccpm(&["install"])?;
@@ -180,7 +184,7 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
 
     // Check that hooks are deduplicated
     let settings_path = project.project_path().join(".claude/settings.local.json");
-    let settings_content = fs::read_to_string(&settings_path)?;
+    let settings_content = fs::read_to_string(&settings_path).await?;
     let settings: Value = serde_json::from_str(&settings_content)?;
 
     let hooks = settings.get("hooks").unwrap();
@@ -206,14 +210,14 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
 
 #[tokio::test]
 async fn test_hooks_unknown_event_type() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create hook source repository
-    let source_repo = project.create_source_repo("hooks")?;
+    let source_repo = project.create_source_repo("hooks").await?;
 
     // Create hooks directory and add hook with unknown event type
     let hooks_dir = source_repo.path.join("hooks");
-    fs::create_dir_all(&hooks_dir)?;
+    fs::create_dir_all(&hooks_dir).await?;
 
     // Create hook with unknown/future event type
     let future_hook = serde_json::json!({
@@ -225,7 +229,8 @@ async fn test_hooks_unknown_event_type() -> Result<()> {
     fs::write(
         hooks_dir.join("future-hook.json"),
         serde_json::to_string_pretty(&future_hook)?,
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Add future hook")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -241,7 +246,7 @@ future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Run install
     let output = project.run_ccpm(&["install"])?;
@@ -250,7 +255,7 @@ future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
 
     // Check settings.local.json has the unknown event type
     let settings_path = project.project_path().join(".claude/settings.local.json");
-    let settings_content = fs::read_to_string(&settings_path)?;
+    let settings_content = fs::read_to_string(&settings_path).await?;
     let settings: Value = serde_json::from_str(&settings_content)?;
 
     let hooks = settings.get("hooks").expect("Should have hooks section");
@@ -281,7 +286,7 @@ future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
 
 #[tokio::test]
 async fn test_hooks_empty_no_message() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create manifest with no hooks
     let manifest_content = r#"
@@ -291,7 +296,7 @@ async fn test_hooks_empty_no_message() -> Result<()> {
 [hooks]
 # No hooks
 "#;
-    project.write_manifest(manifest_content)?;
+    project.write_manifest(manifest_content).await?;
 
     // Run install
     let output = project.run_ccpm(&["install"])?;
@@ -304,7 +309,7 @@ async fn test_hooks_empty_no_message() -> Result<()> {
     // Check that settings file either doesn't exist or has no hooks
     let settings_path = project.project_path().join(".claude/settings.local.json");
     if settings_path.exists() {
-        let settings_content = fs::read_to_string(&settings_path)?;
+        let settings_content = fs::read_to_string(&settings_path).await?;
         let settings: Value = serde_json::from_str(&settings_content)?;
 
         // Should either have no hooks section or empty hooks
@@ -319,14 +324,14 @@ async fn test_hooks_empty_no_message() -> Result<()> {
 
 #[tokio::test]
 async fn test_hooks_no_change_no_message() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create hook source repository
-    let source_repo = project.create_source_repo("hooks")?;
+    let source_repo = project.create_source_repo("hooks").await?;
 
     // Create hooks directory and add hook
     let hooks_dir = source_repo.path.join("hooks");
-    fs::create_dir_all(&hooks_dir)?;
+    fs::create_dir_all(&hooks_dir).await?;
 
     // Create SessionStart hook
     let session_hook = serde_json::json!({
@@ -338,7 +343,8 @@ async fn test_hooks_no_change_no_message() -> Result<()> {
     fs::write(
         hooks_dir.join("session-start.json"),
         serde_json::to_string_pretty(&session_hook)?,
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Add test hook")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -354,7 +360,7 @@ session-hook = {{ source = "hooks", path = "hooks/session-start.json" }}
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // First install - should configure hooks and show message
     let output1 = project.run_ccpm(&["install"])?;

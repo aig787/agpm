@@ -5,12 +5,15 @@
 
 use anyhow::Result;
 use assert_cmd::Command;
-use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use tokio::fs;
+
+mod common;
+use common::TestProject;
 
 /// Helper to create a test manifest with gitignore configuration
-fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
+async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
     let source_path = source_dir.display().to_string().replace('\\', "/");
     format!(
@@ -37,7 +40,7 @@ path = "{}/commands/test.md"
 }
 
 /// Helper to create a test manifest without explicit gitignore setting
-fn create_test_manifest_default(source_dir: &Path) -> String {
+async fn create_test_manifest_default(source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
     let source_path = source_dir.display().to_string().replace('\\', "/");
     format!(
@@ -57,7 +60,7 @@ path = "{}/agents/test.md"
 }
 
 /// Helper to create a test lockfile with installed resources
-fn create_test_lockfile() -> String {
+async fn create_test_lockfile() -> String {
     r#"
 version = 1
 
@@ -83,37 +86,44 @@ installed_at = ".claude/commands/test-command.md"
 }
 
 /// Create test source files that can be installed
-fn create_test_source_files(source_dir: &Path) -> Result<()> {
+async fn create_test_source_files(source_dir: &Path) -> Result<()> {
     // Create the directories
-    fs::create_dir_all(source_dir.join("agents"))?;
-    fs::create_dir_all(source_dir.join("snippets"))?;
-    fs::create_dir_all(source_dir.join("commands"))?;
+    fs::create_dir_all(source_dir.join("agents")).await?;
+    fs::create_dir_all(source_dir.join("snippets")).await?;
+    fs::create_dir_all(source_dir.join("commands")).await?;
 
     // Create source files
-    fs::write(source_dir.join("agents/test.md"), "# Test Agent\n")?;
-    fs::write(source_dir.join("snippets/test.md"), "# Test Snippet\n")?;
-    fs::write(source_dir.join("commands/test.md"), "# Test Command\n")?;
+    fs::write(source_dir.join("agents/test.md"), "# Test Agent\n").await?;
+    fs::write(source_dir.join("snippets/test.md"), "# Test Snippet\n").await?;
+    fs::write(source_dir.join("commands/test.md"), "# Test Command\n").await?;
 
     Ok(())
 }
 
-#[test]
-fn test_gitignore_enabled_by_default() {
+#[tokio::test]
+async fn test_gitignore_enabled_by_default() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest without explicit gitignore setting (should default to true)
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest_default(&source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest_default(&source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -132,28 +142,35 @@ fn test_gitignore_enabled_by_default() {
     );
 
     // Check that it has the expected structure
-    let content = fs::read_to_string(&gitignore_path).unwrap();
+    let content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(content.contains("CCPM managed entries"));
     assert!(content.contains("# End of CCPM managed entries"));
 }
 
-#[test]
-fn test_gitignore_explicitly_enabled() {
+#[tokio::test]
+async fn test_gitignore_explicitly_enabled() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest with gitignore = true
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -169,29 +186,36 @@ fn test_gitignore_explicitly_enabled() {
     assert!(gitignore_path.exists(), "Gitignore should be created");
 
     // Verify content structure
-    let content = fs::read_to_string(&gitignore_path).unwrap();
+    let content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(content.contains("CCPM managed entries"));
     assert!(content.contains("CCPM managed entries - do not edit below this line"));
     assert!(content.contains("# End of CCPM managed entries"));
 }
 
-#[test]
-fn test_gitignore_disabled() {
+#[tokio::test]
+async fn test_gitignore_disabled() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest with gitignore = false
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(false, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(false, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -210,18 +234,20 @@ fn test_gitignore_disabled() {
     );
 }
 
-#[test]
-fn test_gitignore_preserves_user_entries() {
+#[tokio::test]
+async fn test_gitignore_preserves_user_entries() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude")).unwrap();
+    fs::create_dir_all(project_dir.join(".claude"))
+        .await
+        .unwrap();
 
     // Create existing gitignore with user entries
     let gitignore_path = project_dir.join(".gitignore");
@@ -234,15 +260,22 @@ temp/
 .claude/agents/old-agent.md
 # End of CCPM managed entries
 "#;
-    fs::write(&gitignore_path, user_content).unwrap();
+    fs::write(&gitignore_path, user_content).await.unwrap();
 
     // Create manifest with gitignore enabled
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -254,7 +287,7 @@ temp/
         .assert();
 
     // Check that user entries are preserved
-    let updated_content = fs::read_to_string(&gitignore_path).unwrap();
+    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(updated_content.contains("# User's custom comment"));
     assert!(updated_content.contains("*.backup"));
     assert!(updated_content.contains("user-file.txt"));
@@ -266,18 +299,20 @@ temp/
     assert!(updated_content.contains(".claude/ccpm/snippets/test-snippet.md"));
 }
 
-#[test]
-fn test_gitignore_preserves_content_after_ccpm_section() {
+#[tokio::test]
+async fn test_gitignore_preserves_content_after_ccpm_section() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude")).unwrap();
+    fs::create_dir_all(project_dir.join(".claude"))
+        .await
+        .unwrap();
 
     // Create existing gitignore with content after CCPM section
     let gitignore_path = project_dir.join(".gitignore");
@@ -294,15 +329,22 @@ local-config.json
 debug/
 # End comment
 "#;
-    fs::write(&gitignore_path, user_content).unwrap();
+    fs::write(&gitignore_path, user_content).await.unwrap();
 
     // Create manifest with gitignore enabled
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -314,7 +356,7 @@ debug/
         .assert();
 
     // Check that all sections are preserved
-    let updated_content = fs::read_to_string(&gitignore_path).unwrap();
+    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
 
     // Check content before CCPM section
     assert!(updated_content.contains("# Project gitignore"));
@@ -336,23 +378,30 @@ debug/
     assert!(!updated_content.contains(".claude/agents/old-agent.md"));
 }
 
-#[test]
-fn test_gitignore_update_command() {
+#[tokio::test]
+async fn test_gitignore_update_command() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create initial lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run update command (which should also update gitignore)
     Command::cargo_bin("ccpm")
@@ -365,13 +414,13 @@ fn test_gitignore_update_command() {
     // Check that .gitignore exists after update
     let gitignore_path = project_dir.join(".gitignore");
     if gitignore_path.exists() {
-        let content = fs::read_to_string(&gitignore_path).unwrap();
+        let content = fs::read_to_string(&gitignore_path).await.unwrap();
         assert!(content.contains("CCPM managed entries"));
     }
 }
 
-#[test]
-fn test_gitignore_handles_external_paths() {
+#[tokio::test]
+async fn test_gitignore_handles_external_paths() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
@@ -390,7 +439,7 @@ source = "test-source"
 path = "scripts/test.sh"
 version = "v1.0.0"
 "#;
-    fs::write(&manifest_path, manifest_content).unwrap();
+    fs::write(&manifest_path, manifest_content).await.unwrap();
 
     // Create lockfile with resource installed outside .claude
     let lockfile_content = r#"
@@ -422,18 +471,25 @@ checksum = "sha256:test"
 installed_at = ".claude/agents/internal.md"
 "#;
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, lockfile_content).unwrap();
+    fs::write(&lockfile_path, lockfile_content).await.unwrap();
 
     // Create directories
-    fs::create_dir_all(project_dir.join(".claude/agents")).unwrap();
-    fs::create_dir_all(project_dir.join("scripts")).unwrap();
+    fs::create_dir_all(project_dir.join(".claude/agents"))
+        .await
+        .unwrap();
+    fs::create_dir_all(project_dir.join("scripts"))
+        .await
+        .unwrap();
 
     // Create resource files
-    fs::write(project_dir.join("scripts/external.sh"), "#!/bin/bash\n").unwrap();
+    fs::write(project_dir.join("scripts/external.sh"), "#!/bin/bash\n")
+        .await
+        .unwrap();
     fs::write(
         project_dir.join(".claude/agents/internal.md"),
         "# Internal\n",
     )
+    .await
     .unwrap();
 
     // Run install command
@@ -448,7 +504,7 @@ installed_at = ".claude/agents/internal.md"
     // Check gitignore content
     let gitignore_path = project_dir.join(".gitignore");
     if gitignore_path.exists() {
-        let content = fs::read_to_string(&gitignore_path).unwrap();
+        let content = fs::read_to_string(&gitignore_path).await.unwrap();
         // External path should use ../
         assert!(
             content.contains("../scripts/external.sh"),
@@ -462,23 +518,28 @@ installed_at = ".claude/agents/internal.md"
     }
 }
 
-#[test]
-fn test_gitignore_empty_lockfile() {
+#[tokio::test]
+async fn test_gitignore_empty_lockfile() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create empty lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, "version = 1\n").unwrap();
+    fs::write(&lockfile_path, "version = 1\n").await.unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -496,28 +557,35 @@ fn test_gitignore_empty_lockfile() {
         "Gitignore should be created even with empty lockfile"
     );
 
-    let content = fs::read_to_string(&gitignore_path).unwrap();
+    let content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(content.contains("CCPM managed entries"));
     assert!(content.contains("# End of CCPM managed entries"));
 }
 
-#[test]
-fn test_gitignore_idempotent() {
+#[tokio::test]
+async fn test_gitignore_idempotent() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -531,7 +599,7 @@ fn test_gitignore_idempotent() {
     // Get content after first run
     let gitignore_path = project_dir.join(".gitignore");
     let first_content = if gitignore_path.exists() {
-        fs::read_to_string(&gitignore_path).unwrap()
+        fs::read_to_string(&gitignore_path).await.unwrap()
     } else {
         String::new()
     };
@@ -547,7 +615,7 @@ fn test_gitignore_idempotent() {
 
     // Get content after second run
     let second_content = if gitignore_path.exists() {
-        fs::read_to_string(&gitignore_path).unwrap()
+        fs::read_to_string(&gitignore_path).await.unwrap()
     } else {
         String::new()
     };
@@ -559,22 +627,29 @@ fn test_gitignore_idempotent() {
     );
 }
 
-#[test]
-fn test_gitignore_switch_enabled_disabled() {
+#[tokio::test]
+async fn test_gitignore_switch_enabled_disabled() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Start with gitignore enabled
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install with gitignore enabled
     Command::cargo_bin("ccpm")
@@ -589,7 +664,12 @@ fn test_gitignore_switch_enabled_disabled() {
     assert!(gitignore_path.exists(), "Gitignore should be created");
 
     // Now disable gitignore
-    fs::write(&manifest_path, create_test_manifest(false, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(false, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Run install again
     Command::cargo_bin("ccpm")
@@ -607,15 +687,20 @@ fn test_gitignore_switch_enabled_disabled() {
     );
 
     // Re-enable gitignore
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     // Add a user entry to the existing gitignore
-    let content = fs::read_to_string(&gitignore_path).unwrap();
+    let content = fs::read_to_string(&gitignore_path).await.unwrap();
     let modified_content = content.replace(
         "# CCPM managed entries",
         "user-custom.txt\n\n# CCPM managed entries",
     );
-    fs::write(&gitignore_path, modified_content).unwrap();
+    fs::write(&gitignore_path, modified_content).await.unwrap();
 
     // Run install again
     Command::cargo_bin("ccpm")
@@ -627,50 +712,39 @@ fn test_gitignore_switch_enabled_disabled() {
         .assert();
 
     // Check that user entry is preserved
-    let final_content = fs::read_to_string(&gitignore_path).unwrap();
+    let final_content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(
         final_content.contains("user-custom.txt"),
         "User entries should be preserved when re-enabling"
     );
 }
 
-#[test]
-fn test_gitignore_actually_ignored_by_git() {
+#[tokio::test]
+async fn test_gitignore_actually_ignored_by_git() {
     ccpm::test_utils::init_test_logging(None);
-    use std::process::Command as StdCommand;
 
-    let temp = TempDir::new().unwrap();
-    let project_dir = temp.path();
-    let source_dir = temp.path().join("source");
+    let project = TestProject::new().await.unwrap();
+    let project_dir = project.project_path().to_path_buf();
+    let source_dir = project.sources_path().join("source");
 
-    // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
-    // Initialize a git repository
-    StdCommand::new("git")
-        .arg("init")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to initialize git repo");
+    let git = project.init_git_repo().unwrap();
 
-    // Create manifest with gitignore enabled
-    let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    project
+        .write_manifest(&create_test_manifest(true, &source_dir).await)
+        .await
+        .unwrap();
+    project
+        .write_lockfile(&create_test_lockfile().await)
+        .await
+        .unwrap();
 
-    // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
-
-    // Run install command to create gitignore and install files
-    Command::cargo_bin("ccpm")
+    project
+        .run_ccpm(&["install", "--quiet", "--force"])
         .unwrap()
-        .arg("install")
-        .arg("--quiet")
-        .arg("--force")
-        .current_dir(project_dir)
-        .assert();
+        .assert_success();
 
-    // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(
         project_dir
@@ -683,25 +757,9 @@ fn test_gitignore_actually_ignored_by_git() {
             .exists()
     );
 
-    // Stage all files for git
-    StdCommand::new("git")
-        .arg("add")
-        .arg(".")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to stage files");
+    git.add_all().unwrap();
+    let status = git.status_porcelain().unwrap();
 
-    // Check git status to see what files are staged
-    let output = StdCommand::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to get git status");
-
-    let status = String::from_utf8_lossy(&output.stdout);
-
-    // Verify that installed CCPM files are NOT staged (ignored by git)
     assert!(
         !status.contains("agents/test-agent.md"),
         "Agent file should be ignored by git\nGit status:\n{}",
@@ -717,15 +775,11 @@ fn test_gitignore_actually_ignored_by_git() {
         "Command file should be ignored by git\nGit status:\n{}",
         status
     );
-
-    // Verify that the gitignore file itself IS staged
     assert!(
         status.contains(".gitignore"),
         "Gitignore file should be tracked by git\nGit status:\n{}",
         status
     );
-
-    // Verify that manifest and lockfile ARE staged
     assert!(
         status.contains("ccpm.toml"),
         "Manifest should be tracked by git\nGit status:\n{}",
@@ -737,82 +791,48 @@ fn test_gitignore_actually_ignored_by_git() {
         status
     );
 
-    // Also test with git check-ignore to be explicit
-    let check_agent = StdCommand::new("git")
-        .arg("check-ignore")
-        .arg(".claude/agents/test-agent.md")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to check-ignore");
-
-    // git check-ignore returns 0 if the file is ignored
     assert!(
-        check_agent.status.success(),
+        git.check_ignore(".claude/agents/test-agent.md").unwrap(),
         "Agent file should be ignored by git check-ignore"
     );
-
-    let check_snippet = StdCommand::new("git")
-        .arg("check-ignore")
-        .arg(".claude/ccpm/snippets/test-snippet.md")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to check-ignore");
-
     assert!(
-        check_snippet.status.success(),
+        git.check_ignore(".claude/ccpm/snippets/test-snippet.md")
+            .unwrap(),
         "Snippet file should be ignored by git check-ignore"
     );
-
-    let check_command = StdCommand::new("git")
-        .arg("check-ignore")
-        .arg(".claude/commands/test-command.md")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to check-ignore");
-
     assert!(
-        check_command.status.success(),
+        git.check_ignore(".claude/commands/test-command.md")
+            .unwrap(),
         "Command file should be ignored by git check-ignore"
     );
 }
 
-#[test]
-fn test_gitignore_disabled_files_not_ignored_by_git() {
+#[tokio::test]
+async fn test_gitignore_disabled_files_not_ignored_by_git() {
     ccpm::test_utils::init_test_logging(None);
-    use std::process::Command as StdCommand;
 
-    let temp = TempDir::new().unwrap();
-    let project_dir = temp.path();
-    let source_dir = temp.path().join("source");
+    let project = TestProject::new().await.unwrap();
+    let project_dir = project.project_path().to_path_buf();
+    let source_dir = project.sources_path().join("source");
 
-    // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
-    // Initialize a git repository
-    StdCommand::new("git")
-        .arg("init")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to initialize git repo");
+    let git = project.init_git_repo().unwrap();
 
-    // Create manifest with gitignore DISABLED
-    let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(false, &source_dir)).unwrap();
+    project
+        .write_manifest(&create_test_manifest(false, &source_dir).await)
+        .await
+        .unwrap();
+    project
+        .write_lockfile(&create_test_lockfile().await)
+        .await
+        .unwrap();
 
-    // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
-
-    // Run install command (should NOT create gitignore)
-    Command::cargo_bin("ccpm")
+    project
+        .run_ccpm(&["install", "--quiet", "--force"])
         .unwrap()
-        .arg("install")
-        .arg("--quiet")
-        .arg("--force")
-        .current_dir(project_dir)
-        .assert();
+        .assert_success();
 
-    // Verify files were installed
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(
         project_dir
@@ -825,68 +845,51 @@ fn test_gitignore_disabled_files_not_ignored_by_git() {
             .exists()
     );
 
-    // Stage all files for git
-    StdCommand::new("git")
-        .arg("add")
-        .arg(".")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to stage files");
+    git.add_all().unwrap();
+    let status = git.status_porcelain().unwrap();
 
-    // Check git status to see what files are staged
-    let output = StdCommand::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to get git status");
-
-    let status = String::from_utf8_lossy(&output.stdout);
-
-    // When gitignore is disabled, installed files SHOULD be staged (NOT ignored)
     assert!(
         status.contains("agents/test-agent.md"),
-        "Agent file should NOT be ignored when gitignore is disabled\nGit status:\n{}",
+        "Agent file should NOT be ignored when gitignore is disabled
+Git status:
+{}",
         status
     );
     assert!(
         status.contains("snippets/test-snippet.md"),
-        "Snippet file should NOT be ignored when gitignore is disabled\nGit status:\n{}",
+        "Snippet file should NOT be ignored when gitignore is disabled
+Git status:
+{}",
         status
     );
     assert!(
         status.contains("commands/test-command.md"),
-        "Command file should NOT be ignored when gitignore is disabled\nGit status:\n{}",
+        "Command file should NOT be ignored when gitignore is disabled
+Git status:
+{}",
         status
     );
 
-    // Also test with git check-ignore to be explicit
-    let check_agent = StdCommand::new("git")
-        .arg("check-ignore")
-        .arg(".claude/agents/test-agent.md")
-        .current_dir(project_dir)
-        .output()
-        .expect("Failed to check-ignore");
-
-    // git check-ignore returns non-zero if the file is NOT ignored
     assert!(
-        !check_agent.status.success(),
-        "Agent file should NOT be ignored when gitignore is disabled"
+        !project_dir.join(".gitignore").exists(),
+        "Gitignore file should not exist when disabled"
     );
 }
 
-#[test]
-fn test_gitignore_malformed_existing() {
+#[tokio::test]
+async fn test_gitignore_malformed_existing() {
     ccpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
 
     // Create source files
-    create_test_source_files(&source_dir).unwrap();
+    create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude")).unwrap();
+    fs::create_dir_all(project_dir.join(".claude"))
+        .await
+        .unwrap();
 
     // Create malformed gitignore (missing end marker)
     let gitignore_path = project_dir.join(".gitignore");
@@ -897,14 +900,21 @@ user-file.txt
 /old/entry.md
 # Missing end marker!
 "#;
-    fs::write(&gitignore_path, malformed_content).unwrap();
+    fs::write(&gitignore_path, malformed_content).await.unwrap();
 
     // Create manifest and lockfile
     let manifest_path = project_dir.join("ccpm.toml");
-    fs::write(&manifest_path, create_test_manifest(true, &source_dir)).unwrap();
+    fs::write(
+        &manifest_path,
+        create_test_manifest(true, &source_dir).await,
+    )
+    .await
+    .unwrap();
 
     let lockfile_path = project_dir.join("ccpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile()).unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await)
+        .await
+        .unwrap();
 
     // Run install command
     Command::cargo_bin("ccpm")
@@ -916,7 +926,7 @@ user-file.txt
         .assert();
 
     // Check that gitignore was properly recreated
-    let updated_content = fs::read_to_string(&gitignore_path).unwrap();
+    let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(updated_content.contains("# End of CCPM managed entries"));
     assert!(updated_content.contains("user-file.txt"));
     assert!(updated_content.contains("CCPM managed entries"));

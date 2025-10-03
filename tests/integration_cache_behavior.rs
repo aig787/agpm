@@ -2,7 +2,8 @@
 //! Tests the new v0.3.0 caching architecture improvements
 
 use anyhow::Result;
-use std::{fs, time::Duration};
+use std::time::Duration;
+use tokio::fs;
 use tokio::time::Instant;
 
 mod common;
@@ -11,13 +12,19 @@ use common::TestProject;
 /// Test instance-level cache reuse across multiple operations
 #[tokio::test]
 async fn test_instance_cache_reuse() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create test source with multiple agents
-    let source_repo = project.create_source_repo("official")?;
-    source_repo.add_resource("agents", "agent-1", "# Agent 1\n\nTest agent 1")?;
-    source_repo.add_resource("agents", "agent-2", "# Agent 2\n\nTest agent 2")?;
-    source_repo.add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3")?;
+    let source_repo = project.create_source_repo("official").await?;
+    source_repo
+        .add_resource("agents", "agent-1", "# Agent 1\n\nTest agent 1")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-2", "# Agent 2\n\nTest agent 2")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3")
+        .await?;
     source_repo.commit_all("Add test agents")?;
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -35,7 +42,7 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
         source_url
     );
 
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // First install - should populate cache
     let start = Instant::now();
@@ -44,7 +51,7 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
     let first_duration = start.elapsed();
 
     // Remove installed files but keep cache
-    fs::remove_dir_all(project.project_path().join(".claude"))?;
+    fs::remove_dir_all(project.project_path().join(".claude")).await?;
 
     // Second install - should reuse cached worktrees
     let start = Instant::now();
@@ -88,25 +95,31 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
 /// Test fetch caching prevents redundant network operations
 #[tokio::test]
 async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create test source with multiple dependencies from same repo
-    let source_repo = project.create_source_repo("official")?;
-    source_repo.add_resource(
-        "agents",
-        "fetch-agent-1",
-        "# Fetch Agent 1\n\nTest fetch agent 1",
-    )?;
-    source_repo.add_resource(
-        "agents",
-        "fetch-agent-2",
-        "# Fetch Agent 2\n\nTest fetch agent 2",
-    )?;
-    source_repo.add_resource(
-        "snippets",
-        "fetch-snippet-1",
-        "# Fetch Snippet 1\n\nTest fetch snippet 1",
-    )?;
+    let source_repo = project.create_source_repo("official").await?;
+    source_repo
+        .add_resource(
+            "agents",
+            "fetch-agent-1",
+            "# Fetch Agent 1\n\nTest fetch agent 1",
+        )
+        .await?;
+    source_repo
+        .add_resource(
+            "agents",
+            "fetch-agent-2",
+            "# Fetch Agent 2\n\nTest fetch agent 2",
+        )
+        .await?;
+    source_repo
+        .add_resource(
+            "snippets",
+            "fetch-snippet-1",
+            "# Fetch Snippet 1\n\nTest fetch snippet 1",
+        )
+        .await?;
     source_repo.commit_all("Add test resources")?;
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -126,7 +139,7 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
         source_url
     );
 
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Install with high parallelism - should use fetch caching
     let start = Instant::now();
@@ -168,16 +181,18 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
 /// Test cache behavior under high concurrency
 #[tokio::test]
 async fn test_cache_high_concurrency() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create large number of dependencies to stress test caching
-    let source_repo = project.create_source_repo("official")?;
+    let source_repo = project.create_source_repo("official").await?;
     for i in 0..20 {
-        source_repo.add_resource(
-            "agents",
-            &format!("concurrent-agent-{:02}", i),
-            &format!("# Concurrent Agent {:02}\n\nTest concurrent agent {}", i, i),
-        )?;
+        source_repo
+            .add_resource(
+                "agents",
+                &format!("concurrent-agent-{:02}", i),
+                &format!("# Concurrent Agent {:02}\n\nTest concurrent agent {}", i, i),
+            )
+            .await?;
     }
     source_repo.commit_all("Add concurrent test agents")?;
     source_repo.tag_version("v1.0.0")?;
@@ -201,7 +216,7 @@ official = "{}"
         ));
     }
 
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Install with maximum parallelism
     let start = Instant::now();
@@ -226,19 +241,23 @@ official = "{}"
 /// Test cache persistence across command invocations
 #[tokio::test]
 async fn test_cache_persistence() -> Result<()> {
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
-    let source_repo = project.create_source_repo("official")?;
-    source_repo.add_resource(
-        "agents",
-        "persistent-agent",
-        "# Persistent Agent\n\nTest persistent agent",
-    )?;
-    source_repo.add_resource(
-        "snippets",
-        "persistent-snippet",
-        "# Persistent Snippet\n\nTest persistent snippet",
-    )?;
+    let source_repo = project.create_source_repo("official").await?;
+    source_repo
+        .add_resource(
+            "agents",
+            "persistent-agent",
+            "# Persistent Agent\n\nTest persistent agent",
+        )
+        .await?;
+    source_repo
+        .add_resource(
+            "snippets",
+            "persistent-snippet",
+            "# Persistent Snippet\n\nTest persistent snippet",
+        )
+        .await?;
     source_repo.commit_all("Add persistent test resources")?;
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -257,7 +276,7 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
         source_url
     );
 
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // First command: install
     let output = project.run_ccpm(&["install"])?;

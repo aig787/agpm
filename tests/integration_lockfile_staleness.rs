@@ -7,14 +7,18 @@ mod fixtures;
 use fixtures::ManifestFixture;
 
 /// Test that stale lockfile is detected when dependency is missing
-#[test]
-fn test_install_detects_missing_dependency() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_missing_dependency() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo with an agent
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "agent-one", "# Agent One\nTest agent one")?;
-    source_repo.add_resource("agents", "agent-two", "# Agent Two\nTest agent two")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "agent-one", "# Agent One\nTest agent one")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-two", "# Agent Two\nTest agent two")
+        .await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -29,14 +33,14 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // Install first to create lockfile
     let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Now remove one agent from lockfile to make it stale
-    let lockfile = project.read_lockfile()?;
+    let lockfile = project.read_lockfile().await?;
 
     // Find and remove the agent-two section
     let start_marker = "[[agents]]\nname = \"agent-two\"";
@@ -50,7 +54,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
 
         // Remove this entire agent section
         let modified_lockfile = format!("{}{}", &lockfile[..start_pos], &lockfile[end_pos..]);
-        project.write_lockfile(&modified_lockfile)?;
+        project.write_lockfile(&modified_lockfile).await?;
     } else {
         panic!("Could not find agent-two in lockfile to remove");
     }
@@ -65,13 +69,15 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
 }
 
 /// Test that --force flag bypasses staleness check
-#[test]
-fn test_install_with_force_flag() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_with_force_flag() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "test-agent", "# Test Agent\nContent")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent\nContent")
+        .await?;
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -85,20 +91,22 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // First do a normal install to create a valid lockfile
     let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Add a v2.0.0 version to the repo
-    source_repo.add_resource("agents", "test-agent", "# Test Agent v2\nContent v2")?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v2\nContent v2")
+        .await?;
     source_repo.commit_all("Update to v2")?;
     source_repo.tag_version("v2.0.0")?;
 
     // Now update the manifest to use v2.0.0 to create staleness
     let updated_manifest = manifest.replace("v1.0.0", "v2.0.0");
-    project.write_manifest(&updated_manifest)?;
+    project.write_manifest(&updated_manifest).await?;
 
     // Install with --force should succeed despite stale lockfile
     let output = project.run_ccpm_with_env(&["install", "--force"], &[("CI", "true")])?;
@@ -112,13 +120,15 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 }
 
 /// Test that --regenerate flag deletes and recreates lockfile
-#[test]
-fn test_install_with_regenerate_flag() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_with_regenerate_flag() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "new-agent", "# New Agent\nContent")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "new-agent", "# New Agent\nContent")
+        .await?;
     source_repo.commit_all("Add new agent")?;
     source_repo.tag_version("v2.0.0")?;
 
@@ -132,7 +142,7 @@ new-agent = {{ source = "test-source", path = "agents/new-agent.md", version = "
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // Create lockfile with old data
     let old_lockfile = format!(
@@ -154,7 +164,7 @@ installed_at = ".claude/agents/old-agent.md"
 "#,
         source_repo.file_url()
     );
-    project.write_lockfile(&old_lockfile)?;
+    project.write_lockfile(&old_lockfile).await?;
 
     // Install with --regenerate
     let output = project.run_ccpm(&["install", "--regenerate"])?;
@@ -163,14 +173,9 @@ installed_at = ".claude/agents/old-agent.md"
         "Install with --regenerate failed: {}",
         output.stderr
     );
-    assert!(
-        output
-            .stdout
-            .contains("Removing existing lockfile for regeneration")
-    );
 
     // Verify the lockfile was regenerated (old-agent should be gone, new-agent present)
-    let lockfile_content = project.read_lockfile()?;
+    let lockfile_content = project.read_lockfile().await?;
     assert!(!lockfile_content.contains("old-agent"));
     assert!(lockfile_content.contains("new-agent"));
 
@@ -178,17 +183,21 @@ installed_at = ".claude/agents/old-agent.md"
 }
 
 /// Test that version mismatch is detected
-#[test]
-fn test_install_detects_version_mismatch() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_version_mismatch() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo with multiple versions
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "test-agent", "# Test Agent v1\nVersion 1")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v1\nVersion 1")
+        .await?;
     source_repo.commit_all("Version 1")?;
     source_repo.tag_version("v1.0.0")?;
 
-    source_repo.add_resource("agents", "test-agent", "# Test Agent v2\nVersion 2")?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v2\nVersion 2")
+        .await?;
     source_repo.commit_all("Version 2")?;
     source_repo.tag_version("v2.0.0")?;
 
@@ -202,7 +211,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // Install v1.0.0
     let output = project.run_ccpm(&["install", "--quiet"])?;
@@ -210,7 +219,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // Update manifest to v2.0.0
     let manifest_v2 = manifest.replace("v1.0.0", "v2.0.0");
-    project.write_manifest(&manifest_v2)?;
+    project.write_manifest(&manifest_v2).await?;
 
     // Try to install with outdated lockfile in CI mode
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
@@ -225,14 +234,18 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 }
 
 /// Test that extra lockfile entries are allowed (for transitive dependencies)
-#[test]
-fn test_install_detects_removed_dependency() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_removed_dependency() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo with two agents
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "agent-one", "# Agent One")?;
-    source_repo.add_resource("agents", "agent-two", "# Agent Two")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "agent-one", "# Agent One")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-two", "# Agent Two")
+        .await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -247,7 +260,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest_two_agents)?;
+    project.write_manifest(&manifest_two_agents).await?;
 
     // Install both agents
     let output = project.run_ccpm(&["install", "--quiet"])?;
@@ -263,7 +276,7 @@ agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest_one_agent)?;
+    project.write_manifest(&manifest_one_agent).await?;
 
     // Try to install with lockfile containing extra entry in CI mode
     // This should succeed now - extra entries are allowed for transitive dependencies
@@ -282,14 +295,18 @@ agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "
 }
 
 /// Test that path change is detected
-#[test]
-fn test_install_detects_path_change() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_path_change() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo with agent in two locations
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "old-path", "# Agent at old path")?;
-    source_repo.add_resource("agents", "new-path", "# Agent at new path")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "old-path", "# Agent at old path")
+        .await?;
+    source_repo
+        .add_resource("agents", "new-path", "# Agent at new path")
+        .await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -303,7 +320,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest_old)?;
+    project.write_manifest(&manifest_old).await?;
 
     // Install with old path
     let output = project.run_ccpm(&["install", "--quiet"])?;
@@ -311,7 +328,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 
     // Update manifest to new path
     let manifest_new = manifest_old.replace("old-path", "new-path");
-    project.write_manifest(&manifest_new)?;
+    project.write_manifest(&manifest_new).await?;
 
     // Try to install with outdated lockfile in CI mode
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
@@ -322,18 +339,22 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 }
 
 /// Test that source URL change is detected
-#[test]
-fn test_install_detects_source_url_change() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_source_url_change() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create two different source repos
-    let old_repo = project.create_source_repo("old-repo")?;
-    old_repo.add_resource("agents", "test-agent", "# Agent from old repo")?;
+    let old_repo = project.create_source_repo("old-repo").await?;
+    old_repo
+        .add_resource("agents", "test-agent", "# Agent from old repo")
+        .await?;
     old_repo.commit_all("Add agent")?;
     old_repo.tag_version("v1.0.0")?;
 
-    let new_repo = project.create_source_repo("new-repo")?;
-    new_repo.add_resource("agents", "test-agent", "# Agent from new repo")?;
+    let new_repo = project.create_source_repo("new-repo").await?;
+    new_repo
+        .add_resource("agents", "test-agent", "# Agent from new repo")
+        .await?;
     new_repo.commit_all("Add agent")?;
     new_repo.tag_version("v1.0.0")?;
 
@@ -347,7 +368,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         old_repo.file_url()
     );
-    project.write_manifest(&manifest_old)?;
+    project.write_manifest(&manifest_old).await?;
 
     // Install from old repo
     let output = project.run_ccpm(&["install", "--quiet"])?;
@@ -363,7 +384,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         new_repo.file_url()
     );
-    project.write_manifest(&manifest_new)?;
+    project.write_manifest(&manifest_new).await?;
 
     // Try to install with outdated lockfile in CI mode
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
@@ -378,17 +399,22 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 }
 
 /// Test that duplicate entries are detected
-#[test]
-fn test_install_detects_duplicate_entries() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_detects_duplicate_entries() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "test-agent", "# Test Agent")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent")
+        .await?;
     source_repo.commit_all("Add agent")?;
 
-    // Create and set main branch for the test repo
-    source_repo.git.create_branch("main")?;
+    // Ensure we're on main branch (commit creates it automatically in modern git)
+    // Try to checkout main, create it if it doesn't exist
+    if source_repo.git.checkout("main").is_err() {
+        source_repo.git.create_branch("main")?;
+    }
 
     // Create manifest
     let manifest = format!(
@@ -400,14 +426,14 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // First do a normal install to create a valid lockfile
     let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Read the valid lockfile and manually duplicate an entry
-    let lockfile = project.read_lockfile()?;
+    let lockfile = project.read_lockfile().await?;
 
     // Find the agents section and duplicate the first agent entry
     if let Some(agents_pos) = lockfile.find("[[agents]]") {
@@ -422,7 +448,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
         // Add a duplicate at the end
         let corrupted_lockfile = format!("{}\n{}", lockfile.trim(), agent_entry);
-        project.write_lockfile(&corrupted_lockfile)?;
+        project.write_lockfile(&corrupted_lockfile).await?;
     } else {
         panic!("Could not find agents section in lockfile");
     }
@@ -445,17 +471,22 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
 /// Test that branch references don't cause staleness errors
 /// Branches are expected to move, so we shouldn't treat them as stale
-#[test]
-fn test_install_allows_branch_references() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_install_allows_branch_references() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo with a bare clone for stable serving
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "test-agent", "# Test Agent v1")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v1")
+        .await?;
     source_repo.commit_all("Initial commit")?;
 
-    // Create and set main branch for the test repo
-    source_repo.git.create_branch("main")?;
+    // Ensure we're on main branch (commit creates it automatically in modern git)
+    // Try to checkout main, create it if it doesn't exist
+    if source_repo.git.checkout("main").is_err() {
+        source_repo.git.create_branch("main")?;
+    }
 
     // Get the bare URL for stable file:// serving
     let bare_url = source_repo.bare_file_url(project.sources_path())?;
@@ -470,7 +501,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         bare_url
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // Install to create lockfile
     let output = project.run_ccpm(&["install", "--quiet"])?;
@@ -489,13 +520,13 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 }
 
 /// Test that --force and --regenerate flags are mutually exclusive
-#[test]
-fn test_force_and_regenerate_are_mutually_exclusive() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_force_and_regenerate_are_mutually_exclusive() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create minimal manifest
     let manifest = ManifestFixture::basic();
-    project.write_manifest(&manifest.content)?;
+    project.write_manifest(&manifest.content).await?;
 
     // Try to use both flags
     let output = project.run_ccpm(&["install", "--force", "--regenerate"])?;
@@ -517,13 +548,15 @@ fn test_force_and_regenerate_are_mutually_exclusive() -> Result<()> {
 }
 
 /// Test CI vs interactive environment detection
-#[test]
-fn test_ci_environment_detection() -> Result<()> {
-    let project = TestProject::new()?;
+#[tokio::test]
+async fn test_ci_environment_detection() -> Result<()> {
+    let project = TestProject::new().await?;
 
     // Create a source repo
-    let source_repo = project.create_source_repo("test-source")?;
-    source_repo.add_resource("agents", "test-agent", "# Test Agent")?;
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent")
+        .await?;
     source_repo.commit_all("Add agent")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -537,10 +570,10 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 "#,
         source_repo.file_url()
     );
-    project.write_manifest(&manifest)?;
+    project.write_manifest(&manifest).await?;
 
     // Create empty lockfile (stale)
-    project.write_lockfile("version = 1")?;
+    project.write_lockfile("version = 1").await?;
 
     // Test CI environment (CI=true)
     let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;

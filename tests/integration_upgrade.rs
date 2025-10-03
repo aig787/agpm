@@ -159,7 +159,9 @@ async fn test_version_checker_caching() -> Result<()> {
     let cache_path = temp_dir.path().join(".ccpm").join(".version_cache");
 
     // Create cache directory
-    tokio::fs::create_dir_all(cache_path.parent().unwrap()).await?;
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
 
     // Set up environment to use temp directory
     unsafe {
@@ -326,7 +328,9 @@ async fn test_version_cache_expiry() -> Result<()> {
     let cache_path = temp_dir.path().join(".ccpm").join(".version_cache");
 
     // Create cache directory
-    tokio::fs::create_dir_all(cache_path.parent().unwrap()).await?;
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
 
     // Create expired cache manually
     let expired_cache = serde_json::json!({

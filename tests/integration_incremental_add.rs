@@ -5,17 +5,26 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use tokio::fs;
 
 /// Helper to create a test project with manifest and resource files
-fn setup_test_project() -> TempDir {
-    let temp_dir = TempDir::new().unwrap();
+async fn setup_test_project() -> Result<TempDir> {
+    let temp_dir = TempDir::new()?;
     let project_dir = temp_dir.path();
 
-    // Create manifest
-    let manifest_content = r#"[sources]
+    // Create a local source directory for resources
+    let resources_dir = temp_dir.path().join("local-resources");
+    fs::create_dir_all(&resources_dir).await?;
+    fs::create_dir_all(resources_dir.join("commands")).await?;
+    fs::create_dir_all(resources_dir.join("agents")).await?;
+    fs::create_dir_all(resources_dir.join("snippets")).await?;
+
+    // Create manifest with local source
+    let manifest_content = format!(
+        r#"[sources]
+local = "{}"
 
 [target]
 agents = ".claude/agents"
@@ -25,59 +34,65 @@ mcp-servers = ".claude/ccpm/mcp-servers"
 scripts = ".claude/ccpm/scripts"
 hooks = ".claude/ccpm/hooks"
 gitignore = true
-"#;
-    fs::write(project_dir.join("ccpm.toml"), manifest_content).unwrap();
+"#,
+        resources_dir.display()
+    );
+    fs::write(project_dir.join("ccpm.toml"), manifest_content).await?;
 
-    // Create command file with transitive dependencies
+    // Create command file with transitive dependencies in local source
     let command_content = r#"---
 title: Test Command
 description: A test command with dependencies
 dependencies:
   agents:
-    - path: test-agent.md
+    - path: agents/test-agent.md
   snippets:
-    - path: test-snippet.md
+    - path: snippets/test-snippet.md
 ---
 
 # Test Command
 
 This command depends on an agent and a snippet.
 "#;
-    fs::write(project_dir.join("test-command.md"), command_content).unwrap();
+    fs::write(
+        resources_dir.join("commands/test-command.md"),
+        command_content,
+    )
+    .await?;
 
-    // Create agent file with its own transitive dependency
+    // Create agent file with its own transitive dependency in local source
     let agent_content = r#"---
 title: Test Agent
 description: A test agent with dependencies
 dependencies:
   snippets:
-    - path: helper-snippet.md
+    - path: snippets/helper-snippet.md
 ---
 
 # Test Agent
 
 This agent depends on a helper snippet.
 "#;
-    fs::write(project_dir.join("test-agent.md"), agent_content).unwrap();
+    fs::write(resources_dir.join("agents/test-agent.md"), agent_content).await?;
 
-    // Create snippet files
+    // Create snippet files in local source
     fs::write(
-        project_dir.join("test-snippet.md"),
+        resources_dir.join("snippets/test-snippet.md"),
         "# Test Snippet\n\nA test snippet.",
     )
-    .unwrap();
+    .await?;
     fs::write(
-        project_dir.join("helper-snippet.md"),
+        resources_dir.join("snippets/helper-snippet.md"),
         "# Helper Snippet\n\nA helper snippet.",
     )
-    .unwrap();
+    .await?;
 
-    temp_dir
+    Ok(temp_dir)
 }
 
 /// Helper to read and parse lockfile dependencies for a resource
-fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str) -> Vec<String> {
-    let lockfile_content = fs::read_to_string(lockfile_path).unwrap();
+async fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str) -> Vec<String> {
+    let lockfile_content = fs::read_to_string(lockfile_path).await.unwrap();
     let lockfile: toml::Value = toml::from_str(&lockfile_content).unwrap();
 
     // Search in all resource type arrays
@@ -109,9 +124,9 @@ fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str) -> Ve
     Vec::new()
 }
 
-#[test]
-fn test_incremental_add_preserves_transitive_dependencies() {
-    let temp_dir = setup_test_project();
+#[tokio::test]
+async fn test_incremental_add_preserves_transitive_dependencies() {
+    let temp_dir = setup_test_project().await.unwrap();
     let project_dir = temp_dir.path();
     let lockfile_path = project_dir.join("ccpm.lock");
 
@@ -121,7 +136,7 @@ fn test_incremental_add_preserves_transitive_dependencies() {
         .arg("add")
         .arg("dep")
         .arg("command")
-        .arg("test-command.md")
+        .arg("local:commands/test-command.md")
         .arg("--name")
         .arg("test-command");
 
@@ -132,7 +147,7 @@ fn test_incremental_add_preserves_transitive_dependencies() {
     // Verify lockfile has transitive dependencies
     assert!(lockfile_path.exists(), "Lockfile should be created");
 
-    let command_deps = get_lockfile_dependencies(&lockfile_path, "test-command");
+    let command_deps = get_lockfile_dependencies(&lockfile_path, "test-command").await;
     assert!(
         !command_deps.is_empty(),
         "Command should have transitive dependencies after first add. Found: {:?}",
@@ -150,7 +165,7 @@ fn test_incremental_add_preserves_transitive_dependencies() {
         .arg("add")
         .arg("dep")
         .arg("agent")
-        .arg("test-agent.md")
+        .arg("local:agents/test-agent.md")
         .arg("--name")
         .arg("test-agent");
 
@@ -159,7 +174,7 @@ fn test_incremental_add_preserves_transitive_dependencies() {
         .stdout(predicate::str::contains("Added agent 'test-agent'"));
 
     // CRITICAL: Verify command still has its dependencies after agent becomes a base dep
-    let command_deps_after = get_lockfile_dependencies(&lockfile_path, "test-command");
+    let command_deps_after = get_lockfile_dependencies(&lockfile_path, "test-command").await;
     assert!(
         !command_deps_after.is_empty(),
         "Command dependencies should be preserved after adding agent as base dep! \
@@ -173,7 +188,7 @@ fn test_incremental_add_preserves_transitive_dependencies() {
     );
 
     // Verify agent also has its dependencies
-    let agent_deps = get_lockfile_dependencies(&lockfile_path, "test-agent");
+    let agent_deps = get_lockfile_dependencies(&lockfile_path, "test-agent").await;
     assert!(
         !agent_deps.is_empty(),
         "Agent should have its transitive dependencies. Found: {:?}",
@@ -186,9 +201,9 @@ fn test_incremental_add_preserves_transitive_dependencies() {
     );
 }
 
-#[test]
-fn test_incremental_add_chain_of_three_dependencies() {
-    let temp_dir = setup_test_project();
+#[tokio::test]
+async fn test_incremental_add_chain_of_three_dependencies() {
+    let temp_dir = setup_test_project().await.unwrap();
     let project_dir = temp_dir.path();
     let lockfile_path = project_dir.join("ccpm.lock");
 
@@ -198,13 +213,13 @@ fn test_incremental_add_chain_of_three_dependencies() {
         .arg("add")
         .arg("dep")
         .arg("command")
-        .arg("test-command.md")
+        .arg("local:commands/test-command.md")
         .arg("--name")
         .arg("test-command")
         .assert()
         .success();
 
-    let command_deps_step1 = get_lockfile_dependencies(&lockfile_path, "test-command");
+    let command_deps_step1 = get_lockfile_dependencies(&lockfile_path, "test-command").await;
     assert!(
         !command_deps_step1.is_empty(),
         "Command should have dependencies"
@@ -216,14 +231,14 @@ fn test_incremental_add_chain_of_three_dependencies() {
         .arg("add")
         .arg("dep")
         .arg("agent")
-        .arg("test-agent.md")
+        .arg("local:agents/test-agent.md")
         .arg("--name")
         .arg("test-agent")
         .assert()
         .success();
 
-    let command_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-command");
-    let agent_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-agent");
+    let command_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-command").await;
+    let agent_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-agent").await;
 
     assert!(
         !command_deps_step2.is_empty(),
@@ -240,15 +255,15 @@ fn test_incremental_add_chain_of_three_dependencies() {
         .arg("add")
         .arg("dep")
         .arg("snippet")
-        .arg("helper-snippet.md")
+        .arg("local:snippets/helper-snippet.md")
         .arg("--name")
         .arg("helper-snippet")
         .assert()
         .success();
 
     // Verify ALL dependency relationships are still intact
-    let command_deps_final = get_lockfile_dependencies(&lockfile_path, "test-command");
-    let agent_deps_final = get_lockfile_dependencies(&lockfile_path, "test-agent");
+    let command_deps_final = get_lockfile_dependencies(&lockfile_path, "test-command").await;
+    let agent_deps_final = get_lockfile_dependencies(&lockfile_path, "test-agent").await;
 
     assert!(
         !command_deps_final.is_empty(),
@@ -272,24 +287,36 @@ fn test_incremental_add_chain_of_three_dependencies() {
     );
 }
 
-#[test]
-fn test_incremental_add_with_shared_dependency() {
-    let temp_dir = setup_test_project();
+/// Ensure we have anyhow in scope
+#[allow(unused_imports)]
+use anyhow::Result;
+
+#[tokio::test]
+async fn test_incremental_add_with_shared_dependency() {
+    let temp_dir = setup_test_project().await.unwrap();
     let project_dir = temp_dir.path();
+
+    // Get the resources directory path to create second command there
+    let resources_dir = temp_dir.path().join("local-resources");
 
     // Create a second command that shares the test-snippet dependency
     let command2_content = r#"---
 title: Second Command
 dependencies:
   snippets:
-    - path: test-snippet.md
+    - path: snippets/test-snippet.md
 ---
 
 # Second Command
 
 This command also uses test-snippet.
 "#;
-    fs::write(project_dir.join("second-command.md"), command2_content).unwrap();
+    fs::write(
+        resources_dir.join("commands/second-command.md"),
+        command2_content,
+    )
+    .await
+    .unwrap();
 
     let lockfile_path = project_dir.join("ccpm.lock");
 
@@ -300,7 +327,7 @@ This command also uses test-snippet.
         .arg("add")
         .arg("dep")
         .arg("command")
-        .arg("test-command.md")
+        .arg("local:commands/test-command.md")
         .arg("--name")
         .arg("test-command")
         .assert()
@@ -313,15 +340,15 @@ This command also uses test-snippet.
         .arg("add")
         .arg("dep")
         .arg("command")
-        .arg("second-command.md")
+        .arg("local:commands/second-command.md")
         .arg("--name")
         .arg("second-command")
         .assert()
         .success();
 
     // Both commands should have their dependencies
-    let cmd1_deps = get_lockfile_dependencies(&lockfile_path, "test-command");
-    let cmd2_deps = get_lockfile_dependencies(&lockfile_path, "second-command");
+    let cmd1_deps = get_lockfile_dependencies(&lockfile_path, "test-command").await;
+    let cmd2_deps = get_lockfile_dependencies(&lockfile_path, "second-command").await;
 
     assert!(
         !cmd1_deps.is_empty(),
@@ -339,15 +366,15 @@ This command also uses test-snippet.
         .arg("add")
         .arg("dep")
         .arg("snippet")
-        .arg("test-snippet.md")
+        .arg("local:snippets/test-snippet.md")
         .arg("--name")
         .arg("test-snippet")
         .assert()
         .success();
 
     // Both commands should STILL have their dependencies
-    let cmd1_deps_after = get_lockfile_dependencies(&lockfile_path, "test-command");
-    let cmd2_deps_after = get_lockfile_dependencies(&lockfile_path, "second-command");
+    let cmd1_deps_after = get_lockfile_dependencies(&lockfile_path, "test-command").await;
+    let cmd2_deps_after = get_lockfile_dependencies(&lockfile_path, "second-command").await;
 
     assert!(
         cmd1_deps_after.iter().any(|d| d.contains("test-snippet")),

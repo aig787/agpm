@@ -1,5 +1,5 @@
 use predicates::prelude::*;
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -7,18 +7,24 @@ use common::TestProject;
 use fixtures::ManifestFixture;
 
 /// Helper to add mock sources for tests
-fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(String, String)> {
+async fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(String, String)> {
     // Add official source with my-agent and utils
-    let official_repo = project.create_source_repo("official")?;
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent")?;
-    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet")?;
+    let official_repo = project.create_source_repo("official").await?;
+    official_repo
+        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await?;
+    official_repo
+        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await?;
     official_repo.commit_all("Initial commit")?;
     official_repo.tag_version("v1.0.0")?;
     let official_url = official_repo.bare_file_url(project.sources_path())?;
 
     // Add community source with helper
-    let community_repo = project.create_source_repo("community")?;
-    community_repo.add_resource("agents", "helper", "# Helper Agent\n\nA test agent")?;
+    let community_repo = project.create_source_repo("community").await?;
+    community_repo
+        .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await?;
     community_repo.commit_all("Initial commit")?;
     community_repo.tag_version("v1.0.0")?;
     let community_url = community_repo.bare_file_url(project.sources_path())?;
@@ -27,12 +33,12 @@ fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(String, S
 }
 
 /// Test updating all dependencies
-#[test]
-fn test_update_all_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_update_all_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories with newer versions
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -49,7 +55,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
     let lockfile_content = format!(
@@ -101,6 +107,7 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
@@ -116,15 +123,15 @@ installed_at = "snippets/utils.md"
     let lockfile_path = project.project_path().join("ccpm.lock");
     assert!(lockfile_path.exists());
 
-    let lockfile_content = fs::read_to_string(&lockfile_path).unwrap();
+    let lockfile_content = fs::read_to_string(&lockfile_path).await.unwrap();
     assert!(lockfile_content.contains("version = 1"));
 }
 
 /// Test updating specific dependency
-#[test]
-fn test_update_specific_dependency() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_specific_dependency() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -141,7 +148,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
     let lockfile_content = format!(
@@ -193,6 +200,7 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update", "my-agent"]).unwrap();
@@ -200,14 +208,16 @@ installed_at = "snippets/utils.md"
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
     // Verify only the specified dependency was updated
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
+    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+        .await
+        .unwrap();
     assert!(lockfile_content.contains("my-agent"));
 }
 
 /// Test update without manifest
-#[test]
-fn test_update_without_manifest() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_update_without_manifest() {
+    let project = TestProject::new().await.unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
     assert!(!output.success);
@@ -215,10 +225,10 @@ fn test_update_without_manifest() {
 }
 
 /// Test update without lockfile (should perform fresh install)
-#[test]
-fn test_update_without_lockfile() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_without_lockfile() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -235,7 +245,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
     assert!(output.success);
@@ -247,14 +257,15 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test update with --check flag (dry run)
-#[test]
-fn test_update_check_mode() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_update_check_mode() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -270,7 +281,7 @@ official = "{official_url}"
 my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create outdated lockfile with file URLs
     let lockfile_content = format!(
@@ -298,6 +309,7 @@ installed_at = "agents/my-agent.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update", "--check"]).unwrap();
@@ -312,10 +324,10 @@ installed_at = "agents/my-agent.md"
 }
 
 /// Test update with version constraints
-#[test]
-fn test_update_with_version_constraints() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_with_version_constraints() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -332,7 +344,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
     let lockfile_content = format!(
@@ -384,23 +396,26 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
+    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+        .await
+        .unwrap();
     assert!(lockfile_content.contains("my-agent"));
     assert!(lockfile_content.contains("helper"));
     assert!(lockfile_content.contains("utils"));
 }
 
 /// Test update with --force flag to ignore constraints
-#[test]
-fn test_update_force_ignore_constraints() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_force_ignore_constraints() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -417,7 +432,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update", "--force"]).unwrap();
     assert!(output.success);
@@ -429,10 +444,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test update with backup/rollback capability
-#[test]
-fn test_update_with_backup() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_with_backup() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -449,7 +464,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update", "--backup"]).unwrap();
     assert!(output.success);
@@ -459,10 +474,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test update with verbose output
-#[test]
-fn test_update_verbose() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_verbose() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -479,7 +494,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update", "--verbose"]).unwrap();
     assert!(output.success);
@@ -491,10 +506,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test update with quiet output
-#[test]
-fn test_update_quiet() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_quiet() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -511,7 +526,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update", "--quiet"]).unwrap();
     assert!(output.success);
@@ -519,10 +534,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test update with dry-run mode
-#[test]
-fn test_update_dry_run() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_dry_run() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -539,7 +554,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create initial lockfile
     let lockfile_content = format!(
@@ -591,10 +606,13 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     // Store original lockfile content
-    let original_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
+    let original_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["update", "--dry-run"]).unwrap();
     assert!(output.success);
@@ -602,14 +620,16 @@ installed_at = "snippets/utils.md"
     // assert!(output.stdout.contains("Would update") || output.stdout.contains("(dry run)"));
 
     // Verify lockfile wasn't actually modified
-    let current_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
+    let current_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
+        .await
+        .unwrap();
     assert_eq!(original_lockfile, current_lockfile);
 }
 
 /// Test update with network failure simulation
-#[test]
-fn test_update_network_failure() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_update_network_failure() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with non-existent file:// URLs to simulate network failure
     // Note: file:// URLs must use forward slashes even on Windows
@@ -633,7 +653,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#,
         sources_path, sources_path
     );
-    project.write_manifest(manifest_content.trim()).unwrap();
+    project
+        .write_manifest(manifest_content.trim())
+        .await
+        .unwrap();
 
     // Create lockfile with non-existent URLs and matching resources
     let lockfile_content = format!(
@@ -686,6 +709,7 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
@@ -706,8 +730,8 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test update help command
-#[test]
-fn test_update_help() {
+#[tokio::test]
+async fn test_update_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
     cmd.arg("update")
         .arg("--help")
@@ -723,17 +747,18 @@ fn test_update_help() {
 }
 
 /// Test update with corrupted lockfile
-#[test]
-fn test_update_corrupted_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_update_corrupted_lockfile() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
     fs::write(
         project.project_path().join("ccpm.lock"),
         "corrupted lockfile content",
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
@@ -748,10 +773,10 @@ fn test_update_corrupted_lockfile() {
 }
 
 /// Test update with no updates available
-#[test]
-fn test_update_no_updates_available() {
-    let project = TestProject::new().unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).unwrap();
+#[tokio::test]
+async fn test_update_no_updates_available() {
+    let project = TestProject::new().await.unwrap();
+    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
     let manifest_content = format!(
@@ -768,7 +793,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
 "#
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["update"]).unwrap();
     assert!(output.success);

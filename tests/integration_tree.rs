@@ -2,10 +2,10 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
 use tempfile::TempDir;
+use tokio::fs;
 
-fn create_test_manifest(dir: &std::path::Path) {
+async fn create_test_manifest(dir: &std::path::Path) {
     let manifest_content = r#"
 [sources]
 community = "https://github.com/example/community.git"
@@ -18,10 +18,12 @@ local-agent = { path = "../local/agent.md" }
 utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0" }
 "#;
 
-    fs::write(dir.join("ccpm.toml"), manifest_content).unwrap();
+    fs::write(dir.join("ccpm.toml"), manifest_content)
+        .await
+        .unwrap();
 }
 
-fn create_test_lockfile(dir: &std::path::Path) {
+async fn create_test_lockfile(dir: &std::path::Path) {
     let lockfile_content = r#"
 version = 1
 
@@ -75,13 +77,15 @@ dependencies = []
 resource_type = "snippet"
 "#;
 
-    fs::write(dir.join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(dir.join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 }
 
-#[test]
-fn test_tree_no_lockfile() {
+#[tokio::test]
+async fn test_tree_no_lockfile() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
+    create_test_manifest(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
@@ -92,11 +96,11 @@ fn test_tree_no_lockfile() {
         .stdout(predicate::str::contains("ccpm install"));
 }
 
-#[test]
-fn test_tree_basic() {
+#[tokio::test]
+async fn test_tree_basic() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
@@ -109,11 +113,11 @@ fn test_tree_basic() {
         .stdout(predicate::str::contains("local-agent"));
 }
 
-#[test]
-fn test_tree_with_depth() {
+#[tokio::test]
+async fn test_tree_with_depth() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -124,11 +128,11 @@ fn test_tree_with_depth() {
     cmd.assert().success();
 }
 
-#[test]
-fn test_tree_json_format() {
+#[tokio::test]
+async fn test_tree_json_format() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -142,11 +146,11 @@ fn test_tree_json_format() {
         .stdout(predicate::str::contains(r#""roots":"#));
 }
 
-#[test]
-fn test_tree_text_format() {
+#[tokio::test]
+async fn test_tree_text_format() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -160,11 +164,11 @@ fn test_tree_text_format() {
         .stdout(predicate::str::contains("agent/"));
 }
 
-#[test]
-fn test_tree_invalid_format() {
+#[tokio::test]
+async fn test_tree_invalid_format() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -177,11 +181,11 @@ fn test_tree_invalid_format() {
         .stderr(predicate::str::contains("Invalid format"));
 }
 
-#[test]
-fn test_tree_zero_depth() {
+#[tokio::test]
+async fn test_tree_zero_depth() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -194,11 +198,11 @@ fn test_tree_zero_depth() {
         .stderr(predicate::str::contains("must be at least 1"));
 }
 
-#[test]
-fn test_tree_filter_agents() {
+#[tokio::test]
+async fn test_tree_filter_agents() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--agents");
@@ -209,11 +213,11 @@ fn test_tree_filter_agents() {
         .stdout(predicate::str::contains("code-reviewer"));
 }
 
-#[test]
-fn test_tree_filter_snippets() {
+#[tokio::test]
+async fn test_tree_filter_snippets() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--snippets");
@@ -224,11 +228,11 @@ fn test_tree_filter_snippets() {
         .stdout(predicate::str::contains("utils"));
 }
 
-#[test]
-fn test_tree_specific_package() {
+#[tokio::test]
+async fn test_tree_specific_package() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -241,11 +245,11 @@ fn test_tree_specific_package() {
         .stdout(predicate::str::contains("code-reviewer"));
 }
 
-#[test]
-fn test_tree_package_not_found() {
+#[tokio::test]
+async fn test_tree_package_not_found() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path())
@@ -258,11 +262,11 @@ fn test_tree_package_not_found() {
         .stderr(predicate::str::contains("not found"));
 }
 
-#[test]
-fn test_tree_with_transitive_deps() {
+#[tokio::test]
+async fn test_tree_with_transitive_deps() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
@@ -275,8 +279,8 @@ fn test_tree_with_transitive_deps() {
         .stdout(predicate::str::contains("utils"));
 }
 
-#[test]
-fn test_tree_no_manifest() {
+#[tokio::test]
+async fn test_tree_no_manifest() {
     let temp = TempDir::new().unwrap();
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
@@ -287,11 +291,11 @@ fn test_tree_no_manifest() {
     ));
 }
 
-#[test]
-fn test_tree_with_duplicates_flag() {
+#[tokio::test]
+async fn test_tree_with_duplicates_flag() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--duplicates");
@@ -299,11 +303,11 @@ fn test_tree_with_duplicates_flag() {
     cmd.assert().success();
 }
 
-#[test]
-fn test_tree_no_dedupe() {
+#[tokio::test]
+async fn test_tree_no_dedupe() {
     let temp = TempDir::new().unwrap();
-    create_test_manifest(temp.path());
-    create_test_lockfile(temp.path());
+    create_test_manifest(temp.path()).await;
+    create_test_lockfile(temp.path()).await;
 
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--no-dedupe");
