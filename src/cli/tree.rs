@@ -592,10 +592,11 @@ impl<'a> TreeBuilder<'a> {
                 }
             }
 
-            // Sort roots by resource type, then by name
+            // Sort roots by resource type alphabetically, then by name
             roots.sort_by(|a, b| {
                 a.resource_type
-                    .cmp(&b.resource_type)
+                    .to_string()
+                    .cmp(&b.resource_type.to_string())
                     .then_with(|| a.name.cmp(&b.name))
             });
         }
