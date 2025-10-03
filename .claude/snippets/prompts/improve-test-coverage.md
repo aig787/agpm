@@ -39,25 +39,25 @@ cargo test --all
 
 **IMPORTANT Coverage Measurement Notes:**
 
-- Use `cargo tarpaulin` WITHOUT `--lib` flag to include integration tests for better overall coverage
-- Integration tests DO contribute to coverage when run with tarpaulin (they test the library code)
+- `cargo llvm-cov` includes all tests (integration and unit) by default for comprehensive coverage
+- Integration tests DO contribute to coverage (they test the library code)
 - Test utilities themselves (test_utils module) should be excluded from coverage metrics
-- **CRITICAL: `cargo tarpaulin` is expensive to run (takes ~3 minutes)** - save outputs to tmp files and refer back to them
+- **CRITICAL: `cargo llvm-cov` is expensive to run (takes ~3 minutes)** - save outputs to tmp files and refer back to them
 
 ```bash
 # Save baseline coverage output to a tmp file for reference (avoid re-running)
-cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_baseline.txt
+cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/ccpm_coverage_baseline.txt
 
 # Check current coverage percentage quickly from saved file
 tail -5 /tmp/ccpm_coverage_baseline.txt
 
 # Generate HTML coverage report only when needed for detailed analysis
-cargo tarpaulin --out html --exclude-files "*/test_utils/*" --output-dir target/coverage
+cargo llvm-cov --ignore-filename-regex "test_utils" --html --output-dir target/coverage
 
 # View the HTML report (optional, for detailed analysis)
-open target/coverage/tarpaulin-report.html  # macOS
-# xdg-open target/coverage/tarpaulin-report.html  # Linux
-# start target/coverage/tarpaulin-report.html  # Windows
+open target/coverage/html/index.html  # macOS
+# xdg-open target/coverage/html/index.html  # Linux
+# start target/coverage/html/index.html  # Windows
 
 # Or use the Makefile (if available)
 make coverage
@@ -350,11 +350,11 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 1. **Measure Current State**
    ```bash
    # IMPORTANT: Save coverage output to avoid expensive re-runs
-   cargo tarpaulin --lib --out Stdout | tee /tmp/ccpm_coverage_current.txt
-   
+   cargo llvm-cov --text | tee /tmp/ccpm_coverage_current.txt
+
    # Check specific module coverage from saved output
    grep "src/module_name" /tmp/ccpm_coverage_current.txt
-   
+
    # Or reference previous runs
    cat /tmp/ccpm_coverage_*.txt | tail -1 | grep "src/module_name"
    ```
@@ -384,14 +384,14 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 5. **Measure Improvement**
    ```bash
    # Save new coverage measurement
-   cargo tarpaulin --lib --out Stdout | tee /tmp/ccpm_coverage_after_$(date +%Y%m%d_%H%M%S).txt
-   
+   cargo llvm-cov --text | tee /tmp/ccpm_coverage_after_$(date +%Y%m%d_%H%M%S).txt
+
    # Compare with previous baseline
    echo "=== Before ===" && grep "src/module_name" /tmp/ccpm_coverage_current.txt
    echo "=== After ===" && grep "src/module_name" /tmp/ccpm_coverage_after_*.txt | tail -1
-   
+
    # Generate HTML report only when needed for detailed analysis
-   # cargo tarpaulin --out html --output-dir target/coverage
+   # cargo llvm-cov --html --output-dir target/coverage
    ```
 
 6. **Commit Progress**
@@ -457,13 +457,13 @@ Track coverage improvements efficiently:
 
 ```bash
 # Save coverage runs with descriptive names
-cargo tarpaulin --lib --ignore-tests --out Stdout | tee /tmp/ccpm_coverage_no_tests.txt
+cargo llvm-cov --text --no-run | tee /tmp/ccpm_coverage_no_tests.txt
 
 # Focus on specific modules (save output)
-cargo tarpaulin --lib --out Stdout -- module_name:: | tee /tmp/ccpm_coverage_module_$(date +%Y%m%d).txt
+cargo llvm-cov --text -- module_name:: | tee /tmp/ccpm_coverage_module_$(date +%Y%m%d).txt
 
 # Skip problematic tests temporarily (save output)
-cargo tarpaulin --lib --skip 'test_name_pattern' | tee /tmp/ccpm_coverage_skip_problematic.txt
+cargo llvm-cov --text -- --skip 'test_name_pattern' | tee /tmp/ccpm_coverage_skip_problematic.txt
 
 # Compare coverage over time
 ls -la /tmp/ccpm_coverage_*.txt
@@ -511,7 +511,7 @@ Based on module importance:
 
 4. **Coverage Calculation**: Coverage percentage = (covered_lines / total_lines) × 100. Each line covered adds roughly 0.02% to a 5000-line codebase.
 
-5. **Integration vs Unit Tests**: Both contribute to coverage when using tarpaulin. Integration tests often provide broader coverage per test.
+5. **Integration vs Unit Tests**: Both contribute to coverage when using llvm-cov. Integration tests often provide broader coverage per test.
 
 ## Quick Commands Reference
 
@@ -520,13 +520,13 @@ Based on module importance:
 cargo test --all
 
 # Generate and save coverage report (EXPENSIVE - save output!)
-cargo tarpaulin --out Stdout --exclude-files "*/test_utils/*" | tee /tmp/ccpm_coverage_baseline.txt
+cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/ccpm_coverage_baseline.txt
 
 # Generate HTML report only when needed for detailed analysis
-cargo tarpaulin --out html --output-dir target/coverage
+cargo llvm-cov --ignore-filename-regex "test_utils" --html --output-dir target/coverage
 
 # Run coverage for specific module (save output)
-cargo tarpaulin --lib --out Stdout -- module_name:: | tee /tmp/ccpm_coverage_module.txt
+cargo llvm-cov --text -- module_name:: | tee /tmp/ccpm_coverage_module.txt
 
 # View saved coverage reports
 ls -la /tmp/ccpm_coverage_*.txt
@@ -542,7 +542,7 @@ cargo test -- --nocapture
 cargo test test_name -- --exact
 
 # Check coverage without running tests (save output)
-cargo tarpaulin --lib --ignore-tests --out Stdout | tee /tmp/ccpm_coverage_no_tests.txt
+cargo llvm-cov --text --no-run | tee /tmp/ccpm_coverage_no_tests.txt
 
 # Compare coverage between runs
 diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1

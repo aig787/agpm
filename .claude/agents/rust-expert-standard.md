@@ -245,9 +245,9 @@ cargo outdated              # Check for outdated dependencies
 cargo expand                # Expand macros
 cargo asm                   # Show assembly output
 
-# Coverage (with tarpaulin)
-cargo tarpaulin             # Generate coverage report
-cargo tarpaulin --out html  # Generate HTML coverage report
+# Coverage (with llvm-cov)
+cargo llvm-cov              # Generate coverage report
+cargo llvm-cov --html       # Generate HTML coverage report
 ```
 
 ## Resources to Reference

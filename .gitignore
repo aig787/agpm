@@ -28,7 +28,7 @@ Thumbs.db
 # Coverage
 *.profraw
 *.profdata
-tarpaulin-report.html
+lcov.info
 cobertura.xml
 **/mutants.out*/
 **/mutants.out.old*/

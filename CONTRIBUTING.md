@@ -84,8 +84,8 @@ When creating an issue:
    # Install cargo-nextest for faster parallel test execution
    cargo install cargo-nextest --locked
 
-   # Install cargo-tarpaulin for coverage (optional)
-   cargo install cargo-tarpaulin
+   # Install cargo-llvm-cov for coverage (optional)
+   cargo install cargo-llvm-cov
 
    # Install additional development tools
    cargo install cargo-edit  # For managing dependencies
@@ -153,7 +153,7 @@ When creating an issue:
    cargo nextest run installer
 
    # Run tests with coverage (optional)
-   cargo tarpaulin --out html --timeout 300
+   cargo llvm-cov --html
 
    # Test on different parallelism levels
    CCPM_MAX_PARALLEL=1 cargo nextest run
