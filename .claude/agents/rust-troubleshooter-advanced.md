@@ -240,7 +240,7 @@ cargo test --all-features
 cargo test --no-default-features
 cargo doc --no-deps
 cargo audit
-cargo tarpaulin --out Html
+cargo llvm-cov --html
 
 # Platform verification
 cargo test --target x86_64-pc-windows-msvc

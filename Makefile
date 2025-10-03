@@ -44,11 +44,14 @@ lint:
 # Run all checks (fmt, clippy, test)
 check: fmt-check lint test
 
-# Run tests with coverage (requires cargo-tarpaulin)
+# Run tests with coverage (requires cargo-llvm-cov)
 coverage:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
-	@command -v cargo-tarpaulin >/dev/null 2>&1 || { echo "Installing cargo-tarpaulin..."; cargo binstall cargo-tarpaulin --secure; }
-	cargo tarpaulin --exclude-files "*/test_utils/*" --out html --output-dir target/coverage
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "Installing cargo-llvm-cov..."; cargo binstall cargo-llvm-cov --secure; }
+	cargo llvm-cov --ignore-filename-regex "test_utils" --html --output-dir target/coverage
+	@echo ""
+	@echo "Coverage report generated at: target/coverage/html/index.html"
+	@cargo llvm-cov --ignore-filename-regex "test_utils" --summary-only
 
 # Install the binary locally
 install:

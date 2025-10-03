@@ -2250,7 +2250,7 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        // Use the absolute path directly for better compatibility with tarpaulin
+        // Use the absolute path directly for better compatibility with coverage tools
         let source_url = source_dir.display().to_string();
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
@@ -2376,7 +2376,7 @@ mod tests {
             .unwrap();
 
         let mut manifest = Manifest::new();
-        // Use the absolute path directly for better compatibility with tarpaulin
+        // Use the absolute path directly for better compatibility with coverage tools
         let source_url = source_dir.display().to_string();
         manifest.add_source("test".to_string(), source_url);
         manifest.add_dependency(
