@@ -270,9 +270,25 @@ impl VersionConstraint {
             }
         }
 
-        // Try to parse as version requirement
-        if let Ok(req) = VersionReq::parse(trimmed) {
-            return Ok(Self::Requirement(req));
+        // Try to parse as version requirement (with v-prefix normalization)
+        match crate::version::parse_version_req(trimmed) {
+            Ok(req) => return Ok(Self::Requirement(req)),
+            Err(e) => {
+                // If it looks like a semver constraint but failed to parse, return error
+                if trimmed.starts_with('^')
+                    || trimmed.starts_with('~')
+                    || trimmed.starts_with('=')
+                    || trimmed.starts_with('>')
+                    || trimmed.starts_with('<')
+                {
+                    return Err(anyhow::anyhow!(
+                        "Invalid semver constraint '{}': {}",
+                        trimmed,
+                        e
+                    ));
+                }
+                // Otherwise it might be a git ref, continue
+            }
         }
 
         // Otherwise treat as git ref
