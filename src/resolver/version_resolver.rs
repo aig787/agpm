@@ -254,7 +254,10 @@ impl VersionResolver {
                         // Find best matching tag
                         crate::resolver::version_resolution::find_best_matching_tag(version, tags)
                             .with_context(|| {
-                            format!("Failed to resolve version constraint '{}'", version)
+                            format!(
+                                "Failed to resolve version constraint '{}' for source '{}'",
+                                version, source
+                            )
                         })?
                     } else {
                         // Not a constraint, use as-is
