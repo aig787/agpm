@@ -293,8 +293,9 @@ experimental = {{ source = "versioned", path = "agents/experimental.md", branch 
     output.assert_success();
 
     // Check we got develop branch content
+    // Files use basename from path, not dependency name
     let example_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/dev-example.md")).unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).unwrap();
     assert!(example_content.contains("Development"));
     assert!(example_content.contains("Unstable"));
 
@@ -365,8 +366,9 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
     output.assert_success();
 
     // Should get exact v1.0.0 content
+    // Files use basename from path, not dependency name
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/pinned.md")).unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(installed.contains("Initial version"));
 }
@@ -396,8 +398,9 @@ any = {{ source = "versioned", path = "agents/example.md", version = "*" }}
     output.assert_success();
 
     // Should get v2.0.0 (highest available)
+    // Files use basename from path, not dependency name
     let installed =
-        fs::read_to_string(project.project_path().join(".claude/agents/any.md")).unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -427,24 +430,19 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
     project.write_manifest(&manifest).unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
-    output.assert_success();
+    // Should fail due to path conflict - all dependencies resolve to same path
+    assert!(
+        !output.success,
+        "Expected install to fail due to path conflicts"
+    );
 
-    // Check each installed file has the expected content
-    let stable =
-        fs::read_to_string(project.project_path().join(".claude/agents/stable.md")).unwrap();
-    assert!(stable.contains("v1.1.0"));
-
-    let compatible =
-        fs::read_to_string(project.project_path().join(".claude/agents/compatible.md")).unwrap();
-    assert!(compatible.contains("v1.2.0")); // Should get highest 1.x
-
-    let develop =
-        fs::read_to_string(project.project_path().join(".claude/agents/develop.md")).unwrap();
-    assert!(develop.contains("Development"));
-
-    let pinned =
-        fs::read_to_string(project.project_path().join(".claude/agents/pinned.md")).unwrap();
-    assert!(pinned.contains("v1.0.0"));
+    // Verify error message mentions the conflict
+    assert!(output.stderr.contains("Target path conflicts detected"));
+    assert!(output.stderr.contains(".claude/agents/example.md"));
+    assert!(output.stderr.contains("stable"));
+    assert!(output.stderr.contains("compatible"));
+    assert!(output.stderr.contains("develop"));
+    assert!(output.stderr.contains("pinned"));
 }
 
 #[test]
@@ -563,7 +561,8 @@ dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
     output.assert_success();
 
     // Check we got the updated content
-    let file_path = project.project_path().join(".claude/agents/dev.md");
+    // Files use basename from path, not dependency name
+    let file_path = project.project_path().join(".claude/agents/example.md");
     let updated = fs::read_to_string(&file_path).unwrap_or_else(|e| {
         panic!("Failed to read file {file_path:?}: {e}");
     });
@@ -600,22 +599,18 @@ committed = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
     project.write_manifest(&manifest).unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
-    output.assert_success();
+    // Should fail due to path conflict - all dependencies resolve to same path
+    assert!(
+        !output.success,
+        "Expected install to fail due to path conflicts"
+    );
 
-    // Check lockfile contains correct version info
-    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
-
-    // Tagged dependency should show version
-    assert!(lockfile.contains("name = \"tagged\""));
-    assert!(lockfile.contains("version = \"v1.1.0\""));
-
-    // Branch dependency should show git field
-    assert!(lockfile.contains("name = \"branched\""));
-    // The lockfile will show the git field for branch
-
-    // Commit dependency should show git field
-    assert!(lockfile.contains("name = \"committed\""));
-    // The lockfile will show the git field for commit hash
+    // Verify error message mentions the conflict
+    assert!(output.stderr.contains("Target path conflicts detected"));
+    assert!(output.stderr.contains(".claude/agents/example.md"));
+    assert!(output.stderr.contains("tagged"));
+    assert!(output.stderr.contains("branched"));
+    assert!(output.stderr.contains("committed"));
 }
 
 #[test]
@@ -714,4 +709,101 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
         fs::read_to_string(project.project_path().join(".claude/agents/example.md")).unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
+}
+
+/// Test that path collision detection works correctly for different scenarios
+#[test]
+fn test_path_collision_detection() {
+    test_config::init_test_env();
+    let project = TestProject::new().unwrap();
+    let temp_source = TempDir::new().unwrap();
+    let source_path = temp_source.path().to_path_buf();
+
+    setup_git_repo_with_versions(&source_path).unwrap();
+
+    // Test 1: Two dependencies pointing to same path should fail
+    let manifest = format!(
+        r#"[sources]
+versioned = "file://{}"
+
+[agents]
+version-one = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0" }}
+version-two = {{ source = "versioned", path = "agents/example.md", version = "v2.0.0" }}
+"#,
+        source_path.display().to_string().replace('\\', "/")
+    );
+    project.write_manifest(&manifest).unwrap();
+
+    let output = project.run_ccpm(&["install"]).unwrap();
+    assert!(!output.success, "Expected collision for same path");
+    assert!(output.stderr.contains("Target path conflicts"));
+    assert!(output.stderr.contains("version-one"));
+    assert!(output.stderr.contains("version-two"));
+    assert!(output.stderr.contains(".claude/agents/example.md"));
+
+    // Test 2: Custom targets should allow same source path
+    // Clean up from previous test
+    let claude_dir = project.project_path().join(".claude");
+    if claude_dir.exists() {
+        fs::remove_dir_all(&claude_dir).unwrap();
+    }
+    let lock_file = project.project_path().join("ccpm.lock");
+    if lock_file.exists() {
+        fs::remove_file(&lock_file).unwrap();
+    }
+
+    let manifest = format!(
+        r#"[sources]
+versioned = "file://{}"
+
+[agents]
+version-one = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0", target = "v1" }}
+version-two = {{ source = "versioned", path = "agents/example.md", version = "v2.0.0", target = "v2" }}
+"#,
+        source_path.display().to_string().replace('\\', "/")
+    );
+    project.write_manifest(&manifest).unwrap();
+
+    let output = project.run_ccpm(&["install"]).unwrap();
+    output.assert_success();
+
+    // Verify both files are installed with the basename from the path
+    // Custom target "v1" becomes ".claude/agents/v1/example.md"
+    let v1_path = project.project_path().join(".claude/agents/v1/example.md");
+    let v2_path = project.project_path().join(".claude/agents/v2/example.md");
+
+    let v1 = fs::read_to_string(&v1_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", v1_path.display(), e));
+    let v2 = fs::read_to_string(&v2_path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", v2_path.display(), e));
+    assert!(v1.contains("v1.0.0"));
+    assert!(v2.contains("v2.0.0"));
+
+    // Test 3: Different resource types shouldn't conflict
+    // Clean up from previous test
+    let claude_dir = project.project_path().join(".claude");
+    if claude_dir.exists() {
+        fs::remove_dir_all(&claude_dir).unwrap();
+    }
+    let lock_file = project.project_path().join("ccpm.lock");
+    if lock_file.exists() {
+        fs::remove_file(&lock_file).unwrap();
+    }
+
+    let manifest = format!(
+        r#"[sources]
+versioned = "file://{}"
+
+[agents]
+agent-one = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0" }}
+
+[snippets]
+snippet-one = {{ source = "versioned", path = "snippets/utils.md", version = "v1.0.0" }}
+"#,
+        source_path.display().to_string().replace('\\', "/")
+    );
+    project.write_manifest(&manifest).unwrap();
+
+    let output = project.run_ccpm(&["install"]).unwrap();
+    output.assert_success();
 }

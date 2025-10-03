@@ -94,12 +94,9 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
         .success();
 
     // Verify the installed file is from v2.0.0
-    let installed_content = fs::read_to_string(
-        project_dir
-            .join(".claude")
-            .join("agents")
-            .join("test-agent.md"),
-    )?;
+    // Files use basename from path, not dependency name
+    let installed_content =
+        fs::read_to_string(project_dir.join(".claude").join("agents").join("test.md"))?;
     assert!(
         installed_content.contains("v2"),
         "Installed file should be from v2.0.0"
@@ -188,12 +185,9 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
         .success();
 
     // Verify v1 is installed
-    let installed_content = fs::read_to_string(
-        project_dir
-            .join(".claude")
-            .join("agents")
-            .join("test-agent.md"),
-    )?;
+    // Files use basename from path, not dependency name
+    let installed_content =
+        fs::read_to_string(project_dir.join(".claude").join("agents").join("test.md"))?;
     assert!(installed_content.contains("v1"), "Should have v1 installed");
 
     // Now add a new version in the source repo
@@ -230,12 +224,9 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
         .success();
 
     // Verify v2 is now installed
-    let installed_content_v2 = fs::read_to_string(
-        project_dir
-            .join(".claude")
-            .join("agents")
-            .join("test-agent.md"),
-    )?;
+    // Files use basename from path, not dependency name
+    let installed_content_v2 =
+        fs::read_to_string(project_dir.join(".claude").join("agents").join("test.md"))?;
     assert!(
         installed_content_v2.contains("v2"),
         "Should have v2 installed after update"
@@ -317,12 +308,9 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
         .success();
 
     // Verify the installed file is from the committed v1.0.0, not the uncommitted changes
-    let installed_content = fs::read_to_string(
-        project_dir
-            .join(".claude")
-            .join("agents")
-            .join("test-agent.md"),
-    )?;
+    // Files use basename from path, not dependency name
+    let installed_content =
+        fs::read_to_string(project_dir.join(".claude").join("agents").join("test.md"))?;
     assert!(
         installed_content.contains("v1"),
         "Should install committed v1, not uncommitted changes"

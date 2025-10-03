@@ -55,11 +55,12 @@ official = "{}"
     assert!(output.success);
 
     // Verify all agents installed correctly despite high parallelism
+    // Files use basename from path, not dependency name
     for i in 0..10 {
         assert!(
             project
                 .project_path()
-                .join(format!(".claude/agents/agent{:02}.md", i))
+                .join(format!(".claude/agents/extreme-agent-{:02}.md", i))
                 .exists()
         );
     }
@@ -131,22 +132,23 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
     );
 
     // Verify final state
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent1.md")
+            .join(".claude/agents/rapid-agent-1.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent2.md")
+            .join(".claude/agents/rapid-agent-2.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet.md")
+            .join(".claude/ccpm/snippets/rapid-snippet.md")
             .exists()
     );
 
@@ -208,11 +210,12 @@ official = "{}"
         println!("Parallelism level {}: {:?}", level, duration);
 
         // Verify installation
+        // Files use basename from path, not dependency name
         for i in 0..8 {
             assert!(
                 project
                     .project_path()
-                    .join(format!(".claude/agents/agent{:02}.md", i))
+                    .join(format!(".claude/agents/mixed-agent-{:02}.md", i))
                     .exists()
             );
         }
@@ -277,11 +280,12 @@ official = "{}"
     );
 
     // Verify all installations
+    // Files use basename from path, not dependency name
     for i in 0..15 {
         assert!(
             project
                 .project_path()
-                .join(format!(".claude/agents/agent{:02}.md", i))
+                .join(format!(".claude/agents/contention-agent-{:02}.md", i))
                 .exists()
         );
     }
@@ -341,10 +345,11 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
         );
 
         // Verify installation regardless of parallelism setting
+        // Files use basename from path, not dependency name
         assert!(
             project
                 .project_path()
-                .join(".claude/agents/agent1.md")
+                .join(".claude/agents/limit-agent-1.md")
                 .exists(),
             "Failed with {}: {}",
             max_parallel,
@@ -353,7 +358,7 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
         assert!(
             project
                 .project_path()
-                .join(".claude/agents/agent2.md")
+                .join(".claude/agents/limit-agent-2.md")
                 .exists(),
             "Failed with {}: {}",
             max_parallel,

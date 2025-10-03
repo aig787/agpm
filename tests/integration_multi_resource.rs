@@ -121,86 +121,84 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     // Verify all 20 resources are installed with correct versions
 
     // Check agents (4 resources)
+    // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/agents/agent-alpha.md"),
+        &project.project_path().join(".claude/agents/alpha.md"),
         "Agent Alpha v1.0.0",
     )?;
     verify_file_contains(
-        &project.project_path().join(".claude/agents/agent-beta.md"),
+        &project.project_path().join(".claude/agents/beta.md"),
         "Agent Beta v2.0.0",
     )?;
     verify_file_contains(
-        &project.project_path().join(".claude/agents/agent-gamma.md"),
+        &project.project_path().join(".claude/agents/gamma.md"),
         "Agent Gamma v4.0.0",
     )?; // v4.0.0
     verify_file_contains(
-        &project.project_path().join(".claude/agents/agent-delta.md"),
+        &project.project_path().join(".claude/agents/delta.md"),
         "Agent Delta v3.1.0",
     )?;
 
     // Check snippets (4 resources)
+    // Files use basename from path, not dependency name
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet-one.md"),
+            .join(".claude/ccpm/snippets/snippet1.md"),
         "Snippet 1 v1.0.0",
     )?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet-two.md"),
+            .join(".claude/ccpm/snippets/snippet2.md"),
         "Snippet 2 v1.1.0",
     )?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet-three.md"),
+            .join(".claude/ccpm/snippets/snippet3.md"),
         "Snippet 3 v3.0.0",
     )?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet-four.md"),
+            .join(".claude/ccpm/snippets/snippet4.md"),
         "Snippet 4 v4.0.0",
     )?;
 
     // Check commands (4 resources)
+    // Files use basename from path, not dependency name
     verify_file_contains(
-        &project
-            .project_path()
-            .join(".claude/commands/deploy-cmd.md"),
+        &project.project_path().join(".claude/commands/deploy.md"),
         "Deploy Command v2.1.0",
     )?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/build-cmd.md"),
+        &project.project_path().join(".claude/commands/build.md"),
         "Build Command v3.2.0",
     )?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/test-cmd.md"),
+        &project.project_path().join(".claude/commands/test.md"),
         "Test Command v3.2.0",
     )?;
     verify_file_contains(
-        &project.project_path().join(".claude/commands/lint-cmd.md"),
+        &project.project_path().join(".claude/commands/lint.md"),
         "Lint Command v4.0.0",
     )?;
 
     // Check scripts (3 resources)
+    // Files use basename from path, not dependency name
     verify_file_contains(
-        &project
-            .project_path()
-            .join(".claude/ccpm/scripts/build-script.sh"),
+        &project.project_path().join(".claude/ccpm/scripts/build.sh"),
         "Build Script v1.2.0",
     )?;
     verify_file_contains(
-        &project
-            .project_path()
-            .join(".claude/ccpm/scripts/test-script.js"),
+        &project.project_path().join(".claude/ccpm/scripts/test.js"),
         "Test Script v2.2.0",
     )?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/scripts/deploy-script.py"),
+            .join(".claude/ccpm/scripts/deploy.py"),
         "Deploy Script v3.0.0",
     )?;
 
@@ -597,30 +595,25 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
     output.assert_success();
 
     // Verify both are installed with their specified versions
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet-base.md")
+            .join(".claude/ccpm/snippets/base.md")
             .exists()
     );
-    let snippet_content = fs::read_to_string(
-        project
-            .project_path()
-            .join(".claude/ccpm/snippets/snippet-base.md"),
-    )?;
+    let snippet_content =
+        fs::read_to_string(project.project_path().join(".claude/ccpm/snippets/base.md"))?;
     assert!(snippet_content.contains("v2.0.0"));
 
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent-dependent.md")
+            .join(".claude/agents/dependent.md")
             .exists()
     );
-    let agent_content = fs::read_to_string(
-        project
-            .project_path()
-            .join(".claude/agents/agent-dependent.md"),
-    )?;
+    let agent_content =
+        fs::read_to_string(project.project_path().join(".claude/agents/dependent.md"))?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));
 
     Ok(())

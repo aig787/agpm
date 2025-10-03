@@ -91,9 +91,10 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
     output.assert_success();
 
     // Verify resources were installed
+    // Files use basename from path, not dependency name
     let agents_dir = project.project_path().join(".claude/agents");
     DirAssert::exists(&agents_dir);
-    DirAssert::contains_file(&agents_dir, "standard.md");
+    DirAssert::contains_file(&agents_dir, "test-agent.md");
     DirAssert::contains_file(&agents_dir, "custom.md");
 
     // Verify lockfile was created

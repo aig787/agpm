@@ -28,11 +28,22 @@ AI assistant configurations with prompts and behavioral definitions.
 
 **Default Location**: `.claude/agents/`
 
-**Example**:
+**Path Preservation**: CCPM preserves the source directory structure during installation.
+
+**Examples**:
 ```toml
 [agents]
+# Simple path - installed as .claude/agents/rust-expert.md
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-local-agent = { path = "../local-agents/helper.md" }  # Direct local path
+
+# Nested path - installed as .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
+code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
+
+# Deeply nested - installed as .claude/agents/specialized/rust/expert.md
+rust-specialist = { source = "community", path = "agents/specialized/rust/expert.md", version = "v1.0.0" }
+
+# Local path with structure - preserves relative path from source
+local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/ai/helper.md
 ```
 
 ### Snippets
@@ -186,30 +197,46 @@ After installation, `.mcp.json` contains both user and CCPM-managed servers:
 }
 ```
 
-## File Naming
+## File Naming and Path Preservation
 
-**Important**: Installed files are named based on the dependency name in `ccpm.toml`, not their original filename.
+### Path Preservation
+
+CCPM preserves the source directory structure during installation. Files are named based on their source path, maintaining the original organization:
 
 ```toml
-[scripts]
-# Source file: scripts/build.sh
-# Installed as: .claude/ccpm/scripts/my-builder.sh (uses the key "my-builder")
-my-builder = { source = "tools", path = "scripts/build.sh" }
-
 [agents]
-# Source file: agents/code-reviewer.md
-# Installed as: .claude/agents/reviewer.md (uses the key "reviewer")
-reviewer = { source = "community", path = "agents/code-reviewer.md" }
+# Source file: agents/ai/code-reviewer.md
+# Installed as: .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
+code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md" }
 ```
 
-This allows you to:
-- Give resources meaningful names in your project context
-- Avoid naming conflicts when using resources from multiple sources
-- Rename resources without modifying the source repository
+### Benefits of Path Preservation
+
+- **Maintains organization**: Source repository structure is preserved in your project
+- **Avoids conflicts**: Files with the same name in different directories won't collide
+- **Clear provenance**: Installation path reflects the original source location
+- **Pattern matching**: Glob patterns naturally preserve directory hierarchies
+
+### Custom Filenames
+
+You can still use custom filenames with the `filename` option (the dependency name is no longer used):
+
+```toml
+[agents]
+# Custom filename without changing path structure
+reviewer = {
+    source = "community",
+    path = "agents/ai/code-reviewer.md",
+    filename = "my-reviewer.md"
+}
+# Installed as: .claude/agents/ai/my-reviewer.md (preserves ai/ directory)
+```
 
 ## Custom Installation Paths
 
-Override default installation directories:
+### Global Target Directories
+
+Override default installation directories for all resources of a type:
 
 ```toml
 [target]
@@ -223,6 +250,47 @@ mcp-servers = ".claude/ccpm/mcp-servers"  # Default
 # Or use custom paths
 agents = "custom/agents"
 snippets = "resources/snippets"
+```
+
+**Path preservation applies to custom base directories too:**
+```toml
+[target]
+agents = "my/agents"
+
+[agents]
+# Source: agents/ai/helper.md
+# Installed as: my/agents/ai/helper.md (preserves ai/ subdirectory)
+helper = { source = "community", path = "agents/ai/helper.md" }
+```
+
+### Per-Resource Custom Targets
+
+Custom targets are relative to the default resource directory:
+
+```toml
+[agents]
+example = { source = "community", path = "agents/example.md", target = "custom" }
+# Installed as: .claude/agents/custom/example.md (target relative to agents directory)
+```
+
+**Examples with path preservation:**
+```toml
+[agents]
+# Nested source with custom target
+ai-helper = {
+    source = "community",
+    path = "agents/ai/helper.md",
+    target = "specialized"
+}
+# Installed as: .claude/agents/specialized/ai/helper.md (preserves ai/ subdirectory)
+
+# Nested target directory
+reviewer = {
+    source = "community",
+    path = "agents/code-reviewer.md",
+    target = "custom/reviews"
+}
+# Installed as: .claude/agents/custom/reviews/code-reviewer.md
 ```
 
 ## Version Control Strategy
@@ -242,20 +310,36 @@ gitignore = false  # Don't create .gitignore
 
 ## Pattern-Based Dependencies
 
-Install multiple resources using glob patterns:
+Install multiple resources using glob patterns. Each matched file preserves its source directory structure.
 
 ```toml
 [agents]
-# Install all AI agents
+# Install all AI agents - each preserves its source path
+# agents/ai/assistant.md → .claude/agents/ai/assistant.md
+# agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
-# Install all review tools recursively
+# Install all review tools recursively - maintains nested structure
+# agents/code/review-expert.md → .claude/agents/code/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/security/review-scanner.md
 review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
 
 [snippets]
-# All Python snippets
+# All Python snippets - directory structure preserved
+# snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
+# snippets/python/helpers.md → .claude/ccpm/snippets/python/helpers.md
 python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
+
+# Multiple nested directories
+# snippets/web/react/hooks.md → .claude/ccpm/snippets/web/react/hooks.md
+# snippets/web/vue/composables.md → .claude/ccpm/snippets/web/vue/composables.md
+web-snippets = { source = "community", path = "snippets/web/**/*.md", version = "v1.0.0" }
 ```
+
+**Benefits**:
+- **Organization preserved**: Complex directory hierarchies maintained automatically
+- **No conflicts**: Files with identical names in different directories don't collide
+- **Clear structure**: Installation mirrors source repository organization
 
 ## Best Practices
 

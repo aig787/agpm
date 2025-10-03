@@ -62,22 +62,23 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
     );
 
     // Verify all files were installed correctly
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent1.md")
+            .join(".claude/agents/agent-1.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent2.md")
+            .join(".claude/agents/agent-2.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent3.md")
+            .join(".claude/agents/agent-3.md")
             .exists()
     );
 
@@ -141,22 +142,23 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
     );
 
     // Verify all resources installed
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent1.md")
+            .join(".claude/agents/fetch-agent-1.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent2.md")
+            .join(".claude/agents/fetch-agent-2.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet1.md")
+            .join(".claude/ccpm/snippets/fetch-snippet-1.md")
             .exists()
     );
 
@@ -210,10 +212,11 @@ official = "{}"
     println!("High concurrency install took: {:?}", duration);
 
     // Verify all agents were installed
+    // Files use basename from path, not dependency name
     for i in 0..20 {
         let agent_path = project
             .project_path()
-            .join(format!(".claude/agents/agent{:02}.md", i));
+            .join(format!(".claude/agents/concurrent-agent-{:02}.md", i));
         assert!(agent_path.exists(), "Agent {} should be installed", i);
     }
 
@@ -269,16 +272,17 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
     output.assert_success();
 
     // Verify final state
+    // Files use basename from path, not dependency name
     assert!(
         project
             .project_path()
-            .join(".claude/agents/agent.md")
+            .join(".claude/agents/persistent-agent.md")
             .exists()
     );
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet.md")
+            .join(".claude/ccpm/snippets/persistent-snippet.md")
             .exists()
     );
 
