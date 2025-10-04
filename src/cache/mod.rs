@@ -3,7 +3,7 @@
 //! This module provides a sophisticated caching system for Git repositories that enables
 //! safe parallel resource installation through Git worktrees. The cache system has been
 //! redesigned for optimal concurrency, simplified architecture, and enhanced performance
-//! in CCPM v0.3.0.
+//! in AGPM v0.3.0.
 //!
 //! # Architecture Overview
 //!
@@ -16,15 +16,15 @@
 //! # Platform-Specific Cache Locations
 //!
 //! The cache follows platform conventions for optimal performance:
-//! - **Linux/macOS**: `~/.ccpm/cache/` (following XDG standards)
-//! - **Windows**: `%LOCALAPPDATA%\ccpm\cache\` (using Windows cache directory)
-//! - **Environment Override**: Set `CCPM_CACHE_DIR` for custom locations
+//! - **Linux/macOS**: `~/.agpm/cache/` (following XDG standards)
+//! - **Windows**: `%LOCALAPPDATA%\agpm\cache\` (using Windows cache directory)
+//! - **Environment Override**: Set `AGPM_CACHE_DIR` for custom locations
 //!
 //! # Cache Directory Structure
 //!
 //! The cache is organized for optimal parallel access patterns:
 //! ```text
-//! ~/.ccpm/cache/
+//! ~/.agpm/cache/
 //! ├── sources/                    # Bare repositories optimized for worktrees
 //! │   ├── github_owner_repo.git/  # Bare repo with all Git objects
 //! │   └── gitlab_org_project.git/ # URL-parsed directory naming
@@ -44,7 +44,7 @@
 //! - **SHA-based deduplication**: Worktrees keyed by commit SHA, not version reference
 //! - **Centralized resolution**: `VersionResolver` handles batch SHA resolution upfront
 //! - **Maximum reuse**: Multiple tags/branches pointing to same commit share one worktree
-//! - **Instance-level caching**: WorktreeState tracks creation across threads
+//! - **Instance-level caching**: `WorktreeState` tracks creation across threads
 //! - **Per-worktree file locking**: Fine-grained locks prevent creation conflicts
 //! - **Direct parallelism control**: `--max-parallel` flag controls concurrency
 //! - **Command-instance fetch caching**: Single fetch per repository per command
@@ -76,7 +76,7 @@
 //!
 //! # Performance Characteristics
 //!
-//! The cache is optimized for common CCPM workflows:
+//! The cache is optimized for common AGPM workflows:
 //! - **First install**: Clone repository once, reuse for all resources
 //! - **Subsequent installs**: Copy from local cache (fast file operations)
 //! - **Version switching**: Git checkout within cached repository
@@ -109,7 +109,7 @@
 //! ## Basic Cache Operations
 //!
 //! ```rust,no_run
-//! use ccpm::cache::Cache;
+//! use agpm::cache::Cache;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -119,7 +119,7 @@
 //! // Get or clone a source repository
 //! let repo_path = cache.get_or_clone_source(
 //!     "community",
-//!     "https://github.com/example/ccpm-community.git",
+//!     "https://github.com/example/agpm-community.git",
 //!     Some("v1.0.0")  // Specific version
 //! ).await?;
 //!
@@ -136,7 +136,7 @@
 //! ## Cache Maintenance
 //!
 //! ```rust,no_run
-//! use ccpm::cache::Cache;
+//! use agpm::cache::Cache;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
@@ -160,12 +160,12 @@
 //! ## Custom Cache Location
 //!
 //! ```rust,no_run
-//! use ccpm::cache::Cache;
+//! use agpm::cache::Cache;
 //! use std::path::PathBuf;
 //!
 //! # fn custom_location() -> anyhow::Result<()> {
 //! // Use custom cache directory (useful for testing or special setups)
-//! let custom_dir = PathBuf::from("/tmp/my-ccpm-cache");
+//! let custom_dir = PathBuf::from("/tmp/my-agpm-cache");
 //! let cache = Cache::with_dir(custom_dir)?;
 //!
 //! println!("Using cache at: {}", cache.get_cache_location().display());
@@ -173,19 +173,19 @@
 //! # }
 //! ```
 //!
-//! # Integration with CCPM Workflow
+//! # Integration with AGPM Workflow
 //!
-//! The cache module integrates seamlessly with CCPM's dependency management:
-//! 1. **Manifest parsing**: Source URLs extracted from `ccpm.toml`
+//! The cache module integrates seamlessly with AGPM's dependency management:
+//! 1. **Manifest parsing**: Source URLs extracted from `agpm.toml`
 //! 2. **Dependency resolution**: Version constraints resolved to specific commits
 //! 3. **Cache population**: Repositories cloned and checked out as needed
 //! 4. **Resource installation**: Files copied from cache to project directories
-//! 5. **Lockfile generation**: Installed resources tracked in `ccpm.lock`
+//! 5. **Lockfile generation**: Installed resources tracked in `agpm.lock`
 //!
 //! See [`crate::manifest`] for manifest handling and [`crate::lockfile`] for
 //! lockfile management.
 
-use crate::core::error::CcpmError;
+use crate::core::error::AgpmError;
 use crate::git::GitRepo;
 use crate::git::command_builder::GitCommand;
 use crate::utils::fs;
@@ -237,7 +237,7 @@ use tokio::sync::{Mutex, RwLock};
 ///
 /// Components:
 /// - `cache_dir_hash`: First 8 hex chars of cache directory path hash
-/// - `owner_repo`: Parsed from Git URL (e.g., "github_owner_project")
+/// - `owner_repo`: Parsed from Git URL (e.g., "`github_owner_project`")
 /// - `version`: Git reference (tag, branch, commit, or "HEAD")
 ///
 /// This format ensures isolation between:
@@ -341,14 +341,14 @@ impl WorktreeRegistry {
 ///
 /// This module provides thread-safe and process-safe locking for cache
 /// operations through OS-level file locks, ensuring data consistency
-/// when multiple CCPM processes access the same cache directory.
+/// when multiple AGPM processes access the same cache directory.
 pub mod lock;
 pub use lock::CacheLock;
 
 /// Git repository cache for efficient resource management
 ///
 /// The `Cache` struct provides the primary interface for managing Git repository
-/// caching in CCPM. It handles repository cloning, updating, version management,
+/// caching in AGPM. It handles repository cloning, updating, version management,
 /// and resource file copying operations.
 ///
 /// # Thread Safety
@@ -370,7 +370,7 @@ pub use lock::CacheLock;
 /// Create a cache with default platform-specific location:
 ///
 /// ```rust,no_run
-/// use ccpm::cache::Cache;
+/// use agpm::cache::Cache;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
@@ -382,7 +382,7 @@ pub use lock::CacheLock;
 /// Create a cache with custom location (useful for testing):
 ///
 /// ```rust,no_run
-/// use ccpm::cache::Cache;
+/// use agpm::cache::Cache;
 /// use std::path::PathBuf;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -422,7 +422,7 @@ pub struct Cache {
     fetched_repos: Arc<RwLock<HashSet<PathBuf>>>,
 
     /// Persistent registry of worktrees stored on disk for reuse across
-    /// CCPM runs. Tracks last-used timestamps and paths so we can validate
+    /// AGPM runs. Tracks last-used timestamps and paths so we can validate
     /// and clean up cached worktrees without recreating them unnecessarily.
     worktree_registry: Arc<Mutex<WorktreeRegistry>>,
 }
@@ -496,12 +496,12 @@ impl Cache {
     /// Creates a new `Cache` instance using the default platform-specific cache directory.
     ///
     /// The cache directory is determined based on the current platform:
-    /// - **Linux/macOS**: `~/.ccpm/cache/`
-    /// - **Windows**: `%LOCALAPPDATA%\ccpm\cache\`
+    /// - **Linux/macOS**: `~/.agpm/cache/`
+    /// - **Windows**: `%LOCALAPPDATA%\agpm\cache\`
     ///
     /// # Environment Variable Override
     ///
-    /// The cache location can be overridden by setting the `CCPM_CACHE_DIR`
+    /// The cache location can be overridden by setting the `AGPM_CACHE_DIR`
     /// environment variable. This is particularly useful for:
     /// - Testing with isolated cache directories
     /// - CI/CD environments with specific cache locations
@@ -516,7 +516,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -557,7 +557,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -565,10 +565,10 @@ impl Cache {
     /// let project_cache = Cache::with_dir(PathBuf::from("./cache"))?;
     ///
     /// // Use a system-wide cache
-    /// let system_cache = Cache::with_dir(PathBuf::from("/var/cache/ccpm"))?;
+    /// let system_cache = Cache::with_dir(PathBuf::from("/var/cache/agpm"))?;
     ///
     /// // Use a temporary cache for testing
-    /// let temp_cache = Cache::with_dir(std::env::temp_dir().join("ccpm-test"))?;
+    /// let temp_cache = Cache::with_dir(std::env::temp_dir().join("agpm-test"))?;
     /// # Ok(())
     /// # }
     /// ```
@@ -607,7 +607,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -642,7 +642,7 @@ impl Cache {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -673,7 +673,7 @@ impl Cache {
     ///
     /// - **Same source**: Concurrent calls with the same `name` will block
     /// - **Different sources**: Concurrent calls with different `name` run in parallel
-    /// - **Process safety**: Safe across multiple CCPM processes
+    /// - **Process safety**: Safe across multiple AGPM processes
     ///
     /// # Version Handling
     ///
@@ -716,14 +716,14 @@ impl Cache {
     /// Clone a public repository with specific version:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     ///
     /// let repo_path = cache.get_or_clone_source(
     ///     "community",
-    ///     "https://github.com/example/ccpm-community.git",
+    ///     "https://github.com/example/agpm-community.git",
     ///     Some("v1.2.0")
     /// ).await?;
     ///
@@ -735,7 +735,7 @@ impl Cache {
     /// Use latest version from default branch:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -752,7 +752,7 @@ impl Cache {
     /// Work with development branch:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -837,7 +837,7 @@ impl Cache {
 
     /// Get or create a worktree for a specific commit SHA.
     ///
-    /// This method is the cornerstone of CCPM's optimized dependency resolution.
+    /// This method is the cornerstone of AGPM's optimized dependency resolution.
     /// By using commit SHAs as the primary key for worktrees, we ensure:
     /// - Maximum worktree reuse (same SHA = same worktree)
     /// - Deterministic installations (SHA uniquely identifies content)
@@ -863,7 +863,7 @@ impl Cache {
     /// # Example
     ///
     /// ```no_run
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     ///
@@ -890,8 +890,7 @@ impl Cache {
         // Validate SHA format
         if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(anyhow::anyhow!(
-                "Invalid SHA format: expected 40 hex characters, got '{}'",
-                sha
+                "Invalid SHA format: expected 40 hex characters, got '{sha}'"
             ));
         }
 
@@ -991,7 +990,10 @@ impl Cache {
             .join("sources")
             .join(format!("{owner}_{repo}.git"));
 
-        if !bare_repo_dir.exists() {
+        if bare_repo_dir.exists() {
+            // Fetch to ensure we have the SHA
+            self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
+        } else {
             let lock_name = format!("{owner}_{repo}");
             let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
 
@@ -1011,9 +1013,6 @@ impl Cache {
                     .await
                     .ok();
             }
-        } else {
-            // Fetch to ensure we have the SHA
-            self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
         }
 
         let bare_repo = GitRepo::new(&bare_repo_dir);
@@ -1025,7 +1024,7 @@ impl Cache {
             .join(format!("{owner}_{repo}_{sha_short}"));
 
         // Acquire worktree creation lock
-        let worktree_lock_name = format!("worktree-{}-{}-{}", owner, repo, sha_short);
+        let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
         let _worktree_lock = CacheLock::acquire(&self.cache_dir, &worktree_lock_name).await?;
 
         // Re-check after lock
@@ -1059,7 +1058,7 @@ impl Cache {
         // Lock bare repo for worktree creation
         // Hold the lock through cache update to prevent git state corruption
         // when multiple worktrees are created concurrently for the same repo
-        let bare_repo_lock_name = format!("bare-repo-{}_{}", owner, repo);
+        let bare_repo_lock_name = format!("bare-repo-{owner}_{repo}");
         let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
 
         // Create worktree using SHA directly
@@ -1152,7 +1151,7 @@ impl Cache {
         let source_dir = self
             .cache_dir
             .join("sources")
-            .join(format!("{}_{}.git", owner, repo)); // Always use .git suffix for bare repos
+            .join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
@@ -1174,13 +1173,13 @@ impl Cache {
 
                 if already_fetched {
                     tracing::debug!(
-                        target: "ccpm::cache",
+                        target: "agpm::cache",
                         "Skipping fetch for {} (already fetched in this command)",
                         name
                     );
                 } else {
                     tracing::debug!(
-                        target: "ccpm::cache",
+                        target: "agpm::cache",
                         "Fetching updates for {} from {}",
                         name,
                         url
@@ -1188,7 +1187,7 @@ impl Cache {
                     let repo = crate::git::GitRepo::new(&source_dir);
                     if let Err(e) = repo.fetch(None).await {
                         tracing::warn!(
-                            target: "ccpm::cache",
+                            target: "agpm::cache",
                             "Failed to fetch updates for {}: {}",
                             name,
                             e
@@ -1198,7 +1197,7 @@ impl Cache {
                         let mut fetched = self.fetched_repos.write().await;
                         fetched.insert(source_dir.clone());
                         tracing::debug!(
-                            target: "ccpm::cache",
+                            target: "agpm::cache",
                             "Successfully fetched updates for {}",
                             name
                         );
@@ -1206,7 +1205,7 @@ impl Cache {
                 }
             } else {
                 tracing::debug!(
-                    target: "ccpm::cache",
+                    target: "agpm::cache",
                     "Skipping fetch for local path: {}",
                     url
                 );
@@ -1259,20 +1258,20 @@ impl Cache {
         // Clone as a bare repository for better concurrency and worktree support
         GitRepo::clone_bare(url, target)
             .await
-            .with_context(|| format!("Failed to clone repository from {}", url))?;
+            .with_context(|| format!("Failed to clone repository from {url}"))?;
 
         // Debug: List what was cloned
         if cfg!(test)
             && let Ok(entries) = std::fs::read_dir(target)
         {
             tracing::debug!(
-                target: "ccpm::cache",
+                target: "agpm::cache",
                 "Cloned bare repo to {}, contents:",
                 target.display()
             );
             for entry in entries.flatten() {
                 tracing::debug!(
-                    target: "ccpm::cache",
+                    target: "agpm::cache",
                     "  - {}",
                     entry.path().display()
                 );
@@ -1322,7 +1321,7 @@ impl Cache {
     /// Copy a single resource file:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1348,7 +1347,7 @@ impl Cache {
     /// Copy nested resource:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1412,7 +1411,7 @@ impl Cache {
     /// # Errors
     ///
     /// Returns specific error types for different failure modes:
-    /// - [`CcpmError::ResourceFileNotFound`]: Source file doesn't exist
+    /// - [`AgpmError::ResourceFileNotFound`]: Source file doesn't exist
     /// - File system errors: Permission, disk space, invalid paths
     /// - Directory creation errors: Parent directory creation failures
     ///
@@ -1421,7 +1420,7 @@ impl Cache {
     /// Silent installation (for batch operations):
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1441,7 +1440,7 @@ impl Cache {
     /// Interactive installation (with progress):
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1467,7 +1466,7 @@ impl Cache {
         let source_file = source_dir.join(source_path);
 
         if !source_file.exists() {
-            return Err(CcpmError::ResourceFileNotFound {
+            return Err(AgpmError::ResourceFileNotFound {
                 path: source_path.to_string(),
                 source_name: source_dir
                     .file_name()
@@ -1556,12 +1555,12 @@ impl Cache {
     /// Clean cache based on current manifest sources:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     ///
-    /// // Active sources from current ccpm.toml
+    /// // Active sources from current agpm.toml
     /// let active_sources = vec![
     ///     "community".to_string(),
     ///     "work-tools".to_string(),
@@ -1577,7 +1576,7 @@ impl Cache {
     /// Clean all cached repositories:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1655,7 +1654,7 @@ impl Cache {
     /// Check current cache size:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1671,7 +1670,7 @@ impl Cache {
     /// Display human-readable sizes:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1719,7 +1718,7 @@ impl Cache {
     /// Display cache location:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1731,7 +1730,7 @@ impl Cache {
     /// Check if cache exists:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1800,7 +1799,7 @@ impl Cache {
     /// Clear cache for fresh start:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1822,7 +1821,7 @@ impl Cache {
     /// Clear cache with error handling:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::Cache;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1886,7 +1885,7 @@ impl Cache {
         let lock_path = self
             .cache_dir
             .join(".locks")
-            .join(format!("{}.fetch.lock", safe_name));
+            .join(format!("{safe_name}.fetch.lock"));
 
         // Ensure lock directory exists
         if let Some(parent) = lock_path.parent() {
@@ -1908,7 +1907,7 @@ impl Cache {
         use fs4::fs_std::FileExt;
         if let Some(ctx) = context {
             tracing::debug!(
-                target: "ccpm::git",
+                target: "agpm::git",
                 "({}) Acquiring file lock for {}",
                 ctx,
                 bare_repo_path.display()
@@ -1918,7 +1917,7 @@ impl Cache {
 
         if let Some(ctx) = context {
             tracing::debug!(
-                target: "ccpm::git",
+                target: "agpm::git",
                 "({}) Acquired file lock for {}",
                 ctx,
                 bare_repo_path.display()
@@ -1932,13 +1931,13 @@ impl Cache {
             let is_fetched = fetched.contains(bare_repo_path);
             if let Some(ctx) = context {
                 tracing::debug!(
-                    target: "ccpm::git",
+                    target: "agpm::git",
                     "({}) Checking if already fetched: {} - Result: {} (total fetched: {}, hashset addr: {:p})",
                     ctx,
                     bare_repo_path.display(),
                     is_fetched,
                     fetched.len(),
-                    &*fetched as *const _
+                    &raw const *fetched
                 );
             }
             is_fetched
@@ -1947,7 +1946,7 @@ impl Cache {
         if already_fetched {
             if let Some(ctx) = context {
                 tracing::debug!(
-                    target: "ccpm::git",
+                    target: "agpm::git",
                     "({}) Skipping fetch (already fetched in this command): {}",
                     ctx,
                     bare_repo_path.display()
@@ -1962,7 +1961,7 @@ impl Cache {
 
         if let Some(ctx) = context {
             tracing::debug!(
-                target: "ccpm::git",
+                target: "agpm::git",
                 "({}) Fetching updates for {}",
                 ctx,
                 bare_repo_path.display()
@@ -1977,12 +1976,12 @@ impl Cache {
             fetched.insert(bare_repo_path.to_path_buf());
             if let Some(ctx) = context {
                 tracing::debug!(
-                    target: "ccpm::git",
+                    target: "agpm::git",
                     "({}) Marked as fetched: {} (total fetched: {}, hashset addr: {:p})",
                     ctx,
                     bare_repo_path.display(),
                     fetched.len(),
-                    &*fetched as *const _
+                    &raw const *fetched
                 );
             }
         }

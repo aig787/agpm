@@ -1,7 +1,7 @@
-//! Remove sources and dependencies from CCPM projects.
+//! Remove sources and dependencies from AGPM projects.
 //!
 //! This module provides the `remove` command which allows users to remove
-//! sources and dependencies from the project manifest (`ccpm.toml`).
+//! sources and dependencies from the project manifest (`agpm.toml`).
 //! It complements the `add` command by providing removal functionality.
 //!
 //! # Features
@@ -15,20 +15,20 @@
 //!
 //! Remove a source:
 //! ```bash
-//! ccpm remove source private
+//! agpm remove source private
 //! ```
 //!
 //! Remove dependencies:
 //! ```bash
-//! ccpm remove dep agent code-reviewer
-//! ccpm remove dep snippet utils
-//! ccpm remove dep command deploy
-//! ccpm remove dep mcp-server filesystem
+//! agpm remove dep agent code-reviewer
+//! agpm remove dep snippet utils
+//! agpm remove dep command deploy
+//! agpm remove dep mcp-server filesystem
 //! ```
 //!
 //! Force removal without confirmation:
 //! ```bash
-//! ccpm remove source old-repo --force
+//! agpm remove source old-repo --force
 //! ```
 
 use anyhow::{Context, Result, anyhow};
@@ -42,7 +42,7 @@ use crate::utils::fs::atomic_write;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Command to remove sources and dependencies from a CCPM project.
+/// Command to remove sources and dependencies from a AGPM project.
 #[derive(Args)]
 pub struct RemoveCommand {
     /// The specific remove operation to perform
@@ -109,7 +109,7 @@ enum RemoveDependencySubcommand {
 }
 
 /// Helper function to get dependencies for a specific resource type
-fn get_dependencies_for_type(
+const fn get_dependencies_for_type(
     manifest: &Manifest,
     resource_type: ResourceType,
 ) -> &HashMap<String, ResourceDependency> {
@@ -124,7 +124,7 @@ fn get_dependencies_for_type(
 }
 
 /// Helper function to get mutable dependencies for a specific resource type
-fn get_dependencies_for_type_mut(
+const fn get_dependencies_for_type_mut(
     manifest: &mut Manifest,
     resource_type: ResourceType,
 ) -> &mut HashMap<String, ResourceDependency> {
@@ -167,7 +167,7 @@ fn get_installed_path_from_lockfile(
             Some(
                 project_root
                     .join(&manifest.target.mcp_servers)
-                    .join(format!("{}.json", name)),
+                    .join(format!("{name}.json")),
             )
         }
         ResourceType::Script => lockfile
@@ -198,13 +198,13 @@ fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: Reso
 impl RemoveCommand {
     /// Execute the remove command with an optional manifest path.
     ///
-    /// This method allows specifying a custom path to the ccpm.toml manifest file.
-    /// If no path is provided, it will search for ccpm.toml in the current directory
+    /// This method allows specifying a custom path to the agpm.toml manifest file.
+    /// If no path is provided, it will search for agpm.toml in the current directory
     /// and parent directories.
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Optional path to the ccpm.toml file
+    /// * `manifest_path` - Optional path to the agpm.toml file
     ///
     /// # Returns
     ///
@@ -214,7 +214,7 @@ impl RemoveCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::cli::remove::{RemoveCommand, RemoveSubcommand};
+    /// use agpm::cli::remove::{RemoveCommand, RemoveSubcommand};
     /// use std::path::PathBuf;
     ///
     /// let cmd = RemoveCommand {
@@ -267,7 +267,7 @@ async fn remove_source_with_manifest_path(
 
     // Check if source exists
     if !manifest.sources.contains_key(name) {
-        return Err(anyhow!("Source '{}' not found in manifest", name));
+        return Err(anyhow!("Source '{name}' not found in manifest"));
     }
 
     // Check if source is being used by any dependencies
@@ -279,7 +279,7 @@ async fn remove_source_with_manifest_path(
             let dependencies = get_dependencies_for_type(&manifest, *resource_type);
             for (dep_name, dep) in dependencies {
                 if dep.get_source() == Some(name) {
-                    used_by.push(format!("{} '{}'", resource_type, dep_name));
+                    used_by.push(format!("{resource_type} '{dep_name}'"));
                 }
             }
         }
@@ -303,7 +303,7 @@ async fn remove_source_with_manifest_path(
     )?;
 
     // Update lockfile to remove entries from this source
-    let lockfile_path = manifest_path.parent().unwrap().join("ccpm.lock");
+    let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
 
     if lockfile_path.exists() {
         let mut lockfile = LockFile::load(&lockfile_path)?;
@@ -370,7 +370,7 @@ async fn remove_source_with_manifest_path(
         lockfile.save(&lockfile_path)?;
     }
 
-    println!("{}", format!("Removed source '{}'", name).green());
+    println!("{}", format!("Removed source '{name}'").green());
 
     Ok(())
 }
@@ -388,7 +388,7 @@ async fn remove_dependency_with_manifest_path(
     // Parse the resource type
     let resource_type: ResourceType = dep_type
         .parse()
-        .map_err(|_| anyhow!("Invalid dependency type: {}", dep_type))?;
+        .map_err(|_| anyhow!("Invalid dependency type: {dep_type}"))?;
 
     // Get the dependencies for this resource type and check if it exists
     let dependencies = get_dependencies_for_type_mut(&mut manifest, resource_type);
@@ -426,10 +426,7 @@ async fn remove_dependency_with_manifest_path(
     )?;
 
     let dep_type_display = dep_type.replace('-', " ");
-    println!(
-        "{}",
-        format!("Removed {} '{}'", dep_type_display, name).green()
-    );
+    println!("{}", format!("Removed {dep_type_display} '{name}'").green());
 
     let project_root = manifest_path.parent().unwrap();
 
@@ -458,7 +455,7 @@ async fn remove_dependency_with_manifest_path(
     }
 
     // Update lockfile and remove installed files
-    let lockfile_path = manifest_path.parent().unwrap().join("ccpm.lock");
+    let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
     if lockfile_path.exists() {
         let mut lockfile = LockFile::load(&lockfile_path)?;
 
@@ -499,7 +496,7 @@ mod tests {
     #[tokio::test]
     async fn test_remove_source_not_found() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a minimal manifest
         let manifest_content = r#"
@@ -526,7 +523,7 @@ existing = "https://github.com/test/repo.git"
     #[tokio::test]
     async fn test_remove_source_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with sources
         let manifest_content = r#"
@@ -556,7 +553,7 @@ another-source = "https://github.com/another/repo.git"
     #[tokio::test]
     async fn test_remove_source_in_use() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a source in use
         let manifest_content = r#"
@@ -583,7 +580,7 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
     #[tokio::test]
     async fn test_remove_source_in_use_with_force() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a source in use
         let manifest_content = r#"
@@ -614,7 +611,7 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
     #[tokio::test]
     async fn test_remove_dependency_not_found() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a minimal manifest
         let manifest_content = r#"
@@ -640,7 +637,7 @@ test-agent = { source = "used-source", path = "agents/test.md", version = "v1.0.
     #[tokio::test]
     async fn test_remove_agent_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with an agent
         let manifest_content = r#"
@@ -673,7 +670,7 @@ another-agent = "../test/another.md"
     #[tokio::test]
     async fn test_remove_snippet_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a snippet
         let manifest_content = r#"
@@ -704,7 +701,7 @@ test-snippet = "../test/snippet.md"
     #[tokio::test]
     async fn test_remove_command_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a command
         let manifest_content = r#"
@@ -735,7 +732,7 @@ test-command = "../test/command.md"
     #[tokio::test]
     async fn test_remove_mcp_server_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with an MCP server
         let manifest_content = r#"
@@ -765,7 +762,7 @@ test-server = "../local/mcp-servers/test-server.json"
     #[tokio::test]
     async fn test_remove_script_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a script
         let manifest_content = r#"
@@ -798,7 +795,7 @@ another-script = "../test/another.sh"
     #[tokio::test]
     async fn test_remove_hook_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a hook
         let manifest_content = r#"
@@ -829,7 +826,7 @@ post-commit = "../test/another_hook.json"
     #[tokio::test]
     async fn test_remove_invalid_dependency_type() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a minimal manifest
         let manifest_content = r#"
@@ -862,8 +859,8 @@ post-commit = "../test/another_hook.json"
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a manifest
         let manifest_content = r#"
@@ -913,7 +910,7 @@ test-agent = "../test/agent.md"
     #[tokio::test]
     async fn test_remove_source_checks_all_dependency_types() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest with a source used by different dependency types
         let manifest_content = r#"
@@ -957,7 +954,7 @@ test-hook = { source = "used-source", path = "hooks/test.json", version = "v1.0.
     #[tokio::test]
     async fn test_execute_remove_command() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a manifest
         let manifest_content = r#"
@@ -990,8 +987,8 @@ test = "https://github.com/test/repo.git"
 
         let temp = TempDir::new().unwrap();
         let project_dir = temp.path();
-        let manifest_path = project_dir.join("ccpm.toml");
-        let lockfile_path = project_dir.join("ccpm.lock");
+        let manifest_path = project_dir.join("agpm.toml");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         // Create manifest with a dependency
         let manifest = r#"
@@ -1125,8 +1122,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a manifest with scripts and hooks
         let manifest_content = r#"
@@ -1153,7 +1150,7 @@ test-hook = "../test/hook.json"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+            installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
         });
@@ -1165,7 +1162,7 @@ test-hook = "../test/hook.json"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/ccpm/hooks/test-hook.json".to_string(),
+            installed_at: ".claude/agpm/hooks/test-hook.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
         });
@@ -1200,8 +1197,8 @@ test-hook = "../test/hook.json"
         use crate::lockfile::{LockFile, LockedResource, LockedSource};
 
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a manifest with dependencies
         let manifest_content = r#"
@@ -1313,7 +1310,7 @@ test-snippet = "../local/snippet.md"
     #[tokio::test]
     async fn test_remove_mcp_server_updates_settings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let settings_dir = temp.path().join(".claude");
         let settings_path = settings_dir.join("settings.local.json");
 
@@ -1366,7 +1363,7 @@ test-server = "../mcp/test-server.json"
     #[tokio::test]
     async fn test_remove_hook_updates_settings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let settings_dir = temp.path().join(".claude");
         let settings_path = settings_dir.join("settings.local.json");
 
@@ -1416,9 +1413,9 @@ test-hook = "../hooks/test-hook.json"
         use crate::lockfile::{LockFile, LockedResource};
 
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
-        let script_dir = temp.path().join(".claude/ccpm/scripts");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
+        let script_dir = temp.path().join(".claude/agpm/scripts");
         let script_file = script_dir.join("test-script.sh");
 
         // Create manifest with script
@@ -1444,7 +1441,7 @@ test-script = "../test/script.sh"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+            installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
         });

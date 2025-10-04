@@ -6,7 +6,7 @@
 //!
 //! # Overview
 //!
-//! The markdown module is a core component of CCPM that:
+//! The markdown module is a core component of AGPM that:
 //! - Parses Markdown files with optional YAML or TOML frontmatter
 //! - Extracts structured metadata for dependency resolution
 //! - Preserves document structure during read/write operations
@@ -123,7 +123,7 @@
 //! ## Basic Reading and Writing
 //!
 //! ```rust,no_run
-//! use ccpm::markdown::MarkdownDocument;
+//! use agpm::markdown::MarkdownDocument;
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -151,7 +151,7 @@
 //! ## Creating Documents Programmatically
 //!
 //! ```rust,no_run
-//! use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+//! use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! // Create metadata
@@ -173,7 +173,7 @@
 //! ## Batch File Processing
 //!
 //! ```rust,no_run
-//! use ccpm::markdown::{list_markdown_files, MarkdownDocument};
+//! use agpm::markdown::{list_markdown_files, MarkdownDocument};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -191,9 +191,9 @@
 //! # }
 //! ```
 //!
-//! # Integration with CCPM
+//! # Integration with AGPM
 //!
-//! This module integrates with other CCPM components:
+//! This module integrates with other AGPM components:
 //!
 //! - `crate::manifest`: Uses metadata for dependency resolution
 //! - `crate::lockfile`: Stores checksums and installation paths  
@@ -219,7 +219,7 @@ use crate::manifest::DependencySpec;
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::{MarkdownFile, MarkdownDocument};
+/// # use agpm::markdown::{MarkdownFile, MarkdownDocument};
 /// // These are equivalent
 /// let doc1 = MarkdownDocument::new("content".to_string());
 /// let doc2 = MarkdownFile::new("content".to_string());
@@ -232,11 +232,11 @@ pub type MarkdownFile = MarkdownDocument;
 ///
 /// This struct represents all the metadata that can be parsed from YAML or TOML
 /// frontmatter in Markdown files. It follows a flexible schema that accommodates
-/// both standard CCPM fields and custom extensions.
+/// both standard AGPM fields and custom extensions.
 ///
 /// # Standard Fields
 ///
-/// The following fields have special meaning in CCPM:
+/// The following fields have special meaning in AGPM:
 /// - `title`: Human-readable name for the resource
 /// - `description`: Brief explanation of what the resource does
 /// - `version`: Version identifier (semantic versioning recommended)
@@ -259,7 +259,7 @@ pub type MarkdownFile = MarkdownDocument;
 /// # Example
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::MarkdownMetadata;
+/// # use agpm::markdown::MarkdownMetadata;
 /// # use std::collections::HashMap;
 /// let mut metadata = MarkdownMetadata::default();
 /// metadata.title = Some("Python Linter".to_string());
@@ -347,7 +347,7 @@ pub struct MarkdownMetadata {
     ///
     /// Any frontmatter fields not recognized by the standard schema are
     /// preserved here. This allows resource authors to include custom
-    /// metadata without breaking compatibility with CCPM.
+    /// metadata without breaking compatibility with AGPM.
     ///
     /// Values are stored as `serde_json::Value` to handle mixed types
     /// (strings, numbers, arrays, objects).
@@ -357,7 +357,7 @@ pub struct MarkdownMetadata {
 
 /// A parsed Markdown document representing a Claude Code resource.
 ///
-/// This is the core structure for handling Markdown files in CCPM. It provides
+/// This is the core structure for handling Markdown files in AGPM. It provides
 /// a clean separation between structured metadata (from frontmatter) and the
 /// actual content, while preserving the original document format for roundtrip
 /// compatibility.
@@ -390,7 +390,7 @@ pub struct MarkdownMetadata {
 /// ## Reading from File
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::MarkdownDocument;
+/// # use agpm::markdown::MarkdownDocument;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
 /// let doc = MarkdownDocument::read(Path::new("agent.md"))?;
@@ -407,7 +407,7 @@ pub struct MarkdownMetadata {
 /// ## Creating Programmatically
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+/// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
 /// let metadata = MarkdownMetadata {
 ///     title: Some("Test Agent".to_string()),
 ///     version: Some("1.0.0".to_string()),
@@ -425,7 +425,7 @@ pub struct MarkdownMetadata {
 /// ## Modifying Content
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::MarkdownDocument;
+/// # use agpm::markdown::MarkdownDocument;
 /// let mut doc = MarkdownDocument::new("# Original".to_string());
 ///
 /// // Update content - raw is automatically regenerated
@@ -443,7 +443,7 @@ pub struct MarkdownDocument {
     ///
     /// This will be `Some` if the document contained valid YAML or TOML
     /// frontmatter, and `None` for plain Markdown files. The metadata
-    /// is used by CCPM for dependency resolution and resource management.
+    /// is used by AGPM for dependency resolution and resource management.
     pub metadata: Option<MarkdownMetadata>,
 
     /// The main Markdown content without frontmatter delimiters.
@@ -476,7 +476,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::MarkdownDocument;
+    /// # use agpm::markdown::MarkdownDocument;
     /// let doc = MarkdownDocument::new("# Hello\n\nWorld!".to_string());
     ///
     /// assert!(doc.metadata.is_none());
@@ -506,7 +506,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Example".to_string()),
     ///     version: Some("1.0.0".to_string()),
@@ -557,7 +557,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::MarkdownDocument;
+    /// # use agpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
     /// let doc = MarkdownDocument::read(Path::new("resources/agent.md"))?;
@@ -604,7 +604,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::MarkdownDocument;
+    /// # use agpm::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
     /// let doc = MarkdownDocument::new("# Test\n\nContent".to_string());
@@ -664,15 +664,13 @@ impl MarkdownDocument {
                     // Parsing failed - emit warning and treat entire document as content
                     if let Some(ctx) = context {
                         eprintln!(
-                            "⚠️  Warning: Unable to parse YAML frontmatter in '{}'. \
-                            The document will be processed without metadata. Error: {}",
-                            ctx, err
+                            "⚠️  Warning: Unable to parse YAML frontmatter in '{ctx}'. \
+                            The document will be processed without metadata. Error: {err}"
                         );
                     } else {
                         eprintln!(
                             "⚠️  Warning: Unable to parse YAML frontmatter. \
-                            The document will be processed without metadata. Error: {}",
-                            err
+                            The document will be processed without metadata. Error: {err}"
                         );
                     }
 
@@ -707,15 +705,13 @@ impl MarkdownDocument {
                     // TOML parsing failed - emit warning and treat entire document as content
                     if let Some(ctx) = context {
                         eprintln!(
-                            "⚠️  Warning: Unable to parse TOML frontmatter in '{}'. \
-                            The document will be processed without metadata. Error: {}",
-                            ctx, err
+                            "⚠️  Warning: Unable to parse TOML frontmatter in '{ctx}'. \
+                            The document will be processed without metadata. Error: {err}"
                         );
                     } else {
                         eprintln!(
                             "⚠️  Warning: Unable to parse TOML frontmatter. \
-                            The document will be processed without metadata. Error: {}",
-                            err
+                            The document will be processed without metadata. Error: {err}"
                         );
                     }
 
@@ -782,7 +778,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::MarkdownDocument;
+    /// # use agpm::markdown::MarkdownDocument;
     /// // Parse document with YAML frontmatter
     /// let input = "---\ntitle: Test\n---\n# Content";
     /// let doc = MarkdownDocument::parse(input).unwrap();
@@ -822,7 +818,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let mut doc = MarkdownDocument::new("# Test\n\nContent".to_string());
     /// assert!(doc.metadata.is_none());
     ///
@@ -864,7 +860,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // Document with metadata
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Test".to_string()),
@@ -913,7 +909,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Metadata Title".to_string()),
@@ -976,7 +972,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
     ///     description: Some("Metadata description".to_string()),
@@ -1146,7 +1142,7 @@ fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::is_markdown_file;
+/// # use agpm::markdown::is_markdown_file;
 /// # use std::path::Path;
 /// assert!(is_markdown_file(Path::new("agent.md")));
 /// assert!(is_markdown_file(Path::new("README.MD")));
@@ -1194,7 +1190,7 @@ pub fn is_markdown_file(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use ccpm::markdown::list_markdown_files;
+/// # use agpm::markdown::list_markdown_files;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
 /// let files = list_markdown_files(Path::new("resources/"))?;

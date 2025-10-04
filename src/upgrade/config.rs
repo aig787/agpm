@@ -1,15 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-/// Configuration settings for CCPM self-update behavior.
+/// Configuration settings for AGPM self-update behavior.
 ///
-/// `UpgradeConfig` defines how CCPM handles automatic update checking,
+/// `UpgradeConfig` defines how AGPM handles automatic update checking,
 /// backup creation, and security verification during upgrades. These settings
 /// can be configured globally or per-project to control update behavior.
 ///
 /// # Configuration Categories
 ///
 /// ## Update Timing
-/// - **Startup Checks**: Whether to check for updates when CCPM starts
+/// - **Startup Checks**: Whether to check for updates when AGPM starts
 /// - **Check Intervals**: How frequently to perform background update checks
 ///
 /// ## Safety Settings
@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ## Using Default Configuration
 /// ```rust,no_run
-/// use ccpm::upgrade::config::UpgradeConfig;
+/// use agpm::upgrade::config::UpgradeConfig;
 ///
 /// let config = UpgradeConfig::default();
 /// assert_eq!(config.check_on_startup, false);
@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ## Custom Configuration
 /// ```rust,no_run
-/// use ccpm::upgrade::config::UpgradeConfig;
+/// use agpm::upgrade::config::UpgradeConfig;
 ///
 /// let config = UpgradeConfig {
 ///     check_on_startup: true,
@@ -62,20 +62,20 @@ use serde::{Deserialize, Serialize};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpgradeConfig {
-    /// Whether to check for updates when CCPM starts.
+    /// Whether to check for updates when AGPM starts.
     ///
-    /// When enabled, CCPM will perform a background check for updates every
+    /// When enabled, AGPM will perform a background check for updates every
     /// time it starts up. This provides the earliest notification of available
     /// updates but may slightly delay startup time.
     ///
     /// # Default: `false`
     ///
     /// Disabled by default to avoid slowing down CLI operations. Users can
-    /// manually check for updates using `ccpm upgrade --check`.
+    /// manually check for updates using `agpm upgrade --check`.
     ///
     /// # Considerations
     ///
-    /// - **Startup Performance**: Adds network delay to every CCPM invocation
+    /// - **Startup Performance**: Adds network delay to every AGPM invocation
     /// - **Network Dependency**: May fail or timeout in poor network conditions
     /// - **Rate Limiting**: Frequent use may hit GitHub API rate limits
     /// - **User Experience**: Can be intrusive for automated scripts
@@ -84,7 +84,7 @@ pub struct UpgradeConfig {
 
     /// Interval between automatic update checks in seconds.
     ///
-    /// Controls how frequently CCPM performs background checks for new versions.
+    /// Controls how frequently AGPM performs background checks for new versions.
     /// This setting balances update notification timeliness with network usage
     /// and API rate limit consumption.
     ///
@@ -109,7 +109,7 @@ pub struct UpgradeConfig {
 
     /// Whether to automatically create backups before upgrades.
     ///
-    /// When enabled, CCPM creates a backup copy of the current binary before
+    /// When enabled, AGPM creates a backup copy of the current binary before
     /// attempting any upgrade. This enables rollback if the upgrade fails or
     /// the new version has issues.
     ///
@@ -123,7 +123,7 @@ pub struct UpgradeConfig {
     /// - Creates a copy with `.backup` suffix in the same directory
     /// - Preserves file permissions and metadata
     /// - Automatically removed after successful upgrades
-    /// - Can be restored manually or via `ccpm upgrade --rollback`
+    /// - Can be restored manually or via `agpm upgrade --rollback`
     ///
     /// # Disabling Backups
     ///
@@ -137,7 +137,7 @@ pub struct UpgradeConfig {
 
     /// Whether to verify checksums of downloaded binaries.
     ///
-    /// When enabled, CCPM verifies the integrity of downloaded binaries by
+    /// When enabled, AGPM verifies the integrity of downloaded binaries by
     /// comparing their checksums against expected values. This provides
     /// protection against corrupted downloads and potential security issues.
     ///
@@ -192,7 +192,7 @@ impl Default for UpgradeConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::config::UpgradeConfig;
+    /// use agpm::upgrade::config::UpgradeConfig;
     ///
     /// let config = UpgradeConfig::default();
     /// assert_eq!(config.check_on_startup, false);
@@ -212,9 +212,9 @@ impl Default for UpgradeConfig {
 
 /// Default value for startup update checking.
 ///
-/// Returns `false` to avoid adding network latency to every CCPM invocation.
+/// Returns `false` to avoid adding network latency to every AGPM invocation.
 /// Users can explicitly enable this or use manual update checking.
-fn default_check_on_startup() -> bool {
+const fn default_check_on_startup() -> bool {
     false // Default to not checking on startup to avoid slowing down the CLI
 }
 
@@ -222,7 +222,7 @@ fn default_check_on_startup() -> bool {
 ///
 /// Returns `86400` (24 hours) to provide daily update notifications while
 /// being respectful of GitHub API rate limits and user attention.
-fn default_check_interval() -> u64 {
+const fn default_check_interval() -> u64 {
     86400 // 24 hours in seconds
 }
 
@@ -230,7 +230,7 @@ fn default_check_interval() -> u64 {
 ///
 /// Returns `true` to maximize safety during upgrades. Backups enable quick
 /// recovery from failed upgrades and add minimal overhead.
-fn default_auto_backup() -> bool {
+const fn default_auto_backup() -> bool {
     true // Always create backups for safety
 }
 
@@ -238,7 +238,7 @@ fn default_auto_backup() -> bool {
 ///
 /// Returns `true` to ensure download integrity and provide security against
 /// corrupted or tampered binaries. Verification adds minimal overhead.
-fn default_verify_checksum() -> bool {
+const fn default_verify_checksum() -> bool {
     true // Always verify checksums for security
 }
 
@@ -251,7 +251,7 @@ impl UpgradeConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::config::UpgradeConfig;
+    /// use agpm::upgrade::config::UpgradeConfig;
     ///
     /// // These are equivalent
     /// let config1 = UpgradeConfig::new();

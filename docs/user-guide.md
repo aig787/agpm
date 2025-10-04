@@ -1,6 +1,6 @@
 # User Guide
 
-This guide will help you get started with CCPM and cover common workflows.
+This guide will help you get started with AGPM and cover common workflows.
 
 ## Getting Started
 
@@ -12,14 +12,14 @@ This guide will help you get started with CCPM and cover common workflows.
 
 ### Installation
 
-The quickest way to install CCPM:
+The quickest way to install AGPM:
 
 ```bash
 # If you have Rust installed
-cargo install ccpm
+cargo install agpm
 
 # For latest development version
-cargo install --git https://github.com/aig787/ccpm.git
+cargo install --git https://github.com/aig787/agpm.git
 
 # Or download pre-built binaries
 # See the Installation Guide for platform-specific instructions
@@ -30,38 +30,38 @@ cargo install --git https://github.com/aig787/ccpm.git
 1. **Initialize a new project:**
 
 ```bash
-ccpm init
+agpm init
 ```
 
-This creates a basic `ccpm.toml` file with example dependencies.
+This creates a basic `agpm.toml` file with example dependencies.
 
 2. **Install dependencies:**
 
 ```bash
-ccpm install
+agpm install
 ```
 
 This will:
-- Clone the required Git repositories to `~/.ccpm/cache/`
+- Clone the required Git repositories to `~/.agpm/cache/`
 - Copy resources to your project directories
-- Generate a `ccpm.lock` file with exact versions
+- Generate a `agpm.lock` file with exact versions
 
 3. **Verify installation:**
 
 ```bash
-ccpm list
+agpm list
 ```
 
 ## Basic Concepts
 
-### Manifest File (ccpm.toml)
+### Manifest File (agpm.toml)
 
 The manifest defines your project's dependencies:
 
 ```toml
 [sources]
 # Define Git repositories to pull resources from
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 # Install AI agents - path preservation maintains directory structure
@@ -74,28 +74,28 @@ nested = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0
 
 See the [Manifest Reference](manifest-reference.md) for a complete field-by-field breakdown and CLI mapping guidance.
 
-### Lockfile (ccpm.lock)
+### Lockfile (agpm.lock)
 
 The lockfile records exact versions for reproducible installations:
-- Generated automatically by `ccpm install`
+- Generated automatically by `agpm install`
 - Should be committed to version control
 - Ensures team members get identical versions
 
 #### Lifecycle and Guarantees
 
-- `ccpm install` always re-runs dependency resolution using the current manifest and lockfile. If nothing has changed, it writes the same resolved versions and SHAs back to disk—versions do **not** automatically advance just because you reinstalled.
+- `agpm install` always re-runs dependency resolution using the current manifest and lockfile. If nothing has changed, it writes the same resolved versions and SHAs back to disk—versions do **not** automatically advance just because you reinstalled.
 - Resolution only diverges when the manifest changed, a tag/branch now points somewhere else, or a dependency was missing from the previous lockfile.
-- Use `ccpm install --no-lock` when you want to verify installs without touching `ccpm.lock` (e.g., local experiments).
-- Use `ccpm install --frozen` in CI or release pipelines to assert that the existing lockfile matches the manifest exactly. The command fails instead of regenerating when staleness is detected.
+- Use `agpm install --no-lock` when you want to verify installs without touching `agpm.lock` (e.g., local experiments).
+- Use `agpm install --frozen` in CI or release pipelines to assert that the existing lockfile matches the manifest exactly. The command fails instead of regenerating when staleness is detected.
 
 #### Detecting Staleness
 
-CCPM automatically checks for stale lockfiles during install and via `ccpm validate --check-lock`:
+AGPM automatically checks for stale lockfiles during install and via `agpm validate --check-lock`:
 - Duplicate entries or source URL drift (security-critical issues)
 - Manifest entries missing from the lockfile
 - Version/path changes that have not been resolved yet
 
-If any of these occur, rerun `ccpm install` (without `--frozen`) to regenerate the lockfile so teammates stay in sync.
+If any of these occur, rerun `agpm install` (without `--frozen`) to regenerate the lockfile so teammates stay in sync.
 
 ### Sources
 
@@ -108,7 +108,7 @@ Sources are Git repositories containing resources:
 
 ### Adding Dependencies
 
-#### Method 1: Edit ccpm.toml directly
+#### Method 1: Edit agpm.toml directly
 
 ```toml
 [agents]
@@ -117,17 +117,17 @@ my-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0"
 
 Then run:
 ```bash
-ccpm install
+agpm install
 ```
 
 #### Method 2: Use CLI commands
 
 ```bash
 # Add a source
-ccpm add source community https://github.com/aig787/ccpm-community.git
+agpm add source community https://github.com/aig787/agpm-community.git
 
 # Add a dependency
-ccpm add dep agent community:agents/helper.md --name my-agent
+agpm add dep agent community:agents/helper.md --name my-agent
 ```
 
 ### Checking for Updates
@@ -136,16 +136,16 @@ Before updating, check what updates are available:
 
 ```bash
 # Check all dependencies for available updates
-ccpm outdated
+agpm outdated
 
 # Check specific dependencies
-ccpm outdated my-agent other-agent
+agpm outdated my-agent other-agent
 
 # Use in CI to fail if updates are available
-ccpm outdated --check
+agpm outdated --check
 
 # Get JSON output for automation
-ccpm outdated --format json
+agpm outdated --format json
 ```
 
 The `outdated` command shows:
@@ -159,19 +159,19 @@ The `outdated` command shows:
 Update all dependencies within version constraints:
 
 ```bash
-ccpm update
+agpm update
 ```
 
 Update specific dependency:
 
 ```bash
-ccpm update my-agent
+agpm update my-agent
 ```
 
 Preview updates without making changes:
 
 ```bash
-ccpm update --dry-run
+agpm update --dry-run
 ```
 
 ### Working with Local Resources
@@ -199,7 +199,7 @@ For private repositories, configure authentication globally:
 
 ```bash
 # Add private source with token
-ccpm config add-source private "https://oauth2:TOKEN@github.com/org/private.git"
+agpm config add-source private "https://oauth2:TOKEN@github.com/org/private.git"
 ```
 
 Then reference in your manifest:
@@ -213,7 +213,7 @@ internal = { source = "private", path = "agents/internal.md", version = "v1.0.0"
 
 ### Version Constraints
 
-CCPM supports flexible version constraints:
+AGPM supports flexible version constraints:
 
 ```toml
 # Exact version
@@ -238,19 +238,19 @@ For development, track branches:
 dev-agent = { source = "community", path = "agents/dev.md", branch = "main" }
 ```
 
-⚠️ **Note**: Branches update on each `ccpm update`. Use tags for stability.
+⚠️ **Note**: Branches update on each `agpm update`. Use tags for stability.
 
 ## Team Collaboration
 
 ### Setting Up
 
-1. Create and configure `ccpm.toml`
-2. Run `ccpm install` to generate `ccpm.lock`
+1. Create and configure `agpm.toml`
+2. Run `agpm install` to generate `agpm.lock`
 3. Commit both files to Git:
 
 ```bash
-git add ccpm.toml ccpm.lock
-git commit -m "Add CCPM dependencies"
+git add agpm.toml agpm.lock
+git commit -m "Add AGPM dependencies"
 ```
 
 ### Team Member Setup
@@ -259,41 +259,41 @@ Team members clone the repository and run:
 
 ```bash
 # Install exact versions from lockfile
-ccpm install --frozen
+agpm install --frozen
 ```
 
 ### Updating Dependencies
 
 When updating dependencies:
 
-1. Update version constraints in `ccpm.toml`
-2. Run `ccpm update`
+1. Update version constraints in `agpm.toml`
+2. Run `agpm update`
 3. Test the changes
-4. Commit the updated `ccpm.lock`
+4. Commit the updated `agpm.lock`
 
 ## CI/CD Integration
 
 ### GitHub Actions
 
 ```yaml
-- name: Install CCPM
-  run: cargo install --git https://github.com/aig787/ccpm.git
+- name: Install AGPM
+  run: cargo install --git https://github.com/aig787/agpm.git
 
 - name: Install dependencies
-  run: ccpm install --frozen
+  run: agpm install --frozen
 ```
 
 ### With Authentication
 
 ```yaml
-- name: Configure CCPM
+- name: Configure AGPM
   run: |
-    mkdir -p ~/.ccpm
-    echo '[sources]' > ~/.ccpm/config.toml
-    echo 'private = "https://oauth2:${{ secrets.GITHUB_TOKEN }}@github.com/org/private.git"' >> ~/.ccpm/config.toml
+    mkdir -p ~/.agpm
+    echo '[sources]' > ~/.agpm/config.toml
+    echo 'private = "https://oauth2:${{ secrets.GITHUB_TOKEN }}@github.com/org/private.git"' >> ~/.agpm/config.toml
 
 - name: Install dependencies
-  run: ccpm install --frozen
+  run: agpm install --frozen
 ```
 
 ## Pattern Matching
@@ -314,18 +314,18 @@ review-agents = { source = "community", path = "agents/**/review*.md", version =
 
 [snippets]
 # All Python snippets - directory structure preserved
-# snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
-# snippets/python/django/models.md → .claude/ccpm/snippets/python/django/models.md
+# snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
+# snippets/python/django/models.md → .claude/agpm/snippets/python/django/models.md
 python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
 ```
 
-During `ccpm install`, CCPM expands each glob, installs every concrete match, and records them individually in `ccpm.lock` under the pattern dependency. Lockfile entries use the `resource_type/name@resolved_version` format so you can track the exact files that were installed.
+During `agpm install`, AGPM expands each glob, installs every concrete match, and records them individually in `agpm.lock` under the pattern dependency. Lockfile entries use the `resource_type/name@resolved_version` format so you can track the exact files that were installed.
 
-> **Tip**: Pair pattern entries with descriptive keys (like `ai-agents`) and review the resolved output with `ccpm list` or by inspecting `ccpm.lock` to confirm the matches.
+> **Tip**: Pair pattern entries with descriptive keys (like `ai-agents`) and review the resolved output with `agpm list` or by inspecting `agpm.lock` to confirm the matches.
 
 ## Transitive Dependencies
 
-Resources can declare their own dependencies, and CCPM will automatically resolve the entire dependency tree.
+Resources can declare their own dependencies, and AGPM will automatically resolve the entire dependency tree.
 
 ### Declaring Dependencies
 
@@ -361,7 +361,7 @@ dependencies:
 
 ### How It Works
 
-1. **Automatic Discovery**: When installing resources, CCPM scans their contents for dependency declarations
+1. **Automatic Discovery**: When installing resources, AGPM scans their contents for dependency declarations
 2. **Graph Building**: All dependencies (direct and transitive) are collected into a dependency graph
 3. **Cycle Detection**: Circular dependencies are detected and reported as errors
 4. **Topological Ordering**: Dependencies are installed before their dependents
@@ -376,9 +376,9 @@ Transitive dependencies inherit properties from their parent:
 ### Example
 
 ```toml
-# ccpm.toml
+# agpm.toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [commands]
 deploy = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
@@ -396,7 +396,7 @@ dependencies:
 ---
 ```
 
-Running `ccpm install` will automatically install:
+Running `agpm install` will automatically install:
 1. `deploy.md` (direct dependency)
 2. `agents/deploy-helper.md` (transitive, inherits v1.0.0)
 3. `snippets/aws-utils.md` (transitive, uses v2.0.0)
@@ -405,11 +405,11 @@ Running `ccpm install` will automatically install:
 
 - **Scripts & hooks**: Transitive scripts inherit the parent's source but still require executable permissions. Hooks declared in metadata merge into `.claude/settings.local.json`; use `target` or `filename` overrides in the manifest if two hooks would collide.
 - **MCP servers**: Transitive MCP definitions inherit `command`/`args` from the file itself. Edit the manifest entry if you need to override runtime arguments.
-- **Version overrides**: If a downstream resource needs a different version than its parent, specify `version:` in the resource metadata. CCPM will prioritize the explicit value over inheritance.
+- **Version overrides**: If a downstream resource needs a different version than its parent, specify `version:` in the resource metadata. AGPM will prioritize the explicit value over inheritance.
 
 ### Lockfile Tracking
 
-Transitive dependencies are tracked in `ccpm.lock`:
+Transitive dependencies are tracked in `agpm.lock`:
 ```toml
 [[commands]]
 name = "deploy"
@@ -423,7 +423,7 @@ dependencies = [
 
 ### Conflict Resolution
 
-When multiple resources depend on the same resource, CCPM attempts to converge on a single version:
+When multiple resources depend on the same resource, AGPM attempts to converge on a single version:
 - Compatible constraints resolve to the highest satisfying tag and the decision is logged in the CLI output.
 - Incompatible constraints (`v1` vs `v2` with no overlap) make the install fail with a detailed error.
 - Duplicate install paths (for example, two patterns resolving to `.claude/agents/reviewer.md`) also trigger a hard error.
@@ -438,12 +438,12 @@ Error: Version conflict for agents/helper.md
 ```
 
 **Troubleshooting steps:**
-1. Run `ccpm validate --resolve --format json` to see the dependency graph CCPM built.
+1. Run `agpm validate --resolve --format json` to see the dependency graph AGPM built.
 2. If the conflict is transitive, update the declaring resource's metadata to pin a specific `version` or fork the dependency.
-3. If it is direct, align your manifest constraints (e.g., bump both to `v2.0.0`) and run `ccpm install` to auto-update the lockfile.
+3. If it is direct, align your manifest constraints (e.g., bump both to `v2.0.0`) and run `agpm install` to auto-update the lockfile.
 4. For duplicate install paths, add `filename` or `target` overrides so the files land in distinct locations.
 
-After making changes, re-run `ccpm install` to refresh `ccpm.lock`. Use `RUST_LOG=debug` when you need the full resolver trace.
+After making changes, re-run `agpm install` to refresh `agpm.lock`. Use `RUST_LOG=debug` when you need the full resolver trace.
 
 ## Resource Organization
 
@@ -452,11 +452,11 @@ After making changes, re-run `ccpm install` to refresh `ccpm.lock`. Use `RUST_LO
 Resources are installed to these default locations, with source directory structure preserved:
 
 - Agents: `.claude/agents/` (e.g., `agents/ai/helper.md` → `.claude/agents/ai/helper.md`)
-- Snippets: `.claude/ccpm/snippets/` (e.g., `snippets/react/hooks.md` → `.claude/ccpm/snippets/react/hooks.md`)
+- Snippets: `.claude/agpm/snippets/` (e.g., `snippets/react/hooks.md` → `.claude/agpm/snippets/react/hooks.md`)
 - Commands: `.claude/commands/` (e.g., `commands/build/deploy.md` → `.claude/commands/build/deploy.md`)
-- Scripts: `.claude/ccpm/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/ccpm/scripts/ci/test.sh`)
-- Hooks: `.claude/ccpm/hooks/`
-- MCP Servers: `.claude/ccpm/mcp-servers/`
+- Scripts: `.claude/agpm/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/agpm/scripts/ci/test.sh`)
+- Hooks: `.claude/agpm/hooks/`
+- MCP Servers: `.claude/agpm/mcp-servers/`
 
 **Path Preservation**: The relative directory structure from the source repository is maintained during installation. This means:
 - `agents/example.md` → `.claude/agents/example.md`
@@ -465,7 +465,7 @@ Resources are installed to these default locations, with source directory struct
 
 ### Custom Locations
 
-Override defaults in `ccpm.toml`:
+Override defaults in `agpm.toml`:
 
 ```toml
 [target]
@@ -485,7 +485,7 @@ gitignore = false  # Don't create .gitignore
 
 ## Performance Features
 
-CCPM v0.3.2+ includes significant performance optimizations:
+AGPM v0.3.2+ includes significant performance optimizations:
 
 ### Centralized Version Resolution
 - **Batch processing**: All version constraints resolved in a single operation per repository
@@ -500,37 +500,37 @@ CCPM v0.3.2+ includes significant performance optimizations:
 ### Controlling Parallelism
 ```bash
 # Control number of parallel operations (default: max(10, 2 × CPU cores))
-ccpm install --max-parallel 8
+agpm install --max-parallel 8
 
 # Use all available cores
-ccpm install --max-parallel 0
+agpm install --max-parallel 0
 
 # Single-threaded execution for debugging
-ccpm install --max-parallel 1
+agpm install --max-parallel 1
 ```
 
 ### Cache Management
 ```bash
 # View cache statistics
-ccpm cache list
+agpm cache list
 
 # Clean old cache entries
-ccpm cache clean
+agpm cache clean
 
 # Bypass cache for fresh installation
-ccpm install --no-cache
+agpm install --no-cache
 ```
 
 ### Automatic Artifact Cleanup
 
-CCPM automatically removes old resource files when:
+AGPM automatically removes old resource files when:
 - A dependency is removed from the manifest
 - A resource's path changes in the manifest
 - A resource is renamed
 
 **Example:**
 ```toml
-# Initial ccpm.toml
+# Initial agpm.toml
 [agents]
 helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 # Installed as: .claude/agents/helper.md
@@ -538,13 +538,13 @@ helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
 After updating the path:
 ```toml
-# Updated ccpm.toml
+# Updated agpm.toml
 [agents]
 helper = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
 # Now installed as: .claude/agents/ai/helper.md
 ```
 
-When you run `ccpm install`:
+When you run `agpm install`:
 1. The old file at `.claude/agents/helper.md` is automatically removed
 2. The new file is installed at `.claude/agents/ai/helper.md`
 3. Empty parent directories are cleaned up (`.claude/agents/` only if empty)
@@ -556,13 +556,13 @@ When you run `ccpm install`:
 
 ## Best Practices
 
-1. **Always commit ccpm.lock** for reproducible builds
+1. **Always commit agpm.lock** for reproducible builds
 2. **Use semantic versioning** (`v1.0.0`) instead of branches
-3. **Validate before committing**: Run `ccpm validate`
-4. **Use --frozen in production**: `ccpm install --frozen`
-5. **Keep secrets in global config**, never in `ccpm.toml`
+3. **Validate before committing**: Run `agpm validate`
+4. **Use --frozen in production**: `agpm install --frozen`
+5. **Keep secrets in global config**, never in `agpm.toml`
 6. **Document custom sources** with comments
-7. **Check for outdated dependencies** regularly: `ccpm outdated`
+7. **Check for outdated dependencies** regularly: `agpm outdated`
 8. **Test updates locally** before committing
 
 ## Troubleshooting
@@ -571,30 +571,30 @@ When you run `ccpm install`:
 
 **Manifest not found:**
 ```bash
-ccpm init  # Create a new manifest
+agpm init  # Create a new manifest
 ```
 
 **Version conflicts:**
 ```bash
-ccpm validate --resolve  # Check for conflicts
+agpm validate --resolve  # Check for conflicts
 ```
 
 **Authentication issues:**
 ```bash
-ccpm config list-sources  # Verify source configuration
+agpm config list-sources  # Verify source configuration
 ```
 
 **Lockfile out of sync:**
 ```bash
-ccpm install  # Regenerate lockfile
+agpm install  # Regenerate lockfile
 ```
 
 ### Getting Help
 
-- Run `ccpm --help` for command help
+- Run `agpm --help` for command help
 - Check the [FAQ](faq.md) for common questions
 - See [Troubleshooting Guide](troubleshooting.md) for detailed solutions
-- Visit [GitHub Issues](https://github.com/aig787/ccpm/issues) for support
+- Visit [GitHub Issues](https://github.com/aig787/agpm/issues) for support
 
 ## Next Steps
 

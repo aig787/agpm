@@ -1,12 +1,12 @@
-//! Resource abstractions for CCPM
+//! Resource abstractions for AGPM
 //!
 //! This module defines the core resource types and management traits that form the foundation
-//! of CCPM's resource system. Resources are the fundamental units that CCPM manages, installs,
+//! of AGPM's resource system. Resources are the fundamental units that AGPM manages, installs,
 //! and tracks across different source repositories.
 //!
 //! # Resource Model
 //!
-//! CCPM supports different types of resources, each with specific characteristics:
+//! AGPM supports different types of resources, each with specific characteristics:
 //! - **Agents**: AI assistant configurations and prompts
 //! - **Snippets**: Reusable code templates and examples
 //!
@@ -20,7 +20,7 @@
 //!
 //! # Resource Management
 //!
-//! Resources are defined in the project's `ccpm.toml` file and installed to specific
+//! Resources are defined in the project's `agpm.toml` file and installed to specific
 //! directories based on their type. Scripts and hooks have special handling for
 //! Claude Code integration.
 //!
@@ -29,7 +29,7 @@
 //! ## Working with Resource Types
 //!
 //! ```rust,no_run
-//! use ccpm::core::ResourceType;
+//! use agpm::core::ResourceType;
 //! use std::path::Path;
 //!
 //! // Convert strings to resource types
@@ -40,15 +40,15 @@
 //!
 //! // Get default directory names
 //! assert_eq!(agent_type.default_directory(), ".claude/agents");
-//! assert_eq!(snippet_type.default_directory(), ".claude/ccpm/snippets");
-//! assert_eq!(script_type.default_directory(), ".claude/ccpm/scripts");
-//! assert_eq!(hook_type.default_directory(), ".claude/ccpm/hooks");
+//! assert_eq!(snippet_type.default_directory(), ".claude/agpm/snippets");
+//! assert_eq!(script_type.default_directory(), ".claude/agpm/scripts");
+//! assert_eq!(hook_type.default_directory(), ".claude/agpm/hooks");
 //! ```
 //!
 //! ## Serialization Support
 //!
 //! ```rust,no_run
-//! use ccpm::core::ResourceType;
+//! use agpm::core::ResourceType;
 //!
 //! // ResourceType implements Serialize/Deserialize
 //! let agent = ResourceType::Agent;
@@ -63,9 +63,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Enumeration of supported resource types in CCPM
+/// Enumeration of supported resource types in AGPM
 ///
-/// This enum defines the different categories of resources that CCPM can manage.
+/// This enum defines the different categories of resources that AGPM can manage.
 /// Each resource type has specific characteristics, installation paths, and
 /// manifest file requirements.
 ///
@@ -84,17 +84,17 @@ use std::path::Path;
 ///
 /// ## Snippet  
 /// - **Purpose**: Reusable code templates, examples, and documentation fragments
-/// - **Default Directory**: `.claude/ccpm/snippets`
+/// - **Default Directory**: `.claude/agpm/snippets`
 /// - **Common Use Cases**: Code templates, configuration examples, documentation
 ///
 /// ## Script
 /// - **Purpose**: Executable files that can be run by hooks or independently
-/// - **Default Directory**: `.claude/ccpm/scripts`
+/// - **Default Directory**: `.claude/agpm/scripts`
 /// - **Common Use Cases**: Validation scripts, automation tools, hook executables
 ///
 /// ## Hook
 /// - **Purpose**: Event-based automation configurations for Claude Code
-/// - **Default Directory**: `.claude/ccpm/hooks`
+/// - **Default Directory**: `.claude/agpm/hooks`
 /// - **Common Use Cases**: Pre/Post tool use validation, custom event handlers
 ///
 /// # Examples
@@ -102,7 +102,7 @@ use std::path::Path;
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use ccpm::core::ResourceType;
+/// use agpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// let snippet = ResourceType::Snippet;
@@ -114,7 +114,7 @@ use std::path::Path;
 /// ## String Parsing
 ///
 /// ```rust,no_run
-/// use ccpm::core::ResourceType;
+/// use agpm::core::ResourceType;
 /// use std::str::FromStr;
 ///
 /// let agent: ResourceType = "agent".parse().unwrap();
@@ -130,22 +130,22 @@ use std::path::Path;
 /// ## Directory Names
 ///
 /// ```rust,no_run
-/// use ccpm::core::ResourceType;
+/// use agpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// assert_eq!(agent.default_directory(), ".claude/agents");
 ///
 /// let snippet = ResourceType::Snippet;  
-/// assert_eq!(snippet.default_directory(), ".claude/ccpm/snippets");
+/// assert_eq!(snippet.default_directory(), ".claude/agpm/snippets");
 ///
 /// let script = ResourceType::Script;
-/// assert_eq!(script.default_directory(), ".claude/ccpm/scripts");
+/// assert_eq!(script.default_directory(), ".claude/agpm/scripts");
 /// ```
 ///
 /// ## JSON Serialization
 ///
 /// ```rust,no_run
-/// use ccpm::core::ResourceType;
+/// use agpm::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// let json = serde_json::to_string(&agent).unwrap();
@@ -189,13 +189,13 @@ pub enum ResourceType {
     /// Executable script files
     ///
     /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
-    /// by hooks or run independently. They are installed to .claude/ccpm/scripts/
+    /// by hooks or run independently. They are installed to .claude/agpm/scripts/
     Script,
 
     /// Hook configuration files
     ///
     /// Hooks define event-based automation in Claude Code. They are JSON files
-    /// that configure scripts to run at specific events (PreToolUse, PostToolUse, etc.)
+    /// that configure scripts to run at specific events (`PreToolUse`, `PostToolUse`, etc.)
     /// and are merged into settings.local.json
     Hook,
     // Future resource types can be added here
@@ -208,12 +208,12 @@ impl ResourceType {
     /// for iterating over all resource types when processing manifests, lockfiles,
     /// or performing batch operations.
     ///
-    /// The order is guaranteed to be stable: Agent, Snippet, Command, McpServer, Script, Hook
+    /// The order is guaranteed to be stable: Agent, Snippet, Command, `McpServer`, Script, Hook
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::ResourceType;
+    /// use agpm::core::ResourceType;
     ///
     /// // Iterate over all resource types
     /// for resource_type in ResourceType::all() {
@@ -223,14 +223,14 @@ impl ResourceType {
     /// // Count total resource types
     /// assert_eq!(ResourceType::all().len(), 6);
     /// ```
-    pub const fn all() -> &'static [ResourceType] {
+    pub const fn all() -> &'static [Self] {
         &[
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::McpServer,
-            ResourceType::Script,
-            ResourceType::Hook,
+            Self::Agent,
+            Self::Snippet,
+            Self::Command,
+            Self::McpServer,
+            Self::Script,
+            Self::Hook,
         ]
     }
 
@@ -241,47 +241,47 @@ impl ResourceType {
     /// # Examples
     ///
     /// ```
-    /// use ccpm::core::ResourceType;
+    /// use agpm::core::ResourceType;
     ///
     /// assert_eq!(ResourceType::Agent.to_plural(), "agents");
     /// assert_eq!(ResourceType::McpServer.to_plural(), "mcp-servers");
     /// ```
     pub const fn to_plural(&self) -> &'static str {
         match self {
-            ResourceType::Agent => "agents",
-            ResourceType::Snippet => "snippets",
-            ResourceType::Command => "commands",
-            ResourceType::Script => "scripts",
-            ResourceType::Hook => "hooks",
-            ResourceType::McpServer => "mcp-servers",
+            Self::Agent => "agents",
+            Self::Snippet => "snippets",
+            Self::Command => "commands",
+            Self::Script => "scripts",
+            Self::Hook => "hooks",
+            Self::McpServer => "mcp-servers",
         }
     }
 
     /// Get the default installation directory name for this resource type
     ///
     /// Returns the conventional directory name where resources of this type
-    /// are typically installed in CCPM projects.
+    /// are typically installed in AGPM projects.
     ///
     /// # Returns
     ///
     /// - [`Agent`] → `".claude/agents"`
-    /// - [`Snippet`] → `".claude/ccpm/snippets"`
+    /// - [`Snippet`] → `".claude/agpm/snippets"`
     /// - [`Command`] → `.claude/commands`
-    /// - [`McpServer`] → `.claude/ccpm/mcp-servers`
-    /// - [`Script`] → `.claude/ccpm/scripts`
-    /// - [`Hook`] → `.claude/ccpm/hooks`
+    /// - [`McpServer`] → `.claude/agpm/mcp-servers`
+    /// - [`Script`] → `.claude/agpm/scripts`
+    /// - [`Hook`] → `.claude/agpm/hooks`
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::ResourceType;
+    /// use agpm::core::ResourceType;
     ///
     /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
-    /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/ccpm/snippets");
+    /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/agpm/snippets");
     /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands");
-    /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/ccpm/mcp-servers");
-    /// assert_eq!(ResourceType::Script.default_directory(), ".claude/ccpm/scripts");
-    /// assert_eq!(ResourceType::Hook.default_directory(), ".claude/ccpm/hooks");
+    /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/agpm/mcp-servers");
+    /// assert_eq!(ResourceType::Script.default_directory(), ".claude/agpm/scripts");
+    /// assert_eq!(ResourceType::Hook.default_directory(), ".claude/agpm/hooks");
     /// ```
     ///
     /// # Note
@@ -296,14 +296,14 @@ impl ResourceType {
     /// [`Script`]: ResourceType::Script
     /// [`Hook`]: ResourceType::Hook
     #[must_use]
-    pub fn default_directory(&self) -> &str {
+    pub const fn default_directory(&self) -> &str {
         match self {
-            ResourceType::Agent => ".claude/agents",
-            ResourceType::Snippet => ".claude/ccpm/snippets",
-            ResourceType::Command => ".claude/commands",
-            ResourceType::McpServer => ".claude/ccpm/mcp-servers",
-            ResourceType::Script => ".claude/ccpm/scripts",
-            ResourceType::Hook => ".claude/ccpm/hooks",
+            Self::Agent => ".claude/agents",
+            Self::Snippet => ".claude/agpm/snippets",
+            Self::Command => ".claude/commands",
+            Self::McpServer => ".claude/agpm/mcp-servers",
+            Self::Script => ".claude/agpm/scripts",
+            Self::Hook => ".claude/agpm/hooks",
         }
     }
 }
@@ -311,38 +311,38 @@ impl ResourceType {
 impl std::fmt::Display for ResourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResourceType::Agent => write!(f, "agent"),
-            ResourceType::Snippet => write!(f, "snippet"),
-            ResourceType::Command => write!(f, "command"),
-            ResourceType::McpServer => write!(f, "mcp-server"),
-            ResourceType::Script => write!(f, "script"),
-            ResourceType::Hook => write!(f, "hook"),
+            Self::Agent => write!(f, "agent"),
+            Self::Snippet => write!(f, "snippet"),
+            Self::Command => write!(f, "command"),
+            Self::McpServer => write!(f, "mcp-server"),
+            Self::Script => write!(f, "script"),
+            Self::Hook => write!(f, "hook"),
         }
     }
 }
 
 impl std::str::FromStr for ResourceType {
-    type Err = crate::core::CcpmError;
+    type Err = crate::core::AgpmError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "agent" | "agents" => Ok(ResourceType::Agent),
-            "snippet" | "snippets" => Ok(ResourceType::Snippet),
-            "command" | "commands" => Ok(ResourceType::Command),
-            "mcp-server" | "mcp-servers" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
-            "script" | "scripts" => Ok(ResourceType::Script),
-            "hook" | "hooks" => Ok(ResourceType::Hook),
-            _ => Err(crate::core::CcpmError::InvalidResourceType {
+            "agent" | "agents" => Ok(Self::Agent),
+            "snippet" | "snippets" => Ok(Self::Snippet),
+            "command" | "commands" => Ok(Self::Command),
+            "mcp-server" | "mcp-servers" | "mcpserver" | "mcp" => Ok(Self::McpServer),
+            "script" | "scripts" => Ok(Self::Script),
+            "hook" | "hooks" => Ok(Self::Hook),
+            _ => Err(crate::core::AgpmError::InvalidResourceType {
                 resource_type: s.to_string(),
             }),
         }
     }
 }
 
-/// Base trait defining the interface for all CCPM resources
+/// Base trait defining the interface for all AGPM resources
 ///
 /// This trait provides a common interface for different types of resources (agents, snippets)
-/// managed by CCPM. It abstracts the core operations that can be performed on any resource,
+/// managed by AGPM. It abstracts the core operations that can be performed on any resource,
 /// including validation, installation, and metadata access.
 ///
 /// # Design Principles
@@ -366,7 +366,7 @@ impl std::str::FromStr for ResourceType {
 /// ## Basic Resource Usage Pattern
 ///
 /// ```rust,no_run
-/// use ccpm::core::{Resource, ResourceType};
+/// use agpm::core::{Resource, ResourceType};
 /// use anyhow::Result;
 /// use std::path::Path;
 ///
@@ -394,7 +394,7 @@ impl std::str::FromStr for ResourceType {
 /// ## Metadata Extraction
 ///
 /// ```rust,no_run
-/// use ccpm::core::Resource;
+/// use agpm::core::Resource;
 /// use anyhow::Result;
 ///
 /// fn extract_metadata(resource: &dyn Resource) -> Result<()> {
@@ -418,7 +418,7 @@ impl std::str::FromStr for ResourceType {
 /// The trait is object-safe and can be used as a trait object:
 ///
 /// ```rust,no_run
-/// use ccpm::core::Resource;
+/// use agpm::core::Resource;
 /// use std::any::Any;
 ///
 /// fn handle_resource(resource: Box<dyn Resource>) {
@@ -442,7 +442,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     ///
     /// fn print_resource_info(resource: &dyn Resource) {
     ///     println!("Resource name: {}", resource.name());
@@ -462,7 +462,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::{Resource, ResourceType};
+    /// use agpm::core::{Resource, ResourceType};
     ///
     /// fn categorize_resource(resource: &dyn Resource) {
     ///     match resource.resource_type() {
@@ -491,7 +491,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     ///
     /// fn show_resource_details(resource: &dyn Resource) {
     ///     println!("Name: {}", resource.name());
@@ -518,7 +518,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     ///
     /// fn check_dependencies(resource: &dyn Resource) {
     ///     if let Some(deps) = resource.dependencies() {
@@ -549,7 +549,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     /// use anyhow::Result;
     ///
     /// fn validate_before_install(resource: &dyn Resource) -> Result<()> {
@@ -581,7 +581,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     /// use std::path::Path;
     /// use anyhow::Result;
     ///
@@ -616,7 +616,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     /// use std::path::Path;
     ///
     /// fn check_install_location(resource: &dyn Resource) {
@@ -655,7 +655,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     /// use anyhow::Result;
     ///
     /// fn show_resource_metadata(resource: &dyn Resource) -> Result<()> {
@@ -690,7 +690,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::Resource;
+    /// use agpm::core::Resource;
     /// use std::any::Any;
     ///
     /// // Hypothetical concrete resource type
@@ -721,7 +721,7 @@ mod tests {
         assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
         assert_eq!(
             ResourceType::Snippet.default_directory(),
-            ".claude/ccpm/snippets"
+            ".claude/agpm/snippets"
         );
         assert_eq!(
             ResourceType::Command.default_directory(),
@@ -729,13 +729,13 @@ mod tests {
         );
         assert_eq!(
             ResourceType::McpServer.default_directory(),
-            ".claude/ccpm/mcp-servers"
+            ".claude/agpm/mcp-servers"
         );
         assert_eq!(
             ResourceType::Script.default_directory(),
-            ".claude/ccpm/scripts"
+            ".claude/agpm/scripts"
         );
-        assert_eq!(ResourceType::Hook.default_directory(), ".claude/ccpm/hooks");
+        assert_eq!(ResourceType::Hook.default_directory(), ".claude/agpm/hooks");
     }
 
     #[test]

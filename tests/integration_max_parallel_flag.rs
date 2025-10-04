@@ -51,7 +51,7 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
     // Test different --max-parallel values
     for max_parallel in [1, 2, 4, 8] {
         let output = project
-            .run_ccpm(&["install", "--max-parallel", &max_parallel.to_string()])
+            .run_agpm(&["install", "--max-parallel", &max_parallel.to_string()])
             .unwrap();
         assert!(
             output.success,
@@ -92,19 +92,19 @@ async fn test_max_parallel_invalid_values() {
 
     // Test zero value
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "0"])
+        .run_agpm(&["install", "--max-parallel", "0"])
         .unwrap();
     assert!(!output.success);
 
     // Test negative value
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "-1"])
+        .run_agpm(&["install", "--max-parallel", "-1"])
         .unwrap();
     assert!(!output.success);
 
     // Test non-numeric value
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "abc"])
+        .run_agpm(&["install", "--max-parallel", "abc"])
         .unwrap();
     assert!(!output.success);
 }
@@ -137,7 +137,7 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Install without --max-parallel flag (should use default)
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
 
@@ -179,19 +179,19 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
 
     // Install with --max-parallel should work
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "2"])
+        .run_agpm(&["install", "--max-parallel", "2"])
         .unwrap();
     assert!(output.success);
 
     // Update command should work without --max-parallel
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
 }
 
 /// Test --max-parallel in help output for install command
 #[tokio::test]
 async fn test_max_parallel_help_coverage() {
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.arg("install")
         .arg("--help")
         .assert()

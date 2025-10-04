@@ -1,4 +1,4 @@
-//! Integration tests for the `ccpm tree` command.
+//! Integration tests for the `agpm tree` command.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -18,7 +18,7 @@ local-agent = { path = "../local/agent.md" }
 utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0" }
 "#;
 
-    fs::write(dir.join("ccpm.toml"), manifest_content)
+    fs::write(dir.join("agpm.toml"), manifest_content)
         .await
         .unwrap();
 }
@@ -77,7 +77,7 @@ dependencies = []
 resource_type = "snippet"
 "#;
 
-    fs::write(dir.join("ccpm.lock"), lockfile_content)
+    fs::write(dir.join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 }
@@ -87,13 +87,13 @@ async fn test_tree_no_lockfile() {
     let temp = TempDir::new().unwrap();
     create_test_manifest(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("No lockfile found"))
-        .stdout(predicate::str::contains("ccpm install"));
+        .stdout(predicate::str::contains("agpm install"));
 }
 
 #[tokio::test]
@@ -102,7 +102,7 @@ async fn test_tree_basic() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert()
@@ -119,7 +119,7 @@ async fn test_tree_with_depth() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--depth")
@@ -134,7 +134,7 @@ async fn test_tree_json_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--format")
@@ -152,7 +152,7 @@ async fn test_tree_text_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--format")
@@ -170,7 +170,7 @@ async fn test_tree_invalid_format() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--format")
@@ -187,7 +187,7 @@ async fn test_tree_zero_depth() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--depth")
@@ -204,7 +204,7 @@ async fn test_tree_filter_agents() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--agents");
 
     cmd.assert()
@@ -219,7 +219,7 @@ async fn test_tree_filter_snippets() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--snippets");
 
     cmd.assert()
@@ -234,7 +234,7 @@ async fn test_tree_specific_package() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--package")
@@ -251,7 +251,7 @@ async fn test_tree_package_not_found() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path())
         .arg("tree")
         .arg("--package")
@@ -268,7 +268,7 @@ async fn test_tree_with_transitive_deps() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
 
     // Should show code-reviewer with its dependencies
@@ -283,11 +283,11 @@ async fn test_tree_with_transitive_deps() {
 async fn test_tree_no_manifest() {
     let temp = TempDir::new().unwrap();
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree");
 
     cmd.assert().failure().stderr(predicate::str::contains(
-        "Manifest file ccpm.toml not found",
+        "Manifest file agpm.toml not found",
     ));
 }
 
@@ -297,7 +297,7 @@ async fn test_tree_with_duplicates_flag() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--duplicates");
 
     cmd.assert().success();
@@ -309,7 +309,7 @@ async fn test_tree_no_dedupe() {
     create_test_manifest(temp.path()).await;
     create_test_lockfile(temp.path()).await;
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp.path()).arg("tree").arg("--no-dedupe");
 
     cmd.assert().success();

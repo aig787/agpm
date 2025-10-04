@@ -123,7 +123,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0
     project.write_manifest(&manifest).await.unwrap();
 
     // Run install
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Check installed file contains v1.0.0 content
@@ -155,7 +155,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get v1.2.0 (highest compatible version)
@@ -186,7 +186,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "~1.1.0
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get v1.1.0 (only patch updates allowed)
@@ -218,7 +218,7 @@ experimental = {{ source = "versioned", path = "agents/experimental.md", branch 
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Check we got develop branch content
@@ -259,7 +259,7 @@ feature = {{ source = "versioned", path = "agents/feature.md", branch = "feature
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Check feature agent was installed
@@ -293,7 +293,7 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get exact v1.0.0 content
@@ -325,7 +325,7 @@ any = {{ source = "versioned", path = "agents/example.md", version = "*" }}
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get v2.0.0 (highest available)
@@ -360,7 +360,7 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     // Should fail due to version conflict - same resource with different versions
     assert!(
         !output.success,
@@ -396,7 +396,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get v2.0.0 (highest that satisfies >=1.1.0)
@@ -426,7 +426,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Should get v1.2.0 (highest that satisfies the range)
@@ -458,7 +458,7 @@ dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
     project.write_manifest(&manifest).await.unwrap();
 
     // Initial install
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
     // Modify the develop branch
@@ -475,7 +475,7 @@ dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
     source_repo.git.commit("Update develop branch").unwrap();
 
     // Run update to get latest develop branch
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     output.assert_success();
 
     // Check we got the updated content
@@ -523,7 +523,7 @@ committed = {{ source = "versioned", path = "agents/feature.md", rev = "{}" }}
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     // Should succeed - all dependencies have different paths
     output.assert_success();
 
@@ -555,7 +555,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "v99.0.
     project.write_manifest(&manifest).await.unwrap();
 
     // This should fail
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Git operation failed")
@@ -585,7 +585,7 @@ example = {{ source = "versioned", path = "agents/example.md", branch = "nonexis
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
 }
 
@@ -610,10 +610,10 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
     project.write_manifest(&manifest).await.unwrap();
 
     // Initial install (should get v1.2.0)
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
-    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
     assert!(lockfile.contains("version = \"v1.2.0\""));
@@ -624,7 +624,7 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
         .unwrap();
 
     // Run frozen install - should use lockfile version (v1.2.0) not latest (v2.0.0)
-    let output = project.run_ccpm(&["install", "--frozen"]).unwrap();
+    let output = project.run_agpm(&["install", "--frozen"]).unwrap();
     output.assert_success();
 
     let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
@@ -655,7 +655,7 @@ version-two = {{ source = "versioned", path = "agents/example.md", version = "v2
     );
     project.write_manifest(&manifest).await?;
 
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(!output.success, "Expected collision for same path");
     // Should detect version conflict (same resource, different versions)
     assert!(
@@ -672,7 +672,7 @@ version-two = {{ source = "versioned", path = "agents/example.md", version = "v2
     if claude_dir.exists() {
         fs::remove_dir_all(&claude_dir).await?;
     }
-    let lock_file = project.project_path().join("ccpm.lock");
+    let lock_file = project.project_path().join("agpm.lock");
     if lock_file.exists() {
         fs::remove_file(&lock_file).await?;
     }
@@ -693,7 +693,7 @@ version-two = {{ source = "versioned", path = "snippets/utils.md", version = "v1
     );
     project.write_manifest(&manifest).await?;
 
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify both files are installed with custom targets
@@ -702,7 +702,7 @@ version-two = {{ source = "versioned", path = "snippets/utils.md", version = "v1
     let v1_path = project.project_path().join(".claude/agents/v1/example.md");
     let v2_path = project
         .project_path()
-        .join(".claude/ccpm/snippets/v2/utils.md");
+        .join(".claude/agpm/snippets/v2/utils.md");
 
     let v1 = fs::read_to_string(&v1_path)
         .await
@@ -719,7 +719,7 @@ version-two = {{ source = "versioned", path = "snippets/utils.md", version = "v1
     if claude_dir.exists() {
         fs::remove_dir_all(&claude_dir).await?;
     }
-    let lock_file = project.project_path().join("ccpm.lock");
+    let lock_file = project.project_path().join("agpm.lock");
     if lock_file.exists() {
         fs::remove_file(&lock_file).await?;
     }
@@ -738,7 +738,7 @@ snippet-one = {{ source = "versioned", path = "snippets/utils.md", version = "v1
     );
     project.write_manifest(&manifest).await?;
 
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     Ok(())

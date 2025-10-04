@@ -44,7 +44,7 @@ dependencies: vec![],
     #[test]
     fn test_save_and_load() {
         let temp_dir = TempDir::new().unwrap();
-        let lockfile_path = temp_dir.path().join("ccpm.lock");
+        let lockfile_path = temp_dir.path().join("agpm.lock");
 
         let mut lockfile = LockFile::new();
 

@@ -1,31 +1,31 @@
-//! Error handling for CCPM
+//! Error handling for AGPM
 //!
 //! This module provides comprehensive error types and user-friendly error reporting for the
-//! CCPM package manager. The error system is designed around two core principles:
+//! AGPM package manager. The error system is designed around two core principles:
 //! 1. **Strongly-typed errors** for precise error handling in code
 //! 2. **User-friendly messages** with actionable suggestions for CLI users
 //!
 //! # Architecture
 //!
 //! The error system consists of two main types:
-//! - [`CcpmError`] - Enumerated error types for all failure cases in CCPM
+//! - [`AgpmError`] - Enumerated error types for all failure cases in AGPM
 //! - [`ErrorContext`] - Wrapper that adds user-friendly messages and suggestions
 //!
 //! # Error Categories
 //!
-//! CCPM errors are organized into several categories:
-//! - **Git Operations**: [`CcpmError::GitNotFound`], [`CcpmError::GitCommandError`], etc.
-//! - **File System**: [`CcpmError::FileSystemError`], [`CcpmError::PermissionDenied`], etc.
-//! - **Configuration**: [`CcpmError::ManifestNotFound`], [`CcpmError::ManifestParseError`], etc.
-//! - **Dependencies**: [`CcpmError::CircularDependency`], [`CcpmError::DependencyNotMet`], etc.
-//! - **Resources**: [`CcpmError::ResourceNotFound`], [`CcpmError::InvalidResource`], etc.
+//! AGPM errors are organized into several categories:
+//! - **Git Operations**: [`AgpmError::GitNotFound`], [`AgpmError::GitCommandError`], etc.
+//! - **File System**: [`AgpmError::FileSystemError`], [`AgpmError::PermissionDenied`], etc.
+//! - **Configuration**: [`AgpmError::ManifestNotFound`], [`AgpmError::ManifestParseError`], etc.
+//! - **Dependencies**: [`AgpmError::CircularDependency`], [`AgpmError::DependencyNotMet`], etc.
+//! - **Resources**: [`AgpmError::ResourceNotFound`], [`AgpmError::InvalidResource`], etc.
 //!
 //! # Error Conversion and Context
 //!
-//! Common standard library errors are automatically converted to CCPM errors:
-//! - [`std::io::Error`] → [`CcpmError::IoError`]
-//! - [`toml::de::Error`] → [`CcpmError::TomlError`]
-//! - [`semver::Error`] → [`CcpmError::SemverError`]
+//! Common standard library errors are automatically converted to AGPM errors:
+//! - [`std::io::Error`] → [`AgpmError::IoError`]
+//! - [`toml::de::Error`] → [`AgpmError::TomlError`]
+//! - [`semver::Error`] → [`AgpmError::SemverError`]
 //!
 //! Use [`user_friendly_error`] to convert any error into a user-friendly format with
 //! contextual suggestions.
@@ -35,11 +35,11 @@
 //! ## Basic Error Handling
 //!
 //! ```rust,no_run
-//! use ccpm::core::{CcpmError, ErrorContext, user_friendly_error};
+//! use agpm::core::{AgpmError, ErrorContext, user_friendly_error};
 //!
-//! fn handle_git_operation() -> Result<(), CcpmError> {
+//! fn handle_git_operation() -> Result<(), AgpmError> {
 //!     // Simulate a git operation failure
-//!     Err(CcpmError::GitNotFound)
+//!     Err(AgpmError::GitNotFound)
 //! }
 //!
 //! match handle_git_operation() {
@@ -54,12 +54,12 @@
 //! ## Creating Error Context Manually
 //!
 //! ```rust,no_run
-//! use ccpm::core::{CcpmError, ErrorContext};
+//! use agpm::core::{AgpmError, ErrorContext};
 //!
-//! let error = CcpmError::ManifestNotFound;
+//! let error = AgpmError::ManifestNotFound;
 //! let context = ErrorContext::new(error)
-//!     .with_suggestion("Create a ccpm.toml file in your project directory")
-//!     .with_details("CCPM searches for ccpm.toml in current and parent directories");
+//!     .with_suggestion("Create a agpm.toml file in your project directory")
+//!     .with_details("AGPM searches for agpm.toml in current and parent directories");
 //!
 //! // Display with colors in terminal
 //! context.display();
@@ -71,7 +71,7 @@
 //! ## Error Recovery Patterns
 //!
 //! ```rust,no_run
-//! use ccpm::core::{CcpmError, user_friendly_error};
+//! use agpm::core::{AgpmError, user_friendly_error};
 //! use anyhow::Context;
 //!
 //! fn install_dependency(name: &str) -> anyhow::Result<()> {
@@ -96,9 +96,9 @@ use colored::Colorize;
 use std::fmt;
 use thiserror::Error;
 
-/// The main error type for CCPM operations
+/// The main error type for AGPM operations
 ///
-/// This enum represents all possible errors that can occur during CCPM operations.
+/// This enum represents all possible errors that can occur during AGPM operations.
 /// Each variant is designed to provide specific context about the failure and enable
 /// appropriate error handling strategies.
 ///
@@ -125,7 +125,7 @@ use thiserror::Error;
 /// - [`IoError`] - Standard I/O errors from [`std::io::Error`]
 ///
 /// ## Configuration and Parsing
-/// - [`ManifestNotFound`] - ccpm.toml file missing
+/// - [`ManifestNotFound`] - agpm.toml file missing
 /// - [`ManifestParseError`] - Invalid TOML syntax in manifest
 /// - [`ManifestValidationError`] - Manifest content validation failed
 /// - [`LockfileParseError`] - Invalid lockfile format
@@ -164,18 +164,18 @@ use thiserror::Error;
 /// ## Pattern Matching on Errors
 ///
 /// ```rust,no_run
-/// use ccpm::core::CcpmError;
+/// use agpm::core::AgpmError;
 ///
-/// fn handle_error(error: CcpmError) {
+/// fn handle_error(error: AgpmError) {
 ///     match error {
-///         CcpmError::GitNotFound => {
-///             eprintln!("Please install git to use CCPM");
+///         AgpmError::GitNotFound => {
+///             eprintln!("Please install git to use AGPM");
 ///             std::process::exit(1);
 ///         }
-///         CcpmError::ManifestNotFound => {
-///             eprintln!("Run 'ccpm init' to create a manifest file");
+///         AgpmError::ManifestNotFound => {
+///             eprintln!("Run 'agpm init' to create a manifest file");
 ///         }
-///         CcpmError::NetworkError { operation, .. } => {
+///         AgpmError::NetworkError { operation, .. } => {
 ///             eprintln!("Network error during {}: check your connection", operation);
 ///         }
 ///         _ => {
@@ -188,61 +188,61 @@ use thiserror::Error;
 /// ## Creating Specific Errors
 ///
 /// ```rust,no_run
-/// use ccpm::core::CcpmError;
+/// use agpm::core::AgpmError;
 ///
 /// // Create a git command error with context
-/// let error = CcpmError::GitCommandError {
+/// let error = AgpmError::GitCommandError {
 ///     operation: "clone".to_string(),
 ///     stderr: "repository not found".to_string(),
 /// };
 ///
 /// // Create a resource not found error
-/// let error = CcpmError::ResourceNotFound {
+/// let error = AgpmError::ResourceNotFound {
 ///     name: "my-agent".to_string(),
 /// };
 ///
 /// // Create a version constraint error
-/// let error = CcpmError::InvalidVersionConstraint {
+/// let error = AgpmError::InvalidVersionConstraint {
 ///     constraint: "~1.x.y".to_string(),
 /// };
 /// ```
 ///
-/// [`GitNotFound`]: CcpmError::GitNotFound
-/// [`GitCommandError`]: CcpmError::GitCommandError
-/// [`GitAuthenticationFailed`]: CcpmError::GitAuthenticationFailed
-/// [`GitCloneFailed`]: CcpmError::GitCloneFailed
-/// [`GitCheckoutFailed`]: CcpmError::GitCheckoutFailed
-/// [`FileSystemError`]: CcpmError::FileSystemError
-/// [`PermissionDenied`]: CcpmError::PermissionDenied
-/// [`DirectoryNotEmpty`]: CcpmError::DirectoryNotEmpty
-/// [`IoError`]: CcpmError::IoError
-/// [`ManifestNotFound`]: CcpmError::ManifestNotFound
-/// [`ManifestParseError`]: CcpmError::ManifestParseError
-/// [`ManifestValidationError`]: CcpmError::ManifestValidationError
-/// [`LockfileParseError`]: CcpmError::LockfileParseError
-/// [`ConfigError`]: CcpmError::ConfigError
-/// [`TomlError`]: CcpmError::TomlError
-/// [`TomlSerError`]: CcpmError::TomlSerError
-/// [`ResourceNotFound`]: CcpmError::ResourceNotFound
-/// [`ResourceFileNotFound`]: CcpmError::ResourceFileNotFound
-/// [`InvalidResourceType`]: CcpmError::InvalidResourceType
-/// [`InvalidResourceStructure`]: CcpmError::InvalidResourceStructure
-/// [`InvalidResource`]: CcpmError::InvalidResource
-/// [`AlreadyInstalled`]: CcpmError::AlreadyInstalled
-/// [`CircularDependency`]: CcpmError::CircularDependency
-/// [`DependencyResolutionFailed`]: CcpmError::DependencyResolutionFailed
-/// [`DependencyNotMet`]: CcpmError::DependencyNotMet
-/// [`InvalidDependency`]: CcpmError::InvalidDependency
-/// [`InvalidVersionConstraint`]: CcpmError::InvalidVersionConstraint
-/// [`VersionNotFound`]: CcpmError::VersionNotFound
-/// [`SemverError`]: CcpmError::SemverError
-/// [`SourceNotFound`]: CcpmError::SourceNotFound
-/// [`SourceUnreachable`]: CcpmError::SourceUnreachable
-/// [`NetworkError`]: CcpmError::NetworkError
-/// [`PlatformNotSupported`]: CcpmError::PlatformNotSupported
-/// [`ChecksumMismatch`]: CcpmError::ChecksumMismatch
+/// [`GitNotFound`]: AgpmError::GitNotFound
+/// [`GitCommandError`]: AgpmError::GitCommandError
+/// [`GitAuthenticationFailed`]: AgpmError::GitAuthenticationFailed
+/// [`GitCloneFailed`]: AgpmError::GitCloneFailed
+/// [`GitCheckoutFailed`]: AgpmError::GitCheckoutFailed
+/// [`FileSystemError`]: AgpmError::FileSystemError
+/// [`PermissionDenied`]: AgpmError::PermissionDenied
+/// [`DirectoryNotEmpty`]: AgpmError::DirectoryNotEmpty
+/// [`IoError`]: AgpmError::IoError
+/// [`ManifestNotFound`]: AgpmError::ManifestNotFound
+/// [`ManifestParseError`]: AgpmError::ManifestParseError
+/// [`ManifestValidationError`]: AgpmError::ManifestValidationError
+/// [`LockfileParseError`]: AgpmError::LockfileParseError
+/// [`ConfigError`]: AgpmError::ConfigError
+/// [`TomlError`]: AgpmError::TomlError
+/// [`TomlSerError`]: AgpmError::TomlSerError
+/// [`ResourceNotFound`]: AgpmError::ResourceNotFound
+/// [`ResourceFileNotFound`]: AgpmError::ResourceFileNotFound
+/// [`InvalidResourceType`]: AgpmError::InvalidResourceType
+/// [`InvalidResourceStructure`]: AgpmError::InvalidResourceStructure
+/// [`InvalidResource`]: AgpmError::InvalidResource
+/// [`AlreadyInstalled`]: AgpmError::AlreadyInstalled
+/// [`CircularDependency`]: AgpmError::CircularDependency
+/// [`DependencyResolutionFailed`]: AgpmError::DependencyResolutionFailed
+/// [`DependencyNotMet`]: AgpmError::DependencyNotMet
+/// [`InvalidDependency`]: AgpmError::InvalidDependency
+/// [`InvalidVersionConstraint`]: AgpmError::InvalidVersionConstraint
+/// [`VersionNotFound`]: AgpmError::VersionNotFound
+/// [`SemverError`]: AgpmError::SemverError
+/// [`SourceNotFound`]: AgpmError::SourceNotFound
+/// [`SourceUnreachable`]: AgpmError::SourceUnreachable
+/// [`NetworkError`]: AgpmError::NetworkError
+/// [`PlatformNotSupported`]: AgpmError::PlatformNotSupported
+/// [`ChecksumMismatch`]: AgpmError::ChecksumMismatch
 #[derive(Error, Debug)]
-pub enum CcpmError {
+pub enum AgpmError {
     /// Git operation failed during execution
     ///
     /// This error occurs when a git command returns a non-zero exit code.
@@ -262,8 +262,8 @@ pub enum CcpmError {
 
     /// Git executable not found in PATH
     ///
-    /// This error occurs when CCPM cannot locate the `git` command in the system PATH.
-    /// CCPM requires git to be installed and available for repository operations.
+    /// This error occurs when AGPM cannot locate the `git` command in the system PATH.
+    /// AGPM requires git to be installed and available for repository operations.
     ///
     /// Common solutions:
     /// - Install git from <https://git-scm.com/>
@@ -323,14 +323,14 @@ pub enum CcpmError {
         message: String,
     },
 
-    /// Manifest file (ccpm.toml) not found
+    /// Manifest file (agpm.toml) not found
     ///
-    /// This error occurs when CCPM cannot locate a ccpm.toml file in the current
+    /// This error occurs when AGPM cannot locate a agpm.toml file in the current
     /// directory or any parent directory up to the filesystem root.
     ///
-    /// CCPM searches for ccpm.toml starting from the current working directory
+    /// AGPM searches for agpm.toml starting from the current working directory
     /// and walking up the directory tree, similar to how git searches for .git.
-    #[error("Manifest file ccpm.toml not found in current directory or any parent directory")]
+    #[error("Manifest file agpm.toml not found in current directory or any parent directory")]
     ManifestNotFound,
 
     /// Manifest parsing error
@@ -563,143 +563,129 @@ pub enum CcpmError {
     },
 }
 
-impl Clone for CcpmError {
+impl Clone for AgpmError {
     fn clone(&self) -> Self {
         match self {
-            CcpmError::GitCommandError { operation, stderr } => CcpmError::GitCommandError {
+            Self::GitCommandError { operation, stderr } => Self::GitCommandError {
                 operation: operation.clone(),
                 stderr: stderr.clone(),
             },
-            CcpmError::GitNotFound => CcpmError::GitNotFound,
-            CcpmError::GitRepoInvalid { path } => CcpmError::GitRepoInvalid { path: path.clone() },
-            CcpmError::GitAuthenticationFailed { url } => {
-                CcpmError::GitAuthenticationFailed { url: url.clone() }
+            Self::GitNotFound => Self::GitNotFound,
+            Self::GitRepoInvalid { path } => Self::GitRepoInvalid { path: path.clone() },
+            Self::GitAuthenticationFailed { url } => {
+                Self::GitAuthenticationFailed { url: url.clone() }
             }
-            CcpmError::GitCloneFailed { url, reason } => CcpmError::GitCloneFailed {
+            Self::GitCloneFailed { url, reason } => Self::GitCloneFailed {
                 url: url.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::GitCheckoutFailed { reference, reason } => CcpmError::GitCheckoutFailed {
+            Self::GitCheckoutFailed { reference, reason } => Self::GitCheckoutFailed {
                 reference: reference.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::ConfigError { message } => CcpmError::ConfigError {
+            Self::ConfigError { message } => Self::ConfigError {
                 message: message.clone(),
             },
-            CcpmError::ManifestNotFound => CcpmError::ManifestNotFound,
-            CcpmError::ManifestParseError { file, reason } => CcpmError::ManifestParseError {
+            Self::ManifestNotFound => Self::ManifestNotFound,
+            Self::ManifestParseError { file, reason } => Self::ManifestParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::ManifestValidationError { reason } => CcpmError::ManifestValidationError {
+            Self::ManifestValidationError { reason } => Self::ManifestValidationError {
                 reason: reason.clone(),
             },
-            CcpmError::LockfileParseError { file, reason } => CcpmError::LockfileParseError {
+            Self::LockfileParseError { file, reason } => Self::LockfileParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::ResourceNotFound { name } => {
-                CcpmError::ResourceNotFound { name: name.clone() }
-            }
-            CcpmError::ResourceFileNotFound { path, source_name } => {
-                CcpmError::ResourceFileNotFound {
-                    path: path.clone(),
-                    source_name: source_name.clone(),
-                }
-            }
-            CcpmError::SourceNotFound { name } => CcpmError::SourceNotFound { name: name.clone() },
-            CcpmError::SourceUnreachable { name, url } => CcpmError::SourceUnreachable {
+            Self::ResourceNotFound { name } => Self::ResourceNotFound { name: name.clone() },
+            Self::ResourceFileNotFound { path, source_name } => Self::ResourceFileNotFound {
+                path: path.clone(),
+                source_name: source_name.clone(),
+            },
+            Self::SourceNotFound { name } => Self::SourceNotFound { name: name.clone() },
+            Self::SourceUnreachable { name, url } => Self::SourceUnreachable {
                 name: name.clone(),
                 url: url.clone(),
             },
-            CcpmError::InvalidVersionConstraint { constraint } => {
-                CcpmError::InvalidVersionConstraint {
-                    constraint: constraint.clone(),
-                }
-            }
-            CcpmError::VersionNotFound { resource, version } => CcpmError::VersionNotFound {
+            Self::InvalidVersionConstraint { constraint } => Self::InvalidVersionConstraint {
+                constraint: constraint.clone(),
+            },
+            Self::VersionNotFound { resource, version } => Self::VersionNotFound {
                 resource: resource.clone(),
                 version: version.clone(),
             },
-            CcpmError::AlreadyInstalled { name } => {
-                CcpmError::AlreadyInstalled { name: name.clone() }
-            }
-            CcpmError::InvalidResourceType { resource_type } => CcpmError::InvalidResourceType {
+            Self::AlreadyInstalled { name } => Self::AlreadyInstalled { name: name.clone() },
+            Self::InvalidResourceType { resource_type } => Self::InvalidResourceType {
                 resource_type: resource_type.clone(),
             },
-            CcpmError::InvalidResourceStructure { file, reason } => {
-                CcpmError::InvalidResourceStructure {
-                    file: file.clone(),
-                    reason: reason.clone(),
-                }
-            }
-            CcpmError::CircularDependency { chain } => CcpmError::CircularDependency {
+            Self::InvalidResourceStructure { file, reason } => Self::InvalidResourceStructure {
+                file: file.clone(),
+                reason: reason.clone(),
+            },
+            Self::CircularDependency { chain } => Self::CircularDependency {
                 chain: chain.clone(),
             },
-            CcpmError::DependencyResolutionFailed { reason } => {
-                CcpmError::DependencyResolutionFailed {
-                    reason: reason.clone(),
-                }
-            }
-            CcpmError::NetworkError { operation, reason } => CcpmError::NetworkError {
+            Self::DependencyResolutionFailed { reason } => Self::DependencyResolutionFailed {
+                reason: reason.clone(),
+            },
+            Self::NetworkError { operation, reason } => Self::NetworkError {
                 operation: operation.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::FileSystemError { operation, path } => CcpmError::FileSystemError {
+            Self::FileSystemError { operation, path } => Self::FileSystemError {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            CcpmError::PermissionDenied { operation, path } => CcpmError::PermissionDenied {
+            Self::PermissionDenied { operation, path } => Self::PermissionDenied {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            CcpmError::DirectoryNotEmpty { path } => {
-                CcpmError::DirectoryNotEmpty { path: path.clone() }
-            }
-            CcpmError::InvalidDependency { name, reason } => CcpmError::InvalidDependency {
+            Self::DirectoryNotEmpty { path } => Self::DirectoryNotEmpty { path: path.clone() },
+            Self::InvalidDependency { name, reason } => Self::InvalidDependency {
                 name: name.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::InvalidResource { name, reason } => CcpmError::InvalidResource {
+            Self::InvalidResource { name, reason } => Self::InvalidResource {
                 name: name.clone(),
                 reason: reason.clone(),
             },
-            CcpmError::DependencyNotMet {
+            Self::DependencyNotMet {
                 name,
                 required,
                 found,
-            } => CcpmError::DependencyNotMet {
+            } => Self::DependencyNotMet {
                 name: name.clone(),
                 required: required.clone(),
                 found: found.clone(),
             },
-            CcpmError::ConfigNotFound { path } => CcpmError::ConfigNotFound { path: path.clone() },
-            CcpmError::ChecksumMismatch {
+            Self::ConfigNotFound { path } => Self::ConfigNotFound { path: path.clone() },
+            Self::ChecksumMismatch {
                 name,
                 expected,
                 actual,
-            } => CcpmError::ChecksumMismatch {
+            } => Self::ChecksumMismatch {
                 name: name.clone(),
                 expected: expected.clone(),
                 actual: actual.clone(),
             },
-            CcpmError::PlatformNotSupported { operation } => CcpmError::PlatformNotSupported {
+            Self::PlatformNotSupported { operation } => Self::PlatformNotSupported {
                 operation: operation.clone(),
             },
             // For errors that don't implement Clone, convert to Other
-            CcpmError::IoError(e) => CcpmError::Other {
+            Self::IoError(e) => Self::Other {
                 message: format!("IO error: {e}"),
             },
-            CcpmError::TomlError(e) => CcpmError::Other {
+            Self::TomlError(e) => Self::Other {
                 message: format!("TOML parsing error: {e}"),
             },
-            CcpmError::TomlSerError(e) => CcpmError::Other {
+            Self::TomlSerError(e) => Self::Other {
                 message: format!("TOML serialization error: {e}"),
             },
-            CcpmError::SemverError(e) => CcpmError::Other {
+            Self::SemverError(e) => Self::Other {
                 message: format!("Semver parsing error: {e}"),
             },
-            CcpmError::Other { message } => CcpmError::Other {
+            Self::Other { message } => Self::Other {
                 message: message.clone(),
             },
         }
@@ -708,9 +694,9 @@ impl Clone for CcpmError {
 
 /// Error context wrapper that provides user-friendly error information
 ///
-/// `ErrorContext` wraps a [`CcpmError`] and adds optional user-friendly messages,
+/// `ErrorContext` wraps a [`AgpmError`] and adds optional user-friendly messages,
 /// suggestions for resolution, and additional details. This is the primary way
-/// CCPM presents errors to CLI users.
+/// AGPM presents errors to CLI users.
 ///
 /// # Design Philosophy
 ///
@@ -732,12 +718,12 @@ impl Clone for CcpmError {
 /// ## Creating Error Context
 ///
 /// ```rust,no_run
-/// use ccpm::core::{CcpmError, ErrorContext};
+/// use agpm::core::{AgpmError, ErrorContext};
 ///
-/// let error = CcpmError::GitNotFound;
+/// let error = AgpmError::GitNotFound;
 /// let context = ErrorContext::new(error)
 ///     .with_suggestion("Install git from https://git-scm.com/")
-///     .with_details("CCPM requires git for repository operations");
+///     .with_details("AGPM requires git for repository operations");
 ///
 /// // Display to terminal with colors
 /// context.display();
@@ -749,11 +735,11 @@ impl Clone for CcpmError {
 /// ## Builder Pattern Usage
 ///
 /// ```rust,no_run
-/// use ccpm::core::{CcpmError, ErrorContext};
+/// use agpm::core::{AgpmError, ErrorContext};
 ///
-/// let context = ErrorContext::new(CcpmError::ManifestNotFound)
-///     .with_suggestion("Create a ccpm.toml file in your project directory")
-///     .with_details("CCPM searches current and parent directories for ccpm.toml");
+/// let context = ErrorContext::new(AgpmError::ManifestNotFound)
+///     .with_suggestion("Create a agpm.toml file in your project directory")
+///     .with_details("AGPM searches current and parent directories for agpm.toml");
 ///
 /// println!("{}", context);
 /// ```
@@ -761,15 +747,15 @@ impl Clone for CcpmError {
 /// ## Quick Suggestion Creation
 ///
 /// ```rust,no_run
-/// use ccpm::core::ErrorContext;
+/// use agpm::core::ErrorContext;
 ///
 /// // Create context with just a suggestion (useful for generic errors)
 /// let context = ErrorContext::suggestion("Try running the command with --verbose");
 /// ```
 #[derive(Debug)]
 pub struct ErrorContext {
-    /// The underlying CCPM error
-    pub error: CcpmError,
+    /// The underlying AGPM error
+    pub error: AgpmError,
     /// Optional suggestion for resolving the error
     pub suggestion: Option<String>,
     /// Optional additional details about the error
@@ -777,7 +763,7 @@ pub struct ErrorContext {
 }
 
 impl ErrorContext {
-    /// Create a new error context from a [`CcpmError`]
+    /// Create a new error context from a [`AgpmError`]
     ///
     /// This creates a basic error context with no additional suggestions or details.
     /// Use the builder methods [`with_suggestion`] and [`with_details`] to add
@@ -786,15 +772,15 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::{CcpmError, ErrorContext};
+    /// use agpm::core::{AgpmError, ErrorContext};
     ///
-    /// let context = ErrorContext::new(CcpmError::GitNotFound);
+    /// let context = ErrorContext::new(AgpmError::GitNotFound);
     /// ```
     ///
     /// [`with_suggestion`]: ErrorContext::with_suggestion
     /// [`with_details`]: ErrorContext::with_details
     #[must_use]
-    pub fn new(error: CcpmError) -> Self {
+    pub const fn new(error: AgpmError) -> Self {
         Self {
             error,
             suggestion: None,
@@ -810,9 +796,9 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::{CcpmError, ErrorContext};
+    /// use agpm::core::{AgpmError, ErrorContext};
     ///
-    /// let context = ErrorContext::new(CcpmError::GitNotFound)
+    /// let context = ErrorContext::new(AgpmError::GitNotFound)
     ///     .with_suggestion("Install git using 'brew install git' or visit https://git-scm.com/");
     /// ```
     pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
@@ -829,10 +815,10 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::{CcpmError, ErrorContext};
+    /// use agpm::core::{AgpmError, ErrorContext};
     ///
-    /// let context = ErrorContext::new(CcpmError::ManifestNotFound)
-    ///     .with_details("CCPM looks for ccpm.toml in current directory and parent directories");
+    /// let context = ErrorContext::new(AgpmError::ManifestNotFound)
+    ///     .with_details("AGPM looks for agpm.toml in current directory and parent directories");
     /// ```
     pub fn with_details(mut self, details: impl Into<String>) -> Self {
         self.details = Some(details.into());
@@ -847,16 +833,16 @@ impl ErrorContext {
     /// - Details: Yellow
     /// - Suggestion: Green
     ///
-    /// This is the primary way CCPM presents errors to users in the CLI.
+    /// This is the primary way AGPM presents errors to users in the CLI.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::{CcpmError, ErrorContext};
+    /// use agpm::core::{AgpmError, ErrorContext};
     ///
-    /// let context = ErrorContext::new(CcpmError::GitNotFound)
+    /// let context = ErrorContext::new(AgpmError::GitNotFound)
     ///     .with_suggestion("Install git from https://git-scm.com/")
-    ///     .with_details("CCPM requires git for repository operations");
+    ///     .with_details("AGPM requires git for repository operations");
     ///
     /// context.display(); // Prints colored error to stderr
     /// ```
@@ -891,18 +877,18 @@ impl fmt::Display for ErrorContext {
 
 impl std::error::Error for ErrorContext {}
 
-/// Extension trait for converting [`CcpmError`] to [`anyhow::Error`] with context
+/// Extension trait for converting [`AgpmError`] to [`anyhow::Error`] with context
 ///
-/// This trait provides a method to convert CCPM-specific errors into generic
+/// This trait provides a method to convert AGPM-specific errors into generic
 /// [`anyhow::Error`] instances while preserving user-friendly context information.
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::core::{CcpmError, ErrorContext, IntoAnyhowWithContext};
+/// use agpm::core::{AgpmError, ErrorContext, IntoAnyhowWithContext};
 ///
-/// let error = CcpmError::GitNotFound;
-/// let context = ErrorContext::new(CcpmError::Other { message: "dummy".to_string() })
+/// let error = AgpmError::GitNotFound;
+/// let context = ErrorContext::new(AgpmError::Other { message: "dummy".to_string() })
 ///     .with_suggestion("Install git");
 ///
 /// let anyhow_error = error.into_anyhow_with_context(context);
@@ -912,7 +898,7 @@ pub trait IntoAnyhowWithContext {
     fn into_anyhow_with_context(self, context: ErrorContext) -> anyhow::Error;
 }
 
-impl IntoAnyhowWithContext for CcpmError {
+impl IntoAnyhowWithContext for AgpmError {
     fn into_anyhow_with_context(self, context: ErrorContext) -> anyhow::Error {
         anyhow::Error::new(ErrorContext {
             error: self,
@@ -926,19 +912,19 @@ impl ErrorContext {
     /// Create an [`ErrorContext`] with only a suggestion (no specific error)
     ///
     /// This is useful for generic errors where you want to provide a suggestion
-    /// but don't have a specific [`CcpmError`] variant.
+    /// but don't have a specific [`AgpmError`] variant.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::core::ErrorContext;
+    /// use agpm::core::ErrorContext;
     ///
     /// let context = ErrorContext::suggestion("Try running with --verbose for more information");
     /// context.display();
     /// ```
     pub fn suggestion(suggestion: impl Into<String>) -> Self {
         Self {
-            error: CcpmError::Other {
+            error: AgpmError::Other {
                 message: String::new(),
             },
             suggestion: Some(suggestion.into()),
@@ -956,19 +942,19 @@ impl ErrorContext {
 /// # Error Recognition
 ///
 /// The function recognizes and provides specific handling for:
-/// - [`CcpmError`] variants with tailored suggestions
+/// - [`AgpmError`] variants with tailored suggestions
 /// - [`std::io::Error`] with filesystem-specific guidance
 /// - [`toml::de::Error`] with TOML syntax help
 /// - Generic errors with basic context
 ///
 /// # Examples
 ///
-/// ## Converting CCPM Errors
+/// ## Converting AGPM Errors
 ///
 /// ```rust,no_run
-/// use ccpm::core::{CcpmError, user_friendly_error};
+/// use agpm::core::{AgpmError, user_friendly_error};
 ///
-/// let error = CcpmError::GitNotFound;
+/// let error = AgpmError::GitNotFound;
 /// let anyhow_error = anyhow::Error::from(error);
 /// let context = user_friendly_error(anyhow_error);
 ///
@@ -978,7 +964,7 @@ impl ErrorContext {
 /// ## Converting IO Errors
 ///
 /// ```rust,no_run
-/// use ccpm::core::user_friendly_error;
+/// use agpm::core::user_friendly_error;
 /// use std::io::{Error, ErrorKind};
 ///
 /// let io_error = Error::new(ErrorKind::PermissionDenied, "access denied");
@@ -991,7 +977,7 @@ impl ErrorContext {
 /// ## Converting Generic Errors
 ///
 /// ```rust,no_run
-/// use ccpm::core::user_friendly_error;
+/// use agpm::core::user_friendly_error;
 ///
 /// let error = anyhow::anyhow!("Something went wrong");
 /// let context = user_friendly_error(error);
@@ -1001,24 +987,24 @@ impl ErrorContext {
 #[must_use]
 pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     // Check for specific error types and provide helpful suggestions
-    if let Some(ccmp_error) = error.downcast_ref::<CcpmError>() {
+    if let Some(ccmp_error) = error.downcast_ref::<AgpmError>() {
         return create_error_context(ccmp_error.clone());
     }
 
     if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
         match io_error.kind() {
             std::io::ErrorKind::PermissionDenied => {
-                return ErrorContext::new(CcpmError::PermissionDenied {
+                return ErrorContext::new(AgpmError::PermissionDenied {
                     operation: "file access".to_string(),
                     path: "unknown".to_string(),
                 })
                 .with_suggestion(
                     "Try running with elevated permissions (sudo/Administrator) or check file ownership",
                 )
-                .with_details("This error occurs when CCPM doesn't have permission to read or write files");
+                .with_details("This error occurs when AGPM doesn't have permission to read or write files");
             }
             std::io::ErrorKind::NotFound => {
-                return ErrorContext::new(CcpmError::FileSystemError {
+                return ErrorContext::new(AgpmError::FileSystemError {
                     operation: "file access".to_string(),
                     path: "unknown".to_string(),
                 })
@@ -1028,7 +1014,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
                 );
             }
             std::io::ErrorKind::AlreadyExists => {
-                return ErrorContext::new(CcpmError::FileSystemError {
+                return ErrorContext::new(AgpmError::FileSystemError {
                     operation: "file creation".to_string(),
                     path: "unknown".to_string(),
                 })
@@ -1036,7 +1022,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
                 .with_details("The target file or directory already exists");
             }
             std::io::ErrorKind::InvalidData => {
-                return ErrorContext::new(CcpmError::InvalidResource {
+                return ErrorContext::new(AgpmError::InvalidResource {
                     name: "unknown".to_string(),
                     reason: "invalid file format".to_string(),
                 })
@@ -1048,11 +1034,11 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     }
 
     if let Some(toml_error) = error.downcast_ref::<toml::de::Error>() {
-        return ErrorContext::new(CcpmError::ManifestParseError {
-            file: "ccpm.toml".to_string(),
+        return ErrorContext::new(AgpmError::ManifestParseError {
+            file: "agpm.toml".to_string(),
             reason: toml_error.to_string(),
         })
-        .with_suggestion("Check the TOML syntax in your ccpm.toml file. Verify quotes, brackets, and indentation")
+        .with_suggestion("Check the TOML syntax in your agpm.toml file. Verify quotes, brackets, and indentation")
         .with_details("TOML parsing errors are usually caused by syntax issues like missing quotes or mismatched brackets");
     }
 
@@ -1063,7 +1049,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     let chain: Vec<String> = error
         .chain()
         .skip(1) // Skip the root cause which is already in to_string()
-        .map(|e| e.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     if !chain.is_empty() {
@@ -1073,12 +1059,12 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         }
     }
 
-    ErrorContext::new(CcpmError::Other { message })
+    ErrorContext::new(AgpmError::Other { message })
 }
 
-/// Create appropriate [`ErrorContext`] with suggestions for specific CCPM errors
+/// Create appropriate [`ErrorContext`] with suggestions for specific AGPM errors
 ///
-/// This internal function maps each [`CcpmError`] variant to an appropriate
+/// This internal function maps each [`AgpmError`] variant to an appropriate
 /// [`ErrorContext`] with tailored suggestions and details. It's used by
 /// [`user_friendly_error`] to provide consistent, helpful error messages.
 ///
@@ -1088,14 +1074,14 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
 /// - Platform-specific suggestions are provided where applicable
 /// - Error messages focus on actionable steps rather than technical details
 /// - Cross-references to related commands or documentation are included
-fn create_error_context(error: CcpmError) -> ErrorContext {
+fn create_error_context(error: AgpmError) -> ErrorContext {
     match &error {
-        CcpmError::GitNotFound => ErrorContext::new(CcpmError::GitNotFound)
+        AgpmError::GitNotFound => ErrorContext::new(AgpmError::GitNotFound)
             .with_suggestion("Install git from https://git-scm.com/ or your package manager (e.g., 'brew install git', 'apt install git')")
-            .with_details("CCPM requires git to be installed and available in your PATH to manage repositories"),
+            .with_details("AGPM requires git to be installed and available in your PATH to manage repositories"),
 
-        CcpmError::GitCommandError { operation, stderr } => {
-            ErrorContext::new(CcpmError::GitCommandError {
+        AgpmError::GitCommandError { operation, stderr } => {
+            ErrorContext::new(AgpmError::GitCommandError {
                 operation: operation.clone(),
                 stderr: stderr.clone(),
             })
@@ -1123,13 +1109,13 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             })
         }
 
-        CcpmError::GitAuthenticationFailed { url } => ErrorContext::new(CcpmError::GitAuthenticationFailed {
+        AgpmError::GitAuthenticationFailed { url } => ErrorContext::new(AgpmError::GitAuthenticationFailed {
             url: url.clone(),
         })
             .with_suggestion("Configure git authentication: use 'git config --global user.name' and 'git config --global user.email', or set up SSH keys")
             .with_details("Authentication is required for private repositories. You may need to log in with 'git credential-manager-core' or similar"),
 
-        CcpmError::GitCloneFailed { url, reason } => ErrorContext::new(CcpmError::GitCloneFailed {
+        AgpmError::GitCloneFailed { url, reason } => ErrorContext::new(AgpmError::GitCloneFailed {
             url: url.clone(),
             reason: reason.clone(),
         })
@@ -1138,28 +1124,28 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             ))
             .with_details("Clone operations can fail due to invalid URLs, network issues, or access restrictions"),
 
-        CcpmError::ManifestNotFound => ErrorContext::new(CcpmError::ManifestNotFound)
-            .with_suggestion("Create a ccpm.toml file in your project directory. See documentation for the manifest format")
-            .with_details("CCPM looks for ccpm.toml in the current directory and parent directories up to the filesystem root"),
+        AgpmError::ManifestNotFound => ErrorContext::new(AgpmError::ManifestNotFound)
+            .with_suggestion("Create a agpm.toml file in your project directory. See documentation for the manifest format")
+            .with_details("AGPM looks for agpm.toml in the current directory and parent directories up to the filesystem root"),
 
-        CcpmError::ManifestParseError { file, reason } => ErrorContext::new(CcpmError::ManifestParseError {
+        AgpmError::ManifestParseError { file, reason } => ErrorContext::new(AgpmError::ManifestParseError {
             file: file.clone(),
             reason: reason.clone(),
         })
             .with_suggestion(format!(
                 "Check the TOML syntax in {file}. Common issues: missing quotes, unmatched brackets, invalid characters"
             ))
-            .with_details("Use a TOML validator or check the ccpm documentation for correct manifest format"),
+            .with_details("Use a TOML validator or check the agpm documentation for correct manifest format"),
 
-        CcpmError::SourceNotFound { name } => ErrorContext::new(CcpmError::SourceNotFound {
+        AgpmError::SourceNotFound { name } => ErrorContext::new(AgpmError::SourceNotFound {
             name: name.clone(),
         })
             .with_suggestion(format!(
-                "Add source '{name}' to the [sources] section in ccpm.toml with the repository URL"
+                "Add source '{name}' to the [sources] section in agpm.toml with the repository URL"
             ))
             .with_details("All dependencies must reference a source defined in the [sources] section"),
 
-        CcpmError::ResourceFileNotFound { path, source_name } => ErrorContext::new(CcpmError::ResourceFileNotFound {
+        AgpmError::ResourceFileNotFound { path, source_name } => ErrorContext::new(AgpmError::ResourceFileNotFound {
             path: path.clone(),
             source_name: source_name.clone(),
         })
@@ -1168,7 +1154,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
             ))
             .with_details("The resource file may have been moved, renamed, or deleted in the repository"),
 
-        CcpmError::VersionNotFound { resource, version } => ErrorContext::new(CcpmError::VersionNotFound {
+        AgpmError::VersionNotFound { resource, version } => ErrorContext::new(AgpmError::VersionNotFound {
             resource: resource.clone(),
             version: version.clone(),
         })
@@ -1179,7 +1165,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 "The version '{version}' doesn't exist as a git tag, branch, or commit in the repository"
             )),
 
-        CcpmError::CircularDependency { chain } => ErrorContext::new(CcpmError::CircularDependency {
+        AgpmError::CircularDependency { chain } => ErrorContext::new(AgpmError::CircularDependency {
             chain: chain.clone(),
         })
             .with_suggestion("Review your dependency graph and remove circular references")
@@ -1187,7 +1173,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 "Circular dependency chain detected: {chain}. Dependencies cannot depend on themselves directly or indirectly"
             )),
 
-        CcpmError::PermissionDenied { operation, path } => ErrorContext::new(CcpmError::PermissionDenied {
+        AgpmError::PermissionDenied { operation, path } => ErrorContext::new(AgpmError::PermissionDenied {
             operation: operation.clone(),
             path: path.clone(),
         })
@@ -1199,7 +1185,7 @@ fn create_error_context(error: CcpmError) -> ErrorContext {
                 "Cannot {operation} due to insufficient permissions on {path}"
             )),
 
-        CcpmError::ChecksumMismatch { name, expected, actual } => ErrorContext::new(CcpmError::ChecksumMismatch {
+        AgpmError::ChecksumMismatch { name, expected, actual } => ErrorContext::new(AgpmError::ChecksumMismatch {
             name: name.clone(),
             expected: expected.clone(),
             actual: actual.clone(),
@@ -1219,23 +1205,23 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let error = CcpmError::GitNotFound;
+        let error = AgpmError::GitNotFound;
         assert_eq!(
             error.to_string(),
             "Git is not installed or not found in PATH"
         );
 
-        let error = CcpmError::ResourceNotFound {
+        let error = AgpmError::ResourceNotFound {
             name: "test".to_string(),
         };
         assert_eq!(error.to_string(), "Resource 'test' not found");
 
-        let error = CcpmError::InvalidVersionConstraint {
+        let error = AgpmError::InvalidVersionConstraint {
             constraint: "bad-version".to_string(),
         };
         assert_eq!(error.to_string(), "Invalid version constraint: bad-version");
 
-        let error = CcpmError::GitCommandError {
+        let error = AgpmError::GitCommandError {
             operation: "clone".to_string(),
             stderr: "repository not found".to_string(),
         };
@@ -1244,9 +1230,9 @@ mod tests {
 
     #[test]
     fn test_error_context() {
-        let ctx = ErrorContext::new(CcpmError::GitNotFound)
+        let ctx = ErrorContext::new(AgpmError::GitNotFound)
             .with_suggestion("Install git using your package manager")
-            .with_details("Git is required for CCPM to function");
+            .with_details("Git is required for AGPM to function");
 
         assert_eq!(
             ctx.suggestion,
@@ -1254,13 +1240,13 @@ mod tests {
         );
         assert_eq!(
             ctx.details,
-            Some("Git is required for CCPM to function".to_string())
+            Some("Git is required for AGPM to function".to_string())
         );
     }
 
     #[test]
     fn test_error_context_display() {
-        let ctx = ErrorContext::new(CcpmError::GitNotFound).with_suggestion("Install git");
+        let ctx = ErrorContext::new(AgpmError::GitNotFound).with_suggestion("Install git");
 
         let display = format!("{ctx}");
         assert!(display.contains("Git is not installed or not found in PATH"));
@@ -1276,7 +1262,7 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            CcpmError::PermissionDenied { .. } => {}
+            AgpmError::PermissionDenied { .. } => {}
             _ => panic!("Expected PermissionDenied error"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1292,7 +1278,7 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            CcpmError::FileSystemError { .. } => {}
+            AgpmError::FileSystemError { .. } => {}
             _ => panic!("Expected FileSystemError"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1304,10 +1290,10 @@ mod tests {
         use std::io::Error;
 
         let io_error = Error::other("test error");
-        let ccpm_error = CcpmError::from(io_error);
+        let agpm_error = AgpmError::from(io_error);
 
-        match ccpm_error {
-            CcpmError::IoError(_) => {}
+        match agpm_error {
+            AgpmError::IoError(_) => {}
             _ => panic!("Expected IoError"),
         }
     }
@@ -1318,9 +1304,9 @@ mod tests {
         let result: Result<toml::Value, _> = toml::from_str(toml_str);
 
         if let Err(e) = result {
-            let ccpm_error = CcpmError::from(e);
-            match ccpm_error {
-                CcpmError::TomlError(_) => {}
+            let agpm_error = AgpmError::from(e);
+            match agpm_error {
+                AgpmError::TomlError(_) => {}
                 _ => panic!("Expected TomlError"),
             }
         }
@@ -1328,7 +1314,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_git_not_found() {
-        let ctx = create_error_context(CcpmError::GitNotFound);
+        let ctx = create_error_context(AgpmError::GitNotFound);
         assert!(ctx.suggestion.is_some());
         assert!(ctx.suggestion.unwrap().contains("Install git"));
         assert!(ctx.details.is_some());
@@ -1336,7 +1322,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_git_command_error() {
-        let ctx = create_error_context(CcpmError::GitCommandError {
+        let ctx = create_error_context(AgpmError::GitCommandError {
             operation: "clone".to_string(),
             stderr: "error".to_string(),
         });
@@ -1347,7 +1333,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_git_auth_failed() {
-        let ctx = create_error_context(CcpmError::GitAuthenticationFailed {
+        let ctx = create_error_context(AgpmError::GitAuthenticationFailed {
             url: "https://github.com/test/repo".to_string(),
         });
         assert!(ctx.suggestion.is_some());
@@ -1361,15 +1347,15 @@ mod tests {
 
     #[test]
     fn test_create_error_context_manifest_not_found() {
-        let ctx = create_error_context(CcpmError::ManifestNotFound);
+        let ctx = create_error_context(AgpmError::ManifestNotFound);
         assert!(ctx.suggestion.is_some());
-        assert!(ctx.suggestion.unwrap().contains("Create a ccpm.toml"));
+        assert!(ctx.suggestion.unwrap().contains("Create a agpm.toml"));
         assert!(ctx.details.is_some());
     }
 
     #[test]
     fn test_create_error_context_source_not_found() {
-        let ctx = create_error_context(CcpmError::SourceNotFound {
+        let ctx = create_error_context(AgpmError::SourceNotFound {
             name: "test-source".to_string(),
         });
         assert!(ctx.suggestion.is_some());
@@ -1379,7 +1365,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_version_not_found() {
-        let ctx = create_error_context(CcpmError::VersionNotFound {
+        let ctx = create_error_context(AgpmError::VersionNotFound {
             resource: "test-resource".to_string(),
             version: "v1.0.0".to_string(),
         });
@@ -1391,7 +1377,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_circular_dependency() {
-        let ctx = create_error_context(CcpmError::CircularDependency {
+        let ctx = create_error_context(AgpmError::CircularDependency {
             chain: "a -> b -> c -> a".to_string(),
         });
         assert!(ctx.suggestion.is_some());
@@ -1402,7 +1388,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_permission_denied() {
-        let ctx = create_error_context(CcpmError::PermissionDenied {
+        let ctx = create_error_context(AgpmError::PermissionDenied {
             operation: "write".to_string(),
             path: "/test/path".to_string(),
         });
@@ -1413,7 +1399,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_checksum_mismatch() {
-        let ctx = create_error_context(CcpmError::ChecksumMismatch {
+        let ctx = create_error_context(AgpmError::ChecksumMismatch {
             name: "test-resource".to_string(),
             expected: "abc123".to_string(),
             actual: "def456".to_string(),
@@ -1426,11 +1412,11 @@ mod tests {
 
     #[test]
     fn test_error_clone() {
-        let error1 = CcpmError::GitNotFound;
+        let error1 = AgpmError::GitNotFound;
         let error2 = error1.clone();
         assert_eq!(error1.to_string(), error2.to_string());
 
-        let error1 = CcpmError::ResourceNotFound {
+        let error1 = AgpmError::ResourceNotFound {
             name: "test".to_string(),
         };
         let error2 = error1.clone();
@@ -1446,8 +1432,8 @@ mod tests {
 
     #[test]
     fn test_into_anyhow_with_context() {
-        let error = CcpmError::GitNotFound;
-        let context = ErrorContext::new(CcpmError::Other {
+        let error = AgpmError::GitNotFound;
+        let context = ErrorContext::new(AgpmError::Other {
             message: "dummy".to_string(),
         })
         .with_suggestion("Test suggestion")
@@ -1467,7 +1453,7 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            CcpmError::FileSystemError { .. } => {}
+            AgpmError::FileSystemError { .. } => {}
             _ => panic!("Expected FileSystemError"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1483,7 +1469,7 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            CcpmError::InvalidResource { .. } => {}
+            AgpmError::InvalidResource { .. } => {}
             _ => panic!("Expected InvalidResource"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1491,13 +1477,13 @@ mod tests {
     }
 
     #[test]
-    fn test_user_friendly_error_ccpm_error() {
-        let error = CcpmError::GitNotFound;
+    fn test_user_friendly_error_agpm_error() {
+        let error = AgpmError::GitNotFound;
         let anyhow_error = anyhow::Error::from(error);
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            CcpmError::GitNotFound => {}
+            AgpmError::GitNotFound => {}
             _ => panic!("Expected GitNotFound"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1513,7 +1499,7 @@ mod tests {
             let ctx = user_friendly_error(anyhow_error);
 
             match ctx.error {
-                CcpmError::ManifestParseError { .. } => {}
+                AgpmError::ManifestParseError { .. } => {}
                 _ => panic!("Expected ManifestParseError"),
             }
             assert!(ctx.suggestion.is_some());
@@ -1527,7 +1513,7 @@ mod tests {
         let ctx = user_friendly_error(error);
 
         match ctx.error {
-            CcpmError::Other { message } => {
+            AgpmError::Other { message } => {
                 assert_eq!(message, "Generic error");
             }
             _ => panic!("Expected Other error"),
@@ -1538,9 +1524,9 @@ mod tests {
     fn test_from_semver_error() {
         let result = semver::Version::parse("invalid-version");
         if let Err(e) = result {
-            let ccpm_error = CcpmError::from(e);
-            match ccpm_error {
-                CcpmError::SemverError(_) => {}
+            let agpm_error = AgpmError::from(e);
+            match agpm_error {
+                AgpmError::SemverError(_) => {}
                 _ => panic!("Expected SemverError"),
             }
         }
@@ -1550,43 +1536,43 @@ mod tests {
     fn test_error_display_all_variants() {
         // Test display for various error variants
         let errors = vec![
-            CcpmError::GitRepoInvalid {
+            AgpmError::GitRepoInvalid {
                 path: "/test/path".to_string(),
             },
-            CcpmError::GitCheckoutFailed {
+            AgpmError::GitCheckoutFailed {
                 reference: "main".to_string(),
                 reason: "not found".to_string(),
             },
-            CcpmError::ConfigError {
+            AgpmError::ConfigError {
                 message: "config issue".to_string(),
             },
-            CcpmError::ManifestValidationError {
+            AgpmError::ManifestValidationError {
                 reason: "invalid format".to_string(),
             },
-            CcpmError::LockfileParseError {
-                file: "ccpm.lock".to_string(),
+            AgpmError::LockfileParseError {
+                file: "agpm.lock".to_string(),
                 reason: "syntax error".to_string(),
             },
-            CcpmError::ResourceFileNotFound {
+            AgpmError::ResourceFileNotFound {
                 path: "test.md".to_string(),
                 source_name: "source".to_string(),
             },
-            CcpmError::DirectoryNotEmpty {
+            AgpmError::DirectoryNotEmpty {
                 path: "/some/dir".to_string(),
             },
-            CcpmError::InvalidDependency {
+            AgpmError::InvalidDependency {
                 name: "dep".to_string(),
                 reason: "bad format".to_string(),
             },
-            CcpmError::DependencyNotMet {
+            AgpmError::DependencyNotMet {
                 name: "dep".to_string(),
                 required: "v1.0".to_string(),
                 found: "v2.0".to_string(),
             },
-            CcpmError::ConfigNotFound {
+            AgpmError::ConfigNotFound {
                 path: "/config/path".to_string(),
             },
-            CcpmError::PlatformNotSupported {
+            AgpmError::PlatformNotSupported {
                 operation: "test op".to_string(),
             },
         ];
@@ -1607,7 +1593,7 @@ mod tests {
         ];
 
         for (op, expected_text) in operations {
-            let ctx = create_error_context(CcpmError::GitCommandError {
+            let ctx = create_error_context(AgpmError::GitCommandError {
                 operation: op.to_string(),
                 stderr: "error".to_string(),
             });
@@ -1623,7 +1609,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_resource_file_not_found() {
-        let ctx = create_error_context(CcpmError::ResourceFileNotFound {
+        let ctx = create_error_context(AgpmError::ResourceFileNotFound {
             path: "agents/test.md".to_string(),
             source_name: "official".to_string(),
         });
@@ -1636,7 +1622,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_manifest_parse_error() {
-        let ctx = create_error_context(CcpmError::ManifestParseError {
+        let ctx = create_error_context(AgpmError::ManifestParseError {
             file: "custom.toml".to_string(),
             reason: "invalid syntax".to_string(),
         });
@@ -1648,7 +1634,7 @@ mod tests {
 
     #[test]
     fn test_create_error_context_git_clone_failed() {
-        let ctx = create_error_context(CcpmError::GitCloneFailed {
+        let ctx = create_error_context(AgpmError::GitCloneFailed {
             url: "https://example.com/repo.git".to_string(),
             reason: "network error".to_string(),
         });

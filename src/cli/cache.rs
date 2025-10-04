@@ -1,7 +1,7 @@
-//! Manage the global Git repository cache for CCPM.
+//! Manage the global Git repository cache for AGPM.
 //!
 //! This module provides the `cache` command which allows users to manage the
-//! global cache directory where CCPM stores cloned Git repositories. The cache
+//! global cache directory where AGPM stores cloned Git repositories. The cache
 //! improves performance by avoiding repeated clones of the same repositories.
 //!
 //! # Features
@@ -14,7 +14,7 @@
 //!
 //! # Cache Structure
 //!
-//! The cache directory (typically `~/.ccpm/cache/`) contains:
+//! The cache directory (typically `~/.agpm/cache/`) contains:
 //! - One subdirectory per source repository
 //! - Each subdirectory is a bare Git clone
 //! - Directory names match source names from manifests
@@ -23,18 +23,18 @@
 //!
 //! Show cache information:
 //! ```bash
-//! ccpm cache info
-//! ccpm cache  # defaults to info
+//! agpm cache info
+//! agpm cache  # defaults to info
 //! ```
 //!
 //! Clean unused cache entries:
 //! ```bash
-//! ccpm cache clean
+//! agpm cache clean
 //! ```
 //!
 //! Clear entire cache:
 //! ```bash
-//! ccpm cache clean --all
+//! agpm cache clean --all
 //! ```
 //!
 //! # Cache Management Strategy
@@ -76,7 +76,7 @@ use std::path::PathBuf;
 
 /// Command to manage the global Git repository cache.
 ///
-/// This command provides operations for managing CCPM's global cache directory
+/// This command provides operations for managing AGPM's global cache directory
 /// where Git repositories are stored. The cache improves performance by avoiding
 /// repeated clones of the same repositories across multiple projects.
 ///
@@ -87,7 +87,7 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::cache::{CacheCommand, CacheSubcommands};
+/// use agpm::cli::cache::{CacheCommand, CacheSubcommands};
 ///
 /// // Show cache info (default behavior)
 /// let cmd = CacheCommand { command: None };
@@ -122,7 +122,7 @@ enum CacheSubcommands {
     /// repositories not referenced by the current project are removed.
     ///
     /// # Smart Cleanup Logic
-    /// 1. Loads the current project manifest (`ccpm.toml`)
+    /// 1. Loads the current project manifest (`agpm.toml`)
     /// 2. Extracts all source repository names
     /// 3. Compares with cached repository directories
     /// 4. Removes cache entries not referenced in the manifest
@@ -136,8 +136,8 @@ enum CacheSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm cache clean           # Remove unused entries
-    /// ccpm cache clean --all     # Remove entire cache
+    /// agpm cache clean           # Remove unused entries
+    /// agpm cache clean --all     # Remove entire cache
     /// ```
     Clean {
         /// Remove all cache, not just unused entries
@@ -166,8 +166,8 @@ enum CacheSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm cache info    # Explicit info command
-    /// ccpm cache         # Defaults to info
+    /// agpm cache info    # Explicit info command
+    /// agpm cache         # Defaults to info
     /// ```
     Info,
 }
@@ -186,7 +186,7 @@ impl CacheCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::cache::CacheCommand;
+    /// use agpm::cli::cache::CacheCommand;
     ///
     /// # tokio_test::block_on(async {
     /// let cmd = CacheCommand { command: None };
@@ -243,8 +243,8 @@ impl CacheCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::cache::{CacheCommand, CacheSubcommands};
-    /// use ccpm::cache::Cache;
+    /// use agpm::cli::cache::{CacheCommand, CacheSubcommands};
+    /// use agpm::cache::Cache;
     /// use tempfile::TempDir;
     ///
     /// # tokio_test::block_on(async {
@@ -326,7 +326,7 @@ impl CacheCommand {
         if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await
             && removed > 0
         {
-            println!("  Removed {} stale lock files", removed);
+            println!("  Removed {removed} stale lock files");
         }
 
         cache.clear_all().await?;
@@ -339,7 +339,7 @@ impl CacheCommand {
     ///
     /// This method performs intelligent cache cleanup by:
     ///
-    /// 1. Loading the current project's manifest (`ccpm.toml`)
+    /// 1. Loading the current project's manifest (`agpm.toml`)
     /// 2. Extracting the list of source repository names
     /// 3. Comparing cached repositories with active sources
     /// 4. Removing only cache entries not referenced in the manifest
@@ -358,7 +358,7 @@ impl CacheCommand {
     ///
     /// # Behavior Without Manifest
     ///
-    /// If no `ccpm.toml` file is found:
+    /// If no `agpm.toml` file is found:
     /// - Issues a warning message
     /// - Performs no cleanup operations
     /// - Suggests using `--all` flag for complete cleanup
@@ -379,16 +379,13 @@ impl CacheCommand {
         println!("🔍 Scanning for unused cache entries...");
 
         // Find manifest to get active sources
-        let active_sources = match find_manifest_with_optional(manifest_path) {
-            Ok(manifest_path) => {
-                let manifest = Manifest::load(&manifest_path)?;
-                manifest.sources.keys().cloned().collect::<Vec<_>>()
-            }
-            Err(_) => {
-                // No manifest found, can't determine what's in use
-                println!("⚠️  No ccpm.toml found. Use --all to clear entire cache.");
-                return Ok(());
-            }
+        let active_sources = if let Ok(manifest_path) = find_manifest_with_optional(manifest_path) {
+            let manifest = Manifest::load(&manifest_path)?;
+            manifest.sources.keys().cloned().collect::<Vec<_>>()
+        } else {
+            // No manifest found, can't determine what's in use
+            println!("⚠️  No agpm.toml found. Use --all to clear entire cache.");
+            return Ok(());
         };
 
         let removed = cache.clean_unused(&active_sources).await?;
@@ -402,10 +399,10 @@ impl CacheCommand {
         if removed > 0 || lock_removed > 0 {
             let mut messages = Vec::new();
             if removed > 0 {
-                messages.push(format!("{} unused cache entries", removed));
+                messages.push(format!("{removed} unused cache entries"));
             }
             if lock_removed > 0 {
-                messages.push(format!("{} stale lock files", lock_removed));
+                messages.push(format!("{lock_removed} stale lock files"));
             }
             println!(
                 "{}",
@@ -433,8 +430,8 @@ impl CacheCommand {
     ///
     /// ## Cache Location
     /// Shows the full path to the cache directory, typically:
-    /// - `~/.ccpm/cache/` on Unix-like systems
-    /// - `%APPDATA%/ccpm/cache/` on Windows
+    /// - `~/.agpm/cache/` on Unix-like systems
+    /// - `%APPDATA%/agpm/cache/` on Windows
     ///
     /// ## Cache Size
     /// Total disk space used by all cached repositories, automatically
@@ -489,8 +486,8 @@ impl CacheCommand {
         }
 
         println!("\n{}", "Tip:".yellow());
-        println!("  Use 'ccpm cache clean' to remove unused cache");
-        println!("  Use 'ccpm cache clean --all' to clear all cache");
+        println!("  Use 'agpm cache clean' to remove unused cache");
+        println!("  Use 'agpm cache clean --all' to clear all cache");
 
         Ok(())
     }
@@ -527,7 +524,7 @@ impl CacheCommand {
 /// # Examples
 ///
 /// ```rust,ignore
-/// # use ccpm::cli::cache::format_size;
+/// # use agpm::cli::cache::format_size;
 /// assert_eq!(format_size(0), "0 B");
 /// assert_eq!(format_size(512), "512 B");
 /// assert_eq!(format_size(1024), "1.00 KB");
@@ -660,7 +657,7 @@ mod tests {
         };
 
         // Pass a non-existent manifest path to ensure no manifest is found
-        let non_existent_manifest = work_dir.path().join("ccpm.toml");
+        let non_existent_manifest = work_dir.path().join("agpm.toml");
         assert!(!non_existent_manifest.exists());
 
         // Without a manifest, should warn and not clean
@@ -686,7 +683,7 @@ mod tests {
             )]),
             ..Default::default()
         };
-        let manifest_path = work_dir.path().join("ccpm.toml");
+        let manifest_path = work_dir.path().join("agpm.toml");
         manifest.save(&manifest_path).unwrap();
 
         // Create cache directories - one active (matches manifest), one unused
@@ -835,7 +832,7 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let manifest_path = work_dir.path().join("ccpm.toml");
+        let manifest_path = work_dir.path().join("agpm.toml");
         manifest.save(&manifest_path).unwrap();
 
         // Create cache directories
@@ -898,7 +895,7 @@ mod tests {
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
 
         // No manifest file exists
-        let non_existent_manifest = work_dir.path().join("ccpm.toml");
+        let non_existent_manifest = work_dir.path().join("agpm.toml");
         assert!(!non_existent_manifest.exists());
 
         // Create some cache directories
@@ -958,7 +955,7 @@ mod tests {
             )]),
             ..Default::default()
         };
-        let manifest_path = work_dir.path().join("ccpm.toml");
+        let manifest_path = work_dir.path().join("agpm.toml");
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile with additional sources
@@ -983,7 +980,7 @@ mod tests {
             scripts: vec![],
             hooks: vec![],
         };
-        lockfile.save(&work_dir.path().join("ccpm.lock")).unwrap();
+        lockfile.save(&work_dir.path().join("agpm.lock")).unwrap();
 
         // Create cache directories
         let manifest_cache = temp_dir.path().join("manifest-source");

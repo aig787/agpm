@@ -14,7 +14,7 @@
 
 ## Overview
 
-You are tasked with fixing ALL failing tests in the CCPM (Claude Code Package Manager) project. This is an iterative process where you will continuously discover, fix, and validate until every single test passes.
+You are tasked with fixing ALL failing tests in the AGPM (Claude Code Package Manager) project. This is an iterative process where you will continuously discover, fix, and validate until every single test passes.
 
 **⏱️ IMPORTANT: The full test suite may take up to 5 minutes to run.** Plan accordingly and be patient when running `cargo test --all`. Individual test categories typically run faster, but doc tests in particular can be slow due to compilation overhead.
 
@@ -186,7 +186,7 @@ Doc tests have unique issues that differ from regular tests:
 #### Missing Imports in Doc Examples
 ```rust
 /// ```
-/// # use ccpm::utils::progress::MultiPhaseProgress;  // Add hidden import
+/// # use agpm::utils::progress::MultiPhaseProgress;  // Add hidden import
 /// let progress = MultiPhaseProgress::new(true);
 /// ```
 ```
@@ -207,18 +207,18 @@ Doc tests have unique issues that differ from regular tests:
 #### Incomplete Examples
 ```rust
 /// ```
-/// # use ccpm::manifest::Manifest;
+/// # use agpm::manifest::Manifest;
 /// # let manifest = Manifest::default();  // Add setup code
 /// let deps = manifest.all_dependencies();
 /// # assert!(deps.is_empty());  // Add assertion if needed
 /// ```
 ```
 
-### Step 6: Common CCPM-Specific Fixes
+### Step 6: Common AGPM-Specific Fixes
 
 #### Missing Test Utilities
 
-CCPM tests often need test utilities that may be missing:
+AGPM tests often need test utilities that may be missing:
 
 ```rust
 // In tests/fixtures/mod.rs or similar
@@ -233,7 +233,7 @@ pub fn temp_dir_with_git() -> TempDir {
 
 #### Async Test Issues
 
-Many CCPM tests are async and need proper runtime:
+Many AGPM tests are async and need proper runtime:
 
 ```rust
 #[tokio::test]  // Not #[test]
@@ -421,7 +421,7 @@ Consider delegating to rust-expert-advanced when:
 - Performance problems in tests indicate algorithmic issues
 - Complex generic or trait bound problems
 
-## Notes for CCPM Specifics
+## Notes for AGPM Specifics
 
 - The project uses **cargo nextest** for faster test execution when available
 - Tests may involve Git operations - ensure Git is configured in test environment

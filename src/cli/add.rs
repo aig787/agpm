@@ -1,7 +1,7 @@
-//! Add command implementation for CCPM
+//! Add command implementation for AGPM
 //!
 //! This module provides functionality to add sources and dependencies
-//! to a CCPM project manifest. It supports both Git repository sources
+//! to a AGPM project manifest. It supports both Git repository sources
 //! and various types of resource dependencies (agents, snippets, commands, MCP servers).
 
 use anyhow::{Result, anyhow};
@@ -19,7 +19,7 @@ use crate::models::{
 };
 use crate::utils::fs::atomic_write;
 
-/// Command to add sources and dependencies to a CCPM project.
+/// Command to add sources and dependencies to a AGPM project.
 #[derive(Args)]
 pub struct AddCommand {
     /// The specific add operation to perform
@@ -68,13 +68,13 @@ enum DependencySubcommand {
 impl AddCommand {
     /// Execute the add command with an optional manifest path.
     ///
-    /// This method allows specifying a custom path to the ccpm.toml manifest file.
-    /// If no path is provided, it will search for ccpm.toml in the current directory
+    /// This method allows specifying a custom path to the agpm.toml manifest file.
+    /// If no path is provided, it will search for agpm.toml in the current directory
     /// and parent directories.
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Optional path to the ccpm.toml file
+    /// * `manifest_path` - Optional path to the agpm.toml file
     ///
     /// # Returns
     ///
@@ -84,7 +84,7 @@ impl AddCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::cli::add::{AddCommand, AddSubcommand};
+    /// use agpm::cli::add::{AddCommand, AddSubcommand};
     /// use std::path::PathBuf;
     ///
     /// let cmd = AddCommand {
@@ -98,7 +98,7 @@ impl AddCommand {
     /// cmd.execute_with_manifest_path(None).await?;
     ///
     /// // Or specify custom manifest path
-    /// cmd.execute_with_manifest_path(Some(PathBuf::from("/path/to/ccpm.toml"))).await?;
+    /// cmd.execute_with_manifest_path(Some(PathBuf::from("/path/to/agpm.toml"))).await?;
     /// ```
     pub async fn execute_with_manifest_path(
         self,
@@ -183,8 +183,7 @@ async fn add_dependency_with_manifest_path(
         // Check if dependency already exists
         if manifest.mcp_servers.contains_key(&name) && !common.force {
             return Err(anyhow!(
-                "MCP server '{}' already exists in manifest. Use --force to overwrite",
-                name
+                "MCP server '{name}' already exists in manifest. Use --force to overwrite"
             ));
         }
 
@@ -206,9 +205,7 @@ async fn add_dependency_with_manifest_path(
         // Check if dependency already exists
         if section.contains_key(&name) && !common.force {
             return Err(anyhow!(
-                "{} '{}' already exists in manifest. Use --force to overwrite",
-                resource_type,
-                name
+                "{resource_type} '{name}' already exists in manifest. Use --force to overwrite"
             ));
         }
 
@@ -273,7 +270,7 @@ async fn add_dependency_with_manifest_path(
 /// ```text
 /// # Unix/Linux/macOS
 /// /home/user/resources/agent.md
-/// /usr/local/share/ccpm/snippets/helper.md
+/// /usr/local/share/agpm/snippets/helper.md
 ///
 /// # Windows
 /// C:\Users\name\resources\agent.md
@@ -325,7 +322,7 @@ async fn add_dependency_with_manifest_path(
 ///
 /// For pattern dependencies, you should typically provide a custom name:
 /// ```bash
-/// ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+/// agpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
 /// ```
 ///
 /// ## Version Handling
@@ -374,7 +371,7 @@ async fn add_dependency_with_manifest_path(
 /// assert_eq!(name, "my-agent");
 ///
 /// // Parse with manifest context for better source detection
-/// let manifest = Manifest::load(Path::new("ccpm.toml")).unwrap();
+/// let manifest = Manifest::load(Path::new("agpm.toml")).unwrap();
 /// let (name, dep) = parse_dependency_spec(
 ///     "community:snippets/helper.md",
 ///     &None,
@@ -570,7 +567,7 @@ mod tests {
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -595,7 +592,7 @@ existing = "https://github.com/existing/repo.git"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -714,20 +711,20 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
     /// Helper function to convert a manifest path to its corresponding lockfile path
     fn manifest_path_to_lockfile(manifest_path: &std::path::Path) -> std::path::PathBuf {
-        manifest_path.with_file_name("ccpm.lock")
+        manifest_path.with_file_name("agpm.lock")
     }
 
     #[test]
     fn test_manifest_path_to_lockfile() {
         use std::path::PathBuf;
 
-        let manifest = PathBuf::from("/project/ccpm.toml");
+        let manifest = PathBuf::from("/project/agpm.toml");
         let lockfile = manifest_path_to_lockfile(&manifest);
-        assert_eq!(lockfile, PathBuf::from("/project/ccpm.lock"));
+        assert_eq!(lockfile, PathBuf::from("/project/agpm.lock"));
 
-        let manifest2 = PathBuf::from("./ccpm.toml");
+        let manifest2 = PathBuf::from("./agpm.toml");
         let lockfile2 = manifest_path_to_lockfile(&manifest2);
-        assert_eq!(lockfile2, PathBuf::from("./ccpm.lock"));
+        assert_eq!(lockfile2, PathBuf::from("./agpm.lock"));
     }
 
     // NEW COMPREHENSIVE TESTS
@@ -735,7 +732,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_execute_add_source() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Change to temp directory
@@ -765,7 +762,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_execute_add_agent_dependency() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Create local agent file for testing
@@ -800,7 +797,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_execute_add_snippet_dependency() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Create local snippet file for testing
@@ -834,7 +831,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_execute_add_command_dependency() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Create local command file for testing
@@ -868,7 +865,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_execute_add_mcp_server_dependency() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Create a test MCP server JSON file
@@ -903,7 +900,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         // Check that the file was installed
         let installed_path = temp_dir
             .path()
-            .join(".claude/ccpm/mcp-servers/test-mcp.json");
+            .join(".claude/agpm/mcp-servers/test-mcp.json");
         assert!(
             installed_path.exists(),
             "MCP server config should be installed"
@@ -916,7 +913,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_add_source_success() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Change to temp directory
@@ -941,7 +938,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_add_source_already_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Change to temp directory
@@ -1026,7 +1023,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     #[tokio::test]
     async fn test_install_single_dependency_mcp_server() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create a test MCP server JSON file
         let mcp_config = serde_json::json!({
@@ -1045,9 +1042,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
-mcp-servers = ".claude/ccpm/mcp-servers"
+mcp-servers = ".claude/agpm/mcp-servers"
 
 [agents]
 
@@ -1078,7 +1075,7 @@ test-mcp = "{}"
         // Check that the MCP server config was created
         let mcp_config_path = temp_dir
             .path()
-            .join(".claude/ccpm/mcp-servers/test-mcp.json");
+            .join(".claude/agpm/mcp-servers/test-mcp.json");
         assert!(
             mcp_config_path.exists(),
             "MCP server config file should be created"
@@ -1088,7 +1085,7 @@ test-mcp = "{}"
     #[tokio::test]
     async fn test_install_single_dependency_invalid_resource_type() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create a test file
         let test_file = temp_dir.path().join("test.md");
@@ -1100,7 +1097,7 @@ test-mcp = "{}"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -1136,14 +1133,14 @@ test = "{}"
     #[tokio::test]
     async fn test_install_single_dependency_source_not_found() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with a dependency that references a non-existent source
         let manifest_content = r#"[sources]
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -1171,7 +1168,7 @@ test-agent = { source = "nonexistent-source", path = "agents/test.md", version =
     #[tokio::test]
     async fn test_add_dependency_agent_with_force() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create local agent file for testing (this will be the original)
         let original_agent_file = temp_dir.path().join("original-agent.md");
@@ -1184,7 +1181,7 @@ existing = "https://github.com/existing/repo.git"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -1234,7 +1231,7 @@ existing-agent = "{}"
     #[tokio::test]
     async fn test_add_dependency_mcp_server_without_force() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Change to temp directory
@@ -1261,7 +1258,7 @@ existing-agent = "{}"
     #[tokio::test]
     async fn test_add_dependency_snippet_without_force() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Create local snippet file for testing
@@ -1292,7 +1289,7 @@ existing-agent = "{}"
     #[tokio::test]
     async fn test_add_dependency_command_without_force() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest_with_content(&manifest_path);
 
         // Create local command file for testing
@@ -1323,7 +1320,7 @@ existing-agent = "{}"
     #[tokio::test]
     async fn test_add_dependency_mcp_server_with_file() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         create_test_manifest(&manifest_path);
 
         // Create a test MCP server JSON file
@@ -1358,7 +1355,7 @@ existing-agent = "{}"
         // Check that the file was installed
         let installed_path = temp_dir
             .path()
-            .join(".claude/ccpm/mcp-servers/file-mcp.json");
+            .join(".claude/agpm/mcp-servers/file-mcp.json");
         assert!(
             installed_path.exists(),
             "MCP server config should be installed"

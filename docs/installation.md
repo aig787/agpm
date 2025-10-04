@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide covers all installation methods for CCPM across different platforms.
+This guide covers all installation methods for AGPM across different platforms.
 
 ## Requirements
 
@@ -19,27 +19,27 @@ If you have Rust installed, this is the easiest method:
 
 ```bash
 # Install latest stable version from crates.io
-cargo install ccpm
+cargo install agpm
 
 # Install latest development version from GitHub
-cargo install --git https://github.com/aig787/ccpm.git
+cargo install --git https://github.com/aig787/agpm.git
 
 # Install specific version
-cargo install ccpm --version 0.3.0
+cargo install agpm --version 0.3.0
 ```
 
 ### Installer Scripts (Recommended)
 
-The easiest way to install CCPM is using the automated installer scripts:
+The easiest way to install AGPM is using the automated installer scripts:
 
 **Unix/Linux/macOS:**
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/agpm/releases/latest/download/agpm-installer.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 | iex
+irm https://github.com/aig787/agpm/releases/latest/download/agpm-installer.ps1 | iex
 ```
 
 ### Manual Download
@@ -48,44 +48,44 @@ Download and install pre-built binaries directly from GitHub releases:
 
 #### macOS (Apple Silicon)
 ```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+mkdir -p ~/.agpm/bin
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-aarch64-apple-darwin.tar.xz | tar xJ -C ~/.agpm/bin
+echo 'export PATH="$HOME/.agpm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 #### macOS (Intel)
 ```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-apple-darwin.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.zshrc
+mkdir -p ~/.agpm/bin
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-x86_64-apple-darwin.tar.xz | tar xJ -C ~/.agpm/bin
+echo 'export PATH="$HOME/.agpm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 #### Linux (x86_64)
 ```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+mkdir -p ~/.agpm/bin
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-x86_64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.agpm/bin
+echo 'export PATH="$HOME/.agpm/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 #### Linux (ARM64/aarch64)
 ```bash
-mkdir -p ~/.ccpm/bin
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-aarch64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.ccpm/bin
-echo 'export PATH="$HOME/.ccpm/bin:$PATH"' >> ~/.bashrc
+mkdir -p ~/.agpm/bin
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-aarch64-unknown-linux-gnu.tar.xz | tar xJ -C ~/.agpm/bin
+echo 'export PATH="$HOME/.agpm/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 #### Windows (PowerShell)
 ```powershell
 # Download and extract to a user directory
-$installPath = "$env:USERPROFILE\.ccpm\bin"
+$installPath = "$env:USERPROFILE\.agpm\bin"
 New-Item -ItemType Directory -Force -Path $installPath
-Invoke-WebRequest https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-pc-windows-msvc.zip -OutFile ccpm.zip
-Expand-Archive ccpm.zip -DestinationPath $installPath -Force
-Remove-Item ccpm.zip
+Invoke-WebRequest https://github.com/aig787/agpm/releases/latest/download/agpm-x86_64-pc-windows-msvc.zip -OutFile agpm.zip
+Expand-Archive agpm.zip -DestinationPath $installPath -Force
+Remove-Item agpm.zip
 
 # Add to PATH for current session
 $env:PATH += ";$installPath"
@@ -101,8 +101,8 @@ $env:PATH += ";$installPath"
 #### Manual Installation
 ```bash
 # Download and install (automatically detects architecture)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-$(uname -m)-macos.tar.gz | tar xz
-sudo mv ccpm /usr/local/bin/
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-$(uname -m)-macos.tar.gz | tar xz
+sudo mv agpm /usr/local/bin/
 ```
 
 ### Linux
@@ -110,8 +110,8 @@ sudo mv ccpm /usr/local/bin/
 #### Manual Installation
 ```bash
 # Download and install (automatically detects architecture)
-curl -L https://github.com/aig787/ccpm/releases/latest/download/ccpm-$(uname -m)-linux.tar.gz | tar xz
-sudo mv ccpm /usr/local/bin/
+curl -L https://github.com/aig787/agpm/releases/latest/download/agpm-$(uname -m)-linux.tar.gz | tar xz
+sudo mv agpm /usr/local/bin/
 ```
 
 ### Windows
@@ -120,18 +120,18 @@ sudo mv ccpm /usr/local/bin/
 
 ```powershell
 # Download and extract
-Invoke-WebRequest -Uri "https://github.com/aig787/ccpm/releases/latest/download/ccpm-x86_64-windows.zip" -OutFile ccpm.zip
-Expand-Archive -Path ccpm.zip -DestinationPath .
+Invoke-WebRequest -Uri "https://github.com/aig787/agpm/releases/latest/download/agpm-x86_64-windows.zip" -OutFile agpm.zip
+Expand-Archive -Path agpm.zip -DestinationPath .
 
 # Option 1: Install to System32 (requires admin)
-Copy-Item ccpm.exe -Destination C:\Windows\System32\
+Copy-Item agpm.exe -Destination C:\Windows\System32\
 
 # Option 2: Install to user directory (recommended)
-New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\ccpm\bin"
-Copy-Item ccpm.exe -Destination "$env:LOCALAPPDATA\ccpm\bin\"
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\agpm\bin"
+Copy-Item agpm.exe -Destination "$env:LOCALAPPDATA\agpm\bin\"
 
 # Add to PATH (user-level)
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\ccpm\bin", [EnvironmentVariableTarget]::User)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\agpm\bin", [EnvironmentVariableTarget]::User)
 
 # Restart PowerShell or refresh PATH
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
@@ -152,8 +152,8 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User")
 
 ```bash
 # Clone the repository
-git clone https://github.com/aig787/ccpm.git
-cd ccpm
+git clone https://github.com/aig787/agpm.git
+cd agpm
 
 # Build in release mode with optimizations
 cargo build --release
@@ -174,21 +174,21 @@ cargo install --path .
 
 #### Unix/macOS
 ```bash
-git clone https://github.com/aig787/ccpm.git
-cd ccpm
+git clone https://github.com/aig787/agpm.git
+cd agpm
 cargo build --release
-sudo cp target/release/ccpm /usr/local/bin/
+sudo cp target/release/agpm /usr/local/bin/
 ```
 
 #### Windows (PowerShell)
 ```powershell
-git clone https://github.com/aig787/ccpm.git
-cd ccpm
+git clone https://github.com/aig787/agpm.git
+cd agpm
 cargo build --release
 
 # Install to user directory
-New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\ccpm\bin"
-Copy-Item target\release\ccpm.exe -Destination "$env:LOCALAPPDATA\ccpm\bin\"
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\agpm\bin"
+Copy-Item target\release\agpm.exe -Destination "$env:LOCALAPPDATA\agpm\bin\"
 ```
 
 ### Cross-Compilation
@@ -211,34 +211,34 @@ cargo build --target aarch64-unknown-linux-gnu --release
 
 ## Verifying Installation
 
-After installation, verify CCPM is working:
+After installation, verify AGPM is working:
 
 ```bash
 # Check version and verify installation
-ccpm --version
+agpm --version
 
 # Show help and available commands
-ccpm --help
+agpm --help
 
 # Test Git worktree support (requires Git 2.5+)
 git --version
 
 # Initialize a test project
-ccpm init
+agpm init
 
 # Test parallel installation capabilities
-ccpm install --help | grep max-parallel
+agpm install --help | grep max-parallel
 ```
 
-## Updating CCPM
+## Updating AGPM
 
 ### Via Cargo
 ```bash
 # Update to latest stable version
-cargo install ccpm --force
+cargo install agpm --force
 
 # Update to latest development version
-cargo install --git https://github.com/aig787/ccpm.git --force
+cargo install --git https://github.com/aig787/agpm.git --force
 ```
 
 ### Manual Update
@@ -248,16 +248,16 @@ Download the latest release and replace the existing binary.
 
 ### Via Cargo
 ```bash
-cargo uninstall ccpm
+cargo uninstall agpm
 ```
 
 ### Manual Uninstall
 ```bash
 # Unix/macOS
-sudo rm /usr/local/bin/ccpm
+sudo rm /usr/local/bin/agpm
 
 # Windows
-Remove-Item "$env:LOCALAPPDATA\ccpm\bin\ccpm.exe"
+Remove-Item "$env:LOCALAPPDATA\agpm\bin\agpm.exe"
 ```
 
 ## Troubleshooting Installation
@@ -268,17 +268,17 @@ Remove-Item "$env:LOCALAPPDATA\ccpm\bin\ccpm.exe"
 
 **Unix/macOS:**
 ```bash
-# Check if ccpm is in PATH
-which ccpm
+# Check if agpm is in PATH
+which agpm
 
 # Add to PATH in ~/.bashrc or ~/.zshrc
-export PATH="$PATH:/path/to/ccpm"
+export PATH="$PATH:/path/to/agpm"
 ```
 
 **Windows:**
 ```powershell
-# Check if ccpm is in PATH
-where.exe ccpm
+# Check if agpm is in PATH
+where.exe agpm
 
 # View current PATH
 $env:Path -split ';'
@@ -291,10 +291,10 @@ $env:Path -split ';'
 **Unix/macOS:**
 ```bash
 # Make executable
-chmod +x ccpm
+chmod +x agpm
 
 # Use sudo for system directories
-sudo cp ccpm /usr/local/bin/
+sudo cp agpm /usr/local/bin/
 ```
 
 **Windows:**
@@ -338,7 +338,7 @@ sudo yum install git
 
 ### Long Path Support
 
-CCPM handles long paths automatically, but you may need to enable system support:
+AGPM handles long paths automatically, but you may need to enable system support:
 
 ```powershell
 # Enable long paths (requires admin)
@@ -348,9 +348,9 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 
 ### Antivirus Software
 
-Some antivirus software may flag or slow down CCPM operations. Consider:
-- Adding CCPM to your antivirus exclusion list
-- Excluding `~/.ccpm/cache/` directory from real-time scanning
+Some antivirus software may flag or slow down AGPM operations. Consider:
+- Adding AGPM to your antivirus exclusion list
+- Excluding `~/.agpm/cache/` directory from real-time scanning
 
 ## Next Steps
 

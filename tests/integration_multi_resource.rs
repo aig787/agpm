@@ -11,7 +11,7 @@ use common::TestProject;
 #[tokio::test]
 async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Initialize test logging
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -113,10 +113,10 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
 
     // Log the manifest content and working directory for debugging
     debug!("Generated manifest content:\n{}", manifest_content);
-    debug!("Running ccpm from directory: {:?}", project.project_path());
+    debug!("Running agpm from directory: {:?}", project.project_path());
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify all 20 resources are installed with correct versions
@@ -149,28 +149,28 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet1.md"),
+            .join(".claude/agpm/snippets/snippet1.md"),
         "Snippet 1 v1.0.0",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet2.md"),
+            .join(".claude/agpm/snippets/snippet2.md"),
         "Snippet 2 v1.1.0",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet3.md"),
+            .join(".claude/agpm/snippets/snippet3.md"),
         "Snippet 3 v3.0.0",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/snippets/snippet4.md"),
+            .join(".claude/agpm/snippets/snippet4.md"),
         "Snippet 4 v4.0.0",
     )
     .await?;
@@ -201,19 +201,19 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     // Check scripts (3 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/ccpm/scripts/build.sh"),
+        &project.project_path().join(".claude/agpm/scripts/build.sh"),
         "Build Script v1.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/ccpm/scripts/test.js"),
+        &project.project_path().join(".claude/agpm/scripts/test.js"),
         "Test Script v2.2.0",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/scripts/deploy.py"),
+            .join(".claude/agpm/scripts/deploy.py"),
         "Deploy Script v3.0.0",
     )
     .await?;
@@ -222,14 +222,14 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/hooks/pre-commit.json"),
+            .join(".claude/agpm/hooks/pre-commit.json"),
         "Pre-commit hook v2.1.0",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/hooks/post-commit.json"),
+            .join(".claude/agpm/hooks/post-commit.json"),
         "Post-commit hook v3.1.0",
     )
     .await?;
@@ -238,28 +238,28 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/mcp-servers/filesystem.json"),
+            .join(".claude/agpm/mcp-servers/filesystem.json"),
         "\"version\": \"v2.2.0\"",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/mcp-servers/postgres.json"),
+            .join(".claude/agpm/mcp-servers/postgres.json"),
         "\"version\": \"v3.0.0\"",
     )
     .await?;
     verify_file_contains(
         &project
             .project_path()
-            .join(".claude/ccpm/mcp-servers/redis.json"),
+            .join(".claude/agpm/mcp-servers/redis.json"),
         "\"version\": \"v4.0.0\"",
     )
     .await?;
 
     // Verify lockfile was created
-    assert!(project.project_path().join("ccpm.lock").exists());
-    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock")).await?;
+    assert!(project.project_path().join("agpm.lock").exists());
+    let lockfile = fs::read_to_string(project.project_path().join("agpm.lock")).await?;
 
     // Check that lockfile contains all 20 resources
     assert!(lockfile.contains("[[agents]]"));
@@ -549,7 +549,7 @@ fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
 #[tokio::test]
 async fn test_install_with_version_conflicts() -> Result<()> {
     // Initialize test logging
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -605,17 +605,17 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
         repo_url
     );
 
-    fs::write(project.project_path().join("ccpm.toml"), &manifest_content).await?;
+    fs::write(project.project_path().join("agpm.toml"), &manifest_content).await?;
 
     // Log the manifest content and working directory for debugging
     debug!(
         "Generated manifest content for version conflict test:\n{}",
         manifest_content
     );
-    debug!("Running ccpm from directory: {:?}", project.project_path());
+    debug!("Running agpm from directory: {:?}", project.project_path());
 
     // Install should succeed but we can check for warnings in future versions
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify both are installed with their specified versions
@@ -623,11 +623,11 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/base.md")
+            .join(".claude/agpm/snippets/base.md")
             .exists()
     );
     let snippet_content =
-        fs::read_to_string(project.project_path().join(".claude/ccpm/snippets/base.md")).await?;
+        fs::read_to_string(project.project_path().join(".claude/agpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
     assert!(

@@ -1,4 +1,4 @@
-//! Shared installation utilities for CCPM resources.
+//! Shared installation utilities for AGPM resources.
 //!
 //! This module provides common functionality for installing resources from
 //! lockfile entries to the project directory. It's shared between the install
@@ -59,7 +59,7 @@ use std::path::PathBuf;
 ///
 /// This type alias simplifies the return type of parallel installation functions
 /// that need to return either success information or error details with context.
-/// It was introduced in CCPM v0.3.0 to resolve clippy::type_complexity warnings
+/// It was introduced in AGPM v0.3.0 to resolve `clippy::type_complexity` warnings
 /// while maintaining clear semantics for installation results.
 ///
 /// # Success Variant: `Ok((String, bool, String))`
@@ -81,7 +81,7 @@ use std::path::PathBuf;
 /// individual resource results need to be collected and processed:
 ///
 /// ```rust,ignore
-/// use ccpm::installer::InstallResult;
+/// use agpm::installer::InstallResult;
 /// use futures::stream::{self, StreamExt};
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -175,10 +175,10 @@ use std::fs;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::installer::install_resource;
-/// use ccpm::lockfile::LockedResource;
-/// use ccpm::cache::Cache;
-/// use ccpm::core::ResourceType;
+/// use agpm::installer::install_resource;
+/// use agpm::lockfile::LockedResource;
+/// use agpm::cache::Cache;
+/// use agpm::core::ResourceType;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -248,11 +248,7 @@ pub async fn install_resource(
             .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
 
         // Check if this is a local directory source (no SHA or empty SHA)
-        let is_local_source = entry
-            .resolved_commit
-            .as_deref()
-            .map(|commit| commit.is_empty())
-            .unwrap_or(true);
+        let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
 
         let cache_dir = if is_local_source {
             // Local directory source - use the URL as the path directly
@@ -264,7 +260,7 @@ pub async fn install_resource(
                 .as_deref()
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+                        "Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.",
                         entry.name
                     )
                 })?;
@@ -386,11 +382,11 @@ pub async fn install_resource(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::installer::install_resource_with_progress;
-/// use ccpm::lockfile::LockedResource;
-/// use ccpm::cache::Cache;
-/// use ccpm::core::ResourceType;
-/// use ccpm::utils::progress::ProgressBar;
+/// use agpm::installer::install_resource_with_progress;
+/// use agpm::lockfile::LockedResource;
+/// use agpm::cache::Cache;
+/// use agpm::core::ResourceType;
+/// use agpm::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -489,16 +485,16 @@ pub async fn install_resource_with_progress(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::installer::install_resources_parallel;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
-/// use ccpm::utils::progress::ProgressBar;
+/// use agpm::installer::install_resources_parallel;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
+/// use agpm::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 /// let cache = Cache::new()?;
 ///
 /// // Count total resources for progress bar
@@ -595,7 +591,7 @@ pub async fn install_resources_parallel(
     let pb = Arc::new(pb.clone());
 
     // Update message for installation phase
-    pb.set_message(format!("Installing 0/{} resources", total));
+    pb.set_message(format!("Installing 0/{total} resources"));
 
     let shared_cache = Arc::new(cache.clone());
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
@@ -626,7 +622,7 @@ pub async fn install_resources_parallel(
                             *count += 1;
                         }
                         let count = *installed_count.lock().await;
-                        pb.set_message(format!("Installing {}/{} resources", count, total));
+                        pb.set_message(format!("Installing {count}/{total} resources"));
                         pb.inc(1);
                         Ok((entry.name.clone(), actually_installed, checksum))
                     }
@@ -699,9 +695,9 @@ pub async fn install_resources_parallel(
 ///
 /// ```rust,ignore
 /// use futures::stream::{self, StreamExt};
-/// use ccpm::installer::install_resource_for_parallel;
-/// # use ccpm::lockfile::LockedResource;
-/// # use ccpm::cache::Cache;
+/// use agpm::installer::install_resource_for_parallel;
+/// # use agpm::lockfile::LockedResource;
+/// # use agpm::cache::Cache;
 /// # use std::path::Path;
 ///
 /// # async fn example(entries: Vec<LockedResource>, cache: Cache) -> anyhow::Result<()> {
@@ -761,7 +757,7 @@ async fn install_resource_for_parallel(
 /// progress updates to user interface components:
 ///
 /// ```rust,no_run
-/// use ccpm::installer::InstallProgress;
+/// use agpm::installer::InstallProgress;
 /// use tokio::sync::mpsc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -854,17 +850,17 @@ pub struct InstallProgress {
 /// # Channel-Based Architecture
 ///
 /// ```rust,ignore
-/// use ccpm::installer::{install_resources_parallel_with_progress, InstallProgress};
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
+/// use agpm::installer::{install_resources_parallel_with_progress, InstallProgress};
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
 /// use tokio::sync::mpsc;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let (tx, mut rx) = mpsc::unbounded_channel::<InstallProgress>();
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 /// let cache = Cache::new()?;
 ///
 /// // Spawn installation task
@@ -1108,7 +1104,7 @@ pub async fn install_resources_parallel_with_progress(
 ///
 /// Install all resources:
 /// ```rust,no_run
-/// use ccpm::installer::ResourceFilter;
+/// use agpm::installer::ResourceFilter;
 ///
 /// let filter = ResourceFilter::All;
 /// // This will install every resource in the lockfile
@@ -1116,7 +1112,7 @@ pub async fn install_resources_parallel_with_progress(
 ///
 /// Install only updated resources:
 /// ```rust,no_run
-/// use ccpm::installer::ResourceFilter;
+/// use agpm::installer::ResourceFilter;
 ///
 /// let updates = vec![
 ///     ("agent1".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
@@ -1159,7 +1155,7 @@ pub enum ResourceFilter {
 /// This function consolidates all resource installation patterns into a single, flexible
 /// interface that can handle both full installations and selective updates with different
 /// progress reporting mechanisms. It represents the modernized installation architecture
-/// introduced in CCPM v0.3.0.
+/// introduced in AGPM v0.3.0.
 ///
 /// # Architecture Benefits
 ///
@@ -1207,7 +1203,7 @@ pub enum ResourceFilter {
 /// Returns a tuple of:
 /// - The number of resources that were actually installed (new or updated content).
 ///   Resources that already exist with identical content are not counted.
-/// - A vector of (resource_name, checksum) pairs for all processed resources
+/// - A vector of (`resource_name`, checksum) pairs for all processed resources
 ///
 /// # Errors
 ///
@@ -1218,11 +1214,11 @@ pub enum ResourceFilter {
 ///
 /// Install all resources with progress tracking:
 /// ```rust,no_run
-/// use ccpm::installer::{install_resources, ResourceFilter};
-/// use ccpm::utils::progress::MultiPhaseProgress;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
+/// use agpm::installer::{install_resources, ResourceFilter};
+/// use agpm::utils::progress::MultiPhaseProgress;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
 /// use std::sync::Arc;
 /// use std::path::Path;
 ///
@@ -1251,10 +1247,10 @@ pub enum ResourceFilter {
 ///
 /// Install resources quietly (for automation):
 /// ```rust,no_run
-/// use ccpm::installer::{install_resources, ResourceFilter};
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
+/// use agpm::installer::{install_resources, ResourceFilter};
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1379,9 +1375,7 @@ pub async fn install_resources(
     // Process installations in parallel
     let results: Vec<InstallResult> = stream::iter(all_entries)
         .map(|(entry, resource_dir)| {
-            let entry = entry.clone();
             let project_dir = project_dir.to_path_buf();
-            let resource_dir = resource_dir.to_string();
             let installed_count = Arc::clone(&installed_count);
             let cache = cache.clone();
             let progress = progress.clone();
@@ -1410,10 +1404,7 @@ pub async fn install_resources(
 
                     if let Some(ref pm) = progress {
                         let count = *installed_count.lock().await;
-                        pm.update_current_message(&format!(
-                            "Installing {}/{} resources",
-                            count, total
-                        ));
+                        pm.update_current_message(&format!("Installing {count}/{total} resources"));
                         pm.increment_progress(1);
                     }
                 }
@@ -1468,7 +1459,7 @@ pub async fn install_resources(
     if let Some(ref pm) = progress
         && final_count > 0
     {
-        pm.complete_phase(Some(&format!("Installed {} resources", final_count)));
+        pm.complete_phase(Some(&format!("Installed {final_count} resources")));
     }
 
     Ok((final_count, checksums))
@@ -1509,17 +1500,17 @@ pub async fn install_resources(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::installer::install_resources_with_dynamic_progress;
-/// use ccpm::utils::progress::ProgressBar;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
+/// use agpm::installer::install_resources_with_dynamic_progress;
+/// use agpm::utils::progress::ProgressBar;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
 /// use std::sync::Arc;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 /// let cache = Cache::new()?;
 ///
 /// // Create dynamic progress manager
@@ -1717,7 +1708,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///
 /// # Arguments
 ///
-/// * `updates` - Vector of tuples containing (name, old_version, new_version) for each updated resource
+/// * `updates` - Vector of tuples containing (name, `old_version`, `new_version`) for each updated resource
 /// * `lockfile` - Lockfile containing all available resources (updated resources must exist here)
 /// * `manifest` - Project manifest providing configuration and target directories
 /// * `project_dir` - Root directory where resources will be installed
@@ -1743,16 +1734,16 @@ pub async fn install_resources_with_dynamic_progress(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::installer::install_updated_resources;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
-/// use ccpm::cache::Cache;
-/// use ccpm::utils::progress::ProgressBar;
+/// use agpm::installer::install_updated_resources;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
+/// use agpm::cache::Cache;
+/// use agpm::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 /// let cache = Cache::new()?;
 /// let pb = ProgressBar::new(3);
 ///
@@ -1788,7 +1779,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///
 /// # Integration with Update Command
 ///
-/// This function is typically used by the `ccpm update` command after dependency
+/// This function is typically used by the `agpm update` command after dependency
 /// resolution determines which resources have new versions available:
 ///
 /// ```text
@@ -1971,35 +1962,35 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     add_resource_paths(&lockfile.mcp_servers);
 
     // Read existing gitignore if it exists
-    let mut before_ccpm_section = Vec::new();
-    let mut after_ccpm_section = Vec::new();
+    let mut before_agpm_section = Vec::new();
+    let mut after_agpm_section = Vec::new();
 
     if gitignore_path.exists() {
         let content = fs::read_to_string(&gitignore_path)
             .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
 
-        let mut in_ccpm_section = false;
-        let mut past_ccpm_section = false;
+        let mut in_agpm_section = false;
+        let mut past_agpm_section = false;
 
         for line in content.lines() {
-            if line == "# CCPM managed entries - do not edit below this line" {
-                in_ccpm_section = true;
+            if line == "# AGPM managed entries - do not edit below this line" {
+                in_agpm_section = true;
                 continue;
-            } else if line == "# End of CCPM managed entries" {
-                in_ccpm_section = false;
-                past_ccpm_section = true;
+            } else if line == "# End of AGPM managed entries" {
+                in_agpm_section = false;
+                past_agpm_section = true;
                 continue;
             }
 
-            if !in_ccpm_section && !past_ccpm_section {
-                // Preserve everything before CCPM section exactly as-is
-                before_ccpm_section.push(line.to_string());
-            } else if in_ccpm_section {
-                // Skip existing CCPM entries (they'll be replaced)
+            if !in_agpm_section && !past_agpm_section {
+                // Preserve everything before AGPM section exactly as-is
+                before_agpm_section.push(line.to_string());
+            } else if in_agpm_section {
+                // Skip existing AGPM entries (they'll be replaced)
                 continue;
             } else {
-                // Preserve everything after CCPM section exactly as-is
-                after_ccpm_section.push(line.to_string());
+                // Preserve everything after AGPM section exactly as-is
+                after_agpm_section.push(line.to_string());
             }
         }
     }
@@ -2007,21 +1998,21 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     // Build the new content
     let mut new_content = String::new();
 
-    // Add everything before CCPM section exactly as it was
-    if !before_ccpm_section.is_empty() {
-        for line in &before_ccpm_section {
+    // Add everything before AGPM section exactly as it was
+    if !before_agpm_section.is_empty() {
+        for line in &before_agpm_section {
             new_content.push_str(line);
             new_content.push('\n');
         }
-        // Add blank line before CCPM section if the previous content doesn't end with one
-        if !before_ccpm_section.is_empty() && !before_ccpm_section.last().unwrap().trim().is_empty()
+        // Add blank line before AGPM section if the previous content doesn't end with one
+        if !before_agpm_section.is_empty() && !before_agpm_section.last().unwrap().trim().is_empty()
         {
             new_content.push('\n');
         }
     }
 
-    // Add CCPM managed section
-    new_content.push_str("# CCPM managed entries - do not edit below this line\n");
+    // Add AGPM managed section
+    new_content.push_str("# AGPM managed entries - do not edit below this line\n");
 
     // Convert paths to gitignore format (relative to project root)
     // Sort paths for consistent output
@@ -2041,26 +2032,26 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
         new_content.push('\n');
     }
 
-    new_content.push_str("# End of CCPM managed entries\n");
+    new_content.push_str("# End of AGPM managed entries\n");
 
-    // Add everything after CCPM section exactly as it was
-    if !after_ccpm_section.is_empty() {
+    // Add everything after AGPM section exactly as it was
+    if !after_agpm_section.is_empty() {
         new_content.push('\n');
-        for line in &after_ccpm_section {
+        for line in &after_agpm_section {
             new_content.push_str(line);
             new_content.push('\n');
         }
     }
 
     // If this is a new file, add a basic header
-    if before_ccpm_section.is_empty() && after_ccpm_section.is_empty() {
+    if before_agpm_section.is_empty() && after_agpm_section.is_empty() {
         let mut default_content = String::new();
-        default_content.push_str("# .gitignore - CCPM managed entries\n");
-        default_content.push_str("# CCPM entries are automatically generated\n");
+        default_content.push_str("# .gitignore - AGPM managed entries\n");
+        default_content.push_str("# AGPM entries are automatically generated\n");
         default_content.push('\n');
-        default_content.push_str("# CCPM managed entries - do not edit below this line\n");
+        default_content.push_str("# AGPM managed entries - do not edit below this line\n");
 
-        // Add the CCPM paths
+        // Add the AGPM paths
         for path in &sorted_paths {
             let ignore_path = if path.starts_with("./") {
                 path.strip_prefix("./").unwrap_or(path).to_string()
@@ -2071,7 +2062,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
             default_content.push('\n');
         }
 
-        default_content.push_str("# End of CCPM managed entries\n");
+        default_content.push_str("# End of AGPM managed entries\n");
         new_content = default_content;
     }
 
@@ -2086,7 +2077,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 ///
 /// This function performs automatic cleanup of obsolete resource files by comparing
 /// the old and new lockfiles. It identifies and removes artifacts that have been:
-/// - **Removed from manifest**: Dependencies deleted from `ccpm.toml`
+/// - **Removed from manifest**: Dependencies deleted from `agpm.toml`
 /// - **Relocated**: Files with changed `installed_at` paths due to:
 ///   - Relative path preservation (v0.3.18+)
 ///   - Custom target changes
@@ -2099,7 +2090,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// # Cleanup Strategy
 ///
 /// The function uses a **set-based difference algorithm**:
-/// 1. Collects all `installed_at` paths from the new lockfile into a HashSet
+/// 1. Collects all `installed_at` paths from the new lockfile into a `HashSet`
 /// 2. Iterates through old lockfile resources
 /// 3. For each old path not in the new set:
 ///    - Removes the file if it exists
@@ -2129,12 +2120,12 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// ## Basic Cleanup After Update
 ///
 /// ```no_run
-/// use ccpm::installer::cleanup_removed_artifacts;
-/// use ccpm::lockfile::LockFile;
+/// use agpm::installer::cleanup_removed_artifacts;
+/// use agpm::lockfile::LockFile;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let old_lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+/// let old_lockfile = LockFile::load(Path::new("agpm.lock"))?;
 /// let new_lockfile = LockFile::new(); // After resolution
 /// let project_dir = Path::new(".");
 ///
@@ -2166,8 +2157,8 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// ## Cleanup After Dependency Removal
 ///
 /// ```no_run
-/// # use ccpm::installer::cleanup_removed_artifacts;
-/// # use ccpm::lockfile::{LockFile, LockedResource};
+/// # use agpm::installer::cleanup_removed_artifacts;
+/// # use agpm::lockfile::{LockFile, LockedResource};
 /// # use std::path::Path;
 /// # async fn removal_example() -> anyhow::Result<()> {
 /// // Old lockfile had 3 agents
@@ -2190,7 +2181,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 ///
 /// ## Integration with Install Command
 ///
-/// This function is automatically called during `ccpm install` when both old and
+/// This function is automatically called during `agpm install` when both old and
 /// new lockfiles exist:
 ///
 /// ```rust,ignore
@@ -2214,12 +2205,12 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// # Performance
 ///
 /// - **Time Complexity**: O(n + m) where n = old resources, m = new resources
-/// - **Space Complexity**: O(m) for the HashSet of new paths
+/// - **Space Complexity**: O(m) for the `HashSet` of new paths
 /// - **I/O Operations**: One file removal per obsolete artifact
 /// - **Directory Cleanup**: Walks up parent directories once per removed file
 ///
 /// The function is highly efficient as it:
-/// - Uses HashSet for O(1) path lookups
+/// - Uses `HashSet` for O(1) path lookups
 /// - Only performs I/O for files that actually exist
 /// - Cleans directories recursively but stops at first non-empty directory
 ///
@@ -2258,13 +2249,13 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 ///
 /// ## Manifest Cleanup
 ///
-/// Simply removing dependencies from `ccpm.toml` triggers automatic cleanup:
+/// Simply removing dependencies from `agpm.toml` triggers automatic cleanup:
 /// ```toml
 /// # Remove unwanted dependency
 /// [agents]
 /// # old-agent = { ... }  # Commented out or deleted
 /// ```
-/// The next `ccpm install` removes the old agent file automatically.
+/// The next `agpm install` removes the old agent file automatically.
 ///
 /// # Version History
 ///
@@ -2361,7 +2352,7 @@ pub async fn cleanup_removed_artifacts(
 /// ## Basic Directory Cleanup
 ///
 /// ```ignore
-/// # use ccpm::installer::cleanup_empty_dirs;
+/// # use agpm::installer::cleanup_empty_dirs;
 /// # use std::path::Path;
 /// # use std::fs;
 /// # async fn example() -> anyhow::Result<()> {
@@ -2416,7 +2407,7 @@ pub async fn cleanup_removed_artifacts(
 /// Result: .claude/agents/ remains (empty but preserved)
 /// ```
 ///
-/// ## Integration with cleanup_removed_artifacts
+/// ## Integration with `cleanup_removed_artifacts`
 ///
 /// This function is called automatically by [`cleanup_removed_artifacts`]
 /// after each file removal:
@@ -2528,7 +2519,7 @@ async fn cleanup_empty_dirs(file_path: &std::path::Path) -> Result<()> {
 
         // Try to remove the directory (will only succeed if empty)
         match tokio::fs::remove_dir(dir).await {
-            Ok(_) => {
+            Ok(()) => {
                 // Directory was empty and removed, continue up
                 current = dir.parent();
             }
@@ -2790,7 +2781,7 @@ mod tests {
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
         assert!(
             project_dir
-                .join(".claude/ccpm/snippets/test-snippet.md")
+                .join(".claude/agpm/snippets/test-snippet.md")
                 .exists()
         );
         assert!(
@@ -2963,7 +2954,7 @@ mod tests {
 
         // Add snippet with installed path
         let mut snippet = create_test_locked_resource("test-snippet", true);
-        snippet.installed_at = ".claude/ccpm/snippets/test-snippet.md".to_string();
+        snippet.installed_at = ".claude/agpm/snippets/test-snippet.md".to_string();
         lockfile.snippets.push(snippet);
 
         // Call update_gitignore
@@ -2976,9 +2967,9 @@ mod tests {
 
         // Check content
         let content = std::fs::read_to_string(&gitignore_path).unwrap();
-        assert!(content.contains("CCPM managed entries"));
+        assert!(content.contains("AGPM managed entries"));
         assert!(content.contains(".claude/agents/test-agent.md"));
-        assert!(content.contains(".claude/ccpm/snippets/test-snippet.md"));
+        assert!(content.contains(".claude/agpm/snippets/test-snippet.md"));
     }
 
     #[tokio::test]
@@ -3014,9 +3005,9 @@ mod tests {
         let existing_content = "# User comment\n\
                                user-file.txt\n\
                                *.backup\n\
-                               # CCPM managed entries - do not edit below this line\n\
+                               # AGPM managed entries - do not edit below this line\n\
                                .claude/agents/old-entry.md\n\
-                               # End of CCPM managed entries\n";
+                               # End of AGPM managed entries\n";
         std::fs::write(&gitignore_path, existing_content).unwrap();
 
         // Create lockfile with new resources

@@ -10,7 +10,7 @@ mod tests {
 
         // Set up environment to use temp directory
         unsafe {
-            std::env::set_var("CCPM_CONFIG_PATH", temp_dir.path().join("config.toml"));
+            std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join("config.toml"));
         }
 
         // Test cache creation and serialization
@@ -31,7 +31,7 @@ mod tests {
 
         // Clean up environment
         unsafe {
-            std::env::remove_var("CCPM_CONFIG_PATH");
+            std::env::remove_var("AGPM_CONFIG_PATH");
         }
     }
 
@@ -129,13 +129,13 @@ mod tests {
     fn test_self_updater_platform_detection() {
         // Test platform-specific binary naming
         #[cfg(windows)]
-        let expected_name = "ccpm.exe";
+        let expected_name = "agpm.exe";
 
         #[cfg(not(windows))]
-        let expected_name = "ccpm";
+        let expected_name = "agpm";
 
         // Verify the expectation is correct
-        assert!(expected_name.contains("ccpm"));
+        assert!(expected_name.contains("agpm"));
     }
 
     #[test]
@@ -155,7 +155,7 @@ mod tests {
     async fn test_self_updater_download_url_construction() {
         // Test expected GitHub release URL components
         let version = "1.0.0";
-        let expected_components = vec!["github.com", "aig787/ccpm", version, "ccpm"];
+        let expected_components = vec!["github.com", "aig787/agpm", version, "agpm"];
 
         // Verify platform-specific target triple
         #[cfg(target_os = "macos")]
@@ -192,7 +192,7 @@ mod tests {
     #[tokio::test]
     async fn test_self_updater_checksum_url() {
         // Test checksum URL construction
-        let download_url = "https://github.com/aig787/ccpm/releases/download/v1.0.0/ccpm-x86_64-unknown-linux-gnu.tar.xz";
+        let download_url = "https://github.com/aig787/agpm/releases/download/v1.0.0/agpm-x86_64-unknown-linux-gnu.tar.xz";
         let expected_checksum_url = format!("{}.sha256", download_url);
 
         // Verify GitHub URLs get .sha256 suffix
@@ -200,18 +200,18 @@ mod tests {
         assert!(expected_checksum_url.ends_with(".sha256"));
 
         // Non-GitHub URLs behavior
-        let non_github = "https://example.com/ccpm.tar.gz";
+        let non_github = "https://example.com/agpm.tar.gz";
         assert!(!non_github.contains("github.com"));
     }
 
     #[tokio::test]
     async fn test_backup_path_generation() {
         let temp_dir = TempDir::new().unwrap();
-        let binary_path = temp_dir.path().join("ccpm");
+        let binary_path = temp_dir.path().join("agpm");
         let manager = backup::BackupManager::new(binary_path.clone());
 
         let backup_path = manager.backup_path();
-        assert_eq!(backup_path.file_name().unwrap(), "ccpm.backup");
+        assert_eq!(backup_path.file_name().unwrap(), "agpm.backup");
         assert_eq!(backup_path.parent().unwrap(), binary_path.parent().unwrap());
     }
 
@@ -243,7 +243,7 @@ mod tests {
         use serde_json;
 
         let temp_dir = TempDir::new().unwrap();
-        let cache_path = temp_dir.path().join(".ccpm").join(".version_cache");
+        let cache_path = temp_dir.path().join(".agpm").join(".version_cache");
 
         // Create cache directory
         tokio::fs::create_dir_all(cache_path.parent().unwrap())
@@ -265,8 +265,8 @@ mod tests {
         // Set up environment to use temp directory
         unsafe {
             std::env::set_var(
-                "CCPM_CONFIG_PATH",
-                temp_dir.path().join(".ccpm").join("config.toml"),
+                "AGPM_CONFIG_PATH",
+                temp_dir.path().join(".agpm").join("config.toml"),
             );
         }
 
@@ -279,7 +279,7 @@ mod tests {
 
         // Clean up environment
         unsafe {
-            std::env::remove_var("CCPM_CONFIG_PATH");
+            std::env::remove_var("AGPM_CONFIG_PATH");
         }
     }
 

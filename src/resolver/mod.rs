@@ -1,4 +1,4 @@
-//! Dependency resolution and conflict detection for CCPM.
+//! Dependency resolution and conflict detection for AGPM.
 //!
 //! This module implements the core dependency resolution algorithm that transforms
 //! manifest dependencies into locked versions. It handles version constraint solving,
@@ -108,7 +108,7 @@
 //! - **SHA-based Worktree Caching**: Worktrees keyed by commit SHA maximize reuse across versions
 //! - **Batch Version Resolution**: All versions resolved to SHAs upfront via [`version_resolver::VersionResolver`]
 //! - **Single Fetch Per Repository**: Command-instance fetch caching eliminates redundant network operations
-//! - **Source Caching**: Git repositories are cached globally in `~/.ccpm/cache/`
+//! - **Source Caching**: Git repositories are cached globally in `~/.agpm/cache/`
 //! - **Incremental Updates**: Only modified sources are re-synchronized
 //! - **Parallel Operations**: Source syncing and version resolution run concurrently
 //! - **Progress Batching**: UI updates are throttled to prevent performance impact
@@ -126,18 +126,18 @@
 //!
 //! ## Two-Phase Resolution Pattern
 //! ```rust,no_run
-//! use ccpm::resolver::DependencyResolver;
-//! use ccpm::manifest::Manifest;
-//! use ccpm::cache::Cache;
+//! use agpm::resolver::DependencyResolver;
+//! use agpm::manifest::Manifest;
+//! use agpm::cache::Cache;
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
-//! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+//! let manifest = Manifest::load(Path::new("agpm.toml"))?;
 //! let cache = Cache::new()?;
 //! let mut resolver = DependencyResolver::new_with_global(manifest.clone(), cache).await?;
 //!
 //! // Get all dependencies from manifest
-//! let deps: Vec<(String, ccpm::manifest::ResourceDependency)> = manifest
+//! let deps: Vec<(String, agpm::manifest::ResourceDependency)> = manifest
 //!     .all_dependencies()
 //!     .into_iter()
 //!     .map(|(name, dep)| (name.to_string(), dep.clone()))
@@ -157,19 +157,19 @@
 //!
 //! ## Update Pattern
 //! ```rust,no_run
-//! # use ccpm::resolver::DependencyResolver;
-//! # use ccpm::manifest::Manifest;
-//! # use ccpm::cache::Cache;
-//! # use ccpm::lockfile::LockFile;
+//! # use agpm::resolver::DependencyResolver;
+//! # use agpm::manifest::Manifest;
+//! # use agpm::cache::Cache;
+//! # use agpm::lockfile::LockFile;
 //! # use std::path::Path;
 //! # async fn update_example() -> anyhow::Result<()> {
-//! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
-//! let mut lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+//! let manifest = Manifest::load(Path::new("agpm.toml"))?;
+//! let mut lockfile = LockFile::load(Path::new("agpm.lock"))?;
 //! let cache = Cache::new()?;
 //! let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
 //!
 //! // Get dependencies to update
-//! let deps: Vec<(String, ccpm::manifest::ResourceDependency)> = manifest
+//! let deps: Vec<(String, agpm::manifest::ResourceDependency)> = manifest
 //!     .all_dependencies()
 //!     .into_iter()
 //!     .map(|(name, dep)| (name.to_string(), dep.clone()))
@@ -181,21 +181,21 @@
 //! // Phase 2: Update specific dependencies
 //! resolver.update(&mut lockfile, None).await?;
 //!
-//! lockfile.save(Path::new("ccpm.lock"))?;
+//! lockfile.save(Path::new("agpm.lock"))?;
 //! # Ok(())
 //! # }
 //! ```
 //!
 //! ## Incremental Updates
 //! ```rust,no_run
-//! use ccpm::resolver::DependencyResolver;
-//! use ccpm::lockfile::LockFile;
-//! use ccpm::cache::Cache;
+//! use agpm::resolver::DependencyResolver;
+//! use agpm::lockfile::LockFile;
+//! use agpm::cache::Cache;
 //! use std::path::Path;
 //!
 //! # async fn update_example() -> anyhow::Result<()> {
-//! let existing = LockFile::load("ccpm.lock".as_ref())?;
-//! let manifest = ccpm::manifest::Manifest::load("ccpm.toml".as_ref())?;
+//! let existing = LockFile::load("agpm.lock".as_ref())?;
+//! let manifest = agpm::manifest::Manifest::load("agpm.toml".as_ref())?;
 //! let cache = Cache::new()?;
 //! let mut resolver = DependencyResolver::new(manifest, cache)?;
 //!
@@ -210,11 +210,12 @@
 //! ```
 
 pub mod dependency_graph;
+pub mod redundancy;
 pub mod version_resolution;
 pub mod version_resolver;
 
 use crate::cache::Cache;
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{DependencySpec, DetailedDependency, Manifest, ResourceDependency};
@@ -228,7 +229,7 @@ use std::path::{Path, PathBuf};
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
 
-/// Type alias for resource lookup key: (ResourceType, name, source).
+/// Type alias for resource lookup key: (`ResourceType`, name, source).
 ///
 /// Used internally by the resolver to uniquely identify resources across different sources.
 /// This enables precise lookups when multiple resources share the same name but come from
@@ -236,7 +237,7 @@ use self::version_resolver::VersionResolver;
 ///
 /// # Components
 ///
-/// * `ResourceType` - The type of resource (Agent, Snippet, Command, Script, Hook, McpServer)
+/// * `ResourceType` - The type of resource (Agent, Snippet, Command, Script, Hook, `McpServer`)
 /// * `String` - The resource name as defined in the manifest
 /// * `Option<String>` - The source name (None for local resources without a source)
 ///
@@ -319,15 +320,15 @@ pub struct DependencyResolver {
     version_resolver: VersionResolver,
     /// Dependency graph tracking which resources depend on which others.
     ///
-    /// Maps from (resource_type, name, source) to a list of dependencies in the format
-    /// "resource_type/name". This is populated during transitive dependency
-    /// resolution and used to fill the dependencies field in LockedResource entries.
+    /// Maps from (`resource_type`, name, source) to a list of dependencies in the format
+    /// "`resource_type/name`". This is populated during transitive dependency
+    /// resolution and used to fill the dependencies field in `LockedResource` entries.
     /// The source is included to prevent cross-source dependency contamination.
     dependency_map: HashMap<(crate::core::ResourceType, String, Option<String>), Vec<String>>,
     /// Resource type cache for transitive dependencies.
     ///
-    /// Maps from (name, source) to ResourceType for transitive dependencies discovered
-    /// during resolution. This allows get_resource_type() to accurately determine the
+    /// Maps from (name, source) to `ResourceType` for transitive dependencies discovered
+    /// during resolution. This allows `get_resource_type()` to accurately determine the
     /// type for transitive dependencies without defaulting to Snippet.
     transitive_types: HashMap<(String, Option<String>), crate::core::ResourceType>,
     /// Conflict detector for identifying version conflicts.
@@ -390,9 +391,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```ignore
-    /// # use ccpm::lockfile::{LockFile, LockedResource};
-    /// # use ccpm::core::ResourceType;
-    /// # use ccpm::resolver::DependencyResolver;
+    /// # use agpm::lockfile::{LockFile, LockedResource};
+    /// # use agpm::core::ResourceType;
+    /// # use agpm::resolver::DependencyResolver;
     /// # let resolver = DependencyResolver::new();
     /// let mut lockfile = LockFile::new();
     /// let entry = LockedResource {
@@ -503,7 +504,7 @@ impl DependencyResolver {
                 resource.installed_at.clone(),
                 resource.resolved_commit.clone(),
             );
-            path_map.entry(key).or_default().push(name.to_string());
+            path_map.entry(key).or_default().push((*name).to_string());
         }
 
         // Now check for actual conflicts: same path but DIFFERENT commits
@@ -526,7 +527,8 @@ impl DependencyResolver {
 
                 // Only a conflict if different commits
                 if commits.len() > 1 {
-                    let names: Vec<String> = resources.iter().map(|(n, _)| n.to_string()).collect();
+                    let names: Vec<String> =
+                        resources.iter().map(|(n, _)| (*n).to_string()).collect();
                     conflicts.push((path, names));
                 }
             }
@@ -584,9 +586,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```no_run
-    /// # use ccpm::resolver::DependencyResolver;
-    /// # use ccpm::manifest::{Manifest, ResourceDependency};
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::resolver::DependencyResolver;
+    /// # use agpm::manifest::{Manifest, ResourceDependency};
+    /// # use agpm::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let manifest = Manifest::new();
     /// let cache = Cache::new()?;
@@ -610,7 +612,7 @@ impl DependencyResolver {
     ///
     /// # Two-Phase Resolution Pattern
     ///
-    /// This method is part of CCPM's two-phase resolution architecture:
+    /// This method is part of AGPM's two-phase resolution architecture:
     ///
     /// 1. **Sync Phase** (`pre_sync_sources`): Clone/fetch all Git repositories
     /// 2. **Resolution Phase** (`resolve` or `update`): Resolve versions to SHAs locally
@@ -636,7 +638,7 @@ impl DependencyResolver {
                 let source_url =
                     self.source_manager
                         .get_source_url(source_name)
-                        .ok_or_else(|| CcpmError::SourceNotFound {
+                        .ok_or_else(|| AgpmError::SourceNotFound {
                             name: source_name.to_string(),
                         })?;
 
@@ -673,8 +675,8 @@ impl DependencyResolver {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use ccpm::resolver::DependencyResolver;
-    /// use ccpm::cache::Cache;
+    /// use agpm::resolver::DependencyResolver;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -692,12 +694,12 @@ impl DependencyResolver {
         let repo = GitRepo::new(repo_path);
         repo.list_tags()
             .await
-            .with_context(|| format!("Failed to list tags from repository at {:?}", repo_path))
+            .with_context(|| format!("Failed to list tags from repository at {repo_path:?}"))
     }
 
     /// Creates worktrees for all resolved SHAs in parallel.
     ///
-    /// This helper method is part of CCPM's SHA-based worktree architecture, processing
+    /// This helper method is part of AGPM's SHA-based worktree architecture, processing
     /// all resolved versions from the [`VersionResolver`] and creating Git worktrees
     /// for each unique commit SHA. It leverages async concurrency to create multiple
     /// worktrees in parallel while maintaining proper error propagation.
@@ -762,7 +764,7 @@ impl DependencyResolver {
             let source_url_clone = self
                 .source_manager
                 .get_source_url(&source_name)
-                .ok_or_else(|| CcpmError::SourceNotFound {
+                .ok_or_else(|| AgpmError::SourceNotFound {
                     name: source_name.to_string(),
                 })?
                 .to_string();
@@ -820,7 +822,7 @@ impl DependencyResolver {
                     let source_url =
                         self.source_manager
                             .get_source_url(source_name)
-                            .ok_or_else(|| CcpmError::SourceNotFound {
+                            .ok_or_else(|| AgpmError::SourceNotFound {
                                 name: source_name.to_string(),
                             })?;
 
@@ -857,7 +859,7 @@ impl DependencyResolver {
                 let source_url =
                     self.source_manager
                         .get_source_url(source_name)
-                        .ok_or_else(|| CcpmError::SourceNotFound {
+                        .ok_or_else(|| AgpmError::SourceNotFound {
                             name: source_name.to_string(),
                         })?;
 
@@ -887,7 +889,7 @@ impl DependencyResolver {
     /// Creates a new resolver using only manifest-defined sources.
     ///
     /// This constructor creates a resolver that only considers sources defined
-    /// in the manifest file. Global configuration sources from `~/.ccpm/config.toml`
+    /// in the manifest file. Global configuration sources from `~/.agpm/config.toml`
     /// are ignored, which may cause resolution failures for private repositories
     /// that require authentication.
     ///
@@ -924,14 +926,14 @@ impl DependencyResolver {
     /// Creates a new resolver with global configuration support.
     ///
     /// This is the recommended constructor for most use cases. It loads both
-    /// manifest sources and global sources from `~/.ccpm/config.toml`, enabling
+    /// manifest sources and global sources from `~/.agpm/config.toml`, enabling
     /// access to private repositories with authentication tokens.
     ///
     /// # Source Priority
     ///
     /// When sources are defined in both locations:
-    /// 1. **Global sources** (from `~/.ccpm/config.toml`) are loaded first
-    /// 2. **Local sources** (from `ccpm.toml`) can override global sources
+    /// 1. **Global sources** (from `~/.agpm/config.toml`) are loaded first
+    /// 2. **Local sources** (from `agpm.toml`) can override global sources
     ///
     /// This allows teams to share project configurations while keeping
     /// authentication tokens in user-specific global config.
@@ -961,7 +963,7 @@ impl DependencyResolver {
     /// Creates a new resolver with a custom cache.
     ///
     /// This constructor is primarily used for testing and specialized deployments
-    /// where the default cache location (`~/.ccpm/cache/`) is not suitable.
+    /// where the default cache location (`~/.agpm/cache/`) is not suitable.
     ///
     /// # Use Cases
     ///
@@ -1099,14 +1101,14 @@ impl DependencyResolver {
         // Add initial dependencies to queue
         for (name, dep) in base_deps {
             let resource_type = self.get_resource_type(name);
-            let source = dep.get_source().map(|s| s.to_string());
+            let source = dep.get_source().map(std::string::ToString::to_string);
             queue.push((name.clone(), dep.clone(), Some(resource_type)));
             all_deps.insert((resource_type, name.clone(), source), dep.clone());
         }
 
         // Process queue to discover transitive dependencies
         while let Some((name, dep, resource_type)) = queue.pop() {
-            let source = dep.get_source().map(|s| s.to_string());
+            let source = dep.get_source().map(std::string::ToString::to_string);
             let resource_type = resource_type
                 .unwrap_or_else(|| self.get_resource_type_with_source(&name, source.as_deref()));
             let key = (resource_type, name.clone(), source.clone());
@@ -1127,8 +1129,7 @@ impl DependencyResolver {
                 Err(e) => {
                     // If we can't fetch the resource, skip its transitive deps
                     eprintln!(
-                        "Warning: Failed to fetch resource '{}' for transitive dependency extraction: {}",
-                        name, e
+                        "Warning: Failed to fetch resource '{name}' for transitive dependency extraction: {e}"
                     );
                     continue;
                 }
@@ -1149,7 +1150,7 @@ impl DependencyResolver {
                         dep.get_path()
                     );
                     eprintln!(
-                        "         To enable transitive dependency resolution, create a local source with 'ccpm add source <name> <path>'"
+                        "         To enable transitive dependency resolution, create a local source with 'agpm add source <name> <path>'"
                     );
                     eprintln!(
                         "         then reference this resource using the source instead of a direct path."
@@ -1173,7 +1174,8 @@ impl DependencyResolver {
                         let trans_name = self.generate_dependency_name(&dep_spec.path);
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
-                        let trans_source = trans_dep.get_source().map(|s| s.to_string());
+                        let trans_source =
+                            trans_dep.get_source().map(std::string::ToString::to_string);
                         let from_node =
                             DependencyNode::with_source(resource_type, &name, source.clone());
                         let to_node = DependencyNode::with_source(
@@ -1186,7 +1188,7 @@ impl DependencyResolver {
                         // Track in dependency map (use singular form from enum for dependency references)
                         // Include source to prevent cross-source contamination
                         let from_key = (resource_type, name.clone(), source.clone());
-                        let dep_ref = format!("{}/{}", dep_resource_type, trans_name);
+                        let dep_ref = format!("{dep_resource_type}/{trans_name}");
                         self.dependency_map
                             .entry(from_key)
                             .or_default()
@@ -1262,7 +1264,7 @@ impl DependencyResolver {
     ) -> Result<String> {
         match dep {
             ResourceDependency::Simple(path) => {
-                // Local file - path is relative to where ccpm was invoked
+                // Local file - path is relative to where agpm was invoked
                 // Since we don't track the manifest path, assume relative path
                 let full_path = PathBuf::from(path);
                 std::fs::read_to_string(&full_path)
@@ -1273,7 +1275,7 @@ impl DependencyResolver {
                     let source_url = self
                         .source_manager
                         .get_source_url(source_name)
-                        .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+                        .ok_or_else(|| anyhow::anyhow!("Source '{source_name}' not found"))?;
 
                     // Check if this is a local directory source
                     if crate::utils::is_local_path(&source_url) {
@@ -1306,9 +1308,7 @@ impl DependencyResolver {
                                 .get_resolved_sha(source_name, &version)
                                 .ok_or_else(|| {
                                     anyhow::anyhow!(
-                                        "Failed to resolve version for {} @ {}",
-                                        source_name,
-                                        version
+                                        "Failed to resolve version for {source_name} @ {version}"
                                     )
                                 })?
                         };
@@ -1336,7 +1336,7 @@ impl DependencyResolver {
         }
     }
 
-    /// Convert a DependencySpec to a ResourceDependency.
+    /// Convert a `DependencySpec` to a `ResourceDependency`.
     ///
     /// Inherits the source from the parent dependency.
     ///
@@ -1426,18 +1426,18 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use ccpm::resolver::DependencyResolver;
-    /// # use ccpm::manifest::Manifest;
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::resolver::DependencyResolver;
+    /// # use agpm::manifest::Manifest;
+    /// # use agpm::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load("ccpm.toml".as_ref())?;
+    /// let manifest = Manifest::load("agpm.toml".as_ref())?;
     /// let cache = Cache::new()?;
     /// let mut resolver = DependencyResolver::new(manifest, cache)?;
     ///
     /// // Resolve all dependencies including transitive ones
     /// let lockfile = resolver.resolve().await?;
     ///
-    /// lockfile.save("ccpm.lock".as_ref())?;
+    /// lockfile.save("agpm.lock".as_ref())?;
     /// println!("Resolved {} total resources",
     ///          lockfile.agents.len() + lockfile.snippets.len());
     /// # Ok(())
@@ -1470,7 +1470,7 @@ impl DependencyResolver {
     /// - Dependencies are resolved in topological order
     ///
     /// When `enable_transitive` is `false`:
-    /// - Only dependencies explicitly declared in `ccpm.toml` are resolved
+    /// - Only dependencies explicitly declared in `agpm.toml` are resolved
     /// - Resource metadata is not extracted or processed
     /// - Faster resolution for known dependency trees
     ///
@@ -1501,11 +1501,11 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use ccpm::resolver::DependencyResolver;
-    /// # use ccpm::manifest::Manifest;
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::resolver::DependencyResolver;
+    /// # use agpm::manifest::Manifest;
+    /// # use agpm::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load("ccpm.toml".as_ref())?;
+    /// let manifest = Manifest::load("agpm.toml".as_ref())?;
     /// let cache = Cache::new()?;
     /// let mut resolver = DependencyResolver::new(manifest, cache)?;
     ///
@@ -1556,7 +1556,7 @@ impl DependencyResolver {
             .await?;
 
         // Resolve each dependency (including transitive ones)
-        for (name, dep) in deps.iter() {
+        for (name, dep) in &deps {
             // Progress is tracked at the phase level
 
             // Check if this is a pattern dependency
@@ -1658,9 +1658,9 @@ impl DependencyResolver {
         if !conflicts.is_empty() {
             let mut error_msg = String::from("Version conflicts detected:\n\n");
             for conflict in &conflicts {
-                error_msg.push_str(&format!("{}\n", conflict));
+                error_msg.push_str(&format!("{conflict}\n"));
             }
-            return Err(CcpmError::Other { message: error_msg }.into());
+            return Err(AgpmError::Other { message: error_msg }.into());
         }
 
         // Post-process dependencies to add version information
@@ -1724,8 +1724,7 @@ impl DependencyResolver {
             // Pattern dependencies resolve to multiple resources
             // This should be handled by a separate method
             return Err(anyhow::anyhow!(
-                "Pattern dependency '{}' should be resolved using resolve_pattern_dependency",
-                name
+                "Pattern dependency '{name}' should be resolved using resolve_pattern_dependency"
             ));
         }
 
@@ -1761,7 +1760,7 @@ impl DependencyResolver {
                         }
                         _ => "md",
                     };
-                    format!("{}.{}", name, extension)
+                    format!("{name}.{extension}")
                 } else {
                     // Preserve the relative path structure
                     relative_path.to_string_lossy().to_string()
@@ -1793,7 +1792,7 @@ impl DependencyResolver {
                     crate::core::ResourceType::Hook => &self.manifest.target.hooks,
                     crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
-                format!("{}/{}", target_dir, filename)
+                format!("{target_dir}/{filename}")
             };
 
             // For local resources without a source, just use the name (no version suffix)
@@ -1813,53 +1812,50 @@ impl DependencyResolver {
             })
         } else {
             // Remote dependency - need to sync and resolve
-            let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
-                message: format!("Dependency '{}' has no source specified", name),
+            let source_name = dep.get_source().ok_or_else(|| AgpmError::ConfigError {
+                message: format!("Dependency '{name}' has no source specified"),
             })?;
 
             // Get source URL
             let source_url = self
                 .source_manager
                 .get_source_url(source_name)
-                .ok_or_else(|| CcpmError::SourceNotFound {
+                .ok_or_else(|| AgpmError::SourceNotFound {
                     name: source_name.to_string(),
                 })?;
 
             let version_key = dep
                 .get_version()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "HEAD".to_string());
+                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
             let prepared_key = Self::group_key(source_name, &version_key);
 
             // Check if this dependency has been prepared
-            let (resolved_version, resolved_commit) =
+            let (resolved_version, resolved_commit) = if let Some(prepared) =
+                self.prepared_versions.get(&prepared_key)
+            {
+                // Use prepared version
+                (
+                    prepared.resolved_version.clone(),
+                    prepared.resolved_commit.clone(),
+                )
+            } else {
+                // This dependency wasn't prepared (e.g., when called from `agpm add`)
+                // We need to prepare it on-demand
+                let deps = vec![(name.to_string(), dep.clone())];
+                self.prepare_remote_groups(&deps).await?;
+
+                // Now it should be prepared
                 if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
-                    // Use prepared version
                     (
                         prepared.resolved_version.clone(),
                         prepared.resolved_commit.clone(),
                     )
                 } else {
-                    // This dependency wasn't prepared (e.g., when called from `ccpm add`)
-                    // We need to prepare it on-demand
-                    let deps = vec![(name.to_string(), dep.clone())];
-                    self.prepare_remote_groups(&deps).await?;
-
-                    // Now it should be prepared
-                    if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
-                        (
-                            prepared.resolved_version.clone(),
-                            prepared.resolved_commit.clone(),
-                        )
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Failed to prepare dependency '{}' from source '{}' @ '{}'",
-                            name,
-                            source_name,
-                            version_key
-                        ));
-                    }
-                };
+                    return Err(anyhow::anyhow!(
+                        "Failed to prepare dependency '{name}' from source '{source_name}' @ '{version_key}'"
+                    ));
+                }
+            };
 
             // Determine resource type from manifest (already returns enum)
             // Use source-aware lookup to correctly resolve transitive dependency types
@@ -1891,7 +1887,7 @@ impl DependencyResolver {
                         }
                         _ => "md",
                     };
-                    format!("{}.{}", name, extension)
+                    format!("{name}.{extension}")
                 } else {
                     // Preserve the relative path structure
                     relative_path.to_string_lossy().to_string()
@@ -1923,7 +1919,7 @@ impl DependencyResolver {
                     crate::core::ResourceType::Hook => &self.manifest.target.hooks,
                     crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
-                format!("{}/{}", target_dir, filename)
+                format!("{target_dir}/{filename}")
             };
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
@@ -1948,7 +1944,7 @@ impl DependencyResolver {
 
     /// Gets the dependencies for a resource from the dependency map.
     ///
-    /// Returns a list of dependencies in the format "resource_type/name".
+    /// Returns a list of dependencies in the format "`resource_type/name`".
     ///
     /// # Parameters
     /// - `name`: The resource name
@@ -1958,7 +1954,7 @@ impl DependencyResolver {
         let key = (
             resource_type,
             name.to_string(),
-            source.map(|s| s.to_string()),
+            source.map(std::string::ToString::to_string),
         );
         self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
@@ -2073,12 +2069,12 @@ impl DependencyResolver {
                             .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("md");
-                        format!("{}.{}", resource_name, extension)
+                        format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
                     };
 
-                let installed_at = format!("{}/{}", target_dir, filename);
+                let installed_at = format!("{target_dir}/{filename}");
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
@@ -2107,21 +2103,20 @@ impl DependencyResolver {
             Ok(resources)
         } else {
             // Remote pattern dependency - need to sync and search
-            let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
+            let source_name = dep.get_source().ok_or_else(|| AgpmError::ConfigError {
                 message: format!("Pattern dependency '{name}' has no source specified"),
             })?;
 
             let source_url = self
                 .source_manager
                 .get_source_url(source_name)
-                .ok_or_else(|| CcpmError::SourceNotFound {
+                .ok_or_else(|| AgpmError::SourceNotFound {
                     name: source_name.to_string(),
                 })?;
 
             let version_key = dep
                 .get_version()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "HEAD".to_string());
+                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
             let prepared_key = Self::group_key(source_name, &version_key);
 
             let prepared = self
@@ -2129,9 +2124,7 @@ impl DependencyResolver {
                 .get(&prepared_key)
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Prepared state missing for source '{}' @ '{}'. Stage 1 preparation should have populated this entry.",
-                        source_name,
-                        version_key
+                        "Prepared state missing for source '{source_name}' @ '{version_key}'. Stage 1 preparation should have populated this entry."
                     )
                 })?;
 
@@ -2186,12 +2179,12 @@ impl DependencyResolver {
                             .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("md");
-                        format!("{}.{}", resource_name, extension)
+                        format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
                     };
 
-                let installed_at = format!("{}/{}", target_dir, filename);
+                let installed_at = format!("{target_dir}/{filename}");
 
                 // Determine resource type (pattern dependencies inherit from parent name)
                 let resource_type = self.get_resource_type(name);
@@ -2309,7 +2302,10 @@ impl DependencyResolver {
             crate::core::ResourceType::McpServer
         } else {
             // Check transitive_types cache for discovered transitive dependencies
-            let type_key = (name.to_string(), source.map(|s| s.to_string()));
+            let type_key = (
+                name.to_string(),
+                source.map(std::string::ToString::to_string),
+            );
             if let Some(&resource_type) = self.transitive_types.get(&type_key) {
                 return resource_type;
             }
@@ -2379,7 +2375,7 @@ impl DependencyResolver {
 
         if is_existing_range || is_new_range {
             // Don't try to resolve semver ranges here - that should be handled by conflict detector
-            return Err(CcpmError::Other {
+            return Err(AgpmError::Other {
                 message: format!(
                     "Version conflict for '{}': cannot resolve semver ranges automatically. \
                      Existing: {:?}, Required by '{}': {:?}. \
@@ -2510,7 +2506,7 @@ impl DependencyResolver {
     /// - **Selective Updates**: Update specific outdated dependencies
     /// - **Security Patches**: Update dependencies with known vulnerabilities
     /// - **Feature Updates**: Pull latest versions for active development
-    /// - **Manifest Changes**: Reflect additions/modifications to ccpm.toml
+    /// - **Manifest Changes**: Reflect additions/modifications to agpm.toml
     ///
     /// # Parameters
     ///
@@ -2711,7 +2707,7 @@ impl DependencyResolver {
         // Build resource identifier: source:path
         let source = dep.get_source().unwrap_or("unknown");
         let path = dep.get_path();
-        let resource_id = format!("{}:{}", source, path);
+        let resource_id = format!("{source}:{path}");
 
         // Get version constraint (None means HEAD/unspecified)
         if let Some(version) = dep.get_version() {
@@ -2741,8 +2737,11 @@ impl DependencyResolver {
         let normalize_path = |path: &str| -> String { path.trim_start_matches("./").to_string() };
 
         // Helper to extract filename from path
-        let extract_filename =
-            |path: &str| -> Option<String> { path.split('/').next_back().map(|s| s.to_string()) };
+        let extract_filename = |path: &str| -> Option<String> {
+            path.split('/')
+                .next_back()
+                .map(std::string::ToString::to_string)
+        };
 
         // Build lookup map from all lockfile entries
         for entry in &lockfile.agents {
@@ -2965,17 +2964,17 @@ impl DependencyResolver {
                                         parent_source.clone(),
                                     )) {
                                         // Found resource in same source - use singular form from enum
-                                        return format!("{}/{}", resource_type, dep_name);
+                                        return format!("{resource_type}/{dep_name}");
                                     }
 
                                     // If not found with same source, try adding .md extension
-                                    let dep_filename_with_ext = format!("{}.md", dep_filename);
+                                    let dep_filename_with_ext = format!("{dep_filename}.md");
                                     if let Some(dep_name) = lookup_map.get(&(
                                         resource_type,
                                         dep_filename_with_ext.clone(),
                                         parent_source.clone(),
                                     )) {
-                                        return format!("{}/{}", resource_type, dep_name);
+                                        return format!("{resource_type}/{dep_name}");
                                     }
 
                                     // Try looking for resource from ANY source (cross-source dependency)
@@ -3100,15 +3099,13 @@ impl DependencyResolver {
                 }
             } else {
                 // Verify source exists
-                let source_name = dep.get_source().ok_or_else(|| CcpmError::ConfigError {
+                let source_name = dep.get_source().ok_or_else(|| AgpmError::ConfigError {
                     message: format!("Dependency '{name}' has no source specified"),
                 })?;
 
                 if !self.manifest.sources.contains_key(source_name) {
                     anyhow::bail!(
-                        "Dependency '{}' references undefined source: '{}'",
-                        name,
-                        source_name
+                        "Dependency '{name}' references undefined source: '{source_name}'"
                     );
                 }
             }
@@ -3169,8 +3166,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// use std::path::{Path, PathBuf};
-/// # use ccpm::resolver::extract_relative_path;
-/// # use ccpm::core::ResourceType;
+/// # use agpm::resolver::extract_relative_path;
+/// # use agpm::core::ResourceType;
 ///
 /// // Resource type prefix is removed
 /// let path = Path::new("snippets/directives/thing.md");
@@ -3192,8 +3189,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
-/// # use ccpm::resolver::extract_relative_path;
-/// # use ccpm::core::ResourceType;
+/// # use agpm::resolver::extract_relative_path;
+/// # use agpm::core::ResourceType;
 ///
 /// // Multi-level nested directories are fully preserved
 /// let path = Path::new("agents/languages/rust/expert.md");
@@ -3209,8 +3206,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
-/// # use ccpm::resolver::extract_relative_path;
-/// # use ccpm::core::ResourceType;
+/// # use agpm::resolver::extract_relative_path;
+/// # use agpm::core::ResourceType;
 ///
 /// // Example: glob pattern "agents/**/*.md" matches these paths
 /// let matched_paths = vec![
@@ -3233,7 +3230,7 @@ impl DependencyResolver {
 /// Custom targets work in conjunction with relative path extraction:
 ///
 /// ```toml
-/// # In ccpm.toml
+/// # In agpm.toml
 /// [agents]
 /// # Path: agents/rust/expert.md → extract → rust/expert.md
 /// # Target: custom → combined → custom/rust/expert.md
@@ -3252,7 +3249,7 @@ impl DependencyResolver {
 ///
 /// For a source repository with categorized resources:
 /// ```text
-/// ccpm-community/
+/// agpm-community/
 /// ├── agents/
 /// │   ├── languages/
 /// │   │   ├── rust/
@@ -4144,7 +4141,7 @@ mod tests {
         let script = &lockfile.snippets[0];
         assert_eq!(script.name, "analyzer");
         // Verify custom filename is used (with custom extension)
-        assert_eq!(script.installed_at, ".claude/ccpm/snippets/analyze.py");
+        assert_eq!(script.installed_at, ".claude/agpm/snippets/analyze.py");
     }
 
     // ============ NEW TESTS FOR UNCOVERED AREAS ============
@@ -4541,7 +4538,7 @@ mod tests {
 
     // NOTE: Comprehensive integration tests for update() with transitive dependencies
     // are in tests/integration_incremental_add.rs. These provide end-to-end testing
-    // of the incremental `ccpm add dep` scenario which exercises the update() method.
+    // of the incremental `agpm add dep` scenario which exercises the update() method.
 
     #[tokio::test]
     async fn test_resolve_hooks_resource_type() {
@@ -4566,7 +4563,7 @@ mod tests {
 
         // Check that hooks are installed to the correct location
         for hook in &lockfile.hooks {
-            assert!(hook.installed_at.contains(".claude/ccpm/hooks/"));
+            assert!(hook.installed_at.contains(".claude/agpm/hooks/"));
             assert!(hook.installed_at.ends_with(".json"));
         }
     }
@@ -4623,7 +4620,7 @@ mod tests {
 
         // Check that MCP servers are tracked correctly
         for server in &lockfile.mcp_servers {
-            assert!(server.installed_at.contains(".claude/ccpm/mcp-servers/"));
+            assert!(server.installed_at.contains(".claude/agpm/mcp-servers/"));
             assert!(server.installed_at.ends_with(".json"));
         }
     }

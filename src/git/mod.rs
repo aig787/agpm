@@ -1,14 +1,14 @@
-//! Git operations wrapper for CCPM
+//! Git operations wrapper for AGPM
 //!
 //! This module provides a safe, async wrapper around the system `git` command, serving as
-//! the foundation for CCPM's distributed package management capabilities. Unlike libraries
+//! the foundation for AGPM's distributed package management capabilities. Unlike libraries
 //! that use embedded Git implementations (like `libgit2`), this module leverages the system's
 //! installed Git binary to ensure maximum compatibility with existing Git configurations,
 //! authentication methods, and platform-specific optimizations.
 //!
 //! # Design Philosophy: CLI-Based Git Integration
 //!
-//! CCPM follows the same approach as Cargo with `git-fetch-with-cli`, using the system's
+//! AGPM follows the same approach as Cargo with `git-fetch-with-cli`, using the system's
 //! `git` command rather than an embedded Git library. This design choice provides several
 //! critical advantages:
 //!
@@ -89,7 +89,7 @@
 //!
 //! # Error Handling Strategy
 //!
-//! The module provides rich error context through [`CcpmError`] variants:
+//! The module provides rich error context through [`AgpmError`] variants:
 //! - Network failures with retry suggestions
 //! - Authentication errors with configuration guidance
 //! - Repository format errors with recovery steps
@@ -99,7 +99,7 @@
 //!
 //! ## Basic Repository Operations
 //! ```rust,no_run
-//! use ccpm::git::GitRepo;
+//! use agpm::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -128,7 +128,7 @@
 //!
 //! ## Authentication with URLs
 //! ```rust,no_run
-//! use ccpm::git::GitRepo;
+//! use agpm::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn auth_example() -> anyhow::Result<()> {
@@ -151,7 +151,7 @@
 //!
 //! ## Repository Validation
 //! ```rust,no_run
-//! use ccpm::git::{GitRepo, ensure_git_available, is_valid_git_repo};
+//! use agpm::git::{GitRepo, ensure_git_available, is_valid_git_repo};
 //! use std::env;
 //!
 //! # async fn validation_example() -> anyhow::Result<()> {
@@ -175,7 +175,7 @@
 //!
 //! ## Worktree-based Parallel Operations
 //! ```rust,no_run
-//! use ccpm::git::GitRepo;
+//! use agpm::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn worktree_example() -> anyhow::Result<()> {
@@ -230,22 +230,22 @@
 //! - Supports various credential helpers
 //! - Handles different filesystem permissions
 //!
-//! # Integration with CCPM
+//! # Integration with AGPM
 //!
-//! This module integrates with other CCPM components:
+//! This module integrates with other AGPM components:
 //! - [`crate::source`] - Repository source management
 //! - [`crate::manifest`] - Manifest-based dependency resolution
 //! - [`crate::lockfile`] - Lockfile generation with commit hashes
 //! - [`crate::utils::progress`] - User progress feedback
-//! - [`crate::core::CcpmError`] - Centralized error handling
+//! - [`crate::core::AgpmError`] - Centralized error handling
 //!
-//! [`CcpmError`]: crate::core::CcpmError
+//! [`AgpmError`]: crate::core::AgpmError
 
 pub mod command_builder;
 #[cfg(test)]
 mod tests;
 
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 use crate::git::command_builder::GitCommand;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -274,7 +274,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::GitRepo;
+/// use agpm::git::GitRepo;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -318,7 +318,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     /// use std::path::Path;
     ///
     /// // Create repository handle
@@ -369,7 +369,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -392,7 +392,7 @@ impl GitRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::GitCloneFailed`] if:
+    /// Returns [`AgpmError::GitCloneFailed`] if:
     /// - The URL is invalid or unreachable
     /// - Authentication fails
     /// - The target directory already exists and is not empty
@@ -404,7 +404,7 @@ impl GitRepo {
     /// URLs are validated and sanitized before passing to Git. Authentication
     /// tokens in URLs are never logged or exposed in error messages.
     ///
-    /// [`CcpmError::GitCloneFailed`]: crate::core::CcpmError::GitCloneFailed
+    /// [`AgpmError::GitCloneFailed`]: crate::core::AgpmError::GitCloneFailed
     pub async fn clone(url: &str, target: impl AsRef<Path>) -> Result<Self> {
         let target_path = target.as_ref();
 
@@ -457,7 +457,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -477,7 +477,7 @@ impl GitRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::GitCommandError`] if:
+    /// Returns [`AgpmError::GitCommandError`] if:
     /// - Network connectivity fails
     /// - Authentication is rejected
     /// - The remote repository is unavailable
@@ -490,7 +490,7 @@ impl GitRepo {
     /// - Provide progress feedback for large transfers
     /// - Use efficient Git transfer protocols
     ///
-    /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
+    /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn fetch(&self, auth_url: Option<&str>) -> Result<()> {
         // Note: file:// URLs are local repositories, but we still need to fetch
         // from them to get updates from the source repository
@@ -547,7 +547,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -571,12 +571,12 @@ impl GitRepo {
     ///
     /// **This operation discards uncommitted changes.** The hard reset before
     /// checkout ensures a clean state but will permanently lose any local
-    /// modifications. This behavior is intentional for CCPM's package management
+    /// modifications. This behavior is intentional for AGPM's package management
     /// use case where clean, reproducible states are required.
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::GitCheckoutFailed`] if:
+    /// Returns [`AgpmError::GitCheckoutFailed`] if:
     /// - The reference doesn't exist in the repository
     /// - The repository is in an invalid state
     /// - File system permissions prevent checkout
@@ -589,7 +589,7 @@ impl GitRepo {
     /// - Minimal file system operations
     /// - Efficient handling of large repositories
     ///
-    /// [`CcpmError::GitCheckoutFailed`]: crate::core::CcpmError::GitCheckoutFailed
+    /// [`AgpmError::GitCheckoutFailed`]: crate::core::AgpmError::GitCheckoutFailed
     pub async fn checkout(&self, ref_name: &str) -> Result<()> {
         // Reset to clean state before checkout
         let reset_result = GitCommand::reset_hard()
@@ -633,12 +633,12 @@ impl GitRepo {
             .map_err(|e| {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
-                if let Some(ccpm_err) = e.downcast_ref::<CcpmError>()
-                    && matches!(ccpm_err, CcpmError::GitCheckoutFailed { .. })
+                if let Some(agpm_err) = e.downcast_ref::<AgpmError>()
+                    && matches!(agpm_err, AgpmError::GitCheckoutFailed { .. })
                 {
                     return e;
                 }
-                CcpmError::GitCheckoutFailed {
+                AgpmError::GitCheckoutFailed {
                     reference: ref_name.to_string(),
                     reason: e.to_string(),
                 }
@@ -667,7 +667,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -694,7 +694,7 @@ impl GitRepo {
     /// ```rust,no_run
     /// # use anyhow::Result;
     /// use semver::Version;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn version_example() -> Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -713,7 +713,7 @@ impl GitRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::GitCommandError`] if:
+    /// Returns [`AgpmError::GitCommandError`] if:
     /// - The repository path doesn't exist
     /// - The directory is not a valid Git repository
     /// - Git command execution fails
@@ -725,7 +725,7 @@ impl GitRepo {
     /// without network access. For repositories with thousands of tags,
     /// consider filtering or pagination if memory usage is a concern.
     ///
-    /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
+    /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn list_tags(&self) -> Result<Vec<String>> {
         // Check if the directory exists and is a git repo
         if !self.path.exists() {
@@ -777,7 +777,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -799,7 +799,7 @@ impl GitRepo {
     /// For processing the URL further, consider using [`parse_git_url`]:
     ///
     /// ```rust,no_run
-    /// use ccpm::git::{GitRepo, parse_git_url};
+    /// use agpm::git::{GitRepo, parse_git_url};
     ///
     /// # async fn parse_example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -814,7 +814,7 @@ impl GitRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::GitCommandError`] if:
+    /// Returns [`AgpmError::GitCommandError`] if:
     /// - No 'origin' remote is configured
     /// - The repository is not a valid Git repository
     /// - Git command execution fails
@@ -827,7 +827,7 @@ impl GitRepo {
     /// that might contain sensitive tokens or credentials.
     ///
     /// [`parse_git_url`]: fn.parse_git_url.html
-    /// [`CcpmError::GitCommandError`]: crate::core::CcpmError::GitCommandError
+    /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn get_remote_url(&self) -> Result<String> {
         GitCommand::remote_url()
             .current_dir(&self.path)
@@ -844,7 +844,7 @@ impl GitRepo {
     /// This method is intentionally synchronous and lightweight for efficiency.\n    /// It performs at most two filesystem checks without spawning async tasks or\n    /// executing Git commands.\n    ///
     /// # Examples\n    ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// // Regular repository
     /// let repo = GitRepo::new("/path/to/regular/repo");
@@ -884,7 +884,7 @@ impl GitRepo {
     /// For error-based validation with detailed context, use [`ensure_valid_git_repo`]:
     ///
     /// ```rust,no_run
-    /// use ccpm::git::ensure_valid_git_repo;
+    /// use agpm::git::ensure_valid_git_repo;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -913,7 +913,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     /// use std::path::Path;
     ///
     /// let repo = GitRepo::new("/home/user/my-project");
@@ -934,7 +934,7 @@ impl GitRepo {
     /// The returned path can be used for various filesystem operations:
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # fn example() -> std::io::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -993,7 +993,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Verify public repository
@@ -1063,7 +1063,7 @@ impl GitRepo {
             return if std::path::Path::new(path).exists() {
                 Ok(())
             } else {
-                Err(anyhow::anyhow!("Local path does not exist: {}", path))
+                Err(anyhow::anyhow!("Local path does not exist: {path}"))
             };
         }
 
@@ -1099,7 +1099,7 @@ impl GitRepo {
             check_cmd
                 .execute_success()
                 .await
-                .map_err(|e| anyhow::anyhow!("Bare repository has no refs available: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Bare repository has no refs available: {e}"))?;
         }
 
         Ok(())
@@ -1123,7 +1123,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1209,7 +1209,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1232,7 +1232,7 @@ impl GitRepo {
         &self,
         worktree_path: impl AsRef<Path>,
         reference: Option<&str>,
-    ) -> Result<GitRepo> {
+    ) -> Result<Self> {
         self.create_worktree_with_context(worktree_path, reference, None)
             .await
     }
@@ -1256,7 +1256,7 @@ impl GitRepo {
         worktree_path: impl AsRef<Path>,
         reference: Option<&str>,
         context: Option<&str>,
-    ) -> Result<GitRepo> {
+    ) -> Result<Self> {
         let worktree_path = worktree_path.as_ref();
 
         // Ensure parent directory exists
@@ -1303,9 +1303,9 @@ impl GitRepo {
             let result = cmd.execute_success().await;
 
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     // Initialize and update submodules in the new worktree
-                    let worktree_repo = GitRepo::new(worktree_path);
+                    let worktree_repo = Self::new(worktree_path);
 
                     // Initialize submodules
                     let mut init_cmd = GitCommand::new()
@@ -1382,9 +1382,9 @@ impl GitRepo {
                         }
 
                         match force_cmd.execute_success().await {
-                            Ok(_) => {
+                            Ok(()) => {
                                 // Initialize and update submodules in the new worktree
-                                let worktree_repo = GitRepo::new(worktree_path);
+                                let worktree_repo = Self::new(worktree_path);
 
                                 let mut init_cmd = GitCommand::new()
                                     .args(["submodule", "init"])
@@ -1432,9 +1432,9 @@ impl GitRepo {
                         let head_result = head_cmd.execute_success().await;
 
                         match head_result {
-                            Ok(_) => {
+                            Ok(()) => {
                                 // Initialize and update submodules in the new worktree
-                                let worktree_repo = GitRepo::new(worktree_path);
+                                let worktree_repo = Self::new(worktree_path);
 
                                 // Initialize submodules
                                 let mut init_cmd = GitCommand::new()
@@ -1486,8 +1486,7 @@ impl GitRepo {
                             || error_str.contains("unknown revision"))
                     {
                         return Err(anyhow::anyhow!(
-                            "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
-                            ref_name
+                            "Invalid version or reference '{ref_name}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository"
                         ));
                     }
 
@@ -1515,7 +1514,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1547,7 +1546,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1599,7 +1598,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1625,7 +1624,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::GitRepo;
+    /// use agpm::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo.git");
@@ -1664,7 +1663,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```no_run
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::git::GitRepo;
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
     /// let commit = repo.get_current_commit().await?;
@@ -1682,7 +1681,7 @@ impl GitRepo {
 
     /// Resolves a Git reference (tag, branch, commit) to its full SHA-1 hash.
     ///
-    /// This method is central to CCPM's optimization strategy - by resolving all
+    /// This method is central to AGPM's optimization strategy - by resolving all
     /// version specifications to SHAs upfront, we can:
     /// - Create worktrees keyed by SHA for maximum reuse
     /// - Avoid redundant checkouts for the same commit
@@ -1709,7 +1708,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```no_run
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::git::GitRepo;
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
     ///
@@ -1747,7 +1746,7 @@ impl GitRepo {
         let ref_to_resolve = if !reference.contains('/') && reference != "HEAD" {
             // Looks like a branch name (not a tag or special ref)
             // Try origin/branch first
-            let origin_ref = format!("origin/{}", reference);
+            let origin_ref = format!("origin/{reference}");
             if GitCommand::rev_parse(&origin_ref)
                 .current_dir(&self.path)
                 .execute_stdout()
@@ -1768,21 +1767,17 @@ impl GitRepo {
             .current_dir(&self.path)
             .execute_stdout()
             .await
-            .with_context(|| format!("Failed to resolve reference '{}' to SHA", reference))?;
+            .with_context(|| format!("Failed to resolve reference '{reference}' to SHA"))?;
 
         // Ensure we have a full SHA (sometimes rev-parse can return short SHAs)
         if sha.len() < 40 {
             // Request the full SHA explicitly
             let full_sha = GitCommand::new()
-                .args([
-                    "rev-parse",
-                    "--verify",
-                    &format!("{}^{{commit}}", reference),
-                ])
+                .args(["rev-parse", "--verify", &format!("{reference}^{{commit}}")])
                 .current_dir(&self.path)
                 .execute_stdout()
                 .await
-                .with_context(|| format!("Failed to get full SHA for reference '{}'", reference))?;
+                .with_context(|| format!("Failed to get full SHA for reference '{reference}'"))?;
             Ok(full_sha)
         } else {
             Ok(sha)
@@ -1842,7 +1837,7 @@ impl GitRepo {
 ///
 /// This function verifies that the system's `git` command is available in the PATH
 /// and responds to version queries. It's a prerequisite check for all Git operations
-/// in CCPM.
+/// in AGPM.
 ///
 /// # Return Value
 ///
@@ -1863,7 +1858,7 @@ impl GitRepo {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::is_git_installed;
+/// use agpm::git::is_git_installed;
 ///
 /// if is_git_installed() {
 ///     println!("Git is available - proceeding with repository operations");
@@ -1873,7 +1868,7 @@ impl GitRepo {
 /// }
 /// ```
 ///
-/// # Usage in CCPM
+/// # Usage in AGPM
 ///
 /// This function is typically called during:
 /// - Application startup to validate prerequisites
@@ -1885,10 +1880,10 @@ impl GitRepo {
 /// For error-based validation with detailed context, use [`ensure_git_available()`]:
 ///
 /// ```rust,no_run
-/// use ccpm::git::ensure_git_available;
+/// use agpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// ensure_git_available()?; // Throws CcpmError::GitNotFound if not available
+/// ensure_git_available()?; // Throws AgpmError::GitNotFound if not available
 /// # Ok(())
 /// # }
 /// ```
@@ -1908,13 +1903,13 @@ pub fn is_git_installed() -> bool {
 /// Ensures Git is available on the system or returns a detailed error.
 ///
 /// This function validates that Git is installed and accessible, providing a
-/// [`CcpmError::GitNotFound`] with actionable guidance if Git is unavailable.
+/// [`AgpmError::GitNotFound`] with actionable guidance if Git is unavailable.
 /// It's the error-throwing equivalent of [`is_git_installed()`].
 ///
 /// # Return Value
 ///
 /// - `Ok(())` if Git is properly installed and accessible
-/// - `Err(CcpmError::GitNotFound)` if Git is not available
+/// - `Err(AgpmError::GitNotFound)` if Git is not available
 ///
 /// # Error Context
 ///
@@ -1926,7 +1921,7 @@ pub fn is_git_installed() -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::ensure_git_available;
+/// use agpm::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Validate Git before starting operations
@@ -1941,13 +1936,13 @@ pub fn is_git_installed() -> bool {
 /// # Error Handling
 ///
 /// ```rust,no_run
-/// use ccpm::git::ensure_git_available;
-/// use ccpm::core::CcpmError;
+/// use agpm::git::ensure_git_available;
+/// use agpm::core::AgpmError;
 ///
 /// match ensure_git_available() {
 ///     Ok(_) => println!("Git is ready"),
 ///     Err(e) => {
-///         if let Some(CcpmError::GitNotFound) = e.downcast_ref::<CcpmError>() {
+///         if let Some(AgpmError::GitNotFound) = e.downcast_ref::<AgpmError>() {
 ///             eprintln!("Please install Git to continue");
 ///             // Show platform-specific installation instructions
 ///         }
@@ -1960,7 +1955,7 @@ pub fn is_git_installed() -> bool {
 /// Typically called at the start of Git-dependent operations:
 ///
 /// ```rust,no_run
-/// use ccpm::git::{ensure_git_available, GitRepo};
+/// use agpm::git::{ensure_git_available, GitRepo};
 /// use std::env;
 ///
 /// # async fn git_operation() -> anyhow::Result<()> {
@@ -1977,11 +1972,11 @@ pub fn is_git_installed() -> bool {
 /// # }
 /// ```
 ///
-/// [`CcpmError::GitNotFound`]: crate::core::CcpmError::GitNotFound
+/// [`AgpmError::GitNotFound`]: crate::core::AgpmError::GitNotFound
 /// [`is_git_installed()`]: fn.is_git_installed.html
 pub fn ensure_git_available() -> Result<()> {
     if !is_git_installed() {
-        return Err(CcpmError::GitNotFound.into());
+        return Err(AgpmError::GitNotFound.into());
     }
     Ok(())
 }
@@ -2005,7 +2000,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// ```rust,no_run
 /// use std::path::Path;
-/// use ccpm::git::is_git_repository;
+/// use agpm::git::is_git_repository;
 ///
 /// // Check a regular repository
 /// let repo_path = Path::new("/path/to/repo");
@@ -2048,7 +2043,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::is_valid_git_repo;
+/// use agpm::git::is_valid_git_repo;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/home/user/my-project");
@@ -2070,7 +2065,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 /// # Batch Processing Example
 ///
 /// ```rust,no_run
-/// use ccpm::git::is_valid_git_repo;
+/// use agpm::git::is_valid_git_repo;
 /// use std::fs;
 /// use std::path::Path;
 ///
@@ -2110,7 +2105,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// Ensures a directory contains a valid Git repository or returns a detailed error.
 ///
 /// This function validates that the specified path contains a Git repository,
-/// providing a [`CcpmError::GitRepoInvalid`] with actionable guidance if the
+/// providing a [`AgpmError::GitRepoInvalid`] with actionable guidance if the
 /// validation fails. It's the error-throwing equivalent of [`is_valid_git_repo()`].
 ///
 /// # Arguments
@@ -2120,7 +2115,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// # Return Value
 ///
 /// - `Ok(())` if the path contains a valid `.git` directory
-/// - `Err(CcpmError::GitRepoInvalid)` if the path is not a Git repository
+/// - `Err(AgpmError::GitRepoInvalid)` if the path is not a Git repository
 ///
 /// # Error Context
 ///
@@ -2132,7 +2127,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::ensure_valid_git_repo;
+/// use agpm::git::ensure_valid_git_repo;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -2150,8 +2145,8 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// # Error Handling Pattern
 ///
 /// ```rust,no_run
-/// use ccpm::git::ensure_valid_git_repo;
-/// use ccpm::core::CcpmError;
+/// use agpm::git::ensure_valid_git_repo;
+/// use agpm::core::AgpmError;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/some/directory");
@@ -2159,7 +2154,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// match ensure_valid_git_repo(path) {
 ///     Ok(_) => println!("Valid repository found"),
 ///     Err(e) => {
-///         if let Some(CcpmError::GitRepoInvalid { path }) = e.downcast_ref::<CcpmError>() {
+///         if let Some(AgpmError::GitRepoInvalid { path }) = e.downcast_ref::<AgpmError>() {
 ///             eprintln!("Directory {} is not a Git repository", path);
 ///             eprintln!("Try: git clone <url> {} or git init {}", path, path);
 ///         }
@@ -2172,7 +2167,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// This function provides validation before creating `GitRepo` instances:
 ///
 /// ```rust,no_run
-/// use ccpm::git::{ensure_valid_git_repo, GitRepo};
+/// use agpm::git::{ensure_valid_git_repo, GitRepo};
 /// use std::path::Path;
 ///
 /// # async fn validated_repo_operations() -> anyhow::Result<()> {
@@ -2195,11 +2190,11 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// - **Pipeline validation**: Fail fast in processing pipelines
 /// - **User feedback**: Give actionable error messages with suggestions
 ///
-/// [`CcpmError::GitRepoInvalid`]: crate::core::CcpmError::GitRepoInvalid
+/// [`AgpmError::GitRepoInvalid`]: crate::core::AgpmError::GitRepoInvalid
 /// [`is_valid_git_repo()`]: fn.is_valid_git_repo.html
 pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
     if !is_valid_git_repo(path) {
-        return Err(CcpmError::GitRepoInvalid {
+        return Err(AgpmError::GitRepoInvalid {
             path: path.display().to_string(),
         }
         .into());
@@ -2243,7 +2238,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::parse_git_url;
+/// use agpm::git::parse_git_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Parse GitHub URL
@@ -2274,7 +2269,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// # Cache Integration Example
 ///
 /// ```rust,no_run
-/// use ccpm::git::parse_git_url;
+/// use agpm::git::parse_git_url;
 /// use std::path::PathBuf;
 ///
 /// # fn cache_example() -> anyhow::Result<()> {
@@ -2282,12 +2277,12 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// let (owner, repo) = parse_git_url(url)?;
 ///
 /// // Create cache directory path
-/// let cache_path = PathBuf::from("/home/user/.ccpm/cache")
+/// let cache_path = PathBuf::from("/home/user/.agpm/cache")
 ///     .join(&owner)
 ///     .join(&repo);
 ///     
 /// println!("Cache location: {}", cache_path.display());
-/// // Output: Cache location: /home/user/.ccpm/cache/rust-lang/cargo
+/// // Output: Cache location: /home/user/.agpm/cache/rust-lang/cargo
 /// # Ok(())
 /// # }
 /// ```
@@ -2298,7 +2293,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// the repository components:
 ///
 /// ```rust,no_run
-/// use ccpm::git::parse_git_url;
+/// use agpm::git::parse_git_url;
 ///
 /// # fn auth_example() -> anyhow::Result<()> {
 /// // Authentication is ignored in parsing
@@ -2339,10 +2334,9 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
             let repo_name = &url[last_slash + 1..];
             let repo_name = repo_name.trim_end_matches(".git");
             return Ok(("local".to_string(), repo_name.to_string()));
-        } else {
-            let repo_name = url.trim_end_matches(".git");
-            return Ok(("local".to_string(), repo_name.to_string()));
         }
+        let repo_name = url.trim_end_matches(".git");
+        return Ok(("local".to_string(), repo_name.to_string()));
     }
 
     // Handle SSH URLs like git@github.com:user/repo.git
@@ -2416,7 +2410,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::git::strip_auth_from_url;
+/// use agpm::git::strip_auth_from_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Strip token from HTTPS URL
@@ -2437,7 +2431,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Safe Logging Pattern
 ///
 /// ```rust,no_run
-/// use ccpm::git::strip_auth_from_url;
+/// use agpm::git::strip_auth_from_url;
 /// use anyhow::Result;
 ///
 /// fn log_repository_operation(url: &str, operation: &str) -> Result<()> {
@@ -2452,8 +2446,8 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Error Context Integration
 ///
 /// ```rust,no_run
-/// use ccpm::git::strip_auth_from_url;
-/// use ccpm::core::CcpmError;
+/// use agpm::git::strip_auth_from_url;
+/// use agpm::core::AgpmError;
 ///
 /// # async fn operation_example(url: &str) -> anyhow::Result<()> {
 /// match some_git_operation(url).await {

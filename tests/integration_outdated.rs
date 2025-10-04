@@ -20,7 +20,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -34,12 +34,12 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command
-    let output = project.run_ccpm(&["outdated", "--no-fetch"]).unwrap();
+    let output = project.run_agpm(&["outdated", "--no-fetch"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("All dependencies are up to date!");
@@ -52,7 +52,7 @@ async fn test_outdated_with_updates_available() {
 
     // Create manifest with version constraints
     let manifest_content = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
@@ -65,7 +65,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -79,7 +79,7 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
@@ -95,10 +95,10 @@ async fn test_outdated_no_lockfile() {
     let manifest_content = ManifestFixture::basic().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["outdated"]).unwrap();
+    let output = project.run_agpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without lockfile");
     assert!(
-        output.stderr.contains("ccpm.lock") || output.stderr.contains("Run 'ccpm install' first"),
+        output.stderr.contains("agpm.lock") || output.stderr.contains("Run 'agpm install' first"),
         "Expected lockfile error message, got: {}",
         output.stderr
     );
@@ -109,10 +109,10 @@ async fn test_outdated_no_lockfile() {
 async fn test_outdated_without_project() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["outdated"]).unwrap();
+    let output = project.run_agpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without project");
     assert!(
-        output.stderr.contains("ccpm.toml not found"),
+        output.stderr.contains("agpm.toml not found"),
         "Expected manifest not found error, got: {}",
         output.stderr
     );
@@ -133,7 +133,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -147,13 +147,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command with JSON format
     let output = project
-        .run_ccpm(&["outdated", "--format", "json", "--no-fetch"])
+        .run_agpm(&["outdated", "--format", "json", "--no-fetch"])
         .unwrap();
     output.assert_success();
 
@@ -185,7 +185,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -199,13 +199,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command with --check flag
     let output = project
-        .run_ccpm(&["outdated", "--check", "--no-fetch"])
+        .run_agpm(&["outdated", "--check", "--no-fetch"])
         .unwrap();
 
     // Should succeed when all dependencies are up to date
@@ -219,7 +219,7 @@ async fn test_outdated_specific_dependencies() {
 
     // Create manifest with multiple dependencies
     let manifest_content = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
@@ -233,7 +233,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -257,13 +257,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/helper.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command for specific dependency
     let output = project
-        .run_ccpm(&["outdated", "--no-fetch", "my-agent"])
+        .run_agpm(&["outdated", "--no-fetch", "my-agent"])
         .unwrap();
     output.assert_success();
 }

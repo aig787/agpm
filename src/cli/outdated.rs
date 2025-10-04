@@ -7,7 +7,7 @@
 //!
 //! # Overview
 //!
-//! This module implements CCPM's update checking functionality, which:
+//! This module implements AGPM's update checking functionality, which:
 //! - Compares installed versions against repository tags
 //! - Respects semantic version constraints from the manifest
 //! - Distinguishes between compatible and major updates
@@ -21,22 +21,22 @@
 //!
 //! ```bash
 //! # Check all dependencies for updates
-//! ccpm outdated
+//! agpm outdated
 //!
 //! # Check specific dependencies
-//! ccpm outdated my-agent other-agent
+//! agpm outdated my-agent other-agent
 //!
 //! # Use cached data without fetching
-//! ccpm outdated --no-fetch
+//! agpm outdated --no-fetch
 //!
 //! # Exit with error code if updates available
-//! ccpm outdated --check
+//! agpm outdated --check
 //!
 //! # JSON output for scripting
-//! ccpm outdated --format json
+//! agpm outdated --format json
 //!
 //! # Control parallelism
-//! ccpm outdated --max-parallel 5
+//! agpm outdated --max-parallel 5
 //! ```
 //!
 //! ## Output Formats
@@ -87,7 +87,7 @@
 //!
 //! The outdated command performs sophisticated version analysis:
 //!
-//! 1. **Current Version**: The version installed and locked in `ccpm.lock`
+//! 1. **Current Version**: The version installed and locked in `agpm.lock`
 //! 2. **Latest Compatible**: The newest version that satisfies the manifest's version constraint
 //! 3. **Latest Available**: The absolute newest version in the repository
 //!
@@ -103,13 +103,13 @@
 //!
 //! # Requirements
 //!
-//! - Requires an existing `ccpm.lock` file (run `ccpm install` first)
+//! - Requires an existing `agpm.lock` file (run `agpm install` first)
 //! - Accesses Git repositories to fetch latest version information
 //! - Supports both local cache and remote fetching modes
 //!
 //! # Integration with Other Commands
 //!
-//! The outdated command complements other CCPM commands:
+//! The outdated command complements other AGPM commands:
 //!
 //! - [`crate::cli::install`] - Creates the required lockfile
 //! - [`crate::cli::update`] - Updates dependencies to newer versions
@@ -119,7 +119,7 @@
 //!
 //! Common error scenarios and their handling:
 //!
-//! - **Missing lockfile**: Returns error suggesting `ccpm install`
+//! - **Missing lockfile**: Returns error suggesting `agpm install`
 //! - **Repository not cached**: Skips dependency or fails if `--no-fetch` used
 //! - **Invalid version constraints**: Reports parsing errors with context
 //! - **Network issues**: Graceful degradation with appropriate error messages
@@ -127,7 +127,7 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use ccpm::cli::outdated::OutdatedCommand;
+//! use agpm::cli::outdated::OutdatedCommand;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -182,7 +182,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## Check All Dependencies
 ///
 /// ```rust,ignore
-/// use ccpm::cli::outdated::OutdatedCommand;
+/// use agpm::cli::outdated::OutdatedCommand;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cmd = OutdatedCommand {
@@ -202,7 +202,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## Check Specific Dependencies with JSON Output
 ///
 /// ```rust,ignore
-/// use ccpm::cli::outdated::OutdatedCommand;
+/// use agpm::cli::outdated::OutdatedCommand;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cmd = OutdatedCommand {
@@ -222,7 +222,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## CI/CD Integration Example
 ///
 /// ```rust,ignore
-/// use ccpm::cli::outdated::OutdatedCommand;
+/// use agpm::cli::outdated::OutdatedCommand;
 ///
 /// # async fn ci_check() -> anyhow::Result<()> {
 /// // This will exit with code 1 if any updates are available
@@ -474,7 +474,7 @@ pub struct OutdatedSummary {
 /// scripts to programmatically analyze dependency update status.
 ///
 /// ```rust,ignore
-/// use ccpm::cli::outdated::{OutdatedResult, OutdatedInfo, OutdatedSummary};
+/// use agpm::cli::outdated::{OutdatedResult, OutdatedInfo, OutdatedSummary};
 /// use serde_json;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -524,7 +524,7 @@ impl OutdatedCommand {
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Optional path to the `ccpm.toml` file. If `None`,
+    /// * `manifest_path` - Optional path to the `agpm.toml` file. If `None`,
     ///   searches the current directory and parent directories for the manifest.
     ///
     /// # Returns
@@ -543,7 +543,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::outdated::OutdatedCommand;
+    /// use agpm::cli::outdated::OutdatedCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -552,7 +552,7 @@ impl OutdatedCommand {
     /// cmd.execute_with_manifest_path(None).await?;
     ///
     /// // Use specific manifest path
-    /// let manifest_path = Some(PathBuf::from("/path/to/ccpm.toml"));
+    /// let manifest_path = Some(PathBuf::from("/path/to/agpm.toml"));
     /// cmd.execute_with_manifest_path(manifest_path).await?;
     /// # Ok(())
     /// # }
@@ -561,9 +561,9 @@ impl OutdatedCommand {
     /// # Errors
     ///
     /// Returns [`anyhow::Error`] for various failure conditions:
-    /// - `"No manifest found"` - No `ccpm.toml` in current or parent directories
+    /// - `"No manifest found"` - No `agpm.toml` in current or parent directories
     /// - `"Failed to load manifest"` - Manifest exists but has syntax errors
-    /// - `"No lockfile found"` - Missing `ccpm.lock` file (run `ccpm install` first)
+    /// - `"No lockfile found"` - Missing `agpm.lock` file (run `agpm install` first)
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         let manifest_path = find_manifest_with_optional(manifest_path)?;
         self.execute_from_path(manifest_path).await
@@ -581,7 +581,7 @@ impl OutdatedCommand {
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Absolute path to the `ccpm.toml` manifest file
+    /// * `manifest_path` - Absolute path to the `agpm.toml` manifest file
     ///
     /// # Returns
     ///
@@ -606,7 +606,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::outdated::OutdatedCommand;
+    /// use agpm::cli::outdated::OutdatedCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -619,7 +619,7 @@ impl OutdatedCommand {
     ///     no_progress: false,
     /// };
     ///
-    /// let manifest_path = PathBuf::from("./ccpm.toml");
+    /// let manifest_path = PathBuf::from("./agpm.toml");
     /// cmd.execute_from_path(manifest_path).await?;
     /// # Ok(())
     /// # }
@@ -629,20 +629,19 @@ impl OutdatedCommand {
 
         // 1. Load manifest and lockfile
         let manifest = Manifest::load(&manifest_path)
-            .with_context(|| format!("Failed to load manifest from {:?}", manifest_path))?;
+            .with_context(|| format!("Failed to load manifest from {manifest_path:?}"))?;
 
-        let lockfile_path = manifest_path.with_file_name("ccpm.lock");
+        let lockfile_path = manifest_path.with_file_name("agpm.lock");
 
         // Check if lockfile exists first - the outdated command requires it
         if !lockfile_path.exists() {
             return Err(anyhow::anyhow!(
-                "No lockfile found at {:?}. Run 'ccpm install' first to create a lockfile.",
-                lockfile_path
+                "No lockfile found at {lockfile_path:?}. Run 'agpm install' first to create a lockfile."
             ));
         }
 
         let lockfile = LockFile::load(&lockfile_path)
-            .with_context(|| format!("Failed to load lockfile from {:?}", lockfile_path))?;
+            .with_context(|| format!("Failed to load lockfile from {lockfile_path:?}"))?;
 
         // 2. Initialize cache and resolver
         let cache = Cache::new().context("Failed to initialize cache")?;
@@ -652,10 +651,10 @@ impl OutdatedCommand {
             .context("Failed to create dependency resolver")?;
 
         // 4. Pre-sync sources if not skipped
-        let progress = if !self.no_progress {
-            Some(MultiPhaseProgress::new(!self.no_progress))
-        } else {
+        let progress = if self.no_progress {
             None
+        } else {
+            Some(MultiPhaseProgress::new(!self.no_progress))
         };
 
         if !self.no_fetch {
@@ -737,7 +736,7 @@ impl OutdatedCommand {
     /// # Arguments
     ///
     /// * `name` - The dependency name from the lockfile
-    /// * `locked` - The locked resource information from `ccpm.lock`
+    /// * `locked` - The locked resource information from `agpm.lock`
     /// * `manifest` - The project manifest containing dependency specifications
     /// * `cache` - Cache instance for accessing Git repositories
     /// * `resolver` - Dependency resolver for version operations
@@ -767,11 +766,11 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use ccpm::cli::outdated::OutdatedCommand;
-    /// # use ccpm::lockfile::LockedResource;
-    /// # use ccpm::manifest::Manifest;
-    /// # use ccpm::cache::Cache;
-    /// # use ccpm::resolver::DependencyResolver;
+    /// # use agpm::cli::outdated::OutdatedCommand;
+    /// # use agpm::lockfile::LockedResource;
+    /// # use agpm::manifest::Manifest;
+    /// # use agpm::cache::Cache;
+    /// # use agpm::resolver::DependencyResolver;
     /// # async fn example(
     /// #     cmd: &OutdatedCommand,
     /// #     locked: &LockedResource,
@@ -825,13 +824,12 @@ impl OutdatedCommand {
         // Get the source
         let source_name = dep
             .get_source()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {} has no source", name))?;
+            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no source"))?;
 
         // Get the version constraint
         let constraint_str = dep
             .get_version()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "latest".to_string());
+            .map_or_else(|| "latest".to_string(), std::string::ToString::to_string);
         let constraint = VersionConstraint::parse(&constraint_str)?;
 
         // Get available versions from the repository
@@ -839,7 +837,7 @@ impl OutdatedCommand {
         let source_url = manifest
             .sources
             .get(source_name)
-            .ok_or_else(|| anyhow::anyhow!("Source {} not found in manifest", source_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Source {source_name} not found in manifest"))?;
 
         // Parse the Git URL to get owner and repo name
         let (owner, repo) = parse_git_url(source_url)
@@ -850,7 +848,7 @@ impl OutdatedCommand {
         let bare_repo_path = cache
             .get_cache_location()
             .join("sources")
-            .join(format!("{}_{}.git", owner, repo));
+            .join(format!("{owner}_{repo}.git"));
 
         if !bare_repo_path.exists() {
             debug!(
@@ -884,14 +882,10 @@ impl OutdatedCommand {
         let version_str = locked
             .version
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {} has no version in lockfile", name))?;
+            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no version in lockfile"))?;
         let current_str = version_str.trim_start_matches('v');
-        let current_version = semver::Version::parse(current_str).with_context(|| {
-            format!(
-                "Failed to parse current version {} for {}",
-                version_str, name
-            )
-        })?;
+        let current_version = semver::Version::parse(current_str)
+            .with_context(|| format!("Failed to parse current version {version_str} for {name}"))?;
 
         // Find latest within constraint
         let latest_compatible = semver_versions
@@ -909,13 +903,8 @@ impl OutdatedCommand {
 
         // Format versions with 'v' prefix if original had it
         let format_version = |v: &semver::Version| {
-            if locked
-                .version
-                .as_ref()
-                .map(|s| s.starts_with('v'))
-                .unwrap_or(false)
-            {
-                format!("v{}", v)
+            if locked.version.as_ref().is_some_and(|s| s.starts_with('v')) {
+                format!("v{v}")
             } else {
                 v.to_string()
             }
@@ -987,7 +976,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use ccpm::cli::outdated::{OutdatedCommand, OutdatedInfo};
+    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo};
     /// # fn example() {
     /// let cmd = OutdatedCommand::default();
     /// let outdated_deps = vec![
@@ -1038,7 +1027,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use ccpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand {
     ///     format: "json".to_string(),
@@ -1119,7 +1108,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use ccpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand::default();
     /// let outdated = vec![];
@@ -1194,7 +1183,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use ccpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand::default();
     /// let outdated = vec![];

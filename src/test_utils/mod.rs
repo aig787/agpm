@@ -1,4 +1,4 @@
-//! Test utilities for CCPM
+//! Test utilities for AGPM
 //!
 //! This module provides utilities for writing tests, including helpers for
 //! managing test environments, temporary directories, and test isolation.
@@ -22,7 +22,7 @@
 //!         let env = TestEnvironment::with_basic_manifest().unwrap();
 //!         
 //!         // Use the test environment
-//!         assert!(env.file_exists("ccpm.toml"));
+//!         assert!(env.file_exists("agpm.toml"));
 //!     }
 //! }
 //! ```
@@ -45,12 +45,12 @@ static INIT_LOGGING: Once = Once::new();
 /// Initialize logging for tests.
 ///
 /// This function initializes the tracing subscriber for tests, but only once
-/// regardless of how many times it's called. It respects the RUST_LOG environment
+/// regardless of how many times it's called. It respects the `RUST_LOG` environment
 /// variable if set, or uses the provided log level.
 ///
 /// # Arguments
 ///
-/// * `level` - Optional log level to use. If None, uses RUST_LOG environment variable
+/// * `level` - Optional log level to use. If None, uses `RUST_LOG` environment variable
 ///
 /// # Example
 ///
@@ -59,10 +59,10 @@ static INIT_LOGGING: Once = Once::new();
 ///
 /// fn my_test() {
 ///     // Use environment variable
-///     ccpm::test_utils::init_test_logging(None);
+///     agpm::test_utils::init_test_logging(None);
 ///     
 ///     // Or set level programmatically
-///     ccpm::test_utils::init_test_logging(Some(Level::DEBUG));
+///     agpm::test_utils::init_test_logging(Some(Level::DEBUG));
 ///     
 ///     // Your test code here - logging will work
 /// }

@@ -10,7 +10,7 @@ use common::TestProject;
 /// Test installing dependencies using glob patterns.
 #[tokio::test]
 async fn test_pattern_based_installation() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -89,7 +89,7 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
     project.write_manifest(&manifest_content).await?;
 
     // Run install command
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
     // Verify that all AI agents were installed
@@ -119,7 +119,7 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
     );
 
     // Verify lockfile was created with all resources
-    let lockfile_path = project.project_path().join("ccpm.lock");
+    let lockfile_path = project.project_path().join("agpm.lock");
     assert!(lockfile_path.exists(), "Lockfile not created");
 
     let lockfile_content = fs::read_to_string(&lockfile_path).await?;
@@ -150,7 +150,7 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
 /// Test pattern dependencies with custom target directories.
 #[tokio::test]
 async fn test_pattern_with_custom_target() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
@@ -187,14 +187,14 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
     // Verify custom installation path
     // Custom target is relative to default snippets directory
     let custom_dir = project
         .project_path()
-        .join(".claude/ccpm/snippets/tools/utilities");
+        .join(".claude/agpm/snippets/tools/utilities");
     assert!(
         custom_dir.join("util1.md").exists(),
         "util1 not installed to custom path"
@@ -214,7 +214,7 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
 /// Test pattern dependencies with version constraints.
 #[tokio::test]
 async fn test_pattern_with_versions() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
@@ -250,7 +250,7 @@ v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
     // Verify v1.0.0 agents were installed
@@ -279,7 +279,7 @@ v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
 /// Test local filesystem patterns.
 #[tokio::test]
 async fn test_local_pattern_dependencies() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -304,7 +304,7 @@ local-agents = {{ path = "{}/agents/local*.md" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
 
     // Local patterns might not be supported in the same way as remote patterns
     // This test documents the current behavior
@@ -332,7 +332,7 @@ local-agents = {{ path = "{}/agents/local*.md" }}
 /// Test error handling for invalid patterns.
 #[tokio::test]
 async fn test_invalid_pattern_error() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -348,7 +348,7 @@ unsafe = { source = "test-repo", path = "../../../etc/*.conf", version = "latest
     project.write_manifest(manifest_content).await?;
 
     // Run validate command
-    let output = project.run_ccpm(&["validate"])?;
+    let output = project.run_agpm(&["validate"])?;
 
     // Should fail validation due to path traversal
     assert!(!output.success);
@@ -359,7 +359,7 @@ unsafe = { source = "test-repo", path = "../../../etc/*.conf", version = "latest
 /// Test pattern matching performance with many files.
 #[tokio::test]
 async fn test_pattern_performance() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
@@ -395,7 +395,7 @@ all-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }
     // Measure installation time
     let start = std::time::Instant::now();
 
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
     let duration = start.elapsed();
@@ -408,7 +408,7 @@ all-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }
     );
 
     // Verify all files were installed
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock")).await?;
+    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock")).await?;
     let agent_count = lockfile_content.matches("agent").count();
     assert!(agent_count >= 100, "Not all agents were installed");
 

@@ -1,4 +1,4 @@
-# Claude Code Agents for CCPM
+# Claude Code Agents for AGPM
 
 ## Agent Architecture
 

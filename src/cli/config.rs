@@ -1,8 +1,8 @@
-//! Manage global CCPM configuration settings.
+//! Manage global AGPM configuration settings.
 //!
 //! This module provides the `config` command which allows users to manage
-//! the global configuration file (`~/.ccpm/config.toml`) containing settings
-//! that apply across all CCPM projects. The primary use case is managing
+//! the global configuration file (`~/.agpm/config.toml`) containing settings
+//! that apply across all AGPM projects. The primary use case is managing
 //! authentication tokens and private Git repository sources.
 //!
 //! # Features
@@ -18,37 +18,37 @@
 //!
 //! | File | Purpose | Contents | Version Control |
 //! |------|---------|----------|----------------|
-//! | `~/.ccpm/config.toml` | Global settings | Auth tokens, private sources | ❌ Never commit |
-//! | `./ccpm.toml` | Project manifest | Public sources, dependencies | ✅ Commit to git |
+//! | `~/.agpm/config.toml` | Global settings | Auth tokens, private sources | ❌ Never commit |
+//! | `./agpm.toml` | Project manifest | Public sources, dependencies | ✅ Commit to git |
 //!
 //! # Examples
 //!
 //! Initialize global configuration:
 //! ```bash
-//! ccpm config init
+//! agpm config init
 //! ```
 //!
 //! Show current configuration:
 //! ```bash
-//! ccpm config show
-//! ccpm config  # defaults to show
+//! agpm config show
+//! agpm config  # defaults to show
 //! ```
 //!
 //! Edit configuration interactively:
 //! ```bash
-//! ccpm config edit
+//! agpm config edit
 //! ```
 //!
 //! Manage global sources:
 //! ```bash
-//! ccpm config add-source private https://oauth2:TOKEN@github.com/org/private.git
-//! ccpm config list-sources
-//! ccpm config remove-source private
+//! agpm config add-source private https://oauth2:TOKEN@github.com/org/private.git
+//! agpm config list-sources
+//! agpm config remove-source private
 //! ```
 //!
 //! Get configuration file path:
 //! ```bash
-//! ccpm config path
+//! agpm config path
 //! ```
 //!
 //! # Configuration File Structure
@@ -56,13 +56,13 @@
 //! The global configuration follows this format:
 //!
 //! ```toml
-//! # Global CCPM Configuration
+//! # Global AGPM Configuration
 //! # This file contains authentication tokens and private sources
 //! # DO NOT commit this file to version control
 //!
 //! [sources]
 //! # Private repository with authentication
-//! private = "https://oauth2:ghp_xxxx@github.com/company/ccpm-resources.git"
+//! private = "https://oauth2:ghp_xxxx@github.com/company/agpm-resources.git"
 //!
 //! # GitLab with deploy token
 //! gitlab-private = "https://gitlab-ci-token:TOKEN@gitlab.com/group/repo.git"
@@ -110,11 +110,11 @@ use std::path::PathBuf;
 
 use crate::config::GlobalConfig;
 
-/// Command to manage global CCPM configuration settings.
+/// Command to manage global AGPM configuration settings.
 ///
 /// This command provides comprehensive management of the global configuration
 /// file which contains authentication tokens and private sources that apply
-/// across all CCPM projects on the system.
+/// across all AGPM projects on the system.
 ///
 /// # Default Behavior
 ///
@@ -123,7 +123,7 @@ use crate::config::GlobalConfig;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::config::{ConfigCommand, ConfigSubcommands};
+/// use agpm::cli::config::{ConfigCommand, ConfigSubcommands};
 ///
 /// // Show current configuration (default)
 /// let cmd = ConfigCommand { command: None };
@@ -151,7 +151,7 @@ pub struct ConfigCommand {
 /// Subcommands for global configuration management.
 ///
 /// This enum defines all available operations for managing the global
-/// CCPM configuration file and its contents.
+/// AGPM configuration file and its contents.
 #[derive(Subcommand)]
 enum ConfigSubcommands {
     /// Initialize a new global configuration with example content.
@@ -169,8 +169,8 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config init               # Create new config
-    /// ccpm config init --force       # Overwrite existing config
+    /// agpm config init               # Create new config
+    /// agpm config init --force       # Overwrite existing config
     /// ```
     Init {
         /// Force overwrite existing configuration file
@@ -196,8 +196,8 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config show      # Explicit show command
-    /// ccpm config           # Defaults to show
+    /// agpm config show      # Explicit show command
+    /// agpm config           # Defaults to show
     /// ```
     Show,
 
@@ -213,14 +213,14 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config edit
+    /// agpm config edit
     /// ```
     Edit,
 
     /// Add a new global source repository.
     ///
     /// Adds a Git repository source to the global configuration, making it
-    /// available for use in all CCPM projects. This is particularly useful
+    /// available for use in all AGPM projects. This is particularly useful
     /// for private repositories that require authentication tokens.
     ///
     /// # Duplicate Handling
@@ -233,7 +233,7 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config add-source private https://oauth2:TOKEN@github.com/org/repo.git
+    /// agpm config add-source private https://oauth2:TOKEN@github.com/org/repo.git
     /// ```
     AddSource {
         /// Name for the source (used to reference it in manifests)
@@ -263,7 +263,7 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config remove-source private
+    /// agpm config remove-source private
     /// ```
     RemoveSource {
         /// Name of the source to remove
@@ -285,7 +285,7 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config list-sources
+    /// agpm config list-sources
     /// ```
     ListSources,
 
@@ -299,7 +299,7 @@ enum ConfigSubcommands {
     ///
     /// # Examples
     /// ```bash
-    /// ccpm config path
+    /// agpm config path
     /// ```
     Path,
 }
@@ -340,7 +340,7 @@ impl ConfigCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::config::{ConfigCommand, ConfigSubcommands};
+    /// use agpm::cli::config::{ConfigCommand, ConfigSubcommands};
     ///
     /// # tokio_test::block_on(async {
     /// // Show current configuration
@@ -383,7 +383,7 @@ impl ConfigCommand {
 
     async fn init_with_config_path(force: bool, config_path: Option<PathBuf>) -> Result<()> {
         let config_path = config_path.unwrap_or_else(|| {
-            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
 
         if config_path.exists() && !force {
@@ -453,7 +453,7 @@ impl ConfigCommand {
     async fn show(config_path: Option<PathBuf>) -> Result<()> {
         let config = GlobalConfig::load_with_optional(config_path.clone()).await?;
         let config_path = config_path.unwrap_or_else(|| {
-            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
 
         println!("{}", "Global Configuration".bold());
@@ -462,7 +462,7 @@ impl ConfigCommand {
         if config.sources.is_empty() {
             println!("No global sources configured.");
             println!("\n{}", "Tip:".yellow());
-            println!("  Run 'ccpm config init' to create an example configuration");
+            println!("  Run 'agpm config init' to create an example configuration");
         } else {
             println!("{}", toml::to_string_pretty(&config)?);
         }
@@ -472,7 +472,7 @@ impl ConfigCommand {
 
     async fn edit_with_path(config_path: Option<PathBuf>) -> Result<()> {
         let config_path = config_path.unwrap_or_else(|| {
-            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
 
         if !config_path.exists() {
@@ -525,7 +525,7 @@ impl ConfigCommand {
 
         config.add_source(name.clone(), url.clone());
         let save_path = config_path.unwrap_or_else(|| {
-            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
         config.save_to(&save_path).await?;
 
@@ -547,7 +547,7 @@ impl ConfigCommand {
         if config.remove_source(&name) {
             let save_path = config_path.unwrap_or_else(|| {
                 GlobalConfig::default_path()
-                    .unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+                    .unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
             });
             config.save_to(&save_path).await?;
             println!("✅ Removed global source '{}'", name.red());
@@ -566,9 +566,9 @@ impl ConfigCommand {
         if config.sources.is_empty() {
             println!("No global sources configured.");
             println!("\n{}", "Tip:".yellow());
-            println!("  Add a source with: ccpm config add-source <name> <url>");
+            println!("  Add a source with: agpm config add-source <name> <url>");
             println!(
-                "  Example: ccpm config add-source private https://oauth2:TOKEN@gitlab.com/company/agents.git"
+                "  Example: agpm config add-source private https://oauth2:TOKEN@gitlab.com/company/agents.git"
             );
         } else {
             println!("{}", "Global Sources:".bold());
@@ -599,7 +599,7 @@ impl ConfigCommand {
 
     fn show_path(config_path: Option<PathBuf>) -> Result<()> {
         let config_path = config_path.unwrap_or_else(|| {
-            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
         println!("{}", config_path.display());
         Ok(())
@@ -639,7 +639,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // This test specifically tests CCPM_CONFIG_PATH environment variable handling
+    // This test specifically tests AGPM_CONFIG_PATH environment variable handling
     #[tokio::test]
     async fn test_config_show_empty() {
         let temp = TempDir::new().unwrap();

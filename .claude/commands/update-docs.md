@@ -137,8 +137,8 @@ Review the current changes and ensure README.md, all documentation files, and Cl
    - Put detailed content in appropriate docs/ files
    - Ensure cross-references between docs are accurate
 
-8. Special considerations for CCPM:
-   - Lockfile behavior (ccpm.lock) must be accurately described
+8. Special considerations for AGPM:
+   - Lockfile behavior (agpm.lock) must be accurately described
    - Git-based distribution model should be clear
    - Cross-platform support claims must be accurate
    - Security considerations should be mentioned where relevant

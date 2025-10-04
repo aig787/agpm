@@ -19,32 +19,32 @@
 //!
 //! Update all dependencies:
 //! ```bash
-//! ccpm update
+//! agpm update
 //! ```
 //!
 //! Update specific dependencies:
 //! ```bash
-//! ccpm update my-agent utils-snippet
+//! agpm update my-agent utils-snippet
 //! ```
 //!
 //! Preview updates without applying:
 //! ```bash
-//! ccpm update --dry-run
+//! agpm update --dry-run
 //! ```
 //!
 //! Check for available updates (exit code 1 if updates available):
 //! ```bash
-//! ccpm update --check
+//! agpm update --check
 //! ```
 //!
 //! Force update ignoring constraints:
 //! ```bash
-//! ccpm update --force
+//! agpm update --force
 //! ```
 //!
 //! Update with custom parallelism:
 //! ```bash
-//! ccpm update --max-parallel 4
+//! agpm update --max-parallel 4
 //! ```
 //!
 //! # Update Logic
@@ -95,25 +95,25 @@ use crate::resolver::DependencyResolver;
 /// ## Update All Dependencies
 /// Update all dependencies to their latest compatible versions:
 /// ```bash
-/// ccpm update
+/// agpm update
 /// ```
 ///
 /// ## Selective Updates
 /// Update only specific dependencies:
 /// ```bash
-/// ccpm update my-agent utils-snippet
+/// agpm update my-agent utils-snippet
 /// ```
 ///
 /// ## Preview Updates
 /// Check what would be updated without making changes:
 /// ```bash
-/// ccpm update --dry-run
+/// agpm update --dry-run
 /// ```
 ///
 /// ## Force Updates
 /// Update ignoring version constraints:
 /// ```bash
-/// ccpm update --force
+/// agpm update --force
 /// ```
 ///
 /// # Options
@@ -157,7 +157,7 @@ pub struct UpdateCommand {
     /// If provided, only these dependencies will be updated. Otherwise,
     /// all dependencies in the manifest are considered for updates.
     ///
-    /// Example: `ccpm update my-agent utils-snippet`
+    /// Example: `agpm update my-agent utils-snippet`
     #[arg(value_name = "DEPENDENCY")]
     pub dependencies: Vec<String>,
 
@@ -185,7 +185,7 @@ pub struct UpdateCommand {
 
     /// Create a backup of the lockfile before updating.
     ///
-    /// The backup is saved as `ccpm.lock.backup` and can be restored
+    /// The backup is saved as `agpm.lock.backup` and can be restored
     /// manually if the update causes issues.
     #[arg(long)]
     pub backup: bool,
@@ -263,7 +263,7 @@ impl UpdateCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::update::UpdateCommand;
+    /// use agpm::cli::update::UpdateCommand;
     ///
     /// # tokio_test::block_on(async {
     /// // Update all dependencies with backup
@@ -284,9 +284,9 @@ impl UpdateCommand {
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
         let manifest_path = find_manifest_with_optional(manifest_path).with_context(|| {
-            "No ccpm.toml found in current directory or any parent directory.\n\n\
-            The update command requires a ccpm.toml file to know what dependencies to update.\n\
-            Create one first, then run 'ccpm install' before updating."
+            "No agpm.toml found in current directory or any parent directory.\n\n\
+            The update command requires a agpm.toml file to know what dependencies to update.\n\
+            Create one first, then run 'agpm install' before updating."
         })?;
 
         self.execute_from_path(manifest_path).await
@@ -318,7 +318,7 @@ impl UpdateCommand {
         })?;
 
         // Load existing lockfile or perform fresh install if missing
-        let lockfile_path = project_dir.join("ccpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
         let existing_lockfile = if lockfile_path.exists() {
             LockFile::load(&lockfile_path)?
         } else {
@@ -402,7 +402,7 @@ impl UpdateCommand {
 
         // Complete resolving phase
         if !self.quiet && !self.no_progress && total_deps > 0 {
-            multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
+            multi_phase.complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
         }
 
         // Compare lockfiles to see what changed
@@ -468,92 +468,91 @@ impl UpdateCommand {
                 return Err(anyhow::anyhow!(
                     "Dry-run detected updates available (exit 1)"
                 ));
-            } else {
-                // Install all updated resources first, before saving lockfile
-                if !self.quiet && !self.no_progress && !updates.is_empty() {
-                    multi_phase.start_phase(
-                        InstallationPhase::Installing,
-                        Some(&format!("({} resources)", updates.len())),
-                    );
-                }
+            }
 
-                let (install_count, checksums) = install_resources(
-                    ResourceFilter::Updated(updates.clone()),
-                    &new_lockfile,
-                    &manifest,
-                    project_dir,
-                    cache,
-                    false,             // don't force refresh for updates
-                    self.max_parallel, // use provided or default concurrency
-                    if self.quiet || self.no_progress {
-                        None
-                    } else {
-                        Some(multi_phase.clone())
-                    },
-                )
-                .await?;
+            // Install all updated resources first, before saving lockfile
+            if !self.quiet && !self.no_progress && !updates.is_empty() {
+                multi_phase.start_phase(
+                    InstallationPhase::Installing,
+                    Some(&format!("({} resources)", updates.len())),
+                );
+            }
 
-                // Update lockfile with checksums in-memory
-                for (name, checksum) in checksums {
-                    new_lockfile.update_resource_checksum(&name, &checksum);
-                }
+            let (install_count, checksums) = install_resources(
+                ResourceFilter::Updated(updates.clone()),
+                &new_lockfile,
+                &manifest,
+                project_dir,
+                cache,
+                false,             // don't force refresh for updates
+                self.max_parallel, // use provided or default concurrency
+                if self.quiet || self.no_progress {
+                    None
+                } else {
+                    Some(multi_phase.clone())
+                },
+            )
+            .await?;
 
-                // Complete installation phase
-                if install_count > 0 && !self.quiet && !self.no_progress {
-                    multi_phase
-                        .complete_phase(Some(&format!("Updated {} resources", install_count)));
-                }
+            // Update lockfile with checksums in-memory
+            for (name, checksum) in checksums {
+                new_lockfile.update_resource_checksum(&name, &checksum);
+            }
 
-                // Start finalizing phase
-                if !self.quiet && !self.no_progress && install_count > 0 {
-                    multi_phase.start_phase(InstallationPhase::Finalizing, None);
-                }
+            // Complete installation phase
+            if install_count > 0 && !self.quiet && !self.no_progress {
+                multi_phase.complete_phase(Some(&format!("Updated {install_count} resources")));
+            }
 
-                // Save the lockfile once with checksums and error handling
-                match new_lockfile.save(&lockfile_path) {
-                    Ok(()) => {
-                        // Lockfile saved successfully (no progress needed for this quick operation)
+            // Start finalizing phase
+            if !self.quiet && !self.no_progress && install_count > 0 {
+                multi_phase.start_phase(InstallationPhase::Finalizing, None);
+            }
 
-                        // Update .gitignore if enabled
-                        let gitignore_enabled = manifest.target.gitignore;
-                        if gitignore_enabled {
-                            update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
-                        }
+            // Save the lockfile once with checksums and error handling
+            match new_lockfile.save(&lockfile_path) {
+                Ok(()) => {
+                    // Lockfile saved successfully (no progress needed for this quick operation)
 
-                        // Complete finalizing phase
-                        if !self.quiet && !self.no_progress && install_count > 0 {
-                            multi_phase.complete_phase(Some("Update finalized"));
-                        }
-
-                        // Clear the multi-phase display before final message
-                        if !self.quiet && !self.no_progress {
-                            multi_phase.clear();
-                        }
-
-                        if !self.quiet && !self.no_progress && install_count > 0 {
-                            println!("\n✓ Updated {} resources", install_count);
-                        }
+                    // Update .gitignore if enabled
+                    let gitignore_enabled = manifest.target.gitignore;
+                    if gitignore_enabled {
+                        update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
                     }
-                    Err(e) => {
-                        if self.backup {
-                            // Restore from backup
-                            let backup_path = lockfile_path.with_extension("lock.backup");
-                            if backup_path.exists() {
-                                if let Err(restore_err) =
-                                    tokio::fs::copy(&backup_path, &lockfile_path).await
-                                {
-                                    if !self.quiet && !self.no_progress {
-                                        eprintln!("✗ Failed to save updated lockfile: {}", e);
-                                        eprintln!("✗ Failed to restore backup: {}", restore_err);
-                                    }
-                                } else if !self.quiet && !self.no_progress {
-                                    eprintln!("✗ Failed to save updated lockfile: {}", e);
-                                    println!("ℹ️  Rolled back to previous lockfile");
+
+                    // Complete finalizing phase
+                    if !self.quiet && !self.no_progress && install_count > 0 {
+                        multi_phase.complete_phase(Some("Update finalized"));
+                    }
+
+                    // Clear the multi-phase display before final message
+                    if !self.quiet && !self.no_progress {
+                        multi_phase.clear();
+                    }
+
+                    if !self.quiet && !self.no_progress && install_count > 0 {
+                        println!("\n✓ Updated {install_count} resources");
+                    }
+                }
+                Err(e) => {
+                    if self.backup {
+                        // Restore from backup
+                        let backup_path = lockfile_path.with_extension("lock.backup");
+                        if backup_path.exists() {
+                            if let Err(restore_err) =
+                                tokio::fs::copy(&backup_path, &lockfile_path).await
+                            {
+                                if !self.quiet && !self.no_progress {
+                                    eprintln!("✗ Failed to save updated lockfile: {e}");
+                                    eprintln!("✗ Failed to restore backup: {restore_err}");
                                 }
+                            } else if !self.quiet && !self.no_progress {
+                                eprintln!("✗ Failed to save updated lockfile: {e}");
+                                println!("ℹ️  Rolled back to previous lockfile");
                             }
                         }
-                        return Err(e.context("Update failed"));
                     }
+                    return Err(e.context("Update failed"));
                 }
             }
         }
@@ -654,7 +653,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_no_manifest_found() {
         let temp = TempDir::new().unwrap();
-        let non_existent_manifest = temp.path().join("ccpm.toml");
+        let non_existent_manifest = temp.path().join("agpm.toml");
         assert!(!non_existent_manifest.exists());
 
         let cmd = create_update_command();
@@ -664,14 +663,14 @@ mod tests {
 
         assert!(result.is_err());
         let error_msg = format!("{}", result.unwrap_err());
-        assert!(error_msg.contains("No ccpm.toml found"));
+        assert!(error_msg.contains("No agpm.toml found"));
         assert!(error_msg.contains("Create one first"));
     }
 
     #[tokio::test]
     async fn test_execute_from_path_nonexistent_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("nonexistent").join("ccpm.toml");
+        let manifest_path = temp.path().join("nonexistent").join("agpm.toml");
 
         let cmd = create_update_command();
         let result = cmd.execute_from_path(manifest_path.clone()).await;
@@ -685,7 +684,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_from_path_invalid_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create invalid TOML content
         fs::write(&manifest_path, "invalid toml [[[").unwrap();
@@ -702,8 +701,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_from_path_no_lockfile_fresh_install() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a minimal manifest with explicit empty sources
         // This ensures no sources from global config are used
@@ -737,9 +736,9 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_backup_flag() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
-        let backup_path = temp.path().join("ccpm.lock.backup");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
+        let backup_path = temp.path().join("agpm.lock.backup");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -769,8 +768,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_specific_dependencies() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -790,8 +789,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_dry_run_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -815,8 +814,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_check_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -840,8 +839,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_verbose_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -862,8 +861,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_quiet_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -883,8 +882,8 @@ mod tests {
     #[tokio::test]
     async fn test_update_comparison_logic() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest
         let manifest = create_test_manifest();
@@ -908,8 +907,8 @@ mod tests {
     #[tokio::test]
     async fn test_lockfile_save_error_handling() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -944,9 +943,9 @@ mod tests {
     #[tokio::test]
     async fn test_backup_and_rollback_logic() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
-        let backup_path = temp.path().join("ccpm.lock.backup");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
+        let backup_path = temp.path().join("agpm.lock.backup");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -970,8 +969,8 @@ mod tests {
     #[tokio::test]
     async fn test_dependencies_empty_vs_specific() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -995,8 +994,8 @@ mod tests {
     #[tokio::test]
     async fn test_progress_bar_creation_logic() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -1019,7 +1018,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_output_messages() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Test fresh install message path
         let manifest = Manifest::new();
@@ -1038,8 +1037,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_main_workflow() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a minimal manifest with explicit empty sources
         // This ensures no sources from global config are used

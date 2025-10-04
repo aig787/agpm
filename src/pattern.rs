@@ -1,13 +1,13 @@
-//! Pattern-based dependency resolution for CCPM.
+//! Pattern-based dependency resolution for AGPM.
 //!
 //! This module provides glob pattern matching functionality to support
-//! pattern-based dependencies in CCPM manifests. Pattern dependencies
+//! pattern-based dependencies in AGPM manifests. Pattern dependencies
 //! allow installation of multiple resources matching a glob pattern,
 //! enabling bulk operations on related resources.
 //!
 //! # Pattern Syntax
 //!
-//! CCPM uses standard glob patterns with the following support:
+//! AGPM uses standard glob patterns with the following support:
 //!
 //! - `*` matches any sequence of characters within a single path component
 //! - `**` matches any sequence of path components (recursive matching)
@@ -70,7 +70,7 @@ use walkdir::WalkDir;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::PatternMatcher;
+/// use agpm::pattern::PatternMatcher;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -115,7 +115,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     ///
     /// // Simple wildcard
     /// let matcher = PatternMatcher::new("*.md")?;
@@ -129,7 +129,7 @@ impl PatternMatcher {
     /// ```
     pub fn new(pattern_str: &str) -> Result<Self> {
         let pattern = Pattern::new(pattern_str)
-            .with_context(|| format!("Invalid glob pattern: {}", pattern_str))?;
+            .with_context(|| format!("Invalid glob pattern: {pattern_str}"))?;
 
         Ok(Self {
             pattern,
@@ -170,7 +170,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -192,12 +192,12 @@ impl PatternMatcher {
         let mut matches = Vec::new();
         let base_path = base_path
             .canonicalize()
-            .with_context(|| format!("Failed to canonicalize path: {:?}", base_path))?;
+            .with_context(|| format!("Failed to canonicalize path: {base_path:?}"))?;
 
         for entry in WalkDir::new(&base_path)
             .follow_links(false) // Security: don't follow symlinks
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
 
@@ -239,7 +239,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -268,7 +268,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let pattern_str = "**/*.md";
@@ -287,7 +287,7 @@ impl PatternMatcher {
 ///
 /// The `PatternResolver` provides advanced pattern matching with exclusion
 /// support and deterministic ordering. It's designed for resolving
-/// pattern-based dependencies in CCPM manifests to concrete resource files.
+/// pattern-based dependencies in AGPM manifests to concrete resource files.
 ///
 /// # Features
 ///
@@ -299,7 +299,7 @@ impl PatternMatcher {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::PatternResolver;
+/// use agpm::pattern::PatternResolver;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -329,14 +329,14 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     ///
     /// let resolver = PatternResolver::new();
     /// // PatternResolver starts with no exclusions
     /// ```
     ///
     /// [`exclude`]: PatternResolver::exclude
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             exclude_patterns: Vec::new(),
         }
@@ -360,7 +360,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut resolver = PatternResolver::new();
@@ -380,7 +380,7 @@ impl PatternResolver {
     /// ```
     pub fn exclude(&mut self, pattern: &str) -> Result<()> {
         let pattern = Pattern::new(pattern)
-            .with_context(|| format!("Invalid exclusion pattern: {}", pattern))?;
+            .with_context(|| format!("Invalid exclusion pattern: {pattern}"))?;
         self.exclude_patterns.push(pattern);
         Ok(())
     }
@@ -418,7 +418,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -476,7 +476,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -530,7 +530,7 @@ impl Default for PatternResolver {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::extract_resource_name;
+/// use agpm::pattern::extract_resource_name;
 /// use std::path::Path;
 ///
 /// assert_eq!(extract_resource_name(Path::new("agents/helper.md")), "helper");
@@ -576,7 +576,7 @@ pub fn extract_resource_name(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::validate_pattern_safety;
+/// use agpm::pattern::validate_pattern_safety;
 ///
 /// // Safe patterns
 /// assert!(validate_pattern_safety("*.md").is_ok());
@@ -593,17 +593,17 @@ pub fn extract_resource_name(path: &Path) -> String {
 pub fn validate_pattern_safety(pattern: &str) -> Result<()> {
     // Check for path traversal attempts
     if pattern.contains("..") {
-        anyhow::bail!("Pattern contains path traversal (..): {}", pattern);
+        anyhow::bail!("Pattern contains path traversal (..): {pattern}");
     }
 
     // Check for absolute paths on Unix
     if cfg!(unix) && pattern.starts_with('/') {
-        anyhow::bail!("Pattern contains absolute path: {}", pattern);
+        anyhow::bail!("Pattern contains absolute path: {pattern}");
     }
 
     // Check for absolute paths on Windows
     if cfg!(windows) && (pattern.contains(':') || pattern.starts_with('\\')) {
-        anyhow::bail!("Pattern contains absolute path: {}", pattern);
+        anyhow::bail!("Pattern contains absolute path: {pattern}");
     }
 
     Ok(())

@@ -104,13 +104,13 @@ installed_at = "snippets/utils.md"
 "#
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
     eprintln!("=== STDOUT ===\n{}", output.stdout);
     eprintln!("=== STDERR ===\n{}", output.stderr);
@@ -120,7 +120,7 @@ installed_at = "snippets/utils.md"
     assert!(output.stdout.contains("resources"));
 
     // Verify lockfile was updated
-    let lockfile_path = project.project_path().join("ccpm.lock");
+    let lockfile_path = project.project_path().join("agpm.lock");
     assert!(lockfile_path.exists());
 
     let lockfile_content = fs::read_to_string(&lockfile_path).await.unwrap();
@@ -197,18 +197,18 @@ installed_at = "snippets/utils.md"
 "#
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update", "my-agent"]).unwrap();
+    let output = project.run_agpm(&["update", "my-agent"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
     // Verify only the specified dependency was updated
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
     assert!(lockfile_content.contains("my-agent"));
@@ -219,9 +219,9 @@ installed_at = "snippets/utils.md"
 async fn test_update_without_manifest() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);
-    assert!(output.stderr.contains("ccpm.toml not found"));
+    assert!(output.stderr.contains("agpm.toml not found"));
 }
 
 /// Test update without lockfile (should perform fresh install)
@@ -247,13 +247,13 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("No lockfile found"));
     assert!(output.stdout.contains("Performing fresh install"));
 
     // Verify lockfile was created
-    assert!(project.project_path().join("ccpm.lock").exists());
+    assert!(project.project_path().join("agpm.lock").exists());
 }
 
 /// Test update with --check flag (dry run)
@@ -306,13 +306,13 @@ installed_at = "agents/my-agent.md"
 "#
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update", "--check"]).unwrap();
+    let output = project.run_agpm(&["update", "--check"]).unwrap();
     // Should exit with code 1 when updates are available (useful for CI)
     assert!(
         !output.success,
@@ -397,17 +397,17 @@ installed_at = "snippets/utils.md"
 "#
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
     assert!(lockfile_content.contains("my-agent"));
@@ -438,11 +438,11 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["update", "--backup"]).unwrap();
+    let output = project.run_agpm(&["update", "--backup"]).unwrap();
     assert!(output.success);
     // Note: backup functionality may not be implemented yet, so we just check success
     // assert!(output.stdout.contains("Created backup"));
-    // assert!(project.project_path().join("ccpm.lock.backup").exists());
+    // assert!(project.project_path().join("agpm.lock.backup").exists());
 }
 
 /// Test update with verbose output
@@ -468,7 +468,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["update", "--verbose"]).unwrap();
+    let output = project.run_agpm(&["update", "--verbose"]).unwrap();
     assert!(output.success);
     assert!(
         output.stdout.contains("Found")
@@ -500,7 +500,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["update", "--quiet"]).unwrap();
+    let output = project.run_agpm(&["update", "--quiet"]).unwrap();
     assert!(output.success);
     // Should have minimal output in quiet mode
 }
@@ -575,18 +575,18 @@ installed_at = "snippets/utils.md"
 "#
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
     // Store original lockfile content
-    let original_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let original_lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["update", "--dry-run"]).unwrap();
+    let output = project.run_agpm(&["update", "--dry-run"]).unwrap();
     // Should exit with code 1 when updates are available (useful for CI)
     assert!(
         !output.success,
@@ -599,7 +599,7 @@ installed_at = "snippets/utils.md"
     );
 
     // Verify lockfile wasn't actually modified
-    let current_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let current_lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
     assert_eq!(original_lockfile, current_lockfile);
@@ -685,13 +685,13 @@ installed_at = "snippets/utils.md"
         sources_path, sources_path
     );
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);
     assert!(
         output.stderr.contains("Failed to clone")
@@ -711,7 +711,7 @@ installed_at = "snippets/utils.md"
 /// Test update help command
 #[tokio::test]
 async fn test_update_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("update")
         .arg("--help")
         .assert()
@@ -733,13 +733,13 @@ async fn test_update_corrupted_lockfile() {
 
     // Create corrupted lockfile
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         "corrupted lockfile content",
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);
     assert!(
         output.stderr.contains("Failed to parse lockfile")
@@ -773,7 +773,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["update"]).unwrap();
+    let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
     assert!(
         output.stdout.contains("All dependencies are up to date")

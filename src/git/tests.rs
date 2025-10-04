@@ -527,13 +527,13 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -611,7 +611,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -678,13 +678,13 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -721,13 +721,13 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -775,7 +775,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -946,7 +946,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(&repo_path)
             .output()
             .unwrap();
@@ -1004,13 +1004,13 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.email", "test@ccpm.test"])
+            .args(["config", "user.email", "test@agpm.test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();

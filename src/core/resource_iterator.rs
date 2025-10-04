@@ -24,7 +24,7 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency, TargetConfig};
 use std::collections::HashMap;
 
-/// Extension trait for ResourceType that adds lockfile and manifest operations
+/// Extension trait for `ResourceType` that adds lockfile and manifest operations
 ///
 /// This trait extends the base [`ResourceType`] enum with methods for working with
 /// lockfiles and manifests in a type-safe way. It provides the foundation for
@@ -99,23 +99,23 @@ pub trait ResourceTypeExt {
 impl ResourceTypeExt for ResourceType {
     fn all() -> Vec<ResourceType> {
         vec![
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::McpServer,
-            ResourceType::Script,
-            ResourceType::Hook,
+            Self::Agent,
+            Self::Snippet,
+            Self::Command,
+            Self::McpServer,
+            Self::Script,
+            Self::Hook,
         ]
     }
 
     fn get_lockfile_entries<'a>(&self, lockfile: &'a LockFile) -> &'a [LockedResource] {
         match self {
-            ResourceType::Agent => &lockfile.agents,
-            ResourceType::Snippet => &lockfile.snippets,
-            ResourceType::Command => &lockfile.commands,
-            ResourceType::Script => &lockfile.scripts,
-            ResourceType::Hook => &lockfile.hooks,
-            ResourceType::McpServer => &lockfile.mcp_servers,
+            Self::Agent => &lockfile.agents,
+            Self::Snippet => &lockfile.snippets,
+            Self::Command => &lockfile.commands,
+            Self::Script => &lockfile.scripts,
+            Self::Hook => &lockfile.hooks,
+            Self::McpServer => &lockfile.mcp_servers,
         }
     }
 
@@ -124,23 +124,23 @@ impl ResourceTypeExt for ResourceType {
         lockfile: &'a mut LockFile,
     ) -> &'a mut Vec<LockedResource> {
         match self {
-            ResourceType::Agent => &mut lockfile.agents,
-            ResourceType::Snippet => &mut lockfile.snippets,
-            ResourceType::Command => &mut lockfile.commands,
-            ResourceType::Script => &mut lockfile.scripts,
-            ResourceType::Hook => &mut lockfile.hooks,
-            ResourceType::McpServer => &mut lockfile.mcp_servers,
+            Self::Agent => &mut lockfile.agents,
+            Self::Snippet => &mut lockfile.snippets,
+            Self::Command => &mut lockfile.commands,
+            Self::Script => &mut lockfile.scripts,
+            Self::Hook => &mut lockfile.hooks,
+            Self::McpServer => &mut lockfile.mcp_servers,
         }
     }
 
     fn get_target_dir<'a>(&self, targets: &'a TargetConfig) -> &'a str {
         match self {
-            ResourceType::Agent => targets.agents.as_str(),
-            ResourceType::Snippet => targets.snippets.as_str(),
-            ResourceType::Command => targets.commands.as_str(),
-            ResourceType::Script => targets.scripts.as_str(),
-            ResourceType::Hook => targets.hooks.as_str(),
-            ResourceType::McpServer => targets.mcp_servers.as_str(),
+            Self::Agent => targets.agents.as_str(),
+            Self::Snippet => targets.snippets.as_str(),
+            Self::Command => targets.commands.as_str(),
+            Self::Script => targets.scripts.as_str(),
+            Self::Hook => targets.hooks.as_str(),
+            Self::McpServer => targets.mcp_servers.as_str(),
         }
     }
 
@@ -149,12 +149,12 @@ impl ResourceTypeExt for ResourceType {
         manifest: &'a Manifest,
     ) -> &'a HashMap<String, ResourceDependency> {
         match self {
-            ResourceType::Agent => &manifest.agents,
-            ResourceType::Snippet => &manifest.snippets,
-            ResourceType::Command => &manifest.commands,
-            ResourceType::Script => &manifest.scripts,
-            ResourceType::Hook => &manifest.hooks,
-            ResourceType::McpServer => &manifest.mcp_servers,
+            Self::Agent => &manifest.agents,
+            Self::Snippet => &manifest.snippets,
+            Self::Command => &manifest.commands,
+            Self::Script => &manifest.scripts,
+            Self::Hook => &manifest.hooks,
+            Self::McpServer => &manifest.mcp_servers,
         }
     }
 }
@@ -176,14 +176,14 @@ impl ResourceTypeExt for ResourceType {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::core::resource_iterator::ResourceIterator;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
+/// use agpm::core::resource_iterator::ResourceIterator;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 ///
 /// // Collect all resources for parallel installation
 /// let all_entries = ResourceIterator::collect_all_entries(&lockfile, &manifest);
@@ -251,7 +251,7 @@ impl ResourceIterator {
         lockfile: &'a LockFile,
         name: &str,
     ) -> Option<(ResourceType, &'a LockedResource)> {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             if let Some(entry) = resource_type
                 .get_lockfile_entries(lockfile)
                 .iter()
@@ -280,7 +280,7 @@ impl ResourceIterator {
         name: &str,
         source: Option<&str>,
     ) -> Option<(ResourceType, &'a LockedResource)> {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             if let Some(entry) = resource_type
                 .get_lockfile_entries(lockfile)
                 .iter()
@@ -344,7 +344,7 @@ impl ResourceIterator {
     where
         F: FnMut(ResourceType, &LockedResource),
     {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             for entry in resource_type.get_lockfile_entries(lockfile) {
                 f(*resource_type, entry);
             }
@@ -497,7 +497,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("jkl012".to_string()),
             checksum: "sha256:jkl4".to_string(),
-            installed_at: ".claude/ccpm/scripts/script1.sh".to_string(),
+            installed_at: ".claude/agpm/scripts/script1.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
         });
@@ -511,7 +511,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("mno345".to_string()),
             checksum: "sha256:mno5".to_string(),
-            installed_at: ".claude/ccpm/hooks/hook1.json".to_string(),
+            installed_at: ".claude/agpm/hooks/hook1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
         });
@@ -525,7 +525,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("pqr678".to_string()),
             checksum: "sha256:pqr6".to_string(),
-            installed_at: ".claude/ccpm/mcp-servers/mcp1.json".to_string(),
+            installed_at: ".claude/agpm/mcp-servers/mcp1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
         });
@@ -539,7 +539,7 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:local".to_string(),
-            installed_at: ".claude/ccpm/snippets/local-snippet.md".to_string(),
+            installed_at: ".claude/agpm/snippets/local-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
         });
@@ -622,7 +622,7 @@ mod tests {
         assert_eq!(entries[0].1, ".claude/agents");
 
         assert_eq!(entries[1].0.name, "test-snippet");
-        assert_eq!(entries[1].1, ".claude/ccpm/snippets");
+        assert_eq!(entries[1].1, ".claude/agpm/snippets");
     }
 
     #[test]
@@ -1089,7 +1089,7 @@ mod tests {
         );
         assert_eq!(
             ResourceType::Snippet.get_target_dir(targets),
-            ".claude/ccpm/snippets"
+            ".claude/agpm/snippets"
         );
         assert_eq!(
             ResourceType::Command.get_target_dir(targets),
@@ -1097,15 +1097,15 @@ mod tests {
         );
         assert_eq!(
             ResourceType::Script.get_target_dir(targets),
-            ".claude/ccpm/scripts"
+            ".claude/agpm/scripts"
         );
         assert_eq!(
             ResourceType::Hook.get_target_dir(targets),
-            ".claude/ccpm/hooks"
+            ".claude/agpm/hooks"
         );
         assert_eq!(
             ResourceType::McpServer.get_target_dir(targets),
-            ".claude/ccpm/mcp-servers"
+            ".claude/agpm/mcp-servers"
         );
     }
 }

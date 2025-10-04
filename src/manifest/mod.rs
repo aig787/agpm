@@ -1,6 +1,6 @@
-//! Manifest file parsing and validation for CCPM projects.
+//! Manifest file parsing and validation for AGPM projects.
 //!
-//! This module handles the `ccpm.toml` manifest file that defines project
+//! This module handles the `agpm.toml` manifest file that defines project
 //! dependencies and configuration. The manifest uses TOML format and follows
 //! a structure similar to Cargo.toml, providing a lockfile-based dependency
 //! management system for Claude Code resources.
@@ -8,7 +8,7 @@
 //! # Overview
 //!
 //! The manifest system enables:
-//! - Declarative dependency management through `ccpm.toml`
+//! - Declarative dependency management through `agpm.toml`
 //! - Reproducible installations via lockfile generation
 //! - Support for multiple Git-based source repositories
 //! - Local and remote dependency resolution
@@ -22,22 +22,22 @@
 //!
 //! ## Basic Structure
 //!
-//! A `ccpm.toml` manifest file consists of four main sections:
+//! A `agpm.toml` manifest file consists of four main sections:
 //!
 //! ```toml
 //! # Named source repositories (optional)
 //! [sources]
 //! # Git repository URLs mapped to convenient names
-//! official = "https://github.com/example-org/ccpm-official.git"
-//! community = "https://github.com/community/ccpm-resources.git"
+//! official = "https://github.com/example-org/agpm-official.git"
+//! community = "https://github.com/community/agpm-resources.git"
 //! private = "git@github.com:company/private-resources.git"
 //!
 //! # Installation target directories (optional)
 //! [target]
 //! # Where agents should be installed (default: ".claude/agents")
 //! agents = ".claude/agents"
-//! # Where snippets should be installed (default: ".claude/ccpm/snippets")
-//! snippets = ".claude/ccpm/snippets"
+//! # Where snippets should be installed (default: ".claude/agpm/snippets")
+//! snippets = ".claude/agpm/snippets"
 //! # Where commands should be installed (default: ".claude/commands")
 //! commands = ".claude/commands"
 //!
@@ -74,8 +74,8 @@
 //! ```toml
 //! [sources]
 //! # HTTPS URLs (recommended for public repositories)
-//! official = "https://github.com/owner/ccpm-resources.git"
-//! community = "https://gitlab.com/group/ccpm-community.git"
+//! official = "https://github.com/owner/agpm-resources.git"
+//! community = "https://gitlab.com/group/agpm-community.git"
 //!
 //! # SSH URLs (for private repositories with key authentication)
 //! private = "git@github.com:company/private-resources.git"
@@ -97,7 +97,7 @@
 //! [target]
 //! # Default values shown - these can be customized
 //! agents = ".claude/agents"      # Where agent .md files are copied
-//! snippets = ".claude/ccpm/snippets"  # Where snippet .md files are copied
+//! snippets = ".claude/agpm/snippets"  # Where snippet .md files are copied
 //! commands = ".claude/commands"  # Where command .md files are copied
 //!
 //! # Alternative configurations
@@ -244,7 +244,7 @@
 //!
 //! ## Version Constraint Syntax
 //!
-//! CCPM supports flexible version constraints:
+//! AGPM supports flexible version constraints:
 //!
 //! - `"v1.0.0"` - Exact semantic version
 //! - `"1.0.0"` - Exact version (v prefix optional)
@@ -292,40 +292,40 @@
 //!
 //! ## Security Considerations
 //!
-//! **CRITICAL**: Never include authentication credentials in `ccpm.toml`:
+//! **CRITICAL**: Never include authentication credentials in `agpm.toml`:
 //!
 //! ```toml
 //! # ❌ NEVER DO THIS - credentials will be committed to git
 //! [sources]
 //! private = "https://token:ghp_xxxx@github.com/company/repo.git"
 //!
-//! # ✅ Instead, use global configuration in ~/.ccpm/config.toml
+//! # ✅ Instead, use global configuration in ~/.agpm/config.toml
 //! # Or use SSH keys with git@ URLs
 //! [sources]
 //! private = "git@github.com:company/repo.git"
 //! ```
 //!
-//! Authentication should be configured globally in `~/.ccpm/config.toml` or
+//! Authentication should be configured globally in `~/.agpm/config.toml` or
 //! through SSH keys for `git@` URLs. See [`crate::config`] for details.
 //!
 //! ## Relationship to Lockfile
 //!
-//! The manifest works together with the lockfile (`ccpm.lock`):
+//! The manifest works together with the lockfile (`agpm.lock`):
 //!
-//! - **Manifest (`ccpm.toml`)**: Declares dependencies and constraints
-//! - **Lockfile (`ccpm.lock`)**: Records exact resolved versions and checksums
+//! - **Manifest (`agpm.toml`)**: Declares dependencies and constraints
+//! - **Lockfile (`agpm.lock`)**: Records exact resolved versions and checksums
 //!
-//! When you run `ccpm install`:
-//! 1. Reads dependencies from `ccpm.toml`
+//! When you run `agpm install`:
+//! 1. Reads dependencies from `agpm.toml`
 //! 2. Resolves versions within constraints  
-//! 3. Generates/updates `ccpm.lock` with exact commits
+//! 3. Generates/updates `agpm.lock` with exact commits
 //! 4. Installs resources to target directories
 //!
 //! See [`crate::lockfile`] for lockfile format details.
 //!
 //! ## Cross-Platform Compatibility
 //!
-//! CCPM handles platform differences automatically:
+//! AGPM handles platform differences automatically:
 //! - Path separators (/ vs \\) are normalized
 //! - Home directory expansion (~) is supported
 //! - Environment variable expansion is available
@@ -342,9 +342,9 @@
 //! 5. **Keep manifests simple**: Avoid overly complex dependency trees
 //! 6. **Use SSH for private repos**: More secure than HTTPS tokens
 //! 7. **Test across platforms**: Verify paths work on all target systems
-//! 8. **Version control manifests**: Always commit `ccpm.toml` to git
-//! 9. **Validate regularly**: Run `ccpm validate` before commits
-//! 10. **Use lockfiles**: Commit `ccpm.lock` for reproducible builds
+//! 8. **Version control manifests**: Always commit `agpm.toml` to git
+//! 9. **Validate regularly**: Run `agpm validate` before commits
+//! 10. **Use lockfiles**: Commit `agpm.lock` for reproducible builds
 //!
 //! ## Transitive Dependencies
 //!
@@ -376,7 +376,7 @@
 //! {
 //!   "events": ["UserPromptSubmit"],
 //!   "type": "command",
-//!   "command": ".claude/ccpm/scripts/test.js",
+//!   "command": ".claude/agpm/scripts/test.js",
 //!   "dependencies": {
 //!     "scripts": [
 //!       { "path": "scripts/test-runner.sh", "version": "v1.0.0" },
@@ -438,15 +438,15 @@
 //!
 //! ## Integration with Other Modules
 //!
-//! The manifest module works closely with other CCPM modules:
+//! The manifest module works closely with other AGPM modules:
 //!
 //! ### With [`crate::resolver`]
 //!
 //! ```rust,ignore
-//! use ccpm::manifest::Manifest;
-//! use ccpm::resolver::DependencyResolver;
+//! use agpm::manifest::Manifest;
+//! use agpm::resolver::DependencyResolver;
 //!
-//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let resolver = DependencyResolver::new(&manifest);
 //! let resolved = resolver.resolve_all().await?;
 //! ```
@@ -454,21 +454,21 @@
 //! ### With [`crate::lockfile`]
 //!
 //! ```rust,ignore  
-//! use ccpm::manifest::Manifest;
-//! use ccpm::lockfile::LockFile;
+//! use agpm::manifest::Manifest;
+//! use agpm::lockfile::LockFile;
 //!
-//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let lockfile = LockFile::generate_from_manifest(&manifest).await?;
-//! lockfile.save(&project_path.join("ccpm.lock"))?;
+//! lockfile.save(&project_path.join("agpm.lock"))?;
 //! ```
 //!
 //! ### With [`crate::git`] for Source Management
 //!
 //! ```rust,ignore
-//! use ccpm::manifest::Manifest;
-//! use ccpm::git::GitManager;
+//! use agpm::manifest::Manifest;
+//! use agpm::git::GitManager;
 //!
-//! let manifest = Manifest::load(&project_path.join("ccpm.toml"))?;
+//! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let git = GitManager::new(&cache_dir);
 //!
 //! for (name, url) in &manifest.sources {
@@ -485,9 +485,9 @@ use std::path::{Path, PathBuf};
 
 pub use dependency_spec::{DependencyMetadata, DependencySpec};
 
-/// The main manifest file structure representing a complete `ccpm.toml` file.
+/// The main manifest file structure representing a complete `agpm.toml` file.
 ///
-/// This struct encapsulates all configuration for a CCPM project, including
+/// This struct encapsulates all configuration for a AGPM project, including
 /// source repositories, installation targets, and resource dependencies.
 /// It provides the foundation for declarative dependency management similar
 /// to Cargo's `Cargo.toml`.
@@ -514,7 +514,7 @@ pub use dependency_spec::{DependencyMetadata, DependencySpec};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::manifest::{Manifest, ResourceDependency};
+/// use agpm::manifest::{Manifest, ResourceDependency};
 ///
 /// // Create a new empty manifest
 /// let mut manifest = Manifest::new();
@@ -597,7 +597,7 @@ pub struct Manifest {
     /// MCP servers provide integrations with external systems and services,
     /// allowing Claude Code to connect to databases, APIs, and other tools.
     /// MCP servers are JSON configuration files that get installed to
-    /// `.claude/ccpm/mcp-servers/` and configured in `.mcp.json`.
+    /// `.claude/agpm/mcp-servers/` and configured in `.mcp.json`.
     ///
     /// See [`ResourceDependency`] for specification format details.
     #[serde(
@@ -610,7 +610,7 @@ pub struct Manifest {
     /// Script dependencies mapping names to their specifications.
     ///
     /// Scripts are executable files (.sh, .js, .py, etc.) that can be run by hooks
-    /// or independently. They are installed to `.claude/ccpm/scripts/` and can be
+    /// or independently. They are installed to `.claude/agpm/scripts/` and can be
     /// referenced by hook configurations.
     ///
     /// See [`ResourceDependency`] for specification format details.
@@ -632,13 +632,13 @@ pub struct Manifest {
 /// Target directories configuration specifying where resources are installed.
 ///
 /// This struct defines the installation destinations for different resource types
-/// within a CCPM project. All paths are relative to the project root (where
-/// `ccpm.toml` is located) unless they are absolute paths.
+/// within a AGPM project. All paths are relative to the project root (where
+/// `agpm.toml` is located) unless they are absolute paths.
 ///
 /// # Default Values
 ///
 /// - **Agents**: `.claude/agents` - Following Claude Code conventions
-/// - **Snippets**: `.claude/ccpm/snippets` - Following Claude Code conventions
+/// - **Snippets**: `.claude/agpm/snippets` - Following Claude Code conventions
 /// - **Commands**: `.claude/commands` - Following Claude Code conventions
 ///
 /// # Path Resolution
@@ -654,7 +654,7 @@ pub struct Manifest {
 /// # Default configuration (can be omitted)
 /// [target]
 /// agents = ".claude/agents"
-/// snippets = ".claude/ccpm/snippets"
+/// snippets = ".claude/agpm/snippets"
 /// commands = ".claude/commands"
 ///
 /// # Custom configuration
@@ -672,7 +672,7 @@ pub struct Manifest {
 ///
 /// # Cross-Platform Considerations
 ///
-/// CCPM automatically handles platform differences:
+/// AGPM automatically handles platform differences:
 /// - Forward slashes work on all platforms (Windows, macOS, Linux)
 /// - Path separators are normalized during installation
 /// - Long path support on Windows is handled automatically
@@ -692,7 +692,7 @@ pub struct TargetConfig {
     /// Snippets are reusable code templates, examples, or documentation.
     /// This directory will contain copies of snippet files from dependencies.
     ///
-    /// **Default**: `.claude/ccpm/snippets` (following Claude Code conventions)
+    /// **Default**: `.claude/agpm/snippets` (following Claude Code conventions)
     #[serde(default = "default_snippets_dir")]
     pub snippets: String,
 
@@ -711,7 +711,7 @@ pub struct TargetConfig {
     /// not installed to this directory. This directory is used for tracking
     /// metadata about installed servers.
     ///
-    /// **Default**: `.claude/ccpm/mcp-servers` (following Claude Code conventions)
+    /// **Default**: `.claude/agpm/mcp-servers` (following Claude Code conventions)
     #[serde(default = "default_mcp_servers_dir", rename = "mcp-servers")]
     pub mcp_servers: String,
 
@@ -720,7 +720,7 @@ pub struct TargetConfig {
     /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
     /// by hooks or run independently.
     ///
-    /// **Default**: `.claude/ccpm/scripts` (following Claude Code conventions)
+    /// **Default**: `.claude/agpm/scripts` (following Claude Code conventions)
     #[serde(default = "default_scripts_dir")]
     pub scripts: String,
 
@@ -729,13 +729,13 @@ pub struct TargetConfig {
     /// Hooks are JSON configuration files that define event-based automation
     /// in Claude Code.
     ///
-    /// **Default**: `.claude/ccpm/hooks` (following Claude Code conventions)
+    /// **Default**: `.claude/agpm/hooks` (following Claude Code conventions)
     #[serde(default = "default_hooks_dir")]
     pub hooks: String,
 
     /// Whether to automatically add installed files to `.gitignore`.
     ///
-    /// When enabled (default), CCPM will create or update `.gitignore`
+    /// When enabled (default), AGPM will create or update `.gitignore`
     /// to exclude all installed files from version control. This prevents
     /// installed dependencies from being committed to your repository.
     ///
@@ -765,7 +765,7 @@ fn default_agents_dir() -> String {
 }
 
 fn default_snippets_dir() -> String {
-    ".claude/ccpm/snippets".to_string()
+    ".claude/agpm/snippets".to_string()
 }
 
 fn default_commands_dir() -> String {
@@ -773,18 +773,18 @@ fn default_commands_dir() -> String {
 }
 
 fn default_mcp_servers_dir() -> String {
-    ".claude/ccpm/mcp-servers".to_string()
+    ".claude/agpm/mcp-servers".to_string()
 }
 
 fn default_scripts_dir() -> String {
-    ".claude/ccpm/scripts".to_string()
+    ".claude/agpm/scripts".to_string()
 }
 
 fn default_hooks_dir() -> String {
-    ".claude/ccpm/hooks".to_string()
+    ".claude/agpm/hooks".to_string()
 }
 
-fn default_gitignore() -> bool {
+const fn default_gitignore() -> bool {
     true
 }
 
@@ -991,7 +991,7 @@ pub struct DetailedDependency {
     /// - Pattern matching: `"agents/*.md"`, `"**/*.md"`, `"agents/[a-z]*.md"`
     ///
     /// Pattern dependencies are detected by the presence of glob characters
-    /// (`*`, `?`, `[`) in the path. When a pattern is detected, CCPM will
+    /// (`*`, `?`, `[`) in the path. When a pattern is detected, AGPM will
     /// expand it to match all resources in the source repository.
     ///
     /// # Examples
@@ -1192,7 +1192,7 @@ pub struct DetailedDependency {
     ///
     /// Example:
     /// ```toml
-    /// # This would be extracted from the file's frontmatter/JSON, not specified in ccpm.toml
+    /// # This would be extracted from the file's frontmatter/JSON, not specified in agpm.toml
     /// # { "agents": [{"path": "agents/helper.md", "version": "v1.0.0"}] }
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1204,7 +1204,7 @@ impl Manifest {
     ///
     /// The new manifest will have:
     /// - No sources defined
-    /// - Default target directories (`.claude/agents` and `.claude/ccpm/snippets`)
+    /// - Default target directories (`.claude/agents` and `.claude/agpm/snippets`)
     /// - No dependencies
     ///
     /// This is typically used when programmatically building a manifest or
@@ -1213,7 +1213,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
     /// assert!(manifest.sources.is_empty());
@@ -1266,11 +1266,11 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// // Load a manifest file
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     ///
     /// // Access parsed data
     /// println!("Found {} sources", manifest.sources.len());
@@ -1281,7 +1281,7 @@ impl Manifest {
     ///
     /// # File Format
     ///
-    /// Expects a valid TOML file following the CCPM manifest format.
+    /// Expects a valid TOML file following the AGPM manifest format.
     /// See the module-level documentation for complete format specification.
     pub fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path).with_context(|| {
@@ -1296,7 +1296,7 @@ impl Manifest {
         })?;
 
         let manifest: Self = toml::from_str(&content)
-            .map_err(|e| crate::core::CcpmError::ManifestParseError {
+            .map_err(|e| crate::core::AgpmError::ManifestParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
             })
@@ -1348,7 +1348,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// let mut manifest = Manifest::new();
@@ -1360,7 +1360,7 @@ impl Manifest {
     /// // Save to file
     /// # use tempfile::tempdir;
     /// # let temp_dir = tempdir()?;
-    /// # let manifest_path = temp_dir.path().join("ccpm.toml");
+    /// # let manifest_path = temp_dir.path().join("agpm.toml");
     /// manifest.save(&manifest_path)?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1375,7 +1375,7 @@ impl Manifest {
     ///
     /// [target]
     /// agents = ".claude/agents"
-    /// snippets = ".claude/ccpm/snippets"
+    /// snippets = ".claude/agpm/snippets"
     ///
     /// [agents]
     /// helper = { source = "official", path = "agents/helper.md", version = "v1.0.0" }
@@ -1432,14 +1432,14 @@ impl Manifest {
     /// # Error Types
     ///
     /// Returns specific error types for different validation failures:
-    /// - [`crate::core::CcpmError::SourceNotFound`]: Referenced source doesn't exist
-    /// - [`crate::core::CcpmError::ManifestValidationError`]: General validation failures
+    /// - [`crate::core::AgpmError::SourceNotFound`]: Referenced source doesn't exist
+    /// - [`crate::core::AgpmError::ManifestValidationError`]: General validation failures
     /// - Context errors for specific issues with actionable suggestions
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -1489,7 +1489,7 @@ impl Manifest {
         for (name, dep) in self.all_dependencies() {
             // Check for empty path
             if dep.get_path().is_empty() {
-                return Err(crate::core::CcpmError::ManifestValidationError {
+                return Err(crate::core::AgpmError::ManifestValidationError {
                     reason: format!("Missing required field 'path' for dependency '{name}'"),
                 }
                 .into());
@@ -1498,8 +1498,8 @@ impl Manifest {
             // Validate pattern safety if it's a pattern dependency
             if dep.is_pattern() {
                 crate::pattern::validate_pattern_safety(dep.get_path()).map_err(|e| {
-                    crate::core::CcpmError::ManifestValidationError {
-                        reason: format!("Invalid pattern in dependency '{}': {}", name, e),
+                    crate::core::AgpmError::ManifestValidationError {
+                        reason: format!("Invalid pattern in dependency '{name}': {e}"),
                     }
                 })?;
             }
@@ -1507,7 +1507,7 @@ impl Manifest {
             // Check for version when source is specified (non-local dependencies)
             if let Some(source) = dep.get_source() {
                 if !self.sources.contains_key(source) {
-                    return Err(crate::core::CcpmError::SourceNotFound {
+                    return Err(crate::core::AgpmError::SourceNotFound {
                         name: source.to_string(),
                     }
                     .into());
@@ -1531,7 +1531,7 @@ impl Manifest {
                         path.starts_with('/') || path.starts_with("./") || path.starts_with("../");
 
                     if is_plain_dir && dep.get_version().is_some() {
-                        return Err(crate::core::CcpmError::ManifestValidationError {
+                        return Err(crate::core::AgpmError::ManifestValidationError {
                             reason: format!(
                                 "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
                                 Plain directory dependencies do not support versions. \n\
@@ -1551,7 +1551,7 @@ impl Manifest {
             if let Some(version) = dep.get_version() {
                 if let Some(existing_version) = seen_deps.get(name) {
                     if existing_version != version {
-                        return Err(crate::core::CcpmError::ManifestValidationError {
+                        return Err(crate::core::AgpmError::ManifestValidationError {
                             reason: format!("Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"),
                         }
                         .into());
@@ -1576,7 +1576,7 @@ impl Manifest {
             && !expanded_url.starts_with("./")
             && !expanded_url.starts_with("../")
             {
-                return Err(crate::core::CcpmError::ManifestValidationError {
+                return Err(crate::core::AgpmError::ManifestValidationError {
                     reason: format!(
                         "Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"
                     ),
@@ -1589,7 +1589,7 @@ impl Manifest {
                 || expanded_url.starts_with("./")
                 || expanded_url.starts_with("../")
             {
-                return Err(crate::core::CcpmError::ManifestValidationError {
+                return Err(crate::core::AgpmError::ManifestValidationError {
                     reason: format!(
                         "Plain directory path '{url}' cannot be used as source '{name}'. \n\
                         Sources must be git repositories. Use one of:\n\
@@ -1615,10 +1615,9 @@ impl Manifest {
                 // Find the original conflicting name
                 for (other_name, _) in self.all_dependencies() {
                     if other_name != name && other_name.to_lowercase() == normalized {
-                        return Err(crate::core::CcpmError::ManifestValidationError {
+                        return Err(crate::core::AgpmError::ManifestValidationError {
                             reason: format!(
-                                "Case conflict: '{}' and '{}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique.",
-                                name, other_name
+                                "Case conflict: '{name}' and '{other_name}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique."
                             ),
                         }
                         .into());
@@ -1645,7 +1644,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
     /// // ... add some dependencies
@@ -1665,9 +1664,9 @@ impl Manifest {
     /// guaranteed to be stable across runs.
     /// Get dependencies for a specific resource type
     ///
-    /// Returns the HashMap of dependencies for the specified resource type.
+    /// Returns the `HashMap` of dependencies for the specified resource type.
     /// Note: MCP servers return None as they use a different dependency type.
-    pub fn get_dependencies(
+    pub const fn get_dependencies(
         &self,
         resource_type: crate::core::ResourceType,
     ) -> Option<&HashMap<String, ResourceDependency>> {
@@ -1716,7 +1715,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::manifest::Manifest;
+    /// # use agpm::manifest::Manifest;
     /// # let manifest = Manifest::new();
     /// for (name, dep) in manifest.all_dependencies() {
     ///     println!("Dependency: {} -> {}", name, dep.get_path());
@@ -1743,7 +1742,7 @@ impl Manifest {
 
     /// Get all dependencies including MCP servers.
     ///
-    /// All resource types now use standard ResourceDependency, so no conversion needed.
+    /// All resource types now use standard `ResourceDependency`, so no conversion needed.
     #[must_use]
     pub fn all_dependencies_with_mcp(
         &self,
@@ -1771,7 +1770,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -1803,7 +1802,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -1833,7 +1832,7 @@ impl Manifest {
             .or_else(|| self.commands.get(name))
     }
 
-    /// Find a dependency by name from any section (alias for get_dependency).
+    /// Find a dependency by name from any section (alias for `get_dependency`).
     ///
     /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
     /// with the specified name, returning the first match found.
@@ -1841,7 +1840,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -1881,7 +1880,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::manifest::Manifest;
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -1907,7 +1906,7 @@ impl Manifest {
     /// # Security Note
     ///
     /// Never include authentication tokens in the URL. Use SSH keys or
-    /// configure authentication globally in `~/.ccpm/config.toml`.
+    /// configure authentication globally in `~/.agpm/config.toml`.
     pub fn add_source(&mut self, name: String, url: String) {
         self.sources.insert(name, url);
     }
@@ -1937,7 +1936,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -1989,8 +1988,8 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{Manifest, ResourceDependency};
-    /// use ccpm::core::ResourceType;
+    /// use agpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm::core::ResourceType;
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2033,13 +2032,13 @@ impl Manifest {
 
     /// Add or update an MCP server configuration.
     ///
-    /// MCP servers now use standard ResourceDependency format,
+    /// MCP servers now use standard `ResourceDependency` format,
     /// pointing to JSON configuration files in source repositories.
     ///
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use ccpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2064,7 +2063,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no source
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2096,8 +2095,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_source(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.source.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.source.as_deref(),
         }
     }
 
@@ -2109,7 +2108,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom target
     /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2133,8 +2132,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_target(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.target.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.target.as_deref(),
         }
     }
 
@@ -2146,7 +2145,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom filename
     /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2170,8 +2169,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_filename(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.filename.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.filename.as_deref(),
         }
     }
 
@@ -2186,7 +2185,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - filesystem path
     /// let local = ResourceDependency::Simple("../shared/helper.md".to_string());
@@ -2217,8 +2216,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
-            ResourceDependency::Simple(path) => path,
-            ResourceDependency::Detailed(d) => &d.path,
+            Self::Simple(path) => path,
+            Self::Detailed(d) => &d.path,
         }
     }
 
@@ -2246,7 +2245,7 @@ impl ResourceDependency {
     /// the `git` field takes precedence:
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("repo".to_string()),
@@ -2267,7 +2266,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no version
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2315,8 +2314,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_version(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => {
+            Self::Simple(_) => None,
+            Self::Detailed(d) => {
                 // Precedence: rev > branch > version
                 d.rev
                     .as_deref()
@@ -2337,7 +2336,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2418,7 +2417,7 @@ impl Default for Manifest {
 /// # Examples
 ///
 /// ```rust,no_run,ignore
-/// # use ccpm::manifest::expand_url;
+/// # use agpm::manifest::expand_url;
 /// # fn example() -> anyhow::Result<()> {
 /// // Standard URLs remain unchanged
 /// assert_eq!(expand_url("https://github.com/user/repo.git")?,
@@ -2505,7 +2504,7 @@ fn expand_url(url: &str) -> Result<String> {
 
 /// Find the manifest file by searching up the directory tree from the current directory.
 ///
-/// This function implements the standard CCPM behavior of searching for a `ccpm.toml`
+/// This function implements the standard AGPM behavior of searching for a `agpm.toml`
 /// file starting from the current working directory and walking up the directory
 /// tree until one is found or the filesystem root is reached.
 ///
@@ -2515,7 +2514,7 @@ fn expand_url(url: &str) -> Result<String> {
 /// # Search Algorithm
 ///
 /// 1. Start from the current working directory
-/// 2. Look for `ccpm.toml` in the current directory
+/// 2. Look for `agpm.toml` in the current directory
 /// 3. If not found, move to the parent directory
 /// 4. Repeat until found or reach the filesystem root
 /// 5. Return error if no manifest is found
@@ -2523,7 +2522,7 @@ fn expand_url(url: &str) -> Result<String> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::manifest::find_manifest;
+/// use agpm::manifest::find_manifest;
 ///
 /// // Find manifest from current directory
 /// match find_manifest() {
@@ -2536,25 +2535,25 @@ fn expand_url(url: &str) -> Result<String> {
 ///
 /// ```text
 /// /home/user/project/
-/// ├── ccpm.toml          ← Found here
+/// ├── agpm.toml          ← Found here
 /// └── subdir/
 ///     └── deep/
 ///         └── nested/     ← Search started here, walks up
 /// ```
 ///
 /// If called from `/home/user/project/subdir/deep/nested/`, this function
-/// will find and return `/home/user/project/ccpm.toml`.
+/// will find and return `/home/user/project/agpm.toml`.
 ///
 /// # Error Conditions
 ///
-/// - **No manifest found**: Searched to filesystem root without finding `ccpm.toml`
+/// - **No manifest found**: Searched to filesystem root without finding `agpm.toml`
 /// - **Permission denied**: Cannot read current directory or traverse up
 /// - **Filesystem corruption**: Cannot determine current working directory
 ///
 /// # Use Cases
 ///
 /// This function is typically called by CLI commands that need to locate the
-/// project configuration, allowing users to run CCPM commands from any
+/// project configuration, allowing users to run AGPM commands from any
 /// subdirectory within their project.
 pub fn find_manifest() -> Result<PathBuf> {
     let current = std::env::current_dir()
@@ -2586,12 +2585,12 @@ pub fn find_manifest() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::manifest::find_manifest_with_optional;
+/// use agpm::manifest::find_manifest_with_optional;
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Use explicit path
-/// let explicit = Some(PathBuf::from("/path/to/ccpm.toml"));
+/// let explicit = Some(PathBuf::from("/path/to/agpm.toml"));
 /// let manifest = find_manifest_with_optional(explicit)?;
 ///
 /// // Search from current directory
@@ -2605,7 +2604,7 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
             if path.exists() {
                 Ok(path)
             } else {
-                Err(crate::core::CcpmError::ManifestNotFound.into())
+                Err(crate::core::AgpmError::ManifestNotFound.into())
             }
         }
         None => find_manifest(),
@@ -2621,11 +2620,11 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 ///
 /// # Algorithm
 ///
-/// 1. Check if `ccpm.toml` exists in the starting directory
+/// 1. Check if `agpm.toml` exists in the starting directory
 /// 2. If found, return the full path to the manifest
 /// 3. If not found, move to the parent directory
 /// 4. Repeat until manifest is found or filesystem root is reached
-/// 5. Return [`crate::core::CcpmError::ManifestNotFound`] if no manifest is found
+/// 5. Return [`crate::core::AgpmError::ManifestNotFound`] if no manifest is found
 ///
 /// # Parameters
 ///
@@ -2634,7 +2633,7 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::manifest::find_manifest_from;
+/// use agpm::manifest::find_manifest_from;
 /// use std::path::PathBuf;
 ///
 /// // Search from a specific directory
@@ -2665,17 +2664,21 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 ///
 /// # Error Handling
 ///
-/// Returns [`crate::core::CcpmError::ManifestNotFound`] wrapped in an [`anyhow::Error`]
+/// Returns [`crate::core::AgpmError::ManifestNotFound`] wrapped in an [`anyhow::Error`]
 /// if no manifest file is found after searching to the filesystem root.
 pub fn find_manifest_from(mut current: PathBuf) -> Result<PathBuf> {
     loop {
-        let manifest_path = current.join("ccpm.toml");
+        let manifest_path = current.join("agpm.toml");
         if manifest_path.exists() {
             return Ok(manifest_path);
         }
 
         if !current.pop() {
-            return Err(crate::core::CcpmError::ManifestNotFound.into());
+            // Check for legacy CCPM files before returning error
+            if let Some(migration_msg) = crate::cli::common::check_for_legacy_ccpm_files() {
+                return Err(anyhow::anyhow!("{migration_msg}"));
+            }
+            return Err(crate::core::AgpmError::ManifestNotFound.into());
         }
     }
 }
@@ -2698,12 +2701,12 @@ mod tests {
     #[test]
     fn test_manifest_load_save() {
         let temp = tempdir().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.add_source(
             "official".to_string(),
-            "https://github.com/example-org/ccpm-official.git".to_string(),
+            "https://github.com/example-org/agpm-official.git".to_string(),
         );
         manifest.add_dependency(
             "test-agent".to_string(),
@@ -2893,7 +2896,7 @@ mod tests {
     #[test]
     fn test_manifest_save_load_commands() {
         let temp = tempdir().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.add_source(
@@ -2974,7 +2977,7 @@ mod tests {
     #[test]
     fn test_manifest_save_load_mcp_servers() {
         let temp = tempdir().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.add_source("npm".to_string(), "https://registry.npmjs.org".to_string());
@@ -2997,7 +3000,7 @@ mod tests {
     #[test]
     fn test_target_config_mcp_servers_dir() {
         let config = TargetConfig::default();
-        assert_eq!(config.mcp_servers, ".claude/ccpm/mcp-servers");
+        assert_eq!(config.mcp_servers, ".claude/agpm/mcp-servers");
 
         // Test custom config
         let mut manifest = Manifest::new();
@@ -3052,7 +3055,7 @@ mod tests {
     #[test]
     fn test_save_load_dependency_with_custom_target() {
         let temp = tempdir().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.add_source(
@@ -3137,7 +3140,7 @@ mod tests {
     #[test]
     fn test_save_load_dependency_with_custom_filename() {
         let temp = tempdir().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.add_source(

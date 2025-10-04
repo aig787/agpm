@@ -77,14 +77,14 @@ impl TestEnvironmentBuilder {
         std::fs::create_dir_all(&self.cache_dir)?;
 
         // Write manifest if provided
-        let manifest_path = self.project_dir.join("ccpm.toml");
+        let manifest_path = self.project_dir.join("agpm.toml");
         if let Some(manifest) = &self.manifest {
             let content = toml::to_string_pretty(manifest)?;
             std::fs::write(&manifest_path, content)?;
         }
 
         // Write lockfile if provided
-        let lockfile_path = self.project_dir.join("ccpm.lock");
+        let lockfile_path = self.project_dir.join("agpm.lock");
         if let Some(lockfile) = &self.lockfile {
             lockfile.save(&lockfile_path)?;
         }
@@ -206,7 +206,7 @@ mod tests {
         let manifest = Manifest::default();
         let env = TestEnvironment::with_manifest(manifest).unwrap();
 
-        assert!(env.file_exists("ccpm.toml"));
+        assert!(env.file_exists("agpm.toml"));
         let loaded = env.load_manifest().unwrap();
         assert_eq!(loaded.sources.len(), 0);
     }

@@ -62,22 +62,20 @@ impl DependencyMetadata {
     pub fn has_dependencies(&self) -> bool {
         self.dependencies
             .as_ref()
-            .map(|deps| !deps.is_empty() && deps.values().any(|v| !v.is_empty()))
-            .unwrap_or(false)
+            .is_some_and(|deps| !deps.is_empty() && deps.values().any(|v| !v.is_empty()))
     }
 
     /// Get the total count of dependencies.
     pub fn dependency_count(&self) -> usize {
         self.dependencies
             .as_ref()
-            .map(|deps| deps.values().map(|v| v.len()).sum())
-            .unwrap_or(0)
+            .map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
     }
 
     /// Merge another metadata into this one.
     ///
     /// Used when combining dependencies from multiple sources.
-    pub fn merge(&mut self, other: DependencyMetadata) {
+    pub fn merge(&mut self, other: Self) {
         if let Some(other_deps) = other.dependencies {
             let deps = self.dependencies.get_or_insert_with(HashMap::new);
             for (resource_type, specs) in other_deps {

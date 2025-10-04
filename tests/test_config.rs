@@ -15,20 +15,20 @@ static INIT: Once = Once::new();
 pub fn init_test_env() {
     INIT.call_once(|| {
         // Use the shared logging initialization
-        ccpm::test_utils::init_test_logging(None);
+        agpm::test_utils::init_test_logging(None);
 
         // Set test-specific environment variables
         unsafe {
-            std::env::set_var("CCPM_TEST_MODE", "1");
-            std::env::set_var("CCPM_NO_PROGRESS", "1"); // Disable progress bars in tests
-            std::env::set_var("CCPM_PARALLEL_TESTS", "1");
+            std::env::set_var("AGPM_TEST_MODE", "1");
+            std::env::set_var("AGPM_NO_PROGRESS", "1"); // Disable progress bars in tests
+            std::env::set_var("AGPM_PARALLEL_TESTS", "1");
 
             // Ensure consistent behavior across platforms
-            std::env::set_var("CCPM_FORCE_COLOR", "0"); // Disable colors in test output
+            std::env::set_var("AGPM_FORCE_COLOR", "0"); // Disable colors in test output
 
             // Set reasonable timeouts for tests
-            std::env::set_var("CCPM_NETWORK_TIMEOUT", "30");
-            std::env::set_var("CCPM_GIT_TIMEOUT", "30");
+            std::env::set_var("AGPM_NETWORK_TIMEOUT", "30");
+            std::env::set_var("AGPM_GIT_TIMEOUT", "30");
         }
     });
 }

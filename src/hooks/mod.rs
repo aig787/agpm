@@ -1,7 +1,7 @@
-//! Hook configuration management for CCPM
+//! Hook configuration management for AGPM
 //!
 //! This module handles Claude Code hook configurations, including:
-//! - Installing hook JSON files to `.claude/ccpm/hooks/`
+//! - Installing hook JSON files to `.claude/agpm/hooks/`
 //! - Converting them to Claude Code format in `settings.local.json`
 //! - Managing hook lifecycle and dependencies
 
@@ -77,15 +77,15 @@ pub struct HookCommand {
     /// Timeout in milliseconds
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u32>,
-    /// CCPM metadata for tracking
-    #[serde(rename = "_ccpm", skip_serializing_if = "Option::is_none")]
-    pub ccpm_metadata: Option<CcpmHookMetadata>,
+    /// AGPM metadata for tracking
+    #[serde(rename = "_agpm", skip_serializing_if = "Option::is_none")]
+    pub agpm_metadata: Option<AgpmHookMetadata>,
 }
 
-/// Metadata for CCPM-managed hooks
+/// Metadata for AGPM-managed hooks
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CcpmHookMetadata {
-    /// Whether this hook is managed by CCPM (true) or manually configured (false)
+pub struct AgpmHookMetadata {
+    /// Whether this hook is managed by AGPM (true) or manually configured (false)
     pub managed: bool,
     /// Name of the dependency that installed this hook
     pub dependency_name: String,
@@ -121,7 +121,7 @@ pub struct MatcherGroup {
 ///
 /// # Returns
 ///
-/// A HashMap mapping hook names to their configurations. If the directory
+/// A `HashMap` mapping hook names to their configurations. If the directory
 /// doesn't exist, returns an empty map.
 ///
 /// # Errors
@@ -134,11 +134,11 @@ pub struct MatcherGroup {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::hooks::load_hook_configs;
+/// use agpm::hooks::load_hook_configs;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// let hooks_dir = Path::new(".claude/ccpm/hooks");
+/// let hooks_dir = Path::new(".claude/agpm/hooks");
 /// let configs = load_hook_configs(hooks_dir)?;
 ///
 /// for (name, config) in configs {
@@ -178,9 +178,9 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
     Ok(configs)
 }
 
-/// Convert CCPM hook configs to Claude Code format
+/// Convert AGPM hook configs to Claude Code format
 ///
-/// Transforms hooks from the CCPM format to the format expected by Claude Code.
+/// Transforms hooks from the AGPM format to the format expected by Claude Code.
 /// Groups hooks by event type and handles optional matchers correctly.
 fn convert_to_claude_format(
     hook_configs: HashMap<String, HookConfig>,
@@ -234,24 +234,22 @@ fn convert_to_claude_format(
                 // Session event without matcher - add to first group or create new one
                 if let Some(first_group) = event_vec.first_mut() {
                     // Add to existing group if it has no matcher
-                    if !first_group.as_object().unwrap().contains_key("matcher") {
-                        if let Some(hooks_array) =
-                            first_group.get_mut("hooks").and_then(|h| h.as_array_mut())
-                        {
-                            // Check for duplicates before adding
-                            let hook_exists = hooks_array.iter().any(|existing_hook| {
-                                existing_hook.get("command") == hook_obj.get("command")
-                                    && existing_hook.get("type") == hook_obj.get("type")
-                            });
-                            if !hook_exists {
-                                hooks_array.push(hook_obj);
-                            }
-                        }
-                    } else {
+                    if first_group.as_object().unwrap().contains_key("matcher") {
                         // Create new group for session events
                         event_vec.push(json!({
                             "hooks": [hook_obj]
                         }));
+                    } else if let Some(hooks_array) =
+                        first_group.get_mut("hooks").and_then(|h| h.as_array_mut())
+                    {
+                        // Check for duplicates before adding
+                        let hook_exists = hooks_array.iter().any(|existing_hook| {
+                            existing_hook.get("command") == hook_obj.get("command")
+                                && existing_hook.get("type") == hook_obj.get("type")
+                        });
+                        if !hook_exists {
+                            hooks_array.push(hook_obj);
+                        }
                     }
                 } else {
                     // Create first group for session events
@@ -285,7 +283,7 @@ fn event_to_string(event: &HookEvent) -> String {
 /// Install hooks from manifest to .claude/settings.local.json
 ///
 /// This function:
-/// 1. Loads hook JSON files from .claude/ccpm/hooks/
+/// 1. Loads hook JSON files from .claude/agpm/hooks/
 /// 2. Converts them to Claude Code format
 /// 3. Updates .claude/settings.local.json with proper event-based structure
 /// 4. Can be called from both `add` and `install` commands
@@ -322,22 +320,19 @@ pub async fn install_hooks(
 
     if hooks_changed {
         // Count actual configured hooks (after deduplication)
-        let configured_count = claude_hooks
-            .as_object()
-            .map(|events| {
-                events
-                    .values()
-                    .filter_map(|event_groups| event_groups.as_array())
-                    .map(|groups| {
-                        groups
-                            .iter()
-                            .filter_map(|group| group.get("hooks")?.as_array())
-                            .map(|hooks| hooks.len())
-                            .sum::<usize>()
-                    })
-                    .sum::<usize>()
-            })
-            .unwrap_or(0);
+        let configured_count = claude_hooks.as_object().map_or(0, |events| {
+            events
+                .values()
+                .filter_map(|event_groups| event_groups.as_array())
+                .map(|groups| {
+                    groups
+                        .iter()
+                        .filter_map(|group| group.get("hooks")?.as_array())
+                        .map(std::vec::Vec::len)
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
+        });
 
         // Update settings with hooks (replaces existing hooks completely)
         settings.hooks = Some(claude_hooks);
@@ -346,10 +341,7 @@ pub async fn install_hooks(
         settings.save(&settings_path)?;
 
         if configured_count > 0 {
-            println!(
-                "✓ Configured {} hook(s) in .claude/settings.local.json",
-                configured_count
-            );
+            println!("✓ Configured {configured_count} hook(s) in .claude/settings.local.json");
         }
     }
 
@@ -405,7 +397,7 @@ pub async fn install_hooks(
 /// - Event list validation (must have at least one event)
 /// - Regex pattern syntax validation for the matcher
 /// - Hook type validation (only "command" type is supported)
-/// - Script existence validation for CCPM-managed scripts
+/// - Script existence validation for AGPM-managed scripts
 ///
 /// # Arguments
 ///
@@ -422,12 +414,12 @@ pub async fn install_hooks(
 /// - No events are specified
 /// - The matcher regex pattern is invalid
 /// - Unsupported hook type is used (only "command" is supported)
-/// - Referenced script file doesn't exist (for CCPM-managed scripts)
+/// - Referenced script file doesn't exist (for AGPM-managed scripts)
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::hooks::{validate_hook_config, HookConfig, HookEvent};
+/// use agpm::hooks::{validate_hook_config, HookConfig, HookEvent};
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -440,7 +432,7 @@ pub async fn install_hooks(
 ///     description: None,
 /// };
 ///
-/// let hook_file = Path::new(".claude/ccpm/hooks/test.json");
+/// let hook_file = Path::new(".claude/agpm/hooks/test.json");
 /// validate_hook_config(&config, hook_file)?;
 /// println!("Hook configuration is valid!");
 /// # Ok(())
@@ -455,7 +447,7 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     // Validate matcher regex if present
     if let Some(ref matcher) = config.matcher {
         regex::Regex::new(matcher)
-            .with_context(|| format!("Invalid regex pattern in matcher: {}", matcher))?;
+            .with_context(|| format!("Invalid regex pattern in matcher: {matcher}"))?;
     }
 
     // Validate hook type
@@ -466,13 +458,13 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     }
 
     // Validate that the referenced script exists
-    let script_full_path = if config.command.starts_with(".claude/ccpm/scripts/") {
-        // If script_path is the hook file (e.g., .claude/ccpm/hooks/test.json),
+    let script_full_path = if config.command.starts_with(".claude/agpm/scripts/") {
+        // If script_path is the hook file (e.g., .claude/agpm/hooks/test.json),
         // we need to go up to the project root:
-        // test.json -> hooks/ -> ccpm/ -> .claude/ -> project_root
+        // test.json -> hooks/ -> agpm/ -> .claude/ -> project_root
         script_path
             .parent() // hooks/
-            .and_then(|p| p.parent()) // ccpm/
+            .and_then(|p| p.parent()) // agpm/
             .and_then(|p| p.parent()) // .claude/
             .and_then(|p| p.parent()) // project root
             .map(|p| p.join(&config.command))
@@ -531,7 +523,7 @@ mod tests {
             events: vec![HookEvent::PreToolUse, HookEvent::PostToolUse],
             matcher: Some("Bash|Write".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/ccpm/scripts/security-check.sh".to_string(),
+            command: ".claude/agpm/scripts/security-check.sh".to_string(),
             timeout: Some(5000),
             description: Some("Security validation".to_string()),
         };
@@ -564,7 +556,7 @@ mod tests {
 
     #[test]
     fn test_hook_command_serialization() {
-        let metadata = CcpmHookMetadata {
+        let metadata = AgpmHookMetadata {
             managed: true,
             dependency_name: "test-hook".to_string(),
             source: "community".to_string(),
@@ -576,7 +568,7 @@ mod tests {
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: Some(3000),
-            ccpm_metadata: Some(metadata.clone()),
+            agpm_metadata: Some(metadata.clone()),
         };
 
         let json = serde_json::to_string(&command).unwrap();
@@ -585,8 +577,8 @@ mod tests {
         assert_eq!(parsed.hook_type, "command");
         assert_eq!(parsed.command, "test.sh");
         assert_eq!(parsed.timeout, Some(3000));
-        assert!(parsed.ccpm_metadata.is_some());
-        let meta = parsed.ccpm_metadata.unwrap();
+        assert!(parsed.agpm_metadata.is_some());
+        let meta = parsed.agpm_metadata.unwrap();
         assert!(meta.managed);
         assert_eq!(meta.dependency_name, "test-hook");
     }
@@ -597,7 +589,7 @@ mod tests {
             hook_type: "command".to_string(),
             command: "test.sh".to_string(),
             timeout: None,
-            ccpm_metadata: None,
+            agpm_metadata: None,
         };
 
         let group = MatcherGroup {
@@ -767,7 +759,7 @@ mod tests {
         let temp = tempdir().unwrap();
 
         // Create the expected directory structure with script
-        let claude_dir = temp.path().join(".claude").join("ccpm");
+        let claude_dir = temp.path().join(".claude").join("agpm");
         let scripts_dir = claude_dir.join("scripts");
         let hooks_dir = claude_dir.join("hooks");
         fs::create_dir_all(&scripts_dir).unwrap();
@@ -780,12 +772,12 @@ mod tests {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/ccpm/scripts/test.sh".to_string(),
+            command: ".claude/agpm/scripts/test.sh".to_string(),
             timeout: None,
             description: None,
         };
 
-        // The hook file would be at .claude/ccpm/hooks/test.json
+        // The hook file would be at .claude/agpm/hooks/test.json
         // validate_hook_config goes up 3 levels from the hook path to find the project root
         let hook_json_path = hooks_dir.join("test.json");
         let result = validate_hook_config(&config, &hook_json_path);
@@ -806,7 +798,7 @@ mod tests {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/ccpm/scripts/nonexistent.sh".to_string(),
+            command: ".claude/agpm/scripts/nonexistent.sh".to_string(),
             timeout: None,
             description: None,
         };
@@ -815,7 +807,7 @@ mod tests {
         let hook_path = temp
             .path()
             .join(".claude")
-            .join("ccpm")
+            .join("agpm")
             .join("hooks")
             .join("test.json");
         let result = validate_hook_config(&config, &hook_path);
@@ -832,7 +824,7 @@ mod tests {
     fn test_validate_hook_config_non_claude_path() {
         let temp = tempdir().unwrap();
 
-        // Test with a command that doesn't start with .claude/ccpm/scripts/
+        // Test with a command that doesn't start with .claude/agpm/scripts/
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
@@ -859,7 +851,7 @@ mod tests {
     #[tokio::test]
     async fn test_install_hooks_with_hooks() {
         let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        let hooks_dir = temp.path().join(".claude/agpm/hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
 
         // Create a hook JSON file
@@ -897,7 +889,7 @@ mod tests {
                 },
             )),
         );
-        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+        manifest.target.hooks = ".claude/agpm/hooks".to_string();
 
         let result = install_hooks(&manifest, temp.path()).await.unwrap();
         assert_eq!(result.len(), 1);
@@ -916,7 +908,7 @@ mod tests {
     #[tokio::test]
     async fn test_install_hooks_simple_dependency() {
         let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        let hooks_dir = temp.path().join(".claude/agpm/hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
 
         // Create a hook JSON file
@@ -941,7 +933,7 @@ mod tests {
             "simple-hook".to_string(),
             crate::manifest::ResourceDependency::Simple("/path/to/hook.json".to_string()),
         );
-        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+        manifest.target.hooks = ".claude/agpm/hooks".to_string();
 
         let result = install_hooks(&manifest, temp.path()).await.unwrap();
         assert_eq!(result.len(), 1);
@@ -957,7 +949,7 @@ mod tests {
     #[tokio::test]
     async fn test_install_hooks_with_branch() {
         let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        let hooks_dir = temp.path().join(".claude/agpm/hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
 
         // Create a manifest with a branch-based dependency
@@ -979,7 +971,7 @@ mod tests {
                 },
             )),
         );
-        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+        manifest.target.hooks = ".claude/agpm/hooks".to_string();
 
         let result = install_hooks(&manifest, temp.path()).await.unwrap();
         assert_eq!(result.len(), 1);
@@ -991,7 +983,7 @@ mod tests {
     #[tokio::test]
     async fn test_install_hooks_with_rev() {
         let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/ccpm/hooks");
+        let hooks_dir = temp.path().join(".claude/agpm/hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
 
         // Create a manifest with a rev-based dependency
@@ -1013,7 +1005,7 @@ mod tests {
                 },
             )),
         );
-        manifest.target.hooks = ".claude/ccpm/hooks".to_string();
+        manifest.target.hooks = ".claude/agpm/hooks".to_string();
 
         let result = install_hooks(&manifest, temp.path()).await.unwrap();
         assert_eq!(result.len(), 1);
@@ -1136,7 +1128,7 @@ mod tests {
                 events: vec![HookEvent::SessionStart],
                 matcher: None,
                 hook_type: "command".to_string(),
-                command: "ccpm update".to_string(),
+                command: "agpm update".to_string(),
                 timeout: None,
                 description: None,
             },
@@ -1147,7 +1139,7 @@ mod tests {
                 events: vec![HookEvent::SessionStart],
                 matcher: None,
                 hook_type: "command".to_string(),
-                command: "ccpm update".to_string(), // Same command
+                command: "agpm update".to_string(), // Same command
                 timeout: None,
                 description: None,
             },
@@ -1164,7 +1156,7 @@ mod tests {
         assert_eq!(hooks.len(), 1);
         assert_eq!(
             hooks[0].get("command").unwrap().as_str().unwrap(),
-            "ccpm update"
+            "agpm update"
         );
     }
 
@@ -1320,21 +1312,21 @@ mod tests {
     #[tokio::test]
     async fn test_hook_format_sessionstart_debug() {
         let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/ccmp/hooks");
+        let hooks_dir = temp.path().join(".claude/agpm/hooks");
         fs::create_dir_all(&hooks_dir).unwrap();
 
-        // Create a hook JSON file that mimics the problematic "ccpm-update" hook
+        // Create a hook JSON file that mimics the problematic "agpm-update" hook
         let hook_config = HookConfig {
             events: vec![HookEvent::SessionStart],
             matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
-            command: "ccpm update".to_string(),
+            command: "agpm update".to_string(),
             timeout: None,
-            description: Some("Update CCPM packages".to_string()),
+            description: Some("Update AGPM packages".to_string()),
         };
 
         fs::write(
-            hooks_dir.join("ccpm-update.json"),
+            hooks_dir.join("agpm-update.json"),
             serde_json::to_string_pretty(&hook_config).unwrap(),
         )
         .unwrap();
@@ -1342,12 +1334,12 @@ mod tests {
         // Create a manifest with this hook
         let mut manifest = crate::manifest::Manifest::default();
         manifest.hooks.insert(
-            "ccpm-update".to_string(),
+            "agpm-update".to_string(),
             crate::manifest::ResourceDependency::Simple(
-                ".claude/ccpm/hooks/ccpm-update.json".to_string(),
+                ".claude/agpm/hooks/agpm-update.json".to_string(),
             ),
         );
-        manifest.target.hooks = ".claude/ccmp/hooks".to_string();
+        manifest.target.hooks = ".claude/agpm/hooks".to_string();
 
         let result = install_hooks(&manifest, temp.path()).await.unwrap();
         assert_eq!(result.len(), 1);
@@ -1385,11 +1377,11 @@ mod tests {
             assert_eq!(hook.get("type").unwrap().as_str().unwrap(), "command");
             assert_eq!(
                 hook.get("command").unwrap().as_str().unwrap(),
-                "ccpm update"
+                "agpm update"
             );
 
             // Should NOT have the problematic format where hook name is a top-level key
-            assert!(!hooks_obj.contains_key("ccpm-update"));
+            assert!(!hooks_obj.contains_key("agpm-update"));
         } else {
             panic!("No hooks were generated");
         }

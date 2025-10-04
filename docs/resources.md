@@ -1,6 +1,6 @@
 # Resources Guide
 
-CCPM manages six types of resources for Claude Code, divided into two categories based on how they're integrated.
+AGPM manages six types of resources for Claude Code, divided into two categories based on how they're integrated.
 
 ## Resource Categories
 
@@ -15,7 +15,7 @@ These resources are copied directly to their target directories and used as stan
 
 ### Configuration-Merged Resources
 
-These resources are installed to `.claude/ccpm/` and then their configurations are merged into Claude Code's settings:
+These resources are installed to `.claude/agpm/` and then their configurations are merged into Claude Code's settings:
 
 - **Hooks** - Event-based automation
 - **MCP Servers** - Model Context Protocol servers
@@ -28,7 +28,7 @@ AI assistant configurations with prompts and behavioral definitions.
 
 **Default Location**: `.claude/agents/`
 
-**Path Preservation**: CCPM preserves the source directory structure during installation.
+**Path Preservation**: AGPM preserves the source directory structure during installation.
 
 **Examples**:
 ```toml
@@ -50,7 +50,7 @@ local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/ai
 
 Reusable code templates and documentation fragments.
 
-**Default Location**: `.claude/ccpm/snippets/`
+**Default Location**: `.claude/agpm/snippets/`
 
 **Example**:
 ```toml
@@ -76,7 +76,7 @@ lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 
 Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently.
 
-**Default Location**: `.claude/ccpm/scripts/`
+**Default Location**: `.claude/agpm/scripts/`
 
 **Example**:
 ```toml
@@ -92,7 +92,7 @@ Scripts must be executable and can be written in any language supported by your 
 
 Event-based automation configurations for Claude Code. JSON files that define when to run scripts.
 
-**Default Location**: `.claude/ccpm/hooks/`
+**Default Location**: `.claude/agpm/hooks/`
 **Configuration**: Automatically merged into `.claude/settings.local.json`
 
 #### Hook Structure
@@ -102,7 +102,7 @@ Event-based automation configurations for Claude Code. JSON files that define wh
   "events": ["PreToolUse"],
   "matcher": "Bash|Write|Edit",
   "type": "command",
-  "command": ".claude/ccpm/scripts/security-check.sh",
+  "command": ".claude/agpm/scripts/security-check.sh",
   "timeout": 5000,
   "description": "Security validation before file operations"
 }
@@ -128,7 +128,7 @@ file-guard = { source = "security-tools", path = "hooks/file-guard.json", versio
 
 Model Context Protocol servers that extend Claude Code's capabilities with external tools and APIs.
 
-**Default Location**: `.claude/ccpm/mcp-servers/`
+**Default Location**: `.claude/agpm/mcp-servers/`
 **Configuration**: Automatically merged into `.mcp.json`
 
 #### MCP Server Structure
@@ -163,14 +163,14 @@ postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 
 Configuration-merged resources (Hooks and MCP Servers) follow a two-step process:
 
-1. **File Installation**: JSON configuration files are installed to `.claude/ccpm/`
+1. **File Installation**: JSON configuration files are installed to `.claude/agpm/`
 2. **Configuration Merging**: Settings are automatically merged into Claude Code's configuration files
-3. **Non-destructive Updates**: CCPM preserves user-configured entries while managing its own
-4. **Tracking**: CCPM adds metadata to track which entries it manages
+3. **Non-destructive Updates**: AGPM preserves user-configured entries while managing its own
+4. **Tracking**: AGPM adds metadata to track which entries it manages
 
 ### Example: Merged .mcp.json
 
-After installation, `.mcp.json` contains both user and CCPM-managed servers:
+After installation, `.mcp.json` contains both user and AGPM-managed servers:
 
 ```json
 {
@@ -187,9 +187,9 @@ After installation, `.mcp.json` contains both user and CCPM-managed servers:
         "--root",
         "./data"
       ],
-      "_ccpm": {
+      "_agpm": {
         "managed": true,
-        "config_file": ".claude/ccpm/mcp-servers/filesystem.json",
+        "config_file": ".claude/agpm/mcp-servers/filesystem.json",
         "installed_at": "2024-01-15T10:30:00Z"
       }
     }
@@ -201,7 +201,7 @@ After installation, `.mcp.json` contains both user and CCPM-managed servers:
 
 ### Path Preservation
 
-CCPM preserves the source directory structure during installation. Files are named based on their source path, maintaining the original organization:
+AGPM preserves the source directory structure during installation. Files are named based on their source path, maintaining the original organization:
 
 ```toml
 [agents]
@@ -241,11 +241,11 @@ Override default installation directories for all resources of a type:
 ```toml
 [target]
 agents = ".claude/agents"           # Default
-snippets = ".claude/ccpm/snippets"  # Default
+snippets = ".claude/agpm/snippets"  # Default
 commands = ".claude/commands"        # Default
-scripts = ".claude/ccpm/scripts"    # Default
-hooks = ".claude/ccpm/hooks"        # Default
-mcp-servers = ".claude/ccpm/mcp-servers"  # Default
+scripts = ".claude/agpm/scripts"    # Default
+hooks = ".claude/agpm/hooks"        # Default
+mcp-servers = ".claude/agpm/mcp-servers"  # Default
 
 # Or use custom paths
 agents = "custom/agents"
@@ -295,11 +295,11 @@ reviewer = {
 
 ## Version Control Strategy
 
-By default, CCPM creates `.gitignore` entries to exclude installed files from Git:
+By default, AGPM creates `.gitignore` entries to exclude installed files from Git:
 
-- The `ccpm.toml` manifest and `ccpm.lock` lockfile are committed
+- The `agpm.toml` manifest and `agpm.lock` lockfile are committed
 - Installed resource files are automatically gitignored
-- Team members run `ccpm install` to get their own copies
+- Team members run `agpm install` to get their own copies
 
 To commit resources to Git instead:
 
@@ -326,13 +326,13 @@ review-tools = { source = "community", path = "agents/**/review*.md", version = 
 
 [snippets]
 # All Python snippets - directory structure preserved
-# snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
-# snippets/python/helpers.md → .claude/ccpm/snippets/python/helpers.md
+# snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
+# snippets/python/helpers.md → .claude/agpm/snippets/python/helpers.md
 python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 # Multiple nested directories
-# snippets/web/react/hooks.md → .claude/ccpm/snippets/web/react/hooks.md
-# snippets/web/vue/composables.md → .claude/ccpm/snippets/web/vue/composables.md
+# snippets/web/react/hooks.md → .claude/agpm/snippets/web/react/hooks.md
+# snippets/web/vue/composables.md → .claude/agpm/snippets/web/vue/composables.md
 web-snippets = { source = "community", path = "snippets/web/**/*.md", version = "v1.0.0" }
 ```
 
@@ -372,6 +372,6 @@ web-snippets = { source = "community", path = "snippets/web/**/*.md", version = 
 
 ### Configuration Not Merging
 
-- Run `ccpm install` again to re-merge configurations
+- Run `agpm install` again to re-merge configurations
 - Check for syntax errors in JSON files
-- Ensure CCPM has write permissions to config files
+- Ensure AGPM has write permissions to config files

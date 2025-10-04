@@ -1,7 +1,7 @@
 {
   "events": ["UserPromptSubmit"],
   "type": "command",
-  "command": ".claude/ccpm/scripts/test.js",
+  "command": ".claude/agpm/scripts/test.js",
   "timeout": 10000,
   "description": "Run tests before processing user prompt"
 }

@@ -1,7 +1,7 @@
 ---
 title: Git Auto Commit
 description: Automated git commit with semantic commit messages
-author: CCPM Team
+author: AGPM Team
 version: 1.0.0
 tags:
   - git

@@ -15,14 +15,14 @@ use common::TestProject;
 #[tokio::test]
 async fn test_exact_version_conflict_blocks_install() {
     let temp_dir = TempDir::new().unwrap();
-    let manifest_path = temp_dir.path().join("ccpm.toml");
+    let manifest_path = temp_dir.path().join("agpm.toml");
 
     // Create manifest with two resources pointing to same source:path but different versions
     fs::write(
         &manifest_path,
         r#"
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 # Same path, different versions - should conflict
@@ -33,7 +33,7 @@ api-designer-v2 = { source = "community", path = "agents/awesome-claude-code-sub
     .await
     .unwrap();
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(temp_dir.path())
         .arg("install")
         .assert()
@@ -76,7 +76,7 @@ test-agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", version =
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         output.success,
         "Install should succeed. Stderr: {}",
@@ -141,7 +141,7 @@ agent-dev = {{ source = "test-repo", path = "agents/test-agent.md", branch = "ma
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         !output.success,
         "Install should fail with version conflict. Stderr: {}",
@@ -191,7 +191,7 @@ agent-pinned = {{ source = "test-repo", path = "agents/test-agent.md", version =
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         !output.success,
         "Install should fail with version conflict. Stderr: {}",
@@ -252,7 +252,7 @@ agent-dev = {{ source = "test-repo", path = "agents/test-agent.md", branch = "de
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         !output.success,
         "Install should fail with version conflict. Stderr: {}",
@@ -316,7 +316,7 @@ agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", branch = "Main
     );
     project.write_manifest(&manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         output.success,
         "Install should succeed. Stderr: {}",

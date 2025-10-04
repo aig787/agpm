@@ -1,7 +1,7 @@
-use anyhow::Result;
-use ccpm::upgrade::{
+use agpm::upgrade::{
     SelfUpdater, VersionChecker, backup::BackupManager, verification::ChecksumVerifier,
 };
+use anyhow::Result;
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::fs;
@@ -10,8 +10,8 @@ use tokio::fs;
 #[tokio::test]
 async fn test_backup_create_and_restore() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let binary_path = temp_dir.path().join("ccpm");
-    let backup_path = temp_dir.path().join("ccpm.backup");
+    let binary_path = temp_dir.path().join("agpm");
+    let backup_path = temp_dir.path().join("agpm.backup");
 
     // Create a mock binary file
     fs::write(&binary_path, b"original binary content").await?;
@@ -64,7 +64,7 @@ async fn test_backup_missing_original() -> Result<()> {
 #[tokio::test]
 async fn test_restore_missing_backup() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let binary_path = temp_dir.path().join("ccpm");
+    let binary_path = temp_dir.path().join("agpm");
 
     // Create original file
     fs::write(&binary_path, b"original").await?;
@@ -156,7 +156,7 @@ async fn test_checksum_verification_failure() -> Result<()> {
 #[tokio::test]
 async fn test_version_checker_caching() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let cache_path = temp_dir.path().join(".ccpm").join(".version_cache");
+    let cache_path = temp_dir.path().join(".agpm").join(".version_cache");
 
     // Create cache directory
     if let Some(parent) = cache_path.parent() {
@@ -166,13 +166,13 @@ async fn test_version_checker_caching() -> Result<()> {
     // Set up environment to use temp directory
     unsafe {
         std::env::set_var(
-            "CCPM_CONFIG_PATH",
-            temp_dir.path().join(".ccpm").join("config.toml"),
+            "AGPM_CONFIG_PATH",
+            temp_dir.path().join(".agpm").join("config.toml"),
         );
     }
 
     // Test save and load cache
-    let cache = ccpm::upgrade::version_check::VersionCheckCache {
+    let cache = agpm::upgrade::version_check::VersionCheckCache {
         latest_version: "0.5.0".to_string(),
         current_version: env!("CARGO_PKG_VERSION").to_string(),
         checked_at: chrono::Utc::now(),
@@ -189,13 +189,13 @@ async fn test_version_checker_caching() -> Result<()> {
 
     // Verify cache content by reading the file
     let cache_content = tokio::fs::read_to_string(&cache_path).await?;
-    let loaded: ccpm::upgrade::version_check::VersionCheckCache =
+    let loaded: agpm::upgrade::version_check::VersionCheckCache =
         serde_json::from_str(&cache_content)?;
     assert_eq!(loaded.latest_version, "0.5.0");
 
     // Clean up environment
     unsafe {
-        std::env::remove_var("CCPM_CONFIG_PATH");
+        std::env::remove_var("AGPM_CONFIG_PATH");
     }
 
     Ok(())
@@ -240,11 +240,11 @@ async fn test_self_updater_init() -> Result<()> {
 /// Test backup path generation.
 #[tokio::test]
 async fn test_backup_path_generation() -> Result<()> {
-    let original = PathBuf::from("/usr/local/bin/ccpm");
+    let original = PathBuf::from("/usr/local/bin/agpm");
     let backup_manager = BackupManager::new(original.clone());
 
     let backup_path = backup_manager.backup_path();
-    assert_eq!(backup_path.file_name().unwrap(), "ccpm.backup");
+    assert_eq!(backup_path.file_name().unwrap(), "agpm.backup");
     assert_eq!(backup_path.parent(), original.parent());
 
     Ok(())
@@ -254,8 +254,8 @@ async fn test_backup_path_generation() -> Result<()> {
 #[tokio::test]
 async fn test_backup_special_characters() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let binary_path = temp_dir.path().join("ccpm-v1.2.3");
-    let backup_path = temp_dir.path().join("ccpm-v1.2.3.backup");
+    let binary_path = temp_dir.path().join("agpm-v1.2.3");
+    let backup_path = temp_dir.path().join("agpm-v1.2.3.backup");
 
     // Create file
     fs::write(&binary_path, b"content").await?;
@@ -277,7 +277,7 @@ async fn test_backup_special_characters() -> Result<()> {
 #[tokio::test]
 async fn test_concurrent_backup_operations() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let binary_path = temp_dir.path().join("ccpm");
+    let binary_path = temp_dir.path().join("agpm");
 
     // Create original file
     fs::write(&binary_path, b"original").await?;
@@ -325,7 +325,7 @@ async fn test_checksum_case_insensitive() -> Result<()> {
 #[tokio::test]
 async fn test_version_cache_expiry() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let cache_path = temp_dir.path().join(".ccpm").join(".version_cache");
+    let cache_path = temp_dir.path().join(".agpm").join(".version_cache");
 
     // Create cache directory
     if let Some(parent) = cache_path.parent() {
@@ -347,14 +347,14 @@ async fn test_version_cache_expiry() -> Result<()> {
     // Set up environment to use temp directory
     unsafe {
         std::env::set_var(
-            "CCPM_CONFIG_PATH",
-            temp_dir.path().join(".ccpm").join("config.toml"),
+            "AGPM_CONFIG_PATH",
+            temp_dir.path().join(".agpm").join("config.toml"),
         );
     }
 
     // Read cache and verify it's old
     let cache_content = tokio::fs::read_to_string(&cache_path).await?;
-    let loaded: ccpm::upgrade::version_check::VersionCheckCache =
+    let loaded: agpm::upgrade::version_check::VersionCheckCache =
         serde_json::from_str(&cache_content)?;
 
     // Verify the cache has old timestamp
@@ -363,7 +363,7 @@ async fn test_version_cache_expiry() -> Result<()> {
 
     // Clean up environment
     unsafe {
-        std::env::remove_var("CCPM_CONFIG_PATH");
+        std::env::remove_var("AGPM_CONFIG_PATH");
     }
 
     Ok(())
@@ -375,8 +375,8 @@ async fn test_backup_permission_preservation() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let temp_dir = TempDir::new()?;
-    let binary_path = temp_dir.path().join("ccpm");
-    let backup_path = temp_dir.path().join("ccpm.backup");
+    let binary_path = temp_dir.path().join("agpm");
+    let backup_path = temp_dir.path().join("agpm.backup");
 
     // Create file with specific permissions
     fs::write(&binary_path, b"content").await?;

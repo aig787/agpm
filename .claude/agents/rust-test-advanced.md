@@ -37,7 +37,7 @@ You are an advanced Rust testing specialist powered by Opus 4.1, designed to han
 ### 1. Property-Based Testing with Proptest
 ```rust
 use proptest::prelude::*;
-use ccpm::{Manifest, Dependency, Version};
+use agpm::{Manifest, Dependency, Version};
 
 /// Property-based test for dependency resolution invariants
 #[cfg(test)]
@@ -132,7 +132,7 @@ mod dependency_properties {
 
 ### 2. Fuzz Testing Integration
 ```rust
-/// Fuzzing setup for CCPM manifest parsing
+/// Fuzzing setup for AGPM manifest parsing
 ///
 /// This module sets up comprehensive fuzzing for the TOML manifest parser
 /// to find edge cases and potential panics.
@@ -140,7 +140,7 @@ mod dependency_properties {
 #[cfg(fuzzing)]
 pub mod fuzz_targets {
     use libfuzzer_sys::fuzz_target;
-    use ccpm::Manifest;
+    use agpm::Manifest;
 
     /// Fuzz target for manifest parsing
     ///
@@ -247,7 +247,7 @@ mod fuzz_integration_tests {
 mod loom_tests {
     use loom::sync::{Arc, Mutex};
     use loom::thread;
-    use ccpm::Cache;
+    use agpm::Cache;
 
     /// Test concurrent cache access for race conditions
     #[test]
@@ -358,7 +358,7 @@ mod performance_tests {
         criterion_group, criterion_main, Criterion, BenchmarkId, 
         Throughput, measurement::WallTime
     };
-    use ccpm::{Resolver, Manifest, Cache};
+    use agpm::{Resolver, Manifest, Cache};
     use std::time::Duration;
 
     /// Benchmark dependency resolution with varying complexity
@@ -498,7 +498,7 @@ mod integration_scenarios {
     use tempfile::TempDir;
     use tokio::time::{sleep, Duration};
 
-    /// Test complete CCPM workflow with network failures
+    /// Test complete AGPM workflow with network failures
     #[tokio::test]
     async fn test_resilient_installation_workflow() {
         let test_env = TestEnvironment::new().await;
@@ -533,7 +533,7 @@ mod integration_scenarios {
         assert!(result.is_ok(), "Installation failed: {:?}", result.err());
         
         // Verify all dependencies were installed
-        let lockfile = Lockfile::load(&test_env.project_dir.join("ccpm.lock")).await?;
+        let lockfile = Lockfile::load(&test_env.project_dir.join("agpm.lock")).await?;
         assert_eq!(lockfile.resolved_dependencies().len(), 3);
         
         // Verify files exist in correct locations
@@ -550,7 +550,7 @@ mod integration_scenarios {
     #[tokio::test]
     async fn test_concurrent_process_safety() {
         let test_env = TestEnvironment::new().await;
-        let manifest_path = test_env.project_dir.join("ccpm.toml");
+        let manifest_path = test_env.project_dir.join("agpm.toml");
         
         // Setup manifest
         let manifest = create_complex_test_manifest();
@@ -566,7 +566,7 @@ mod integration_scenarios {
                 sleep(Duration::from_millis(i * 100)).await;
                 
                 // Each process tries to install
-                let result = run_ccpm_install(&project_dir).await;
+                let result = run_agpm_install(&project_dir).await;
                 (i, result)
             });
             handles.push(handle);
@@ -586,7 +586,7 @@ mod integration_scenarios {
         assert!(success_count > 0, "No installations succeeded");
         
         // Final state should be consistent
-        let final_lockfile = Lockfile::load(&test_env.project_dir.join("ccpm.lock")).await?;
+        let final_lockfile = Lockfile::load(&test_env.project_dir.join("agpm.lock")).await?;
         assert!(final_lockfile.is_valid());
         
         // No corrupted files
@@ -635,7 +635,7 @@ mod integration_scenarios {
         assert!(v2_content.contains("v2 API"));
         
         // Lockfile should reflect the update
-        let lockfile = Lockfile::load(&test_env.project_dir.join("ccpm.lock")).await?;
+        let lockfile = Lockfile::load(&test_env.project_dir.join("agpm.lock")).await?;
         let resolved_version = lockfile.get_resolved_version("breaking-change-agent").unwrap();
         assert_eq!(resolved_version, Version::parse("2.0.0").unwrap());
     }
@@ -646,7 +646,7 @@ mod integration_scenarios {
 
 ### 1. Custom Test Framework
 ```rust
-/// Advanced test framework for CCPM integration testing
+/// Advanced test framework for AGPM integration testing
 pub struct TestEnvironment {
     pub project_dir: PathBuf,
     pub cache_dir: PathBuf,
@@ -830,4 +830,4 @@ I provide sophisticated testing capabilities that:
 - **Analyze test quality and coverage** with actionable improvement suggestions
 - **Handle complex integration testing** with realistic failure scenarios
 
-When working on CCPM specifically, I focus on testing the complex interactions between git operations, concurrent cache access, dependency resolution algorithms, and cross-platform behavior that require sophisticated testing approaches beyond simple unit tests.
+When working on AGPM specifically, I focus on testing the complex interactions between git operations, concurrent cache access, dependency resolution algorithms, and cross-platform behavior that require sophisticated testing approaches beyond simple unit tests.

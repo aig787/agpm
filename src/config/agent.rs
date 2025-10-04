@@ -1,13 +1,13 @@
 //! Agent and snippet configuration structures.
 //!
-//! This module defines the configuration structures for CCPM resources (agents and snippets).
+//! This module defines the configuration structures for AGPM resources (agents and snippets).
 //! These structures can be used standalone or embedded as frontmatter in Markdown files.
 //! The configuration system supports rich metadata, dependency management, and platform-specific
 //! requirements.
 //!
 //! # Resource Types
 //!
-//! CCPM supports two main types of resources:
+//! AGPM supports two main types of resources:
 //!
 //! ## Agents
 //!
@@ -38,14 +38,14 @@
 //! [metadata]
 //! name = "rust-expert"
 //! description = "Expert Rust development agent"
-//! author = "CCPM Community"
+//! author = "AGPM Community"
 //! license = "MIT"
-//! homepage = "https://github.com/ccpm-community/rust-expert"
+//! homepage = "https://github.com/agpm-community/rust-expert"
 //! keywords = ["rust", "programming", "expert", "development"]
 //! categories = ["development", "programming-languages"]
 //!
 //! [requirements]
-//! ccpm_version = ">=0.1.0"
+//! agpm_version = ">=0.1.0"
 //! claude_version = "latest"
 //! platforms = ["windows", "macos", "linux"]
 //!
@@ -74,7 +74,7 @@
 //! keywords = ["python", "expert", "development"]
 //!
 //! [requirements]
-//! ccpm_version = ">=0.1.0"
+//! agpm_version = ">=0.1.0"
 //! +++
 //!
 //! # Python Expert Agent
@@ -154,7 +154,7 @@
 //! ## Loading Agent Configuration
 //!
 //! ```rust,no_run
-//! use ccpm::config::AgentManifest;
+//! use agpm::config::AgentManifest;
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -174,7 +174,7 @@
 //! ## Creating Default Configuration
 //!
 //! ```rust,ignore
-//! use ccpm::config::create_agent_manifest;
+//! use agpm::config::create_agent_manifest;
 //!
 //! let manifest = create_agent_manifest(
 //!     "my-agent".to_string(),
@@ -192,7 +192,7 @@ use std::path::Path;
 
 /// Agent configuration manifest.
 ///
-/// Represents the complete configuration for a CCPM agent, including metadata,
+/// Represents the complete configuration for a AGPM agent, including metadata,
 /// requirements, and custom configuration. This structure can be loaded from
 /// standalone TOML files or extracted from Markdown frontmatter.
 ///
@@ -207,7 +207,7 @@ use std::path::Path;
 /// ## Minimal Agent
 ///
 /// ```rust,no_run
-/// use ccpm::config::{AgentManifest, AgentMetadata};
+/// use agpm::config::{AgentManifest, AgentMetadata};
 /// use std::collections::HashMap;
 ///
 /// let manifest = AgentManifest {
@@ -229,7 +229,7 @@ use std::path::Path;
 /// ## Loading from File
 ///
 /// ```rust,no_run
-/// use ccpm::config::AgentManifest;
+/// use agpm::config::AgentManifest;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -286,7 +286,7 @@ impl AgentManifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::AgentManifest;
+    /// use agpm::config::AgentManifest;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -436,9 +436,9 @@ pub enum SnippetContent {
 /// Requirements and dependencies
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Requirements {
-    /// Minimum CCPM version required
+    /// Minimum AGPM version required
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ccpm_version: Option<String>,
+    pub agpm_version: Option<String>,
 
     /// Required Claude version/features
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_requirements() {
         let req = Requirements {
-            ccpm_version: Some(">=0.1.0".to_string()),
+            agpm_version: Some(">=0.1.0".to_string()),
             claude_version: Some("latest".to_string()),
             dependencies: vec![Dependency {
                 name: "dep1".to_string(),
@@ -615,7 +615,7 @@ mod tests {
             platforms: Some(vec!["windows".to_string(), "macos".to_string()]),
         };
 
-        assert_eq!(req.ccpm_version, Some(">=0.1.0".to_string()));
+        assert_eq!(req.agpm_version, Some(">=0.1.0".to_string()));
         assert_eq!(req.dependencies.len(), 1);
         assert_eq!(req.platforms.as_ref().unwrap().len(), 2);
     }

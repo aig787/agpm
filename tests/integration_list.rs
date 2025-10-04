@@ -21,13 +21,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -58,11 +58,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("my-agent")
@@ -77,11 +77,11 @@ async fn test_list_no_lockfile() {
     let manifest_content = ManifestFixture::basic().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("No installed resources")
-            || output.stdout.contains("ccpm.lock not found"),
+            || output.stdout.contains("agpm.lock not found"),
         "Expected no resources message, got: {}",
         output.stdout
     );
@@ -92,10 +92,10 @@ async fn test_list_no_lockfile() {
 async fn test_list_without_project() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("ccpm.toml not found"),
+        output.stderr.contains("agpm.toml not found"),
         "Expected manifest not found error, got: {}",
         output.stderr
     );
@@ -121,11 +121,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--format", "table"]).unwrap();
+    let output = project.run_agpm(&["list", "--format", "table"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("Name")
@@ -155,11 +155,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--format", "json"]).unwrap();
+    let output = project.run_agpm(&["list", "--format", "json"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("{"));
     assert!(output.stdout.contains("\"name\""));
@@ -188,11 +188,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--format", "yaml"]).unwrap();
+    let output = project.run_agpm(&["list", "--format", "yaml"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("name:"));
     assert!(output.stdout.contains("version:"));
@@ -213,13 +213,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -250,11 +250,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--format", "compact"]).unwrap();
+    let output = project.run_agpm(&["list", "--format", "compact"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("my-agent")
@@ -275,13 +275,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -312,11 +312,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--type", "agents"]).unwrap();
+    let output = project.run_agpm(&["list", "--type", "agents"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
     assert!(output.stdout.contains("helper"));
@@ -336,13 +336,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -373,11 +373,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--type", "snippets"]).unwrap();
+    let output = project.run_agpm(&["list", "--type", "snippets"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("utils"));
     assert!(!output.stdout.contains("my-agent")); // my-agent is an agent
@@ -397,13 +397,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -434,11 +434,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--source", "official"]).unwrap();
+    let output = project.run_agpm(&["list", "--source", "official"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
     assert!(output.stdout.contains("utils"));
@@ -458,13 +458,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -495,11 +495,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--search", "agent"]).unwrap();
+    let output = project.run_agpm(&["list", "--search", "agent"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
     assert!(!output.stdout.contains("utils"));
@@ -518,13 +518,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -555,11 +555,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--detailed"]).unwrap();
+    let output = project.run_agpm(&["list", "--detailed"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
     assert!(output.stdout.contains("Path:") || output.stdout.contains("agents/my-agent.md"));
@@ -579,13 +579,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -616,7 +616,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
@@ -636,7 +636,7 @@ installed_at = "snippets/utils.md"
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--files"]).unwrap();
+    let output = project.run_agpm(&["list", "--files"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("agents/my-agent.md") || output.stdout.contains("my-agent"));
     assert!(output.stdout.contains("agents/helper.md") || output.stdout.contains("helper"));
@@ -663,11 +663,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--sort", "name"]).unwrap();
+    let output = project.run_agpm(&["list", "--sort", "name"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
 }
@@ -692,11 +692,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--sort", "version"]).unwrap();
+    let output = project.run_agpm(&["list", "--sort", "version"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
 }
@@ -721,11 +721,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--sort", "source"]).unwrap();
+    let output = project.run_agpm(&["list", "--sort", "source"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("my-agent"));
 }
@@ -743,7 +743,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -770,11 +770,11 @@ version = "local"
 checksum = "sha256:local987654321fedcba987654321fedcba987654321fedcba"
 installed_at = "snippets/local-utils.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("local-agent"));
     assert!(output.stdout.contains("local-utils"));
@@ -784,7 +784,7 @@ installed_at = "snippets/local-utils.md"
 /// Test list help command
 #[tokio::test]
 async fn test_list_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("list")
         .arg("--help")
         .assert()
@@ -807,7 +807,7 @@ async fn test_list_empty_project() {
 
     // Create minimal manifest with no dependencies
     let minimal_manifest = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 "#;
     project.write_manifest(minimal_manifest).await.unwrap();
 
@@ -815,11 +815,11 @@ official = "https://github.com/example-org/ccpm-official.git"
     let empty_lockfile = r#"# Auto-generated lockfile - DO NOT EDIT
 version = 1
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), empty_lockfile)
+    fs::write(project.project_path().join("agpm.lock"), empty_lockfile)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     assert!(output.success);
     assert!(
         output.stdout.contains("No installed resources") || output.stdout.contains("Empty project"),
@@ -837,13 +837,13 @@ async fn test_list_corrupted_lockfile() {
 
     // Create corrupted lockfile
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         "corrupted content",
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["list"]).unwrap();
+    let output = project.run_agpm(&["list"]).unwrap();
     assert!(!output.success);
     assert!(
         output.stderr.contains("Invalid lockfile syntax")
@@ -873,11 +873,11 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["list", "--format", "invalid"]).unwrap();
+    let output = project.run_agpm(&["list", "--format", "invalid"]).unwrap();
     assert!(!output.success);
     assert!(output.stderr.contains("Invalid format") || output.stderr.contains("invalid"));
 }

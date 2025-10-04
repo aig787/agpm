@@ -20,7 +20,7 @@ use std::path::Path;
 /// ```no_run
 /// # use anyhow::{Context, Result};
 /// # fn example() -> Result<()> {
-/// use ccpm::core::error_builders::file_error_context;
+/// use agpm::core::error_builders::file_error_context;
 /// use std::fs;
 /// use std::path::Path;
 ///
@@ -31,10 +31,10 @@ use std::path::Path;
 /// # }
 /// ```
 pub fn file_error_context(operation: &str, path: &Path) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::FileSystemError {
+        error: AgpmError::FileSystemError {
             operation: operation.to_string(),
             path: path.display().to_string(),
         },
@@ -63,17 +63,17 @@ pub fn file_error_context(operation: &str, path: &Path) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::git_error_context;
+/// use agpm::core::error_builders::git_error_context;
 ///
 /// let context = git_error_context("clone", Some("https://github.com/user/repo.git"));
 /// ```
 pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::GitCommandError {
+        error: AgpmError::GitCommandError {
             operation: command.to_string(),
-            stderr: format!("Git {} operation failed", command),
+            stderr: format!("Git {command} operation failed"),
         },
         suggestion: match command {
             "clone" => {
@@ -86,7 +86,7 @@ pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
             "status" => Some("Ensure you're in a valid git repository".to_string()),
             _ => Some("Check that git is installed and accessible".to_string()),
         },
-        details: repo.map(|r| format!("Repository: {}", r)),
+        details: repo.map(|r| format!("Repository: {r}")),
     }
 }
 
@@ -100,38 +100,38 @@ pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::manifest_error_context;
+/// use agpm::core::error_builders::manifest_error_context;
 ///
 /// let context = manifest_error_context("parse", Some("Invalid TOML syntax at line 5"));
 /// ```
 pub fn manifest_error_context(operation: &str, details: Option<&str>) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     let error = match operation {
-        "load" => CcpmError::ManifestNotFound,
-        "parse" => CcpmError::ManifestParseError {
-            file: "ccpm.toml".to_string(),
+        "load" => AgpmError::ManifestNotFound,
+        "parse" => AgpmError::ManifestParseError {
+            file: "agpm.toml".to_string(),
             reason: details.unwrap_or("Invalid TOML syntax").to_string(),
         },
-        "validate" => CcpmError::ManifestValidationError {
+        "validate" => AgpmError::ManifestValidationError {
             reason: details.unwrap_or("Validation failed").to_string(),
         },
-        _ => CcpmError::Other {
-            message: format!("Manifest operation '{}' failed", operation),
+        _ => AgpmError::Other {
+            message: format!("Manifest operation '{operation}' failed"),
         },
     };
 
     ErrorContext {
         error,
         suggestion: match operation {
-            "load" => Some("Check that ccpm.toml exists in the project directory".to_string()),
-            "parse" => Some("Check that ccpm.toml contains valid TOML syntax".to_string()),
+            "load" => Some("Check that agpm.toml exists in the project directory".to_string()),
+            "parse" => Some("Check that agpm.toml contains valid TOML syntax".to_string()),
             "validate" => {
                 Some("Ensure all required fields are present in the manifest".to_string())
             }
             _ => None,
         },
-        details: details.map(|d| d.to_string()),
+        details: details.map(std::string::ToString::to_string),
     }
 }
 
@@ -145,19 +145,19 @@ pub fn manifest_error_context(operation: &str, details: Option<&str>) -> ErrorCo
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::dependency_error_context;
+/// use agpm::core::error_builders::dependency_error_context;
 ///
 /// let context = dependency_error_context("my-agent", "Version conflict with existing dependency");
 /// ```
 pub fn dependency_error_context(dependency: &str, reason: &str) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::InvalidDependency {
+        error: AgpmError::InvalidDependency {
             name: dependency.to_string(),
             reason: reason.to_string(),
         },
-        suggestion: Some("Try running 'ccpm update' to update dependencies".to_string()),
+        suggestion: Some("Try running 'agpm update' to update dependencies".to_string()),
         details: Some(reason.to_string()),
     }
 }
@@ -172,20 +172,20 @@ pub fn dependency_error_context(dependency: &str, reason: &str) -> ErrorContext 
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::network_error_context;
+/// use agpm::core::error_builders::network_error_context;
 ///
 /// let context = network_error_context("fetch", Some("https://api.example.com"));
 /// ```
 pub fn network_error_context(operation: &str, url: Option<&str>) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::NetworkError {
+        error: AgpmError::NetworkError {
             operation: operation.to_string(),
-            reason: format!("Network {} failed", operation),
+            reason: format!("Network {operation} failed"),
         },
         suggestion: Some("Check your internet connection and try again".to_string()),
-        details: url.map(|u| format!("URL: {}", u)),
+        details: url.map(|u| format!("URL: {u}")),
     }
 }
 
@@ -199,20 +199,20 @@ pub fn network_error_context(operation: &str, url: Option<&str>) -> ErrorContext
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::config_error_context;
+/// use agpm::core::error_builders::config_error_context;
 ///
 /// let context = config_error_context("global", "Missing authentication token");
 /// ```
 pub fn config_error_context(config_type: &str, issue: &str) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::ConfigError {
-            message: format!("Configuration error in {} config: {}", config_type, issue),
+        error: AgpmError::ConfigError {
+            message: format!("Configuration error in {config_type} config: {issue}"),
         },
         suggestion: match config_type {
-            "global" => Some("Check ~/.ccpm/config.toml for correct settings".to_string()),
-            "project" => Some("Check ccpm.toml in your project directory".to_string()),
+            "global" => Some("Check ~/.agpm/config.toml for correct settings".to_string()),
+            "project" => Some("Check agpm.toml in your project directory".to_string()),
             "mcp" => Some("Check .mcp.json for valid MCP server configurations".to_string()),
             _ => None,
         },
@@ -230,21 +230,20 @@ pub fn config_error_context(config_type: &str, issue: &str) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use ccpm::core::error_builders::permission_error_context;
+/// use agpm::core::error_builders::permission_error_context;
 ///
 /// let context = permission_error_context("/usr/local/bin", "write");
 /// ```
 pub fn permission_error_context(resource: &str, operation: &str) -> ErrorContext {
-    use crate::core::CcpmError;
+    use crate::core::AgpmError;
 
     ErrorContext {
-        error: CcpmError::PermissionDenied {
+        error: AgpmError::PermissionDenied {
             operation: operation.to_string(),
             path: resource.to_string(),
         },
         suggestion: Some(format!(
-            "Check that you have {} permissions for: {}",
-            operation, resource
+            "Check that you have {operation} permissions for: {resource}"
         )),
         details: if cfg!(windows) {
             Some("On Windows, you may need to run as Administrator".to_string())
@@ -302,10 +301,10 @@ where
 /// # Example
 ///
 /// ```
-/// use ccpm::{error_context, core::CcpmError};
+/// use agpm::{error_context, core::AgpmError};
 ///
 /// let context = error_context! {
-///     error: CcpmError::Other { message: "Operation failed".to_string() },
+///     error: AgpmError::Other { message: "Operation failed".to_string() },
 ///     suggestion: "Try again later",
 ///     details: "Additional information"
 /// };
@@ -351,7 +350,7 @@ mod tests {
         let context = file_error_context("read", Path::new("/tmp/test.txt"));
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::FileSystemError { .. }
+            crate::core::AgpmError::FileSystemError { .. }
         ));
         assert!(context.suggestion.is_some());
         assert!(context.details.unwrap().contains("/tmp/test.txt"));
@@ -362,7 +361,7 @@ mod tests {
         let context = git_error_context("clone", Some("https://github.com/test/repo"));
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::GitCommandError { .. }
+            crate::core::AgpmError::GitCommandError { .. }
         ));
         assert!(context.suggestion.unwrap().contains("network"));
         assert!(context.details.unwrap().contains("github.com"));
@@ -370,14 +369,14 @@ mod tests {
 
     #[test]
     fn test_error_context_macro() {
-        use crate::core::CcpmError;
+        use crate::core::AgpmError;
 
         let context = error_context! {
-            error: CcpmError::Other { message: "Test error".to_string() },
+            error: AgpmError::Other { message: "Test error".to_string() },
             suggestion: "Test suggestion",
             details: "Test details"
         };
-        assert!(matches!(context.error, CcpmError::Other { .. }));
+        assert!(matches!(context.error, AgpmError::Other { .. }));
         assert_eq!(context.suggestion.unwrap(), "Test suggestion");
         assert_eq!(context.details.unwrap(), "Test details");
     }
@@ -387,7 +386,7 @@ mod tests {
         let context = permission_error_context("/usr/local", "write");
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::PermissionDenied { .. }
+            crate::core::AgpmError::PermissionDenied { .. }
         ));
         assert!(context.suggestion.unwrap().contains("write permissions"));
         assert!(context.details.is_some());
@@ -399,15 +398,15 @@ mod tests {
         let context = manifest_error_context("load", None);
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::ManifestNotFound
+            crate::core::AgpmError::ManifestNotFound
         ));
-        assert!(context.suggestion.unwrap().contains("ccpm.toml exists"));
+        assert!(context.suggestion.unwrap().contains("agpm.toml exists"));
 
         // Test parse operation with details
         let context = manifest_error_context("parse", Some("Syntax error at line 10"));
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::ManifestParseError { .. }
+            crate::core::AgpmError::ManifestParseError { .. }
         ));
         assert!(context.suggestion.unwrap().contains("valid TOML syntax"));
         assert_eq!(context.details.unwrap(), "Syntax error at line 10");
@@ -416,7 +415,7 @@ mod tests {
         let context = manifest_error_context("validate", Some("Missing required field"));
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::ManifestValidationError { .. }
+            crate::core::AgpmError::ManifestValidationError { .. }
         ));
         assert!(context.suggestion.unwrap().contains("required fields"));
         assert_eq!(context.details.unwrap(), "Missing required field");
@@ -425,7 +424,7 @@ mod tests {
         let context = manifest_error_context("unknown", None);
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::Other { .. }
+            crate::core::AgpmError::Other { .. }
         ));
         assert!(context.suggestion.is_none());
     }
@@ -435,9 +434,9 @@ mod tests {
         let context = dependency_error_context("test-agent", "Version not found");
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::InvalidDependency { .. }
+            crate::core::AgpmError::InvalidDependency { .. }
         ));
-        assert!(context.suggestion.unwrap().contains("ccpm update"));
+        assert!(context.suggestion.unwrap().contains("agpm update"));
         assert_eq!(context.details.unwrap(), "Version not found");
     }
 
@@ -446,7 +445,7 @@ mod tests {
         let context = network_error_context("download", Some("https://example.com/file"));
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::NetworkError { .. }
+            crate::core::AgpmError::NetworkError { .. }
         ));
         assert!(context.suggestion.unwrap().contains("internet connection"));
         assert!(context.details.unwrap().contains("example.com"));
@@ -458,13 +457,13 @@ mod tests {
         let context = config_error_context("global", "Invalid format");
         assert!(matches!(
             context.error,
-            crate::core::CcpmError::ConfigError { .. }
+            crate::core::AgpmError::ConfigError { .. }
         ));
-        assert!(context.suggestion.unwrap().contains("~/.ccpm/config.toml"));
+        assert!(context.suggestion.unwrap().contains("~/.agpm/config.toml"));
 
         // Test project config
         let context = config_error_context("project", "Missing dependency");
-        assert!(context.suggestion.unwrap().contains("ccpm.toml"));
+        assert!(context.suggestion.unwrap().contains("agpm.toml"));
 
         // Test MCP config
         let context = config_error_context("mcp", "Invalid server");
@@ -569,18 +568,18 @@ mod tests {
 
     #[test]
     fn test_error_context_macro_variants() {
-        use crate::core::CcpmError;
+        use crate::core::AgpmError;
 
         // Test with error only
         let context = error_context! {
-            error: CcpmError::Other { message: "Error only".to_string() }
+            error: AgpmError::Other { message: "Error only".to_string() }
         };
         assert!(context.suggestion.is_none());
         assert!(context.details.is_none());
 
         // Test with error and suggestion
         let context = error_context! {
-            error: CcpmError::Other { message: "Error".to_string() },
+            error: AgpmError::Other { message: "Error".to_string() },
             suggestion: "Do this"
         };
         assert_eq!(context.suggestion.unwrap(), "Do this");
@@ -588,7 +587,7 @@ mod tests {
 
         // Test with error and details
         let context = error_context! {
-            error: CcpmError::Other { message: "Error".to_string() },
+            error: AgpmError::Other { message: "Error".to_string() },
             details: "More info"
         };
         assert!(context.suggestion.is_none());

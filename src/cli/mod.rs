@@ -1,4 +1,4 @@
-//! Command-line interface for CCPM (Claude Code Package Manager).
+//! Command-line interface for AGPM (Claude Code Package Manager).
 //!
 //! This module contains all CLI command implementations for the Claude Code Package Manager.
 //! The CLI provides a comprehensive set of commands for managing Claude Code resources,
@@ -16,7 +16,7 @@
 //! # Available Commands
 //!
 //! ## Project Management
-//! - `init` - Initialize a new CCPM project with a manifest file
+//! - `init` - Initialize a new AGPM project with a manifest file
 //! - `add` - Add sources and dependencies to the project manifest
 //! - `remove` - Remove sources and dependencies from the project manifest  
 //! - `install` - Install dependencies from the manifest
@@ -31,57 +31,57 @@
 //! ## System Management
 //! - `cache` - Manage the global Git repository cache
 //! - `config` - Manage global configuration settings
-//! - `upgrade` - Upgrade CCPM to newer versions with backup support
+//! - `upgrade` - Upgrade AGPM to newer versions with backup support
 //!
 //! # Command Usage Patterns
 //!
 //! ## Basic Workflow
 //! ```bash
 //! # 1. Initialize a new project
-//! ccpm init
+//! agpm init
 //!
 //! # 2. Add sources and dependencies
-//! ccpm add source official https://github.com/org/ccpm-resources.git
-//! ccpm add dep official:agents/code-reviewer.md@v1.0.0 --agent
+//! agpm add source official https://github.com/org/agpm-resources.git
+//! agpm add dep official:agents/code-reviewer.md@v1.0.0 --agent
 //!
 //! # 3. Install dependencies
-//! ccpm install
+//! agpm install
 //!
 //! # 4. List what's installed
-//! ccpm list
+//! agpm list
 //! ```
 //!
 //! ## Maintenance Operations
 //! ```bash
 //! # Check for available updates
-//! ccpm outdated
+//! agpm outdated
 //!
 //! # Validate project configuration
-//! ccpm validate --resolve --sources
+//! agpm validate --resolve --sources
 //!
 //! # Update dependencies
-//! ccpm update
+//! agpm update
 //!
 //! # Manage cache
-//! ccpm cache clean
+//! agpm cache clean
 //!
 //! # Configure global settings
-//! ccpm config add-source private https://oauth2:TOKEN@github.com/org/private.git
+//! agpm config add-source private https://oauth2:TOKEN@github.com/org/private.git
 //!
-//! # Check for and install CCPM updates
-//! ccpm upgrade --check     # Check for updates
-//! ccpm upgrade             # Upgrade to latest
-//! ccpm upgrade --rollback  # Restore previous version
+//! # Check for and install AGPM updates
+//! agpm upgrade --check     # Check for updates
+//! agpm upgrade             # Upgrade to latest
+//! agpm upgrade --rollback  # Restore previous version
 //! ```
 //!
 //! # Global vs Project Configuration
 //!
-//! CCPM uses two types of configuration:
+//! AGPM uses two types of configuration:
 //!
 //! | Type | File | Purpose | Version Control |
 //! |------|------|---------|----------------|
-//! | Project | `ccpm.toml` | Define dependencies | ✅ Commit |
-//! | Global | `~/.ccpm/config.toml` | Authentication tokens | ❌ Never commit |
+//! | Project | `agpm.toml` | Define dependencies | ✅ Commit |
+//! | Global | `~/.agpm/config.toml` | Authentication tokens | ❌ Never commit |
 //!
 //! # Cross-Platform Support
 //!
@@ -106,13 +106,13 @@
 //!
 //! ```bash
 //! # Initialize a new project
-//! ccpm init --with-examples
+//! agpm init --with-examples
 //!
 //! # Install dependencies
-//! ccpm install --verbose
+//! agpm install --verbose
 //!
 //! # Update dependencies
-//! ccpm update --no-progress
+//! agpm update --no-progress
 //! ```
 
 mod add;
@@ -122,13 +122,14 @@ mod config;
 mod init;
 mod install;
 mod list;
+mod migrate;
 mod outdated;
 mod remove;
 mod tree;
 mod update;
-/// Self-update functionality for upgrading CCPM to newer versions.
+/// Self-update functionality for upgrading AGPM to newer versions.
 ///
-/// This module provides the `upgrade` command which enables CCPM to update itself
+/// This module provides the `upgrade` command which enables AGPM to update itself
 /// by downloading and installing new versions from GitHub releases. It includes
 /// safety features like automatic backups and rollback capabilities.
 ///
@@ -170,7 +171,7 @@ use std::path::PathBuf;
 pub struct CliConfig {
     /// Log level for the `RUST_LOG` environment variable.
     ///
-    /// Controls the verbosity of logging output throughout CCPM. Common values:
+    /// Controls the verbosity of logging output throughout AGPM. Common values:
     /// - `"error"`: Only errors are logged
     /// - `"warn"`: Errors and warnings
     /// - `"info"`: Errors, warnings, and informational messages
@@ -182,7 +183,7 @@ pub struct CliConfig {
 
     /// Whether to disable progress indicators and animated output.
     ///
-    /// When `true`, sets the `CCPM_NO_PROGRESS` environment variable to disable:
+    /// When `true`, sets the `AGPM_NO_PROGRESS` environment variable to disable:
     /// - Progress bars during long operations
     /// - Spinner animations
     /// - Real-time status updates
@@ -195,8 +196,8 @@ pub struct CliConfig {
 
     /// Custom path to the global configuration file.
     ///
-    /// When specified, sets the `CCPM_CONFIG` environment variable to override
-    /// the default configuration file location (`~/.ccpm/config.toml`).
+    /// When specified, sets the `AGPM_CONFIG` environment variable to override
+    /// the default configuration file location (`~/.agpm/config.toml`).
     ///
     /// This enables:
     /// - Testing with isolated configuration files
@@ -216,7 +217,7 @@ impl CliConfig {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::CliConfig;
+    /// use agpm::cli::CliConfig;
     ///
     /// let config = CliConfig::new();
     /// assert_eq!(config.log_level, None);
@@ -229,7 +230,7 @@ impl CliConfig {
     }
 }
 
-/// Main CLI structure for CCPM (Claude Code Package Manager).
+/// Main CLI structure for AGPM (Claude Code Package Manager).
 ///
 /// This struct represents the root command and all its global options. It uses the
 /// `clap` derive API to automatically generate command-line parsing, help text, and
@@ -254,13 +255,13 @@ impl CliConfig {
 ///
 /// ```bash
 /// # Basic command with global options
-/// ccpm --verbose install
-/// ccpm --quiet --no-progress list
-/// ccpm --config ./custom.toml validate
+/// agpm --verbose install
+/// agpm --quiet --no-progress list
+/// agpm --config ./custom.toml validate
 ///
 /// # Global options work with any subcommand
-/// ccpm --verbose install
-/// ccpm --quiet cache clean
+/// agpm --verbose install
+/// agpm --quiet cache clean
 /// ```
 ///
 /// # Subcommand Structure
@@ -278,23 +279,23 @@ impl CliConfig {
 /// - Global and project-specific configuration files
 /// - Cross-platform file system operations
 ///
-/// # Main CLI application structure for CCPM
+/// # Main CLI application structure for AGPM
 ///
 /// This struct represents the top-level command-line interface for the Claude Code
 /// Package Manager. It handles global flags and delegates to subcommands for
 /// specific operations.
 #[derive(Parser)]
 #[command(
-    name = "ccpm",
+    name = "agpm",
     about = "Claude Code Package Manager - Manage Claude Code resources",
     version,
     author,
-    long_about = "CCPM is a Git-based package manager for Claude Code resources including agents, snippets, and more."
+    long_about = "AGPM is a Git-based package manager for Claude Code resources including agents, snippets, and more."
 )]
 pub struct Cli {
     /// The subcommand to execute.
     ///
-    /// Each subcommand provides a specific functionality area within CCPM.
+    /// Each subcommand provides a specific functionality area within AGPM.
     /// The available commands are defined in the [`Commands`] enum.
     #[command(subcommand)]
     command: Commands,
@@ -313,8 +314,8 @@ pub struct Cli {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm --verbose install     # Verbose installation
-    /// ccpm -v update             # Short form
+    /// agpm --verbose install     # Verbose installation
+    /// agpm -v update             # Short form
     /// ```
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -332,16 +333,16 @@ pub struct Cli {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm --quiet install       # Silent installation
-    /// ccpm -q list               # Short form
-    /// ccpm --quiet cache clean   # Automated cache cleanup
+    /// agpm --quiet install       # Silent installation
+    /// agpm -q list               # Short form
+    /// agpm --quiet cache clean   # Automated cache cleanup
     /// ```
     #[arg(short, long, global = true)]
     quiet: bool,
 
     /// Path to custom global configuration file.
     ///
-    /// Overrides the default configuration file location (`~/.ccpm/config.toml`)
+    /// Overrides the default configuration file location (`~/.agpm/config.toml`)
     /// with a custom path. This is useful for:
     ///
     /// - **Testing**: Using isolated configuration files
@@ -356,16 +357,16 @@ pub struct Cli {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm --config ./dev-config.toml install    # Custom config
-    /// ccpm -c ~/.ccpm/team-config.toml list      # Team config
-    /// ccpm --config /etc/ccpm/global.toml update # System config
+    /// agpm --config ./dev-config.toml install    # Custom config
+    /// agpm -c ~/.agpm/team-config.toml list      # Team config
+    /// agpm --config /etc/agpm/global.toml update # System config
     /// ```
     #[arg(short, long, global = true)]
     config: Option<String>,
 
-    /// Path to the manifest file (ccpm.toml).
+    /// Path to the manifest file (agpm.toml).
     ///
-    /// By default, CCPM searches for ccpm.toml in the current directory
+    /// By default, AGPM searches for agpm.toml in the current directory
     /// and parent directories. This option allows you to specify an exact
     /// path to the manifest file, which is useful for:
     ///
@@ -376,8 +377,8 @@ pub struct Cli {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm --manifest-path /path/to/ccpm.toml install
-    /// ccpm --manifest-path ../other-project/ccpm.toml list
+    /// agpm --manifest-path /path/to/agpm.toml install
+    /// agpm --manifest-path ../other-project/agpm.toml list
     /// ```
     #[arg(long, global = true)]
     manifest_path: Option<PathBuf>,
@@ -403,24 +404,24 @@ pub struct Cli {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm --no-progress install         # No animations
-    /// ccpm install 2>&1 | tee log.txt   # Auto-detected non-TTY
-    /// CI=true ccpm install               # CI environment
+    /// agpm --no-progress install         # No animations
+    /// agpm install 2>&1 | tee log.txt   # Auto-detected non-TTY
+    /// CI=true agpm install               # CI environment
     /// ```
     #[arg(long, global = true)]
     no_progress: bool,
 }
 
-/// Available subcommands for the CCPM CLI.
+/// Available subcommands for the AGPM CLI.
 ///
-/// This enum defines all the subcommands available in CCPM, organized by
+/// This enum defines all the subcommands available in AGPM, organized by
 /// functional categories. Each variant contains the specific command structure
 /// with its own arguments and options.
 ///
 /// # Command Categories
 ///
 /// ## Project Management
-/// - [`Init`](Commands::Init): Initialize new CCPM projects
+/// - [`Init`](Commands::Init): Initialize new AGPM projects
 /// - [`Add`](Commands::Add): Add sources and dependencies
 /// - [`Remove`](Commands::Remove): Remove sources and dependencies
 /// - [`Install`](Commands::Install): Install dependencies from manifest
@@ -434,7 +435,8 @@ pub struct Cli {
 /// ## System Management
 /// - [`Cache`](Commands::Cache): Manage Git repository cache
 /// - [`Config`](Commands::Config): Manage global configuration
-/// - [`Upgrade`](Commands::Upgrade): Self-update CCPM to newer versions
+/// - [`Upgrade`](Commands::Upgrade): Self-update AGPM to newer versions
+/// - [`Migrate`](Commands::Migrate): Migrate from legacy CCPM naming to AGPM
 ///
 /// # Command Execution
 ///
@@ -449,27 +451,28 @@ pub struct Cli {
 ///
 /// ```bash
 /// # Project setup and management
-/// ccpm init                    # Initialize new project
-/// ccpm add source official ... # Add a source repository
-/// ccpm install                 # Install all dependencies
-/// ccpm update                  # Update to latest versions
+/// agpm init                    # Initialize new project
+/// agpm add source official ... # Add a source repository
+/// agpm install                 # Install all dependencies
+/// agpm update                  # Update to latest versions
 ///
 /// # Information and validation
-/// ccpm list                    # Show installed resources
-/// ccpm outdated                # Check for available updates
-/// ccpm validate --resolve      # Comprehensive validation
+/// agpm list                    # Show installed resources
+/// agpm outdated                # Check for available updates
+/// agpm validate --resolve      # Comprehensive validation
 ///
 /// # System management
-/// ccpm cache info              # Show cache information
-/// ccpm config show             # Show configuration
+/// agpm cache info              # Show cache information
+/// agpm config show             # Show configuration
+/// agpm migrate                 # Migrate from CCPM to AGPM
 /// ```
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a new CCPM project with a manifest file.
+    /// Initialize a new AGPM project with a manifest file.
     ///
-    /// Creates a new `ccpm.toml` manifest file in the current directory with
+    /// Creates a new `agpm.toml` manifest file in the current directory with
     /// basic project structure and example configurations. This is the first
-    /// step in setting up a new CCPM project.
+    /// step in setting up a new AGPM project.
     ///
     /// See [`init::InitCommand`] for detailed options and behavior.
     Init(init::InitCommand),
@@ -478,7 +481,7 @@ enum Commands {
     ///
     /// Provides subcommands to add Git repository sources and resource
     /// dependencies (agents, snippets, commands, MCP servers) to the
-    /// `ccpm.toml` manifest file.
+    /// `agpm.toml` manifest file.
     ///
     /// See [`add::AddCommand`] for detailed options and behavior.
     Add(add::AddCommand),
@@ -487,16 +490,16 @@ enum Commands {
     ///
     /// Provides subcommands to remove Git repository sources and resource
     /// dependencies (agents, snippets, commands, MCP servers) from the
-    /// `ccpm.toml` manifest file.
+    /// `agpm.toml` manifest file.
     ///
     /// See [`remove::RemoveCommand`] for detailed options and behavior.
     Remove(remove::RemoveCommand),
 
     /// Install Claude Code resources from manifest dependencies.
     ///
-    /// Reads the `ccpm.toml` manifest, resolves all dependencies, downloads
+    /// Reads the `agpm.toml` manifest, resolves all dependencies, downloads
     /// resources from Git repositories, and installs them to the project
-    /// directory. Creates or updates the `ccpm.lock` lockfile.
+    /// directory. Creates or updates the `agpm.lock` lockfile.
     ///
     /// See [`install::InstallCommand`] for detailed options and behavior.
     Install(install::InstallCommand),
@@ -519,9 +522,9 @@ enum Commands {
     /// See [`outdated::OutdatedCommand`] for detailed options and behavior.
     Outdated(outdated::OutdatedCommand),
 
-    /// Upgrade CCPM to the latest version.
+    /// Upgrade AGPM to the latest version.
     ///
-    /// Downloads and installs the latest version of CCPM from GitHub releases.
+    /// Downloads and installs the latest version of AGPM from GitHub releases.
     /// Supports checking for updates, upgrading to specific versions, and
     /// rolling back to previous versions if needed.
     ///
@@ -546,7 +549,7 @@ enum Commands {
     /// See [`tree::TreeCommand`] for detailed options and behavior.
     Tree(tree::TreeCommand),
 
-    /// Validate CCPM project configuration and dependencies.
+    /// Validate AGPM project configuration and dependencies.
     ///
     /// Performs comprehensive validation of the project manifest, dependencies,
     /// source accessibility, and configuration consistency. Supports multiple
@@ -558,20 +561,27 @@ enum Commands {
     /// Manage the global Git repository cache.
     ///
     /// Provides operations for managing the global cache directory where
-    /// CCPM stores cloned Git repositories. Includes cache information,
+    /// AGPM stores cloned Git repositories. Includes cache information,
     /// cleanup, and size management.
     ///
     /// See [`cache::CacheCommand`] for detailed options and behavior.
     Cache(cache::CacheCommand),
 
-    /// Manage global CCPM configuration.
+    /// Manage global AGPM configuration.
     ///
     /// Provides operations for managing the global configuration file
-    /// (`~/.ccpm/config.toml`) which contains authentication tokens,
+    /// (`~/.agpm/config.toml`) which contains authentication tokens,
     /// default sources, and user preferences.
     ///
     /// See [`config::ConfigCommand`] for detailed options and behavior.
     Config(config::ConfigCommand),
+
+    /// Migrate from legacy CCPM naming to AGPM.
+    ///
+    /// Detects and renames ccpm.toml and ccpm.lock files to agpm.toml
+    /// and agpm.lock respectively. This is a one-time migration command
+    /// for projects upgrading from the legacy CCPM naming.
+    Migrate(migrate::MigrateCommand),
 }
 
 impl Cli {
@@ -595,7 +605,7 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::Cli;
+    /// use agpm::cli::Cli;
     /// use clap::Parser;
     ///
     /// # tokio_test::block_on(async {
@@ -634,10 +644,10 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::Cli;
+    /// use agpm::cli::Cli;
     /// use clap::Parser;
     ///
-    /// let cli = Cli::parse_from(&["ccpm", "--verbose", "install"]);
+    /// let cli = Cli::parse_from(&["agpm", "--verbose", "install"]);
     /// let config = cli.build_config();
     /// assert_eq!(config.log_level, Some("debug".to_string()));
     /// ```
@@ -690,11 +700,11 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::{Cli, CliConfig};
+    /// use agpm::cli::{Cli, CliConfig};
     /// use clap::Parser;
     ///
     /// # tokio_test::block_on(async {
-    /// let cli = Cli::parse_from(&["ccpm", "install"]);
+    /// let cli = Cli::parse_from(&["agpm", "install"]);
     /// let mut config = CliConfig::new();
     /// config.log_level = Some("trace".to_string());
     /// config.no_progress = true;
@@ -740,10 +750,11 @@ impl Cli {
                 let config_path = config.config_path.as_ref().map(PathBuf::from);
                 cmd.execute(config_path).await
             }
+            Commands::Migrate(cmd) => cmd.execute().await,
         }
     }
 
-    /// Check for CCPM updates automatically based on configuration.
+    /// Check for AGPM updates automatically based on configuration.
     ///
     /// This method performs a non-blocking, best-effort check for updates.
     /// It respects the user's configuration for automatic update checking

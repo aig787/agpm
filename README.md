@@ -1,9 +1,10 @@
-# CCPM - Claude Code Package Manager
+# AGPM - AGentic Package Manager
 
 > ⚠️ **Beta Software**: This project is in active development and may contain breaking changes. Use with caution in
 > production environments.
 
-A Git-based package manager for Claude Code resources that enables reproducible installations using lockfile-based
+A Git-based package manager for Claude Code and other agentic tools that enables reproducible installations using
+lockfile-based
 dependency management, similar to Cargo.
 
 ## Features
@@ -14,34 +15,30 @@ dependency management, similar to Cargo.
 - 🔒 **Cargo-style lockfile handling** - Auto-updates by default, strict validation with `--frozen`
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
-- 🧹 **Automatic artifact cleanup** - Old files removed when paths change
-- ⚠️ **Path conflict detection** - Prevents multiple dependencies from overwriting the same file
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
-- 🛡️ **Circular dependency detection** - Prevents circular references with comprehensive error reporting
-- 🧩 **Intelligent conflict resolution** - Automatic version resolution with transparent logging
 
 ## Quick Start
 
-### Install CCPM
+### Install AGPM
 
 **Using installer script (Recommended):**
 
 ```bash
 # Unix/Linux/macOS
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/aig787/agpm/releases/latest/download/agpm-installer.sh | sh
 
 # Windows PowerShell
-irm https://github.com/aig787/ccpm/releases/latest/download/ccpm-installer.ps1 | iex
+irm https://github.com/aig787/agpm/releases/latest/download/agpm-installer.ps1 | iex
 ```
 
 **Using Cargo:**
 
 ```bash
-cargo install ccpm                                    # From crates.io
-cargo binstall ccpm                                   # Pre-built binaries (faster)
-cargo install --git https://github.com/aig787/ccpm.git  # Latest development
+cargo install agpm                                    # From crates.io
+cargo binstall agpm                                   # Pre-built binaries (faster)
+cargo install --git https://github.com/aig787/agpm.git  # Latest development
 ```
 
 For more installation options, see the [Installation Guide](docs/installation.md).
@@ -49,15 +46,15 @@ For more installation options, see the [Installation Guide](docs/installation.md
 ### Create a Project
 
 ```bash
-# Initialize a new CCPM project
-ccpm init
+# Initialize a new AGPM project
+agpm init
 
-# Or manually create ccpm.toml:
+# Or manually create agpm.toml:
 ```
 
 ```toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 # Single file - installed at .claude/agents/example.md
@@ -75,69 +72,73 @@ react-utils = { source = "community", path = "snippets/react/*.md", version = "^
 
 ```bash
 # Install all dependencies (auto-updates lockfile like Cargo)
-ccpm install
+agpm install
 
 # Use exact lockfile versions (for CI/CD - like cargo build --locked)
-ccpm install --frozen
+agpm install --frozen
 
 # Control parallelism (default: max(10, 2 × CPU cores))
-ccpm install --max-parallel 8
+agpm install --max-parallel 8
 
 # Bypass cache for fresh installation
-ccpm install --no-cache
+agpm install --no-cache
 ```
 
 ### Adding Dependencies
 
 ```bash
 # Add a Git source repository
-ccpm add source community https://github.com/aig787/ccpm-community.git
+agpm add source community https://github.com/aig787/agpm-community.git
 
 # Add dependencies from Git sources
-ccpm add dep agent community:agents/rust-expert.md@v1.0.0
-ccpm add dep snippet community:snippets/react.md --name react-utils
+agpm add dep agent community:agents/rust-expert.md@v1.0.0
+agpm add dep snippet community:snippets/react.md --name react-utils
 
 # Add local file dependencies
-ccpm add dep agent ./local-agents/helper.md --name my-helper
-ccpm add dep script ../shared/scripts/build.sh
+agpm add dep agent ./local-agents/helper.md --name my-helper
+agpm add dep script ../shared/scripts/build.sh
 
 # Add pattern dependencies (bulk installation)
-ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+agpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
 ```
 
 ### Dependency Validation
 
-CCPM provides comprehensive validation and automatic conflict resolution:
+AGPM provides comprehensive validation and automatic conflict resolution:
 
 ```bash
 # Basic manifest validation
-ccpm validate
+agpm validate
 
 # Full validation with all checks
-ccpm validate --resolve --sources --paths --check-lock
+agpm validate --resolve --sources --paths --check-lock
 
 # JSON output for CI/CD integration
-ccpm validate --format json
+agpm validate --format json
 ```
 
 #### Transitive Dependencies and Conflict Resolution
 
-CCPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare dependencies in their metadata, and CCPM automatically resolves the entire dependency tree.
+AGPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare
+dependencies in their metadata, and AGPM automatically resolves the entire dependency tree.
 
 **What is a Conflict?**
 
 A conflict occurs when the same resource (same source and path) is required at different versions:
+
 - **Direct conflict**: Your manifest requires `helper.md@v1.0.0` and `helper.md@v2.0.0`
 - **Transitive conflict**: Agent A depends on `helper.md@v1.0.0`, Agent B depends on `helper.md@v2.0.0`
 
 **Automatic Resolution Strategy:**
 
-When conflicts are detected, CCPM automatically resolves them:
+When conflicts are detected, AGPM automatically resolves them:
+
 1. **Specific over "latest"**: If one version is specific and another is "latest", use the specific version
 2. **Higher version**: When both are specific versions, use the higher version
 3. **Transparent logging**: All conflict resolutions are logged for visibility
 
 **Example Conflict Resolution:**
+
 ```text
 Direct dependencies:
   - app-agent requires helper.md v1.0.0
@@ -161,22 +162,27 @@ Error: Version conflict for agents/helper.md
   resolution: no compatible tag satisfies both constraints
 ```
 
-Use `ccpm validate --resolve --format json` or `RUST_LOG=debug ccpm install` to see the exact dependency chain. Typical fixes:
-- Pin the manifest entry to a single version (`version = "v2.0.0"`) and run `ccpm install` to auto-update.
+Use `agpm validate --resolve --format json` or `RUST_LOG=debug agpm install` to see the exact dependency chain. Typical
+fixes:
+
+- Pin the manifest entry to a single version (`version = "v2.0.0"`) and run `agpm install` to auto-update.
 - Split competing resources into separate manifests or disable the conflicting dependency in one branch.
 - If a transitive dependency is too new, override it by forking the source repo or requesting an upstream fix.
-- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs cleanly.
+- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs
+  cleanly.
 
 **Circular Dependencies:**
 
-CCPM detects and prevents circular dependencies in the dependency graph:
+AGPM detects and prevents circular dependencies in the dependency graph:
+
 ```text
 Error: Circular dependency detected: A → B → C → A
 ```
 
 **No Conflicts:**
 
-When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph and installs resources in topological order (dependencies before dependents).
+When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph
+and installs resources in topological order (dependencies before dependents).
 
 See the [Command Reference](docs/command-reference.md#add-dependency) for all supported dependency formats.
 
@@ -185,6 +191,7 @@ See the [Command Reference](docs/command-reference.md#add-dependency) for all su
 Resources can declare their own dependencies within their files, creating a complete dependency graph:
 
 **Markdown files (.md)** use YAML frontmatter:
+
 ```markdown
 ---
 title: My Agent
@@ -202,9 +209,12 @@ dependencies:
 ```
 
 **JSON files (.json)** use a top-level `dependencies` field:
+
 ```json
 {
-  "events": ["SessionStart"],
+  "events": [
+    "SessionStart"
+  ],
   "type": "command",
   "command": "echo 'Starting session'",
   "dependencies": {
@@ -219,16 +229,19 @@ dependencies:
 ```
 
 **Key Features:**
+
 - Dependencies inherit the source from their parent resource
 - Version is optional - defaults to parent's version if not specified
 - Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
 - Graph-based resolution with topological ordering ensures correct installation order
 - Circular dependency detection prevents infinite loops
-- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the parent entry in `ccpm.toml`
+- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the
+  parent entry in `agpm.toml`
 
 **Lockfile Format:**
 
-Dependencies are tracked in `ccpm.lock` using the format `resource_type/name@version`:
+Dependencies are tracked in `agpm.lock` using the format `resource_type/name@version`:
+
 ```toml
 [[commands]]
 name = "my-command"
@@ -243,28 +256,29 @@ dependencies = [
 
 | Command         | Description                                                  |
 |-----------------|--------------------------------------------------------------|
-| `ccpm init`     | Initialize a new project                                     |
-| `ccpm install`  | Install dependencies from ccpm.toml with parallel processing |
-| `ccpm update`   | Update dependencies within version constraints               |
-| `ccpm outdated` | Check for available updates to installed dependencies        |
-| `ccpm upgrade`  | Self-update CCPM to the latest version                       |
-| `ccpm list`     | List installed resources                                     |
-| `ccpm validate` | Validate manifest and dependencies                           |
-| `ccpm add`      | Add sources or dependencies                                  |
-| `ccpm remove`   | Remove sources or dependencies                               |
-| `ccpm config`   | Manage global configuration                                  |
-| `ccpm cache`    | Manage the Git cache                                         |
+| `agpm init`     | Initialize a new project                                     |
+| `agpm install`  | Install dependencies from agpm.toml with parallel processing |
+| `agpm update`   | Update dependencies within version constraints               |
+| `agpm outdated` | Check for available updates to installed dependencies        |
+| `agpm upgrade`  | Self-update AGPM to the latest version                       |
+| `agpm list`     | List installed resources                                     |
+| `agpm validate` | Validate manifest and dependencies                           |
+| `agpm add`      | Add sources or dependencies                                  |
+| `agpm remove`   | Remove sources or dependencies                               |
+| `agpm config`   | Manage global configuration                                  |
+| `agpm cache`    | Manage the Git cache                                         |
+| `agpm migrate`  | Migrate from legacy CCPM naming to AGPM                      |
 
-Run `ccpm --help` for full command reference.
+Run `agpm --help` for full command reference.
 
 ## Resource Types
 
-CCPM manages six types of resources:
+AGPM manages six types of resources:
 
 - **Agents** - AI assistant configurations (`.claude/agents/`)
-- **Snippets** - Reusable code templates (`.claude/ccpm/snippets/`)
+- **Snippets** - Reusable code templates (`.claude/agpm/snippets/`)
 - **Commands** - Claude Code slash commands (`.claude/commands/`)
-- **Scripts** - Executable automation files (`.claude/ccpm/scripts/`)
+- **Scripts** - Executable automation files (`.claude/agpm/scripts/`)
 - **Hooks** - Event-based automation (merged into `.claude/settings.local.json`)
 - **MCP Servers** - Model Context Protocol servers (merged into `.mcp.json`)
 
@@ -284,9 +298,9 @@ CCPM manages six types of resources:
 ## Example Project
 
 ```toml
-# ccpm.toml
+# agpm.toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 local = "./local-resources"
 
 [agents]
@@ -302,10 +316,10 @@ code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", ver
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
 
 [snippets]
-# Single file - installed at .claude/ccpm/snippets/react-hooks.md
+# Single file - installed at .claude/agpm/snippets/react-hooks.md
 react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "~1.2.0" }
 
-# Nested pattern - snippets/python/utils.md → .claude/ccpm/snippets/python/utils.md
+# Nested pattern - snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
 python-tools = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [scripts]
@@ -320,7 +334,7 @@ filesystem = { source = "community", path = "mcp/filesystem.json", version = "la
 
 ## Performance Architecture
 
-CCPM v0.3.2+ features a high-performance SHA-based architecture:
+AGPM v0.3.2+ features a high-performance SHA-based architecture:
 
 ### Centralized Version Resolution
 
@@ -336,7 +350,7 @@ CCPM v0.3.2+ features a high-performance SHA-based architecture:
 
 ## Versioning
 
-CCPM uses Git-based versioning at the repository level with enhanced constraint support:
+AGPM uses Git-based versioning at the repository level with enhanced constraint support:
 
 - **Git tags** (recommended): `version = "v1.0.0"` or `version = "^1.0.0"`
 - **Semver constraints**: `^1.0`, `~2.1`, `>=1.0.0, <2.0.0`
@@ -348,14 +362,14 @@ See the [Versioning Guide](docs/versioning.md) for details.
 
 ## Security
 
-CCPM separates credentials from project configuration:
+AGPM separates credentials from project configuration:
 
-- ✅ **Project manifest** (`ccpm.toml`) - Safe to commit
-- ❌ **Global config** (`~/.ccpm/config.toml`) - Contains secrets, never commit
+- ✅ **Project manifest** (`agpm.toml`) - Safe to commit
+- ❌ **Global config** (`~/.agpm/config.toml`) - Contains secrets, never commit
 
 ```bash
 # Add private source with authentication (global config only)
-ccpm config add-source private "https://oauth2:TOKEN@github.com/org/private.git"
+agpm config add-source private "https://oauth2:TOKEN@github.com/org/private.git"
 ```
 
 ## Contributing
@@ -364,19 +378,18 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## Project Status
 
-CCPM is actively developed with comprehensive test coverage and automated releases:
+AGPM is actively developed with comprehensive test coverage and automated releases:
 
 - ✅ All core commands implemented
 - ✅ Cross-platform support (Windows, macOS, Linux)
 - ✅ Comprehensive test suite (70%+ coverage)
-- ✅ Specialized Rust development agents (standard/advanced tiers)
 - ✅ Automated semantic releases with conventional commits
 - ✅ Cross-platform binary builds for all releases
-- ✅ Publishing to crates.io (automated via semantic-release)
+- ✅ Publishing to crates.io
 
 ### Automated Releases
 
-CCPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and publishing:
+AGPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and publishing:
 
 - **Conventional Commits**: Version bumps based on commit messages (`feat:` → minor, `fix:` → patch)
 - **Cross-Platform Binaries**: Automatic builds for Linux, macOS, and Windows
@@ -389,8 +402,8 @@ MIT License - see [LICENSE.md](LICENSE.md) for details.
 
 ## Support
 
-- 🐛 [Issue Tracker](https://github.com/aig787/ccpm/issues)
-- 💬 [Discussions](https://github.com/aig787/ccpm/discussions)
+- 🐛 [Issue Tracker](https://github.com/aig787/agpm/issues)
+- 💬 [Discussions](https://github.com/aig787/agpm/discussions)
 - 📖 [Documentation](docs/user-guide.md)
 
 ---

@@ -1,6 +1,6 @@
-//! Version constraint parsing, comparison, and resolution for CCPM dependencies.
+//! Version constraint parsing, comparison, and resolution for AGPM dependencies.
 //!
-//! This module provides comprehensive version management for CCPM, handling semantic
+//! This module provides comprehensive version management for AGPM, handling semantic
 //! versioning, Git references, and dependency resolution. It supports multiple version
 //! specification formats and provides sophisticated constraint resolution with conflict
 //! detection and prerelease handling.
@@ -13,7 +13,7 @@
 //!
 //! # Version Specifications
 //!
-//! CCPM supports several version specification formats:
+//! AGPM supports several version specification formats:
 //!
 //! ## Semantic Versions
 //! - **Exact versions**: `"1.0.0"` - Matches exactly the specified version
@@ -52,8 +52,8 @@
 //! ## Basic Git Tag Resolution
 //!
 //! ```rust,no_run
-//! use ccpm::version::{VersionResolver, VersionInfo};
-//! use ccpm::git::GitRepo;
+//! use agpm::version::{VersionResolver, VersionInfo};
+//! use agpm::git::GitRepo;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -75,7 +75,7 @@
 //! ## Advanced Constraint Resolution
 //!
 //! ```rust,no_run
-//! use ccpm::version::constraints::{ConstraintResolver, VersionConstraint};
+//! use agpm::version::constraints::{ConstraintResolver, VersionConstraint};
 //! use semver::Version;
 //! use std::collections::HashMap;
 //!
@@ -103,7 +103,7 @@
 //! ## Version Comparison and Analysis
 //!
 //! ```rust,no_run
-//! use ccpm::version::comparison::VersionComparator;
+//! use agpm::version::comparison::VersionComparator;
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! let available_versions = vec![
@@ -132,7 +132,7 @@
 //!
 //! # Prerelease Version Handling
 //!
-//! CCPM provides sophisticated prerelease version management:
+//! AGPM provides sophisticated prerelease version management:
 //!
 //! - **Default exclusion**: Most constraints exclude prereleases for stability
 //! - **Explicit inclusion**: Use `latest-prerelease` or Git refs to include them
@@ -177,7 +177,7 @@ use serde::{Deserialize, Serialize};
 /// # Examples
 ///
 /// ```
-/// use ccpm::version::parse_version_req;
+/// use agpm::version::parse_version_req;
 ///
 /// // All of these parse successfully:
 /// assert!(parse_version_req("1.0.0").is_ok());
@@ -192,8 +192,9 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
     // Handles patterns like: "v1.0.0", "^v1.0.0", "~v2.1.0", "=v1.0.0", ">=v1.0.0", etc.
     // We match 'v' at the start OR after operators to avoid breaking prerelease tags
     // like "1.0.0-dev.1" or branch names like "develop"
-    use once_cell::sync::Lazy;
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(^|[~^=><])v").unwrap());
+
+    static RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(^|[~^=><])v").unwrap());
 
     let normalized = RE.replace_all(requirement, "$1");
 
@@ -216,7 +217,7 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::version::VersionInfo;
+/// use agpm::version::VersionInfo;
 /// use semver::Version;
 ///
 /// let info = VersionInfo {
@@ -268,8 +269,8 @@ pub struct VersionInfo {
 /// ## Creating from Git Repository
 ///
 /// ```rust,no_run
-/// use ccpm::version::VersionResolver;
-/// use ccpm::git::GitRepo;
+/// use agpm::version::VersionResolver;
+/// use agpm::git::GitRepo;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -284,8 +285,8 @@ pub struct VersionInfo {
 /// ## Version Resolution
 ///
 /// ```rust,no_run
-/// # use ccpm::version::VersionResolver;
-/// # use ccpm::git::GitRepo;
+/// # use agpm::version::VersionResolver;
+/// # use agpm::git::GitRepo;
 /// # use std::path::PathBuf;
 /// #
 /// # async fn example() -> anyhow::Result<()> {
@@ -322,14 +323,14 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
+    /// use agpm::version::VersionResolver;
     ///
     /// let resolver = VersionResolver::new();
     /// assert_eq!(resolver.list_all().len(), 0);
     /// assert!(resolver.get_latest().is_none());
     /// ```
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             versions: Vec::new(),
         }
@@ -363,8 +364,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -428,7 +429,7 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
+    /// use agpm::version::VersionResolver;
     /// use semver::Version;
     ///
     /// // These would all parse successfully (if the method were public)
@@ -479,8 +480,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -576,8 +577,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -626,8 +627,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -648,8 +649,8 @@ impl VersionResolver {
     /// # Comparison with `get_latest()`
     ///
     /// ```rust,no_run
-    /// # use ccpm::version::VersionResolver;
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::version::VersionResolver;
+    /// # use agpm::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -706,8 +707,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -728,8 +729,8 @@ impl VersionResolver {
     /// ## Filtering and Analysis
     ///
     /// ```rust,no_run
-    /// # use ccpm::version::VersionResolver;
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::version::VersionResolver;
+    /// # use agpm::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -786,8 +787,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -808,8 +809,8 @@ impl VersionResolver {
     /// ## Comparison with All Versions
     ///
     /// ```rust,no_run
-    /// # use ccpm::version::VersionResolver;
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::version::VersionResolver;
+    /// # use agpm::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -872,8 +873,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionResolver;
-    /// use ccpm::git::GitRepo;
+    /// use agpm::version::VersionResolver;
+    /// use agpm::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -906,8 +907,8 @@ impl VersionResolver {
     /// ## Validation Before Resolution
     ///
     /// ```rust,no_run
-    /// # use ccpm::version::VersionResolver;
-    /// # use ccpm::git::GitRepo;
+    /// # use agpm::version::VersionResolver;
+    /// # use agpm::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -980,7 +981,7 @@ impl Default for VersionResolver {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::version::matches_requirement;
+/// use agpm::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Exact version matching
@@ -1011,7 +1012,7 @@ impl Default for VersionResolver {
 /// ## Complex Range Matching
 ///
 /// ```rust,no_run
-/// use ccpm::version::matches_requirement;
+/// use agpm::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Multiple constraints
@@ -1055,7 +1056,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 
     // Parse requirement (with v-prefix normalization)
     let req = parse_version_req(requirement)
-        .map_err(|e| anyhow::anyhow!("Invalid version requirement '{}': {}", requirement, e))?;
+        .map_err(|e| anyhow::anyhow!("Invalid version requirement '{requirement}': {e}"))?;
 
     Ok(req.matches(&version))
 }
@@ -1087,7 +1088,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::version::{parse_version_constraint, VersionConstraint};
+/// use agpm::version::{parse_version_constraint, VersionConstraint};
 ///
 /// // Semantic versions are classified as tags
 /// let constraint = parse_version_constraint("1.0.0");
@@ -1182,15 +1183,15 @@ pub mod conflict;
 /// Version constraint parsing, sets, and resolution system.
 ///
 /// The [`constraints`] module contains the core constraint management system for
-/// CCPM, including constraint parsing, conflict detection, and multi-dependency
+/// AGPM, including constraint parsing, conflict detection, and multi-dependency
 /// resolution. See the module documentation for comprehensive examples.
 pub mod constraints;
 
-/// Represents different types of version constraints in CCPM.
+/// Represents different types of version constraints in AGPM.
 ///
 /// `VersionConstraint` is a simple enum that categorizes version references into
 /// three main types: Git tags (including semantic versions), Git branches, and
-/// Git commit hashes. This classification helps CCPM route version resolution
+/// Git commit hashes. This classification helps AGPM route version resolution
 /// to the appropriate handling logic.
 ///
 /// # Variants
@@ -1207,7 +1208,7 @@ pub mod constraints;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::version::VersionConstraint;
+/// use agpm::version::VersionConstraint;
 ///
 /// // Create different constraint types
 /// let version = VersionConstraint::Tag("1.0.0".to_string());
@@ -1219,7 +1220,7 @@ pub mod constraints;
 /// assert_eq!(branch.as_str(), "main");
 /// assert_eq!(commit.as_str(), "abc123def");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum VersionConstraint {
     /// A semantic version tag (e.g., "v1.2.0", "1.0.0")
     Tag(String),
@@ -1243,7 +1244,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::VersionConstraint;
+    /// use agpm::version::VersionConstraint;
     ///
     /// let tag = VersionConstraint::Tag("^1.0.0".to_string());
     /// assert_eq!(tag.as_str(), "^1.0.0");
@@ -1265,9 +1266,9 @@ impl VersionConstraint {
     #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
-            VersionConstraint::Tag(s) => s,
-            VersionConstraint::Branch(s) => s,
-            VersionConstraint::Commit(s) => s,
+            Self::Tag(s) => s,
+            Self::Branch(s) => s,
+            Self::Commit(s) => s,
         }
     }
 }

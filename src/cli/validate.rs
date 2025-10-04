@@ -1,13 +1,13 @@
-//! Validate CCPM project configuration and dependencies.
+//! Validate AGPM project configuration and dependencies.
 //!
 //! This module provides the `validate` command which performs comprehensive
-//! validation of a CCPM project's manifest file, dependencies, sources, and
+//! validation of a AGPM project's manifest file, dependencies, sources, and
 //! overall configuration. The command can check various aspects of the project
 //! setup and report issues or warnings.
 //!
 //! # Features
 //!
-//! - **Manifest Validation**: Checks `ccpm.toml` syntax and structure
+//! - **Manifest Validation**: Checks `agpm.toml` syntax and structure
 //! - **Dependency Resolution**: Verifies all dependencies can be resolved
 //! - **Source Accessibility**: Tests if source repositories are reachable
 //! - **Path Validation**: Checks if local file dependencies exist
@@ -19,27 +19,27 @@
 //!
 //! Basic validation:
 //! ```bash
-//! ccpm validate
+//! agpm validate
 //! ```
 //!
 //! Comprehensive validation with all checks:
 //! ```bash
-//! ccpm validate --resolve --sources --paths --check-lock
+//! agpm validate --resolve --sources --paths --check-lock
 //! ```
 //!
 //! JSON output for automation:
 //! ```bash
-//! ccpm validate --format json
+//! agpm validate --format json
 //! ```
 //!
 //! Strict mode for CI:
 //! ```bash
-//! ccpm validate --strict --quiet
+//! agpm validate --strict --quiet
 //! ```
 //!
 //! Validate specific manifest file:
 //! ```bash
-//! ccpm validate ./projects/my-project/ccpm.toml
+//! agpm validate ./projects/my-project/agpm.toml
 //! ```
 //!
 //! # Validation Levels
@@ -59,7 +59,7 @@
 //!
 //! ## Text Format (Default)
 //! ```text
-//! ✓ Valid ccpm.toml
+//! ✓ Valid agpm.toml
 //! ✓ Dependencies resolvable
 //! ⚠ Warning: No dependencies defined
 //! ```
@@ -94,9 +94,9 @@ use crate::cache::Cache;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 
-/// Command to validate CCPM project configuration and dependencies.
+/// Command to validate AGPM project configuration and dependencies.
 ///
-/// This command performs comprehensive validation of a CCPM project, checking
+/// This command performs comprehensive validation of a AGPM project, checking
 /// various aspects from basic manifest syntax to complex dependency resolution.
 /// It supports multiple validation levels and output formats for different use cases.
 ///
@@ -111,7 +111,7 @@ use crate::resolver::DependencyResolver;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::validate::{ValidateCommand, OutputFormat};
+/// use agpm::cli::validate::{ValidateCommand, OutputFormat};
 ///
 /// // Basic validation
 /// let cmd = ValidateCommand {
@@ -143,7 +143,7 @@ use crate::resolver::DependencyResolver;
 pub struct ValidateCommand {
     /// Specific manifest file path to validate
     ///
-    /// If not provided, searches for `ccpm.toml` in the current directory
+    /// If not provided, searches for `agpm.toml` in the current directory
     /// and parent directories. When specified, validates the exact file path.
     #[arg(value_name = "FILE")]
     pub file: Option<String>,
@@ -223,7 +223,7 @@ pub struct ValidateCommand {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::validate::OutputFormat;
+/// use agpm::cli::validate::OutputFormat;
 ///
 /// // For human consumption
 /// let format = OutputFormat::Text;
@@ -231,7 +231,7 @@ pub struct ValidateCommand {
 /// // For automation/CI
 /// let format = OutputFormat::Json;
 /// ```
-#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     /// Human-readable text output with colors and formatting.
     ///
@@ -289,7 +289,7 @@ impl ValidateCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::cli::validate::{ValidateCommand, OutputFormat};
+    /// use agpm::cli::validate::{ValidateCommand, OutputFormat};
     ///
     /// let cmd = ValidateCommand {
     ///     file: None,
@@ -310,14 +310,14 @@ impl ValidateCommand {
 
     /// Execute the validate command with an optional manifest path.
     ///
-    /// This method performs validation of the ccpm.toml manifest file and optionally
+    /// This method performs validation of the agpm.toml manifest file and optionally
     /// the associated lockfile. It can validate manifest syntax, source availability,
     /// and dependency resolution consistency.
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Optional path to the ccpm.toml file. If None, searches
-    ///   for ccpm.toml in current directory and parent directories. If the command
+    /// * `manifest_path` - Optional path to the agpm.toml file. If None, searches
+    ///   for agpm.toml in current directory and parent directories. If the command
     ///   has a `file` field set, that takes precedence.
     ///
     /// # Returns
@@ -328,7 +328,7 @@ impl ValidateCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use ccpm::cli::validate::ValidateCommand;
+    /// use agpm::cli::validate::ValidateCommand;
     /// use std::path::PathBuf;
     ///
     /// let cmd = ValidateCommand {
@@ -341,7 +341,7 @@ impl ValidateCommand {
     ///     fix: false,
     /// };
     ///
-    /// cmd.execute_with_manifest_path(Some(PathBuf::from("./ccpm.toml"))).await?;
+    /// cmd.execute_with_manifest_path(Some(PathBuf::from("./agpm.toml"))).await?;
     /// ```
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find or use specified manifest file
@@ -352,7 +352,7 @@ impl ValidateCommand {
                 Ok(path) => path,
                 Err(e) => {
                     let error_msg =
-                        "No ccpm.toml found in current directory or any parent directory";
+                        "No agpm.toml found in current directory or any parent directory";
 
                     if matches!(self.format, OutputFormat::Json) {
                         let validation_results = ValidationResults {
@@ -435,7 +435,7 @@ impl ValidateCommand {
             }
             Err(e) => {
                 let error_msg = if e.to_string().contains("TOML") {
-                    format!("Syntax error in ccpm.toml: TOML parsing failed - {e}")
+                    format!("Syntax error in agpm.toml: TOML parsing failed - {e}")
                 } else {
                     format!("Invalid manifest structure: {e}")
                 };
@@ -479,7 +479,7 @@ impl ValidateCommand {
         validation_results.manifest_valid = true;
 
         if !self.quiet && matches!(self.format, OutputFormat::Text) {
-            println!("✓ Valid ccpm.toml");
+            println!("✓ Valid agpm.toml");
         }
 
         // Check for empty manifest warnings
@@ -574,11 +574,11 @@ impl ValidateCommand {
                         validation_results.errors = errors;
                         validation_results.warnings = warnings;
                         println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                        return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                        return Err(anyhow::anyhow!("Source not accessible: {e}"));
                     } else if !self.quiet {
                         println!("{} {}", "✗".red(), error_msg);
                     }
-                    return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                    return Err(anyhow::anyhow!("Source not accessible: {e}"));
                 }
             };
 
@@ -600,11 +600,11 @@ impl ValidateCommand {
                         validation_results.errors = errors;
                         validation_results.warnings = warnings;
                         println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                        return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                        return Err(anyhow::anyhow!("Source not accessible: {e}"));
                     } else if !self.quiet {
                         println!("{} {}", "✗".red(), error_msg);
                     }
-                    return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                    return Err(anyhow::anyhow!("Source not accessible: {e}"));
                 }
             }
         }
@@ -659,7 +659,7 @@ impl ValidateCommand {
         // Check lockfile consistency
         if self.check_lock {
             let project_dir = manifest_path.parent().unwrap();
-            let lockfile_path = project_dir.join("ccpm.lock");
+            let lockfile_path = project_dir.join("agpm.lock");
 
             if lockfile_path.exists() {
                 if self.verbose && !self.quiet {
@@ -725,7 +725,7 @@ impl ValidateCommand {
                                 for (name, type_) in missing {
                                     println!("  - {name} ({type_}))");
                                 }
-                                println!("\nRun 'ccpm install' to update the lockfile");
+                                println!("\nRun 'agpm install' to update the lockfile");
                             }
                         }
                     }
@@ -738,11 +738,11 @@ impl ValidateCommand {
                             validation_results.errors = errors;
                             validation_results.warnings = warnings;
                             println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                            return Err(anyhow::anyhow!("Invalid lockfile syntax: {}", e));
+                            return Err(anyhow::anyhow!("Invalid lockfile syntax: {e}"));
                         } else if !self.quiet {
                             println!("{} {}", "✗".red(), error_msg);
                         }
-                        return Err(anyhow::anyhow!("Invalid lockfile syntax: {}", e));
+                        return Err(anyhow::anyhow!("Invalid lockfile syntax: {e}"));
                     }
                 }
             } else {
@@ -873,7 +873,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_no_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("nonexistent").join("ccpm.toml");
+        let manifest_path = temp.path().join("nonexistent").join("agpm.toml");
 
         let cmd = ValidateCommand {
             file: None,
@@ -894,7 +894,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_valid_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
@@ -923,7 +923,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_invalid_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create invalid manifest (dependency without source)
         let mut manifest = crate::manifest::Manifest::new();
@@ -966,7 +966,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_json_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
@@ -995,7 +995,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_with_resolve() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with a source dependency that needs resolving
         let mut manifest = crate::manifest::Manifest::new();
@@ -1044,7 +1044,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_lock_consistent() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a simple manifest without dependencies
         let manifest = crate::manifest::Manifest::new();
@@ -1052,7 +1052,7 @@ mod tests {
 
         // Create an empty lockfile (consistent with no dependencies)
         let lockfile = crate::lockfile::LockFile::new();
-        lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
+        lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
         let cmd = ValidateCommand {
             file: None,
@@ -1074,7 +1074,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_lock_with_extra_entries() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create empty manifest
         let manifest = crate::manifest::Manifest::new();
@@ -1094,7 +1094,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
         });
-        lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
+        lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
         let cmd = ValidateCommand {
             file: None,
@@ -1116,7 +1116,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_strict_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with warning (empty sources)
         let manifest = crate::manifest::Manifest::new();
@@ -1142,7 +1142,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_verbose_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
@@ -1171,7 +1171,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_paths_local() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a local file to reference
         std::fs::create_dir_all(temp.path().join("local")).unwrap();
@@ -1250,7 +1250,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_json_error_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create invalid manifest
         let mut manifest = crate::manifest::Manifest::new();
@@ -1293,7 +1293,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_paths_check() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with local dependency
         let mut manifest = crate::manifest::Manifest::new();
@@ -1343,7 +1343,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_lock() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest
         let mut manifest = crate::manifest::Manifest::new();
@@ -1392,7 +1392,7 @@ mod tests {
             scripts: vec![],
             hooks: vec![],
         };
-        lockfile.save(&temp.path().join("ccpm.lock")).unwrap();
+        lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
         let cmd = ValidateCommand {
             file: None,
@@ -1413,7 +1413,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_verbose_output() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let manifest = crate::manifest::Manifest::new();
         manifest.save(&manifest_path).unwrap();
@@ -1437,7 +1437,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_strict_mode_with_warnings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest that will have warnings
         let manifest = crate::manifest::Manifest::new();
@@ -1485,7 +1485,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_quiet_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create valid manifest
         let manifest = crate::manifest::Manifest::new();
@@ -1510,7 +1510,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_json_output_success() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create valid manifest with dependencies
         let mut manifest = crate::manifest::Manifest::new();
@@ -1552,7 +1552,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_sources() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a local git repository to use as a mock source
         let source_dir = temp.path().join("test-source");
@@ -1595,7 +1595,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_check_paths() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with local dependency
         let mut manifest = crate::manifest::Manifest::new();
@@ -1752,7 +1752,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_manifest_toml_syntax_error() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create invalid TOML file
         std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
@@ -1777,7 +1777,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_manifest_toml_syntax_error_json() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create invalid TOML file
         std::fs::write(&manifest_path, "invalid toml syntax [[[").unwrap();
@@ -1802,7 +1802,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_manifest_structure_error() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with invalid structure
         let mut manifest = crate::manifest::Manifest::new();
@@ -1846,7 +1846,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_manifest_version_conflict() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a test manifest file that would trigger version conflict detection
         std::fs::write(
@@ -1884,7 +1884,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_with_outdated_version_warnings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with v0.x versions (potentially outdated)
         let mut manifest = crate::manifest::Manifest::new();
@@ -1931,7 +1931,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_resolve_with_error_json_output() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with dependency that will fail to resolve
         let mut manifest = crate::manifest::Manifest::new();
@@ -1980,7 +1980,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_resolve_dependency_not_found_error() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with dependencies that will fail resolution
         let mut manifest = crate::manifest::Manifest::new();
@@ -2046,7 +2046,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_sources_accessibility_error() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with sources that will fail accessibility check
         // Use file:// URLs pointing to non-existent local paths
@@ -2088,7 +2088,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_sources_accessibility_error_json() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with sources that will fail accessibility check
         // Use file:// URLs pointing to non-existent local paths
@@ -2130,7 +2130,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_check_paths_snippets_and_commands() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with local dependencies for snippets and commands (not just agents)
         let mut manifest = crate::manifest::Manifest::new();
@@ -2201,7 +2201,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_check_paths_missing_snippets_json() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with missing local snippet
         let mut manifest = crate::manifest::Manifest::new();
@@ -2244,7 +2244,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_lockfile_missing_warning() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest but no lockfile
         let manifest = crate::manifest::Manifest::new();
@@ -2270,8 +2270,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_lockfile_syntax_error_json() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create valid manifest
         let manifest = crate::manifest::Manifest::new();
@@ -2300,8 +2300,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_lockfile_missing_dependencies() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest with dependencies
         let mut manifest = crate::manifest::Manifest::new();
@@ -2341,8 +2341,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_lockfile_extra_entries_error() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create empty manifest
         let manifest = crate::manifest::Manifest::new();
@@ -2384,7 +2384,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_strict_mode_with_json_output() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest that will generate warnings
         let manifest = crate::manifest::Manifest::new(); // Empty manifest generates "no dependencies" warning
@@ -2410,7 +2410,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_strict_mode_text_output() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest that will generate warnings
         let manifest = crate::manifest::Manifest::new();
@@ -2436,7 +2436,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_final_success_with_warnings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest that will have warnings but no errors
         let manifest = crate::manifest::Manifest::new();
@@ -2462,7 +2462,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_verbose_mode_with_summary() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with some content for summary
         let mut manifest = crate::manifest::Manifest::new();
@@ -2502,8 +2502,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_all_checks_enabled() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create a manifest with dependencies
         let mut manifest = Manifest::new();
@@ -2561,7 +2561,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validate_sources_check_with_invalid_url() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest
@@ -2637,7 +2637,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_json_output_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let manifest = Manifest::new();
         manifest.save(&manifest_path).unwrap();
@@ -2661,7 +2661,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_verbose_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let manifest = Manifest::new();
         manifest.save(&manifest_path).unwrap();
@@ -2685,7 +2685,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_quiet_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let manifest = Manifest::new();
         manifest.save(&manifest_path).unwrap();
@@ -2709,7 +2709,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_strict_mode_and_warnings() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create empty manifest to trigger warning
         let manifest = Manifest::new();
@@ -2734,7 +2734,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_local_paths_check() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -2762,7 +2762,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_existing_local_paths() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let local_file = temp.path().join("agent.md");
 
         // Create the local file
@@ -2794,7 +2794,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_lockfile_consistency_check_no_lockfile() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -2822,8 +2822,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_inconsistent_lockfile() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest with agent
         let mut manifest = Manifest::new();
@@ -2868,8 +2868,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_invalid_lockfile_syntax() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         let manifest = Manifest::new();
         manifest.save(&manifest_path).unwrap();
@@ -2896,7 +2896,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_outdated_version_warning() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         // Add the source that's referenced
@@ -2940,7 +2940,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_json_output_with_errors() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Write invalid TOML
         std::fs::write(&manifest_path, "invalid toml [[[ syntax").unwrap();
@@ -3006,8 +3006,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_missing_lockfile_dependencies() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create manifest with multiple dependencies
         let mut manifest = Manifest::new();
@@ -3127,7 +3127,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
     #[tokio::test]
     async fn test_validation_with_verbose_and_text_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.sources.insert(

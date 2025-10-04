@@ -1,11 +1,11 @@
-//! CCPM CLI entry point
+//! AGPM CLI entry point
 //!
-//! This is the main executable for the Claude Code Package Manager.
+//! This is the main executable for the AGent Package Manager.
 //! It handles command-line argument parsing, error display, and command execution.
 //!
 //! The CLI supports various commands for managing Claude Code resources:
-//! - `init` - Initialize a new ccpm.toml manifest
-//! - `install` - Install dependencies from ccpm.toml
+//! - `init` - Initialize a new agpm.toml manifest
+//! - `install` - Install dependencies from agpm.toml
 //! - `update` - Update dependencies within version constraints
 //! - `list` - List installed resources
 //! - `validate` - Validate manifest and lockfile
@@ -14,9 +14,9 @@
 //! - `add` - Add sources or dependencies to manifest
 //! - `remove` - Remove sources or dependencies from manifest
 
+use agpm::cli;
+use agpm::core::error::user_friendly_error;
 use anyhow::Result;
-use ccpm::cli;
-use ccpm::core::error::user_friendly_error;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 

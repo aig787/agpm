@@ -1,23 +1,23 @@
-//! Core types and functionality for CCPM
+//! Core types and functionality for AGPM
 //!
-//! This module forms the foundation of CCPM's type system, providing fundamental abstractions
+//! This module forms the foundation of AGPM's type system, providing fundamental abstractions
 //! for error handling, resource management, and core operations. It defines the contracts and
-//! interfaces used throughout the CCPM codebase.
+//! interfaces used throughout the AGPM codebase.
 //!
 //! # Architecture Overview
 //!
 //! The core module is organized around several key concepts:
 //!
 //! ## Error Management
-//! CCPM uses a sophisticated error handling system designed for both developer ergonomics
+//! AGPM uses a sophisticated error handling system designed for both developer ergonomics
 //! and end-user experience:
-//! - **Strongly-typed errors** ([`CcpmError`]) for precise error handling in code
+//! - **Strongly-typed errors** ([`AgpmError`]) for precise error handling in code
 //! - **User-friendly contexts** ([`ErrorContext`]) with actionable suggestions for CLI users
 //! - **Automatic error conversion** from common standard library errors
 //! - **Contextual suggestions** tailored to specific error conditions
 //!
 //! ## Resource Abstractions
-//! Resources are the core entities managed by CCPM:
+//! Resources are the core entities managed by AGPM:
 //! - **Resource types** ([`ResourceType`]) define categories (agents, snippets)
 //! - **Resource trait** provides common interface for all resource types  
 //! - **Type detection** automatically identifies resources
@@ -28,7 +28,7 @@
 //! ## `error` - Comprehensive Error Handling
 //!
 //! The error module provides:
-//! - [`CcpmError`] - Enumerated error types covering all CCPM failure modes
+//! - [`AgpmError`] - Enumerated error types covering all AGPM failure modes
 //! - [`ErrorContext`] - User-friendly error wrapper with suggestions and details
 //! - [`user_friendly_error`] - Convert any error to user-friendly format
 //! - [`IntoAnyhowWithContext`] - Extension trait for error conversion
@@ -63,12 +63,12 @@
 //! ## Error Handling Pattern
 //!
 //! ```rust,no_run
-//! use ccpm::core::{CcpmError, ErrorContext, user_friendly_error};
+//! use agpm::core::{AgpmError, ErrorContext, user_friendly_error};
 //! use anyhow::Result;
 //!
 //! fn example_operation() -> Result<String> {
 //!     // Simulate an operation that might fail
-//!     Err(CcpmError::ManifestNotFound.into())
+//!     Err(AgpmError::ManifestNotFound.into())
 //! }
 //!
 //! fn handle_operation() {
@@ -86,7 +86,7 @@
 //! ## Resource Type Detection
 //!
 //! ```rust,no_run
-//! use ccpm::core::{ResourceType, detect_resource_type};
+//! use agpm::core::{ResourceType, detect_resource_type};
 //! use std::path::Path;
 //! use tempfile::tempdir;
 //!
@@ -136,7 +136,7 @@
 //! ## Resource Trait Usage
 //!
 //! ```rust,no_run
-//! use ccpm::core::{Resource, ResourceType};
+//! use agpm::core::{Resource, ResourceType};
 //! use anyhow::Result;
 //! use std::path::Path;
 //!
@@ -169,12 +169,12 @@
 //! ## Error Context Creation
 //!
 //! ```rust,no_run
-//! use ccpm::core::{CcpmError, ErrorContext};
+//! use agpm::core::{AgpmError, ErrorContext};
 //!
 //! fn create_helpful_error() -> ErrorContext {
-//!     ErrorContext::new(CcpmError::GitNotFound)
+//!     ErrorContext::new(AgpmError::GitNotFound)
 //!         .with_suggestion("Install git from https://git-scm.com/ or use your package manager")
-//!         .with_details("CCPM requires git to clone and manage source repositories")
+//!         .with_details("AGPM requires git to clone and manage source repositories")
 //! }
 //!
 //! fn display_error() {
@@ -185,9 +185,9 @@
 //!
 //! # Integration with Other Modules
 //!
-//! The core module provides types used throughout CCPM:
-//! - **CLI commands** use [`CcpmError`] and [`ErrorContext`] for user feedback
-//! - **Git operations** return [`CcpmError`] variants for specific failure modes
+//! The core module provides types used throughout AGPM:
+//! - **CLI commands** use [`AgpmError`] and [`ErrorContext`] for user feedback
+//! - **Git operations** return [`AgpmError`] variants for specific failure modes
 //! - **Manifest parsing** uses [`Resource`] trait for type-agnostic operations
 //! - **Installation** relies on [`ResourceType`] for path generation and validation
 //! - **Dependency resolution** uses error types for constraint violations
@@ -196,7 +196,7 @@
 //!
 //! All core types are designed to be thread-safe where appropriate:
 //! - [`ResourceType`] is [`Copy`] and can be shared freely
-//! - [`CcpmError`] implements [`Clone`] for error propagation
+//! - [`AgpmError`] implements [`Clone`] for error propagation
 //! - [`Resource`] trait is object-safe for dynamic dispatch
 //!
 //! [`Result`]: std::result::Result
@@ -209,7 +209,7 @@ pub mod error_helpers;
 mod resource;
 pub mod resource_iterator;
 
-pub use error::{CcpmError, ErrorContext, IntoAnyhowWithContext, user_friendly_error};
+pub use error::{AgpmError, ErrorContext, IntoAnyhowWithContext, user_friendly_error};
 pub use error_builders::{
     ErrorContextExt, file_error_context, git_error_context, manifest_error_context,
 };
@@ -239,7 +239,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::core::{ResourceType, detect_resource_type};
+/// use agpm::core::{ResourceType, detect_resource_type};
 /// use tempfile::tempdir;
 /// use std::fs;
 ///

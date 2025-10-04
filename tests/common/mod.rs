@@ -1,4 +1,4 @@
-//! Common test utilities and fixtures for CCPM integration tests
+//! Common test utilities and fixtures for AGPM integration tests
 //!
 //! This module consolidates frequently used test patterns to reduce duplication
 //! and improve test maintainability.
@@ -53,7 +53,7 @@ impl TestGit {
     /// Configure git user for tests
     pub fn config_user(&self) -> Result<()> {
         self.run_git_command(
-            &["config", "user.email", "test@ccpm.example"],
+            &["config", "user.email", "test@agpm.example"],
             "Failed to configure git user email",
         )?;
 
@@ -198,7 +198,7 @@ impl TestProject {
     pub async fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("project");
-        let cache_dir = temp_dir.path().join(".ccpm").join("cache");
+        let cache_dir = temp_dir.path().join(".agpm").join("cache");
         let sources_dir = temp_dir.path().join("sources");
 
         fs::create_dir_all(&project_dir).await?;
@@ -230,7 +230,7 @@ impl TestProject {
 
     /// Write a manifest file to the project directory
     pub async fn write_manifest(&self, content: &str) -> Result<()> {
-        let manifest_path = self.project_dir.join("ccpm.toml");
+        let manifest_path = self.project_dir.join("agpm.toml");
         fs::write(&manifest_path, content)
             .await
             .with_context(|| format!("Failed to write manifest to {:?}", manifest_path))?;
@@ -239,7 +239,7 @@ impl TestProject {
 
     /// Write a lockfile to the project directory
     pub async fn write_lockfile(&self, content: &str) -> Result<()> {
-        let lockfile_path = self.project_dir.join("ccpm.lock");
+        let lockfile_path = self.project_dir.join("agpm.lock");
         fs::write(&lockfile_path, content)
             .await
             .with_context(|| format!("Failed to write lockfile to {:?}", lockfile_path))?;
@@ -248,7 +248,7 @@ impl TestProject {
 
     /// Read the lockfile from the project directory
     pub async fn read_lockfile(&self) -> Result<String> {
-        let lockfile_path = self.project_dir.join("ccpm.lock");
+        let lockfile_path = self.project_dir.join("agpm.lock");
         fs::read_to_string(&lockfile_path)
             .await
             .with_context(|| format!("Failed to read lockfile from {:?}", lockfile_path))
@@ -287,24 +287,24 @@ impl TestProject {
         })
     }
 
-    /// Run a CCPM command in the project directory
-    pub fn run_ccpm(&self, args: &[&str]) -> Result<CommandOutput> {
-        self.run_ccpm_with_env(args, &[])
+    /// Run a AGPM command in the project directory
+    pub fn run_agpm(&self, args: &[&str]) -> Result<CommandOutput> {
+        self.run_agpm_with_env(args, &[])
     }
 
-    /// Run a CCPM command with custom environment variables
-    pub fn run_ccpm_with_env(
+    /// Run a AGPM command with custom environment variables
+    pub fn run_agpm_with_env(
         &self,
         args: &[&str],
         env_vars: &[(&str, &str)],
     ) -> Result<CommandOutput> {
-        let ccpm_binary = env!("CARGO_BIN_EXE_ccpm");
-        let mut cmd = Command::new(ccpm_binary);
+        let agpm_binary = env!("CARGO_BIN_EXE_agpm");
+        let mut cmd = Command::new(agpm_binary);
 
         cmd.args(args)
             .current_dir(&self.project_dir)
-            .env("CCPM_CACHE_DIR", &self.cache_dir)
-            .env("CCPM_TEST_MODE", "true")
+            .env("AGPM_CACHE_DIR", &self.cache_dir)
+            .env("AGPM_TEST_MODE", "true")
             .env("NO_COLOR", "1");
 
         // Add custom environment variables
@@ -312,7 +312,7 @@ impl TestProject {
             cmd.env(key, value);
         }
 
-        let output = cmd.output().context("Failed to run ccpm command")?;
+        let output = cmd.output().context("Failed to run agpm command")?;
 
         Ok(CommandOutput {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

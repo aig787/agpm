@@ -1,7 +1,7 @@
 ---
 title: Format JSON
 description: Pretty-print and validate JSON files
-author: CCPM Team
+author: AGPM Team
 version: 1.0.0
 tags:
   - json

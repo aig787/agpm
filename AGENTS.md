@@ -1,16 +1,16 @@
-# AGENTS.md - CCPM Project Context (Codex)
+# AGENTS.md - AGPM Project Context (Codex)
 
 **IMPORTANT**: This file must remain under 20,000 characters.
 
-This document mirrors the CCPM context from `CLAUDE.md` but focuses on architecture, workflows, and guardrails that are
-especially relevant when contributing through Codex. CCPM is still the Claude Code Package Manager, so references to
+This document mirrors the AGPM context from `CLAUDE.md` but focuses on architecture, workflows, and guardrails that are
+especially relevant when contributing through Codex. AGPM is still the Claude Code Package Manager, so references to
 `.claude/...` paths and Claude-specific resource types remain accurate; Codex contributors should respect them when
 working in this repository.
 
 ## Overview
 
-CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
-scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (ccpm.toml + ccpm.lock) like Cargo for
+AGPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
+scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (agpm.toml + agpm.lock) like Cargo for
 reproducible installations from Git repositories.
 
 ## Architecture
@@ -34,8 +34,8 @@ src/
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Hook integrations for Claude Code environments
 ├── installer.rs # Parallel resource installation
-├── lockfile/    # ccpm.lock management
-├── manifest/    # ccpm.toml parsing + transitive dependencies
+├── lockfile/    # agpm.lock management
+├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
@@ -57,10 +57,10 @@ src/
 
 ## CLI Commands
 
-- `install [--frozen] [--no-cache] [--max-parallel N]` - Install from ccpm.toml
+- `install [--frozen] [--no-cache] [--max-parallel N]` - Install from agpm.toml
 - `update [dep]` - Update dependencies
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
-- `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update CCPM
+- `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
 - `list` - List installed resources
 - `validate [--check-lock] [--resolve]` - Validate manifest
 - `cache [clean|list]` - Manage cache
@@ -208,7 +208,7 @@ Conflict detection is integrated into the core resolution logic (`resolver::mod.
 Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ```
-~/.ccpm/cache/
+~/.agpm/cache/
 ├── sources/        # Bare repositories (.git suffix)
 │   └── github_owner_repo.git/
 ├── worktrees/      # SHA-based worktrees (deduplicated)
@@ -235,17 +235,17 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Use Task tool** for complex operations
 - **Cross-platform**: Windows, macOS, Linux
 - **NO git2**: Use system git command
-- **Security**: Credentials only in ~/.ccpm/config.toml, path traversal prevention, checksums
+- **Security**: Credentials only in ~/.agpm/config.toml, path traversal prevention, checksums
 - **Atomic ops**: Temp file + rename
 - **Resources**: .md, .json, .sh/.js/.py files
 - **Hooks**: Configure in .claude/settings.local.json
 - **MCP**: Configure in .mcp.json
 
-## Example ccpm.toml Format
+## Example agpm.toml Format
 
 ```toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
 [agents]
@@ -278,7 +278,7 @@ filesystem = { source = "community", path = "mcp-servers/filesystem.json", versi
 postgres = { source = "local", path = "mcp-servers/postgres.json" }
 ```
 
-## Example ccpm.lock
+## Example agpm.lock
 
 ```toml
 # Auto-generated lockfile
@@ -295,7 +295,7 @@ installed_at = ".claude/agents/example-agent.md"
 
 ## Config Priority
 
-1. `~/.ccpm/config.toml` - Global config with auth tokens (not in git)
-2. `ccpm.toml` - Project manifest (in git)
+1. `~/.agpm/config.toml` - Global config with auth tokens (not in git)
+2. `agpm.toml` - Project manifest (in git)
 
 Keeps secrets out of version control.

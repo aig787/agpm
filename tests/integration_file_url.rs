@@ -46,7 +46,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     );
     project.write_manifest(&manifest).await?;
 
-    project.run_ccpm(&["install"])?.assert_success();
+    project.run_agpm(&["install"])?.assert_success();
 
     // Verify the installed file is from v2.0.0
     // Files use basename from path, not dependency name
@@ -105,7 +105,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
     );
     project.write_manifest(&manifest_v1).await?;
 
-    project.run_ccpm(&["install"])?.assert_success();
+    project.run_agpm(&["install"])?.assert_success();
 
     // Verify v1 is installed
     // Files use basename from path, not dependency name
@@ -131,7 +131,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     );
     project.write_manifest(&manifest_v2).await?;
 
-    project.run_ccpm(&["install"])?.assert_success();
+    project.run_agpm(&["install"])?.assert_success();
 
     // Verify v2 is now installed
     // Files use basename from path, not dependency name
@@ -184,7 +184,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
     );
     project.write_manifest(&manifest).await?;
 
-    project.run_ccpm(&["install"])?.assert_success();
+    project.run_agpm(&["install"])?.assert_success();
 
     // Verify the installed file is from the committed v1.0.0, not the uncommitted changes
     // Files use basename from path, not dependency name

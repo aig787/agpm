@@ -1,5 +1,5 @@
 #!/bin/bash
-# Example build script for CCPM
+# Example build script for AGPM
 # This script demonstrates how to use scripts as dependencies
 
 set -e

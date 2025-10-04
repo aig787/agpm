@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Example test runner script for CCPM
+// Example test runner script for AGPM
 // This script demonstrates how to use JavaScript scripts as dependencies
 
 console.log('🧪 Running tests...');

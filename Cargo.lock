@@ -29,6 +29,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "agpm"
+version = "0.3.17"
+dependencies = [
+ "agpm",
+ "anyhow",
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "colored",
+ "dashmap",
+ "dirs",
+ "fs4",
+ "futures",
+ "glob",
+ "hex",
+ "indicatif",
+ "is-terminal",
+ "once_cell",
+ "petgraph",
+ "predicates",
+ "pubgrub",
+ "regex",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "shellexpand",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "which",
+ "zip",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -239,48 +281,6 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
-]
-
-[[package]]
-name = "ccpm"
-version = "0.3.17"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "ccpm",
- "chrono",
- "clap",
- "colored",
- "dashmap",
- "dirs",
- "fs4",
- "futures",
- "glob",
- "hex",
- "indicatif",
- "is-terminal",
- "once_cell",
- "petgraph",
- "predicates",
- "pubgrub",
- "regex",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "shellexpand",
- "tempfile",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "which",
- "zip",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 ---
 allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(cargo nextest:*), Bash(cargo build:*), Bash(cargo doc:*), Bash(cargo check:*), Read, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
-description: Perform comprehensive PR review for CCPM project
+description: Perform comprehensive PR review for AGPM project
 argument-hint: [ <commit> | <range> ] [ --quick | --full | --security | --performance ] - e.g., "abc123 --quick" for single commit, "main..HEAD --full" for range
 ---
 
@@ -12,7 +12,7 @@ argument-hint: [ <commit> | <range> ] [ --quick | --full | --security | --perfor
 
 ## Your task
 
-Perform a comprehensive pull request review for the CCPM project based on the arguments provided.
+Perform a comprehensive pull request review for the AGPM project based on the arguments provided.
 
 **IMPORTANT**: Batch related operations thoughtfully; schedule tool calls in Claude Code only in parallel when the workflow benefits from it.
 
@@ -127,7 +127,7 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - No circular dependencies
 
    **Security**:
-   - No credentials in ccpm.toml
+   - No credentials in agpm.toml
    - Input validation for git commands
    - Atomic file operations
 

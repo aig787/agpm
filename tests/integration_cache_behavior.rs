@@ -46,7 +46,7 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
 
     // First install - should populate cache
     let start = Instant::now();
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     let first_duration = start.elapsed();
 
@@ -55,7 +55,7 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
 
     // Second install - should reuse cached worktrees
     let start = Instant::now();
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     let second_duration = start.elapsed();
 
@@ -143,7 +143,7 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
 
     // Install with high parallelism - should use fetch caching
     let start = Instant::now();
-    let output = project.run_ccpm(&["install", "--verbose"])?;
+    let output = project.run_agpm(&["install", "--verbose"])?;
     output.assert_success();
     let duration = start.elapsed();
 
@@ -171,7 +171,7 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/fetch-snippet-1.md")
+            .join(".claude/agpm/snippets/fetch-snippet-1.md")
             .exists()
     );
 
@@ -220,7 +220,7 @@ official = "{}"
 
     // Install with maximum parallelism
     let start = Instant::now();
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     let duration = start.elapsed();
 
@@ -279,15 +279,15 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
     project.write_manifest(&manifest_content).await?;
 
     // First command: install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Second command: update (should reuse cache)
-    let output = project.run_ccpm(&["update"])?;
+    let output = project.run_agpm(&["update"])?;
     output.assert_success();
 
     // Third command: list (should work with cached data)
-    let output = project.run_ccpm(&["list"])?;
+    let output = project.run_agpm(&["list"])?;
     output.assert_success();
 
     // Verify final state
@@ -301,7 +301,7 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/persistent-snippet.md")
+            .join(".claude/agpm/snippets/persistent-snippet.md")
             .exists()
     );
 

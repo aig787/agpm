@@ -1,11 +1,11 @@
 [package]
-name = "ccpm"
+name = "agpm"
 version = "0.3.17"
 edition = "2024"
 authors = ["Aaron Griffin <aig787@icloud.com>"]
-description = "Claude Code Package Manager - A Git-based package manager for Claude agents"
+description = "AGent Package Manager - A Git-based package manager for Claude agents"
 license = "MIT"
-repository = "https://github.com/aig787/ccpm"
+repository = "https://github.com/aig787/agpm"
 readme = "README.md"
 keywords = ["claude", "ai", "package-manager", "agent", "cli"]
 categories = ["command-line-utilities", "development-tools"]
@@ -53,7 +53,7 @@ pubgrub = { version = "0.3.0", default-features = false }
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.10"
-ccpm = { path = ".", features = ["test-utils"] }
+agpm = { path = ".", features = ["test-utils"] }
 
 # Config for 'dist'
 [workspace.metadata.dist]
@@ -78,7 +78,7 @@ post-announce-jobs = ["./update-release-notes", "./publish-crates"]
 
 # cargo-binstall metadata for binary installation
 [package.metadata.binstall]
-pkg-url = "https://github.com/aig787/ccpm/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+pkg-url = "https://github.com/aig787/agpm/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
 bin-dir = "{ bin }{ binary-ext }"
 
 [profile.release]

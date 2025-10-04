@@ -169,7 +169,7 @@ This is a command without frontmatter."#;
         let content = r#"{
   "events": ["UserPromptSubmit"],
   "type": "command",
-  "command": ".claude/ccpm/scripts/test.js",
+  "command": ".claude/agpm/scripts/test.js",
   "dependencies": {
     "scripts": [
       { "path": "scripts/test-runner.sh", "version": "v1.0.0" },

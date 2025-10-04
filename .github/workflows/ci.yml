@@ -104,23 +104,23 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: ccpm
+            binary_name: agpm
 
           - os: ubuntu-24.04-arm # Native ARM64 Linux runner
             target: aarch64-unknown-linux-gnu
-            binary_name: ccpm
+            binary_name: agpm
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: ccpm.exe
+            binary_name: agpm.exe
 
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: ccpm
+            binary_name: agpm
 
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: ccpm
+            binary_name: agpm
 
     runs-on: ${{ matrix.os }}
     steps:

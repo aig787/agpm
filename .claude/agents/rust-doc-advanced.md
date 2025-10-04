@@ -40,7 +40,7 @@ You are an advanced Rust documentation specialist powered by Opus 4.1, designed 
 //!
 //! ## High-Level Design
 //!
-//! The CCPM system follows a layered architecture with clear separation of concerns:
+//! The AGPM system follows a layered architecture with clear separation of concerns:
 //!
 //! ```text
 //! ┌─────────────────┐
@@ -57,7 +57,7 @@ You are an advanced Rust documentation specialist powered by Opus 4.1, designed 
 //! The resolver component acts as the central coordinator:
 //!
 //! ```rust
-//! use ccpm::{Resolver, Manifest, Lockfile, Cache};
+//! use agpm::{Resolver, Manifest, Lockfile, Cache};
 //!
 //! let resolver = Resolver::new()
 //!     .with_cache(cache)
@@ -77,7 +77,7 @@ You are an advanced Rust documentation specialist powered by Opus 4.1, designed 
 //!
 //! ### Why Lockfiles?
 //!
-//! The decision to use lockfiles (ccpm.lock) provides:
+//! The decision to use lockfiles (agpm.lock) provides:
 //! - Reproducible builds across environments
 //! - Explicit dependency version tracking
 //! - Faster resolution on subsequent runs
@@ -391,9 +391,9 @@ pub mod path_utils {
 
 ### 1. Custom HTML/CSS
 ```rust
-#![doc(html_root_url = "https://docs.rs/ccpm/")]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/aig787/ccpm/main/assets/logo.png")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/aig787/ccpm/main/assets/favicon.ico")]
+#![doc(html_root_url = "https://docs.rs/agpm/")]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/aig787/agpm/main/assets/logo.png")]
+#![doc(html_favicon_url = "https://raw.githubusercontent.com/aig787/agpm/main/assets/favicon.ico")]
 #![doc(html_playground_url = "https://play.rust-lang.org/")]
 
 //! <div class="warning">
@@ -414,7 +414,7 @@ pub mod path_utils {
 /// See also:
 /// - [`Manifest::dependencies`] for dependency specification
 /// - [`Lockfile::resolved`] for cached resolution results
-/// - [The dependency resolution guide](https://ccpm.dev/guide/resolution)
+/// - [The dependency resolution guide](https://agpm.dev/guide/resolution)
 ///
 /// # Related Types
 ///
@@ -447,7 +447,7 @@ cargo rustdoc -- -Z unstable-options --show-coverage
 
 # Link checking
 cargo doc --no-deps --open
-linkchecker target/doc/ccpm/index.html
+linkchecker target/doc/agpm/index.html
 ```
 
 ## Integration with rust-doc-standard
@@ -467,7 +467,7 @@ The standard rust-doc-standard agent should delegate to this advanced version wh
 
 ```markdown
 This documentation task requires advanced architectural analysis:
-- System: CCPM dependency resolution system
+- System: AGPM dependency resolution system
 - Scope: Multi-module interaction patterns, performance characteristics
 - Complexity: Advanced type system usage, concurrent safety guarantees
 
@@ -487,4 +487,4 @@ I provide comprehensive, sophisticated documentation that:
 - **Creates learning resources** beyond basic API documentation
 - **Maintains documentation accuracy** through automated testing
 
-When working on CCPM specifically, I focus on documenting the complex interactions between the resolver, cache, git operations, and cross-platform considerations that make this system robust and reliable.
+When working on AGPM specifically, I focus on documenting the complex interactions between the resolver, cache, git operations, and cross-platform considerations that make this system robust and reliable.

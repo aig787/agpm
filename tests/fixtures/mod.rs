@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-/// Test fixture for creating sample ccpm.toml files
+/// Test fixture for creating sample agpm.toml files
 pub struct ManifestFixture {
     pub content: String,
     #[allow(dead_code)]
@@ -14,8 +14,8 @@ impl ManifestFixture {
             name: "basic".to_string(),
             content: r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
-community = "https://github.com/example-org/ccpm-community.git"
+official = "https://github.com/example-org/agpm-official.git"
+community = "https://github.com/example-org/agpm-community.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
@@ -36,7 +36,7 @@ utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
             name: "with_local".to_string(),
             content: r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
@@ -56,7 +56,7 @@ local-utils = { path = "./snippets/local-utils.md" }
             name: "invalid_syntax".to_string(),
             content: r#"
 [sources
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0"
@@ -73,7 +73,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
             name: "missing_fields".to_string(),
             content: r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 incomplete-agent = { source = "official", path = "" }  # Missing path
@@ -90,8 +90,8 @@ incomplete-agent = { source = "official", path = "" }  # Missing path
             name: "version_conflicts".to_string(),
             content: r#"
 [sources]
-source1 = "https://github.com/example-org/ccpm-repo1.git"
-source2 = "https://github.com/example-org/ccpm-repo2.git"
+source1 = "https://github.com/example-org/agpm-repo1.git"
+source2 = "https://github.com/example-org/agpm-repo2.git"
 
 [agents]
 # Agents that would conflict if installed together
@@ -122,13 +122,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -175,7 +175,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "old123456789abcdef123456789abcdef123456789"
 fetched_at = "2023-12-01T00:00:00Z"
 

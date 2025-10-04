@@ -1,6 +1,6 @@
 //! Error handling helper functions and utilities
 //!
-//! This module provides common error handling patterns used throughout CCPM,
+//! This module provides common error handling patterns used throughout AGPM,
 //! reducing boilerplate and ensuring consistent error messages.
 
 use anyhow::{Context, Result};
@@ -80,7 +80,7 @@ pub trait FileOperations {
     }
 }
 
-/// Implement FileOperations for a unit struct to enable trait usage
+/// Implement `FileOperations` for a unit struct to enable trait usage
 pub struct FileOps;
 impl FileOperations for FileOps {}
 
@@ -102,7 +102,7 @@ pub trait ManifestOperations {
     }
 }
 
-/// Implement ManifestOperations for a unit struct to enable trait usage
+/// Implement `ManifestOperations` for a unit struct to enable trait usage
 pub struct ManifestOps;
 impl ManifestOperations for ManifestOps {}
 
@@ -126,7 +126,7 @@ pub trait MarkdownOperations {
     }
 }
 
-/// Implement MarkdownOperations for a unit struct to enable trait usage
+/// Implement `MarkdownOperations` for a unit struct to enable trait usage
 pub struct MarkdownOps;
 impl MarkdownOperations for MarkdownOps {}
 
@@ -151,7 +151,7 @@ pub trait LockfileOperations {
     }
 }
 
-/// Implement LockfileOperations for a unit struct to enable trait usage
+/// Implement `LockfileOperations` for a unit struct to enable trait usage
 pub struct LockfileOps;
 impl LockfileOperations for LockfileOps {}
 
@@ -177,7 +177,7 @@ pub trait JsonOperations {
     }
 }
 
-/// Implement JsonOperations for a unit struct to enable trait usage
+/// Implement `JsonOperations` for a unit struct to enable trait usage
 pub struct JsonOps;
 impl JsonOperations for JsonOps {}
 
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_manifest_operations_load() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create a valid manifest file
         let manifest_content = r#"
@@ -504,7 +504,7 @@ This is a test agent for reading.
     #[test]
     fn test_lockfile_operations_load() {
         let temp = TempDir::new().unwrap();
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Test loading non-existent lockfile (should create new)
         let lockfile = LockfileOps::load_lockfile_with_context(&lockfile_path).unwrap();

@@ -1,8 +1,8 @@
-# Test Coverage Improvement Instructions for CCPM
+# Test Coverage Improvement Instructions for AGPM
 
 ## Overview
 
-You are tasked with improving test coverage for the CCPM (Claude Code Package Manager) project. The target is 70%
+You are tasked with improving test coverage for the AGPM (Claude Code Package Manager) project. The target is 70%
 minimum coverage. All existing tests must remain passing throughout this process.
 
 **IMPORTANT**: This is an iterative process. You will:
@@ -46,10 +46,10 @@ cargo test --all
 
 ```bash
 # Save baseline coverage output to a tmp file for reference (avoid re-running)
-cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/ccpm_coverage_baseline.txt
+cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/agpm_coverage_baseline.txt
 
 # Check current coverage percentage quickly from saved file
-tail -5 /tmp/ccpm_coverage_baseline.txt
+tail -5 /tmp/agpm_coverage_baseline.txt
 
 # Generate HTML coverage report only when needed for detailed analysis
 cargo llvm-cov --ignore-filename-regex "test_utils" --html --output-dir target/coverage
@@ -75,7 +75,7 @@ make coverage
 
 ```bash
 # Extract coverage ratios from the summary section (format: "src/file.rs: 123/456")
-grep -E "src/[^:]+: [0-9]+/[0-9]+" /tmp/ccpm_coverage_baseline.txt | while read line; do
+grep -E "src/[^:]+: [0-9]+/[0-9]+" /tmp/agpm_coverage_baseline.txt | while read line; do
     # Extract file path and coverage
     file=$(echo "$line" | cut -d: -f1 | sed 's/|| //')
     coverage_part=$(echo "$line" | cut -d: -f2 | cut -d' ' -f2)
@@ -197,7 +197,7 @@ mod tests {
 Location: `tests/` directory
 
 ```rust
-use ccpm::cli;
+use agpm::cli;
 use tempfile::TempDir;
 
 #[test]
@@ -207,7 +207,7 @@ fn test_install_command() {
 }
 ```
 
-### Step 6: CCPM-Specific Testing Requirements
+### Step 6: AGPM-Specific Testing Requirements
 
 #### Critical Testing Rules
 
@@ -226,7 +226,7 @@ fn test_install_command() {
     - Each test should be completely independent
     - Use dependency injection for configuration
 
-#### Testing Patterns for CCPM
+#### Testing Patterns for AGPM
 
 **Manifest Testing**
 
@@ -282,7 +282,7 @@ When selecting modules to test, use this decision matrix:
 # Quick analysis to find best targets
 echo "=== High Impact Modules (test these first) ==="
 # Modules with >50 uncovered lines and <50% coverage
-grep "^|| src/" /tmp/ccpm_coverage_*.txt | awk -F': ' '{
+grep "^|| src/" /tmp/agpm_coverage_*.txt | awk -F': ' '{
     split($2, a, " ");
     split(a[1], b, "/");
     if (b[2] > 0) {
@@ -297,7 +297,7 @@ grep "^|| src/" /tmp/ccpm_coverage_*.txt | awk -F': ' '{
 
 echo -e "\n=== Quick Wins (small modules to boost percentage) ==="
 # Modules with <20 uncovered lines that can reach 90%+
-grep "^|| src/" /tmp/ccpm_coverage_*.txt | awk -F': ' '{
+grep "^|| src/" /tmp/agpm_coverage_*.txt | awk -F': ' '{
     split($2, a, " ");
     split(a[1], b, "/");
     if (b[2] > 0) {
@@ -318,7 +318,7 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 1. **Calculate Exact Need:**
    ```bash
    # Extract actual numbers from coverage report
-   coverage_line=$(tail -1 /tmp/ccpm_coverage_baseline.txt)
+   coverage_line=$(tail -1 /tmp/agpm_coverage_baseline.txt)
    # Example line: "69.91% coverage, 3609/5162 lines covered, +0.00% change in coverage"
    
    current_pct=$(echo "$coverage_line" | grep -oE "[0-9]+\.[0-9]+%" | head -1 | tr -d '%')
@@ -350,13 +350,13 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 1. **Measure Current State**
    ```bash
    # IMPORTANT: Save coverage output to avoid expensive re-runs
-   cargo llvm-cov --text | tee /tmp/ccpm_coverage_current.txt
+   cargo llvm-cov --text | tee /tmp/agpm_coverage_current.txt
 
    # Check specific module coverage from saved output
-   grep "src/module_name" /tmp/ccpm_coverage_current.txt
+   grep "src/module_name" /tmp/agpm_coverage_current.txt
 
    # Or reference previous runs
-   cat /tmp/ccpm_coverage_*.txt | tail -1 | grep "src/module_name"
+   cat /tmp/agpm_coverage_*.txt | tail -1 | grep "src/module_name"
    ```
 
 2. **Pick ONE Module to Improve**
@@ -384,11 +384,11 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 5. **Measure Improvement**
    ```bash
    # Save new coverage measurement
-   cargo llvm-cov --text | tee /tmp/ccpm_coverage_after_$(date +%Y%m%d_%H%M%S).txt
+   cargo llvm-cov --text | tee /tmp/agpm_coverage_after_$(date +%Y%m%d_%H%M%S).txt
 
    # Compare with previous baseline
-   echo "=== Before ===" && grep "src/module_name" /tmp/ccpm_coverage_current.txt
-   echo "=== After ===" && grep "src/module_name" /tmp/ccpm_coverage_after_*.txt | tail -1
+   echo "=== Before ===" && grep "src/module_name" /tmp/agpm_coverage_current.txt
+   echo "=== After ===" && grep "src/module_name" /tmp/agpm_coverage_after_*.txt | tail -1
 
    # Generate HTML report only when needed for detailed analysis
    # cargo llvm-cov --html --output-dir target/coverage
@@ -409,7 +409,7 @@ If you're within 1% of the target (e.g., at 69.91% aiming for 70%):
 **Remember**: Small, incremental improvements are better than large, risky changes. Each iteration should leave the
 codebase in a stable, working state.
 
-### Step 8: Common Testing Scenarios for CCPM
+### Step 8: Common Testing Scenarios for AGPM
 
 #### Testing CLI Commands
 
@@ -423,7 +423,7 @@ fn test_install_with_dependencies() {
     let result = cli::install::execute(temp_dir.path()).await;
 
     // Verify lockfile created
-    assert!(temp_dir.path().join("ccpm.lock").exists());
+    assert!(temp_dir.path().join("agpm.lock").exists());
 }
 ```
 
@@ -457,20 +457,20 @@ Track coverage improvements efficiently:
 
 ```bash
 # Save coverage runs with descriptive names
-cargo llvm-cov --text --no-run | tee /tmp/ccpm_coverage_no_tests.txt
+cargo llvm-cov --text --no-run | tee /tmp/agpm_coverage_no_tests.txt
 
 # Focus on specific modules (save output)
-cargo llvm-cov --text -- module_name:: | tee /tmp/ccpm_coverage_module_$(date +%Y%m%d).txt
+cargo llvm-cov --text -- module_name:: | tee /tmp/agpm_coverage_module_$(date +%Y%m%d).txt
 
 # Skip problematic tests temporarily (save output)
-cargo llvm-cov --text -- --skip 'test_name_pattern' | tee /tmp/ccpm_coverage_skip_problematic.txt
+cargo llvm-cov --text -- --skip 'test_name_pattern' | tee /tmp/agpm_coverage_skip_problematic.txt
 
 # Compare coverage over time
-ls -la /tmp/ccpm_coverage_*.txt
-diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
+ls -la /tmp/agpm_coverage_*.txt
+diff /tmp/agpm_coverage_current.txt /tmp/agpm_coverage_after_*.txt | tail -1
 
 # Quick coverage check from saved results
-tail -20 /tmp/ccpm_coverage_current.txt
+tail -20 /tmp/agpm_coverage_current.txt
 ```
 
 ## Red Flags to Avoid
@@ -520,17 +520,17 @@ Based on module importance:
 cargo test --all
 
 # Generate and save coverage report (EXPENSIVE - save output!)
-cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/ccpm_coverage_baseline.txt
+cargo llvm-cov --ignore-filename-regex "test_utils" --text | tee /tmp/agpm_coverage_baseline.txt
 
 # Generate HTML report only when needed for detailed analysis
 cargo llvm-cov --ignore-filename-regex "test_utils" --html --output-dir target/coverage
 
 # Run coverage for specific module (save output)
-cargo llvm-cov --text -- module_name:: | tee /tmp/ccpm_coverage_module.txt
+cargo llvm-cov --text -- module_name:: | tee /tmp/agpm_coverage_module.txt
 
 # View saved coverage reports
-ls -la /tmp/ccpm_coverage_*.txt
-cat /tmp/ccpm_coverage_current.txt
+ls -la /tmp/agpm_coverage_*.txt
+cat /tmp/agpm_coverage_current.txt
 
 # Run tests with single thread (for debugging)
 cargo test -- --test-threads=1
@@ -542,10 +542,10 @@ cargo test -- --nocapture
 cargo test test_name -- --exact
 
 # Check coverage without running tests (save output)
-cargo llvm-cov --text --no-run | tee /tmp/ccpm_coverage_no_tests.txt
+cargo llvm-cov --text --no-run | tee /tmp/agpm_coverage_no_tests.txt
 
 # Compare coverage between runs
-diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
+diff /tmp/agpm_coverage_current.txt /tmp/agpm_coverage_after_*.txt | tail -1
 ```
 
 ## When to Use Each Agent
@@ -557,14 +557,14 @@ diff /tmp/ccpm_coverage_current.txt /tmp/ccpm_coverage_after_*.txt | tail -1
 - **Complex issues**: Use `rust-troubleshooter-opus` for deep debugging
 - **Code quality**: Use `rust-linting-expert` for test code style
 
-## Real-World Example: Improving CCPM Coverage from 69.91% to 70.11%
+## Real-World Example: Improving AGPM Coverage from 69.91% to 70.11%
 
 This is an actual example of how the coverage was improved:
 
 ### 1. Initial Assessment
 ```bash
 # Check baseline
-tail -5 /tmp/ccpm_coverage_baseline.txt
+tail -5 /tmp/agpm_coverage_baseline.txt
 # Output: 69.91% coverage, 3609/5162 lines covered
 ```
 
@@ -587,7 +587,7 @@ Added 3 strategic tests to `src/cli/remove.rs`:
 ### 4. Result
 ```bash
 # After adding tests
-tail -5 /tmp/ccpm_coverage_after.txt
+tail -5 /tmp/agpm_coverage_after.txt
 # Output: 70.11% coverage, 3619/5162 lines covered, +0.19% change
 ```
 

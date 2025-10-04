@@ -1,13 +1,13 @@
-//! Hook merging logic for safely integrating CCPM hooks with user settings
+//! Hook merging logic for safely integrating AGPM hooks with user settings
 //!
-//! This module provides the critical functionality for merging CCPM-managed hooks
+//! This module provides the critical functionality for merging AGPM-managed hooks
 //! into Claude Code's settings.local.json while preserving user configurations.
 
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::{CcpmHookMetadata, HookCommand, HookConfig, HookEvent, MatcherGroup};
+use super::{AgpmHookMetadata, HookCommand, HookConfig, HookEvent, MatcherGroup};
 
 /// Result of a merge operation for debugging and validation
 #[derive(Debug)]
@@ -16,38 +16,38 @@ pub struct MergeResult {
     pub hooks: Value,
     /// Number of user hooks preserved
     pub user_hooks_preserved: usize,
-    /// Number of CCPM hooks added
-    pub ccpm_hooks_added: usize,
-    /// Number of CCPM hooks updated
-    pub ccpm_hooks_updated: usize,
-    /// Number of CCPM hooks removed
-    pub ccpm_hooks_removed: usize,
+    /// Number of AGPM hooks added
+    pub agpm_hooks_added: usize,
+    /// Number of AGPM hooks updated
+    pub agpm_hooks_updated: usize,
+    /// Number of AGPM hooks removed
+    pub agpm_hooks_removed: usize,
 }
 
-/// Merge CCPM hooks into existing settings with comprehensive conflict resolution
+/// Merge AGPM hooks into existing settings with comprehensive conflict resolution
 ///
 /// This function implements a sophisticated merge strategy that:
 /// 1. Preserves all user-managed hooks
-/// 2. Removes outdated CCPM-managed hooks
-/// 3. Adds or updates current CCPM-managed hooks
+/// 2. Removes outdated AGPM-managed hooks
+/// 3. Adds or updates current AGPM-managed hooks
 /// 4. Groups hooks by matcher pattern for efficiency
 /// 5. Maintains stable ordering where possible
 pub fn merge_hooks_advanced(
     existing_hooks: Option<&Value>,
-    ccpm_hooks: HashMap<String, HookConfig>,
+    agpm_hooks: HashMap<String, HookConfig>,
     source_info: &HashMap<String, (String, String)>, // name -> (source, version)
 ) -> Result<MergeResult> {
     let mut merged: HashMap<String, Vec<MatcherGroup>> = HashMap::new();
     let mut stats = MergeResult {
         hooks: Value::Null,
         user_hooks_preserved: 0,
-        ccpm_hooks_added: 0,
-        ccpm_hooks_updated: 0,
-        ccpm_hooks_removed: 0,
+        agpm_hooks_added: 0,
+        agpm_hooks_updated: 0,
+        agpm_hooks_removed: 0,
     };
 
     // Step 1: Parse and categorize existing hooks
-    let (user_hooks, existing_ccpm) = parse_existing_hooks(existing_hooks)?;
+    let (user_hooks, existing_agpm) = parse_existing_hooks(existing_hooks)?;
 
     // Step 2: Preserve all user hooks
     for (event_name, groups) in user_hooks {
@@ -55,16 +55,16 @@ pub fn merge_hooks_advanced(
         merged.insert(event_name, groups);
     }
 
-    // Step 3: Track which CCPM hooks to keep
-    let mut active_ccpm_hooks: HashMap<String, bool> = HashMap::new();
+    // Step 3: Track which AGPM hooks to keep
+    let mut active_agpm_hooks: HashMap<String, bool> = HashMap::new();
 
-    // Step 4: Add/update CCPM hooks
-    for (name, config) in ccpm_hooks {
+    // Step 4: Add/update AGPM hooks
+    for (name, config) in agpm_hooks {
         let (source, version) = source_info
             .get(&name)
             .ok_or_else(|| anyhow::anyhow!("Missing source info for hook: {}", name))?;
 
-        active_ccpm_hooks.insert(name.clone(), true);
+        active_agpm_hooks.insert(name.clone(), true);
 
         for event in &config.events {
             let event_name = event_to_string(event);
@@ -73,7 +73,7 @@ pub fn merge_hooks_advanced(
                 hook_type: config.hook_type.clone(),
                 command: config.command.clone(),
                 timeout: config.timeout,
-                ccpm_metadata: Some(CcpmHookMetadata {
+                agpm_metadata: Some(AgpmHookMetadata {
                     managed: true,
                     dependency_name: name.clone(),
                     source: source.clone(),
@@ -83,14 +83,14 @@ pub fn merge_hooks_advanced(
             };
 
             // Check if this hook already exists (update vs add)
-            let is_update = existing_ccpm
+            let is_update = existing_agpm
                 .iter()
                 .any(|(existing_name, _)| existing_name == &name);
 
             if is_update {
-                stats.ccpm_hooks_updated += 1;
+                stats.agpm_hooks_updated += 1;
             } else {
-                stats.ccpm_hooks_added += 1;
+                stats.agpm_hooks_added += 1;
             }
 
             // Add to appropriate matcher group
@@ -98,10 +98,10 @@ pub fn merge_hooks_advanced(
         }
     }
 
-    // Step 5: Count removed CCPM hooks
-    for (old_name, _) in existing_ccpm {
-        if !active_ccpm_hooks.contains_key(&old_name) {
-            stats.ccpm_hooks_removed += 1;
+    // Step 5: Count removed AGPM hooks
+    for (old_name, _) in existing_agpm {
+        if !active_agpm_hooks.contains_key(&old_name) {
+            stats.agpm_hooks_removed += 1;
         }
     }
 
@@ -114,13 +114,13 @@ pub fn merge_hooks_advanced(
 /// Type alias for parsed hooks result
 type ParsedHooks = (
     HashMap<String, Vec<MatcherGroup>>, // User hooks
-    HashMap<String, Vec<String>>,       // CCPM hooks: name -> events
+    HashMap<String, Vec<String>>,       // AGPM hooks: name -> events
 );
 
-/// Parse existing hooks and separate user-managed from CCPM-managed
+/// Parse existing hooks and separate user-managed from AGPM-managed
 fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
     let mut user_hooks: HashMap<String, Vec<MatcherGroup>> = HashMap::new();
-    let mut ccpm_hooks: HashMap<String, Vec<String>> = HashMap::new();
+    let mut agpm_hooks: HashMap<String, Vec<String>> = HashMap::new();
 
     if let Some(existing) = existing
         && let Some(obj) = existing.as_object()
@@ -142,12 +142,12 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
                             let mut user_hooks_in_group = Vec::new();
 
                             for hook in hooks_array {
-                                // Check if this is CCPM-managed
-                                if let Some(ccpm_meta) = hook.get("_ccpm") {
+                                // Check if this is AGPM-managed
+                                if let Some(agpm_meta) = hook.get("_agpm") {
                                     if let Some(dep_name) =
-                                        ccpm_meta.get("dependency_name").and_then(|n| n.as_str())
+                                        agpm_meta.get("dependency_name").and_then(|n| n.as_str())
                                     {
-                                        ccpm_hooks
+                                        agpm_hooks
                                             .entry(dep_name.to_string())
                                             .or_default()
                                             .push(event_name.clone());
@@ -179,7 +179,7 @@ fn parse_existing_hooks(existing: Option<&Value>) -> Result<ParsedHooks> {
         }
     }
 
-    Ok((user_hooks, ccpm_hooks))
+    Ok((user_hooks, agpm_hooks))
 }
 
 /// Add a hook to the appropriate matcher group
@@ -193,10 +193,10 @@ fn add_hook_to_groups(
 
     // Find existing matcher group or create new one
     if let Some(group) = event_groups.iter_mut().find(|g| g.matcher == matcher) {
-        // Remove any existing CCPM hook with the same dependency_name
-        if let Some(ref new_meta) = hook.ccpm_metadata {
+        // Remove any existing AGPM hook with the same dependency_name
+        if let Some(ref new_meta) = hook.agpm_metadata {
             group.hooks.retain(|h| {
-                h.ccpm_metadata
+                h.agpm_metadata
                     .as_ref()
                     .map(|m| m.dependency_name != new_meta.dependency_name)
                     .unwrap_or(true)
@@ -273,9 +273,9 @@ mod tests {
         let result = merge_hooks_advanced(None, HashMap::new(), &HashMap::new()).unwrap();
 
         assert_eq!(result.user_hooks_preserved, 0);
-        assert_eq!(result.ccpm_hooks_added, 0);
-        assert_eq!(result.ccpm_hooks_updated, 0);
-        assert_eq!(result.ccpm_hooks_removed, 0);
+        assert_eq!(result.agpm_hooks_added, 0);
+        assert_eq!(result.agpm_hooks_updated, 0);
+        assert_eq!(result.agpm_hooks_removed, 0);
         assert_eq!(result.hooks, json!({}));
     }
 
@@ -296,7 +296,7 @@ mod tests {
             merge_hooks_advanced(Some(&existing), HashMap::new(), &HashMap::new()).unwrap();
 
         assert_eq!(result.user_hooks_preserved, 1);
-        assert_eq!(result.ccpm_hooks_added, 0);
+        assert_eq!(result.agpm_hooks_added, 0);
 
         // Verify user hook is preserved
         let hooks = result.hooks.as_object().unwrap();
@@ -306,19 +306,19 @@ mod tests {
         assert_eq!(group.get("matcher").unwrap().as_str().unwrap(), "Bash");
         let hooks_array = group.get("hooks").unwrap().as_array().unwrap();
         assert_eq!(hooks_array.len(), 1);
-        assert!(hooks_array[0].get("_ccpm").is_none());
+        assert!(hooks_array[0].get("_agpm").is_none());
     }
 
     #[test]
-    fn test_add_ccpm_hooks() {
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+    fn test_add_agpm_hooks() {
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "security-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash|Write".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/ccpm/scripts/security.sh".to_string(),
+                command: ".claude/agpm/scripts/security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -330,12 +330,12 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
         assert_eq!(result.user_hooks_preserved, 0);
 
-        // Verify CCPM hook was added
+        // Verify AGPM hook was added
         let hooks = result.hooks.as_object().unwrap();
         let pre_tool = hooks.get("PreToolUse").unwrap().as_array().unwrap();
         assert_eq!(pre_tool.len(), 1);
@@ -347,18 +347,18 @@ mod tests {
         let hooks_array = group.get("hooks").unwrap().as_array().unwrap();
         assert_eq!(hooks_array.len(), 1);
 
-        // Check CCPM metadata
-        let ccpm_meta = hooks_array[0].get("_ccpm").unwrap();
+        // Check AGPM metadata
+        let agpm_meta = hooks_array[0].get("_agpm").unwrap();
         assert_eq!(
-            ccpm_meta.get("dependency_name").unwrap().as_str().unwrap(),
+            agpm_meta.get("dependency_name").unwrap().as_str().unwrap(),
             "security-hook"
         );
         assert_eq!(
-            ccpm_meta.get("source").unwrap().as_str().unwrap(),
+            agpm_meta.get("source").unwrap().as_str().unwrap(),
             "test-source"
         );
         assert_eq!(
-            ccpm_meta.get("version").unwrap().as_str().unwrap(),
+            agpm_meta.get("version").unwrap().as_str().unwrap(),
             "v1.0.0"
         );
     }
@@ -377,15 +377,15 @@ mod tests {
             }]
         });
 
-        // CCPM hook with same matcher
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        // AGPM hook with same matcher
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "security-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/ccpm/scripts/security.sh".to_string(),
+                command: ".claude/agpm/scripts/security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -397,10 +397,10 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info).unwrap();
 
         assert_eq!(result.user_hooks_preserved, 1);
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
 
         // Verify both hooks are in the same matcher group
         let hooks = result.hooks.as_object().unwrap();
@@ -411,33 +411,33 @@ mod tests {
         assert_eq!(group.get("matcher").unwrap().as_str().unwrap(), "Bash");
 
         let hooks_array = group.get("hooks").unwrap().as_array().unwrap();
-        assert_eq!(hooks_array.len(), 2, "Should have both user and CCPM hooks");
+        assert_eq!(hooks_array.len(), 2, "Should have both user and AGPM hooks");
 
-        // Check that we have one user hook and one CCPM hook
-        let ccpm_count = hooks_array
+        // Check that we have one user hook and one AGPM hook
+        let agpm_count = hooks_array
             .iter()
-            .filter(|h| h.get("_ccpm").is_some())
+            .filter(|h| h.get("_agpm").is_some())
             .count();
-        assert_eq!(ccpm_count, 1);
+        assert_eq!(agpm_count, 1);
 
         let user_count = hooks_array
             .iter()
-            .filter(|h| h.get("_ccpm").is_none())
+            .filter(|h| h.get("_agpm").is_none())
             .count();
         assert_eq!(user_count, 1);
     }
 
     #[test]
-    fn test_update_existing_ccpm_hook() {
-        // Existing CCPM hook
+    fn test_update_existing_agpm_hook() {
+        // Existing AGPM hook
         let existing = json!({
             "PreToolUse": [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/ccpm/scripts/old-security.sh",
+                    "command": ".claude/agpm/scripts/old-security.sh",
                     "timeout": 5000,
-                    "_ccpm": {
+                    "_agpm": {
                         "managed": true,
                         "dependency_name": "security-hook",
                         "source": "test-source",
@@ -448,14 +448,14 @@ mod tests {
             }]
         });
 
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "security-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/ccpm/scripts/new-security.sh".to_string(),
+                command: ".claude/agpm/scripts/new-security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -467,12 +467,12 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info).unwrap();
 
         assert_eq!(result.user_hooks_preserved, 0);
-        assert_eq!(result.ccpm_hooks_added, 0);
-        assert_eq!(result.ccpm_hooks_updated, 1);
-        assert_eq!(result.ccpm_hooks_removed, 0);
+        assert_eq!(result.agpm_hooks_added, 0);
+        assert_eq!(result.agpm_hooks_updated, 1);
+        assert_eq!(result.agpm_hooks_removed, 0);
 
         // Verify hook was updated
         let hooks = result.hooks.as_object().unwrap();
@@ -487,27 +487,27 @@ mod tests {
         let hook = &hooks_array[0];
         assert_eq!(
             hook.get("command").unwrap().as_str().unwrap(),
-            ".claude/ccpm/scripts/new-security.sh"
+            ".claude/agpm/scripts/new-security.sh"
         );
         assert_eq!(hook.get("timeout").unwrap().as_u64().unwrap(), 3000);
 
-        let ccpm_meta = hook.get("_ccpm").unwrap();
+        let agpm_meta = hook.get("_agpm").unwrap();
         assert_eq!(
-            ccpm_meta.get("version").unwrap().as_str().unwrap(),
+            agpm_meta.get("version").unwrap().as_str().unwrap(),
             "v1.0.0"
         );
     }
 
     #[test]
-    fn test_remove_outdated_ccpm_hooks() {
-        // Existing with two CCPM hooks
+    fn test_remove_outdated_agpm_hooks() {
+        // Existing with two AGPM hooks
         let existing = json!({
             "PreToolUse": [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/ccpm/scripts/keep.sh",
-                    "_ccpm": {
+                    "command": ".claude/agpm/scripts/keep.sh",
+                    "_agpm": {
                         "managed": true,
                         "dependency_name": "keep-hook",
                         "source": "test-source",
@@ -519,8 +519,8 @@ mod tests {
                 "matcher": "Write",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/ccpm/scripts/remove.sh",
-                    "_ccpm": {
+                    "command": ".claude/agpm/scripts/remove.sh",
+                    "_agpm": {
                         "managed": true,
                         "dependency_name": "remove-hook",
                         "source": "test-source",
@@ -532,14 +532,14 @@ mod tests {
         });
 
         // Only keep one hook
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "keep-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/ccpm/scripts/keep.sh".to_string(),
+                command: ".claude/agpm/scripts/keep.sh".to_string(),
                 timeout: None,
                 description: None,
             },
@@ -551,10 +551,10 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_removed, 1);
-        assert_eq!(result.ccpm_hooks_updated, 1);
+        assert_eq!(result.agpm_hooks_removed, 1);
+        assert_eq!(result.agpm_hooks_updated, 1);
 
         // Verify only one hook remains
         let hooks = result.hooks.as_object().unwrap();
@@ -571,8 +571,8 @@ mod tests {
 
     #[test]
     fn test_multiple_events_same_hook() {
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "multi-event-hook".to_string(),
             HookConfig {
                 events: vec![
@@ -594,9 +594,9 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 3); // One hook added to 3 events
+        assert_eq!(result.agpm_hooks_added, 3); // One hook added to 3 events
 
         // Verify hook appears in all three events
         let hooks = result.hooks.as_object().unwrap();
@@ -616,8 +616,8 @@ mod tests {
     #[test]
     fn test_invalid_regex_matcher() {
         // Test that invalid regex matchers are handled gracefully
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "test-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -635,9 +635,9 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
 
         // The hook should still be added even with invalid regex
         // (validation happens elsewhere)
@@ -648,8 +648,8 @@ mod tests {
 
     #[test]
     fn test_empty_matcher_string() {
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "empty-matcher".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -667,9 +667,9 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
 
         // Empty matcher should still work
         let hooks = result.hooks.as_object().unwrap();
@@ -679,14 +679,14 @@ mod tests {
 
     #[test]
     fn test_duplicate_hooks_in_same_matcher() {
-        // Test that duplicate CCPM hooks with same name get deduplicated
+        // Test that duplicate AGPM hooks with same name get deduplicated
         let existing = json!({
             "PreToolUse": [{
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
                     "command": "old-security.sh",
-                    "_ccpm": {
+                    "_agpm": {
                         "managed": true,
                         "dependency_name": "security",
                         "source": "test",
@@ -696,8 +696,8 @@ mod tests {
             }]
         });
 
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "security".to_string(), // Same dependency name
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -715,11 +715,11 @@ mod tests {
             ("test".to_string(), "v2.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info).unwrap();
 
         // Should update, not add
-        assert_eq!(result.ccpm_hooks_updated, 1);
-        assert_eq!(result.ccpm_hooks_added, 0);
+        assert_eq!(result.agpm_hooks_updated, 1);
+        assert_eq!(result.agpm_hooks_added, 0);
 
         // Should have only one hook in the matcher group
         let hooks = result.hooks.as_object().unwrap();
@@ -768,8 +768,8 @@ mod tests {
             ]
         });
 
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "new-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -788,13 +788,13 @@ mod tests {
         );
 
         // Should handle gracefully without panicking
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info);
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info);
 
         // We expect this to either succeed with partial data or fail gracefully
         assert!(result.is_ok() || result.is_err());
 
         if let Ok(result) = result {
-            assert_eq!(result.ccpm_hooks_added, 1);
+            assert_eq!(result.agpm_hooks_added, 1);
 
             // New hook should be added
             let hooks = result.hooks.as_object().unwrap();
@@ -806,8 +806,8 @@ mod tests {
     fn test_very_long_matcher_pattern() {
         let long_pattern = "A|".repeat(1000) + "B"; // Very long pattern
 
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "long-hook".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -825,9 +825,9 @@ mod tests {
             ("test".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
 
         // Long pattern should be preserved
         let hooks = result.hooks.as_object().unwrap();
@@ -841,8 +841,8 @@ mod tests {
     #[test]
     fn test_special_characters_in_names() {
         // Test hooks with special characters in names
-        let mut ccpm_hooks = HashMap::new();
-        ccpm_hooks.insert(
+        let mut agpm_hooks = HashMap::new();
+        agpm_hooks.insert(
             "hook-with-special!@#$%^&*()_+chars".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -860,16 +860,16 @@ mod tests {
             ("test-source".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(None, ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(None, agpm_hooks, &source_info).unwrap();
 
-        assert_eq!(result.ccpm_hooks_added, 1);
+        assert_eq!(result.agpm_hooks_added, 1);
 
         // Special characters should be preserved
         let hooks = result.hooks.as_object().unwrap();
         let pre_tool = hooks.get("PreToolUse").unwrap().as_array().unwrap();
         let hook = &pre_tool[0].get("hooks").unwrap().as_array().unwrap()[0];
         assert_eq!(
-            hook.get("_ccpm")
+            hook.get("_agpm")
                 .unwrap()
                 .get("dependency_name")
                 .unwrap()
@@ -893,8 +893,8 @@ mod tests {
                         },
                         {
                             "type": "command",
-                            "command": "old-ccpm-hook.sh",
-                            "_ccpm": {
+                            "command": "old-agpm-hook.sh",
+                            "_agpm": {
                                 "managed": true,
                                 "dependency_name": "old-hook",
                                 "source": "old-source",
@@ -920,7 +920,7 @@ mod tests {
                         {
                             "type": "command",
                             "command": "logging.sh",
-                            "_ccpm": {
+                            "_agpm": {
                                 "managed": true,
                                 "dependency_name": "logger",
                                 "source": "utils",
@@ -932,11 +932,11 @@ mod tests {
             ]
         });
 
-        // New CCPM hooks configuration
-        let mut ccpm_hooks = HashMap::new();
+        // New AGPM hooks configuration
+        let mut agpm_hooks = HashMap::new();
 
         // Keep and update the logger
-        ccpm_hooks.insert(
+        agpm_hooks.insert(
             "logger".to_string(),
             HookConfig {
                 events: vec![HookEvent::PostToolUse],
@@ -949,7 +949,7 @@ mod tests {
         );
 
         // Add a new security hook
-        ccpm_hooks.insert(
+        agpm_hooks.insert(
             "security".to_string(),
             HookConfig {
                 events: vec![HookEvent::PreToolUse],
@@ -971,12 +971,12 @@ mod tests {
             ("security-tools".to_string(), "v1.0.0".to_string()),
         );
 
-        let result = merge_hooks_advanced(Some(&existing), ccpm_hooks, &source_info).unwrap();
+        let result = merge_hooks_advanced(Some(&existing), agpm_hooks, &source_info).unwrap();
 
         assert_eq!(result.user_hooks_preserved, 2); // user-bash-hook and user-write-hook
-        assert_eq!(result.ccpm_hooks_added, 1); // security hook
-        assert_eq!(result.ccpm_hooks_updated, 1); // logger hook
-        assert_eq!(result.ccpm_hooks_removed, 1); // old-hook
+        assert_eq!(result.agpm_hooks_added, 1); // security hook
+        assert_eq!(result.agpm_hooks_updated, 1); // logger hook
+        assert_eq!(result.agpm_hooks_removed, 1); // old-hook
 
         // Verify final structure
         let hooks = result.hooks.as_object().unwrap();
@@ -1005,7 +1005,7 @@ mod tests {
 
         let write_hooks = write_group.get("hooks").unwrap().as_array().unwrap();
         assert_eq!(write_hooks.len(), 1); // Just the user hook
-        assert!(write_hooks[0].get("_ccpm").is_none());
+        assert!(write_hooks[0].get("_agpm").is_none());
 
         // Check PostToolUse
         let post_tool = hooks.get("PostToolUse").unwrap().as_array().unwrap();

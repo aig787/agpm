@@ -1,17 +1,17 @@
-# CCPM Command Reference
+# AGPM Command Reference
 
-This document provides detailed information about all CCPM commands and their options.
+This document provides detailed information about all AGPM commands and their options.
 
 ## Global Options
 
 ```
-ccpm [OPTIONS] <COMMAND>
+agpm [OPTIONS] <COMMAND>
 
 Options:
   -v, --verbose              Enable verbose output
   -q, --quiet                Suppress non-error output
       --config <PATH>        Path to custom global configuration file
-      --manifest-path <PATH> Path to the manifest file (ccpm.toml)
+      --manifest-path <PATH> Path to the manifest file (agpm.toml)
       --no-progress          Disable progress bars and spinners
   -h, --help                 Print help information
   -V, --version              Print version information
@@ -19,74 +19,74 @@ Options:
 
 ## Commands
 
-### `ccpm init`
+### `agpm init`
 
-Initialize a new CCPM project by creating a `ccpm.toml` manifest file.
+Initialize a new AGPM project by creating a `agpm.toml` manifest file.
 
 ```bash
-ccpm init [OPTIONS]
+agpm init [OPTIONS]
 
 Options:
       --path <PATH>    Initialize in specific directory (default: current directory)
-      --force          Overwrite existing ccpm.toml file
+      --force          Overwrite existing agpm.toml file
   -h, --help           Print help information
 ```
 
 **Example:**
 ```bash
 # Initialize in current directory
-ccpm init
+agpm init
 
 # Initialize in specific directory
-ccpm init --path ./my-project
+agpm init --path ./my-project
 
 # Force overwrite existing manifest
-ccpm init --force
+agpm init --force
 ```
 
-### `ccpm install`
+### `agpm install`
 
-Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
+Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
-ccpm install [OPTIONS]
+agpm install [OPTIONS]
 
 Options:
       --no-lock                  Don't write lockfile after installation
       --frozen                   Require exact lockfile match (like cargo build --locked)
       --no-cache                 Bypass cache and fetch directly from sources
       --max-parallel <NUMBER>    Maximum parallel operations (default: max(10, 2 × CPU cores))
-      --manifest-path <PATH>     Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>     Path to agpm.toml (default: ./agpm.toml)
   -h, --help                     Print help information
 ```
 
 **Examples:**
 ```bash
 # Standard installation (auto-updates lockfile)
-ccpm install
+agpm install
 
 # CI/production mode - fail if lockfile out of sync (like cargo build --locked)
-ccpm install --frozen
+agpm install --frozen
 
 # Install without creating lockfile
-ccpm install --no-lock
+agpm install --no-lock
 
 # Bypass cache for fresh fetch
-ccpm install --no-cache
+agpm install --no-cache
 
 # Control parallelism (default: max(10, 2 × CPU cores))
-ccpm install --max-parallel 8
+agpm install --max-parallel 8
 
 # Use custom manifest path
-ccpm install --manifest-path ./configs/ccpm.toml
+agpm install --manifest-path ./configs/agpm.toml
 ```
 
-### `ccpm update`
+### `agpm update`
 
 Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions.
 
 ```bash
-ccpm update [OPTIONS] [DEPENDENCY]
+agpm update [OPTIONS] [DEPENDENCY]
 
 Arguments:
   [DEPENDENCY]    Update specific dependency (default: update all)
@@ -94,31 +94,31 @@ Arguments:
 Options:
       --dry-run               Preview changes without applying
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 **Examples:**
 ```bash
 # Update all dependencies
-ccpm update
+agpm update
 
 # Update specific dependency
-ccpm update rust-expert
+agpm update rust-expert
 
 # Preview changes
-ccpm update --dry-run
+agpm update --dry-run
 
 # Update with custom parallelism
-ccpm update --max-parallel 6
+agpm update --max-parallel 6
 ```
 
-### `ccpm outdated`
+### `agpm outdated`
 
 Check for available updates to installed dependencies. Analyzes the lockfile against available versions in Git repositories to identify dependencies with newer versions available.
 
 ```bash
-ccpm outdated [OPTIONS] [DEPENDENCIES]...
+agpm outdated [OPTIONS] [DEPENDENCIES]...
 
 Arguments:
   [DEPENDENCIES]...    Check specific dependencies (default: check all)
@@ -128,7 +128,7 @@ Options:
       --check                 Exit with error code 1 if updates are available
       --no-fetch             Use cached repository data without fetching updates
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
       --no-progress          Disable progress bars and spinners
   -h, --help                  Print help information
 ```
@@ -136,22 +136,22 @@ Options:
 **Examples:**
 ```bash
 # Check all dependencies for updates
-ccpm outdated
+agpm outdated
 
 # Check specific dependencies
-ccpm outdated rust-expert my-agent
+agpm outdated rust-expert my-agent
 
 # Use in CI - exit with error if outdated
-ccpm outdated --check
+agpm outdated --check
 
 # Use cached data without fetching
-ccpm outdated --no-fetch
+agpm outdated --no-fetch
 
 # JSON output for scripting
-ccpm outdated --format json
+agpm outdated --format json
 
 # Control parallelism
-ccpm outdated --max-parallel 5
+agpm outdated --max-parallel 5
 ```
 
 **Output Information:**
@@ -165,7 +165,7 @@ The command displays:
 **Version Analysis:**
 
 The outdated command performs sophisticated version comparison:
-1. **Compatible Updates**: Versions that satisfy the current version constraint in ccpm.toml
+1. **Compatible Updates**: Versions that satisfy the current version constraint in agpm.toml
 2. **Major Updates**: Newer versions that exceed the constraint (require manual manifest update)
 3. **Up-to-date**: Dependencies already on the latest compatible version
 
@@ -197,41 +197,41 @@ When using `--format json`, the output includes:
 }
 ```
 
-### `ccpm list`
+### `agpm list`
 
-List installed resources from `ccpm.lock`.
+List installed resources from `agpm.lock`.
 
 ```bash
-ccpm list [OPTIONS]
+agpm list [OPTIONS]
 
 Options:
       --format <FORMAT>       Output format: table, json (default: table)
       --type <TYPE>           Filter by resource type: agents, snippets, commands, scripts, hooks, mcp-servers
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 **Examples:**
 ```bash
 # List all resources in table format
-ccpm list
+agpm list
 
 # List only agents
-ccpm list --type agents
+agpm list --type agents
 
 # Output as JSON
-ccpm list --format json
+agpm list --format json
 
 # Use custom manifest path
-ccpm list --manifest-path ./configs/ccpm.toml
+agpm list --manifest-path ./configs/agpm.toml
 ```
 
-### `ccpm tree`
+### `agpm tree`
 
 Display dependency trees for installed resources with transitive dependencies. Visualizes the complete dependency graph similar to `cargo tree`, helping identify duplicate or redundant dependencies.
 
 ```bash
-ccpm tree [OPTIONS]
+agpm tree [OPTIONS]
 
 Options:
   -d, --depth <NUMBER>        Maximum depth to display (unlimited if not specified)
@@ -246,35 +246,35 @@ Options:
       --hooks                 Show only hooks
       --mcp-servers           Show only MCP servers
   -i, --invert                Invert tree to show what depends on each package
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 **Examples:**
 ```bash
 # Display full dependency tree
-ccpm tree
+agpm tree
 
 # Limit tree depth to 2 levels
-ccpm tree --depth 2
+agpm tree --depth 2
 
 # Show tree for specific package
-ccpm tree --package my-agent
+agpm tree --package my-agent
 
 # Show only duplicate dependencies
-ccpm tree --duplicates
+agpm tree --duplicates
 
 # JSON output for scripting
-ccpm tree --format json
+agpm tree --format json
 
 # Show only agents and their dependencies
-ccpm tree --agents
+agpm tree --agents
 
 # Invert tree to see what depends on each package
-ccpm tree --invert
+agpm tree --invert
 
 # Show tree without deduplication
-ccpm tree --no-dedupe
+agpm tree --no-dedupe
 ```
 
 **Output Format:**
@@ -303,57 +303,57 @@ my-project
 
 Use `--format json` for programmatic access to dependency information, which includes complete metadata about each dependency and its relationships.
 
-### `ccpm validate`
+### `agpm validate`
 
-Validate `ccpm.toml` syntax and dependency resolution.
+Validate `agpm.toml` syntax and dependency resolution.
 
 ```bash
-ccpm validate [OPTIONS]
+agpm validate [OPTIONS]
 
 Options:
       --check-lock            Also validate lockfile consistency
       --resolve               Perform full dependency resolution
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 **Examples:**
 ```bash
 # Basic syntax validation
-ccpm validate
+agpm validate
 
 # Validate with lockfile consistency check
-ccpm validate --check-lock
+agpm validate --check-lock
 
 # Full validation with dependency resolution
-ccpm validate --resolve
+agpm validate --resolve
 
 # Validate custom manifest
-ccpm validate --manifest-path ./configs/ccpm.toml
+agpm validate --manifest-path ./configs/agpm.toml
 ```
 
-### `ccpm add`
+### `agpm add`
 
-Add sources or dependencies to `ccpm.toml`.
+Add sources or dependencies to `agpm.toml`.
 
 #### Add Source
 
 ```bash
-ccpm add source <NAME> <URL> [OPTIONS]
+agpm add source <NAME> <URL> [OPTIONS]
 
 Arguments:
   <NAME>    Source name
   <URL>     Git repository URL or local path
 
 Options:
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 #### Add Dependency
 
 ```bash
-ccpm add dep <RESOURCE_TYPE> <SPEC> [OPTIONS]
+agpm add dep <RESOURCE_TYPE> <SPEC> [OPTIONS]
 
 Arguments:
   <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server
@@ -362,7 +362,7 @@ Arguments:
 Options:
       --name <NAME>           Dependency name (default: derived from path)
   -f, --force                 Force overwrite if dependency exists
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
@@ -388,33 +388,33 @@ The `<SPEC>` argument supports multiple formats for different source types:
 **Examples:**
 ```bash
 # Add a source repository first
-ccpm add source community https://github.com/aig787/ccpm-community.git
+agpm add source community https://github.com/aig787/agpm-community.git
 
 # Git repository dependencies
-ccpm add dep agent community:agents/rust-expert.md@v1.0.0
-ccpm add dep agent community:agents/rust-expert.md  # Uses "main" branch
-ccpm add dep snippet community:snippets/react.md@feature-branch
+agpm add dep agent community:agents/rust-expert.md@v1.0.0
+agpm add dep agent community:agents/rust-expert.md  # Uses "main" branch
+agpm add dep snippet community:snippets/react.md@feature-branch
 
 # Local file dependencies
-ccpm add dep agent ./local-agents/helper.md --name my-helper
-ccpm add dep script /usr/local/scripts/build.sh
-ccpm add dep hook ../shared/hooks/pre-commit.json
+agpm add dep agent ./local-agents/helper.md --name my-helper
+agpm add dep script /usr/local/scripts/build.sh
+agpm add dep hook ../shared/hooks/pre-commit.json
 
 # Pattern dependencies (bulk installation)
-ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
-ccpm add dep snippet "community:snippets/**/*.md" --name all-snippets
-ccpm add dep script "./scripts/*.sh" --name local-scripts
+agpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+agpm add dep snippet "community:snippets/**/*.md" --name all-snippets
+agpm add dep script "./scripts/*.sh" --name local-scripts
 
 # Windows paths
-ccpm add dep agent C:\Resources\agents\windows.md
-ccpm add dep script "file://C:/Users/name/scripts/build.ps1"
+agpm add dep agent C:\Resources\agents\windows.md
+agpm add dep script "file://C:/Users/name/scripts/build.ps1"
 
 # Custom names (recommended for patterns)
-ccpm add dep agent community:agents/reviewer.md --name code-reviewer
-ccpm add dep snippet "community:snippets/python/*.md" --name python-utils
+agpm add dep agent community:agents/reviewer.md --name code-reviewer
+agpm add dep snippet "community:snippets/python/*.md" --name python-utils
 
 # Force overwrite existing dependency
-ccpm add dep agent community:agents/new-version.md --name existing-agent --force
+agpm add dep agent community:agents/new-version.md --name existing-agent --force
 ```
 
 **Name Derivation:**
@@ -428,57 +428,57 @@ For pattern dependencies, you should typically provide a custom name since multi
 
 See the [Manifest Reference](manifest-reference.md) for inline table fields (`branch`, `rev`, `target`, `filename`, MCP settings) and advanced configuration after the dependency is added.
 
-### `ccpm remove`
+### `agpm remove`
 
-Remove sources or dependencies from `ccpm.toml`.
+Remove sources or dependencies from `agpm.toml`.
 
 #### Remove Source
 
 ```bash
-ccpm remove source <NAME> [OPTIONS]
+agpm remove source <NAME> [OPTIONS]
 
 Arguments:
   <NAME>    Source name to remove
 
 Options:
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 #### Remove Dependency
 
 ```bash
-ccpm remove dep <RESOURCE_TYPE> <NAME> [OPTIONS]
+agpm remove dep <RESOURCE_TYPE> <NAME> [OPTIONS]
 
 Arguments:
   <RESOURCE_TYPE>  Resource type: agent, snippet, command, script, hook, mcp-server
   <NAME>           Dependency name to remove
 
 Options:
-      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+      --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
 
 **Examples:**
 ```bash
 # Remove a source
-ccpm remove source old-repo
+agpm remove source old-repo
 
 # Remove an agent
-ccpm remove dep agent old-agent
+agpm remove dep agent old-agent
 
 # Remove a snippet
-ccpm remove dep snippet unused-snippet
+agpm remove dep snippet unused-snippet
 ```
 
-### `ccpm config`
+### `agpm config`
 
-Manage global configuration in `~/.ccpm/config.toml`.
+Manage global configuration in `~/.agpm/config.toml`.
 
 #### Show Configuration
 
 ```bash
-ccpm config show [OPTIONS]
+agpm config show [OPTIONS]
 
 Options:
       --no-mask    Show actual token values (use with caution)
@@ -488,7 +488,7 @@ Options:
 #### Initialize Configuration
 
 ```bash
-ccpm config init [OPTIONS]
+agpm config init [OPTIONS]
 
 Options:
       --force      Overwrite existing configuration
@@ -498,7 +498,7 @@ Options:
 #### Edit Configuration
 
 ```bash
-ccpm config edit [OPTIONS]
+agpm config edit [OPTIONS]
 
 Options:
   -h, --help    Print help information
@@ -508,42 +508,42 @@ Options:
 
 ```bash
 # Add source with authentication
-ccpm config add-source <NAME> <URL>
+agpm config add-source <NAME> <URL>
 
 # List all global sources (tokens masked)
-ccpm config list-sources
+agpm config list-sources
 
 # Remove source
-ccpm config remove-source <NAME>
+agpm config remove-source <NAME>
 ```
 
 **Examples:**
 ```bash
 # Show current configuration (tokens masked)
-ccpm config show
+agpm config show
 
 # Initialize config with examples
-ccpm config init
+agpm config init
 
 # Edit config in default editor
-ccpm config edit
+agpm config edit
 
 # Add private source with token
-ccpm config add-source private "https://oauth2:ghp_xxxx@github.com/org/private.git"
+agpm config add-source private "https://oauth2:ghp_xxxx@github.com/org/private.git"
 
 # List all sources
-ccpm config list-sources
+agpm config list-sources
 
 # Remove a source
-ccpm config remove-source old-private
+agpm config remove-source old-private
 ```
 
-### `ccpm upgrade`
+### `agpm upgrade`
 
-Self-update CCPM to the latest version or a specific version. Includes automatic backup and rollback capabilities with built-in security features.
+Self-update AGPM to the latest version or a specific version. Includes automatic backup and rollback capabilities with built-in security features.
 
 ```bash
-ccpm upgrade [OPTIONS] [VERSION]
+agpm upgrade [OPTIONS] [VERSION]
 
 Arguments:
   [VERSION]    Target version to upgrade to (e.g., "0.3.18" or "v0.3.18")
@@ -560,46 +560,46 @@ Options:
 **Examples:**
 ```bash
 # Upgrade to latest version
-ccpm upgrade
+agpm upgrade
 
 # Check for available updates
-ccpm upgrade --check
+agpm upgrade --check
 
 # Show current and latest version
-ccpm upgrade --status
+agpm upgrade --status
 
 # Upgrade to specific version
-ccpm upgrade 0.3.18
+agpm upgrade 0.3.18
 
 # Force reinstall latest version
-ccpm upgrade --force
+agpm upgrade --force
 
 # Rollback to previous version
-ccpm upgrade --rollback
+agpm upgrade --rollback
 
 # Upgrade without creating backup
-ccpm upgrade --no-backup
+agpm upgrade --no-backup
 ```
 
 #### Security Features
 
 The upgrade command implements multiple security measures to ensure safe updates:
 
-- **GitHub Integration**: Only downloads binaries from official CCPM GitHub releases
+- **GitHub Integration**: Only downloads binaries from official AGPM GitHub releases
 - **HTTPS Downloads**: Uses secure HTTPS connections for all network operations
 - **Platform-Specific Archives**: Downloads appropriate archive format for your platform (.tar.xz for Unix, .zip for Windows)
 - **Atomic Operations**: Minimizes vulnerability windows during binary replacement
 - **Permission Preservation**: Maintains original file permissions and ownership
 - **Backup Protection**: Creates backups with appropriate permissions before any modifications
 
-### `ccpm cache`
+### `agpm cache`
 
-Manage the global Git repository cache in `~/.ccpm/cache/`. The cache uses SHA-based worktrees for optimal deduplication and performance.
+Manage the global Git repository cache in `~/.agpm/cache/`. The cache uses SHA-based worktrees for optimal deduplication and performance.
 
 #### Cache Information
 
 ```bash
-ccpm cache info [OPTIONS]
+agpm cache info [OPTIONS]
 
 Options:
   -h, --help    Print help information
@@ -608,7 +608,7 @@ Options:
 #### Clean Cache
 
 ```bash
-ccpm cache clean [OPTIONS]
+agpm cache clean [OPTIONS]
 
 Options:
       --all       Remove all cached repositories
@@ -619,7 +619,7 @@ Options:
 #### List Cache
 
 ```bash
-ccpm cache list [OPTIONS]
+agpm cache list [OPTIONS]
 
 Options:
   -h, --help    Print help information
@@ -628,33 +628,64 @@ Options:
 **Examples:**
 ```bash
 # Show cache statistics
-ccpm cache info
+agpm cache info
 
 # Clean unused repositories
-ccpm cache clean
+agpm cache clean
 
 # Remove all cached repositories
-ccpm cache clean --all
+agpm cache clean --all
 
 # List cached repositories
-ccpm cache list
+agpm cache list
 ```
+
+### `agpm migrate`
+
+Migrate from legacy CCPM naming to AGPM. This is a one-time migration command for projects upgrading from the legacy CCPM naming scheme.
+
+```bash
+agpm migrate [OPTIONS]
+
+Options:
+  -p, --path <PATH>    Path to directory containing ccpm.toml/ccpm.lock (default: current directory)
+      --dry-run        Show what would be renamed without actually renaming files
+  -h, --help           Print help information
+```
+
+**Examples:**
+```bash
+# Migrate in current directory
+agpm migrate
+
+# Migrate with custom path
+agpm migrate --path /path/to/project
+
+# Dry run to preview changes
+agpm migrate --dry-run
+```
+
+**Behavior:**
+- Detects `ccpm.toml` and `ccpm.lock` files in the specified directory
+- Renames them to `agpm.toml` and `agpm.lock` respectively
+- Fails with an error if target files already exist (conflict detection)
+- Provides clear feedback and next steps after migration
 
 ## Resource Types
 
-CCPM manages six types of resources with optimized parallel installation:
+AGPM manages six types of resources with optimized parallel installation:
 
 ### Direct Installation Resources
 
 - **Agents**: AI assistant configurations (installed to `.claude/agents/`)
-- **Snippets**: Reusable code templates (installed to `.claude/ccpm/snippets/`)
+- **Snippets**: Reusable code templates (installed to `.claude/agpm/snippets/`)
 - **Commands**: Claude Code slash commands (installed to `.claude/commands/`)
-- **Scripts**: Executable automation files (installed to `.claude/ccpm/scripts/`)
+- **Scripts**: Executable automation files (installed to `.claude/agpm/scripts/`)
 
 ### Configuration-Merged Resources
 
-- **Hooks**: Event-based automation (installed to `.claude/ccpm/hooks/`, merged into `.claude/settings.local.json`)
-- **MCP Servers**: Model Context Protocol servers (installed to `.claude/ccpm/mcp-servers/`, merged into `.mcp.json`)
+- **Hooks**: Event-based automation (installed to `.claude/agpm/hooks/`, merged into `.claude/settings.local.json`)
+- **MCP Servers**: Model Context Protocol servers (installed to `.claude/agpm/mcp-servers/`, merged into `.mcp.json`)
 
 ### Parallel Installation Features
 
@@ -665,7 +696,7 @@ CCPM manages six types of resources with optimized parallel installation:
 
 ## Version Constraints
 
-CCPM supports semantic version constraints:
+AGPM supports semantic version constraints:
 
 | Syntax | Description | Example |
 |--------|-------------|---------|
@@ -699,7 +730,7 @@ review-tools = { source = "community", path = "agents/**/review*.md", version = 
 
 ## Parallelism Control
 
-CCPM v0.3.0 introduces advanced parallelism control for optimal performance:
+AGPM v0.3.0 introduces advanced parallelism control for optimal performance:
 
 ### --max-parallel Flag
 
@@ -715,16 +746,16 @@ Available on `install` and `update` commands to control concurrent operations:
 **Examples:**
 ```bash
 # Use default parallelism (recommended)
-ccpm install
+agpm install
 
 # High-performance system with fast network
-ccpm install --max-parallel 20
+agpm install --max-parallel 20
 
 # Limited bandwidth or shared resources
-ccpm install --max-parallel 3
+agpm install --max-parallel 3
 
 # Single-threaded operation (debugging)
-ccpm install --max-parallel 1
+agpm install --max-parallel 1
 ```
 
 ### Performance Characteristics
@@ -736,17 +767,17 @@ ccpm install --max-parallel 1
 
 ## Environment Variables
 
-CCPM respects these environment variables:
+AGPM respects these environment variables:
 
-- `CCPM_CONFIG` - Path to custom global config file
-- `CCPM_CACHE_DIR` - Override cache directory
-- `CCPM_NO_PROGRESS` - Disable progress bars
-- `CCPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
+- `AGPM_CONFIG` - Path to custom global config file
+- `AGPM_CACHE_DIR` - Override cache directory
+- `AGPM_NO_PROGRESS` - Disable progress bars
+- `AGPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
 - `RUST_LOG` - Set logging level (debug, info, warn, error)
 
 ## Exit Codes
 
-CCPM uses these exit codes:
+AGPM uses these exit codes:
 
 - `0` - Success
 - `1` - General error
@@ -762,9 +793,9 @@ CCPM uses these exit codes:
 ### Basic Project
 
 ```toml
-# ccpm.toml
+# agpm.toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
@@ -776,10 +807,10 @@ react-hooks = { source = "community", path = "snippets/react-hooks.md", version 
 ### Advanced Project
 
 ```toml
-# ccpm.toml
+# agpm.toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
-tools = "https://github.com/myorg/ccpm-tools.git"
+community = "https://github.com/aig787/agpm-community.git"
+tools = "https://github.com/myorg/agpm-tools.git"
 local = "./local-resources"
 
 [agents]
@@ -813,7 +844,7 @@ gitignore = false
 
 ## Getting Help
 
-- Run `ccpm --help` for general help
-- Run `ccpm <command> --help` for command-specific help
+- Run `agpm --help` for general help
+- Run `agpm <command> --help` for command-specific help
 - Check the [FAQ](docs/faq.md) for common questions
-- Visit [GitHub Issues](https://github.com/aig787/ccpm/issues) for support
+- Visit [GitHub Issues](https://github.com/aig787/agpm/issues) for support
