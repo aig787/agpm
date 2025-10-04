@@ -14,14 +14,14 @@ argument-hint: [ <commit> | <range> ] [ --quick | --full | --security | --perfor
 
 Perform a comprehensive pull request review for the CCPM project based on the arguments provided.
 
-**IMPORTANT**: Always run multiple independent operations IN PARALLEL by using multiple tool calls in a single message. This significantly improves performance.
+**IMPORTANT**: Batch related operations thoughtfully; schedule tool calls in Claude Code only in parallel when the workflow benefits from it.
 
 **CRITICAL**: Use the Task tool to delegate to specialized agents for code analysis, NOT Grep or other direct tools. Agents have context about the project and can provide deeper insights.
 
 1. **Agent Delegation Strategy**:
-   - ALWAYS use Task tool for code analysis, NOT direct Grep/Read
+   - Prefer the Task tool for broad or multi-file code analysis
+   - Use direct Read/Grep commands for targeted inspections and pattern searches
    - Provide agents with specific context about what changed
-   - Run multiple Task invocations in parallel for efficiency
    - Include relevant file paths and change summaries in prompts
 
 2. Parse arguments to determine review target and type:
@@ -53,13 +53,13 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 3. Run automated checks based on review type:
 
    **Quick Review (--quick)**:
-   - Run these checks IN PARALLEL using multiple tool calls in a single message:
-     * `cargo fmt` to fix formatting
+   - Run these checks:
+     * `cargo fmt -- --check` to ensure formatting
      * `cargo clippy -- -D warnings` to catch issues
      * `cargo nextest run --lib` for basic tests
 
    **Full Review (--full or default)**:
-   - First, run quick checks IN PARALLEL (cargo fmt, clippy, nextest run --lib)
+   - First, run quick checks (cargo fmt -- --check, clippy, nextest run --lib)
    - Then use the Task tool to delegate to specialized agents IN PARALLEL:
      * Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
      * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and best practices
@@ -81,31 +81,36 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
      * `cargo doc --no-deps`
    - Check cross-platform compatibility
 
-   **Security Review (--security)**:
-   - Use Task with subagent_type="rust-expert-standard" with security-focused prompt:
-     ```
-     Task(description="Security review", 
-          prompt="Review for security issues: credentials in code, input validation, path traversal, unsafe operations...", 
-          subagent_type="rust-expert-standard")
-     ```
-   - Additionally run targeted Grep searches IN PARALLEL:
-     * Search for credential patterns: `(password|token|secret|api_key)\s*=\s*"`
-     * Search for unsafe blocks: `unsafe\s+\{`
-     * Search for path traversal: `\.\./`
-   - Verify no secrets in version-controlled files
+    **Security Review (--security)**:
+    - Use Task with subagent_type="rust-expert-standard" with security-focused prompt:
+      ```
+      Task(description="Security review", 
+           prompt="Review for security issues: credentials in code, input validation, path traversal, unsafe operations, Windows path handling...", 
+           subagent_type="rust-expert-standard")
+      ```
+    - Additionally run targeted Grep searches IN PARALLEL:
+      * Search for credential patterns: `(password|token|secret|api_key)\s*=\s*"`
+      * Search for unsafe blocks: `unsafe\s+\{`
+      * Search for path traversal: `\.\./`
+      * Search for Windows path issues: `r"[A-Z]:\\|\\\\|CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]"`
+    - Verify no secrets in version-controlled files
+    - Check proper path validation in utils/path_validation.rs
 
-   **Performance Review (--performance)**:
-   - Build in release mode: `cargo build --release`
-   - Use Task with subagent_type="rust-expert-standard" with performance-focused prompt:
-     ```
-     Task(description="Performance review",
-          prompt="Review for performance issues: blocking operations in async code, unnecessary allocations, algorithmic complexity...",
-          subagent_type="rust-expert-standard")
-     ```
-   - Additionally check for specific anti-patterns:
-     * `.block_on()` in async contexts
-     * `std::fs::` instead of `tokio::fs` in async code
-     * Excessive cloning or allocations
+    **Performance Review (--performance)**:
+    - Build in release mode: `cargo build --release`
+    - Use Task with subagent_type="rust-expert-standard" with performance-focused prompt:
+      ```
+      Task(description="Performance review",
+           prompt="Review for performance issues: blocking operations in async code, unnecessary allocations, algorithmic complexity, lock contention, resource cleanup...",
+           subagent_type="rust-expert-standard")
+      ```
+    - Additionally check for specific anti-patterns:
+      * `.block_on()` in async contexts
+      * `std::fs::` instead of `tokio::fs` in async code
+      * Excessive cloning or allocations
+      * Missing Drop implementations for resources
+      * Potential deadlocks in parallel code
+      * Blocking I/O in async functions
 
 4. Manual review based on these key areas:
 
@@ -133,10 +138,13 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Check for tests using `TempDir::new()` with `Command::cargo_bin()` but no `TestProject` or `Cache::with_dir()`
    - Platform-specific tests handled correctly
 
-   **Documentation**:
-   - Public APIs documented
-   - README.md accuracy check
-   - CLAUDE.md reflects architectural changes
+    **Documentation**:
+    - Public APIs documented
+    - README.md accuracy check
+    - CLAUDE.md reflects architectural changes
+    - AGENTS.md updated for architectural changes
+    - Examples in docs/ updated if relevant
+    - Help text and man page consistency
 
 5. Generate a summary report with:
    - **Changes Overview**: What was modified
