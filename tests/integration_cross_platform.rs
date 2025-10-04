@@ -109,6 +109,7 @@ async fn test_long_paths_windows() {
             &long_name,
             &format!("# {}\n\nA test agent", long_name),
         )
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
