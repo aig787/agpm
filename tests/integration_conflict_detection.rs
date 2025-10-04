@@ -50,31 +50,43 @@ api-designer-v2 = { source = "community", path = "agents/awesome-claude-code-sub
 /// version of the same file, there's no conflict.
 #[tokio::test]
 async fn test_identical_exact_versions_no_conflict() {
-    let temp_dir = TempDir::new().unwrap();
-    let manifest_path = temp_dir.path().join("ccpm.toml");
+    let project = TestProject::new().await.unwrap();
+    let source_repo = project.create_source_repo("test-repo").await.unwrap();
+
+    // Create test resource
+    source_repo
+        .add_resource("agents", "test-agent", "# Test Agent v1.0.0")
+        .await
+        .unwrap();
+    source_repo.commit_all("Initial commit").unwrap();
+    source_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with two resources pointing to same source:path and IDENTICAL version
-    fs::write(
-        &manifest_path,
+    let manifest = format!(
         r#"
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+test-repo = "{}"
 
 [agents]
 # Same path, same exact version - should NOT conflict
-test-agent-1 = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
-test-agent-2 = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
+test-agent-1 = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
+test-agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
 "#,
-    )
-    .await
-    .unwrap();
+        source_repo.file_url()
+    );
+    project.write_manifest(&manifest).await.unwrap();
 
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
-    cmd.current_dir(temp_dir.path())
-        .arg("install")
-        .assert()
-        .success()
-        .stderr(predicate::str::contains("Version conflicts detected").not());
+    let output = project.run_ccpm(&["install"]).unwrap();
+    assert!(
+        output.success,
+        "Install should succeed. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        !output.stderr.contains("Version conflicts detected"),
+        "Should not contain conflict message. Stderr: {}",
+        output.stderr
+    );
 }
 
 /// Test that mixing semver version with git branch is detected as a conflict.
@@ -267,12 +279,15 @@ async fn test_same_branch_different_case_no_conflict() {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
-    // Create initial commit on main
+    // Create initial commit
     source_repo
         .add_resource("agents", "test-agent", "# Test Agent")
         .await
         .unwrap();
     source_repo.commit_all("Initial commit").unwrap();
+
+    // Ensure we're on 'main' branch (git's default branch name varies)
+    source_repo.git.ensure_branch("main").unwrap();
 
     // Create manifest with same resource using different case for branch name
     let manifest = format!(
