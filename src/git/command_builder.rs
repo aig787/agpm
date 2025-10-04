@@ -10,13 +10,13 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 use crate::utils::platform::get_git_command;
 
 /// Type-safe builder for constructing and executing Git commands with consistent error handling.
 ///
 /// This builder provides a fluent API for Git command construction that ensures
-/// consistent behavior across CCPM's Git operations. It handles platform-specific
+/// consistent behavior across AGPM's Git operations. It handles platform-specific
 /// differences, timeout management, error context, and output capture in a unified way.
 ///
 /// # Features
@@ -31,7 +31,7 @@ use crate::utils::platform::get_git_command;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::git::command_builder::GitCommand;
+/// use agpm::git::command_builder::GitCommand;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -121,7 +121,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// let cmd = GitCommand::new()
     ///     .args(["status", "--short"])
@@ -144,7 +144,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     /// use std::path::Path;
     ///
     /// let cmd = GitCommand::new()
@@ -175,7 +175,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// let cmd = GitCommand::new()
     ///     .arg("clone")
@@ -206,7 +206,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// // Using array literals
     /// let cmd = GitCommand::new()
@@ -244,7 +244,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// // Set Git configuration for this command only
     /// let cmd = GitCommand::new()
@@ -285,7 +285,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// // Interactive merge that may require user input
     /// # async fn example() -> anyhow::Result<()> {
@@ -333,7 +333,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let output = GitCommand::fetch()
@@ -437,7 +437,7 @@ impl GitCommand {
                                 .cloned()
                                 .unwrap_or_else(|| "unknown".to_string())
                         };
-                    return Err(CcpmError::GitCommandError {
+                    return Err(AgpmError::GitCommandError {
                         operation: git_operation,
                         stderr: format!(
                             "Git command timed out after {} seconds. This may indicate:\n\
@@ -488,19 +488,19 @@ impl GitCommand {
 
             let error = if effective_args.first().is_some_and(|arg| arg == "clone") {
                 let url = effective_args.get(2).cloned().unwrap_or_default();
-                CcpmError::GitCloneFailed {
+                AgpmError::GitCloneFailed {
                     url,
                     reason: stderr.to_string(),
                 }
             } else if effective_args.first().is_some_and(|arg| arg == "checkout") {
                 let reference = effective_args.get(1).cloned().unwrap_or_default();
-                CcpmError::GitCheckoutFailed {
+                AgpmError::GitCheckoutFailed {
                     reference,
                     reason: stderr.to_string(),
                 }
             } else if effective_args.first().is_some_and(|arg| arg == "worktree") {
                 let subcommand = effective_args.get(1).cloned().unwrap_or_default();
-                CcpmError::GitCommandError {
+                AgpmError::GitCommandError {
                     operation: format!("worktree {}", subcommand),
                     stderr: if stderr.is_empty() {
                         stdout.to_string()
@@ -509,7 +509,7 @@ impl GitCommand {
                     },
                 }
             } else {
-                CcpmError::GitCommandError {
+                AgpmError::GitCommandError {
                     operation: effective_args
                         .first()
                         .cloned()
@@ -724,7 +724,7 @@ impl GitCommand {
     ///
     /// Bare repositories are optimized for use as a source for worktrees,
     /// allowing multiple concurrent checkouts without conflicts. This is
-    /// the preferred method for parallel operations in CCPM.
+    /// the preferred method for parallel operations in AGPM.
     ///
     /// # Arguments
     ///
@@ -738,7 +738,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// GitCommand::clone_bare(
@@ -757,7 +757,7 @@ impl GitCommand {
     /// with [`worktree_add`](#method.worktree_add) for parallel operations:
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn worktree_example() -> anyhow::Result<()> {
     /// // Clone bare repository
@@ -829,7 +829,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Create worktree with specific version
@@ -849,7 +849,7 @@ impl GitCommand {
     ///
     /// # Concurrency Control
     ///
-    /// CCPM uses a global semaphore to limit concurrent Git operations and
+    /// AGPM uses a global semaphore to limit concurrent Git operations and
     /// prevent resource exhaustion. This is handled automatically by the
     /// cache layer when using worktrees for parallel installations.
     ///
@@ -893,7 +893,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Remove a worktree
@@ -912,7 +912,7 @@ impl GitCommand {
     /// - Files are locked or in use
     /// - The worktree directory structure has been modified
     ///
-    /// This is appropriate for CCPM's use case where worktrees are temporary
+    /// This is appropriate for AGPM's use case where worktrees are temporary
     /// and any local changes should be discarded.
     ///
     /// [`worktree_add`]: #method.worktree_add
@@ -951,7 +951,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let output = GitCommand::worktree_list()
@@ -994,7 +994,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::git::command_builder::GitCommand;
+    /// use agpm::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Clean up stale worktree references

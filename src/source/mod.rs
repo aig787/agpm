@@ -16,17 +16,17 @@
 //!
 //! Sources can be defined in two locations with different purposes:
 //!
-//! 1. **Project manifest** (`ccpm.toml`) - Committed to version control, shared with team
+//! 1. **Project manifest** (`agpm.toml`) - Committed to version control, shared with team
 //!    ```toml
 //!    [sources]
-//!    community = "https://github.com/example/ccpm-community.git"
-//!    official = "https://github.com/example/ccpm-official.git"
+//!    community = "https://github.com/example/agpm-community.git"
+//!    official = "https://github.com/example/agpm-official.git"
 //!    ```
 //!
-//! 2. **Global config** (`~/.ccpm/config.toml`) - User-specific with authentication tokens
+//! 2. **Global config** (`~/.agpm/config.toml`) - User-specific with authentication tokens
 //!    ```toml
 //!    [sources]
-//!    private = "https://oauth2:ghp_xxxx@github.com/company/private-ccpm.git"
+//!    private = "https://oauth2:ghp_xxxx@github.com/company/private-agpm.git"
 //!    ```
 //!
 //! ## Source Priority and Security
@@ -43,7 +43,7 @@
 //! ## Cache Directory Structure
 //!
 //! ```text
-//! ~/.ccpm/cache/
+//! ~/.agpm/cache/
 //! └── sources/
 //!     ├── owner1_repo1/          # Cached repository
 //!     │   ├── .git/              # Git metadata
@@ -142,13 +142,13 @@
 //!
 //! ## Basic Source Management
 //! ```rust,no_run
-//! use ccpm::source::{Source, SourceManager};
-//! use ccpm::manifest::Manifest;
+//! use agpm::source::{Source, SourceManager};
+//! use agpm::manifest::Manifest;
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Load from manifest with global config integration
-//! let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+//! let manifest = Manifest::load(Path::new("agpm.toml"))?;
 //! let mut manager = SourceManager::from_manifest_with_global(&manifest).await?;
 //!
 //! // Sync a specific source
@@ -165,7 +165,7 @@
 //!
 //! ## Progress Monitoring
 //! ```rust,no_run
-//! use ccpm::source::SourceManager;
+//! use agpm::source::SourceManager;
 //! use indicatif::ProgressBar;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
@@ -182,7 +182,7 @@
 //!
 //! ## Direct URL Operations
 //! ```rust,no_run
-//! use ccpm::source::SourceManager;
+//! use agpm::source::SourceManager;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
 //! // Sync a repository by URL (for direct dependencies)
@@ -200,7 +200,7 @@
 
 use crate::cache::lock::CacheLock;
 use crate::config::GlobalConfig;
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 use crate::git::{GitRepo, parse_git_url};
 use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
@@ -245,12 +245,12 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::source::Source;
+/// use agpm::source::Source;
 ///
 /// // Public repository
 /// let source = Source::new(
 ///     "community".to_string(),
-///     "https://github.com/example/ccpm-community.git".to_string()
+///     "https://github.com/example/agpm-community.git".to_string()
 /// ).with_description("Community resources".to_string());
 ///
 /// // Local development repository
@@ -290,11 +290,11 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::Source;
+    /// use agpm::source::Source;
     ///
     /// let source = Source::new(
     ///     "official".to_string(),
-    ///     "https://github.com/example/ccpm-official.git".to_string()
+    ///     "https://github.com/example/agpm-official.git".to_string()
     /// );
     ///
     /// assert_eq!(source.name, "official");
@@ -325,11 +325,11 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::Source;
+    /// use agpm::source::Source;
     ///
     /// let source = Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// ).with_description("Community-contributed agents and snippets".to_string());
     ///
     /// assert_eq!(source.description, Some("Community-contributed agents and snippets".to_string()));
@@ -353,7 +353,7 @@ impl Source {
     ///
     /// # Arguments
     ///
-    /// * `base_dir` - Base cache directory (typically `~/.ccpm/cache`)
+    /// * `base_dir` - Base cache directory (typically `~/.agpm/cache`)
     ///
     /// # Returns
     ///
@@ -362,20 +362,20 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::Source;
+    /// use agpm::source::Source;
     /// use std::path::Path;
     ///
     /// let source = Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// );
     ///
-    /// let base_dir = Path::new("/home/user/.ccpm/cache");
+    /// let base_dir = Path::new("/home/user/.agpm/cache");
     /// let cache_dir = source.cache_dir(base_dir);
     ///
     /// assert_eq!(
     ///     cache_dir,
-    ///     Path::new("/home/user/.ccpm/cache/sources/example_ccpm-community")
+    ///     Path::new("/home/user/.agpm/cache/sources/example_agpm-community")
     /// );
     /// ```
     #[must_use]
@@ -388,7 +388,7 @@ impl Source {
 
 /// Manages multiple source repositories with caching, synchronization, and verification.
 ///
-/// [`SourceManager`] is the central component for handling source repositories in CCPM.
+/// [`SourceManager`] is the central component for handling source repositories in AGPM.
 /// It provides operations for adding, removing, syncing, and verifying sources while
 /// maintaining a local cache for efficient access. The manager handles both remote
 /// repositories and local file paths with comprehensive error handling and progress reporting.
@@ -404,7 +404,7 @@ impl Source {
 ///
 /// # Cache Management
 ///
-/// The manager maintains a cache directory (typically `~/.ccpm/cache/sources/`) where
+/// The manager maintains a cache directory (typically `~/.agpm/cache/sources/`) where
 /// each source is stored in a subdirectory named after the repository owner and name.
 /// The cache provides:
 ///
@@ -423,7 +423,7 @@ impl Source {
 ///
 /// ## Basic Usage
 /// ```rust,no_run
-/// use ccpm::source::{Source, SourceManager};
+/// use agpm::source::{Source, SourceManager};
 /// use anyhow::Result;
 ///
 /// # async fn example() -> Result<()> {
@@ -433,7 +433,7 @@ impl Source {
 /// // Add a source
 /// let source = Source::new(
 ///     "community".to_string(),
-///     "https://github.com/example/ccpm-community.git".to_string()
+///     "https://github.com/example/agpm-community.git".to_string()
 /// );
 /// manager.add(source)?;
 ///
@@ -446,13 +446,13 @@ impl Source {
 ///
 /// ## Loading from Manifest
 /// ```rust,no_run
-/// use ccpm::source::SourceManager;
-/// use ccpm::manifest::Manifest;
+/// use agpm::source::SourceManager;
+/// use agpm::manifest::Manifest;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// // Load sources from project manifest and global config
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 /// let manager = SourceManager::from_manifest_with_global(&manifest).await?;
 ///
 /// println!("Loaded {} sources", manager.list().len());
@@ -501,7 +501,7 @@ impl SourceManager {
     /// Creates a new source manager with the default cache directory.
     ///
     /// The cache directory is determined by the system configuration, typically
-    /// `~/.ccpm/cache/` on Unix systems or `%APPDATA%\ccpm\cache\` on Windows.
+    /// `~/.agpm/cache/` on Unix systems or `%APPDATA%\agpm\cache\` on Windows.
     ///
     /// # Errors
     ///
@@ -510,7 +510,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
+    /// use agpm::source::SourceManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -538,7 +538,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
+    /// use agpm::source::SourceManager;
     /// use std::path::PathBuf;
     ///
     /// let custom_cache = PathBuf::from("/custom/cache/location");
@@ -571,12 +571,12 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::source::SourceManager;
+    /// use agpm::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     /// let manager = SourceManager::from_manifest(&manifest)?;
     ///
     /// println!("Loaded {} sources from manifest", manager.list().len());
@@ -626,12 +626,12 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::source::SourceManager;
+    /// use agpm::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     /// let manager = SourceManager::from_manifest_with_global(&manifest).await?;
     ///
     /// // Manager now includes both project and global sources
@@ -671,12 +671,12 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
-    /// use ccpm::manifest::Manifest;
+    /// use agpm::source::SourceManager;
+    /// use agpm::manifest::Manifest;
     /// use std::path::{Path, PathBuf};
     ///
     /// # fn example() -> anyhow::Result<()> {
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     /// let custom_cache = PathBuf::from("/tmp/test-cache");
     /// let manager = SourceManager::from_manifest_with_cache(&manifest, custom_cache);
     /// # Ok(())
@@ -706,19 +706,19 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::ConfigError`] if a source with the same name already exists.
+    /// Returns [`AgpmError::ConfigError`] if a source with the same name already exists.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
     ///
     /// let source = Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// );
     ///
     /// manager.add(source)?;
@@ -728,7 +728,7 @@ impl SourceManager {
     /// ```
     pub fn add(&mut self, source: Source) -> Result<()> {
         if self.sources.contains_key(&source.name) {
-            return Err(CcpmError::ConfigError {
+            return Err(AgpmError::ConfigError {
                 message: format!("Source '{}' already exists", source.name),
             }
             .into());
@@ -751,13 +751,13 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The source does not exist ([`CcpmError::SourceNotFound`])
+    /// - The source does not exist ([`AgpmError::SourceNotFound`])
     /// - The cache directory cannot be removed due to filesystem permissions
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -773,7 +773,7 @@ impl SourceManager {
     /// ```
     pub async fn remove(&mut self, name: &str) -> Result<()> {
         if !self.sources.contains_key(name) {
-            return Err(CcpmError::SourceNotFound {
+            return Err(AgpmError::SourceNotFound {
                 name: name.to_string(),
             }
             .into());
@@ -802,7 +802,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -832,7 +832,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -858,7 +858,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -885,7 +885,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -914,7 +914,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -964,7 +964,7 @@ impl SourceManager {
     ///
     /// Authentication is handled transparently through URLs with embedded credentials
     /// from the global configuration. Private repositories should have their authentication
-    /// tokens configured in `~/.ccpm/config.toml`.
+    /// tokens configured in `~/.agpm/config.toml`.
     ///
     /// # Error Handling
     ///
@@ -987,8 +987,8 @@ impl SourceManager {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Source doesn't exist ([`CcpmError::SourceNotFound`])
-    /// - Source is disabled ([`CcpmError::ConfigError`])
+    /// - Source doesn't exist ([`AgpmError::SourceNotFound`])
+    /// - Source is disabled ([`AgpmError::ConfigError`])
     /// - Repository is not accessible (network, permissions, etc.)
     /// - Local path doesn't exist or isn't a Git repository
     /// - Cache directory cannot be created
@@ -997,13 +997,13 @@ impl SourceManager {
     ///
     /// ## Basic Synchronization
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
     /// let source = Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// );
     /// manager.add(source)?;
     ///
@@ -1016,7 +1016,7 @@ impl SourceManager {
     ///
     /// ## Synchronization with Progress
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     /// use indicatif::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1040,12 +1040,12 @@ impl SourceManager {
         let source = self
             .sources
             .get(name)
-            .ok_or_else(|| CcpmError::SourceNotFound {
+            .ok_or_else(|| AgpmError::SourceNotFound {
                 name: name.to_string(),
             })?;
 
         if !source.enabled {
-            return Err(CcpmError::ConfigError {
+            return Err(AgpmError::ConfigError {
                 message: format!("Source '{name}' is disabled"),
             }
             .into());
@@ -1191,7 +1191,7 @@ impl SourceManager {
     ///
     /// ## Direct Repository Access
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
+    /// use agpm::source::SourceManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1208,7 +1208,7 @@ impl SourceManager {
     ///
     /// ## Local Repository Access
     /// ```rust,no_run
-    /// use ccpm::source::SourceManager;
+    /// use agpm::source::SourceManager;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1355,7 +1355,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::source::SourceManager;
+    /// # use agpm::source::SourceManager;
     /// # use tempfile::TempDir;
     /// # async fn example() -> anyhow::Result<()> {
     /// # let temp = TempDir::new()?;
@@ -1398,12 +1398,12 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::SourceNotFound`] if no source with the given name exists.
+    /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1425,7 +1425,7 @@ impl SourceManager {
         let source = self
             .sources
             .get_mut(name)
-            .ok_or_else(|| CcpmError::SourceNotFound {
+            .ok_or_else(|| AgpmError::SourceNotFound {
                 name: name.to_string(),
             })?;
 
@@ -1445,12 +1445,12 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::SourceNotFound`] if no source with the given name exists.
+    /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1472,7 +1472,7 @@ impl SourceManager {
         let source = self
             .sources
             .get_mut(name)
-            .ok_or_else(|| CcpmError::SourceNotFound {
+            .ok_or_else(|| AgpmError::SourceNotFound {
                 name: name.to_string(),
             })?;
 
@@ -1496,12 +1496,12 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::SourceNotFound`] if no source with the given URL exists.
+    /// Returns [`AgpmError::SourceNotFound`] if no source with the given URL exists.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1520,7 +1520,7 @@ impl SourceManager {
             .sources
             .values()
             .find(|s| s.url == url)
-            .ok_or_else(|| CcpmError::SourceNotFound {
+            .ok_or_else(|| AgpmError::SourceNotFound {
                 name: url.to_string(),
             })?;
 
@@ -1542,18 +1542,18 @@ impl SourceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`CcpmError::SourceNotFound`] if no source with the given name exists.
+    /// Returns [`AgpmError::SourceNotFound`] if no source with the given name exists.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
     /// let source = Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// );
     /// manager.add(source)?;
     ///
@@ -1566,7 +1566,7 @@ impl SourceManager {
         let source = self
             .sources
             .get(name)
-            .ok_or_else(|| CcpmError::SourceNotFound {
+            .ok_or_else(|| AgpmError::SourceNotFound {
                 name: name.to_string(),
             })?;
 
@@ -1608,7 +1608,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::source::{Source, SourceManager};
+    /// use agpm::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1616,7 +1616,7 @@ impl SourceManager {
     /// // Add some sources
     /// manager.add(Source::new(
     ///     "community".to_string(),
-    ///     "https://github.com/example/ccpm-community.git".to_string()
+    ///     "https://github.com/example/agpm-community.git".to_string()
     /// ))?;
     ///
     /// // Verify all sources
@@ -1792,11 +1792,11 @@ mod tests {
         let mut manifest = Manifest::new();
         manifest.add_source(
             "official".to_string(),
-            "https://github.com/example-org/ccpm-official.git".to_string(),
+            "https://github.com/example-org/agpm-official.git".to_string(),
         );
         manifest.add_source(
             "community".to_string(),
-            "https://github.com/example-org/ccpm-community.git".to_string(),
+            "https://github.com/example-org/agpm-community.git".to_string(),
         );
 
         let temp_dir = TempDir::new().unwrap();
@@ -2574,7 +2574,7 @@ mod tests {
         assert!(!error_msg.contains("C:\\"));
 
         let security_msg =
-            "Security error: Local path must be within the project directory or CCPM cache";
+            "Security error: Local path must be within the project directory or AGPM cache";
         assert!(!security_msg.contains("{:?}"));
         assert!(!security_msg.contains("{}"));
     }

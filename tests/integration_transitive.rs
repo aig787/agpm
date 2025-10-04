@@ -11,7 +11,7 @@ use common::TestProject;
 /// Test basic transitive dependency resolution with real Git repos
 #[tokio::test]
 async fn test_transitive_resolution_basic() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -67,7 +67,7 @@ main-app = {{ source = "community", path = "agents/main-app.md", version = "v1.0
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    project.run_ccpm(&["install"])?;
+    project.run_agpm(&["install"])?;
 
     // Verify both agents were installed (main + transitive helper)
     let lockfile_content = project.read_lockfile().await?;
@@ -111,7 +111,7 @@ main-app = {{ source = "community", path = "agents/main-app.md", version = "v1.0
 #[tokio::test]
 #[ignore = "Cross-source transitive dependencies with same names not yet supported"]
 async fn test_transitive_cross_source_same_names() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -191,7 +191,7 @@ tool = {{ source = "source2", path = "agents/tool.md", version = "v1.0.0" }}
     // Run install - currently this fails with a path conflict error
     // because both "utils" transitive deps resolve to .claude/agents/utils.md
     // but have different commits (different sources)
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
 
     // Expected behavior: Should detect path conflict
     assert!(
@@ -210,7 +210,7 @@ tool = {{ source = "source2", path = "agents/tool.md", version = "v1.0.0" }}
 /// Test that circular transitive dependencies are detected and rejected
 #[tokio::test]
 async fn test_transitive_cycle_detection() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -286,7 +286,7 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
     project.write_manifest(&manifest_content).await?;
 
     // Run install - should fail with cycle detection
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(
         !output.success,
         "Install should fail due to circular dependency"
@@ -303,7 +303,7 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
 /// Test diamond dependencies (same resource via multiple paths)
 #[tokio::test]
 async fn test_transitive_diamond_dependencies() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -398,7 +398,7 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
     project.write_manifest(&manifest_content).await?;
 
     // Run install - should succeed
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     assert!(
         output.success,
         "Install should succeed with diamond dependencies: {}",

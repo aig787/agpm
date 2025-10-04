@@ -41,7 +41,7 @@ pub static BLACKLISTED_PATHS: &[&str] = &[
 ///
 /// # Examples
 /// ```
-/// use ccpm::utils::security::is_path_blacklisted;
+/// use agpm::utils::security::is_path_blacklisted;
 /// use std::path::Path;
 ///
 /// assert!(is_path_blacklisted(Path::new("/etc/passwd")));

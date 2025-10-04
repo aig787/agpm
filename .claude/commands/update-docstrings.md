@@ -88,7 +88,7 @@ Review the current code changes and ensure all related documentation (doc commen
    - Update CLAUDE.md if architecture changed
    - Ensure error messages are documented
 
-6. Focus areas for CCPM project:
+6. Focus areas for AGPM project:
 
    **Critical documentation to maintain**:
    - **Public API documentation**: All pub functions and structs

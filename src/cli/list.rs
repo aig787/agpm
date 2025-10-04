@@ -1,7 +1,7 @@
 //! List installed Claude Code resources from the lockfile.
 //!
 //! This module provides the `list` command which displays information about
-//! currently installed dependencies as recorded in the lockfile (`ccpm.lock`).
+//! currently installed dependencies as recorded in the lockfile (`agpm.lock`).
 //! The command offers various output formats and filtering options to help
 //! users understand their project's dependencies.
 //!
@@ -17,32 +17,32 @@
 //!
 //! List all installed resources:
 //! ```bash
-//! ccpm list
+//! agpm list
 //! ```
 //!
 //! List only agents:
 //! ```bash
-//! ccpm list --agents
+//! agpm list --agents
 //! ```
 //!
 //! List with detailed information:
 //! ```bash
-//! ccpm list --details
+//! agpm list --details
 //! ```
 //!
 //! Output in JSON format:
 //! ```bash
-//! ccpm list --format json
+//! agpm list --format json
 //! ```
 //!
 //! Show dependency tree:
 //! ```bash
-//! ccpm list --format tree
+//! agpm list --format tree
 //! ```
 //!
 //! List specific dependencies:
 //! ```bash
-//! ccpm list my-agent utils-snippet
+//! agpm list my-agent utils-snippet
 //! ```
 //!
 //! # Output Formats
@@ -75,8 +75,8 @@
 //! # Data Sources
 //!
 //! The command primarily reads from:
-//! - **Primary**: `ccpm.lock` - Contains installed resource information
-//! - **Secondary**: `ccpm.toml` - Used for manifest comparison and validation
+//! - **Primary**: `agpm.lock` - Contains installed resource information
+//! - **Secondary**: `agpm.toml` - Used for manifest comparison and validation
 //!
 //! # Error Conditions
 //!
@@ -128,7 +128,7 @@ struct ListItem {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::list::ListCommand;
+/// use agpm::cli::list::ListCommand;
 ///
 /// // List all resources in default table format
 /// let cmd = ListCommand {
@@ -196,8 +196,8 @@ pub struct ListCommand {
 
     /// Show from manifest instead of lockfile
     ///
-    /// When enabled, shows dependencies defined in the manifest (`ccpm.toml`)
-    /// rather than installed dependencies from the lockfile (`ccpm.lock`).
+    /// When enabled, shows dependencies defined in the manifest (`agpm.toml`)
+    /// rather than installed dependencies from the lockfile (`agpm.lock`).
     /// This is useful for comparing intended vs. actual installations.
     #[arg(long)]
     manifest: bool,
@@ -271,8 +271,8 @@ impl ListCommand {
     ///
     /// # Data Sources
     ///
-    /// - **Default**: Uses lockfile (`ccpm.lock`) to show installed resources
-    /// - **Manifest Mode**: Uses manifest (`ccpm.toml`) to show defined dependencies
+    /// - **Default**: Uses lockfile (`agpm.lock`) to show installed resources
+    /// - **Manifest Mode**: Uses manifest (`agpm.toml`) to show defined dependencies
     ///
     /// # Filtering Logic
     ///
@@ -293,7 +293,7 @@ impl ListCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::list::ListCommand;
+    /// use agpm::cli::list::ListCommand;
     ///
     /// # tokio_test::block_on(async {
     /// let cmd = ListCommand {
@@ -320,7 +320,7 @@ impl ListCommand {
 
         // Find manifest file
         let manifest_path = find_manifest_with_optional(manifest_path)
-            .context("No ccpm.toml found. Please create one to define your dependencies.")?;
+            .context("No agpm.toml found. Please create one to define your dependencies.")?;
 
         self.execute_from_path(manifest_path).await
     }
@@ -454,20 +454,20 @@ impl ListCommand {
         self.sort_items(&mut items);
 
         // Output results
-        self.output_items(&items, "Dependencies from ccpm.toml:")?;
+        self.output_items(&items, "Dependencies from agpm.toml:")?;
 
         Ok(())
     }
 
     fn list_from_lockfile(&self, project_dir: &std::path::Path) -> Result<()> {
-        let lockfile_path = project_dir.join("ccpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         if !lockfile_path.exists() {
             if self.format == "json" {
                 println!("{{}}");
             } else {
                 println!("No installed resources found.");
-                println!("⚠️  ccpm.lock not found. Run 'ccpm install' first.");
+                println!("⚠️  agpm.lock not found. Run 'agpm install' first.");
             }
             return Ok(());
         }
@@ -500,7 +500,7 @@ impl ListCommand {
         // Handle special flags
 
         // Output results
-        self.output_items(&items, "Installed resources from ccpm.lock:")?;
+        self.output_items(&items, "Installed resources from agpm.lock:")?;
 
         Ok(())
     }
@@ -1003,8 +1003,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_no_manifest() {
         let temp = TempDir::new().unwrap();
-        // Don't create ccpm.toml
-        let manifest_path = temp.path().join("ccpm.toml");
+        // Don't create agpm.toml
+        let manifest_path = temp.path().join("agpm.toml");
 
         let cmd = create_default_command();
 
@@ -1016,7 +1016,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_empty_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create empty manifest
         let manifest = crate::manifest::Manifest::new();
@@ -1034,7 +1034,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_from_manifest_with_resources() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1052,7 +1052,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_from_lockfile_no_lockfile() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest but no lockfile
         let manifest = create_test_manifest();
@@ -1067,8 +1067,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_from_lockfile_with_resources() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create both manifest and lockfile
         let manifest = create_test_manifest();
@@ -1621,7 +1621,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_json_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1640,7 +1640,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_yaml_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1659,7 +1659,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_compact_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1678,7 +1678,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_simple_format() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1697,7 +1697,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_by_agents_only() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with both agents and snippets
         let manifest = create_test_manifest();
@@ -1716,7 +1716,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_by_snippets_only() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with both agents and snippets
         let manifest = create_test_manifest();
@@ -1735,7 +1735,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_by_type() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with both agents and snippets
         let manifest = create_test_manifest();
@@ -1765,7 +1765,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_filter_by_source() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources from different sources
         let manifest = create_test_manifest();
@@ -1784,7 +1784,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_search_by_pattern() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1803,7 +1803,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_detailed_flag() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1822,7 +1822,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_files_flag() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1841,7 +1841,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_verbose_flag() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1860,7 +1860,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_with_sort() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest with resources
         let manifest = create_test_manifest();
@@ -1879,7 +1879,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_empty_lockfile_json_output() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         // Create manifest but no lockfile
         let manifest = create_test_manifest();

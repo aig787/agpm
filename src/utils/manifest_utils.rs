@@ -10,13 +10,13 @@ use std::path::Path;
 
 /// Load a project manifest from the standard location
 ///
-/// This function looks for a `ccpm.toml` file in the given project directory
+/// This function looks for a `agpm.toml` file in the given project directory
 /// and returns a parsed Manifest. It provides consistent error messages
 /// across all commands.
 ///
 /// # Arguments
 ///
-/// * `project_dir` - The project directory to search for ccpm.toml
+/// * `project_dir` - The project directory to search for agpm.toml
 ///
 /// # Returns
 ///
@@ -29,31 +29,31 @@ use std::path::Path;
 /// # use anyhow::Result;
 /// # fn example() -> Result<()> {
 /// use std::path::Path;
-/// use ccpm::utils::manifest_utils::load_project_manifest;
+/// use agpm::utils::manifest_utils::load_project_manifest;
 ///
 /// let manifest = load_project_manifest(Path::new("."))?;
 /// # Ok(())
 /// # }
 /// ```
 pub fn load_project_manifest(project_dir: &Path) -> Result<Manifest> {
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
 
     if !manifest_path.exists() {
         return Err(
-            anyhow!("No ccpm.toml found in {}", project_dir.display()).context(ErrorContext {
-                error: crate::core::CcpmError::ManifestNotFound,
-                suggestion: Some("Run 'ccpm init' to create a new project".to_string()),
+            anyhow!("No agpm.toml found in {}", project_dir.display()).context(ErrorContext {
+                error: crate::core::AgpmError::ManifestNotFound,
+                suggestion: Some("Run 'agpm init' to create a new project".to_string()),
                 details: Some(format!("Expected manifest at: {}", manifest_path.display())),
             }),
         );
     }
 
     Manifest::load(&manifest_path).with_context(|| ErrorContext {
-        error: crate::core::CcpmError::ManifestParseError {
+        error: crate::core::AgpmError::ManifestParseError {
             file: manifest_path.display().to_string(),
             reason: "Failed to parse manifest".to_string(),
         },
-        suggestion: Some("Check that ccpm.toml is valid TOML syntax".to_string()),
+        suggestion: Some("Check that agpm.toml is valid TOML syntax".to_string()),
         details: Some(format!("Manifest path: {}", manifest_path.display())),
     })
 }
@@ -90,10 +90,10 @@ pub fn load_and_validate_manifest(
     if require_sources && manifest.sources.is_empty() {
         return Err(
             anyhow!("No sources defined in manifest").context(ErrorContext {
-                error: crate::core::CcpmError::ManifestValidationError {
+                error: crate::core::AgpmError::ManifestValidationError {
                     reason: "No sources defined in manifest".to_string(),
                 },
-                suggestion: Some("Add at least one source using 'ccpm add source'".to_string()),
+                suggestion: Some("Add at least one source using 'agpm add source'".to_string()),
                 details: None,
             }),
         );
@@ -107,10 +107,10 @@ pub fn load_and_validate_manifest(
     {
         return Err(
             anyhow!("No dependencies defined in manifest").context(ErrorContext {
-                error: crate::core::CcpmError::ManifestValidationError {
+                error: crate::core::AgpmError::ManifestValidationError {
                     reason: "No dependencies defined in manifest".to_string(),
                 },
-                suggestion: Some("Add dependencies using 'ccpm add dep'".to_string()),
+                suggestion: Some("Add dependencies using 'agpm add dep'".to_string()),
                 details: None,
             }),
         );
@@ -127,9 +127,9 @@ pub fn load_and_validate_manifest(
 ///
 /// # Returns
 ///
-/// * `true` if ccpm.toml exists, `false` otherwise
+/// * `true` if agpm.toml exists, `false` otherwise
 pub fn manifest_exists(project_dir: &Path) -> bool {
-    project_dir.join("ccpm.toml").exists()
+    project_dir.join("agpm.toml").exists()
 }
 
 /// Get the path to the manifest file
@@ -140,9 +140,9 @@ pub fn manifest_exists(project_dir: &Path) -> bool {
 ///
 /// # Returns
 ///
-/// The path to ccpm.toml in the project directory
+/// The path to agpm.toml in the project directory
 pub fn manifest_path(project_dir: &Path) -> std::path::PathBuf {
-    project_dir.join("ccpm.toml")
+    project_dir.join("agpm.toml")
 }
 
 #[cfg(test)]
@@ -159,13 +159,13 @@ mod tests {
         // The error will contain both the initial message and the context
         let err = result.unwrap_err();
         let err_str = err.to_string();
-        assert!(err_str.contains("ccpm.toml") || err_str.contains("Manifest"));
+        assert!(err_str.contains("agpm.toml") || err_str.contains("Manifest"));
     }
 
     #[test]
     fn test_load_project_manifest_invalid() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "invalid toml {").unwrap();
 
         let result = load_project_manifest(temp_dir.path());
@@ -178,7 +178,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         assert!(!manifest_exists(temp_dir.path()));
 
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "[sources]").unwrap();
         assert!(manifest_exists(temp_dir.path()));
     }
@@ -187,13 +187,13 @@ mod tests {
     fn test_manifest_path() {
         let temp_dir = tempdir().unwrap();
         let path = manifest_path(temp_dir.path());
-        assert_eq!(path, temp_dir.path().join("ccpm.toml"));
+        assert_eq!(path, temp_dir.path().join("agpm.toml"));
     }
 
     #[test]
     fn test_load_and_validate_manifest_success() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create valid manifest with sources and dependencies
         let content = r#"
@@ -217,7 +217,7 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
     #[test]
     fn test_load_and_validate_manifest_no_sources() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest without sources
         let content = r#"
@@ -239,7 +239,7 @@ test-agent = { path = "../local/agent.md" }
     #[test]
     fn test_load_and_validate_manifest_no_dependencies() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with only sources
         let content = r#"
@@ -271,7 +271,7 @@ test = "https://github.com/test/repo.git"
     #[test]
     fn test_load_and_validate_manifest_with_snippets() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with snippets dependency
         let content = r#"
@@ -291,7 +291,7 @@ test-snippet = { source = "test", path = "snippet.md", version = "v1.0.0" }
     #[test]
     fn test_load_and_validate_manifest_with_commands() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with commands dependency
         let content = r#"
@@ -311,7 +311,7 @@ test-command = { source = "test", path = "command.md", version = "v1.0.0" }
     #[test]
     fn test_load_and_validate_manifest_with_mcp_servers() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with MCP servers dependency
         let content = r#"
@@ -331,7 +331,7 @@ test-server = "../local/mcp-servers/test-server.json"
     #[test]
     fn test_load_project_manifest_valid() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create a valid manifest
         let content = r#"
@@ -354,7 +354,7 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
     #[test]
     fn test_load_and_validate_empty_manifest() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create an empty but valid manifest
         let content = "";
@@ -376,7 +376,7 @@ test-agent = { source = "test", path = "agent.md", version = "v1.0.0" }
     #[test]
     fn test_manifest_validation_mixed_dependencies() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest with multiple types of dependencies
         let content = r#"
@@ -417,13 +417,13 @@ cmd1 = { source = "source1", path = "cmd1.md", version = "v1.0.0" }
         let err_str = format!("{:?}", err_chain);
 
         // Should contain error context with suggestion
-        assert!(err_str.contains("ccpm.toml") || err_str.contains("init"));
+        assert!(err_str.contains("agpm.toml") || err_str.contains("init"));
     }
 
     #[test]
     fn test_error_context_in_validation() {
         let temp_dir = tempdir().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create manifest without sources
         fs::write(&manifest_path, "").unwrap();

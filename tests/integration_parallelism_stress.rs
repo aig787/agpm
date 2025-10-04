@@ -51,7 +51,7 @@ official = "{}"
 
     // Test with extremely high parallelism (should be throttled by system)
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "100"])
+        .run_agpm(&["install", "--max-parallel", "100"])
         .unwrap();
     assert!(output.success);
 
@@ -123,7 +123,7 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 
     let start = Instant::now();
     for operation in operations {
-        let output = project.run_ccpm(&operation).unwrap();
+        let output = project.run_agpm(&operation).unwrap();
         assert!(output.success);
     }
     let total_duration = start.elapsed();
@@ -152,7 +152,7 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
     assert!(
         project
             .project_path()
-            .join(".claude/ccpm/snippets/rapid-snippet.md")
+            .join(".claude/agpm/snippets/rapid-snippet.md")
             .exists()
     );
 
@@ -207,7 +207,7 @@ official = "{}"
 
         let start = Instant::now();
         let output = project
-            .run_ccpm(&["install", "--max-parallel", &level.to_string()])
+            .run_agpm(&["install", "--max-parallel", &level.to_string()])
             .unwrap();
         assert!(output.success);
         let duration = start.elapsed();
@@ -273,7 +273,7 @@ official = "{}"
     // High parallelism with single source should work efficiently
     let start = Instant::now();
     let output = project
-        .run_ccpm(&["install", "--max-parallel", "10"])
+        .run_agpm(&["install", "--max-parallel", "10"])
         .unwrap();
     assert!(output.success);
     let duration = start.elapsed();
@@ -344,7 +344,7 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
         let _ = tokio::fs::remove_dir_all(project.project_path().join(".claude")).await;
 
         let output = project
-            .run_ccpm(&["install", "--max-parallel", max_parallel])
+            .run_agpm(&["install", "--max-parallel", max_parallel])
             .unwrap();
         assert!(
             output.success,

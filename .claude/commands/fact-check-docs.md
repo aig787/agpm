@@ -56,7 +56,7 @@ Systematically verify the accuracy of all documentation files against the curren
    - Design patterns described are actually used
 
    **Configuration claims**:
-   - Config file formats are accurate (ccpm.toml, ccpm.lock)
+   - Config file formats are accurate (agpm.toml, agpm.lock)
    - Field names and types match schema
    - Default configuration values are correct
    - Environment variable names are accurate
@@ -132,7 +132,7 @@ Systematically verify the accuracy of all documentation files against the curren
 
 6. Special areas requiring careful verification:
 
-   **CCPM-specific**:
+   **AGPM-specific**:
    - Git worktree architecture descriptions
    - SHA-based resolution claims
    - Parallel installation capabilities
@@ -163,8 +163,8 @@ Systematically verify the accuracy of all documentation files against the curren
    ## File: docs/example.md
 
    ### Line 42: Incorrect command syntax
-   - Documentation says: `ccpm install --parallel`
-   - Actually should be: `ccpm install --max-parallel N`
+   - Documentation says: `agpm install --parallel`
+   - Actually should be: `agpm install --max-parallel N`
    - Severity: Important
 
    ### Line 78: Outdated module structure

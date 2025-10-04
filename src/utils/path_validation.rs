@@ -1,4 +1,4 @@
-//! Path validation and security utilities for CCPM.
+//! Path validation and security utilities for AGPM.
 //!
 //! This module provides utilities for safe path handling, validation,
 //! and security checks to prevent path traversal attacks.
@@ -228,7 +228,7 @@ pub fn sanitize_file_name(name: &str) -> String {
 
 /// Gets the project root directory from a path.
 ///
-/// Searches upward from the given path to find a directory containing ccpm.toml
+/// Searches upward from the given path to find a directory containing agpm.toml
 ///
 /// # Arguments
 /// * `start_path` - The path to start searching from
@@ -245,7 +245,7 @@ pub fn find_project_root(start_path: &Path) -> Result<PathBuf> {
     };
 
     loop {
-        if current.join("ccpm.toml").exists() {
+        if current.join("agpm.toml").exists() {
             return safe_canonicalize(current);
         }
 
@@ -253,7 +253,7 @@ pub fn find_project_root(start_path: &Path) -> Result<PathBuf> {
             Some(parent) => current = parent,
             None => {
                 return Err(anyhow!(
-                    "No ccpm.toml found in any parent directory of {}",
+                    "No agpm.toml found in any parent directory of {}",
                     start_path.display()
                 ));
             }
@@ -327,8 +327,8 @@ mod tests {
         let temp_dir = tempdir()?;
         let project_dir = temp_dir.path();
 
-        // Create ccpm.toml
-        fs::write(project_dir.join("ccpm.toml"), "[project]")?;
+        // Create agpm.toml
+        fs::write(project_dir.join("agpm.toml"), "[project]")?;
 
         // Create nested directory
         let nested = project_dir.join("src").join("nested");

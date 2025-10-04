@@ -1,6 +1,6 @@
-//! Global configuration management for CCPM.
+//! Global configuration management for AGPM.
 //!
-//! This module handles the global user configuration file (`~/.ccpm/config.toml`) which stores
+//! This module handles the global user configuration file (`~/.agpm/config.toml`) which stores
 //! user-wide settings including authentication tokens for private repositories. The global
 //! configuration provides a secure way to manage credentials without exposing them in
 //! version-controlled project files.
@@ -18,10 +18,10 @@
 //!
 //! The global configuration file is stored in platform-specific locations:
 //!
-//! - **Unix/macOS**: `~/.ccpm/config.toml`
-//! - **Windows**: `%LOCALAPPDATA%\ccpm\config.toml`
+//! - **Unix/macOS**: `~/.agpm/config.toml`
+//! - **Windows**: `%LOCALAPPDATA%\agpm\config.toml`
 //!
-//! The location can be overridden using the `CCPM_CONFIG_PATH` environment variable.
+//! The location can be overridden using the `AGPM_CONFIG_PATH` environment variable.
 //!
 //! # File Format
 //!
@@ -31,13 +31,13 @@
 //! # Global sources with authentication (never commit this file!)
 //! [sources]
 //! # GitHub with personal access token
-//! private = "https://oauth2:ghp_xxxxxxxxxxxx@github.com/company/private-ccpm.git"
+//! private = "https://oauth2:ghp_xxxxxxxxxxxx@github.com/company/private-agpm.git"
 //!
 //! # GitLab with deploy token
 //! enterprise = "https://gitlab-ci-token:token123@gitlab.company.com/ai/resources.git"
 //!
 //! # SSH-based authentication
-//! internal = "git@internal.company.com:team/ccpm-resources.git"
+//! internal = "git@internal.company.com:team/agpm-resources.git"
 //!
 //! # Basic authentication (not recommended)
 //! legacy = "https://username:password@old-server.com/repo.git"
@@ -69,12 +69,12 @@
 //!
 //! # Source Resolution Priority
 //!
-//! When resolving sources, CCPM follows this priority order:
+//! When resolving sources, AGPM follows this priority order:
 //!
-//! 1. **Global sources** from `~/.ccpm/config.toml` (loaded first)
-//! 2. **Project sources** from `ccpm.toml` (can override global sources)
+//! 1. **Global sources** from `~/.agpm/config.toml` (loaded first)
+//! 2. **Project sources** from `agpm.toml` (can override global sources)
 //!
-//! This allows teams to share public sources in `ccpm.toml` while keeping
+//! This allows teams to share public sources in `agpm.toml` while keeping
 //! authentication tokens private in individual global configurations.
 //!
 //! # Examples
@@ -82,7 +82,7 @@
 //! ## Basic Usage
 //!
 //! ```rust,no_run
-//! use ccpm::config::GlobalConfig;
+//! use agpm::config::GlobalConfig;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Load existing configuration or create default
@@ -103,7 +103,7 @@
 //! ## Using Configuration Manager
 //!
 //! ```rust,no_run
-//! use ccpm::config::GlobalConfigManager;
+//! use agpm::config::GlobalConfigManager;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let mut manager = GlobalConfigManager::new()?;
@@ -129,9 +129,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-/// Global configuration structure for CCPM.
+/// Global configuration structure for AGPM.
 ///
-/// This structure represents the global user configuration file stored at `~/.ccpm/config.toml`.
+/// This structure represents the global user configuration file stored at `~/.agpm/config.toml`.
 /// It contains user-wide settings including authentication credentials for private Git repositories.
 ///
 /// # Security Considerations
@@ -153,7 +153,7 @@ use tokio::fs;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::config::GlobalConfig;
+/// use agpm::config::GlobalConfig;
 /// use std::collections::HashMap;
 ///
 /// // Create new configuration
@@ -162,7 +162,7 @@ use tokio::fs;
 /// // Add authenticated source
 /// config.add_source(
 ///     "company".to_string(),
-///     "https://oauth2:token@github.com/company/ccpm.git".to_string()
+///     "https://oauth2:token@github.com/company/agpm.git".to_string()
 /// );
 ///
 /// assert!(config.has_source("company"));
@@ -213,14 +213,14 @@ impl GlobalConfig {
     ///
     /// # Default Locations
     ///
-    /// - **Unix/macOS**: `~/.ccpm/config.toml`
-    /// - **Windows**: `%LOCALAPPDATA%\ccpm\config.toml`
-    /// - **Override**: Set `CCPM_CONFIG_PATH` environment variable
+    /// - **Unix/macOS**: `~/.agpm/config.toml`
+    /// - **Windows**: `%LOCALAPPDATA%\agpm\config.toml`
+    /// - **Override**: Set `AGPM_CONFIG_PATH` environment variable
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let config = GlobalConfig::load().await?;
@@ -247,7 +247,7 @@ impl GlobalConfig {
     /// Load global configuration from an optional path.
     ///
     /// If a path is provided, loads from that path. Otherwise, loads from the
-    /// default location (`~/.ccpm/config.toml` or platform equivalent).
+    /// default location (`~/.agpm/config.toml` or platform equivalent).
     ///
     /// # Parameters
     ///
@@ -265,7 +265,7 @@ impl GlobalConfig {
     /// - The file contains invalid TOML syntax
     pub async fn load_with_optional(path: Option<PathBuf>) -> Result<Self> {
         let path = path.unwrap_or_else(|| {
-            Self::default_path().unwrap_or_else(|_| PathBuf::from("~/.ccpm/config.toml"))
+            Self::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
         if path.exists() {
             Self::load_from(&path).await
@@ -286,7 +286,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -324,7 +324,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut config = GlobalConfig::load().await?;
@@ -361,7 +361,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -419,8 +419,8 @@ impl GlobalConfig {
     ///
     /// # Path Resolution
     ///
-    /// - **Windows**: `%LOCALAPPDATA%\ccpm\config.toml`
-    /// - **Unix/macOS**: `~/.ccpm/config.toml`
+    /// - **Windows**: `%LOCALAPPDATA%\agpm\config.toml`
+    /// - **Unix/macOS**: `~/.agpm/config.toml`
     ///
     /// Note: Environment variable overrides are deprecated. Use the load_with_optional()
     /// method with an explicit path instead for better thread safety.
@@ -428,7 +428,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let path = GlobalConfig::default_path()?;
@@ -446,11 +446,11 @@ impl GlobalConfig {
         let config_dir = if cfg!(target_os = "windows") {
             dirs::data_local_dir()
                 .ok_or_else(|| anyhow::anyhow!("Unable to determine local data directory"))?
-                .join("ccpm")
+                .join("agpm")
         } else {
             dirs::home_dir()
                 .ok_or_else(|| anyhow::anyhow!("Unable to determine home directory"))?
-                .join(".ccpm")
+                .join(".agpm")
         };
 
         Ok(config_dir.join("config.toml"))
@@ -471,7 +471,7 @@ impl GlobalConfig {
     ///
     /// # Parameters
     ///
-    /// - `local_sources`: Sources from project manifest (`ccpm.toml`)
+    /// - `local_sources`: Sources from project manifest (`agpm.toml`)
     ///
     /// # Returns
     ///
@@ -480,7 +480,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     /// use std::collections::HashMap;
     ///
     /// let mut global = GlobalConfig::default();
@@ -533,7 +533,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     ///
@@ -575,7 +575,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// config.add_source("test".to_string(), "https://example.com/repo.git".to_string());
@@ -601,7 +601,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// assert!(!config.has_source("test"));
@@ -630,7 +630,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// config.add_source(
@@ -665,7 +665,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfig;
+    /// use agpm::config::GlobalConfig;
     ///
     /// let config = GlobalConfig::init_example();
     /// assert!(config.has_source("private"));
@@ -684,7 +684,7 @@ impl GlobalConfig {
         let mut sources = HashMap::new();
         sources.insert(
             "private".to_string(),
-            "https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-ccpm.git".to_string(),
+            "https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-agpm.git".to_string(),
         );
 
         Self {
@@ -713,7 +713,7 @@ impl GlobalConfig {
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use ccpm::config::GlobalConfigManager;
+/// use agpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let mut manager = GlobalConfigManager::new()?;
@@ -731,7 +731,7 @@ impl GlobalConfig {
 /// ## Modifying Configuration
 ///
 /// ```rust,no_run
-/// use ccpm::config::GlobalConfigManager;
+/// use agpm::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let mut manager = GlobalConfigManager::new()?;
@@ -762,7 +762,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = GlobalConfigManager::new()?;
@@ -792,7 +792,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     /// use std::path::PathBuf;
     ///
     /// let manager = GlobalConfigManager::with_path(PathBuf::from("/tmp/test.toml"));
@@ -814,7 +814,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -853,7 +853,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -892,7 +892,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -928,7 +928,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::config::GlobalConfigManager;
+    /// use agpm::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -1072,7 +1072,7 @@ mod tests {
         assert!(config.has_source("private"));
         assert_eq!(
             config.get_source("private"),
-            Some(&"https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-ccpm.git".to_string())
+            Some(&"https://oauth2:YOUR_TOKEN@github.com/yourcompany/private-agpm.git".to_string())
         );
     }
 

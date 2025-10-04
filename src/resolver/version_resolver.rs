@@ -1,4 +1,4 @@
-//! Centralized version resolution module for CCPM
+//! Centralized version resolution module for AGPM
 //!
 //! This module implements the core version-to-SHA resolution strategy that ensures
 //! deterministic and efficient dependency management. By resolving all version
@@ -48,8 +48,8 @@ pub struct VersionEntry {
 /// # Example
 ///
 /// ```no_run
-/// # use ccpm::resolver::version_resolver::{VersionResolver, VersionEntry};
-/// # use ccpm::cache::Cache;
+/// # use agpm::resolver::version_resolver::{VersionResolver, VersionEntry};
+/// # use agpm::cache::Cache;
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
 /// let mut resolver = VersionResolver::new(cache);
@@ -128,7 +128,7 @@ impl VersionResolver {
 
     /// Resolves all collected versions to their commit SHAs using cached repositories.
     ///
-    /// This method implements the second phase of CCPM's two-phase resolution architecture.
+    /// This method implements the second phase of AGPM's two-phase resolution architecture.
     /// It processes all version entries collected via `add_version()` calls and resolves
     /// them to concrete commit SHAs using locally cached Git repositories.
     ///
@@ -166,8 +166,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```ignore
-    /// # use ccpm::resolver::version_resolver::VersionResolver;
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::resolver::version_resolver::VersionResolver;
+    /// # use agpm::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     /// let mut resolver = VersionResolver::new(cache);
@@ -397,7 +397,7 @@ impl VersionResolver {
 
     /// Pre-syncs all unique sources to ensure repositories are cloned/fetched.
     ///
-    /// This method implements the first phase of CCPM's two-phase resolution architecture.
+    /// This method implements the first phase of AGPM's two-phase resolution architecture.
     /// It is designed to be called during the "Syncing sources" phase to perform all
     /// Git network operations upfront, before version resolution occurs.
     ///
@@ -409,7 +409,7 @@ impl VersionResolver {
     /// # Post-Execution State
     ///
     /// After this method completes successfully:
-    /// - All required repositories will be cloned to `~/.ccpm/cache/sources/`
+    /// - All required repositories will be cloned to `~/.agpm/cache/sources/`
     /// - All repositories will have their latest refs fetched from remote
     /// - The internal `bare_repos` map will be populated with repository paths
     /// - `resolve_all()` can proceed without any network operations
@@ -423,8 +423,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```ignore
-    /// use ccpm::resolver::version_resolver::VersionResolver;
-    /// use ccpm::cache::Cache;
+    /// use agpm::resolver::version_resolver::VersionResolver;
+    /// use agpm::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -433,17 +433,17 @@ impl VersionResolver {
     /// // Add versions to resolve across multiple sources
     /// version_resolver.add_version(
     ///     "community",
-    ///     "https://github.com/org/ccpm-community.git",
+    ///     "https://github.com/org/agpm-community.git",
     ///     Some("v1.0.0"),
     /// );
     /// version_resolver.add_version(
     ///     "community",
-    ///     "https://github.com/org/ccpm-community.git",
+    ///     "https://github.com/org/agpm-community.git",
     ///     Some("v2.0.0"),
     /// );
     /// version_resolver.add_version(
     ///     "private-tools",
-    ///     "https://github.com/company/private-ccpm.git",
+    ///     "https://github.com/company/private-agpm.git",
     ///     Some("main"),
     /// );
     ///
@@ -535,8 +535,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```
-    /// # use ccpm::resolver::version_resolver::VersionResolver;
-    /// # use ccpm::cache::Cache;
+    /// # use agpm::resolver::version_resolver::VersionResolver;
+    /// # use agpm::cache::Cache;
     /// # let cache = Cache::new().unwrap();
     /// let mut resolver = VersionResolver::new(cache);
     /// assert!(!resolver.has_entries()); // Initially empty

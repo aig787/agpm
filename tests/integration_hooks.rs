@@ -62,7 +62,7 @@ tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     output.assert_stdout_contains("✓ Configured 2 hook(s)");
 
@@ -146,8 +146,8 @@ async fn test_hooks_deduplication() -> Result<()> {
     let session_hook = serde_json::json!({
         "events": ["SessionStart"],
         "type": "command",
-        "command": "ccpm update",
-        "description": "Update CCPM"
+        "command": "agpm update",
+        "description": "Update AGPM"
     });
     fs::write(
         hooks_dir.join("hook1.json"),
@@ -178,7 +178,7 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     output.assert_stdout_contains("✓ Configured 1 hook(s)"); // Deduplicated count
 
@@ -202,7 +202,7 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
     );
     assert_eq!(
         hook_commands[0].get("command").unwrap().as_str().unwrap(),
-        "ccpm update"
+        "agpm update"
     );
 
     Ok(())
@@ -249,7 +249,7 @@ future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
     output.assert_stdout_contains("✓ Configured 1 hook(s)");
 
@@ -299,7 +299,7 @@ async fn test_hooks_empty_no_message() -> Result<()> {
     project.write_manifest(manifest_content).await?;
 
     // Run install
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Should NOT contain any hook configuration message
@@ -363,12 +363,12 @@ session-hook = {{ source = "hooks", path = "hooks/session-start.json" }}
     project.write_manifest(&manifest_content).await?;
 
     // First install - should configure hooks and show message
-    let output1 = project.run_ccpm(&["install"])?;
+    let output1 = project.run_agpm(&["install"])?;
     output1.assert_success();
     output1.assert_stdout_contains("✓ Configured 1 hook(s)");
 
     // Second install with same hooks - should NOT show message (no changes)
-    let output2 = project.run_ccpm(&["install"])?;
+    let output2 = project.run_agpm(&["install"])?;
     output2.assert_success();
     assert!(!output2.stdout.contains("Configured"));
     assert!(!output2.stdout.contains("hook"));

@@ -26,16 +26,16 @@ mod cli_tests {
     #[test]
     fn test_cli_parsing() {
         // Test basic command parsing
-        let cli = Cli::try_parse_from(["ccpm", "--help"]);
+        let cli = Cli::try_parse_from(["agpm", "--help"]);
         assert!(cli.is_err()); // --help causes a special error
 
-        let cli = Cli::try_parse_from(["ccpm", "list"]);
+        let cli = Cli::try_parse_from(["agpm", "list"]);
         assert!(cli.is_ok());
     }
 
     #[test]
     fn test_cli_verbose_flag() {
-        let cli = Cli::try_parse_from(["ccpm", "--verbose", "list"]);
+        let cli = Cli::try_parse_from(["agpm", "--verbose", "list"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert!(cli.verbose);
@@ -43,7 +43,7 @@ mod cli_tests {
 
     #[test]
     fn test_cli_quiet_flag() {
-        let cli = Cli::try_parse_from(["ccpm", "--quiet", "list"]);
+        let cli = Cli::try_parse_from(["agpm", "--quiet", "list"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert!(cli.quiet);
@@ -51,7 +51,7 @@ mod cli_tests {
 
     #[test]
     fn test_cli_no_progress_flag() {
-        let cli = Cli::try_parse_from(["ccpm", "--no-progress", "list"]);
+        let cli = Cli::try_parse_from(["agpm", "--no-progress", "list"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert!(cli.no_progress);
@@ -59,7 +59,7 @@ mod cli_tests {
 
     #[test]
     fn test_cli_config_option() {
-        let cli = Cli::try_parse_from(["ccpm", "--config", "/path/to/config", "list"]);
+        let cli = Cli::try_parse_from(["agpm", "--config", "/path/to/config", "list"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert_eq!(cli.config, Some("/path/to/config".to_string()));
@@ -69,20 +69,20 @@ mod cli_tests {
     fn test_cli_all_commands() {
         // Test that all commands can be parsed
         let commands = vec![
-            vec!["ccpm", "init"],
+            vec!["agpm", "init"],
             vec![
-                "ccpm",
+                "agpm",
                 "add",
                 "source",
                 "test",
                 "https://github.com/test/repo.git",
             ],
-            vec!["ccpm", "install"],
-            vec!["ccpm", "update"],
-            vec!["ccpm", "list"],
-            vec!["ccpm", "validate"],
-            vec!["ccpm", "cache", "info"],
-            vec!["ccpm", "config", "show"],
+            vec!["agpm", "install"],
+            vec!["agpm", "update"],
+            vec!["agpm", "list"],
+            vec!["agpm", "validate"],
+            vec!["agpm", "cache", "info"],
+            vec!["agpm", "config", "show"],
         ];
 
         for cmd in commands {
@@ -103,7 +103,7 @@ mod cli_tests {
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
         // Create the manifest
-        let manifest_path = temp_path.join("ccpm.toml");
+        let manifest_path = temp_path.join("agpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 
         // Verify the file exists
@@ -111,7 +111,7 @@ mod cli_tests {
 
         // Test that verbose flag creates correct config and executes successfully
         // Use config path command which doesn't need a manifest in current dir
-        let cli = Cli::try_parse_from(["ccpm", "--verbose", "config", "path"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--verbose", "config", "path"]).unwrap();
         assert!(cli.verbose);
         let config = cli.build_config();
         assert_eq!(config.log_level, Some("debug".to_string()));
@@ -123,7 +123,7 @@ mod cli_tests {
         assert!(result.is_ok(), "Failed to execute with verbose flag");
 
         // Test that quiet flag creates correct config
-        let cli = Cli::try_parse_from(["ccpm", "--quiet", "config", "path"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--quiet", "config", "path"]).unwrap();
         assert!(cli.quiet);
         let config = cli.build_config();
         assert_eq!(config.log_level, None);
@@ -133,7 +133,7 @@ mod cli_tests {
         assert!(result.is_ok(), "Failed to execute with quiet flag");
 
         // Test that no-progress flag creates correct config
-        let cli = Cli::try_parse_from(["ccpm", "--no-progress", "config", "path"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--no-progress", "config", "path"]).unwrap();
         assert!(cli.no_progress);
         let config = cli.build_config();
         assert!(config.no_progress);
@@ -145,7 +145,7 @@ mod cli_tests {
 
         // Test combined flags
         let cli =
-            Cli::try_parse_from(["ccpm", "--verbose", "--no-progress", "config", "path"]).unwrap();
+            Cli::try_parse_from(["agpm", "--verbose", "--no-progress", "config", "path"]).unwrap();
         assert!(cli.verbose);
         assert!(cli.no_progress);
         let config = cli.build_config();
@@ -160,28 +160,28 @@ mod cli_tests {
     #[test]
     fn test_cli_config_builder() {
         // Test verbose flag sets debug log level
-        let cli = Cli::try_parse_from(["ccpm", "--verbose", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--verbose", "list"]).unwrap();
         let config = cli.build_config();
         assert_eq!(config.log_level, Some("debug".to_string()));
         assert!(!config.no_progress);
 
         // Test quiet flag sets no log level
-        let cli = Cli::try_parse_from(["ccpm", "--quiet", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--quiet", "list"]).unwrap();
         let config = cli.build_config();
         assert_eq!(config.log_level, None);
 
         // Test default sets info log level
-        let cli = Cli::try_parse_from(["ccpm", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "list"]).unwrap();
         let config = cli.build_config();
         assert_eq!(config.log_level, Some("info".to_string()));
 
         // Test no-progress flag
-        let cli = Cli::try_parse_from(["ccpm", "--no-progress", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--no-progress", "list"]).unwrap();
         let config = cli.build_config();
         assert!(config.no_progress);
 
         // Test config path
-        let cli = Cli::try_parse_from(["ccpm", "--config", "/custom/path", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "--config", "/custom/path", "list"]).unwrap();
         let config = cli.build_config();
         assert_eq!(config.config_path, Some("/custom/path".to_string()));
     }
@@ -197,7 +197,7 @@ mod cli_tests {
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
         // Create the manifest in temp directory
-        let manifest_path = temp_path.join("ccpm.toml");
+        let manifest_path = temp_path.join("agpm.toml");
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 
         // Verify the file exists
@@ -208,7 +208,7 @@ mod cli_tests {
 
         // Test each command execution path - use manifest-path parameter for all
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "list",
@@ -221,7 +221,7 @@ mod cli_tests {
         assert!(manifest_path.exists(), "Manifest disappeared after list");
 
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "validate",
@@ -231,7 +231,7 @@ mod cli_tests {
         assert!(result.is_ok(), "validate command failed: {result:?}");
 
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "cache",
@@ -246,7 +246,7 @@ mod cli_tests {
 
         // Test install
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "install",
@@ -257,7 +257,7 @@ mod cli_tests {
 
         // Test update
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "update",
@@ -268,7 +268,7 @@ mod cli_tests {
 
         // Test add source
         let cli = Cli::try_parse_from([
-            "ccpm",
+            "agpm",
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "add",
@@ -284,7 +284,7 @@ mod cli_tests {
     #[tokio::test]
     async fn test_cli_execute_method() {
         // Test with config path command which doesn't require a manifest
-        let cli = Cli::try_parse_from(["ccpm", "config", "path"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "config", "path"]).unwrap();
 
         // This tests the execute method path (lines 582-584)
         let result = cli.execute().await;
@@ -301,13 +301,13 @@ mod cli_tests {
         // Test Init command execution (line 692)
         // Parse the CLI to properly create the command with path option
         let cli =
-            Cli::try_parse_from(["ccpm", "init", "--path", temp_path.to_str().unwrap()]).unwrap();
+            Cli::try_parse_from(["agpm", "init", "--path", temp_path.to_str().unwrap()]).unwrap();
 
         let result = cli.execute().await;
         assert!(result.is_ok(), "Init command failed: {result:?}");
 
         // Verify the manifest was created
-        let manifest_path = temp_path.join("ccpm.toml");
+        let manifest_path = temp_path.join("agpm.toml");
         assert!(manifest_path.exists());
     }
 
@@ -319,11 +319,11 @@ mod cli_tests {
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
         // Create a manifest for cache operations
-        std::fs::write(temp_path.join("ccpm.toml"), "[sources]\n").unwrap();
+        std::fs::write(temp_path.join("agpm.toml"), "[sources]\n").unwrap();
 
         // Test Cache command execution (line 698)
         // Parse the CLI to properly create the command with default subcommand
-        let cli = Cli::try_parse_from(["ccpm", "cache", "info"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "cache", "info"]).unwrap();
 
         let result = cli.execute().await;
         assert!(result.is_ok(), "Cache command failed: {result:?}");
@@ -340,7 +340,7 @@ mod cli_tests {
 
         // Create a manifest with a source to remove
         std::fs::write(
-            temp_path.join("ccpm.toml"),
+            temp_path.join("agpm.toml"),
             r#"[sources]
 test-source = "https://github.com/test/repo.git"
 
@@ -353,7 +353,7 @@ test-source = "https://github.com/test/repo.git"
         .unwrap();
 
         // Test Remove command execution - try to remove non-existent source
-        let cli = Cli::try_parse_from(["ccpm", "remove", "source", "nonexistent"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "remove", "source", "nonexistent"]).unwrap();
 
         let result = cli.execute().await;
 
@@ -372,7 +372,7 @@ test-source = "https://github.com/test/repo.git"
 
         // Test Config command execution (line 699)
         // Config path command doesn't need a manifest
-        let cli = Cli::try_parse_from(["ccpm", "config", "path"]).unwrap();
+        let cli = Cli::try_parse_from(["agpm", "config", "path"]).unwrap();
 
         let result = cli.execute().await;
         assert!(result.is_ok(), "Config command failed: {result:?}");
@@ -385,7 +385,7 @@ test-source = "https://github.com/test/repo.git"
 
         for cmd in &commands {
             for flag in &flags {
-                let result = Cli::try_parse_from(["ccpm", flag, cmd]);
+                let result = Cli::try_parse_from(["agpm", flag, cmd]);
                 assert!(result.is_ok(), "Failed with {flag} {cmd}");
             }
         }

@@ -47,9 +47,9 @@ impl CacheLock {
     /// ```
     ///
     /// Examples:
-    /// - `~/.ccpm/cache/.locks/community.lock`
-    /// - `~/.ccpm/cache/.locks/work-tools.lock`
-    /// - `~/.ccpm/cache/.locks/my-project.lock`
+    /// - `~/.agpm/cache/.locks/community.lock`
+    /// - `~/.agpm/cache/.locks/work-tools.lock`
+    /// - `~/.agpm/cache/.locks/my-project.lock`
     ///
     /// # Parameters
     ///
@@ -92,11 +92,11 @@ impl CacheLock {
     /// Simple lock acquisition:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::lock::CacheLock;
+    /// use agpm::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let cache_dir = PathBuf::from("/home/user/.ccpm/cache");
+    /// let cache_dir = PathBuf::from("/home/user/.agpm/cache");
     ///
     /// // This will block if another process has the lock
     /// let lock = CacheLock::acquire(&cache_dir, "my-source").await?;
@@ -113,7 +113,7 @@ impl CacheLock {
     /// Error handling for lock acquisition:
     ///
     /// ```rust,no_run
-    /// use ccpm::cache::lock::CacheLock;
+    /// use agpm::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -134,7 +134,7 @@ impl CacheLock {
     /// # }
     /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
-        // Create lock file path: ~/.ccpm/cache/.locks/source_name.lock
+        // Create lock file path: ~/.agpm/cache/.locks/source_name.lock
         let locks_dir = cache_dir.join(".locks");
         tokio::fs::create_dir_all(&locks_dir).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotADirectory {
@@ -217,11 +217,11 @@ impl Drop for CacheLock {
 /// # Example
 ///
 /// ```rust,no_run
-/// use ccpm::cache::lock::cleanup_stale_locks;
+/// use agpm::cache::lock::cleanup_stale_locks;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let cache_dir = PathBuf::from("/home/user/.ccpm/cache");
+/// let cache_dir = PathBuf::from("/home/user/.agpm/cache");
 /// // Clean up lock files older than 1 hour
 /// let removed = cleanup_stale_locks(&cache_dir, 3600).await?;
 /// println!("Removed {} stale lock files", removed);

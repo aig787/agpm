@@ -1,11 +1,11 @@
-# CLAUDE.md - CCPM Project Context
+# CLAUDE.md - AGPM Project Context
 
 **IMPORTANT**: This file must remain under 20,000 characters.
 
 ## Overview
 
-CCPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
-scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (ccpm.toml + ccpm.lock) like Cargo for
+AGPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
+scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (agpm.toml + agpm.lock) like Cargo for
 reproducible installations from Git repositories.
 
 ## Architecture
@@ -29,8 +29,8 @@ src/
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
 ├── installer.rs # Parallel resource installation + artifact cleanup
-├── lockfile/    # ccpm.lock management + staleness detection
-├── manifest/    # ccpm.toml parsing + transitive dependencies
+├── lockfile/    # agpm.lock management + staleness detection
+├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
@@ -93,10 +93,10 @@ src/
 
 ## CLI Commands
 
-- `install [--frozen] [--no-cache] [--max-parallel N]` - Install from ccpm.toml
+- `install [--frozen] [--no-cache] [--max-parallel N]` - Install from agpm.toml
 - `update [dep]` - Update dependencies
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
-- `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update CCPM
+- `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
 - `list` - List installed resources
 - `validate [--check-lock] [--resolve]` - Validate manifest
 - `cache [clean|list]` - Manage cache
@@ -246,7 +246,7 @@ dependencies:
 Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ```
-~/.ccpm/cache/
+~/.agpm/cache/
 ├── sources/        # Bare repositories (.git suffix)
 │   └── github_owner_repo.git/
 ├── worktrees/      # SHA-based worktrees (deduplicated)
@@ -273,17 +273,17 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Use Task tool** for complex operations
 - **Cross-platform**: Windows, macOS, Linux
 - **NO git2**: Use system git command
-- **Security**: Credentials only in ~/.ccpm/config.toml, path traversal prevention, checksums
+- **Security**: Credentials only in ~/.agpm/config.toml, path traversal prevention, checksums
 - **Atomic ops**: Temp file + rename
 - **Resources**: .md, .json, .sh/.js/.py files
 - **Hooks**: Configure in .claude/settings.local.json
 - **MCP**: Configure in .mcp.json
 
-## Example ccpm.toml Format
+## Example agpm.toml Format
 
 ```toml
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
 [agents]
@@ -323,7 +323,7 @@ filesystem = { source = "community", path = "mcp-servers/filesystem.json", versi
 postgres = { source = "local", path = "mcp-servers/postgres.json" }
 ```
 
-## Example ccpm.lock
+## Example agpm.lock
 
 ```toml
 # Auto-generated lockfile
@@ -349,7 +349,7 @@ installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirectory structure
 
 ## Config Priority
 
-1. `~/.ccpm/config.toml` - Global config with auth tokens (not in git)
-2. `ccpm.toml` - Project manifest (in git)
+1. `~/.agpm/config.toml` - Global config with auth tokens (not in git)
+2. `agpm.toml` - Project manifest (in git)
 
 Keeps secrets out of version control.

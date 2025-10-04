@@ -34,12 +34,12 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command
-    let output = project.run_ccpm(&["outdated", "--no-fetch"]).unwrap();
+    let output = project.run_agpm(&["outdated", "--no-fetch"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("All dependencies are up to date!");
@@ -79,7 +79,7 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
@@ -95,10 +95,10 @@ async fn test_outdated_no_lockfile() {
     let manifest_content = ManifestFixture::basic().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["outdated"]).unwrap();
+    let output = project.run_agpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without lockfile");
     assert!(
-        output.stderr.contains("ccpm.lock") || output.stderr.contains("Run 'ccpm install' first"),
+        output.stderr.contains("agpm.lock") || output.stderr.contains("Run 'agpm install' first"),
         "Expected lockfile error message, got: {}",
         output.stderr
     );
@@ -109,10 +109,10 @@ async fn test_outdated_no_lockfile() {
 async fn test_outdated_without_project() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["outdated"]).unwrap();
+    let output = project.run_agpm(&["outdated"]).unwrap();
     assert!(!output.success, "Expected command to fail without project");
     assert!(
-        output.stderr.contains("ccpm.toml not found"),
+        output.stderr.contains("agpm.toml not found"),
         "Expected manifest not found error, got: {}",
         output.stderr
     );
@@ -147,13 +147,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command with JSON format
     let output = project
-        .run_ccpm(&["outdated", "--format", "json", "--no-fetch"])
+        .run_agpm(&["outdated", "--format", "json", "--no-fetch"])
         .unwrap();
     output.assert_success();
 
@@ -199,13 +199,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command with --check flag
     let output = project
-        .run_ccpm(&["outdated", "--check", "--no-fetch"])
+        .run_agpm(&["outdated", "--check", "--no-fetch"])
         .unwrap();
 
     // Should succeed when all dependencies are up to date
@@ -257,13 +257,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/helper.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run outdated command for specific dependency
     let output = project
-        .run_ccpm(&["outdated", "--no-fetch", "my-agent"])
+        .run_agpm(&["outdated", "--no-fetch", "my-agent"])
         .unwrap();
     output.assert_success();
 }

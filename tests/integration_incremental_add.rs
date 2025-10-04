@@ -1,4 +1,4 @@
-//! Integration tests for incremental dependency addition with `ccpm add dep`.
+//! Integration tests for incremental dependency addition with `agpm add dep`.
 //!
 //! These tests verify that transitive dependency relationships are properly maintained
 //! when dependencies are added incrementally to a project manifest.
@@ -28,16 +28,16 @@ local = "{}"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
-mcp-servers = ".claude/ccpm/mcp-servers"
-scripts = ".claude/ccpm/scripts"
-hooks = ".claude/ccpm/hooks"
+mcp-servers = ".claude/agpm/mcp-servers"
+scripts = ".claude/agpm/scripts"
+hooks = ".claude/agpm/hooks"
 gitignore = true
 "#,
         resources_dir.display().to_string().replace('\\', "/")
     );
-    fs::write(project_dir.join("ccpm.toml"), manifest_content).await?;
+    fs::write(project_dir.join("agpm.toml"), manifest_content).await?;
 
     // Create command file with transitive dependencies in local source
     let command_content = r#"---
@@ -128,10 +128,10 @@ async fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str)
 async fn test_incremental_add_preserves_transitive_dependencies() {
     let temp_dir = setup_test_project().await.unwrap();
     let project_dir = temp_dir.path();
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
 
     // Step 1: Add command dependency (should discover transitive deps)
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(project_dir)
         .arg("add")
         .arg("dep")
@@ -160,7 +160,7 @@ async fn test_incremental_add_preserves_transitive_dependencies() {
     );
 
     // Step 2: Add agent dependency explicitly (making it a base dependency)
-    let mut cmd2 = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd2 = Command::cargo_bin("agpm").unwrap();
     cmd2.current_dir(project_dir)
         .arg("add")
         .arg("dep")
@@ -205,10 +205,10 @@ async fn test_incremental_add_preserves_transitive_dependencies() {
 async fn test_incremental_add_chain_of_three_dependencies() {
     let temp_dir = setup_test_project().await.unwrap();
     let project_dir = temp_dir.path();
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
 
     // Add command (discovers agent and snippet as transitive deps)
-    let mut cmd1 = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd1 = Command::cargo_bin("agpm").unwrap();
     cmd1.current_dir(project_dir)
         .arg("add")
         .arg("dep")
@@ -226,7 +226,7 @@ async fn test_incremental_add_chain_of_three_dependencies() {
     );
 
     // Add agent explicitly (was transitive, now base)
-    let mut cmd2 = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd2 = Command::cargo_bin("agpm").unwrap();
     cmd2.current_dir(project_dir)
         .arg("add")
         .arg("dep")
@@ -250,7 +250,7 @@ async fn test_incremental_add_chain_of_three_dependencies() {
     );
 
     // Add helper-snippet explicitly (was transitive of agent, now base)
-    let mut cmd3 = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd3 = Command::cargo_bin("agpm").unwrap();
     cmd3.current_dir(project_dir)
         .arg("add")
         .arg("dep")
@@ -318,10 +318,10 @@ This command also uses test-snippet.
     .await
     .unwrap();
 
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
 
     // Add first command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .current_dir(project_dir)
         .arg("add")
@@ -334,7 +334,7 @@ This command also uses test-snippet.
         .success();
 
     // Add second command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .current_dir(project_dir)
         .arg("add")
@@ -360,7 +360,7 @@ This command also uses test-snippet.
     );
 
     // Now add the shared snippet explicitly
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .current_dir(project_dir)
         .arg("add")

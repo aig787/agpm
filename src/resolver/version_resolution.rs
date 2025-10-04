@@ -25,7 +25,7 @@ use crate::version::constraints::{ConstraintSet, VersionConstraint};
 /// # Examples
 ///
 /// ```
-/// use ccpm::resolver::version_resolution::is_version_constraint;
+/// use agpm::resolver::version_resolution::is_version_constraint;
 /// assert!(is_version_constraint("^1.0.0"));
 /// assert!(is_version_constraint("~1.2.0"));
 /// assert!(is_version_constraint(">=1.0.0"));
@@ -73,7 +73,7 @@ pub fn is_version_constraint(version: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use ccpm::resolver::version_resolution::parse_tags_to_versions;
+/// use agpm::resolver::version_resolution::parse_tags_to_versions;
 /// let tags = vec!["v1.0.0".to_string(), "1.2.0".to_string(), "feature-branch".to_string(), "v2.0.0-beta.1".to_string()];
 /// let versions = parse_tags_to_versions(tags);
 /// // Returns: [("v2.0.0-beta.1", Version), ("1.2.0", Version), ("v1.0.0", Version)]
@@ -118,7 +118,7 @@ pub fn parse_tags_to_versions(tags: Vec<String>) -> Vec<(String, Version)> {
 /// ```no_run
 /// # use anyhow::Result;
 /// # fn example() -> Result<()> {
-/// use ccpm::resolver::version_resolution::find_best_matching_tag;
+/// use agpm::resolver::version_resolution::find_best_matching_tag;
 /// let tags = vec!["v1.0.0".to_string(), "v1.2.0".to_string(), "v1.5.0".to_string(), "v2.0.0".to_string()];
 /// let best = find_best_matching_tag("^1.0.0", tags)?;
 /// assert_eq!(best, "v1.5.0"); // Highest 1.x.x version

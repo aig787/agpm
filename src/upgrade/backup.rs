@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, info, warn};
 
-/// Manages backup and restoration of CCPM binaries during upgrades.
+/// Manages backup and restoration of AGPM binaries during upgrades.
 ///
 /// `BackupManager` provides comprehensive backup functionality to protect against
 /// failed upgrades and enable rollback capabilities. It creates backups of the
@@ -42,11 +42,11 @@ use tracing::{debug, info, warn};
 ///
 /// ## Basic Backup and Restore
 /// ```rust,no_run
-/// use ccpm::upgrade::backup::BackupManager;
+/// use agpm::upgrade::backup::BackupManager;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let exe_path = PathBuf::from("/usr/local/bin/ccpm");
+/// let exe_path = PathBuf::from("/usr/local/bin/agpm");
 /// let backup_manager = BackupManager::new(exe_path);
 ///
 /// // Create backup before upgrade
@@ -67,10 +67,10 @@ use tracing::{debug, info, warn};
 ///
 /// ## Check for Existing Backup
 /// ```rust,no_run
-/// use ccpm::upgrade::backup::BackupManager;
+/// use agpm::upgrade::backup::BackupManager;
 /// use std::path::PathBuf;
 ///
-/// let backup_manager = BackupManager::new(PathBuf::from("ccpm"));
+/// let backup_manager = BackupManager::new(PathBuf::from("agpm"));
 ///
 /// if backup_manager.backup_exists() {
 ///     println!("Backup found at: {}", backup_manager.backup_path().display());
@@ -110,16 +110,16 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// // Unix-style path
-    /// let manager = BackupManager::new(PathBuf::from("/usr/local/bin/ccpm"));
-    /// // Backup will be at /usr/local/bin/ccpm.backup
+    /// let manager = BackupManager::new(PathBuf::from("/usr/local/bin/agpm"));
+    /// // Backup will be at /usr/local/bin/agpm.backup
     ///
     /// // Windows-style path
-    /// let manager = BackupManager::new(PathBuf::from(r"C:\Program Files\ccpm\ccpm.exe"));
-    /// // Backup will be at C:\Program Files\ccpm\ccpm.exe.backup
+    /// let manager = BackupManager::new(PathBuf::from(r"C:\Program Files\agpm\agpm.exe"));
+    /// // Backup will be at C:\Program Files\agpm\agpm.exe.backup
     /// ```
     pub fn new(executable_path: PathBuf) -> Self {
         let mut backup_path = executable_path.clone();
@@ -165,11 +165,11 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manager = BackupManager::new(PathBuf::from("./ccpm"));
+    /// let manager = BackupManager::new(PathBuf::from("./agpm"));
     ///
     /// match manager.create_backup().await {
     ///     Ok(()) => println!("Backup created successfully"),
@@ -255,11 +255,11 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manager = BackupManager::new(PathBuf::from("./ccpm"));
+    /// let manager = BackupManager::new(PathBuf::from("./agpm"));
     ///
     /// if manager.backup_exists() {
     ///     match manager.restore_backup().await {
@@ -369,11 +369,11 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
-    /// let manager = BackupManager::new(PathBuf::from("./ccpm"));
+    /// let manager = BackupManager::new(PathBuf::from("./agpm"));
     ///
     /// // After successful upgrade
     /// manager.cleanup_backup().await?;
@@ -409,10 +409,10 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
-    /// let manager = BackupManager::new(PathBuf::from("./ccpm"));
+    /// let manager = BackupManager::new(PathBuf::from("./agpm"));
     ///
     /// if manager.backup_exists() {
     ///     println!("Backup available for rollback");
@@ -442,12 +442,12 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::backup::BackupManager;
+    /// use agpm::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
-    /// let manager = BackupManager::new(PathBuf::from("/usr/local/bin/ccpm"));
+    /// let manager = BackupManager::new(PathBuf::from("/usr/local/bin/agpm"));
     /// println!("Backup location: {}", manager.backup_path().display());
-    /// // Output: Backup location: /usr/local/bin/ccpm.backup
+    /// // Output: Backup location: /usr/local/bin/agpm.backup
     /// ```
     ///
     /// # Use Cases

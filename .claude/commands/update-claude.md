@@ -64,7 +64,7 @@ Review the current changes and ensure both CLAUDE.md and AGENTS.md accurately re
    - **Testing Strategy**: New test types, coverage changes, testing patterns
    - **Security Rules**: New security considerations or validations
    - **Development Guidelines**: Updated practices or requirements
-   - **Example Formats**: ccpm.toml and ccpm.lock format changes
+   - **Example Formats**: agpm.toml and agpm.lock format changes
    - **Build and Release**: New build steps or requirements
 
    **Key sections to check in AGENTS.md**:

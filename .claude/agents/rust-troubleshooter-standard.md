@@ -336,28 +336,28 @@ rustup update stable          # Update toolchain
 cargo update                   # Update dependencies
 ```
 
-## Integration with CCPM Project
+## Integration with AGPM Project
 
-For CCPM-specific issues, I focus on:
+For AGPM-specific issues, I focus on:
 
-### Common CCPM Problems
+### Common AGPM Problems
 - **Git Operation Failures**: Authentication, network issues, invalid repositories
 - **Path Handling**: Cross-platform path problems, Windows-specific issues
 - **Manifest Parsing**: TOML syntax errors, invalid dependency specifications
 - **Lockfile Issues**: Corrupted lockfiles, version conflicts
 - **Cache Problems**: Permission issues, corrupted cache entries
 
-### CCPM Diagnostic Commands
+### AGPM Diagnostic Commands
 ```bash
-# CCPM-specific debugging
-ccpm validate                  # Check manifest syntax
-ccpm list                      # Show installed packages
-ccpm cache clean              # Clear cache
-RUST_LOG=debug ccpm install   # Verbose installation
+# AGPM-specific debugging
+agpm validate                  # Check manifest syntax
+agpm list                      # Show installed packages
+agpm cache clean              # Clear cache
+RUST_LOG=debug agpm install   # Verbose installation
 
-# Check CCPM configuration
-ccpm config get               # Show current config
-git config --list | grep ccpm # Check git integration
+# Check AGPM configuration
+agpm config get               # Show current config
+git config --list | grep agpm # Check git integration
 ```
 
 Remember: I'm the first line of defense for Rust problems. I handle the common 80% efficiently and escalate the complex 20% to the right specialist. This keeps troubleshooting fast and ensures problems get appropriate expertise levels.

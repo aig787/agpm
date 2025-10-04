@@ -9,7 +9,7 @@ use common::{DirAssert, FileAssert, TestProject};
 /// Example test showing TestProject usage
 #[tokio::test]
 async fn test_using_test_project_helper() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     // Create a test project with all necessary directories
     let project = TestProject::new().await?;
 
@@ -37,8 +37,8 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
     DirAssert::exists(project.sources_path()).await;
 
     // Verify manifest was written
-    FileAssert::exists(project.project_path().join("ccpm.toml")).await;
-    FileAssert::contains(project.project_path().join("ccpm.toml"), "test-agent").await;
+    FileAssert::exists(project.project_path().join("agpm.toml")).await;
+    FileAssert::contains(project.project_path().join("agpm.toml"), "test-agent").await;
 
     // Verify local resource was created
     FileAssert::exists(project.project_path().join("agents/local-agent.md")).await;
@@ -48,10 +48,10 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
     )
     .await;
 
-    // Run a CCPM command (validate in this case)
-    let output = project.run_ccpm(&["validate"])?;
+    // Run a AGPM command (validate in this case)
+    let output = project.run_agpm(&["validate"])?;
     output.assert_success();
-    output.assert_stdout_contains("Valid ccpm.toml");
+    output.assert_stdout_contains("Valid agpm.toml");
 
     Ok(())
 }
@@ -59,7 +59,7 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
 /// Example test showing TestSourceRepo usage
 #[tokio::test]
 async fn test_using_test_source_repo_helper() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let project = TestProject::new().await?;
 
     // Create a source repository with standard resources
@@ -94,7 +94,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
     project.write_manifest(&manifest_content).await?;
 
     // Run install command
-    let output = project.run_ccpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
     output.assert_success();
 
     // Verify resources were installed
@@ -105,7 +105,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
     DirAssert::contains_file(&agents_dir, "custom.md").await;
 
     // Verify lockfile was created
-    FileAssert::exists(project.project_path().join("ccpm.lock")).await;
+    FileAssert::exists(project.project_path().join("agpm.lock")).await;
 
     Ok(())
 }
@@ -113,7 +113,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
 /// Example test showing FileAssert and DirAssert usage
 #[tokio::test]
 async fn test_assertion_helpers() -> Result<()> {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let project = TestProject::new().await?;
 
     // Create some test files and directories

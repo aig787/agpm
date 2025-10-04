@@ -1,4 +1,4 @@
-//! CCPM - Claude Code Package Manager
+//! AGPM - Claude Code Package Manager
 //!
 //! A Git-based package manager for Claude Code resources (agents, snippets, commands,
 //! scripts, hooks, and MCP servers) that enables reproducible installations using
@@ -6,9 +6,9 @@
 //!
 //! # Architecture Overview
 //!
-//! CCPM follows a manifest/lockfile model where:
-//! - `ccpm.toml` defines desired dependencies and their version constraints
-//! - `ccpm.lock` records exact resolved versions for reproducible builds
+//! AGPM follows a manifest/lockfile model where:
+//! - `agpm.toml` defines desired dependencies and their version constraints
+//! - `agpm.lock` records exact resolved versions for reproducible builds
 //! - Resources are fetched directly from Git repositories (no central registry)
 //! - Pattern-based dependencies enable bulk installation of related resources
 //!
@@ -27,7 +27,7 @@
 //! ## Core Functionality
 //! - [`cache`] - Git repository caching and management for performance
 //! - [`cli`] - Command-line interface with comprehensive subcommands
-//! - [`config`] - Global (~/.ccpm/config.toml) and project configuration
+//! - [`config`] - Global (~/.agpm/config.toml) and project configuration
 //! - [`core`] - Core types, error handling, and resource abstractions
 //! - [`resolver`] - Dependency resolution, conflict detection, and version matching
 //!
@@ -36,8 +36,8 @@
 //! - [`source`] - Source repository operations and management
 //!
 //! ## Resource Management
-//! - [`lockfile`] - Lockfile generation, parsing, and validation (ccpm.lock)
-//! - [`manifest`] - Manifest parsing and validation (ccpm.toml)
+//! - [`lockfile`] - Lockfile generation, parsing, and validation (agpm.lock)
+//! - [`manifest`] - Manifest parsing and validation (agpm.toml)
 //! - [`markdown`] - Markdown file operations and frontmatter extraction
 //! - [`metadata`] - Extraction of transitive dependencies from resource files
 //! - [`pattern`] - Pattern-based dependency resolution using glob patterns
@@ -51,7 +51,7 @@
 //! - [`utils`] - Cross-platform utilities, file operations, and path validation
 //! - [`version`] - Version constraint parsing, comparison, and resolution
 //!
-//! # Manifest Format (ccpm.toml)
+//! # Manifest Format (agpm.toml)
 //!
 //! ## Basic Example
 //! ```toml
@@ -87,44 +87,44 @@
 //!
 //! ## Installation and Management
 //! ```bash
-//! # Initialize new CCPM project
-//! ccpm init
+//! # Initialize new AGPM project
+//! agpm init
 //!
-//! # Install all dependencies from ccpm.toml
-//! ccpm install
+//! # Install all dependencies from agpm.toml
+//! agpm install
 //!
 //! # Install with frozen lockfile (CI/production)
-//! ccpm install --frozen
+//! agpm install --frozen
 //!
 //! # Update dependencies within version constraints
-//! ccpm update
+//! agpm update
 //!
 //! # Update specific dependencies only
-//! ccpm update code-reviewer utils
+//! agpm update code-reviewer utils
 //! ```
 //!
 //! ## Resource Discovery
 //! ```bash
 //! # List installed resources
-//! ccpm list
+//! agpm list
 //!
 //! # List with details and source information
-//! ccpm list --details
+//! agpm list --details
 //!
 //! # List specific resource types
-//! ccpm list --agents --format json
+//! agpm list --agents --format json
 //! ```
 //!
 //! ## Project Management
 //! ```bash
 //! # Validate project configuration
-//! ccpm validate --resolve --sources
+//! agpm validate --resolve --sources
 //!
 //! # Add new dependencies
-//! ccpm add dep agent official:agents/helper.md@v1.0.0
+//! agpm add dep agent official:agents/helper.md@v1.0.0
 //!
 //! # Manage cache
-//! ccpm cache clean
+//! agpm cache clean
 //! ```
 
 // Core functionality modules

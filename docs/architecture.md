@@ -1,17 +1,17 @@
 # Architecture
 
-This document describes CCPM's technical architecture and design decisions.
+This document describes AGPM's technical architecture and design decisions.
 
 ## Overview
 
-CCPM is built with Rust for performance, safety, and reliability. It uses system Git commands for maximum compatibility and respects existing Git configurations.
+AGPM is built with Rust for performance, safety, and reliability. It uses system Git commands for maximum compatibility and respects existing Git configurations.
 
 ## Core Components
 
 ### Module Structure
 
 ```
-ccpm/
+agpm/
 ├── cli/          # Command implementations
 ├── cache/        # Cache management and file locking
 ├── config/       # Configuration handling
@@ -32,12 +32,12 @@ ccpm/
 
 ### Key Components
 
-**manifest**: Parses and validates ccpm.toml files
+**manifest**: Parses and validates agpm.toml files
 - TOML deserialization with serde
 - Schema validation
 - Pattern expansion for glob dependencies
 
-**lockfile**: Manages ccpm.lock files
+**lockfile**: Manages agpm.lock files
 - Atomic writes for safety
 - Preserves exact commit hashes
 - Tracks installation metadata
@@ -75,7 +75,7 @@ ccpm/
 
 ### Copy-Based Installation
 
-CCPM copies files from cache to project directories rather than using symlinks:
+AGPM copies files from cache to project directories rather than using symlinks:
 
 - **Maximum compatibility** across Windows, macOS, Linux
 - **Git-friendly** - Real files can be tracked
@@ -113,7 +113,7 @@ Separates project manifest from global config:
 
 ### Installation Process
 
-1. **Parse manifest** - Read ccpm.toml
+1. **Parse manifest** - Read agpm.toml
 2. **Load global config** - Merge sources
 3. **Resolve dependencies** - Match versions
 4. **Fetch repositories** - Clone/update cache
@@ -131,14 +131,14 @@ Separates project manifest from global config:
 6. **SHA validation** - Validate all resolved SHAs are valid 40-character hex strings
 7. **Conflict detection** - Check compatibility across all resolved dependencies
 8. **Worktree optimization** - SHA-based worktree creation maximizes reuse for identical commits
-9. **Lock generation** - Record exact SHAs and resolved references in ccpm.lock
+9. **Lock generation** - Record exact SHAs and resolved references in agpm.lock
 
 ## File Locking
 
-CCPM uses file locking to prevent corruption during concurrent operations:
+AGPM uses file locking to prevent corruption during concurrent operations:
 
 ```
-~/.ccpm/cache/.locks/
+~/.agpm/cache/.locks/
 ├── source1.lock
 ├── source2.lock
 └── source3.lock
@@ -153,10 +153,10 @@ CCPM uses file locking to prevent corruption during concurrent operations:
 
 ### Cache Structure
 
-CCPM v0.3.2+ uses a sophisticated SHA-based caching architecture with centralized version resolution:
+AGPM v0.3.2+ uses a sophisticated SHA-based caching architecture with centralized version resolution:
 
 ```
-~/.ccpm/cache/
+~/.agpm/cache/
 ├── sources/                 # Bare repositories (shared storage)
 │   ├── github_org1_repo1.git/         # Single bare repo per source
 │   ├── github_org2_repo2.git/         # Optimized for worktree creation
@@ -198,7 +198,7 @@ CCPM v0.3.2+ uses a sophisticated SHA-based caching architecture with centralize
 
 ### Credential Handling
 
-- Never store credentials in ccpm.toml
+- Never store credentials in agpm.toml
 - Global config for sensitive data
 - Environment variable expansion
 - Token masking in output
@@ -219,7 +219,7 @@ CCPM v0.3.2+ uses a sophisticated SHA-based caching architecture with centralize
 
 ## Concurrency Model
 
-CCPM v0.3.0 implements a sophisticated concurrency system designed for maximum performance while maintaining safety:
+AGPM v0.3.0 implements a sophisticated concurrency system designed for maximum performance while maintaining safety:
 
 ### Command-Level Parallelism
 
@@ -339,7 +339,7 @@ Each error includes:
 
 ## Worktree-Based Parallel Architecture
 
-CCPM's advanced parallel processing system uses Git worktrees to enable safe concurrent access to different versions of the same repository, dramatically improving installation performance.
+AGPM's advanced parallel processing system uses Git worktrees to enable safe concurrent access to different versions of the same repository, dramatically improving installation performance.
 
 ### Core Benefits
 
@@ -360,7 +360,7 @@ CCPM's advanced parallel processing system uses Git worktrees to enable safe con
 ### Enhanced Directory Structure
 
 ```
-~/.ccpm/cache/
+~/.agpm/cache/
 ├── sources/                           # Bare repositories for worktree use
 │   ├── github_owner_repo.git/         # Optimized bare repo
 │   └── gitlab_org_project.git/        # Multiple sources supported
@@ -383,7 +383,7 @@ CCPM's advanced parallel processing system uses Git worktrees to enable safe con
 
 ## Advanced Concurrency Control
 
-CCPM implements a sophisticated multi-layered concurrency system designed for optimal performance while maintaining safety across all operations.
+AGPM implements a sophisticated multi-layered concurrency system designed for optimal performance while maintaining safety across all operations.
 
 ### User-Controlled Parallelism
 
@@ -403,7 +403,7 @@ CCPM implements a sophisticated multi-layered concurrency system designed for op
 #### Repository-Level Locking
 - **Per-Source Isolation**: Each repository source has its own lock file
 - **Atomic Operations**: Lock acquisition prevents race conditions during repository modifications
-- **Cross-Process Safety**: Multiple CCPM instances can run simultaneously without conflicts
+- **Cross-Process Safety**: Multiple AGPM instances can run simultaneously without conflicts
 - **Platform Compatibility**: Uses `fs4` crate for consistent cross-platform file locking
 
 #### Worktree Isolation
@@ -428,7 +428,7 @@ CCPM implements a sophisticated multi-layered concurrency system designed for op
 
 ### Enhanced Debugging and Monitoring
 
-CCPM provides comprehensive logging and monitoring capabilities for understanding parallel operations.
+AGPM provides comprehensive logging and monitoring capabilities for understanding parallel operations.
 
 #### Context-Aware Logging
 - **Dependency Context**: All Git operations include the dependency name being processed
@@ -446,7 +446,7 @@ CCPM provides comprehensive logging and monitoring capabilities for understandin
 
 ```bash
 # Context-aware Git operation logging
-DEBUG git: (rust-expert-agent) Cloning bare repository: https://github.com/community/ccpm-resources.git
+DEBUG git: (rust-expert-agent) Cloning bare repository: https://github.com/community/agpm-resources.git
 DEBUG git: (rust-expert-agent) Creating worktree at commit abc123: agents/rust-expert.md
 DEBUG git: (react-snippets) Reusing existing bare repository cache
 DEBUG git: (react-snippets) Creating worktree at tag v2.1.0: snippets/react/*.md
@@ -489,7 +489,7 @@ Updating configurations... █████████████████�
 
 ## Self-Update Architecture
 
-CCPM implements its own self-update mechanism to handle platform-specific release archives from GitHub.
+AGPM implements its own self-update mechanism to handle platform-specific release archives from GitHub.
 
 ### Archive Format Support
 - **Unix systems**: `.tar.xz` archives with binary extraction from nested directories
@@ -512,7 +512,7 @@ CCPM implements its own self-update mechanism to handle platform-specific releas
 
 ## Dependencies
 
-Key dependencies and their purposes in CCPM's architecture:
+Key dependencies and their purposes in AGPM's architecture:
 
 ### Core Framework
 - **tokio** - Async runtime enabling non-blocking I/O and concurrent operations

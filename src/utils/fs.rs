@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use ccpm::utils::fs::{ensure_dir, safe_write, calculate_checksum};
+//! use agpm::utils::fs::{ensure_dir, safe_write, calculate_checksum};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -74,7 +74,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::ensure_dir;
+/// use agpm::utils::fs::ensure_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -136,7 +136,7 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::safe_write;
+/// use agpm::utils::fs::safe_write;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -176,12 +176,12 @@ pub fn safe_write(path: &Path, content: &str) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::atomic_write;
+/// use agpm::utils::fs::atomic_write;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let config_bytes = b"[sources]\ncommunity = \"https://example.com\"";
-/// atomic_write(Path::new("ccpm.toml"), config_bytes)?;
+/// atomic_write(Path::new("agpm.toml"), config_bytes)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -259,7 +259,7 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::copy_dir;
+/// use agpm::utils::fs::copy_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -332,7 +332,7 @@ pub fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::remove_dir_all;
+/// use agpm::utils::fs::remove_dir_all;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -382,7 +382,7 @@ pub fn remove_dir_all(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::normalize_path;
+/// use agpm::utils::fs::normalize_path;
 /// use std::path::{Path, PathBuf};
 ///
 /// let path = Path::new("/foo/./bar/../baz");
@@ -441,7 +441,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::is_safe_path;
+/// use agpm::utils::fs::is_safe_path;
 /// use std::path::Path;
 ///
 /// let base = Path::new("/home/user/project");
@@ -498,7 +498,7 @@ pub fn is_safe_path(base: &Path, path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::find_files;
+/// use agpm::utils::fs::find_files;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -570,11 +570,11 @@ fn find_files_recursive(dir: &Path, pattern: &str, files: &mut Vec<PathBuf>) -> 
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::dir_size;
+/// use agpm::utils::fs::dir_size;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// let cache_size = dir_size(Path::new("~/.ccpm/cache"))?;
+/// let cache_size = dir_size(Path::new("~/.agpm/cache"))?;
 /// println!("Cache size: {} bytes ({:.2} MB)", cache_size, cache_size as f64 / 1024.0 / 1024.0);
 /// # Ok(())
 /// # }
@@ -632,11 +632,11 @@ pub fn dir_size(path: &Path) -> Result<u64> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::get_directory_size;
+/// use agpm::utils::fs::get_directory_size;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let cache_size = get_directory_size(Path::new("~/.ccpm/cache")).await?;
+/// let cache_size = get_directory_size(Path::new("~/.agpm/cache")).await?;
 /// println!("Cache size: {} bytes", cache_size);
 /// # Ok(())
 /// # }
@@ -680,7 +680,7 @@ pub async fn get_directory_size(path: &Path) -> Result<u64> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::ensure_parent_dir;
+/// use agpm::utils::fs::ensure_parent_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -718,10 +718,10 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
     copy_dir(src, dst)
 }
 
-/// Finds the CCPM project root by searching for `ccpm.toml` in the directory hierarchy.
+/// Finds the AGPM project root by searching for `agpm.toml` in the directory hierarchy.
 ///
 /// This function starts from the given directory and walks up the directory tree
-/// looking for a `ccpm.toml` file, which indicates the root of a CCPM project.
+/// looking for a `agpm.toml` file, which indicates the root of a AGPM project.
 /// This is similar to how Git finds the repository root by looking for `.git`.
 ///
 /// # Arguments
@@ -730,12 +730,12 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 ///
 /// # Returns
 ///
-/// The path to the directory containing `ccpm.toml`, or an error if not found
+/// The path to the directory containing `agpm.toml`, or an error if not found
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::find_project_root;
+/// use agpm::utils::fs::find_project_root;
 /// use std::env;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -750,13 +750,13 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 /// # Behavior
 ///
 /// - Starts from the given directory and searches upward
-/// - Returns the first directory containing `ccpm.toml`
+/// - Returns the first directory containing `agpm.toml`
 /// - Canonicalizes the starting path to handle symlinks
-/// - Stops at filesystem root if no `ccpm.toml` is found
+/// - Stops at filesystem root if no `agpm.toml` is found
 ///
 /// # Error Cases
 ///
-/// - No `ccpm.toml` found in the directory hierarchy
+/// - No `agpm.toml` found in the directory hierarchy
 /// - Permission denied accessing parent directories
 /// - Invalid or inaccessible starting path
 ///
@@ -764,24 +764,24 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 ///
 /// - CLI commands that need to operate on the current project
 /// - Finding configuration files relative to project root
-/// - Validating that commands are run within a CCPM project
+/// - Validating that commands are run within a AGPM project
 pub fn find_project_root(start: &Path) -> Result<PathBuf> {
     let mut current = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
 
     loop {
-        if current.join("ccpm.toml").exists() {
+        if current.join("agpm.toml").exists() {
             return Ok(current);
         }
 
         if !current.pop() {
             return Err(anyhow::anyhow!(
-                "No ccpm.toml found in current directory or any parent directory"
+                "No agpm.toml found in current directory or any parent directory"
             ));
         }
     }
 }
 
-/// Returns the path to the global CCPM configuration file.
+/// Returns the path to the global AGPM configuration file.
 ///
 /// This function constructs the path to the global configuration file following
 /// platform conventions. The global config contains user-specific settings like
@@ -789,13 +789,13 @@ pub fn find_project_root(start: &Path) -> Result<PathBuf> {
 ///
 /// # Returns
 ///
-/// The path to `~/.config/ccpm/config.toml`, or an error if the home directory
+/// The path to `~/.config/agpm/config.toml`, or an error if the home directory
 /// cannot be determined
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::get_global_config_path;
+/// use agpm::utils::fs::get_global_config_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let config_path = get_global_config_path()?;
@@ -812,9 +812,9 @@ pub fn find_project_root(start: &Path) -> Result<PathBuf> {
 ///
 /// # Platform Paths
 ///
-/// - **Linux**: `~/.config/ccpm/config.toml`
-/// - **macOS**: `~/.config/ccpm/config.toml`
-/// - **Windows**: `%USERPROFILE%\.config\ccpm\config.toml`
+/// - **Linux**: `~/.config/agpm/config.toml`
+/// - **macOS**: `~/.config/agpm/config.toml`
+/// - **Windows**: `%USERPROFILE%\.config\agpm\config.toml`
 ///
 /// # Use Cases
 ///
@@ -828,7 +828,7 @@ pub fn find_project_root(start: &Path) -> Result<PathBuf> {
 /// be committed to version control or shared publicly.
 pub fn get_global_config_path() -> Result<PathBuf> {
     let home = crate::utils::platform::get_home_dir()?;
-    Ok(home.join(".config").join("ccpm").join("config.toml"))
+    Ok(home.join(".config").join("agpm").join("config.toml"))
 }
 
 /// A temporary directory that automatically cleans up when dropped.
@@ -840,7 +840,7 @@ pub fn get_global_config_path() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::TempDir;
+/// use agpm::utils::fs::TempDir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// {
@@ -882,7 +882,7 @@ impl TempDir {
     /// Creates a new temporary directory with the given prefix.
     ///
     /// The directory is created immediately and will have a name like
-    /// `ccpm_{prefix}_{uuid}` in the system temporary directory.
+    /// `agpm_{prefix}_{uuid}` in the system temporary directory.
     ///
     /// # Arguments
     ///
@@ -895,7 +895,7 @@ impl TempDir {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::utils::fs::TempDir;
+    /// use agpm::utils::fs::TempDir;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let temp = TempDir::new("cache")?;
@@ -905,7 +905,7 @@ impl TempDir {
     /// ```
     pub fn new(prefix: &str) -> Result<Self> {
         let temp_dir = std::env::temp_dir();
-        let unique_name = format!("ccpm_{}_{}", prefix, uuid::Uuid::new_v4());
+        let unique_name = format!("agpm_{}_{}", prefix, uuid::Uuid::new_v4());
         let path = temp_dir.join(unique_name);
 
         ensure_dir(&path)?;
@@ -950,7 +950,7 @@ impl Drop for TempDir {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::calculate_checksum;
+/// use agpm::utils::fs::calculate_checksum;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1014,7 +1014,7 @@ pub fn calculate_checksum(path: &Path) -> Result<String> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::calculate_checksums_parallel;
+/// use agpm::utils::fs::calculate_checksums_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1120,7 +1120,7 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::copy_files_parallel;
+/// use agpm::utils::fs::copy_files_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1235,7 +1235,7 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::atomic_write_multiple;
+/// use agpm::utils::fs::atomic_write_multiple;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1331,7 +1331,7 @@ pub async fn atomic_write_multiple(files: &[(PathBuf, Vec<u8>)]) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::copy_dirs_parallel;
+/// use agpm::utils::fs::copy_dirs_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1432,12 +1432,12 @@ pub async fn copy_dirs_parallel(sources_and_destinations: &[(PathBuf, PathBuf)])
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::fs::read_files_parallel;
+/// use agpm::utils::fs::read_files_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let config_files = vec![
-///     PathBuf::from("ccpm.toml"),
+///     PathBuf::from("agpm.toml"),
 ///     PathBuf::from("agents/agent1.md"),
 ///     PathBuf::from("snippets/snippet1.md"),
 /// ];
@@ -1970,7 +1970,7 @@ mod tests {
         let subdir = project.join("src").join("subdir");
 
         ensure_dir(&subdir).unwrap();
-        std::fs::write(project.join("ccpm.toml"), "[sources]").unwrap();
+        std::fs::write(project.join("agpm.toml"), "[sources]").unwrap();
 
         let root = find_project_root(&subdir).unwrap();
         assert_eq!(
@@ -1990,7 +1990,7 @@ mod tests {
     fn test_get_global_config_path() {
         let config_path = get_global_config_path().unwrap();
         assert!(config_path.to_string_lossy().contains(".config"));
-        assert!(config_path.to_string_lossy().contains("ccpm"));
+        assert!(config_path.to_string_lossy().contains("agpm"));
     }
 
     #[test]
@@ -2553,10 +2553,10 @@ mod tests {
         let deep = subproject.join("src");
 
         ensure_dir(&deep).unwrap();
-        std::fs::write(root.join("ccpm.toml"), "[sources]").unwrap();
-        std::fs::write(subproject.join("ccpm.toml"), "[sources]").unwrap();
+        std::fs::write(root.join("agpm.toml"), "[sources]").unwrap();
+        std::fs::write(subproject.join("agpm.toml"), "[sources]").unwrap();
 
-        // Should find the closest ccpm.toml
+        // Should find the closest agpm.toml
         let found = find_project_root(&deep).unwrap();
         assert_eq!(
             found.canonicalize().unwrap(),
@@ -2573,10 +2573,10 @@ mod tests {
         // The cache directory should be a valid non-empty path
         assert!(!cache_dir.as_os_str().is_empty());
 
-        // When no env var is set, it should contain "ccpm" in its path
-        // (unless CCPM_CACHE_DIR is already set in the test environment)
-        if std::env::var("CCPM_CACHE_DIR").is_err() {
-            assert!(cache_dir.to_string_lossy().contains("ccpm"));
+        // When no env var is set, it should contain "agpm" in its path
+        // (unless AGPM_CACHE_DIR is already set in the test environment)
+        if std::env::var("AGPM_CACHE_DIR").is_err() {
+            assert!(cache_dir.to_string_lossy().contains("agpm"));
         }
     }
 }

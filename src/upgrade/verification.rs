@@ -31,7 +31,7 @@ impl ChecksumVerifier {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::verification::ChecksumVerifier;
+    /// use agpm::upgrade::verification::ChecksumVerifier;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -69,7 +69,7 @@ impl ChecksumVerifier {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::verification::ChecksumVerifier;
+    /// use agpm::upgrade::verification::ChecksumVerifier;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -117,8 +117,8 @@ impl ChecksumVerifier {
     ///
     /// Expected format (one per line):
     /// ```text
-    /// abc123def456...  ccpm-linux-x86_64
-    /// 789ghi012jkl...  ccpm-macos-aarch64
+    /// abc123def456...  agpm-linux-x86_64
+    /// 789ghi012jkl...  agpm-macos-aarch64
     /// ```
     pub async fn fetch_expected_checksum(
         checksums_url: &str,
@@ -151,7 +151,7 @@ impl ChecksumVerifier {
                 let (checksum, filename) = (parts[0], parts[1]);
 
                 // Check if this line is for our binary
-                // Handle both exact matches and pattern matches (e.g., ccpm-linux-x86_64)
+                // Handle both exact matches and pattern matches (e.g., agpm-linux-x86_64)
                 if filename == binary_name || filename.contains(binary_name) {
                     debug!("Found checksum for {}: {}", binary_name, checksum);
                     return Ok(Some(checksum.to_string()));

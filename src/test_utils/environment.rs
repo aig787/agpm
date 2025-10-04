@@ -69,7 +69,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
             env.sources_dir.display()
         );
 
-        fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
+        fs::write(env.project_dir.join("agpm.toml"), manifest_content.trim())?;
         Ok(env)
     }
 
@@ -103,7 +103,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
             env.sources_dir.display()
         );
 
-        fs::write(env.project_dir.join("ccpm.toml"), manifest_content.trim())?;
+        fs::write(env.project_dir.join("agpm.toml"), manifest_content.trim())?;
 
         // Create a matching lockfile that uses file:// URLs
         let lockfile_content = format!(
@@ -154,7 +154,7 @@ installed_at = "snippets/utils.md"
             env.sources_dir.display()
         );
 
-        fs::write(env.project_dir.join("ccpm.lock"), lockfile_content.trim())?;
+        fs::write(env.project_dir.join("agpm.lock"), lockfile_content.trim())?;
         Ok(env)
     }
 

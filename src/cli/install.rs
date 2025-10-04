@@ -1,7 +1,7 @@
 //! Install Claude Code resources from manifest dependencies.
 //!
 //! This module provides the `install` command which reads dependencies from the
-//! `ccpm.toml` manifest file, resolves them, and installs the resource files
+//! `agpm.toml` manifest file, resolves them, and installs the resource files
 //! to the project directory. The command supports both fresh installations and
 //! updates to existing installations with advanced parallel processing capabilities.
 //!
@@ -9,7 +9,7 @@
 //!
 //! - **Dependency Resolution**: Resolves all dependencies defined in the manifest
 //! - **Transitive Dependencies**: Automatically discovers and installs dependencies declared in resource files
-//! - **Lockfile Management**: Generates and maintains `ccpm.lock` for reproducible builds
+//! - **Lockfile Management**: Generates and maintains `agpm.lock` for reproducible builds
 //! - **Worktree-Based Parallel Installation**: Uses Git worktrees for safe concurrent resource installation
 //! - **Multi-Phase Progress Tracking**: Shows detailed progress with phase transitions and real-time updates
 //! - **Resource Validation**: Validates markdown files and content during installation
@@ -21,42 +21,42 @@
 //!
 //! Install all dependencies from manifest:
 //! ```bash
-//! ccpm install
+//! agpm install
 //! ```
 //!
 //! Force reinstall all dependencies:
 //! ```bash
-//! ccpm install --force
+//! agpm install --force
 //! ```
 //!
 //! Install without creating lockfile:
 //! ```bash
-//! ccpm install --no-lock
+//! agpm install --no-lock
 //! ```
 //!
 //! Use frozen lockfile (CI/production):
 //! ```bash
-//! ccpm install --frozen
+//! agpm install --frozen
 //! ```
 //!
 //! Disable cache and clone fresh:
 //! ```bash
-//! ccpm install --no-cache
+//! agpm install --no-cache
 //! ```
 //!
 //! Install only direct dependencies (skip transitive):
 //! ```bash
-//! ccpm install --no-transitive
+//! agpm install --no-transitive
 //! ```
 //!
 //! Preview installation without making changes:
 //! ```bash
-//! ccpm install --dry-run
+//! agpm install --dry-run
 //! ```
 //!
 //! # Installation Process
 //!
-//! 1. **Manifest Loading**: Reads `ccpm.toml` to understand dependencies
+//! 1. **Manifest Loading**: Reads `agpm.toml` to understand dependencies
 //! 2. **Source Synchronization**: Clones/fetches Git repositories for all sources
 //! 3. **Dependency Resolution**: Resolves versions and creates dependency graph
 //! 4. **Transitive Discovery**: Extracts dependencies from resource files (YAML/JSON metadata)
@@ -65,7 +65,7 @@
 //! 7. **Parallel Resource Installation**: Installs resources concurrently using isolated worktrees
 //! 8. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
 //! 9. **Configuration Updates**: Updates hooks and MCP server configurations as needed
-//! 10. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
+//! 10. **Lockfile Generation**: Creates or updates `agpm.lock` with checksums and metadata
 //! 11. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
 //!
 //! # Error Conditions
@@ -102,23 +102,23 @@ use crate::resolver::DependencyResolver;
 
 /// Command to install Claude Code resources from manifest dependencies.
 ///
-/// This command reads the project's `ccpm.toml` manifest file, resolves all dependencies,
+/// This command reads the project's `agpm.toml` manifest file, resolves all dependencies,
 /// and installs the resource files to the appropriate directories. It generates or updates
-/// a `ccpm.lock` lockfile to ensure reproducible installations.
+/// a `agpm.lock` lockfile to ensure reproducible installations.
 ///
 /// # Behavior
 ///
-/// 1. Locates and loads the project manifest (`ccpm.toml`)
+/// 1. Locates and loads the project manifest (`agpm.toml`)
 /// 2. Resolves dependencies using the dependency resolver
 /// 3. Downloads or updates Git repository sources as needed
 /// 4. Installs resource files to target directories
-/// 5. Generates or updates the lockfile (`ccpm.lock`)
+/// 5. Generates or updates the lockfile (`agpm.lock`)
 /// 6. Provides progress feedback during installation
 ///
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::install::InstallCommand;
+/// use agpm::cli::install::InstallCommand;
 ///
 /// // Standard installation
 /// let cmd = InstallCommand {
@@ -142,7 +142,7 @@ use crate::resolver::DependencyResolver;
 pub struct InstallCommand {
     /// Don't write lockfile after installation
     ///
-    /// Prevents the command from creating or updating the `ccpm.lock` file.
+    /// Prevents the command from creating or updating the `agpm.lock` file.
     /// This is useful for development scenarios where you don't want to
     /// commit lockfile changes.
     #[arg(long)]
@@ -240,7 +240,7 @@ impl InstallCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::install::InstallCommand;
+    /// use agpm::cli::install::InstallCommand;
     ///
     /// let cmd = InstallCommand::new();
     /// // cmd can now be executed with execute_from_path()
@@ -268,7 +268,7 @@ impl InstallCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::install::InstallCommand;
+    /// use agpm::cli::install::InstallCommand;
     ///
     /// let cmd = InstallCommand::new_quiet();
     /// // cmd will execute without progress bars or status messages
@@ -290,27 +290,27 @@ impl InstallCommand {
     /// Executes the install command with automatic manifest discovery.
     ///
     /// This method provides convenient manifest file discovery, searching for
-    /// `ccpm.toml` in the current directory and parent directories if no specific
+    /// `agpm.toml` in the current directory and parent directories if no specific
     /// path is provided. It's the standard entry point for CLI usage.
     ///
     /// # Arguments
     ///
-    /// * `manifest_path` - Optional explicit path to `ccpm.toml`. If `None`,
-    ///   the method searches for `ccpm.toml` starting from the current directory
+    /// * `manifest_path` - Optional explicit path to `agpm.toml`. If `None`,
+    ///   the method searches for `agpm.toml` starting from the current directory
     ///   and walking up the directory tree.
     ///
     /// # Manifest Discovery
     ///
     /// When `manifest_path` is `None`, the search process:
-    /// 1. Checks current directory for `ccpm.toml`
-    /// 2. Walks up parent directories until `ccpm.toml` is found
+    /// 1. Checks current directory for `agpm.toml`
+    /// 2. Walks up parent directories until `agpm.toml` is found
     /// 3. Stops at filesystem root if no manifest found
     /// 4. Returns an error with helpful guidance if no manifest exists
     ///
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::install::InstallCommand;
+    /// use agpm::cli::install::InstallCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -320,7 +320,7 @@ impl InstallCommand {
     /// cmd.execute_with_manifest_path(None).await?;
     ///
     /// // Use specific manifest file
-    /// cmd.execute_with_manifest_path(Some(PathBuf::from("./my-project/ccpm.toml"))).await?;
+    /// cmd.execute_with_manifest_path(Some(PathBuf::from("./my-project/agpm.toml"))).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -328,7 +328,7 @@ impl InstallCommand {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No `ccpm.toml` file found in search path
+    /// - No `agpm.toml` file found in search path
     /// - Specified manifest path doesn't exist
     /// - Manifest file contains invalid TOML syntax
     /// - Dependencies cannot be resolved
@@ -338,9 +338,9 @@ impl InstallCommand {
     ///
     /// When no manifest is found, the error includes helpful guidance:
     /// ```text
-    /// No ccpm.toml found in current directory or any parent directory.
+    /// No agpm.toml found in current directory or any parent directory.
     ///
-    /// To get started, create a ccpm.toml file with your dependencies:
+    /// To get started, create a agpm.toml file with your dependencies:
     ///
     /// [sources]
     /// official = "https://github.com/example-org/ccpm-official.git"
@@ -351,8 +351,8 @@ impl InstallCommand {
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
         let manifest_path = find_manifest_with_optional(manifest_path).with_context(|| {
-"No ccpm.toml found in current directory or any parent directory.\n\n\
-            To get started, create a ccpm.toml file with your dependencies:\n\n\
+"No agpm.toml found in current directory or any parent directory.\n\n\
+            To get started, create a agpm.toml file with your dependencies:\n\n\
             [sources]\n\
             official = \"https://github.com/example-org/ccpm-official.git\"\n\n\
             [agents]\n\
@@ -371,12 +371,12 @@ impl InstallCommand {
         let manifest_path = if let Some(p) = path {
             p.to_path_buf()
         } else {
-            std::env::current_dir()?.join("ccpm.toml")
+            std::env::current_dir()?.join("agpm.toml")
         };
 
         if !manifest_path.exists() {
             return Err(anyhow::anyhow!(
-                "No ccpm.toml found at {}",
+                "No agpm.toml found at {}",
                 manifest_path.display()
             ));
         }
@@ -387,7 +387,7 @@ impl InstallCommand {
         let lockfile_path = manifest_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("ccpm.lock");
+            .join("agpm.lock");
 
         if self.frozen && lockfile_path.exists() {
             // Check for critical issues (corruption/security) but not version/path changes
@@ -413,7 +413,7 @@ impl InstallCommand {
             .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
 
         // Check for existing lockfile
-        let lockfile_path = actual_project_dir.join("ccpm.lock");
+        let lockfile_path = actual_project_dir.join("agpm.lock");
 
         let existing_lockfile = if lockfile_path.exists() {
             Some(LockFile::load(&lockfile_path)?)
@@ -964,25 +964,25 @@ mod tests {
     #[tokio::test]
     async fn test_install_command_no_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let cmd = InstallCommand::new();
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ccpm.toml"));
+        assert!(result.unwrap_err().to_string().contains("agpm.toml"));
     }
 
     #[tokio::test]
     async fn test_install_with_empty_manifest() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         Manifest::new().save(&manifest_path).unwrap();
 
         let cmd = InstallCommand::new();
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
         assert!(result.is_ok());
 
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
         assert!(lockfile_path.exists());
         let lockfile = LockFile::load(&lockfile_path).unwrap();
         assert!(lockfile.agents.is_empty());
@@ -1002,7 +1002,7 @@ mod tests {
     #[tokio::test]
     async fn test_install_respects_no_lock_flag() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         Manifest::new().save(&manifest_path).unwrap();
 
         let cmd = InstallCommand {
@@ -1018,13 +1018,13 @@ mod tests {
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
         assert!(result.is_ok());
-        assert!(!temp.path().join("ccpm.lock").exists());
+        assert!(!temp.path().join("agpm.lock").exists());
     }
 
     #[tokio::test]
     async fn test_install_with_local_dependency() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let local_file = temp.path().join("local-agent.md");
         fs::write(
             &local_file,
@@ -1060,7 +1060,7 @@ This is a test agent.",
     #[tokio::test]
     async fn test_install_with_invalid_manifest_syntax() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         fs::write(&manifest_path, "[invalid toml").unwrap();
 
         let cmd = InstallCommand::new();
@@ -1081,8 +1081,8 @@ This is a test agent.",
     #[tokio::test]
     async fn test_install_uses_existing_lockfile_when_frozen() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         let local_file = temp.path().join("test-agent.md");
         fs::write(
@@ -1153,7 +1153,7 @@ Body",
     #[tokio::test]
     async fn test_install_errors_when_local_file_missing() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
         manifest.agents.insert(
@@ -1183,7 +1183,7 @@ Body",
     #[tokio::test]
     async fn test_install_single_resource_paths() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let snippet_file = temp.path().join("single-snippet.md");
         fs::write(
             &snippet_file,
@@ -1213,7 +1213,7 @@ Body",
         let cmd = InstallCommand::new();
         assert!(cmd.execute_from_path(Some(&manifest_path)).await.is_ok());
 
-        let lockfile = LockFile::load(&temp.path().join("ccpm.lock")).unwrap();
+        let lockfile = LockFile::load(&temp.path().join("agpm.lock")).unwrap();
         assert_eq!(lockfile.snippets.len(), 1);
         let installed_path = temp.path().join(&lockfile.snippets[0].installed_at);
         assert!(installed_path.exists());
@@ -1222,7 +1222,7 @@ Body",
     #[tokio::test]
     async fn test_install_single_command_resource() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let command_file = temp.path().join("single-command.md");
         fs::write(
             &command_file,
@@ -1252,7 +1252,7 @@ Body",
         let cmd = InstallCommand::new();
         assert!(cmd.execute_from_path(Some(&manifest_path)).await.is_ok());
 
-        let lockfile = LockFile::load(&temp.path().join("ccpm.lock")).unwrap();
+        let lockfile = LockFile::load(&temp.path().join("agpm.lock")).unwrap();
         assert_eq!(lockfile.commands.len(), 1);
         assert!(
             temp.path()
@@ -1264,8 +1264,8 @@ Body",
     #[tokio::test]
     async fn test_install_dry_run_mode() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let manifest_path = temp.path().join("agpm.toml");
+        let lockfile_path = temp.path().join("agpm.lock");
         let agent_file = temp.path().join("test-agent.md");
 
         // Create a local file for the agent
@@ -1317,7 +1317,7 @@ Body",
     #[tokio::test]
     async fn test_install_summary_with_mcp_servers() {
         let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
+        let manifest_path = temp.path().join("agpm.toml");
         let agent_file = temp.path().join("summary-agent.md");
         fs::write(&agent_file, "# Agent\nBody").unwrap();
 

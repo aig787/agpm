@@ -113,29 +113,29 @@ cross-all: cross-setup
 	@echo ""
 	@echo "Building for current platform..."
 	@cargo build --release
-	@echo "  Built: target/release/ccpm"
+	@echo "  Built: target/release/agpm"
 	@echo ""
 	@echo "Cross-compiling for: $(CROSS_NAMES)"
 	@for target in $(CROSS_TARGETS); do \
 		echo "Building for $$target..."; \
 		cargo zigbuild --release --target $$target || exit 1; \
 		if echo $$target | grep -q windows; then \
-			echo "  Built: target/$$target/release/ccpm.exe"; \
+			echo "  Built: target/$$target/release/agpm.exe"; \
 		else \
-			echo "  Built: target/$$target/release/ccpm"; \
+			echo "  Built: target/$$target/release/agpm"; \
 		fi; \
 	done
 	@echo ""
 	@echo "All builds complete!"
 	@echo "Binaries available:"
-	@echo "  - $(CURRENT_PLATFORM): target/release/ccpm"
+	@echo "  - $(CURRENT_PLATFORM): target/release/agpm"
 	@for target in $(CROSS_TARGETS); do \
 		if echo $$target | grep -q windows; then \
-			echo "  - Windows: target/$$target/release/ccpm.exe"; \
+			echo "  - Windows: target/$$target/release/agpm.exe"; \
 		elif echo $$target | grep -q linux; then \
-			echo "  - Linux: target/$$target/release/ccpm"; \
+			echo "  - Linux: target/$$target/release/agpm"; \
 		elif echo $$target | grep -q darwin; then \
-			echo "  - macOS: target/$$target/release/ccpm"; \
+			echo "  - macOS: target/$$target/release/agpm"; \
 		fi; \
 	done
 
@@ -149,7 +149,7 @@ cross-windows:
 		rustup target add x86_64-pc-windows-gnullvm || exit 1; \
 	}
 	cargo zigbuild --release --target x86_64-pc-windows-gnullvm
-	@echo "Windows binary built at: target/x86_64-pc-windows-gnullvm/release/ccpm.exe"
+	@echo "Windows binary built at: target/x86_64-pc-windows-gnullvm/release/agpm.exe"
 
 cross-linux:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
@@ -160,7 +160,7 @@ cross-linux:
 		rustup target add x86_64-unknown-linux-gnu || exit 1; \
 	}
 	cargo zigbuild --release --target x86_64-unknown-linux-gnu
-	@echo "Linux binary built at: target/x86_64-unknown-linux-gnu/release/ccpm"
+	@echo "Linux binary built at: target/x86_64-unknown-linux-gnu/release/agpm"
 
 cross-macos:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
@@ -171,7 +171,7 @@ cross-macos:
 		rustup target add x86_64-apple-darwin || exit 1; \
 	}
 	cargo zigbuild --release --target x86_64-apple-darwin
-	@echo "macOS binary built at: target/x86_64-apple-darwin/release/ccpm"
+	@echo "macOS binary built at: target/x86_64-apple-darwin/release/agpm"
 
 # Install cargo-dist for distribution tasks
 dist-setup:

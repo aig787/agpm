@@ -22,10 +22,10 @@ use tracing::{debug, info, warn};
 /// ```rust,no_run
 /// // This function is used internally by SelfUpdater::with_repo()
 /// // for repository identifier validation
-/// use ccpm::upgrade::SelfUpdater;
+/// use agpm::upgrade::SelfUpdater;
 ///
 /// // Valid repository identifiers
-/// let updater = SelfUpdater::with_repo("aig787", "ccpm");
+/// let updater = SelfUpdater::with_repo("aig787", "agpm");
 /// assert!(updater.is_ok());
 ///
 /// let updater = SelfUpdater::with_repo("my-repo", "my_project");
@@ -175,15 +175,15 @@ impl Default for ChecksumPolicy {
     }
 }
 
-/// Core self-update manager for CCPM binary upgrades.
+/// Core self-update manager for AGPM binary upgrades.
 ///
-/// `SelfUpdater` handles the entire process of checking for and installing CCPM updates
+/// `SelfUpdater` handles the entire process of checking for and installing AGPM updates
 /// from GitHub releases. It provides a safe, reliable way to upgrade the running binary
 /// with proper error handling and version management.
 ///
 /// # Features
 ///
-/// - **GitHub Integration**: Fetches releases from the official CCPM repository
+/// - **GitHub Integration**: Fetches releases from the official AGPM repository
 /// - **Version Comparison**: Uses semantic versioning for intelligent update detection
 /// - **Force Updates**: Allows forcing updates even when already on latest version
 /// - **Target Versions**: Supports upgrading to specific versions or latest
@@ -200,7 +200,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Check for Updates
 /// ```rust,no_run
-/// use ccpm::upgrade::SelfUpdater;
+/// use agpm::upgrade::SelfUpdater;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new();
@@ -217,7 +217,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Update to Latest Version
 /// ```rust,no_run
-/// use ccpm::upgrade::SelfUpdater;
+/// use agpm::upgrade::SelfUpdater;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new();
@@ -232,7 +232,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Force Update with Required Checksums
 /// ```rust,no_run
-/// use ccpm::upgrade::{SelfUpdater, ChecksumPolicy};
+/// use agpm::upgrade::{SelfUpdater, ChecksumPolicy};
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new()
@@ -248,8 +248,8 @@ impl Default for ChecksumPolicy {
 ///
 /// # Repository Configuration
 ///
-/// By default, updates are fetched from `aig787/ccpm` on GitHub. This is configured
-/// in the [`Default`] implementation and targets the official CCPM repository.
+/// By default, updates are fetched from `aig787/agpm` on GitHub. This is configured
+/// in the [`Default`] implementation and targets the official AGPM repository.
 ///
 /// # Error Handling
 ///
@@ -262,7 +262,7 @@ impl Default for ChecksumPolicy {
 pub struct SelfUpdater {
     /// GitHub repository owner (e.g., "aig787").
     repo_owner: String,
-    /// GitHub repository name (e.g., "ccpm").
+    /// GitHub repository name (e.g., "agpm").
     repo_name: String,
     /// Current version of the running binary.
     current_version: String,
@@ -277,15 +277,15 @@ impl Default for SelfUpdater {
     ///
     /// # Default Configuration
     ///
-    /// - **Repository**: `aig787/ccpm` (official CCPM repository)
-    /// - **Binary Name**: `ccpm`
+    /// - **Repository**: `aig787/agpm` (official AGPM repository)
+    /// - **Binary Name**: `agpm`
     /// - **Current Version**: Detected from build-time crate version
     /// - **Force Mode**: Disabled (respects version comparisons)
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::default();
     /// println!("Current version: {}", updater.current_version());
@@ -293,7 +293,7 @@ impl Default for SelfUpdater {
     fn default() -> Self {
         // These are hardcoded safe values for the official repository
         let repo_owner = "aig787".to_string();
-        let repo_name = "ccpm".to_string();
+        let repo_name = "agpm".to_string();
 
         // Validate even hardcoded values for extra safety
         debug_assert!(
@@ -324,7 +324,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::new();
     /// assert_eq!(updater.current_version(), env!("CARGO_PKG_VERSION"));
@@ -341,7 +341,7 @@ impl SelfUpdater {
     /// # Arguments
     ///
     /// * `repo_owner` - GitHub repository owner (e.g., "aig787")
-    /// * `repo_name` - GitHub repository name (e.g., "ccpm")
+    /// * `repo_name` - GitHub repository name (e.g., "agpm")
     ///
     /// # Errors
     ///
@@ -351,11 +351,11 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// // Valid repository identifiers
-    /// let updater = SelfUpdater::with_repo("aig787", "ccpm")?;
+    /// let updater = SelfUpdater::with_repo("aig787", "agpm")?;
     /// let custom = SelfUpdater::with_repo("my-org", "my_fork")?;
     ///
     /// // This would fail due to invalid characters
@@ -400,7 +400,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// // Normal update (respects versions)
     /// let updater = SelfUpdater::new();
@@ -431,7 +431,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::{SelfUpdater, ChecksumPolicy};
+    /// use agpm::upgrade::{SelfUpdater, ChecksumPolicy};
     ///
     /// // Require checksum verification (most secure)
     /// let secure_updater = SelfUpdater::new()
@@ -446,7 +446,7 @@ impl SelfUpdater {
         self
     }
 
-    /// Get the current version of the running CCPM binary.
+    /// Get the current version of the running AGPM binary.
     ///
     /// This version is determined at compile time from the crate's `Cargo.toml`
     /// and represents the version of the currently executing binary.
@@ -458,10 +458,10 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::new();
-    /// println!("Current CCPM version: {}", updater.current_version());
+    /// println!("Current AGPM version: {}", updater.current_version());
     /// ```
     pub fn current_version(&self) -> &str {
         &self.current_version
@@ -557,7 +557,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -586,7 +586,7 @@ impl SelfUpdater {
         let client = reqwest::Client::new();
         let response = client
             .get(&url)
-            .header("User-Agent", "ccpm")
+            .header("User-Agent", "agpm")
             .send()
             .await
             .context("Failed to fetch release information")?;
@@ -623,7 +623,7 @@ impl SelfUpdater {
         }
     }
 
-    /// Update the CCPM binary to a specific version or latest.
+    /// Update the AGPM binary to a specific version or latest.
     ///
     /// Downloads and installs the specified version from GitHub releases,
     /// replacing the current binary. This is the core update method used by
@@ -664,7 +664,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -697,7 +697,7 @@ impl SelfUpdater {
             let client = reqwest::Client::new();
             let response = client
                 .get(&url)
-                .header("User-Agent", "ccpm")
+                .header("User-Agent", "agpm")
                 .send()
                 .await
                 .context("Failed to fetch release information")?;
@@ -729,7 +729,7 @@ impl SelfUpdater {
 
         // Download to temp file
         let temp_dir = tempfile::tempdir()?;
-        let archive_path = temp_dir.path().join("ccpm-archive");
+        let archive_path = temp_dir.path().join("agpm-archive");
 
         self.download_file(&archive_url, &archive_path).await?;
 
@@ -761,7 +761,7 @@ impl SelfUpdater {
             "tar.xz"
         };
 
-        let filename = format!("ccpm-{}.{}", platform, extension);
+        let filename = format!("agpm-{}.{}", platform, extension);
         Ok(self.build_github_download_url(version, &filename))
     }
 
@@ -778,7 +778,7 @@ impl SelfUpdater {
         let mut delay = std::time::Duration::from_secs(1);
 
         loop {
-            match client.get(url).header("User-Agent", "ccpm").send().await {
+            match client.get(url).header("User-Agent", "agpm").send().await {
                 Ok(response) => {
                     if !response.status().is_success() {
                         if retries > 0 && response.status().is_server_error() {
@@ -876,7 +876,7 @@ impl SelfUpdater {
 
         let response = client
             .get(checksum_url)
-            .header("User-Agent", "ccpm")
+            .header("User-Agent", "agpm")
             .send()
             .await
             .context("Failed to download checksum file")?;
@@ -932,9 +932,9 @@ impl SelfUpdater {
         temp_dir: &std::path::Path,
     ) -> Result<std::path::PathBuf> {
         let binary_name = if std::env::consts::OS == "windows" {
-            "ccpm.exe"
+            "agpm.exe"
         } else {
-            "ccpm"
+            "agpm"
         };
 
         if archive_path.to_string_lossy().ends_with(".zip") {
@@ -1123,7 +1123,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -1170,7 +1170,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::upgrade::SelfUpdater;
+    /// use agpm::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();

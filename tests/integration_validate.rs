@@ -55,7 +55,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Valid"));
@@ -66,10 +66,10 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 async fn test_validate_no_manifest() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
-    assert!(output.stdout.contains("No ccpm.toml found"));
+    assert!(output.stdout.contains("No agpm.toml found"));
 }
 
 /// Test validating manifest with invalid syntax
@@ -79,7 +79,7 @@ async fn test_validate_invalid_syntax() {
     let manifest = ManifestFixture::invalid_syntax();
     project.write_manifest(&manifest.content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Syntax error"));
@@ -93,7 +93,7 @@ async fn test_validate_missing_fields() {
     let manifest = ManifestFixture::missing_fields();
     project.write_manifest(&manifest.content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Missing required field"));
@@ -152,7 +152,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--sources"]).unwrap();
+    let output = project.run_agpm(&["validate", "--sources"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Sources accessible"));
@@ -179,7 +179,7 @@ utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--sources"]).unwrap();
+    let output = project.run_agpm(&["validate", "--sources"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Source not accessible"));
@@ -234,7 +234,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Dependencies resolvable"));
@@ -277,7 +277,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Current implementation validates source accessibility, not file existence
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Dependencies resolvable"));
@@ -312,7 +312,7 @@ async fn test_validate_local_paths() {
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--paths"]).unwrap();
+    let output = project.run_agpm(&["validate", "--paths"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Local paths exist"));
@@ -327,7 +327,7 @@ async fn test_validate_missing_local_paths() {
 
     // Don't create the local files to test validation failure
 
-    let output = project.run_ccpm(&["validate", "--paths"]).unwrap();
+    let output = project.run_agpm(&["validate", "--paths"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Local path not found"));
@@ -432,13 +432,13 @@ installed_at = "snippets/utils.md"
     );
 
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Lockfile consistent"));
@@ -480,13 +480,13 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/different.md"
 "#;
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         inconsistent_lockfile,
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Lockfile inconsistent"));
@@ -509,13 +509,13 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 
     // Create corrupted lockfile
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         "corrupted content",
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Failed to parse lockfile"));
@@ -619,14 +619,14 @@ installed_at = "snippets/utils.md"
     );
 
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         lockfile_content.trim(),
     )
     .await
     .unwrap();
 
     let output = project
-        .run_ccpm(&["validate", "--resolve", "--check-lock"])
+        .run_agpm(&["validate", "--resolve", "--check-lock"])
         .unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
@@ -646,7 +646,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--verbose"]).unwrap();
+    let output = project.run_agpm(&["validate", "--verbose"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Validating"));
     assert!(output.stdout.contains("✓"));
@@ -666,7 +666,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--quiet"]).unwrap();
+    let output = project.run_agpm(&["validate", "--quiet"]).unwrap();
     assert!(output.success);
 
     // Should have minimal output in quiet mode
@@ -686,7 +686,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--format", "json"]).unwrap();
+    let output = project.run_agpm(&["validate", "--format", "json"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("{"));
     assert!(output.stdout.contains("\"valid\""));
@@ -720,13 +720,13 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    let manifest_path = project.project_path().join("ccpm.toml");
+    let manifest_path = project.project_path().join("agpm.toml");
     fs::write(&manifest_path, manifest_content.trim())
         .await
         .unwrap();
 
     let output = project
-        .run_ccpm(&["validate", manifest_path.to_str().unwrap()])
+        .run_agpm(&["validate", manifest_path.to_str().unwrap()])
         .unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
@@ -745,7 +745,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Valid"));
@@ -765,7 +765,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--strict"]).unwrap();
+    let output = project.run_agpm(&["validate", "--strict"]).unwrap();
     assert!(!output.success);
     assert!(output.stdout.contains("✗"));
     assert!(output.stdout.contains("Strict mode"));
@@ -775,7 +775,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 /// Test validate help command
 #[tokio::test]
 async fn test_validate_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("validate")
         .arg("--help")
         .assert()
@@ -795,7 +795,7 @@ async fn test_validate_empty_manifest() {
 ";
     project.write_manifest(empty_manifest).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Valid"));
@@ -820,7 +820,7 @@ agent-b = { source = "source2", path = "agents/b.md", version = "v1.0.0" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--dependencies"]).unwrap();
+    let output = project.run_agpm(&["validate", "--dependencies"]).unwrap();
     assert!(output.success); // Should handle gracefully
     assert!(output.stdout.contains("✓"));
 }

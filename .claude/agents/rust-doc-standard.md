@@ -131,9 +131,9 @@ pub fn my_function(param1: &str, param2: i32) -> Result<String, Error> {
 - Integration examples
 - Troubleshooting guides
 
-## CCPM-Specific Documentation Focus
+## AGPM-Specific Documentation Focus
 
-For the CCPM project, prioritize documenting:
+For the AGPM project, prioritize documenting:
 
 ### Core Modules
 - **manifest/**: TOML structure, validation rules, source definitions
@@ -149,9 +149,9 @@ For the CCPM project, prioritize documenting:
 - Error messages and recovery
 
 ### Configuration
-- ccpm.toml format with all options
-- ccpm.lock structure and purpose
-- Global config (~/.ccpm/config.toml) settings
+- agpm.toml format with all options
+- agpm.lock structure and purpose
+- Global config (~/.agpm/config.toml) settings
 - Environment variable support
 
 ### Security Considerations
@@ -330,4 +330,4 @@ I'm the documentation specialist who:
 - **Improves** existing documentation for clarity
 - **Validates** documentation accuracy and completeness
 
-When documenting the CCPM project, I focus on making the codebase accessible to new contributors and ensuring users understand how to effectively use the package manager. I ensure all security considerations are well-documented and that the documentation serves as both reference and learning material.
+When documenting the AGPM project, I focus on making the codebase accessible to new contributors and ensuring users understand how to effectively use the package manager. I ensure all security considerations are well-documented and that the documentation serves as both reference and learning material.

@@ -1,6 +1,6 @@
 //! Platform-specific utilities and cross-platform compatibility helpers
 //!
-//! This module provides abstractions over platform differences to ensure CCPM
+//! This module provides abstractions over platform differences to ensure AGPM
 //! works consistently across Windows, macOS, and Linux. It handles differences in:
 //!
 //! - Path separators and conventions
@@ -11,14 +11,14 @@
 //!
 //! # Cross-Platform Design
 //!
-//! CCPM is designed to provide identical functionality across all supported platforms
+//! AGPM is designed to provide identical functionality across all supported platforms
 //! while respecting platform conventions and limitations. This module encapsulates
 //! the platform-specific logic to achieve this goal.
 //!
 //! # Examples
 //!
 //! ```rust,no_run
-//! use ccpm::utils::platform::{get_home_dir, resolve_path, is_windows};
+//! use agpm::utils::platform::{get_home_dir, resolve_path, is_windows};
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! // Get platform-appropriate home directory
@@ -26,7 +26,7 @@
 //! println!("Home directory: {}", home.display());
 //!
 //! // Resolve paths with tilde expansion and env vars
-//! let config_path = resolve_path("~/.ccpm/config.toml")?;
+//! let config_path = resolve_path("~/.agpm/config.toml")?;
 //!
 //! // Handle platform differences
 //! if is_windows() {
@@ -74,7 +74,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::is_windows;
+/// use agpm::utils::platform::is_windows;
 ///
 /// if is_windows() {
 ///     println!("Windows-specific code path");
@@ -107,14 +107,14 @@ pub fn is_windows() -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::get_home_dir;
+/// use agpm::utils::platform::get_home_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let home = get_home_dir()?;
 /// println!("Home directory: {}", home.display());
 ///
-/// let ccpm_dir = home.join(".ccpm");
-/// println!("CCPM directory would be: {}", ccpm_dir.display());
+/// let agpm_dir = home.join(".agpm");
+/// println!("AGPM directory would be: {}", agpm_dir.display());
 /// # Ok(())
 /// # }
 /// ```
@@ -160,7 +160,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::get_git_command;
+/// use agpm::utils::platform::get_git_command;
 /// use std::process::Command;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -212,11 +212,11 @@ pub fn get_git_command() -> &'static str {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::resolve_path;
+/// use agpm::utils::platform::resolve_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Tilde expansion
-/// let config_path = resolve_path("~/.ccpm/config.toml")?;
+/// let config_path = resolve_path("~/.agpm/config.toml")?;
 /// println!("Config: {}", config_path.display());
 ///
 /// // Environment variable expansion (Unix)
@@ -347,7 +347,7 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::normalize_path_separator;
+/// use agpm::utils::platform::normalize_path_separator;
 /// use std::path::Path;
 ///
 /// let mixed_path = Path::new("src/utils\\platform.rs");
@@ -403,7 +403,7 @@ pub fn normalize_path_separator(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::path_to_string;
+/// use agpm::utils::platform::path_to_string;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/home/user/file.txt");
@@ -455,7 +455,7 @@ pub fn path_to_string(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::path_to_os_str;
+/// use agpm::utils::platform::path_to_os_str;
 /// use std::path::Path;
 /// use std::process::Command;
 ///
@@ -512,7 +512,7 @@ pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::paths_equal;
+/// use agpm::utils::platform::paths_equal;
 /// use std::path::Path;
 ///
 /// let path1 = Path::new("Config.toml");
@@ -586,7 +586,7 @@ pub fn paths_equal(path1: &Path, path2: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::safe_canonicalize;
+/// use agpm::utils::platform::safe_canonicalize;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -673,7 +673,7 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::command_exists;
+/// use agpm::utils::platform::command_exists;
 ///
 /// // Check if Git is available
 /// if command_exists("git") {
@@ -716,7 +716,7 @@ pub fn command_exists(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
 
-/// Returns the platform-specific cache directory for CCPM.
+/// Returns the platform-specific cache directory for AGPM.
 ///
 /// This function returns the appropriate cache directory following platform
 /// conventions and standards (XDG Base Directory on Linux, standard locations
@@ -724,16 +724,16 @@ pub fn command_exists(cmd: &str) -> bool {
 ///
 /// # Returns
 ///
-/// The cache directory path (`{cache_dir}/ccpm`), or an error if it cannot be determined
+/// The cache directory path (`{cache_dir}/agpm`), or an error if it cannot be determined
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::get_cache_dir;
+/// use agpm::utils::platform::get_cache_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache_dir = get_cache_dir()?;
-/// println!("CCPM cache directory: {}", cache_dir.display());
+/// println!("AGPM cache directory: {}", cache_dir.display());
 ///
 /// // Use for storing temporary data
 /// let repo_cache = cache_dir.join("repositories");
@@ -743,9 +743,9 @@ pub fn command_exists(cmd: &str) -> bool {
 ///
 /// # Platform Paths
 ///
-/// - **Linux**: `$XDG_CACHE_HOME/ccpm` or `$HOME/.cache/ccpm`
-/// - **macOS**: `$HOME/Library/Caches/ccpm`
-/// - **Windows**: `%LOCALAPPDATA%\ccpm`
+/// - **Linux**: `$XDG_CACHE_HOME/agpm` or `$HOME/.cache/agpm`
+/// - **macOS**: `$HOME/Library/Caches/agpm`
+/// - **Windows**: `%LOCALAPPDATA%\agpm`
 ///
 /// # Standards Compliance
 ///
@@ -770,7 +770,7 @@ pub fn command_exists(cmd: &str) -> bool {
 /// - [`get_data_dir`] for persistent application data
 /// - [`get_home_dir`] for user home directory
 pub fn get_cache_dir() -> Result<PathBuf> {
-    dirs::cache_dir().map(|p| p.join("ccpm")).ok_or_else(|| {
+    dirs::cache_dir().map(|p| p.join("agpm")).ok_or_else(|| {
         let platform_help = if is_windows() {
             "On Windows: Check that the LOCALAPPDATA environment variable is set"
         } else if cfg!(target_os = "macos") {
@@ -782,23 +782,23 @@ pub fn get_cache_dir() -> Result<PathBuf> {
     })
 }
 
-/// Returns the platform-specific data directory for CCPM.
+/// Returns the platform-specific data directory for AGPM.
 ///
 /// This function returns the appropriate data directory for storing persistent
 /// application data, following platform conventions and standards.
 ///
 /// # Returns
 ///
-/// The data directory path (`{data_dir}/ccpm`), or an error if it cannot be determined
+/// The data directory path (`{data_dir}/agpm`), or an error if it cannot be determined
 ///
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::get_data_dir;
+/// use agpm::utils::platform::get_data_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let data_dir = get_data_dir()?;
-/// println!("CCPM data directory: {}", data_dir.display());
+/// println!("AGPM data directory: {}", data_dir.display());
 ///
 /// // Use for storing persistent data
 /// let lockfile_backup = data_dir.join("lockfile_backups");
@@ -808,9 +808,9 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 ///
 /// # Platform Paths
 ///
-/// - **Linux**: `$XDG_DATA_HOME/ccpm` or `$HOME/.local/share/ccpm`
-/// - **macOS**: `$HOME/Library/Application Support/ccpm`
-/// - **Windows**: `%APPDATA%\ccpm`
+/// - **Linux**: `$XDG_DATA_HOME/agpm` or `$HOME/.local/share/agpm`
+/// - **macOS**: `$HOME/Library/Application Support/agpm`
+/// - **Windows**: `%APPDATA%\agpm`
 ///
 /// # Standards Compliance
 ///
@@ -840,7 +840,7 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 /// - [`get_cache_dir`] for temporary cached data
 /// - [`get_home_dir`] for user home directory
 pub fn get_data_dir() -> Result<PathBuf> {
-    dirs::data_dir().map(|p| p.join("ccpm")).ok_or_else(|| {
+    dirs::data_dir().map(|p| p.join("agpm")).ok_or_else(|| {
         let platform_help = if is_windows() {
             "On Windows: Check that the APPDATA environment variable is set"
         } else if cfg!(target_os = "macos") {
@@ -870,7 +870,7 @@ pub fn get_data_dir() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::windows_long_path;
+/// use agpm::utils::platform::windows_long_path;
 /// use std::path::Path;
 ///
 /// let long_path = Path::new("C:\\very\\long\\path\\that\\exceeds\\windows\\limit");
@@ -985,7 +985,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::get_shell_command;
+/// use agpm::utils::platform::get_shell_command;
 /// use std::process::Command;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1055,7 +1055,7 @@ pub fn get_shell_command() -> (&'static str, &'static str) {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::validate_path_chars;
+/// use agpm::utils::platform::validate_path_chars;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Valid paths
@@ -1174,7 +1174,7 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::utils::platform::safe_join;
+/// use agpm::utils::platform::safe_join;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1340,13 +1340,13 @@ mod tests {
     #[test]
     fn test_get_cache_dir() {
         let dir = get_cache_dir().unwrap();
-        assert!(dir.to_string_lossy().contains("ccpm"));
+        assert!(dir.to_string_lossy().contains("agpm"));
     }
 
     #[test]
     fn test_get_data_dir() {
         let dir = get_data_dir().unwrap();
-        assert!(dir.to_string_lossy().contains("ccpm"));
+        assert!(dir.to_string_lossy().contains("agpm"));
     }
 
     #[test]

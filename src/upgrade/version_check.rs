@@ -24,7 +24,7 @@ use crate::upgrade::SelfUpdater;
 ///
 /// # Serialization
 ///
-/// This struct is serialized to JSON for persistent caching between CCPM runs.
+/// This struct is serialized to JSON for persistent caching between AGPM runs.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VersionCheckCache {
     /// The latest version string from GitHub releases (e.g., "0.4.0").
@@ -143,23 +143,23 @@ impl VersionChecker {
     /// # Cache Location
     ///
     /// The cache file is stored at:
-    /// - Unix/macOS: `~/.ccpm/.version_cache`
-    /// - Windows: `%LOCALAPPDATA%\ccpm\.version_cache`
+    /// - Unix/macOS: `~/.agpm/.version_cache`
+    /// - Windows: `%LOCALAPPDATA%\agpm\.version_cache`
     pub async fn new() -> Result<Self> {
         let config = GlobalConfig::load().await?;
         let updater = SelfUpdater::new();
 
         // Determine cache path based on configuration directory
-        let cache_path = if let Ok(path) = std::env::var("CCPM_CONFIG_PATH") {
+        let cache_path = if let Ok(path) = std::env::var("AGPM_CONFIG_PATH") {
             PathBuf::from(path)
                 .parent()
                 .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| PathBuf::from(".ccpm"))
+                .unwrap_or_else(|| PathBuf::from(".agpm"))
                 .join(".version_cache")
         } else {
             dirs::home_dir()
                 .context("Could not determine home directory")?
-                .join(".ccpm")
+                .join(".agpm")
                 .join(".version_cache")
         };
 
@@ -373,15 +373,15 @@ impl VersionChecker {
             "{}",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
         );
-        eprintln!("{} A new version of CCPM is available!", "📦".bright_cyan());
+        eprintln!("{} A new version of AGPM is available!", "📦".bright_cyan());
         eprintln!();
         eprintln!("  Current version: {}", current_version.yellow());
         eprintln!("  Latest version:  {}", latest_version.green().bold());
         eprintln!();
-        eprintln!("  Run {} to upgrade", "ccpm upgrade".cyan().bold());
+        eprintln!("  Run {} to upgrade", "agpm upgrade".cyan().bold());
         eprintln!();
         eprintln!("  To disable automatic update checks, run:");
-        eprintln!("  {}", "ccpm config set upgrade.check_interval 0".dimmed());
+        eprintln!("  {}", "agpm config set upgrade.check_interval 0".dimmed());
         eprintln!(
             "{}",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
@@ -441,7 +441,7 @@ mod tests {
     async fn test_cache_save_load() -> Result<()> {
         let temp_dir = TempDir::new()?;
         unsafe {
-            std::env::set_var("CCPM_CONFIG_PATH", temp_dir.path().join("config.toml"));
+            std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join("config.toml"));
         }
 
         // Can't test the full VersionChecker without mocking, but can test cache directly
@@ -459,7 +459,7 @@ mod tests {
         assert!(loaded.update_available);
 
         unsafe {
-            std::env::remove_var("CCPM_CONFIG_PATH");
+            std::env::remove_var("AGPM_CONFIG_PATH");
         }
         Ok(())
     }

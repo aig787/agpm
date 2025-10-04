@@ -8,26 +8,26 @@ This guide covers common issues and their solutions.
 
 **Unix/macOS:**
 ```bash
-# Check if ccpm is in PATH
-which ccpm
+# Check if agpm is in PATH
+which agpm
 
 # Add to PATH in ~/.bashrc or ~/.zshrc
-export PATH="$PATH:/path/to/ccpm"
+export PATH="$PATH:/path/to/agpm"
 ```
 
 **Windows:**
 ```powershell
-# Check if ccpm is in PATH
-where.exe ccpm
+# Check if agpm is in PATH
+where.exe agpm
 
 # View current PATH
 $env:Path -split ';'
 
 # Add to PATH for current session
-$env:Path += ";$env:LOCALAPPDATA\ccpm\bin"
+$env:Path += ";$env:LOCALAPPDATA\agpm\bin"
 
 # Add to PATH permanently
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\ccpm\bin", [EnvironmentVariableTarget]::User)
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\agpm\bin", [EnvironmentVariableTarget]::User)
 ```
 
 ### Permission Denied
@@ -35,10 +35,10 @@ $env:Path += ";$env:LOCALAPPDATA\ccpm\bin"
 **Unix/macOS:**
 ```bash
 # Make executable
-chmod +x ccpm
+chmod +x agpm
 
 # Use sudo for system directories
-sudo cp ccpm /usr/local/bin/
+sudo cp agpm /usr/local/bin/
 ```
 
 **Windows:**
@@ -80,10 +80,10 @@ xcode-select --install
 
 ```bash
 # Initialize a new project
-ccpm init
+agpm init
 
 # Or specify manifest path
-ccpm install --manifest-path ./path/to/ccpm.toml
+agpm install --manifest-path ./path/to/agpm.toml
 ```
 
 ## Dependency Issues
@@ -92,30 +92,30 @@ ccpm install --manifest-path ./path/to/ccpm.toml
 
 ```bash
 # Check for conflicts
-ccpm validate --resolve
+agpm validate --resolve
 
 # View detailed resolution
-RUST_LOG=debug ccpm validate --resolve
+RUST_LOG=debug agpm validate --resolve
 ```
 
 **Common solutions:**
-- Widen version constraints in ccpm.toml
+- Widen version constraints in agpm.toml
 - Use exact versions to pin dependencies
 - Check if sources have compatible versions
 
 ### Lockfile Out of Sync
 
-- Check the exact staleness reason with `ccpm validate --check-lock`.
-- Rerun `ccpm install` to regenerate the lockfile; the resolver keeps existing versions unless the manifest or upstream reference changed.
-- Remove `ccpm.lock` only when you intentionally want a clean rebuild (e.g., recovering from manual edits or corruption).
+- Check the exact staleness reason with `agpm validate --check-lock`.
+- Rerun `agpm install` to regenerate the lockfile; the resolver keeps existing versions unless the manifest or upstream reference changed.
+- Remove `agpm.lock` only when you intentionally want a clean rebuild (e.g., recovering from manual edits or corruption).
 
 ```bash
 # Regenerate lockfile in place
-ccpm install
+agpm install
 
 # Last resort: rebuild from scratch
-rm ccpm.lock
-ccpm install
+rm agpm.lock
+agpm install
 ```
 
 ### Dependency Not Found
@@ -150,7 +150,7 @@ ssh-add ~/.ssh/id_rsa
 **HTTPS Token Issues:**
 ```bash
 # Verify token in global config
-ccpm config show
+agpm config show
 
 # Test git access directly
 git ls-remote https://token@github.com/org/repo.git
@@ -160,14 +160,14 @@ git ls-remote https://token@github.com/org/repo.git
 
 ```bash
 # Update token
-ccpm config edit
+agpm config edit
 
 # Or use command
-ccpm config add-source private "https://oauth2:NEW_TOKEN@github.com/org/repo.git"
+agpm config add-source private "https://oauth2:NEW_TOKEN@github.com/org/repo.git"
 
 # Clear cache and retry
-ccpm cache clean --all
-ccpm install --no-cache
+agpm cache clean --all
+agpm install --no-cache
 ```
 
 ## Cache Issues
@@ -176,29 +176,29 @@ ccpm install --no-cache
 
 ```bash
 # Clean specific source
-ccpm cache clean
+agpm cache clean
 
 # Clear entire cache (including worktrees)
-ccpm cache clean --all
+agpm cache clean --all
 
 # Bypass cache
-ccpm install --no-cache
+agpm install --no-cache
 
 # Clean only worktrees (keep bare repositories)
-ccpm cache clean --worktrees
+agpm cache clean --worktrees
 ```
 
 ### Disk Space
 
 ```bash
 # Check cache size
-ccpm cache info
+agpm cache info
 
 # Clean unused entries
-ccpm cache clean
+agpm cache clean
 
 # Change cache location
-# Edit ~/.ccpm/config.toml
+# Edit ~/.agpm/config.toml
 [settings]
 cache_dir = "/larger/disk/cache"
 ```
@@ -209,14 +209,14 @@ cache_dir = "/larger/disk/cache"
 
 **Check permissions:**
 ```bash
-ls -la .claude/ccpm/scripts/
-chmod +x .claude/ccpm/scripts/*.sh
+ls -la .claude/agpm/scripts/
+chmod +x .claude/agpm/scripts/*.sh
 ```
 
 **Check interpreter:**
 ```bash
 # Verify shebang line
-head -1 .claude/ccpm/scripts/script.sh
+head -1 .claude/agpm/scripts/script.sh
 
 # Check if interpreter exists
 which bash
@@ -231,7 +231,7 @@ which python3
 cat .claude/settings.local.json | grep "hook-name"
 
 # Check hook file exists
-ls .claude/ccpm/hooks/
+ls .claude/agpm/hooks/
 ```
 
 **Debug hooks:**
@@ -284,7 +284,7 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 git config --global core.autocrlf true
 
 # Convert existing files
-dos2unix .claude/ccpm/scripts/*.sh
+dos2unix .claude/agpm/scripts/*.sh
 ```
 
 ### macOS Gatekeeper
@@ -293,7 +293,7 @@ If macOS blocks the binary:
 
 ```bash
 # Remove quarantine attribute
-xattr -d com.apple.quarantine ccpm
+xattr -d com.apple.quarantine agpm
 
 # Or allow in System Preferences > Security & Privacy
 ```
@@ -302,11 +302,11 @@ xattr -d com.apple.quarantine ccpm
 
 ```bash
 # Fix ownership
-sudo chown -R $USER:$USER ~/.ccpm
+sudo chown -R $USER:$USER ~/.agpm
 
 # Fix permissions
-chmod -R u+rw ~/.ccpm
-find ~/.ccpm -type d -exec chmod u+x {} \;
+chmod -R u+rw ~/.agpm
+find ~/.agpm -type d -exec chmod u+x {} \;
 ```
 
 ## Worktree Issues
@@ -316,26 +316,26 @@ find ~/.ccpm -type d -exec chmod u+x {} \;
 **Concurrent access conflicts:**
 ```bash
 # Check for existing worktrees
-ls ~/.ccpm/cache/worktrees/
+ls ~/.agpm/cache/worktrees/
 
 # Clean stale worktrees
-ccpm cache clean --worktrees
+agpm cache clean --worktrees
 
 # Retry with fresh worktrees
-ccpm install --no-cache
+agpm install --no-cache
 ```
 
 **Bare repository issues:**
 ```bash
 # Verify bare repository exists
-ls ~/.ccpm/cache/sources/
+ls ~/.agpm/cache/sources/
 
 # Check if bare repo has refs
-git --git-dir ~/.ccpm/cache/sources/repo.git show-ref
+git --git-dir ~/.agpm/cache/sources/repo.git show-ref
 
 # Re-clone if corrupted
-ccpm cache clean --source repo-name
-ccpm install
+agpm cache clean --source repo-name
+agpm install
 ```
 
 ### Parallel Installation Problems
@@ -346,10 +346,10 @@ ccpm install
 top -n1 | grep "load average"
 
 # Reduce parallelism
-ccpm install --max-parallel 2
+agpm install --max-parallel 2
 
 # Monitor Git operations
-RUST_LOG="ccpm::git=debug" ccpm install
+RUST_LOG="agpm::git=debug" agpm install
 ```
 
 **Git semaphore exhaustion:**
@@ -360,21 +360,21 @@ sysctl -n hw.ncpu  # macOS
 echo $NUMBER_OF_PROCESSORS  # Windows
 
 # Force sequential operations
-ccpm install --max-parallel 1
+agpm install --max-parallel 1
 ```
 
 ## SHA-Based Optimization Issues
 
-CCPM v0.3.2+ uses centralized version resolution and SHA-based worktrees for optimal performance. Here are common issues:
+AGPM v0.3.2+ uses centralized version resolution and SHA-based worktrees for optimal performance. Here are common issues:
 
 ### Version Resolution Failures
 
 ```bash
 # Check if version constraint is valid
-ccpm validate --resolve
+agpm validate --resolve
 
 # Debug version resolution
-RUST_LOG="ccpm::resolver::version_resolver=debug" ccpm install
+RUST_LOG="agpm::resolver::version_resolver=debug" agpm install
 
 # Check available tags in repository
 git ls-remote --tags https://github.com/org/repo.git
@@ -384,33 +384,33 @@ git ls-remote --tags https://github.com/org/repo.git
 
 ```bash
 # Clean resolved SHA cache
-ccpm cache clean --all
+agpm cache clean --all
 
 # Force fresh resolution
-ccpm install --no-cache
+agpm install --no-cache
 
 # Verify repository integrity
-ccpm cache list
+agpm cache list
 ```
 
 ### Worktree Deduplication Issues
 
 ```bash
 # Check if worktrees are being reused properly
-ls ~/.ccpm/cache/worktrees/
+ls ~/.agpm/cache/worktrees/
 
 # View worktree reuse in logs
-RUST_LOG="ccpm::cache=debug" ccpm install
+RUST_LOG="agpm::cache=debug" agpm install
 
 # Clean stale SHA-based worktrees
-ccpm cache clean --worktrees
+agpm cache clean --worktrees
 ```
 
 ### Constraint Resolution Problems
 
 ```bash
 # Test constraint manually
-ccpm validate --resolve
+agpm validate --resolve
 
 # Check for complex constraints that might fail
 # Example: version = ">=1.0.0, <2.0.0, !=1.5.0"
@@ -428,27 +428,27 @@ ccpm validate --resolve
 ping github.com
 
 # Use parallel operations with worktrees
-ccpm install --max-parallel 8
+agpm install --max-parallel 8
 
 # Use cache (worktrees reuse bare repos)
-ccpm install  # Second run uses cache
+agpm install  # Second run uses cache
 
 # Check worktree overhead
-RUST_LOG="ccpm::cache=debug" ccpm install
+RUST_LOG="agpm::cache=debug" agpm install
 ```
 
 ### High Memory Usage
 
 ```bash
 # Limit parallelism (reduces concurrent worktrees)
-ccpm install --max-parallel 2
+agpm install --max-parallel 2
 
 # Clean cache and worktrees regularly
-ccpm cache clean
-ccpm cache clean --worktrees
+agpm cache clean
+agpm cache clean --worktrees
 
 # Monitor worktree count
-find ~/.ccpm/cache/worktrees/ -maxdepth 1 -type d | wc -l
+find ~/.agpm/cache/worktrees/ -maxdepth 1 -type d | wc -l
 ```
 
 ## Debugging
@@ -457,19 +457,19 @@ find ~/.ccpm/cache/worktrees/ -maxdepth 1 -type d | wc -l
 
 ```bash
 # Verbose output
-RUST_LOG=debug ccpm install
+RUST_LOG=debug agpm install
 
 # Focus on Git operations
-RUST_LOG="ccpm::git=debug" ccpm install
+RUST_LOG="agpm::git=debug" agpm install
 
 # Focus on cache operations
-RUST_LOG="ccpm::cache=debug" ccpm install
+RUST_LOG="agpm::cache=debug" agpm install
 
 # Trace-level logging
-RUST_LOG=trace ccpm install
+RUST_LOG=trace agpm install
 
 # Log to file
-RUST_LOG=debug ccpm install 2> debug.log
+RUST_LOG=debug agpm install 2> debug.log
 ```
 
 ### Check Git Operations
@@ -478,7 +478,7 @@ RUST_LOG=debug ccpm install 2> debug.log
 # Test git commands directly
 GIT_TRACE=1 git clone https://github.com/org/repo.git
 
-# Test bare clone (CCPM method)
+# Test bare clone (AGPM method)
 GIT_TRACE=1 git clone --bare https://github.com/org/repo.git /tmp/test.git
 
 # Test worktree creation
@@ -496,13 +496,13 @@ git --version  # Should be >= 2.5
 
 ```bash
 # Check manifest syntax
-ccpm validate
+agpm validate
 
 # Check with resolution
-ccpm validate --resolve
+agpm validate --resolve
 
 # Check lockfile consistency
-ccpm validate --check-lock
+agpm validate --check-lock
 ```
 
 ## Getting Help
@@ -510,10 +510,10 @@ ccpm validate --check-lock
 If you're still having issues:
 
 1. Check the [FAQ](faq.md)
-2. Search [existing issues](https://github.com/aig787/ccpm/issues)
-3. Create a [new issue](https://github.com/aig787/ccpm/issues/new) with:
-   - CCPM version: `ccpm --version`
+2. Search [existing issues](https://github.com/aig787/agpm/issues)
+3. Create a [new issue](https://github.com/aig787/agpm/issues/new) with:
+   - AGPM version: `agpm --version`
    - Platform: Windows/macOS/Linux
    - Error message
-   - Debug output: `RUST_LOG=debug ccpm [command]`
+   - Debug output: `RUST_LOG=debug agpm [command]`
    - Relevant config files (remove sensitive data)

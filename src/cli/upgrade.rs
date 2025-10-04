@@ -6,10 +6,10 @@ use colored::Colorize;
 use std::env;
 use tracing::debug;
 
-/// Command-line arguments for the CCPM upgrade command.
+/// Command-line arguments for the AGPM upgrade command.
 ///
 /// This structure defines all the options and flags available for upgrading
-/// CCPM to newer versions. The upgrade command provides multiple modes of
+/// AGPM to newer versions. The upgrade command provides multiple modes of
 /// operation from simple version checking to full upgrades with rollback support.
 ///
 /// # Command Modes
@@ -33,32 +33,32 @@ use tracing::debug;
 /// ## Basic Usage
 /// ```bash
 /// # Check for available updates
-/// ccpm upgrade --check
+/// agpm upgrade --check
 ///
 /// # Show version status
-/// ccpm upgrade --status
+/// agpm upgrade --status
 ///
 /// # Upgrade to latest version
-/// ccpm upgrade
+/// agpm upgrade
 /// ```
 ///
 /// ## Version-Specific Upgrades
 /// ```bash
 /// # Upgrade to specific version
-/// ccpm upgrade 0.4.0
-/// ccpm upgrade v0.4.0
+/// agpm upgrade 0.4.0
+/// agpm upgrade v0.4.0
 ///
 /// # Force upgrade even if already on target version
-/// ccpm upgrade 0.4.0 --force
+/// agpm upgrade 0.4.0 --force
 /// ```
 ///
 /// ## Safety and Recovery
 /// ```bash
 /// # Upgrade without creating backup (risky)
-/// ccpm upgrade --no-backup
+/// agpm upgrade --no-backup
 ///
 /// # Rollback to previous version
-/// ccpm upgrade --rollback
+/// agpm upgrade --rollback
 /// ```
 ///
 /// # Safety Features
@@ -72,7 +72,7 @@ use tracing::debug;
 pub struct UpgradeArgs {
     /// Target version to upgrade to (e.g., "0.4.0" or "v0.4.0").
     ///
-    /// When specified, CCPM will attempt to upgrade to this specific version
+    /// When specified, AGPM will attempt to upgrade to this specific version
     /// instead of the latest available version. The version string can be
     /// provided with or without the 'v' prefix.
     ///
@@ -93,9 +93,9 @@ pub struct UpgradeArgs {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm upgrade 0.4.0        # Upgrade to specific stable version
-    /// ccpm upgrade v0.5.0-beta  # Upgrade to beta version
-    /// ccpm upgrade 0.3.0 --force # Downgrade to older version
+    /// agpm upgrade 0.4.0        # Upgrade to specific stable version
+    /// agpm upgrade v0.5.0-beta  # Upgrade to beta version
+    /// agpm upgrade 0.3.0 --force # Downgrade to older version
     /// ```
     #[arg(value_name = "VERSION")]
     pub version: Option<String>,
@@ -120,7 +120,7 @@ pub struct UpgradeArgs {
     /// ```text
     /// # When update is available
     /// Update available: 0.3.14 -> 0.4.0
-    /// Run `ccpm upgrade` to install the latest version
+    /// Run `agpm upgrade` to install the latest version
     ///
     /// # When up to date
     /// You are on the latest version (0.4.0)
@@ -137,13 +137,13 @@ pub struct UpgradeArgs {
 
     /// Show current version and latest available.
     ///
-    /// Displays comprehensive version information including the current CCPM
+    /// Displays comprehensive version information including the current AGPM
     /// version and the latest available version from GitHub releases. Uses
     /// cached version information when available to avoid unnecessary API calls.
     ///
     /// # Information Displayed
     ///
-    /// - Current version of the running CCPM binary
+    /// - Current version of the running AGPM binary
     /// - Latest version available on GitHub (if reachable)
     /// - Update availability status
     /// - Cache status (when version info was last fetched)
@@ -213,20 +213,20 @@ pub struct UpgradeArgs {
     ///
     /// ```bash
     /// # Reinstall current version
-    /// ccpm upgrade --force
+    /// agpm upgrade --force
     ///
     /// # Downgrade to older version
-    /// ccpm upgrade 0.3.0 --force
+    /// agpm upgrade 0.3.0 --force
     ///
     /// # Force upgrade to specific version
-    /// ccpm upgrade 0.4.0 --force
+    /// agpm upgrade 0.4.0 --force
     /// ```
     #[arg(short, long)]
     pub force: bool,
 
     /// Rollback to previous version from backup.
     ///
-    /// Restores the CCPM binary from the backup created during the most recent
+    /// Restores the AGPM binary from the backup created during the most recent
     /// upgrade. This provides a quick recovery mechanism if the current version
     /// has issues or if you need to revert to the previous version.
     ///
@@ -242,7 +242,7 @@ pub struct UpgradeArgs {
     ///
     /// - A backup must exist from a previous upgrade
     /// - Backup file must be readable and valid
-    /// - Write permissions to the CCPM binary location
+    /// - Write permissions to the AGPM binary location
     /// - Current binary must not be locked by running processes
     ///
     /// # Error Conditions
@@ -262,11 +262,11 @@ pub struct UpgradeArgs {
     ///
     /// ```bash
     /// # Simple rollback
-    /// ccpm upgrade --rollback
+    /// agpm upgrade --rollback
     ///
     /// # Check if backup exists first
-    /// ls ~/.local/bin/ccpm.backup  # Unix example
-    /// ccpm upgrade --rollback
+    /// ls ~/.local/bin/agpm.backup  # Unix example
+    /// agpm upgrade --rollback
     /// ```
     ///
     /// # Post-Rollback
@@ -281,7 +281,7 @@ pub struct UpgradeArgs {
     /// Skip creating a backup before upgrade.
     ///
     /// Disables the automatic backup creation that normally occurs before
-    /// upgrading the CCPM binary. This removes the safety net of being able
+    /// upgrading the AGPM binary. This removes the safety net of being able
     /// to rollback if the upgrade fails or the new version has issues.
     ///
     /// # ⚠️ WARNING
@@ -304,7 +304,7 @@ pub struct UpgradeArgs {
     ///
     /// Without backups:
     /// - No automatic rollback if upgrade fails
-    /// - Cannot use `ccpm upgrade --rollback` command
+    /// - Cannot use `agpm upgrade --rollback` command
     /// - Must manually reinstall if new version has issues
     /// - Requires external recovery mechanisms
     ///
@@ -320,13 +320,13 @@ pub struct UpgradeArgs {
     ///
     /// ```bash
     /// # Upgrade without backup (not recommended)
-    /// ccpm upgrade --no-backup
+    /// agpm upgrade --no-backup
     ///
     /// # Force upgrade without backup
-    /// ccpm upgrade 0.4.0 --force --no-backup
+    /// agpm upgrade 0.4.0 --force --no-backup
     ///
     /// # Check-only mode (backups not relevant)
-    /// ccpm upgrade --check
+    /// agpm upgrade --check
     /// ```
     #[arg(long)]
     pub no_backup: bool,
@@ -406,7 +406,7 @@ pub struct UpgradeArgs {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::cli::upgrade::{UpgradeArgs, execute};
+/// use agpm::cli::upgrade::{UpgradeArgs, execute};
 /// use clap::Parser;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -520,7 +520,7 @@ async fn check_for_updates(updater: &SelfUpdater, version_checker: &VersionCheck
                 )
                 .green()
             );
-            println!("Run `ccpm upgrade` to install the latest version");
+            println!("Run `agpm upgrade` to install the latest version");
         }
         Ok(None) => {
             println!(

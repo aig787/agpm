@@ -1,10 +1,10 @@
 # Configuration Guide
 
-CCPM uses a two-tier configuration system to separate sensitive data from project settings.
+AGPM uses a two-tier configuration system to separate sensitive data from project settings.
 
 ## Configuration Files
 
-### Project Manifest (ccpm.toml)
+### Project Manifest (agpm.toml)
 
 The project manifest defines dependencies and is committed to version control.
 
@@ -12,11 +12,11 @@ The project manifest defines dependencies and is committed to version control.
 **Purpose**: Define sources and dependencies
 **Version Control**: ✅ Commit to Git
 
-### Global Configuration (~/.ccpm/config.toml)
+### Global Configuration (~/.agpm/config.toml)
 
 The global configuration stores sensitive data like authentication tokens.
 
-**Location**: `~/.ccpm/config.toml` (Unix/macOS) or `%USERPROFILE%\.ccpm\config.toml` (Windows)
+**Location**: `~/.agpm/config.toml` (Unix/macOS) or `%USERPROFILE%\.agpm\config.toml` (Windows)
 **Purpose**: Store authentication tokens and private sources
 **Version Control**: ❌ Never commit to Git
 
@@ -26,35 +26,35 @@ The global configuration stores sensitive data like authentication tokens.
 
 ```bash
 # Initialize with example configuration
-ccpm config init
+agpm config init
 
 # Edit the config file
-ccpm config edit
+agpm config edit
 
 # Show current configuration (tokens masked)
-ccpm config show
+agpm config show
 ```
 
 ### Managing Sources
 
 ```bash
 # Add a private source with authentication
-ccpm config add-source private "https://oauth2:TOKEN@github.com/yourcompany/private-ccpm.git"
+agpm config add-source private "https://oauth2:TOKEN@github.com/yourcompany/private-agpm.git"
 
 # List all global sources (tokens are masked)
-ccpm config list-sources
+agpm config list-sources
 
 # Remove a source
-ccpm config remove-source private
+agpm config remove-source private
 ```
 
 ### Global Config Format
 
 ```toml
-# ~/.ccpm/config.toml
+# ~/.agpm/config.toml
 [sources]
 # Private sources with authentication
-private = "https://oauth2:ghp_xxxx@github.com/yourcompany/private-ccpm.git"
+private = "https://oauth2:ghp_xxxx@github.com/yourcompany/private-agpm.git"
 internal = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.company.com/resources.git"
 
 [settings]
@@ -72,8 +72,8 @@ enhanced_progress = true
 
 Sources are resolved in this order:
 
-1. **Global sources** from `~/.ccpm/config.toml` (loaded first, contain secrets)
-2. **Local sources** from `ccpm.toml` (override global, committed to Git)
+1. **Global sources** from `~/.agpm/config.toml` (loaded first, contain secrets)
+2. **Local sources** from `agpm.toml` (override global, committed to Git)
 
 This separation keeps authentication tokens out of version control while allowing teams to share project configurations.
 
@@ -84,7 +84,7 @@ This separation keeps authentication tokens out of version control while allowin
 For repositories accessible via SSH:
 
 ```toml
-# In ccpm.toml (safe to commit)
+# In agpm.toml (safe to commit)
 [sources]
 private = "git@github.com:mycompany/private-agents.git"
 ```
@@ -94,8 +94,8 @@ private = "git@github.com:mycompany/private-agents.git"
 For repositories requiring authentication tokens:
 
 ```bash
-# In global config only (never in ccpm.toml)
-ccpm config add-source private "https://oauth2:ghp_xxxx@github.com/yourcompany/private-ccpm.git"
+# In global config only (never in agpm.toml)
+agpm config add-source private "https://oauth2:ghp_xxxx@github.com/yourcompany/private-agpm.git"
 ```
 
 ### Environment Variables
@@ -103,7 +103,7 @@ ccpm config add-source private "https://oauth2:ghp_xxxx@github.com/yourcompany/p
 Use environment variables for CI/CD:
 
 ```toml
-# In ~/.ccpm/config.toml
+# In ~/.agpm/config.toml
 [sources]
 ci-source = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.company.com/resources.git"
 ```
@@ -112,18 +112,18 @@ ci-source = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.company.com/resource
 
 ### DO ✅
 
-- Store authentication tokens in `~/.ccpm/config.toml`
-- Use SSH URLs for repositories in `ccpm.toml`
-- Commit `ccpm.toml` to version control
+- Store authentication tokens in `~/.agpm/config.toml`
+- Use SSH URLs for repositories in `agpm.toml`
+- Commit `agpm.toml` to version control
 - Use environment variables for CI/CD tokens
 - Rotate tokens regularly
 - Use read-only tokens when possible
 
 ### DON'T ❌
 
-- Put tokens, passwords, or secrets in `ccpm.toml`
-- Use HTTPS URLs with embedded credentials in `ccpm.toml`
-- Commit `~/.ccpm/config.toml` to version control
+- Put tokens, passwords, or secrets in `agpm.toml`
+- Use HTTPS URLs with embedded credentials in `agpm.toml`
+- Commit `~/.agpm/config.toml` to version control
 - Share your global config file
 - Use personal tokens in CI/CD
 - Store tokens in plain text files
@@ -133,7 +133,7 @@ ci-source = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.company.com/resource
 ### Using SSH (Recommended)
 
 ```toml
-# ccpm.toml - safe to commit
+# agpm.toml - safe to commit
 [sources]
 private = "git@github.com:mycompany/private-agents.git"
 
@@ -145,11 +145,11 @@ internal-tool = { source = "private", path = "agents/tool.md", version = "v1.0.0
 
 ```bash
 # Add to global config
-ccpm config add-source private "https://oauth2:TOKEN@github.com/yourcompany/private-ccpm.git"
+agpm config add-source private "https://oauth2:TOKEN@github.com/yourcompany/private-agpm.git"
 ```
 
 ```toml
-# ccpm.toml - reference the source name
+# agpm.toml - reference the source name
 [agents]
 internal-tool = { source = "private", path = "agents/tool.md", version = "v1.0.0" }
 ```
@@ -159,27 +159,27 @@ internal-tool = { source = "private", path = "agents/tool.md", version = "v1.0.0
 ### GitHub Actions
 
 ```yaml
-- name: Configure CCPM
+- name: Configure AGPM
   run: |
-    mkdir -p ~/.ccpm
-    echo '[sources]' > ~/.ccpm/config.toml
-    echo 'private = "https://oauth2:${{ secrets.GITHUB_TOKEN }}@github.com/org/private.git"' >> ~/.ccpm/config.toml
+    mkdir -p ~/.agpm
+    echo '[sources]' > ~/.agpm/config.toml
+    echo 'private = "https://oauth2:${{ secrets.GITHUB_TOKEN }}@github.com/org/private.git"' >> ~/.agpm/config.toml
 
 - name: Install dependencies
-  run: ccpm install --frozen
+  run: agpm install --frozen
 ```
 
 ### GitLab CI
 
 ```yaml
 before_script:
-  - mkdir -p ~/.ccpm
+  - mkdir -p ~/.agpm
   - |
-    cat > ~/.ccpm/config.toml << EOF
+    cat > ~/.agpm/config.toml << EOF
     [sources]
     private = "https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/org/private.git"
     EOF
-  - ccpm install --frozen
+  - agpm install --frozen
 ```
 
 ## Cache Configuration
@@ -187,7 +187,7 @@ before_script:
 ### Custom Cache Directory
 
 ```toml
-# ~/.ccpm/config.toml
+# ~/.agpm/config.toml
 [settings]
 cache_dir = "/custom/cache/path"
 ```
@@ -196,26 +196,26 @@ cache_dir = "/custom/cache/path"
 
 ```bash
 # View cache information
-ccpm cache info
+agpm cache info
 
 # Clean unused cache entries
-ccpm cache clean
+agpm cache clean
 
 # Clear entire cache
-ccpm cache clean --all
+agpm cache clean --all
 
 # Bypass cache for fresh clone
-ccpm install --no-cache
+agpm install --no-cache
 ```
 
 ## Performance Settings
 
 ### Parallelism Control
 
-CCPM provides flexible parallelism control at multiple levels:
+AGPM provides flexible parallelism control at multiple levels:
 
 ```toml
-# ~/.ccpm/config.toml
+# ~/.agpm/config.toml
 [settings]
 # Default parallelism for all operations (default: max(10, 2 × CPU cores))
 max_parallel = 8
@@ -225,21 +225,21 @@ Per-command override:
 
 ```bash
 # Override global setting for specific commands
-ccpm install --max-parallel 12
-ccpm update --max-parallel 6
+agpm install --max-parallel 12
+agpm update --max-parallel 6
 ```
 
 Environment variable override:
 
 ```bash
 # Set default for current session
-export CCPM_MAX_PARALLEL=16
-ccpm install  # Uses 16 parallel operations
+export AGPM_MAX_PARALLEL=16
+agpm install  # Uses 16 parallel operations
 ```
 
 #### Parallelism Guidelines
 
-- **Default behavior**: CCPM automatically sets reasonable limits based on your system
+- **Default behavior**: AGPM automatically sets reasonable limits based on your system
 - **High-end systems**: Can safely use 16-32 parallel operations
 - **Resource-constrained environments**: Consider lowering to 4-8 operations
 - **CI/CD environments**: May need lower limits depending on container resources
@@ -250,7 +250,7 @@ ccpm install  # Uses 16 parallel operations
 Override default installation paths:
 
 ```toml
-# ccpm.toml
+# agpm.toml
 [target]
 agents = "custom/agents"
 snippets = "resources/snippets"
@@ -265,18 +265,18 @@ gitignore = false  # Don't create .gitignore (default: true)
 
 ## Environment Variables
 
-CCPM respects these environment variables for configuration and debugging:
+AGPM respects these environment variables for configuration and debugging:
 
 ### Configuration Variables
 
-- `CCPM_CONFIG` - Path to custom global config file
-- `CCPM_CACHE_DIR` - Override cache directory location
-- `CCPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
+- `AGPM_CONFIG` - Path to custom global config file
+- `AGPM_CACHE_DIR` - Override cache directory location
+- `AGPM_MAX_PARALLEL` - Default parallelism level (overridden by --max-parallel flag)
 
 ### User Interface Variables
 
-- `CCPM_NO_PROGRESS` - Disable progress bars (useful for CI/CD)
-- `CCPM_ENHANCED_PROGRESS` - Enable enhanced progress reporting with phase details
+- `AGPM_NO_PROGRESS` - Disable progress bars (useful for CI/CD)
+- `AGPM_ENHANCED_PROGRESS` - Enable enhanced progress reporting with phase details
 
 ### Debugging Variables
 
@@ -292,19 +292,19 @@ CCPM respects these environment variables for configuration and debugging:
 
 ```bash
 # Debug mode with detailed Git operation logging
-RUST_LOG=debug ccpm install
+RUST_LOG=debug agpm install
 
 # CI/CD mode: no progress bars, custom parallelism
-CCPM_NO_PROGRESS=1 CCPM_MAX_PARALLEL=4 ccpm install --frozen
+AGPM_NO_PROGRESS=1 AGPM_MAX_PARALLEL=4 agpm install --frozen
 
 # Enhanced progress with custom config location
-CCPM_ENHANCED_PROGRESS=1 CCPM_CONFIG=/custom/config.toml ccpm install
+AGPM_ENHANCED_PROGRESS=1 AGPM_CONFIG=/custom/config.toml agpm install
 
 # High-performance mode for powerful systems
-CCPM_MAX_PARALLEL=20 ccpm install --max-parallel 32
+AGPM_MAX_PARALLEL=20 agpm install --max-parallel 32
 
 # Debugging Git worktree operations
-RUST_LOG=debug GIT_TRACE=1 ccpm install
+RUST_LOG=debug GIT_TRACE=1 agpm install
 ```
 
 ## Troubleshooting Configuration
@@ -313,17 +313,17 @@ RUST_LOG=debug GIT_TRACE=1 ccpm install
 
 ```bash
 # Check config location
-ccpm config show
+agpm config show
 
 # Initialize if missing
-ccpm config init
+agpm config init
 ```
 
 ### Authentication Failures
 
 ```bash
 # Verify source URL
-ccpm config list-sources
+agpm config list-sources
 
 # Test git access directly
 git ls-remote https://token@github.com/org/repo.git
@@ -333,33 +333,33 @@ git ls-remote https://token@github.com/org/repo.git
 
 ```bash
 # Check which source is being used (with worktree context)
-RUST_LOG=debug ccpm install
+RUST_LOG=debug agpm install
 
 # Trace Git operations to see repository access patterns
-GIT_TRACE=1 RUST_LOG=debug ccpm install
+GIT_TRACE=1 RUST_LOG=debug agpm install
 
 # Override with local source
-# In ccpm.toml, redefine the source name
+# In agpm.toml, redefine the source name
 ```
 
 ### Parallel Operation Issues
 
 ```bash
 # Reduce parallelism if experiencing resource contention
-ccpm install --max-parallel 2
+agpm install --max-parallel 2
 
 # Debug worktree creation issues
-RUST_LOG=debug ccpm install --no-cache
+RUST_LOG=debug agpm install --no-cache
 
 # Monitor system resources during installation
-top -p $(pgrep ccpm) &
-ccpm install --max-parallel 16
+top -p $(pgrep agpm) &
+agpm install --max-parallel 16
 ```
 
 ### Token Rotation
 
 When rotating tokens:
 
-1. Update global config: `ccpm config edit`
-2. Clear cache: `ccpm cache clean --all`
-3. Test installation: `ccpm install --no-cache`
+1. Update global config: `agpm config edit`
+2. Clear cache: `agpm cache clean --all`
+3. Test installation: `agpm install --no-cache`

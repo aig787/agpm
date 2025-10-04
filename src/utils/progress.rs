@@ -1,6 +1,6 @@
 //! Progress indicators and user interface utilities
 //!
-//! This module provides a unified progress system for CCPM operations using the
+//! This module provides a unified progress system for AGPM operations using the
 //! MultiPhaseProgress approach. All progress tracking goes through phases to ensure
 //! consistent user experience across different operations.
 //!
@@ -21,7 +21,7 @@
 //! ## Multi-Phase Progress
 //!
 //! ```rust,no_run
-//! use ccpm::utils::progress::{MultiPhaseProgress, InstallationPhase};
+//! use agpm::utils::progress::{MultiPhaseProgress, InstallationPhase};
 //!
 //! let progress = MultiPhaseProgress::new(true);
 //!

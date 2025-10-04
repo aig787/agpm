@@ -24,7 +24,7 @@
 //! ## Direct Parsing
 //!
 //! ```rust,no_run
-//! use ccpm::config::parse_config;
+//! use agpm::config::parse_config;
 //! use serde::Deserialize;
 //! use std::path::Path;
 //!
@@ -44,7 +44,7 @@
 //! ## With Complex Types
 //!
 //! ```rust,no_run
-//! use ccpm::config::{parse_config, AgentManifest, SnippetManifest};
+//! use agpm::config::{parse_config, AgentManifest, SnippetManifest};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -74,7 +74,7 @@
 //!
 //! # Integration
 //!
-//! This parser is used throughout CCPM for:
+//! This parser is used throughout AGPM for:
 //!
 //! - Agent manifest loading ([`AgentManifest::load`])
 //! - Snippet manifest loading ([`SnippetManifest::load`])
@@ -110,7 +110,7 @@ use std::path::Path;
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use ccpm::config::parse_config;
+/// use agpm::config::parse_config;
 /// use serde::Deserialize;
 /// use std::path::Path;
 ///
@@ -127,10 +127,10 @@ use std::path::Path;
 /// # }
 /// ```
 ///
-/// ## With CCPM Types
+/// ## With AGPM Types
 ///
 /// ```rust,no_run
-/// use ccpm::config::{parse_config, AgentManifest};
+/// use agpm::config::{parse_config, AgentManifest};
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -143,7 +143,7 @@ use std::path::Path;
 /// ## Error Handling
 ///
 /// ```rust,no_run
-/// use ccpm::config::parse_config;
+/// use agpm::config::parse_config;
 /// use serde::Deserialize;
 /// use std::path::Path;
 ///

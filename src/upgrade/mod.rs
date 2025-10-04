@@ -1,6 +1,6 @@
-//! Self-update functionality for CCPM.
+//! Self-update functionality for AGPM.
 //!
-//! This module provides comprehensive self-update capabilities for the CCPM binary,
+//! This module provides comprehensive self-update capabilities for the AGPM binary,
 //! allowing users to upgrade to newer versions directly from the command line.
 //! The implementation follows safety-first principles with automatic backups,
 //! rollback capabilities, and robust error handling.
@@ -73,21 +73,21 @@
 //!
 //! ## Basic Update Check
 //! ```bash
-//! ccpm upgrade --check          # Check for updates without installing
-//! ccpm upgrade --status         # Show current and latest versions
+//! agpm upgrade --check          # Check for updates without installing
+//! agpm upgrade --status         # Show current and latest versions
 //! ```
 //!
 //! ## Safe Upgrade
 //! ```bash
-//! ccpm upgrade                  # Upgrade to latest with automatic backup
-//! ccpm upgrade v0.4.0          # Upgrade to specific version
+//! agpm upgrade                  # Upgrade to latest with automatic backup
+//! agpm upgrade v0.4.0          # Upgrade to specific version
 //! ```
 //!
 //! ## Advanced Options
 //! ```bash
-//! ccpm upgrade --force          # Force upgrade even if on latest
-//! ccpm upgrade --no-backup      # Skip backup creation (not recommended)
-//! ccpm upgrade --rollback       # Restore from backup
+//! agpm upgrade --force          # Force upgrade even if on latest
+//! agpm upgrade --no-backup      # Skip backup creation (not recommended)
+//! agpm upgrade --rollback       # Restore from backup
 //! ```
 //!
 //! # Module Structure
@@ -104,7 +104,7 @@
 //! All functions return `Result<T, E>` for proper error propagation:
 //!
 //! ```rust,no_run
-//! use ccpm::upgrade::SelfUpdater;
+//! use agpm::upgrade::SelfUpdater;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let updater = SelfUpdater::new();
@@ -125,30 +125,30 @@
 //! - Includes comprehensive logging for debugging
 //! - Designed for minimal external dependencies
 
-/// Backup management for CCPM binary upgrades.
+/// Backup management for AGPM binary upgrades.
 ///
 /// The backup module provides functionality to create, manage, and restore backups
-/// of the CCPM binary during upgrade operations. This ensures safe upgrades with
+/// of the AGPM binary during upgrade operations. This ensures safe upgrades with
 /// the ability to rollback if issues occur.
 pub mod backup;
 /// Configuration structures for upgrade behavior.
 ///
-/// Defines configuration options that control how CCPM handles self-updates,
+/// Defines configuration options that control how AGPM handles self-updates,
 /// including backup settings, version checking preferences, and security options.
 pub mod config;
 /// Core self-update implementation.
 ///
 /// Contains the main SelfUpdater struct that handles downloading and installing
-/// CCPM updates from GitHub releases with proper version management and safety checks.
+/// AGPM updates from GitHub releases with proper version management and safety checks.
 pub mod self_updater;
 /// Download verification and integrity checking.
 ///
 /// Provides checksum verification and integrity validation for downloaded
-/// CCPM binaries to ensure secure and reliable upgrades.
+/// AGPM binaries to ensure secure and reliable upgrades.
 pub mod verification;
 /// Version checking and comparison utilities.
 ///
-/// Handles checking for available CCPM updates, comparing versions, and
+/// Handles checking for available AGPM updates, comparing versions, and
 /// maintaining update check caches to avoid unnecessary network requests.
 pub mod version_check;
 

@@ -1,6 +1,6 @@
-# Contributing to CCPM
+# Contributing to AGPM
 
-Thank you for your interest in contributing to CCPM (Claude Code Package Manager)! We welcome contributions from everyone and are grateful for even the smallest fixes or features.
+Thank you for your interest in contributing to AGPM (AGent Package Manager)! We welcome contributions from everyone and are grateful for even the smallest fixes or features.
 
 ## Table of Contents
 
@@ -67,13 +67,13 @@ When creating an issue:
 1. **Fork and clone the repository:**
    ```bash
    # Fork via GitHub UI, then:
-   git clone https://github.com/YOUR_USERNAME/ccpm.git
-   cd ccpm
+   git clone https://github.com/YOUR_USERNAME/agpm.git
+   cd agpm
    ```
 
 2. **Add upstream remote:**
    ```bash
-   git remote add upstream https://github.com/aig787/ccpm.git
+   git remote add upstream https://github.com/aig787/agpm.git
    ```
 
 3. **Install development tools:**
@@ -156,8 +156,8 @@ When creating an issue:
    cargo llvm-cov --html
 
    # Test on different parallelism levels
-   CCPM_MAX_PARALLEL=1 cargo nextest run
-   CCPM_MAX_PARALLEL=16 cargo nextest run
+   AGPM_MAX_PARALLEL=1 cargo nextest run
+   AGPM_MAX_PARALLEL=16 cargo nextest run
    ```
 
 4. **Commit your changes:**
@@ -270,7 +270,7 @@ Example:
 ///
 /// # Example
 /// ```
-/// let manifest = Manifest::load("ccpm.toml")?;
+/// let manifest = Manifest::load("agpm.toml")?;
 /// let lockfile = resolve_dependencies(&manifest)?;
 /// ```
 pub fn resolve_dependencies(manifest: &Manifest) -> Result<Lockfile> {
@@ -321,7 +321,7 @@ Place integration tests in the `tests/` directory. Focus on testing full workflo
 
 ```rust
 // tests/integration_parallel_install.rs
-use ccpm::cli;
+use agpm::cli;
 use tempfile::TempDir;
 use std::sync::Arc;
 
@@ -441,7 +441,7 @@ We value all contributions! Contributors are recognized through:
 
 ## Release Process
 
-CCPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and release management based on conventional commits.
+AGPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and release management based on conventional commits.
 
 ### Creating a Release
 
@@ -497,7 +497,7 @@ If you have questions about contributing, please:
 2. Create a new discussion if your question hasn't been answered
 3. Be patient - we're all volunteers!
 
-Thank you for contributing to CCPM! Your efforts help make package management better for the entire Claude Code community.
+Thank you for contributing to AGPM! Your efforts help make package management better for the entire Claude Code community.
 
 ---
 

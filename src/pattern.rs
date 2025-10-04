@@ -1,13 +1,13 @@
-//! Pattern-based dependency resolution for CCPM.
+//! Pattern-based dependency resolution for AGPM.
 //!
 //! This module provides glob pattern matching functionality to support
-//! pattern-based dependencies in CCPM manifests. Pattern dependencies
+//! pattern-based dependencies in AGPM manifests. Pattern dependencies
 //! allow installation of multiple resources matching a glob pattern,
 //! enabling bulk operations on related resources.
 //!
 //! # Pattern Syntax
 //!
-//! CCPM uses standard glob patterns with the following support:
+//! AGPM uses standard glob patterns with the following support:
 //!
 //! - `*` matches any sequence of characters within a single path component
 //! - `**` matches any sequence of path components (recursive matching)
@@ -70,7 +70,7 @@ use walkdir::WalkDir;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::PatternMatcher;
+/// use agpm::pattern::PatternMatcher;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -115,7 +115,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     ///
     /// // Simple wildcard
     /// let matcher = PatternMatcher::new("*.md")?;
@@ -170,7 +170,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -239,7 +239,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -268,7 +268,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternMatcher;
+    /// use agpm::pattern::PatternMatcher;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let pattern_str = "**/*.md";
@@ -287,7 +287,7 @@ impl PatternMatcher {
 ///
 /// The `PatternResolver` provides advanced pattern matching with exclusion
 /// support and deterministic ordering. It's designed for resolving
-/// pattern-based dependencies in CCPM manifests to concrete resource files.
+/// pattern-based dependencies in AGPM manifests to concrete resource files.
 ///
 /// # Features
 ///
@@ -299,7 +299,7 @@ impl PatternMatcher {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::PatternResolver;
+/// use agpm::pattern::PatternResolver;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -329,7 +329,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     ///
     /// let resolver = PatternResolver::new();
     /// // PatternResolver starts with no exclusions
@@ -360,7 +360,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut resolver = PatternResolver::new();
@@ -418,7 +418,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -476,7 +476,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::pattern::PatternResolver;
+    /// use agpm::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -530,7 +530,7 @@ impl Default for PatternResolver {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::extract_resource_name;
+/// use agpm::pattern::extract_resource_name;
 /// use std::path::Path;
 ///
 /// assert_eq!(extract_resource_name(Path::new("agents/helper.md")), "helper");
@@ -576,7 +576,7 @@ pub fn extract_resource_name(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::pattern::validate_pattern_safety;
+/// use agpm::pattern::validate_pattern_safety;
 ///
 /// // Safe patterns
 /// assert!(validate_pattern_safety("*.md").is_ok());

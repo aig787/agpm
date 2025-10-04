@@ -22,7 +22,7 @@ test_source = "../test_resources"
 [agents]
 test_agent = { path = "../test_resources/agent.md" }
 "#;
-    fs::write(project_dir.join("ccpm.toml"), manifest_content)
+    fs::write(project_dir.join("agpm.toml"), manifest_content)
         .await
         .unwrap();
 
@@ -34,17 +34,17 @@ test_agent = { path = "../test_resources/agent.md" }
         .unwrap();
 
     // Run install first to create lockfile
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(project_dir)
         .arg("install")
         .assert()
         .success();
 
     // Verify lockfile was created
-    assert!(project_dir.join("ccpm.lock").exists());
+    assert!(project_dir.join("agpm.lock").exists());
 
     // Run update - should show proper phases (or "up to date" message)
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     let output = cmd
         .current_dir(project_dir)
         .arg("update")
@@ -72,19 +72,19 @@ async fn test_update_empty_manifest() {
     let project_dir = temp.path();
 
     // Create empty manifest
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n")
         .await
         .unwrap();
 
     // Run install first
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(project_dir)
         .arg("install")
         .assert()
         .success();
 
     // Run update - should handle gracefully
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(project_dir)
         .arg("update")
         .assert()
@@ -99,15 +99,15 @@ async fn test_update_no_lockfile_fresh_install() {
     let project_dir = temp.path();
 
     // Create manifest without running install
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n")
         .await
         .unwrap();
 
     // Ensure no lockfile exists
-    assert!(!project_dir.join("ccpm.lock").exists());
+    assert!(!project_dir.join("agpm.lock").exists());
 
     // Run update - should perform fresh install
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     let output = cmd
         .current_dir(project_dir)
         .arg("update")
@@ -125,7 +125,7 @@ async fn test_update_no_lockfile_fresh_install() {
     );
 
     // Lockfile should be created
-    assert!(project_dir.join("ccpm.lock").exists());
+    assert!(project_dir.join("agpm.lock").exists());
 }
 
 /// Test that dry-run mode doesn't modify files
@@ -135,23 +135,23 @@ async fn test_update_dry_run_no_modifications() {
     let project_dir = temp.path();
 
     // Create manifest and lockfile
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n")
         .await
         .unwrap();
 
     fs::write(
-        project_dir.join("ccpm.lock"),
+        project_dir.join("agpm.lock"),
         "version = 1\nsources = []\nagents = []\n",
     )
     .await
     .unwrap();
 
-    let original_lock = fs::read_to_string(project_dir.join("ccpm.lock"))
+    let original_lock = fs::read_to_string(project_dir.join("agpm.lock"))
         .await
         .unwrap();
 
     // Run update with --dry-run
-    let mut cmd = Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = Command::cargo_bin("agpm").unwrap();
     cmd.current_dir(project_dir)
         .arg("update")
         .arg("--dry-run")
@@ -159,7 +159,7 @@ async fn test_update_dry_run_no_modifications() {
         .success();
 
     // Lockfile should be unchanged
-    let current_lock = fs::read_to_string(project_dir.join("ccpm.lock"))
+    let current_lock = fs::read_to_string(project_dir.join("agpm.lock"))
         .await
         .unwrap();
     assert_eq!(original_lock, current_lock);

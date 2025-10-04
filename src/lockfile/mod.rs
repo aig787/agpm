@@ -1,13 +1,13 @@
 //! Lockfile management for reproducible installations across environments.
 //!
-//! This module provides comprehensive lockfile functionality for CCPM, similar to Cargo's
+//! This module provides comprehensive lockfile functionality for AGPM, similar to Cargo's
 //! `Cargo.lock` but designed specifically for managing Claude Code resources (agents,
 //! snippets, and commands) from Git repositories. The lockfile ensures that all team members and CI/CD
 //! systems install identical versions of dependencies.
 //!
 //! # Overview
 //!
-//! The lockfile (`ccpm.lock`) is automatically generated from the manifest (`ccpm.toml`)
+//! The lockfile (`agpm.lock`) is automatically generated from the manifest (`agpm.toml`)
 //! during installation and contains exact resolved versions of all dependencies. Unlike
 //! the manifest which specifies version constraints, the lockfile pins exact commit hashes
 //! and file checksums for reproducibility.
@@ -92,10 +92,10 @@
 //!
 //! # Relationship to Manifest
 //!
-//! The lockfile is generated from the manifest (`ccpm.toml`) through dependency resolution:
+//! The lockfile is generated from the manifest (`agpm.toml`) through dependency resolution:
 //!
 //! ```toml
-//! # ccpm.toml (manifest)
+//! # agpm.toml (manifest)
 //! [sources]
 //! community = "https://github.com/example/repo.git"
 //!
@@ -104,10 +104,10 @@
 //! local-agent = { path = "../local/helper.md" }
 //! ```
 //!
-//! During `ccpm install`, this becomes:
+//! During `agpm install`, this becomes:
 //!
 //! ```toml
-//! # ccpm.lock (lockfile)
+//! # agpm.lock (lockfile)
 //! version = 1
 //!
 //! [[sources]]
@@ -135,7 +135,7 @@
 //!
 //! # Version Resolution and Pinning
 //!
-//! CCPM resolves version constraints to exact commits using Git tags and branches:
+//! AGPM resolves version constraints to exact commits using Git tags and branches:
 //!
 //! ## Version Constraint Resolution
 //!
@@ -171,18 +171,18 @@
 //!
 //! ```bash
 //! # Install exact versions from lockfile (if available)
-//! ccpm install
+//! agpm install
 //!
 //! # Update to latest within manifest constraints
-//! ccpm update
+//! agpm update
 //!
 //! # Update specific resource
-//! ccpm update example-agent
+//! agpm update example-agent
 //! ```
 //!
 //! # Checksum Verification
 //!
-//! CCPM uses SHA-256 checksums to ensure file integrity:
+//! AGPM uses SHA-256 checksums to ensure file integrity:
 //!
 //! ## Checksum Format
 //! - **Algorithm**: SHA-256
@@ -202,7 +202,7 @@
 //!
 //! ```bash
 //! # Commit both manifest and lockfile together
-//! git add ccpm.toml ccpm.lock
+//! git add agpm.toml agpm.lock
 //! git commit -m "Add new agent dependency"
 //! ```
 //!
@@ -210,30 +210,30 @@
 //!
 //! ## Don't Edit Lockfile Manually
 //! The lockfile is auto-generated and should not be edited manually:
-//! - Use `ccpm install` to update lockfile from manifest changes
-//! - Use `ccpm update` to update dependency versions
-//! - Delete lockfile and run `ccpm install` to regenerate from scratch
+//! - Use `agpm install` to update lockfile from manifest changes
+//! - Use `agpm update` to update dependency versions
+//! - Delete lockfile and run `agpm install` to regenerate from scratch
 //!
 //! ## Lockfile Conflicts
 //! During Git merges, lockfile conflicts may occur:
 //!
 //! ```bash
 //! # Resolve by regenerating lockfile
-//! rm ccpm.lock
-//! ccpm install
-//! git add ccpm.lock
+//! rm agpm.lock
+//! agpm install
+//! git add agpm.lock
 //! git commit -m "Resolve lockfile conflict"
 //! ```
 //!
 //! # Migration and Upgrades
 //!
 //! ## Format Version Compatibility
-//! CCPM checks lockfile format version and provides clear error messages:
+//! AGPM checks lockfile format version and provides clear error messages:
 //!
 //! ```text
 //! Error: Lockfile version 2 is newer than supported version 1.
-//! This lockfile was created by a newer version of ccpm.
-//! Please update ccpm to the latest version to use this lockfile.
+//! This lockfile was created by a newer version of agpm.
+//! Please update agpm to the latest version to use this lockfile.
 //! ```
 //!
 //! ## Upgrading Lockfiles
@@ -241,14 +241,14 @@
 //!
 //! ```bash
 //! # Future: Migrate lockfile to newer format
-//! ccpm install --migrate-lockfile
+//! agpm install --migrate-lockfile
 //! ```
 //!
 //! # Comparison with Cargo.lock
 //!
-//! CCPM's lockfile design is inspired by Cargo but adapted for Git-based resources:
+//! AGPM's lockfile design is inspired by Cargo but adapted for Git-based resources:
 //!
-//! | Feature | Cargo.lock | ccpm.lock |
+//! | Feature | Cargo.lock | agpm.lock |
 //! |---------|------------|-----------|
 //! | Format | TOML | TOML |
 //! | Versioning | Semantic | Git tags/branches/commits |
@@ -286,7 +286,7 @@
 //! The [`LockFile`] struct is not thread-safe by itself, but the module provides
 //! atomic operations for concurrent access:
 //! - **File Locking**: Uses OS file locking during atomic writes
-//! - **Process Safety**: Multiple ccpm instances coordinate via lockfile
+//! - **Process Safety**: Multiple agpm instances coordinate via lockfile
 //! - **Concurrent Reads**: Safe to read lockfile from multiple threads
 
 use anyhow::{Context, Result};
@@ -310,8 +310,8 @@ use crate::utils::fs::atomic_write;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::lockfile::StalenessReason;
-/// use ccpm::core::ResourceType;
+/// use agpm::lockfile::StalenessReason;
+/// use agpm::core::ResourceType;
 ///
 /// let reason = StalenessReason::MissingDependency {
 ///     name: "my-agent".to_string(),
@@ -443,7 +443,7 @@ impl std::fmt::Display for StalenessReason {
 
 impl std::error::Error for StalenessReason {}
 
-/// The main lockfile structure representing a complete `ccpm.lock` file.
+/// The main lockfile structure representing a complete `agpm.lock` file.
 ///
 /// This structure contains all resolved dependencies, source repositories, and their
 /// exact versions/commits for reproducible installations. The lockfile is automatically
@@ -465,7 +465,7 @@ impl std::error::Error for StalenessReason {}
 /// Creating a new lockfile:
 ///
 /// ```rust,no_run
-/// use ccpm::lockfile::LockFile;
+/// use agpm::lockfile::LockFile;
 ///
 /// let lockfile = LockFile::new();
 /// assert_eq!(lockfile.version, 1);
@@ -476,9 +476,9 @@ impl std::error::Error for StalenessReason {}
 ///
 /// ```rust,no_run
 /// # use std::path::Path;
-/// # use ccpm::lockfile::LockFile;
+/// # use agpm::lockfile::LockFile;
 /// # fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
 /// println!("Loaded {} sources, {} agents",
 ///          lockfile.sources.len(), lockfile.agents.len());
 /// # Ok(())
@@ -488,7 +488,7 @@ impl std::error::Error for StalenessReason {}
 pub struct LockFile {
     /// Version of the lockfile format.
     ///
-    /// This field enables forward and backward compatibility checking. CCPM will
+    /// This field enables forward and backward compatibility checking. AGPM will
     /// refuse to load lockfiles with versions newer than it supports, and may
     /// provide migration paths for older versions in the future.
     pub version: u32,
@@ -592,7 +592,7 @@ pub struct LockFile {
 pub struct LockedSource {
     /// Unique source name from the manifest.
     ///
-    /// This corresponds to keys in the `[sources]` section of `ccpm.toml`
+    /// This corresponds to keys in the `[sources]` section of `agpm.toml`
     /// and is used to reference the source in resource definitions.
     pub name: String,
 
@@ -693,7 +693,7 @@ pub struct LockedResource {
 
     /// Original version constraint from the manifest.
     ///
-    /// This preserves the version constraint specified in `ccpm.toml` (e.g., "^1.0", "v2.1.0").
+    /// This preserves the version constraint specified in `agpm.toml` (e.g., "^1.0", "v2.1.0").
     /// For local resources or resources without version constraints, this field is `None`.
     ///
     /// Omitted from TOML serialization when `None`.
@@ -756,9 +756,9 @@ pub struct LockedResource {
 impl LockFile {
     /// Current lockfile format version.
     ///
-    /// This constant defines the lockfile format version that this version of CCPM
+    /// This constant defines the lockfile format version that this version of AGPM
     /// generates. It's used for compatibility checking when loading lockfiles that
-    /// may have been created by different versions of CCPM.
+    /// may have been created by different versions of AGPM.
     const CURRENT_VERSION: u32 = 1;
 
     /// Create a new empty lockfile with the current format version.
@@ -769,7 +769,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// let lockfile = LockFile::new();
     /// assert_eq!(lockfile.version, 1);
@@ -799,7 +799,7 @@ impl LockFile {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to the lockfile (typically "ccpm.lock")
+    /// * `path` - Path to the lockfile (typically "agpm.lock")
     ///
     /// # Returns
     ///
@@ -812,18 +812,18 @@ impl LockFile {
     /// - **File not found**: Returns empty lockfile (not an error)
     /// - **Permission denied**: Suggests checking file ownership/permissions
     /// - **TOML parse errors**: Suggests regenerating lockfile or checking syntax
-    /// - **Version incompatibility**: Suggests updating CCPM
+    /// - **Version incompatibility**: Suggests updating AGPM
     /// - **Empty file**: Returns empty lockfile (graceful handling)
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// // Load existing lockfile
-    /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
     /// println!("Loaded {} sources", lockfile.sources.len());
     ///
     /// // Non-existent file returns empty lockfile
@@ -836,12 +836,12 @@ impl LockFile {
     /// # Version Compatibility
     ///
     /// The method checks the lockfile format version and will refuse to load
-    /// lockfiles created by newer versions of CCPM:
+    /// lockfiles created by newer versions of AGPM:
     ///
     /// ```text
     /// Error: Lockfile version 2 is newer than supported version 1.
-    /// This lockfile was created by a newer version of ccpm.
-    /// Please update ccpm to the latest version to use this lockfile.
+    /// This lockfile was created by a newer version of agpm.
+    /// Please update agpm to the latest version to use this lockfile.
     /// ```
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
@@ -852,7 +852,7 @@ impl LockFile {
             format!(
                 "Cannot read lockfile: {}\n\n\
                     Possible causes:\n\
-                    - File doesn't exist (run 'ccpm install' to create it)\n\
+                    - File doesn't exist (run 'agpm install' to create it)\n\
                     - Permission denied (check file ownership)\n\
                     - File is corrupted or locked by another process",
                 path.display()
@@ -865,7 +865,7 @@ impl LockFile {
         }
 
         let mut lockfile: Self = toml::from_str(&content)
-            .map_err(|e| crate::core::CcpmError::LockfileParseError {
+            .map_err(|e| crate::core::AgpmError::LockfileParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
             })
@@ -873,7 +873,7 @@ impl LockFile {
                 format!(
                     "Invalid TOML syntax in lockfile: {}\n\n\
                     The lockfile may be corrupted. You can:\n\
-                    - Delete ccpm.lock and run 'ccpm install' to regenerate it\n\
+                    - Delete agpm.lock and run 'agpm install' to regenerate it\n\
                     - Check for syntax errors if you manually edited the file\n\
                     - Restore from backup if available",
                     path.display()
@@ -902,11 +902,11 @@ impl LockFile {
 
         // Check version compatibility
         if lockfile.version > Self::CURRENT_VERSION {
-            return Err(crate::core::CcpmError::Other {
+            return Err(crate::core::AgpmError::Other {
                 message: format!(
                     "Lockfile version {} is newer than supported version {}.\n\n\
-                    This lockfile was created by a newer version of ccpm.\n\
-                    Please update ccpm to the latest version to use this lockfile.",
+                    This lockfile was created by a newer version of agpm.\n\
+                    Please update agpm to the latest version to use this lockfile.",
                     lockfile.version,
                     Self::CURRENT_VERSION
                 ),
@@ -926,7 +926,7 @@ impl LockFile {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path where to save the lockfile (typically "ccpm.lock")
+    /// * `path` - Path where to save the lockfile (typically "agpm.lock")
     ///
     /// # Returns
     ///
@@ -960,7 +960,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut lockfile = LockFile::new();
@@ -973,7 +973,7 @@ impl LockFile {
     /// );
     ///
     /// // Save to disk
-    /// lockfile.save(Path::new("ccpm.lock"))?;
+    /// lockfile.save(Path::new("agpm.lock"))?;
     /// # Ok(())
     /// # }
     /// ```
@@ -1084,7 +1084,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// let mut lockfile = LockFile::new();
     /// lockfile.add_source(
@@ -1138,8 +1138,8 @@ impl LockFile {
     /// Adding an agent:
     ///
     /// ```rust,no_run
-    /// use ccpm::lockfile::{LockFile, LockedResource};
-    /// use ccpm::core::ResourceType;
+    /// use agpm::lockfile::{LockFile, LockedResource};
+    /// use agpm::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
     /// let resource = LockedResource {
@@ -1162,8 +1162,8 @@ impl LockFile {
     /// Adding a snippet:
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::{LockFile, LockedResource};
-    /// # use ccpm::core::ResourceType;
+    /// # use agpm::lockfile::{LockFile, LockedResource};
+    /// # use agpm::core::ResourceType;
     /// # let mut lockfile = LockFile::new();
     /// let snippet = LockedResource {
     ///     name: "util-snippet".to_string(),
@@ -1207,8 +1207,8 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::lockfile::{LockFile, LockedResource};
-    /// use ccpm::core::ResourceType;
+    /// use agpm::lockfile::{LockFile, LockedResource};
+    /// use agpm::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
     /// let command = LockedResource {
@@ -1273,7 +1273,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// // Simple lookup when resource names are unique
     /// if let Some(resource) = lockfile.get_resource("example-agent") {
@@ -1323,7 +1323,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// // When multiple resources have the same name from different sources
     /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("community")) {
@@ -1382,7 +1382,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(source) = lockfile.get_source("community") {
     ///     println!("Source URL: {}", source.url);
@@ -1411,7 +1411,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if lockfile.has_resource("example-agent") {
     ///     println!("Agent is already locked");
@@ -1439,7 +1439,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
     /// println!("Total locked resources: {}", all_resources.len());
@@ -1506,7 +1506,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
     /// println!("Total locked resources: {}", all_resources.len());
@@ -1535,7 +1535,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::LockFile;
+    /// # use agpm::lockfile::LockFile;
     /// let mut lockfile = LockFile::new();
     /// // ... add sources and resources ...
     ///
@@ -1548,7 +1548,7 @@ impl LockFile {
     /// # Use Cases
     ///
     /// - Preparing for complete lockfile regeneration
-    /// - Implementing `ccpm clean` functionality
+    /// - Implementing `agpm clean` functionality
     /// - Resetting lockfile state during testing
     /// - Handling lockfile corruption recovery
     pub fn clear(&mut self) {
@@ -1586,7 +1586,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let checksum = LockFile::compute_checksum(Path::new("example.md"))?;
@@ -1655,7 +1655,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use ccpm::lockfile::LockFile;
+    /// use agpm::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let expected = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3";
@@ -1714,18 +1714,18 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// # use std::path::Path;
-    /// # use ccpm::lockfile::LockFile;
-    /// # use ccpm::manifest::Manifest;
+    /// # use agpm::lockfile::LockFile;
+    /// # use agpm::manifest::Manifest;
     /// # fn example() -> anyhow::Result<()> {
-    /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     ///
     /// // Strict mode: check everything including version/path changes
     /// match lockfile.validate_against_manifest(&manifest, true)? {
     ///     None => println!("Lockfile is valid"),
     ///     Some(reason) => {
     ///         eprintln!("Lockfile is stale: {}", reason);
-    ///         eprintln!("Run 'ccpm install' to auto-update it");
+    ///         eprintln!("Run 'agpm install' to auto-update it");
     ///     }
     /// }
     ///
@@ -1844,11 +1844,11 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// # use std::path::Path;
-    /// # use ccpm::lockfile::LockFile;
-    /// # use ccpm::manifest::Manifest;
+    /// # use agpm::lockfile::LockFile;
+    /// # use agpm::manifest::Manifest;
     /// # fn example() -> anyhow::Result<()> {
-    /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+    /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
     ///
     /// if lockfile.is_stale(&manifest, true)? {
     ///     println!("Lockfile needs updating");
@@ -1904,8 +1904,8 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use ccpm::lockfile::{LockFile, LockedResource};
-    /// # use ccpm::core::ResourceType;
+    /// # use agpm::lockfile::{LockFile, LockedResource};
+    /// # use agpm::core::ResourceType;
     /// # let mut lockfile = LockFile::default();
     /// # // First add a resource to update
     /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource {
@@ -1986,14 +1986,14 @@ impl Default for LockFile {
 
 /// Find the lockfile in the current or parent directories.
 ///
-/// Searches upward from the current working directory to find a `ccpm.lock` file,
-/// similar to how Git searches for `.git` directories. This enables running CCPM
+/// Searches upward from the current working directory to find a `agpm.lock` file,
+/// similar to how Git searches for `.git` directories. This enables running AGPM
 /// commands from subdirectories within a project.
 ///
 /// # Search Algorithm
 ///
 /// 1. Start from current working directory
-/// 2. Check for `ccpm.lock` in current directory
+/// 2. Check for `agpm.lock` in current directory
 /// 3. If found, return the path
 /// 4. If not found, move to parent directory
 /// 5. Repeat until root directory is reached
@@ -2007,12 +2007,12 @@ impl Default for LockFile {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::lockfile::find_lockfile;
+/// use agpm::lockfile::find_lockfile;
 ///
 /// if let Some(lockfile_path) = find_lockfile() {
 ///     println!("Found lockfile: {}", lockfile_path.display());
 /// } else {
-///     println!("No lockfile found (run 'ccpm install' to create one)");
+///     println!("No lockfile found (run 'agpm install' to create one)");
 /// }
 /// ```
 ///
@@ -2027,10 +2027,10 @@ impl Default for LockFile {
 ///
 /// ```text
 /// project/
-/// ├── ccpm.lock          # ← This will be found
-/// ├── ccpm.toml
+/// ├── agpm.lock          # ← This will be found
+/// ├── agpm.toml
 /// └── src/
-///     └── subdir/         # ← Commands run from here will find ../ccpm.lock
+///     └── subdir/         # ← Commands run from here will find ../agpm.lock
 /// ```
 ///
 /// # Errors
@@ -2047,7 +2047,7 @@ pub fn find_lockfile() -> Option<PathBuf> {
     let mut current = std::env::current_dir().ok()?;
 
     loop {
-        let lockfile_path = current.join("ccpm.lock");
+        let lockfile_path = current.join("agpm.lock");
         if lockfile_path.exists() {
             return Some(lockfile_path);
         }
@@ -2074,7 +2074,7 @@ mod tests {
     #[test]
     fn test_lockfile_save_load() {
         let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         let mut lockfile = LockFile::new();
 
@@ -2155,7 +2155,7 @@ mod tests {
     #[test]
     fn test_lockfile_empty_file() {
         let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create empty file
         std::fs::write(&lockfile_path, "").unwrap();
@@ -2169,7 +2169,7 @@ mod tests {
     #[test]
     fn test_lockfile_version_check() {
         let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         // Create lockfile with future version
         let content = "version = 999\n";
@@ -2370,7 +2370,7 @@ mod tests {
     #[test]
     fn test_lockfile_save_load_commands() {
         let temp = tempdir().unwrap();
-        let lockfile_path = temp.path().join("ccpm.lock");
+        let lockfile_path = temp.path().join("agpm.lock");
 
         let mut lockfile = LockFile::new();
 

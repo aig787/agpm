@@ -1,12 +1,12 @@
-//! Version constraint parsing and resolution for CCPM dependencies.
+//! Version constraint parsing and resolution for AGPM dependencies.
 //!
-//! This module provides comprehensive version constraint handling for CCPM dependencies,
+//! This module provides comprehensive version constraint handling for AGPM dependencies,
 //! supporting semantic versioning, Git references, and various constraint types. It enables
 //! dependency resolution with conflict detection and version matching.
 //!
 //! # Version Constraint Types
 //!
-//! CCPM supports several types of version constraints:
+//! AGPM supports several types of version constraints:
 //!
 //! - **Exact versions**: `"1.0.0"` - Matches exactly the specified version
 //! - **Semantic version ranges**: `"^1.0.0"`, `"~1.2.0"`, `">=1.0.0"` - Uses semver ranges
@@ -26,7 +26,7 @@
 //! ## Basic Constraint Parsing
 //!
 //! ```rust,no_run
-//! use ccpm::version::constraints::VersionConstraint;
+//! use agpm::version::constraints::VersionConstraint;
 //!
 //! // Parse different constraint types
 //! let exact = VersionConstraint::parse("1.0.0")?;
@@ -39,7 +39,7 @@
 //! ## Constraint Set Management
 //!
 //! ```rust,no_run
-//! use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+//! use agpm::version::constraints::{ConstraintSet, VersionConstraint};
 //! use semver::Version;
 //!
 //! let mut set = ConstraintSet::new();
@@ -60,7 +60,7 @@
 //! ## Dependency Resolution
 //!
 //! ```rust,no_run
-//! use ccpm::version::constraints::ConstraintResolver;
+//! use agpm::version::constraints::ConstraintResolver;
 //! use semver::Version;
 //! use std::collections::HashMap;
 //!
@@ -94,7 +94,7 @@
 //!
 //! # Version Resolution Precedence
 //!
-//! When resolving versions, CCPM follows this precedence:
+//! When resolving versions, AGPM follows this precedence:
 //!
 //! 1. **Exact matches** take highest priority
 //! 2. **Semantic version requirements** are resolved to highest compatible version
@@ -122,11 +122,11 @@ use semver::{Version, VersionReq};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 
 /// A version constraint that defines acceptable versions for a dependency.
 ///
-/// Version constraints in CCPM support multiple formats to handle different
+/// Version constraints in AGPM support multiple formats to handle different
 /// versioning strategies and Git-based dependencies. Each constraint type
 /// provides specific matching behavior for version resolution.
 ///
@@ -141,7 +141,7 @@ use crate::core::CcpmError;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::VersionConstraint;
+/// use agpm::version::constraints::VersionConstraint;
 /// use semver::Version;
 ///
 /// // Parse various constraint formats
@@ -216,7 +216,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::VersionConstraint;
+    /// use agpm::version::constraints::VersionConstraint;
     ///
     /// // Exact version matching
     /// let exact = VersionConstraint::parse("1.0.0")?;
@@ -317,7 +317,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::VersionConstraint;
+    /// use agpm::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
     /// let constraint = VersionConstraint::parse("^1.0.0")?;
@@ -365,7 +365,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::VersionConstraint;
+    /// use agpm::version::constraints::VersionConstraint;
     ///
     /// let branch_constraint = VersionConstraint::parse("main")?;
     /// assert!(branch_constraint.matches_ref("main"));
@@ -410,7 +410,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::VersionConstraint;
+    /// use agpm::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
     /// let exact = VersionConstraint::parse("1.0.0")?;
@@ -474,7 +474,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::VersionConstraint;
+    /// use agpm::version::constraints::VersionConstraint;
     ///
     /// let latest = VersionConstraint::parse("latest")?;
     /// assert!(!latest.allows_prerelease()); // Stable only
@@ -543,7 +543,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -561,7 +561,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Best Match Selection
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -582,7 +582,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Conflict Detection
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -644,7 +644,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
     ///
@@ -661,7 +661,7 @@ impl ConstraintSet {
     pub fn add(&mut self, constraint: VersionConstraint) -> Result<()> {
         // Check for conflicting constraints
         if self.has_conflict(&constraint) {
-            return Err(CcpmError::Other {
+            return Err(AgpmError::Other {
                 message: format!("Constraint {constraint} conflicts with existing constraints"),
             }
             .into());
@@ -689,7 +689,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -715,7 +715,7 @@ impl ConstraintSet {
     /// Find the best matching version from a list of available versions.
     ///
     /// This method filters the provided versions to find those that satisfy all
-    /// constraints, then selects the "best" match according to CCPM's resolution
+    /// constraints, then selects the "best" match according to AGPM's resolution
     /// strategy. The selection prioritizes newer versions while respecting prerelease
     /// preferences.
     ///
@@ -738,7 +738,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -760,7 +760,7 @@ impl ConstraintSet {
     /// ## Prerelease Handling
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -806,7 +806,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut stable_set = ConstraintSet::new();
     /// stable_set.add(VersionConstraint::parse("^1.0.0")?)?;
@@ -862,7 +862,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use ccpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
     /// set.add(VersionConstraint::parse("1.0.0")?)?;
@@ -929,7 +929,7 @@ impl ConstraintSet {
 /// ## Basic Multi-Dependency Resolution
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::ConstraintResolver;
+/// use agpm::version::constraints::ConstraintResolver;
 /// use semver::Version;
 /// use std::collections::HashMap;
 ///
@@ -955,7 +955,7 @@ impl ConstraintSet {
 /// ## Incremental Constraint Addition
 ///
 /// ```rust,no_run
-/// use ccpm::version::constraints::ConstraintResolver;
+/// use agpm::version::constraints::ConstraintResolver;
 ///
 /// let mut resolver = ConstraintResolver::new();
 ///
@@ -1027,7 +1027,7 @@ impl ConstraintResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::ConstraintResolver;
+    /// use agpm::version::constraints::ConstraintResolver;
     ///
     /// let mut resolver = ConstraintResolver::new();
     ///
@@ -1095,7 +1095,7 @@ impl ConstraintResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::ConstraintResolver;
+    /// use agpm::version::constraints::ConstraintResolver;
     /// use semver::Version;
     /// use std::collections::HashMap;
     ///
@@ -1133,7 +1133,7 @@ impl ConstraintResolver {
     /// ## Error Handling
     ///
     /// ```rust,no_run
-    /// use ccpm::version::constraints::ConstraintResolver;
+    /// use agpm::version::constraints::ConstraintResolver;
     /// use std::collections::HashMap;
     ///
     /// let mut resolver = ConstraintResolver::new();
@@ -1160,14 +1160,14 @@ impl ConstraintResolver {
         for (dep, constraint_set) in &self.constraints {
             let versions = available_versions
                 .get(dep)
-                .ok_or_else(|| CcpmError::Other {
+                .ok_or_else(|| AgpmError::Other {
                     message: format!("No versions available for dependency: {dep}"),
                 })?;
 
             let best_match =
                 constraint_set
                     .find_best_match(versions)
-                    .ok_or_else(|| CcpmError::Other {
+                    .ok_or_else(|| AgpmError::Other {
                         message: format!("No version satisfies constraints for dependency: {dep}"),
                     })?;
 

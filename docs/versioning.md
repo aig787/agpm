@@ -1,6 +1,6 @@
 # Versioning Guide
 
-CCPM uses Git-based versioning where version constraints apply at the repository level, not individual files. This guide explains how versioning works and best practices for managing dependencies.
+AGPM uses Git-based versioning where version constraints apply at the repository level, not individual files. This guide explains how versioning works and best practices for managing dependencies.
 
 ## Core Concepts
 
@@ -10,7 +10,7 @@ When you specify a version (e.g., `version = "v1.0.0"`), you're referencing a Gi
 
 ### Supported Version References
 
-CCPM supports multiple ways to reference specific points in a repository's history:
+AGPM supports multiple ways to reference specific points in a repository's history:
 
 - **Git Tags** (recommended): Semantic versions like `v1.0.0`, `v2.1.3`
 - **Git Branches**: Branch names like `main`, `develop`, `feature/xyz`
@@ -29,7 +29,7 @@ agent2 = { source = "community", path = "agents/agent2.md", version = "v1.0.0" }
 
 ### Semantic Version Ranges
 
-CCPM follows standard semver conventions used by Cargo and npm:
+AGPM follows standard semver conventions used by Cargo and npm:
 
 | Syntax              | Example                       | Matches              | Description           |
 |---------------------|-------------------------------|----------------------|-----------------------|
@@ -64,7 +64,7 @@ any-agent = { source = "community", path = "agents/any.md", version = "*" }
 
 ### Enhanced Constraint Support
 
-CCPM v0.3.2+ includes improved constraint parsing and resolution:
+AGPM v0.3.2+ includes improved constraint parsing and resolution:
 
 - **Complex ranges**: Support for multiple constraints with AND logic
 - **Intelligent tag matching**: Better handling of tag prefixes (v1.0.0 vs 1.0.0)
@@ -87,7 +87,7 @@ compatible-agent = { source = "community", path = "agents/helper.md", version = 
 patch-only-agent = { source = "community", path = "agents/util.md", version = "~1.2.3" }    # 1.2.3 to <1.3.0
 ```
 
-**How it works**: When CCPM resolves `version = "v1.0.0"`, it:
+**How it works**: When AGPM resolves `version = "v1.0.0"`, it:
 1. Looks for a Git tag named `v1.0.0` in the repository
 2. Checks out the repository at that tag
 3. Retrieves the specified file from that tagged state
@@ -105,7 +105,7 @@ dev-agent = { source = "community", path = "agents/dev.md", branch = "main" }
 feature-agent = { source = "community", path = "agents/new.md", branch = "feature/new-capability" }
 ```
 
-⚠️ **Important**: Branch references are mutable - they update to the latest commit each time you run `ccpm update`. Use tags for stable, reproducible builds.
+⚠️ **Important**: Branch references are mutable - they update to the latest commit each time you run `agpm update`. Use tags for stable, reproducible builds.
 
 ### Git Commit Hashes
 
@@ -144,7 +144,7 @@ direct-agent = { path = "../agents/my-agent.md" }
 
 ## Version Resolution
 
-CCPM v0.3.2+ uses a centralized, high-performance version resolution system with the VersionResolver module:
+AGPM v0.3.2+ uses a centralized, high-performance version resolution system with the VersionResolver module:
 
 ### Centralized Resolution Process
 
@@ -154,7 +154,7 @@ CCPM v0.3.2+ uses a centralized, high-performance version resolution system with
 4. **Constraint Matching**: Enhanced semver engine finds best matching tags for complex constraints
 5. **SHA Validation**: All resolved SHAs are validated as 40-character hexadecimal strings
 6. **Worktree Optimization**: SHA-based worktree creation maximizes reuse for identical commits
-7. **Lock Generation**: Record exact commit SHAs and resolved references in `ccpm.lock`
+7. **Lock Generation**: Record exact commit SHAs and resolved references in `agpm.lock`
 
 ### Enhanced Performance Benefits
 
@@ -177,14 +177,14 @@ Given available tags: `v1.0.0`, `v1.1.0`, `v1.2.0`, `v2.0.0`
 
 ## Lockfile and Reproducibility
 
-The `ccpm.lock` file ensures reproducible installations by recording exact resolution results from the VersionResolver:
+The `agpm.lock` file ensures reproducible installations by recording exact resolution results from the VersionResolver:
 
 ```toml
 [[agents]]
 name = "example-agent"
 source = "community"
 path = "agents/example.md"
-version = "^1.0.0"                    # Original constraint from ccpm.toml
+version = "^1.0.0"                    # Original constraint from agpm.toml
 resolved_commit = "abc123def456..."   # Exact commit SHA (40 characters)
 resolved_version = "v1.2.3"          # Actual tag that satisfied constraint
 ```
@@ -193,7 +193,7 @@ resolved_version = "v1.2.3"          # Actual tag that satisfied constraint
 
 With the centralized VersionResolver, the lockfile provides:
 
-- **Original constraint** (`version`): What was requested in `ccpm.toml` (e.g., `^1.0.0`)
+- **Original constraint** (`version`): What was requested in `agpm.toml` (e.g., `^1.0.0`)
 - **Resolved commit** (`resolved_commit`): Exact Git commit SHA determined by VersionResolver
 - **Resolved version** (`resolved_version`): The specific tag/branch that satisfied the constraint
 - **SHA-based reproducibility**: Same SHA always produces identical installations
@@ -201,13 +201,13 @@ With the centralized VersionResolver, the lockfile provides:
 
 ### Lockfile Staleness Checks
 
-CCPM tracks whether `ccpm.lock` still matches the manifest and the resolution rules that produced it. Both `ccpm install` and `ccpm validate --check-lock` run the same validation logic:
+AGPM tracks whether `agpm.lock` still matches the manifest and the resolution rules that produced it. Both `agpm install` and `agpm validate --check-lock` run the same validation logic:
 
 - **Always checked**: duplicate lockfile entries (corruption) and changed source URLs (security risk).
-- **Strict-mode checks** (`ccpm install`, `ccpm validate --check-lock`): missing dependencies that now exist in the manifest, version constraint changes, or path changes compared to what the lockfile previously captured.
-- **Lenient mode** (`ccpm install --frozen`): only the always-checked issues; anything else causes the command to exit instead of regenerating.
+- **Strict-mode checks** (`agpm install`, `agpm validate --check-lock`): missing dependencies that now exist in the manifest, version constraint changes, or path changes compared to what the lockfile previously captured.
+- **Lenient mode** (`agpm install --frozen`): only the always-checked issues; anything else causes the command to exit instead of regenerating.
 
-When validation reports a staleness reason, run `ccpm install` (without `--frozen`) to regenerate the lockfile. The resolver reuses prior resolutions whenever possible, so versions stay unchanged unless the manifest or upstream reference moved.
+When validation reports a staleness reason, run `agpm install` (without `--frozen`) to regenerate the lockfile. The resolver reuses prior resolutions whenever possible, so versions stay unchanged unless the manifest or upstream reference moved.
 
 ## Common Scenarios
 
@@ -261,7 +261,7 @@ Use local directories as sources without requiring Git:
 # Local directory as a source - no Git required
 local-deps = "./dependencies"
 shared-resources = "../shared-resources"
-absolute-local = "/home/user/ccpm-resources"
+absolute-local = "/home/user/agpm-resources"
 
 [agents]
 # Dependencies from local directory sources don't need versions
@@ -271,7 +271,7 @@ shared-agent = { source = "shared-resources", path = "agents/common.md" }
 
 **Security Note**: For security, local paths are restricted to:
 - Within the current project directory
-- Within the CCPM cache directory (`~/.ccpm/cache`)
+- Within the AGPM cache directory (`~/.agpm/cache`)
 - Within `/tmp` for testing
 
 ### Direct File Paths
@@ -307,13 +307,13 @@ local-branch-agent = { source = "local-repo", path = "agents/dev.md", branch = "
 1. **Use Semantic Version Tags**: Tag releases with semantic versions (`v1.0.0`, `v2.1.3`)
 2. **Prefer Tags Over Branches**: Tags are immutable; branches change over time
 3. **Use Caret Ranges**: `^1.0.0` allows compatible updates while preventing breaking changes
-4. **Lock for Production**: Commit `ccpm.lock` and use `--frozen` flag in CI/CD
+4. **Lock for Production**: Commit `agpm.lock` and use `--frozen` flag in CI/CD
 5. **Document Breaking Changes**: Use major version bumps (v1.x.x → v2.x.x) for breaking changes
-6. **Test Before Updating**: Use `ccpm update --dry-run` to preview changes
+6. **Test Before Updating**: Use `agpm update --dry-run` to preview changes
 
 ## Automated Releases
 
-CCPM itself uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning. Every push to `main` triggers:
+AGPM itself uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning. Every push to `main` triggers:
 
 1. **Commit analysis** to determine version bump based on [Conventional Commits](https://www.conventionalcommits.org/):
    - `fix:` → Patch release (0.0.X)
@@ -329,11 +329,11 @@ CCPM itself uses [semantic-release](https://semantic-release.gitbook.io/) for au
    - Pre-release support on `alpha` and `beta` branches
 
 3. **Binary Assets** available for each release:
-   - `ccpm-x86_64-linux.tar.gz` - Linux x86_64
-   - `ccpm-aarch64-linux.tar.gz` - Linux ARM64
-   - `ccpm-x86_64-macos.tar.gz` - macOS Intel
-   - `ccpm-aarch64-macos.tar.gz` - macOS Apple Silicon
-   - `ccpm-x86_64-windows.zip` - Windows x86_64
+   - `agpm-x86_64-linux.tar.gz` - Linux x86_64
+   - `agpm-aarch64-linux.tar.gz` - Linux ARM64
+   - `agpm-x86_64-macos.tar.gz` - macOS Intel
+   - `agpm-aarch64-macos.tar.gz` - macOS Apple Silicon
+   - `agpm-x86_64-windows.zip` - Windows x86_64
 
 ## Troubleshooting
 
@@ -341,21 +341,21 @@ CCPM itself uses [semantic-release](https://semantic-release.gitbook.io/) for au
 
 ```bash
 # Check for conflicts
-ccpm validate --resolve
+agpm validate --resolve
 
-# Update version constraints in ccpm.toml to resolve
+# Update version constraints in agpm.toml to resolve
 ```
 
-If no shared version exists, synchronize the manifest constraints (for example, bump every dependent to the same tag) or pin the dependency to a specific commit with `rev = "<sha>"`. You can inspect the resolver output with `ccpm validate --resolve --format json` to see which dependency introduced the incompatible requirement.
+If no shared version exists, synchronize the manifest constraints (for example, bump every dependent to the same tag) or pin the dependency to a specific commit with `rev = "<sha>"`. You can inspect the resolver output with `agpm validate --resolve --format json` to see which dependency introduced the incompatible requirement.
 
 ### Lockfile Out of Sync
 
 ```bash
 # Regenerate lockfile
-ccpm install
+agpm install
 
 # Use exact lockfile versions (no updates)
-ccpm install --frozen
+agpm install --frozen
 ```
 
 ### Finding Available Versions

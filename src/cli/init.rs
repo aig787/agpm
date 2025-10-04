@@ -1,24 +1,24 @@
-//! Initialize a new CCPM project with a manifest file.
+//! Initialize a new AGPM project with a manifest file.
 //!
-//! This module provides the `init` command which creates a new `ccpm.toml` manifest file
+//! This module provides the `init` command which creates a new `agpm.toml` manifest file
 //! in the specified directory (or current directory). The manifest file is the main
-//! configuration file for a CCPM project that defines dependencies on Claude Code resources.
+//! configuration file for a AGPM project that defines dependencies on Claude Code resources.
 //!
 //! # Examples
 //!
 //! Initialize a manifest in the current directory:
 //! ```bash
-//! ccpm init
+//! agpm init
 //! ```
 //!
 //! Initialize a manifest in a specific directory:
 //! ```bash
-//! ccpm init --path ./my-project
+//! agpm init --path ./my-project
 //! ```
 //!
 //! Force overwrite an existing manifest:
 //! ```bash
-//! ccpm init --force
+//! agpm init --force
 //! ```
 //!
 //! # Manifest Structure
@@ -57,16 +57,16 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
-/// Command to initialize a new CCPM project with a manifest file.
+/// Command to initialize a new AGPM project with a manifest file.
 ///
-/// This command creates a `ccpm.toml` manifest file in the specified directory
+/// This command creates a `agpm.toml` manifest file in the specified directory
 /// (or current directory if no path is provided). The manifest serves as the
 /// main configuration file for defining Claude Code resource dependencies.
 ///
 /// # Examples
 ///
 /// ```rust,ignore
-/// use ccpm::cli::init::InitCommand;
+/// use agpm::cli::init::InitCommand;
 /// use std::path::PathBuf;
 ///
 /// // Initialize in current directory
@@ -92,7 +92,7 @@ pub struct InitCommand {
 
     /// Force overwrite if manifest already exists
     ///
-    /// By default, the command will fail if a `ccpm.toml` file already exists
+    /// By default, the command will fail if a `agpm.toml` file already exists
     /// in the target directory. Use this flag to overwrite an existing file.
     #[arg(short, long)]
     force: bool,
@@ -109,9 +109,9 @@ impl InitCommand {
         self.execute().await
     }
 
-    /// Execute the init command to create a new CCPM manifest file.
+    /// Execute the init command to create a new AGPM manifest file.
     ///
-    /// This method creates a `ccpm.toml` manifest file with a minimal template structure
+    /// This method creates a `agpm.toml` manifest file with a minimal template structure
     /// that includes empty sections for all resource types. The file is
     /// created in the specified directory or current directory if no path is provided.
     ///
@@ -120,7 +120,7 @@ impl InitCommand {
     /// 1. Determines the target directory (from `path` option or current directory)
     /// 2. Checks if a manifest already exists and handles the `force` flag
     /// 3. Creates the target directory if it doesn't exist
-    /// 4. Writes the manifest template to `ccpm.toml`
+    /// 4. Writes the manifest template to `agpm.toml`
     /// 5. Displays success message and next steps to the user
     ///
     /// # Returns
@@ -134,7 +134,7 @@ impl InitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ccpm::cli::init::InitCommand;
+    /// use agpm::cli::init::InitCommand;
     /// use std::path::PathBuf;
     ///
     /// # tokio_test::block_on(async {
@@ -143,14 +143,14 @@ impl InitCommand {
     ///     force: false,
     /// };
     ///
-    /// // This would create ./test-project/ccpm.toml
+    /// // This would create ./test-project/agpm.toml
     /// // cmd.execute().await?;
     /// # Ok::<(), anyhow::Error>(())
     /// # });
     /// ```
     pub async fn execute(self) -> Result<()> {
         let target_dir = self.path.unwrap_or_else(|| PathBuf::from("."));
-        let manifest_path = target_dir.join("ccpm.toml");
+        let manifest_path = target_dir.join("agpm.toml");
         let gitignore_path = target_dir.join(".gitignore");
 
         // Check if manifest already exists
@@ -167,12 +167,12 @@ impl InitCommand {
         }
 
         // Write a minimal template with empty sections
-        let template = r#"# CCPM Manifest
+        let template = r#"# AGPM Manifest
 # This file defines your Claude Code resource dependencies
 
 [sources]
 # Add your Git repository sources here
-# Example: official = "https://github.com/aig787/ccpm-community.git"
+# Example: official = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 # Add your agent dependencies here
@@ -200,8 +200,8 @@ impl InitCommand {
 "#;
         fs::write(&manifest_path, template)?;
 
-        // Update or create .gitignore with CCPM entries
-        let gitignore_entries = vec![".claude/ccpm/"];
+        // Update or create .gitignore with AGPM entries
+        let gitignore_entries = vec![".claude/agpm/"];
 
         let mut gitignore_content = if gitignore_path.exists() {
             fs::read_to_string(&gitignore_path)?
@@ -209,16 +209,16 @@ impl InitCommand {
             String::new()
         };
 
-        // Check if CCPM section exists
-        if !gitignore_content.contains("# CCPM managed directories") {
-            // Add CCPM entries
+        // Check if AGPM section exists
+        if !gitignore_content.contains("# AGPM managed directories") {
+            // Add AGPM entries
             if !gitignore_content.is_empty() && !gitignore_content.ends_with('\n') {
                 gitignore_content.push('\n');
             }
             if !gitignore_content.is_empty() {
                 gitignore_content.push('\n');
             }
-            gitignore_content.push_str("# CCPM managed directories\n");
+            gitignore_content.push_str("# AGPM managed directories\n");
 
             for entry in gitignore_entries {
                 // Check if entry doesn't already exist
@@ -229,22 +229,22 @@ impl InitCommand {
             }
 
             fs::write(&gitignore_path, gitignore_content)?;
-            println!("{} Updated .gitignore with CCPM entries", "✓".green());
+            println!("{} Updated .gitignore with AGPM entries", "✓".green());
         }
 
         println!(
-            "{} Initialized ccpm.toml at {}",
+            "{} Initialized agpm.toml at {}",
             "✓".green(),
             manifest_path.display()
         );
 
         println!("\n{}", "Next steps:".cyan());
-        println!("  Add dependencies with {}:", "ccpm add".bright_white());
+        println!("  Add dependencies with {}:", "agpm add".bright_white());
         println!(
-            "    ccpm add agent my-agent --source https://github.com/org/repo.git --path agents/my-agent.md"
+            "    agpm add agent my-agent --source https://github.com/org/repo.git --path agents/my-agent.md"
         );
-        println!("    ccpm add snippet utils --path ../local/snippets/utils.md");
-        println!("\n  Then run {} to install", "ccpm install".bright_white());
+        println!("    agpm add snippet utils --path ../local/snippets/utils.md");
+        println!("\n  Then run {} to install", "agpm install".bright_white());
 
         Ok(())
     }
@@ -266,7 +266,7 @@ mod tests {
         let result = cmd.execute().await;
         assert!(result.is_ok());
 
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         assert!(manifest_path.exists());
 
         let content = fs::read_to_string(&manifest_path).unwrap();
@@ -289,13 +289,13 @@ mod tests {
         assert!(result.is_ok());
 
         assert!(new_dir.exists());
-        assert!(new_dir.join("ccpm.toml").exists());
+        assert!(new_dir.join("agpm.toml").exists());
     }
 
     #[tokio::test]
     async fn test_init_fails_if_manifest_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "existing content").unwrap();
 
         let cmd = InitCommand {
@@ -311,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn test_init_force_overwrites_existing() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         fs::write(&manifest_path, "old content").unwrap();
 
         let cmd = InitCommand {
@@ -339,7 +339,7 @@ mod tests {
 
         let result = cmd.execute().await;
         assert!(result.is_ok());
-        assert!(temp_dir.path().join("ccpm.toml").exists());
+        assert!(temp_dir.path().join("agpm.toml").exists());
     }
 
     #[tokio::test]
@@ -353,11 +353,11 @@ mod tests {
         let result = cmd.execute().await;
         assert!(result.is_ok());
 
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
         let content = fs::read_to_string(&manifest_path).unwrap();
 
         // Verify template content
-        assert!(content.contains("# CCPM Manifest"));
+        assert!(content.contains("# AGPM Manifest"));
         assert!(content.contains("# This file defines your Claude Code resource dependencies"));
         assert!(content.contains("# Add your Git repository sources here"));
         assert!(content.contains("# Example: official ="));
@@ -380,13 +380,13 @@ mod tests {
         let result = cmd.execute().await;
         assert!(result.is_ok());
         assert!(nested_path.exists());
-        assert!(nested_path.join("ccpm.toml").exists());
+        assert!(nested_path.join("agpm.toml").exists());
     }
 
     #[tokio::test]
     async fn test_init_force_flag_behavior() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Write initial content
         let initial_content = "# Old manifest\n[sources]\n";
@@ -414,7 +414,7 @@ mod tests {
 
         // Verify new template content
         let new_content = fs::read_to_string(&manifest_path).unwrap();
-        assert!(new_content.contains("# CCPM Manifest"));
+        assert!(new_content.contains("# AGPM Manifest"));
         assert!(!new_content.contains("# Old manifest"));
     }
 
@@ -433,8 +433,8 @@ mod tests {
         assert!(gitignore_path.exists());
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
-        assert!(content.contains("# CCPM managed directories"));
-        assert!(content.contains(".claude/ccpm/"));
+        assert!(content.contains("# AGPM managed directories"));
+        assert!(content.contains(".claude/agpm/"));
     }
 
     #[tokio::test]
@@ -457,9 +457,9 @@ mod tests {
         // Should preserve existing content
         assert!(content.contains("node_modules/"));
         assert!(content.contains("*.log"));
-        // Should add CCPM entries
-        assert!(content.contains("# CCPM managed directories"));
-        assert!(content.contains(".claude/ccpm/"));
+        // Should add AGPM entries
+        assert!(content.contains("# AGPM managed directories"));
+        assert!(content.contains(".claude/agpm/"));
     }
 
     #[tokio::test]
@@ -487,10 +487,10 @@ mod tests {
 
         let second_content = fs::read_to_string(&gitignore_path).unwrap();
 
-        // Should not have duplicated the CCPM section
+        // Should not have duplicated the AGPM section
         assert_eq!(
-            first_content.matches("# CCPM managed directories").count(),
-            second_content.matches("# CCPM managed directories").count()
+            first_content.matches("# AGPM managed directories").count(),
+            second_content.matches("# AGPM managed directories").count()
         );
     }
 }

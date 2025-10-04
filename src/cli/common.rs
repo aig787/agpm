@@ -14,8 +14,8 @@ pub trait CommandExecutor: Sized {
     {
         async move {
             let manifest_path = find_manifest().with_context(|| {
-                "No ccpm.toml found in current directory or any parent directory. \
-                 Run 'ccpm init' to create a new project."
+                "No agpm.toml found in current directory or any parent directory. \
+                 Run 'agpm init' to create a new project."
             })?;
             self.execute_from_path(manifest_path).await
         }
@@ -31,13 +31,13 @@ pub trait CommandExecutor: Sized {
 /// Common context for CLI commands that need manifest and project information
 #[derive(Debug)]
 pub struct CommandContext {
-    /// Parsed project manifest (ccpm.toml)
+    /// Parsed project manifest (agpm.toml)
     pub manifest: Manifest,
     /// Path to the manifest file
     pub manifest_path: PathBuf,
-    /// Project root directory (containing ccpm.toml)
+    /// Project root directory (containing agpm.toml)
     pub project_dir: PathBuf,
-    /// Path to the lockfile (ccpm.lock)
+    /// Path to the lockfile (agpm.lock)
     pub lockfile_path: PathBuf,
 }
 
@@ -62,7 +62,7 @@ impl CommandContext {
             format!("Failed to parse manifest file: {}", manifest_path.display())
         })?;
 
-        let lockfile_path = project_dir.join("ccpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         Ok(Self {
             manifest,
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn test_command_context_from_manifest_path() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create a test manifest
         std::fs::write(
@@ -119,13 +119,13 @@ test = "https://github.com/test/repo.git"
 
         assert_eq!(context.manifest_path, manifest_path);
         assert_eq!(context.project_dir, temp_dir.path());
-        assert_eq!(context.lockfile_path, temp_dir.path().join("ccpm.lock"));
+        assert_eq!(context.lockfile_path, temp_dir.path().join("agpm.lock"));
         assert!(context.manifest.sources.contains_key("test"));
     }
 
     #[test]
     fn test_command_context_missing_manifest() {
-        let result = CommandContext::from_manifest_path("/nonexistent/ccpm.toml");
+        let result = CommandContext::from_manifest_path("/nonexistent/agpm.toml");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
@@ -133,7 +133,7 @@ test = "https://github.com/test/repo.git"
     #[test]
     fn test_command_context_invalid_manifest() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         // Create an invalid manifest
         std::fs::write(&manifest_path, "invalid toml {{").unwrap();
@@ -151,8 +151,8 @@ test = "https://github.com/test/repo.git"
     #[test]
     fn test_load_lockfile_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
-        let lockfile_path = temp_dir.path().join("ccpm.lock");
+        let manifest_path = temp_dir.path().join("agpm.toml");
+        let lockfile_path = temp_dir.path().join("agpm.lock");
 
         // Create test files
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
@@ -182,7 +182,7 @@ fetched_at = "2024-01-01T00:00:00Z"
     #[test]
     fn test_load_lockfile_not_exists() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 
@@ -195,7 +195,7 @@ fetched_at = "2024-01-01T00:00:00Z"
     #[test]
     fn test_save_lockfile() {
         let temp_dir = TempDir::new().unwrap();
-        let manifest_path = temp_dir.path().join("ccpm.toml");
+        let manifest_path = temp_dir.path().join("agpm.toml");
 
         std::fs::write(&manifest_path, "[sources]\n").unwrap();
 

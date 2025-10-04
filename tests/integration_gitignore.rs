@@ -1,6 +1,6 @@
 //! Integration tests for .gitignore management functionality
 //!
-//! These tests verify that CCPM correctly manages .gitignore files
+//! These tests verify that AGPM correctly manages .gitignore files
 //! based on the target.gitignore configuration setting.
 
 use anyhow::Result;
@@ -22,7 +22,7 @@ async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 gitignore = {}
 
@@ -49,7 +49,7 @@ async fn create_test_manifest_default(source_dir: &Path) -> String {
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/ccpm/snippets"
+snippets = ".claude/agpm/snippets"
 commands = ".claude/commands"
 
 [agents.test-agent]
@@ -74,7 +74,7 @@ installed_at = ".claude/agents/test-agent.md"
 name = "test-snippet"
 path = "source/snippets/test.md"
 checksum = ""
-installed_at = ".claude/ccpm/snippets/test-snippet.md"
+installed_at = ".claude/agpm/snippets/test-snippet.md"
 
 [[commands]]
 name = "test-command"
@@ -102,7 +102,7 @@ async fn create_test_source_files(source_dir: &Path) -> Result<()> {
 
 #[tokio::test]
 async fn test_gitignore_enabled_by_default() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -111,7 +111,7 @@ async fn test_gitignore_enabled_by_default() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest without explicit gitignore setting (should default to true)
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest_default(&source_dir).await,
@@ -120,13 +120,13 @@ async fn test_gitignore_enabled_by_default() {
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -142,13 +142,13 @@ async fn test_gitignore_enabled_by_default() {
 
     // Check that it has the expected structure
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("CCPM managed entries"));
-    assert!(content.contains("# End of CCPM managed entries"));
+    assert!(content.contains("AGPM managed entries"));
+    assert!(content.contains("# End of AGPM managed entries"));
 }
 
 #[tokio::test]
 async fn test_gitignore_explicitly_enabled() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -157,7 +157,7 @@ async fn test_gitignore_explicitly_enabled() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest with gitignore = true
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -166,13 +166,13 @@ async fn test_gitignore_explicitly_enabled() {
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -185,14 +185,14 @@ async fn test_gitignore_explicitly_enabled() {
 
     // Verify content structure
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("CCPM managed entries"));
-    assert!(content.contains("CCPM managed entries - do not edit below this line"));
-    assert!(content.contains("# End of CCPM managed entries"));
+    assert!(content.contains("AGPM managed entries"));
+    assert!(content.contains("AGPM managed entries - do not edit below this line"));
+    assert!(content.contains("# End of AGPM managed entries"));
 }
 
 #[tokio::test]
 async fn test_gitignore_disabled() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -201,7 +201,7 @@ async fn test_gitignore_disabled() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest with gitignore = false
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(false, &source_dir).await,
@@ -210,13 +210,13 @@ async fn test_gitignore_disabled() {
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -233,7 +233,7 @@ async fn test_gitignore_disabled() {
 
 #[tokio::test]
 async fn test_gitignore_preserves_user_entries() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -253,14 +253,14 @@ async fn test_gitignore_preserves_user_entries() {
 user-file.txt
 temp/
 
-# CCPM managed entries - do not edit below this line
+# AGPM managed entries - do not edit below this line
 .claude/agents/old-agent.md
-# End of CCPM managed entries
+# End of AGPM managed entries
 "#;
     fs::write(&gitignore_path, user_content).await.unwrap();
 
     // Create manifest with gitignore enabled
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -269,13 +269,13 @@ temp/
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -289,15 +289,15 @@ temp/
     assert!(updated_content.contains("user-file.txt"));
     assert!(updated_content.contains("temp/"));
 
-    // Check that CCPM section exists (entries will be based on what was actually installed)
-    assert!(updated_content.contains("CCPM managed entries"));
-    assert!(updated_content.contains("# End of CCPM managed entries"));
-    assert!(updated_content.contains(".claude/ccpm/snippets/test-snippet.md"));
+    // Check that AGPM section exists (entries will be based on what was actually installed)
+    assert!(updated_content.contains("AGPM managed entries"));
+    assert!(updated_content.contains("# End of AGPM managed entries"));
+    assert!(updated_content.contains(".claude/agpm/snippets/test-snippet.md"));
 }
 
 #[tokio::test]
-async fn test_gitignore_preserves_content_after_ccpm_section() {
-    ccpm::test_utils::init_test_logging(None);
+async fn test_gitignore_preserves_content_after_agpm_section() {
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -310,17 +310,17 @@ async fn test_gitignore_preserves_content_after_ccpm_section() {
         .await
         .unwrap();
 
-    // Create existing gitignore with content after CCPM section
+    // Create existing gitignore with content after AGPM section
     let gitignore_path = project_dir.join(".gitignore");
     let user_content = r#"# Project gitignore
 *.backup
 temp/
 
-# CCPM managed entries - do not edit below this line
+# AGPM managed entries - do not edit below this line
 .claude/agents/old-agent.md
-# End of CCPM managed entries
+# End of AGPM managed entries
 
-# Additional entries after CCPM section
+# Additional entries after AGPM section
 local-config.json
 debug/
 # End comment
@@ -328,7 +328,7 @@ debug/
     fs::write(&gitignore_path, user_content).await.unwrap();
 
     // Create manifest with gitignore enabled
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -337,13 +337,13 @@ debug/
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -353,29 +353,29 @@ debug/
     // Check that all sections are preserved
     let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
 
-    // Check content before CCPM section
+    // Check content before AGPM section
     assert!(updated_content.contains("# Project gitignore"));
     assert!(updated_content.contains("*.backup"));
     assert!(updated_content.contains("temp/"));
 
-    // Check CCPM section is updated
-    assert!(updated_content.contains("CCPM managed entries"));
-    assert!(updated_content.contains("# End of CCPM managed entries"));
-    assert!(updated_content.contains(".claude/ccpm/snippets/test-snippet.md"));
+    // Check AGPM section is updated
+    assert!(updated_content.contains("AGPM managed entries"));
+    assert!(updated_content.contains("# End of AGPM managed entries"));
+    assert!(updated_content.contains(".claude/agpm/snippets/test-snippet.md"));
 
-    // Check content after CCPM section is preserved
-    assert!(updated_content.contains("# Additional entries after CCPM section"));
+    // Check content after AGPM section is preserved
+    assert!(updated_content.contains("# Additional entries after AGPM section"));
     assert!(updated_content.contains("local-config.json"));
     assert!(updated_content.contains("debug/"));
     assert!(updated_content.contains("# End comment"));
 
-    // Verify old CCPM entry is removed
+    // Verify old AGPM entry is removed
     assert!(!updated_content.contains(".claude/agents/old-agent.md"));
 }
 
 #[tokio::test]
 async fn test_gitignore_update_command() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -384,7 +384,7 @@ async fn test_gitignore_update_command() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -393,13 +393,13 @@ async fn test_gitignore_update_command() {
     .unwrap();
 
     // Create initial lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run update command (which should also update gitignore)
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("update")
         .arg("--quiet")
@@ -410,18 +410,18 @@ async fn test_gitignore_update_command() {
     let gitignore_path = project_dir.join(".gitignore");
     if gitignore_path.exists() {
         let content = fs::read_to_string(&gitignore_path).await.unwrap();
-        assert!(content.contains("CCPM managed entries"));
+        assert!(content.contains("AGPM managed entries"));
     }
 }
 
 #[tokio::test]
 async fn test_gitignore_handles_external_paths() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
     // Create manifest
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     let manifest_content = r#"
 [sources]
 test-source = "https://github.com/test/repo.git"
@@ -465,7 +465,7 @@ resolved_commit = "abc123"
 checksum = "sha256:test"
 installed_at = ".claude/agents/internal.md"
 "#;
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, lockfile_content).await.unwrap();
 
     // Create directories
@@ -488,7 +488,7 @@ installed_at = ".claude/agents/internal.md"
     .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -514,7 +514,7 @@ installed_at = ".claude/agents/internal.md"
 
 #[tokio::test]
 async fn test_gitignore_empty_lockfile() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -523,7 +523,7 @@ async fn test_gitignore_empty_lockfile() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -532,11 +532,11 @@ async fn test_gitignore_empty_lockfile() {
     .unwrap();
 
     // Create empty lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, "version = 1\n").await.unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -551,13 +551,13 @@ async fn test_gitignore_empty_lockfile() {
     );
 
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(content.contains("CCPM managed entries"));
-    assert!(content.contains("# End of CCPM managed entries"));
+    assert!(content.contains("AGPM managed entries"));
+    assert!(content.contains("# End of AGPM managed entries"));
 }
 
 #[tokio::test]
 async fn test_gitignore_idempotent() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -566,7 +566,7 @@ async fn test_gitignore_idempotent() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create manifest
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -575,13 +575,13 @@ async fn test_gitignore_idempotent() {
     .unwrap();
 
     // Create lockfile
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -597,7 +597,7 @@ async fn test_gitignore_idempotent() {
     };
 
     // Run again
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -620,7 +620,7 @@ async fn test_gitignore_idempotent() {
 
 #[tokio::test]
 async fn test_gitignore_switch_enabled_disabled() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -629,7 +629,7 @@ async fn test_gitignore_switch_enabled_disabled() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Start with gitignore enabled
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -637,13 +637,13 @@ async fn test_gitignore_switch_enabled_disabled() {
     .await
     .unwrap();
 
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install with gitignore enabled
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -662,7 +662,7 @@ async fn test_gitignore_switch_enabled_disabled() {
     .unwrap();
 
     // Run install again
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -686,13 +686,13 @@ async fn test_gitignore_switch_enabled_disabled() {
     // Add a user entry to the existing gitignore
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
     let modified_content = content.replace(
-        "# CCPM managed entries",
-        "user-custom.txt\n\n# CCPM managed entries",
+        "# AGPM managed entries",
+        "user-custom.txt\n\n# AGPM managed entries",
     );
     fs::write(&gitignore_path, modified_content).await.unwrap();
 
     // Run install again
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -709,7 +709,7 @@ async fn test_gitignore_switch_enabled_disabled() {
 
 #[tokio::test]
 async fn test_gitignore_actually_ignored_by_git() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await.unwrap();
     let project_dir = project.project_path().to_path_buf();
@@ -729,14 +729,14 @@ async fn test_gitignore_actually_ignored_by_git() {
         .unwrap();
 
     project
-        .run_ccpm(&["install", "--quiet"])
+        .run_agpm(&["install", "--quiet"])
         .unwrap()
         .assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(
         project_dir
-            .join(".claude/ccpm/snippets/test-snippet.md")
+            .join(".claude/agpm/snippets/test-snippet.md")
             .exists()
     );
     assert!(
@@ -769,12 +769,12 @@ async fn test_gitignore_actually_ignored_by_git() {
         status
     );
     assert!(
-        status.contains("ccpm.toml"),
+        status.contains("agpm.toml"),
         "Manifest should be tracked by git\nGit status:\n{}",
         status
     );
     assert!(
-        status.contains("ccpm.lock"),
+        status.contains("agpm.lock"),
         "Lockfile should be tracked by git\nGit status:\n{}",
         status
     );
@@ -784,7 +784,7 @@ async fn test_gitignore_actually_ignored_by_git() {
         "Agent file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".claude/ccpm/snippets/test-snippet.md")
+        git.check_ignore(".claude/agpm/snippets/test-snippet.md")
             .unwrap(),
         "Snippet file should be ignored by git check-ignore"
     );
@@ -797,7 +797,7 @@ async fn test_gitignore_actually_ignored_by_git() {
 
 #[tokio::test]
 async fn test_gitignore_disabled_files_not_ignored_by_git() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await.unwrap();
     let project_dir = project.project_path().to_path_buf();
@@ -817,14 +817,14 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
         .unwrap();
 
     project
-        .run_ccpm(&["install", "--quiet"])
+        .run_agpm(&["install", "--quiet"])
         .unwrap()
         .assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(
         project_dir
-            .join(".claude/ccpm/snippets/test-snippet.md")
+            .join(".claude/agpm/snippets/test-snippet.md")
             .exists()
     );
     assert!(
@@ -866,7 +866,7 @@ Git status:
 
 #[tokio::test]
 async fn test_gitignore_malformed_existing() {
-    ccpm::test_utils::init_test_logging(None);
+    agpm::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -884,14 +884,14 @@ async fn test_gitignore_malformed_existing() {
     let malformed_content = r#"# Some content
 user-file.txt
 
-# CCPM managed entries - do not edit below this line
+# AGPM managed entries - do not edit below this line
 /old/entry.md
 # Missing end marker!
 "#;
     fs::write(&gitignore_path, malformed_content).await.unwrap();
 
     // Create manifest and lockfile
-    let manifest_path = project_dir.join("ccpm.toml");
+    let manifest_path = project_dir.join("agpm.toml");
     fs::write(
         &manifest_path,
         create_test_manifest(true, &source_dir).await,
@@ -899,13 +899,13 @@ user-file.txt
     .await
     .unwrap();
 
-    let lockfile_path = project_dir.join("ccpm.lock");
+    let lockfile_path = project_dir.join("agpm.lock");
     fs::write(&lockfile_path, create_test_lockfile().await)
         .await
         .unwrap();
 
     // Run install command
-    Command::cargo_bin("ccpm")
+    Command::cargo_bin("agpm")
         .unwrap()
         .arg("install")
         .arg("--quiet")
@@ -914,7 +914,7 @@ user-file.txt
 
     // Check that gitignore was properly recreated
     let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
-    assert!(updated_content.contains("# End of CCPM managed entries"));
+    assert!(updated_content.contains("# End of AGPM managed entries"));
     assert!(updated_content.contains("user-file.txt"));
-    assert!(updated_content.contains("CCPM managed entries"));
+    assert!(updated_content.contains("AGPM managed entries"));
 }

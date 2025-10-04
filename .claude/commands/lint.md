@@ -6,11 +6,11 @@ argument-hint: [ --fix | --check ] [ --all ] [ --doc ] - e.g., "--fix" or "--che
 
 ## Context
 
-- Project name: CCPM (Claude Code Package Manager)
+- Project name: AGPM (Claude Code Package Manager)
 
 ## Your task
 
-Run code quality checks for the CCPM project using specialized Rust agents:
+Run code quality checks for the AGPM project using specialized Rust agents:
 
 1. Parse the arguments:
    - `--fix`: Apply automatic fixes where possible (uses rust-linting-standard)

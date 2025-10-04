@@ -48,7 +48,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -59,7 +59,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
     );
 
     // Verify lockfile was created
-    let lockfile_path = project.project_path().join("ccpm.lock");
+    let lockfile_path = project.project_path().join("agpm.lock");
     FileAssert::exists(&lockfile_path).await;
 
     // Verify lockfile content structure
@@ -152,12 +152,12 @@ installed_at = ".claude/agents/helper.md"
         official_url, official_sha, community_url, community_sha, official_sha, community_sha
     );
 
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
     // Run install command
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -174,15 +174,15 @@ installed_at = ".claude/agents/helper.md"
     DirAssert::contains_file(&agents_dir, "helper.md").await;
 }
 
-/// Test install command without ccpm.toml
+/// Test install command without agpm.toml
 #[tokio::test]
 async fn test_install_without_manifest() {
     let project = TestProject::new().await.unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("Manifest file ccpm.toml not found"),
+        output.stderr.contains("Manifest file agpm.toml not found"),
         "Expected manifest not found error, got: {}",
         output.stderr
     );
@@ -195,7 +195,7 @@ async fn test_install_invalid_manifest_syntax() {
     let manifest_content = ManifestFixture::invalid_syntax().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Invalid manifest file syntax"),
@@ -211,7 +211,7 @@ async fn test_install_missing_manifest_fields() {
     let manifest_content = ManifestFixture::missing_fields().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Missing required field"),
@@ -266,7 +266,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -336,7 +336,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -347,7 +347,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     );
 
     // Verify lockfile was created and contains all dependencies
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
         .await
         .unwrap();
     assert!(lockfile_content.contains("my-agent")); // remote dependency
@@ -362,7 +362,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     let snippets_dir = project
         .project_path()
         .join(".claude")
-        .join("ccpm")
+        .join("agpm")
         .join("snippets");
     assert!(snippets_dir.join("local-utils.md").exists());
 }
@@ -400,7 +400,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 
     // Run install command with verbose flag
     let output = project
-        .run_ccpm(&["install", "--no-cache", "--verbose"])
+        .run_agpm(&["install", "--no-cache", "--verbose"])
         .unwrap();
     output.assert_success();
     assert!(
@@ -442,7 +442,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 
     // Run install command with quiet flag
     let output = project
-        .run_ccpm(&["install", "--no-cache", "--quiet"])
+        .run_agpm(&["install", "--no-cache", "--quiet"])
         .unwrap();
     output.assert_success();
 }
@@ -462,7 +462,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Failed to clone")
@@ -478,7 +478,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 /// Test install help command
 #[tokio::test]
 async fn test_install_help() {
-    let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
+    let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
     cmd.arg("install")
         .arg("--help")
         .assert()
@@ -500,13 +500,13 @@ async fn test_install_corrupted_lockfile() {
 
     // Create corrupted lockfile
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         "corrupted content",
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Invalid lockfile syntax"),

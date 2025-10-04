@@ -176,14 +176,14 @@ impl ResourceTypeExt for ResourceType {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::core::resource_iterator::ResourceIterator;
-/// use ccpm::lockfile::LockFile;
-/// use ccpm::manifest::Manifest;
+/// use agpm::core::resource_iterator::ResourceIterator;
+/// use agpm::lockfile::LockFile;
+/// use agpm::manifest::Manifest;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
-/// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+/// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
+/// let manifest = Manifest::load(Path::new("agpm.toml"))?;
 ///
 /// // Collect all resources for parallel installation
 /// let all_entries = ResourceIterator::collect_all_entries(&lockfile, &manifest);
@@ -497,7 +497,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("jkl012".to_string()),
             checksum: "sha256:jkl4".to_string(),
-            installed_at: ".claude/ccpm/scripts/script1.sh".to_string(),
+            installed_at: ".claude/agpm/scripts/script1.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
         });
@@ -511,7 +511,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("mno345".to_string()),
             checksum: "sha256:mno5".to_string(),
-            installed_at: ".claude/ccpm/hooks/hook1.json".to_string(),
+            installed_at: ".claude/agpm/hooks/hook1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
         });
@@ -525,7 +525,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("pqr678".to_string()),
             checksum: "sha256:pqr6".to_string(),
-            installed_at: ".claude/ccpm/mcp-servers/mcp1.json".to_string(),
+            installed_at: ".claude/agpm/mcp-servers/mcp1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
         });
@@ -539,7 +539,7 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:local".to_string(),
-            installed_at: ".claude/ccpm/snippets/local-snippet.md".to_string(),
+            installed_at: ".claude/agpm/snippets/local-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
         });
@@ -622,7 +622,7 @@ mod tests {
         assert_eq!(entries[0].1, ".claude/agents");
 
         assert_eq!(entries[1].0.name, "test-snippet");
-        assert_eq!(entries[1].1, ".claude/ccpm/snippets");
+        assert_eq!(entries[1].1, ".claude/agpm/snippets");
     }
 
     #[test]
@@ -1089,7 +1089,7 @@ mod tests {
         );
         assert_eq!(
             ResourceType::Snippet.get_target_dir(targets),
-            ".claude/ccpm/snippets"
+            ".claude/agpm/snippets"
         );
         assert_eq!(
             ResourceType::Command.get_target_dir(targets),
@@ -1097,15 +1097,15 @@ mod tests {
         );
         assert_eq!(
             ResourceType::Script.get_target_dir(targets),
-            ".claude/ccpm/scripts"
+            ".claude/agpm/scripts"
         );
         assert_eq!(
             ResourceType::Hook.get_target_dir(targets),
-            ".claude/ccpm/hooks"
+            ".claude/agpm/hooks"
         );
         assert_eq!(
             ResourceType::McpServer.get_target_dir(targets),
-            ".claude/ccpm/mcp-servers"
+            ".claude/agpm/mcp-servers"
         );
     }
 }

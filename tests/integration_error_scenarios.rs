@@ -21,7 +21,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     project.write_manifest(manifest_content).await.unwrap();
 
     // This should fail trying to access the non-existent source
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Failed to clone")
@@ -71,7 +71,7 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
 
     // Note: TestProject uses its own cache dir, so we'd need to modify the test approach
     // For now, let's test that a valid install works and adapt the test
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success(); // This should work with the TestProject setup
 }
 
@@ -103,7 +103,7 @@ test-agent = {{ source = "official", path = "agents/test.md", version = "v1.0.0"
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Corrupted repository")
@@ -130,7 +130,7 @@ secret-agent = { source = "private", path = "agents/secret.md", version = "v1.0.
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Failed to clone")
@@ -168,7 +168,7 @@ invalid yaml: [ unclosed
         .unwrap();
 
     // Now malformed markdown should succeed but emit a warning
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(
         output.success,
         "Expected command to succeed with warning but it failed: {}",
@@ -239,7 +239,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     perms.set_mode(0o444); // Read-only
     fs::set_permissions(&agents_dir, perms).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Failed to install") && output.stderr.contains("resource"),
@@ -288,7 +288,7 @@ malformed-constraint = {{ source = "official", path = "agents/malformed.md", ver
     );
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Invalid version")
@@ -327,13 +327,13 @@ agent_b = { path = "./agents/b.md" }
         .unwrap();
 
     // Test that validation succeeds (no circular dependencies in this simple case)
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     output
         .assert_success()
         .assert_stdout_contains("Valid manifest");
 
     // Test that install works with local files
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 }
 
@@ -361,7 +361,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     output.assert_success(); // Should handle gracefully
     assert!(
         output.stdout.contains("✓")
@@ -404,11 +404,11 @@ version = 1
 name = "official"
 url = "https://github.com/example-org/ccpm-official.git"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), partial_lockfile)
+    fs::write(project.project_path().join("agpm.lock"), partial_lockfile)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Incomplete lockfile")
@@ -436,7 +436,7 @@ test-agent = { source = "invalid_url", path = "agents/test.md", version = "v1.0.
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Invalid URL")
@@ -482,7 +482,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Large files should be handled correctly
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success().assert_stdout_contains("Installed");
 }
 
@@ -511,11 +511,11 @@ local-snippet = { path = "./snippets/local.md" }
 
     // Create lockfile with null bytes (filesystem corruption simulation)
     let corrupted_lockfile = "version = 1\n\0\0\0corrupted\0data\n";
-    fs::write(project.project_path().join("ccpm.lock"), corrupted_lockfile)
+    fs::write(project.project_path().join("agpm.lock"), corrupted_lockfile)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Corrupted")
@@ -574,13 +574,13 @@ installed_at = "agents/local-agent.md"
 # Missing 'helper' and 'utils' from manifest
 "#;
     fs::write(
-        project.project_path().join("ccpm.lock"),
+        project.project_path().join("agpm.lock"),
         incomplete_lockfile,
     )
     .await
     .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("Missing dependencies")
@@ -610,7 +610,7 @@ test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" 
 
     // Set PATH to a location that doesn't contain git
     let output = project
-        .run_ccpm_with_env(&["install"], &[("PATH", "/nonexistent")])
+        .run_agpm_with_env(&["install"], &[("PATH", "/nonexistent")])
         .unwrap();
     assert!(
         !output.success,
@@ -643,7 +643,7 @@ key = "value without closing quote
 "#;
     project.write_manifest(invalid_toml).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("TOML parsing")
@@ -697,11 +697,11 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
     // Create lockfile indicating complete installation
     let lockfile_content = LockfileFixture::basic().content;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded"); // Should detect missing files
     assert!(
         output.stderr.contains("Lockfile inconsistent") || output.stderr.contains("helper"), // Lockfile has helper but manifest doesn't
@@ -739,7 +739,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 
     // This test mainly checks that the system can handle lockfile operations
     // In a real concurrent scenario, we'd expect either success or a conflict detection
-    let output = project.run_ccpm(&["install"]).unwrap();
+    let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success().assert_stdout_contains("Installed"); // File URLs should work correctly now
 }
 
@@ -751,7 +751,7 @@ async fn test_helpful_error_messages() {
     let manifest_content = ManifestFixture::missing_fields().content;
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
         output.stderr.contains("error:"),

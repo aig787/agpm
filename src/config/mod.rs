@@ -1,16 +1,16 @@
-//! Configuration management for CCPM
+//! Configuration management for AGPM
 //!
-//! This module provides comprehensive configuration management for the Claude Code Package Manager (CCPM).
+//! This module provides comprehensive configuration management for the AGent Package Manager (AGPM).
 //! It handles project manifests, global user configuration, and resource metadata with a focus on
 //! security, cross-platform compatibility, and reproducible builds.
 //!
 //! # Architecture Overview
 //!
-//! CCPM uses a multi-layered configuration architecture:
+//! AGPM uses a multi-layered configuration architecture:
 //!
-//! 1. **Global Configuration** (`~/.ccpm/config.toml`) - User-wide settings including authentication
-//! 2. **Project Manifest** (`ccpm.toml`) - Project dependencies and sources
-//! 3. **Lockfile** (`ccpm.lock`) - Resolved versions for reproducible builds
+//! 1. **Global Configuration** (`~/.agpm/config.toml`) - User-wide settings including authentication
+//! 2. **Project Manifest** (`agpm.toml`) - Project dependencies and sources
+//! 3. **Lockfile** (`agpm.lock`) - Resolved versions for reproducible builds
 //! 4. **Resource Metadata** - Agent and snippet configurations embedded in `.md` files
 //!
 //! # Modules
@@ -21,11 +21,11 @@
 //!
 //! # Configuration Files
 //!
-//! ## Global Configuration (`~/.ccpm/config.toml`)
+//! ## Global Configuration (`~/.agpm/config.toml`)
 //!
 //! **Location:**
-//! - Unix/macOS: `~/.ccpm/config.toml`
-//! - Windows: `%LOCALAPPDATA%\ccpm\config.toml`
+//! - Unix/macOS: `~/.agpm/config.toml`
+//! - Windows: `%LOCALAPPDATA%\agpm\config.toml`
 //!
 //! **Purpose:** Store user-wide settings including private repository access tokens.
 //! This file is never committed to version control.
@@ -33,17 +33,17 @@
 //! ```toml
 //! # Global sources with authentication tokens
 //! [sources]
-//! private = "https://oauth2:ghp_xxxxxxxxxxxx@github.com/company/private-ccpm.git"
+//! private = "https://oauth2:ghp_xxxxxxxxxxxx@github.com/company/private-agpm.git"
 //! enterprise = "https://token:abc123@gitlab.company.com/ai/resources.git"
 //! ```
 //!
-//! ## Project Manifest (`ccpm.toml`)
+//! ## Project Manifest (`agpm.toml`)
 //!
 //! **Purpose:** Define project dependencies and public sources. Safe for version control.
 //!
 //! ```toml
 //! [sources]
-//! community = "https://github.com/aig787/ccpm-community.git"
+//! community = "https://github.com/aig787/agpm-community.git"
 //!
 //! [agents]
 //! code-reviewer = { source = "community", path = "agents/code-reviewer.md", version = "v1.2.0" }
@@ -53,7 +53,7 @@
 //! rust-patterns = { source = "community", path = "snippets/rust.md", version = "^2.0" }
 //! ```
 //!
-//! ## Lockfile (`ccpm.lock`)
+//! ## Lockfile (`agpm.lock`)
 //!
 //! **Purpose:** Pin exact versions for reproducible installations. Auto-generated.
 //!
@@ -63,7 +63,7 @@
 //!
 //! [[sources]]
 //! name = "community"
-//! url = "https://github.com/aig787/ccpm-community.git"
+//! url = "https://github.com/aig787/agpm-community.git"
 //! commit = "abc123..."
 //!
 //! [[agents]]
@@ -85,9 +85,9 @@
 //!
 //! ## Configuration Priority
 //!
-//! 1. Environment variables (`CCPM_CONFIG_PATH`, `CCPM_CACHE_DIR`)
-//! 2. Global configuration (`~/.ccpm/config.toml`)
-//! 3. Project manifest (`ccpm.toml`)
+//! 1. Environment variables (`AGPM_CONFIG_PATH`, `AGPM_CACHE_DIR`)
+//! 2. Global configuration (`~/.agpm/config.toml`)
+//! 3. Project manifest (`agpm.toml`)
 //! 4. Default values
 //!
 //! # Resource Metadata
@@ -99,12 +99,12 @@
 //! [metadata]
 //! name = "rust-expert"
 //! description = "Expert Rust development agent"
-//! author = "CCPM Community"
+//! author = "AGPM Community"
 //! license = "MIT"
 //! keywords = ["rust", "programming", "expert"]
 //!
 //! [requirements]
-//! ccpm_version = ">=0.1.0"
+//! agpm_version = ">=0.1.0"
 //! claude_version = "latest"
 //! platforms = ["windows", "macos", "linux"]
 //!
@@ -124,7 +124,7 @@
 //! This module handles cross-platform configuration paths:
 //!
 //! - **Windows**: Uses `%LOCALAPPDATA%` for configuration
-//! - **macOS/Linux**: Uses `$HOME/.ccpm` directory
+//! - **macOS/Linux**: Uses `$HOME/.agpm` directory
 //! - **Path Separators**: Normalized automatically
 //! - **File Permissions**: Handles Windows vs Unix differences
 //!
@@ -133,7 +133,7 @@
 //! ## Loading Global Configuration
 //!
 //! ```rust,no_run
-//! use ccpm::config::{GlobalConfig, GlobalConfigManager};
+//! use agpm::config::{GlobalConfig, GlobalConfigManager};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Simple load
@@ -158,7 +158,7 @@
 //! ## Parsing Resource Metadata
 //!
 //! ```rust,no_run
-//! use ccpm::config::{parse_config, AgentManifest};
+//! use agpm::config::{parse_config, AgentManifest};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -170,7 +170,7 @@
 //!          agent.metadata.author);
 //!
 //! if let Some(requirements) = &agent.requirements {
-//!     println!("Requires CCPM: {:?}", requirements.ccpm_version);
+//!     println!("Requires AGPM: {:?}", requirements.agpm_version);
 //! }
 //! # Ok(())
 //! # }
@@ -179,7 +179,7 @@
 //! ## Source Resolution with Authentication
 //!
 //! ```rust,no_run
-//! use ccpm::config::GlobalConfig;
+//! use agpm::config::GlobalConfig;
 //! use std::collections::HashMap;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -189,7 +189,7 @@
 //! let mut local_sources = HashMap::new();
 //! local_sources.insert(
 //!     "community".to_string(),
-//!     "https://github.com/aig787/ccpm-community.git".to_string()
+//!     "https://github.com/aig787/agpm-community.git".to_string()
 //! );
 //!
 //! // Merge with global sources (may include auth tokens)
@@ -224,17 +224,17 @@ pub type SnippetConfig = SnippetManifest;
 use anyhow::Result;
 use std::path::PathBuf;
 
-/// Get the cache directory for CCPM.
+/// Get the cache directory for AGPM.
 ///
-/// Returns the directory where CCPM stores cached Git repositories and temporary files.
+/// Returns the directory where AGPM stores cached Git repositories and temporary files.
 /// The location follows platform conventions and can be overridden with environment variables.
 ///
 /// # Location Priority
 ///
-/// 1. `CCPM_CACHE_DIR` environment variable (if set)
+/// 1. `AGPM_CACHE_DIR` environment variable (if set)
 /// 2. Platform-specific cache directory:
-///    - Windows: `%LOCALAPPDATA%\ccpm\cache`
-///    - macOS/Linux: `~/.ccpm/cache`
+///    - Windows: `%LOCALAPPDATA%\agpm\cache`
+///    - macOS/Linux: `~/.agpm/cache`
 ///
 /// # Directory Creation
 ///
@@ -243,7 +243,7 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ccpm::config::get_cache_dir;
+/// use agpm::config::get_cache_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache = get_cache_dir()?;
@@ -260,20 +260,20 @@ use std::path::PathBuf;
 /// - Insufficient permissions for directory creation
 pub fn get_cache_dir() -> Result<PathBuf> {
     // Check for environment variable override first (essential for testing)
-    if let Ok(dir) = std::env::var("CCPM_CACHE_DIR") {
+    if let Ok(dir) = std::env::var("AGPM_CACHE_DIR") {
         return Ok(PathBuf::from(dir));
     }
 
-    // Use consistent directory structure with rest of CCPM
+    // Use consistent directory structure with rest of AGPM
     let cache_dir = if cfg!(target_os = "windows") {
         dirs::data_local_dir()
             .ok_or_else(|| anyhow::anyhow!("Unable to determine local data directory"))?
-            .join("ccpm")
+            .join("agpm")
             .join("cache")
     } else {
         dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Unable to determine home directory"))?
-            .join(".ccpm")
+            .join(".agpm")
             .join("cache")
     };
 
@@ -292,6 +292,6 @@ mod tests {
     fn test_get_cache_dir() {
         // Test that we get a valid cache dir
         let dir = get_cache_dir().unwrap();
-        assert!(dir.to_string_lossy().contains("ccpm"));
+        assert!(dir.to_string_lossy().contains("agpm"));
     }
 }

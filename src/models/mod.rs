@@ -1,4 +1,4 @@
-//! Shared data models for CCPM operations
+//! Shared data models for AGPM operations
 //!
 //! This module provides reusable data structures that are used across
 //! different CLI commands and core operations, ensuring consistency

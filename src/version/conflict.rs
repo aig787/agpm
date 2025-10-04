@@ -9,7 +9,7 @@ use semver::{Op, Version, VersionReq};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::core::CcpmError;
+use crate::core::AgpmError;
 use pubgrub::Ranges;
 
 /// Represents a version conflict between dependencies
@@ -339,7 +339,7 @@ impl ConflictDetector {
         if !conflicts.is_empty() {
             let conflict_messages: Vec<String> = conflicts.iter().map(|c| c.to_string()).collect();
 
-            return Err(CcpmError::Other {
+            return Err(AgpmError::Other {
                 message: format!(
                     "Unable to resolve version conflicts:\n{}",
                     conflict_messages.join("\n")
@@ -352,7 +352,7 @@ impl ConflictDetector {
         for (resource, requirements) in &self.requirements {
             let versions = available_versions
                 .get(resource)
-                .ok_or_else(|| CcpmError::Other {
+                .ok_or_else(|| AgpmError::Other {
                     message: format!("No versions available for resource: {}", resource),
                 })?;
 
@@ -383,7 +383,7 @@ impl ConflictDetector {
         }
 
         if candidates.is_empty() {
-            return Err(CcpmError::Other {
+            return Err(AgpmError::Other {
                 message: format!("No version satisfies all requirements: {:?}", requirements),
             }
             .into());

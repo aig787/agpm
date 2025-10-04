@@ -35,7 +35,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     project.write_manifest(&manifest).await?;
 
     // Install first to create lockfile
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Now remove one agent from lockfile to simulate staleness
@@ -59,7 +59,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     }
 
     // Install should auto-update the lockfile (Cargo-style behavior)
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(
         output.success,
         "Install should auto-update lockfile: {}",
@@ -108,7 +108,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest).await?;
 
     // Install v1.0.0
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Update manifest to v2.0.0
@@ -116,7 +116,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest_v2).await?;
 
     // Normal install should auto-update (Cargo-style)
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(
         output.success,
         "Normal install should auto-update: {}",
@@ -125,7 +125,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // Revert to v1.0.0 lockfile
     project.write_manifest(&manifest).await?;
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success);
 
     // Change manifest back to v2.0.0
@@ -133,7 +133,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // --frozen mode should succeed (only checks corruption/security, not version changes)
     // It will use the lockfile as-is with v1.0.0 even though manifest has v2.0.0
-    let output = project.run_ccpm(&["install", "--frozen"])?;
+    let output = project.run_agpm(&["install", "--frozen"])?;
     assert!(
         output.success,
         "Frozen install should succeed (ignores version changes): {}",
@@ -173,7 +173,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     project.write_manifest(&manifest_two_agents).await?;
 
     // Install both agents
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Remove agent-two from manifest (simulating it becoming only a transitive dependency)
@@ -190,7 +190,7 @@ agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "
 
     // Try to install with lockfile containing extra entry in CI mode
     // This should succeed now - extra entries are allowed for transitive dependencies
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
+    let output = project.run_agpm_with_env(&["install"], &[("CI", "true")])?;
     assert!(
         output.success,
         "Install should succeed with extra lockfile entries for transitive deps: {}",
@@ -233,7 +233,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
     project.write_manifest(&manifest_old).await?;
 
     // Install with old path
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Update manifest to new path
@@ -241,7 +241,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
     project.write_manifest(&manifest_new).await?;
 
     // Normal install should auto-update
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(
         output.success,
         "Normal install should auto-update path change: {}",
@@ -250,14 +250,14 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 
     // Revert to old path and reinstall
     project.write_manifest(&manifest_old).await?;
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success);
 
     // Change back to new path
     project.write_manifest(&manifest_new).await?;
 
     // --frozen mode should fail
-    let output = project.run_ccpm(&["install", "--frozen"])?;
+    let output = project.run_agpm(&["install", "--frozen"])?;
     assert!(
         output.success,
         "Frozen mode should succeed (ignores path changes): {}",
@@ -300,7 +300,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest_old).await?;
 
     // Install from old repo
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Update manifest to point to new repo
@@ -316,7 +316,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest_new).await?;
 
     // --frozen mode should fail on source URL change (security concern)
-    let output = project.run_ccpm(&["install", "--frozen"])?;
+    let output = project.run_agpm(&["install", "--frozen"])?;
     assert!(
         !output.success,
         "Should fail on source URL change (security)"
@@ -361,7 +361,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest).await?;
 
     // First do a normal install to create a valid lockfile
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Read the valid lockfile and manually duplicate an entry
@@ -386,7 +386,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     }
 
     // --frozen mode should fail on corrupted lockfile
-    let output = project.run_ccpm(&["install", "--frozen"])?;
+    let output = project.run_agpm(&["install", "--frozen"])?;
     assert!(
         !output.success,
         "Expected failure due to duplicate entries, but command succeeded"
@@ -434,12 +434,12 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest).await?;
 
     // Install to create lockfile
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Try to install again - should succeed because branches are allowed to move
     // This is expected behavior with auto-update
-    let output = project.run_ccpm(&["install", "--quiet"])?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(
         output.success,
         "Install should succeed with branch references, got error: {}",

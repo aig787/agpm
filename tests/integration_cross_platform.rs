@@ -85,7 +85,7 @@ local-snippet = {{ path = "./snippets/local.md" }}
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 }
@@ -129,7 +129,7 @@ official = "{}"
 
     project.write_manifest(&manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(output.success); // Should handle long paths gracefully
     assert!(output.stdout.contains("Installed") || output.stdout.contains("Installing"));
 }
@@ -174,12 +174,12 @@ MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Pass explicit manifest path to avoid path resolution issues
-    let manifest_path = project.project_path().join("ccpm.toml");
+    let manifest_path = project.project_path().join("agpm.toml");
 
     // Validation should fail with case conflict error on all platforms
     // to ensure manifests are portable
     let output = project
-        .run_ccpm(&[
+        .run_agpm(&[
             "--manifest-path",
             manifest_path.to_str().unwrap(),
             "validate",
@@ -200,7 +200,7 @@ async fn test_home_directory_expansion() {
     let manifest_content = if cfg!(windows) {
         r#"
 [sources]
-local = "~/ccpm-sources/local.git"
+local = "~/agpm-sources/local.git"
 
 [agents]
 home-agent = { source = "local", path = "agents/home-agent.md", version = "v1.0.0" }
@@ -211,7 +211,7 @@ home-snippet = { path = "~\\Documents\\snippets\\home.md" }
     } else {
         r#"
 [sources]
-local = "~/ccpm-sources/local.git"
+local = "~/agpm-sources/local.git"
 
 [agents]
 home-agent = { source = "local", path = "agents/home-agent.md", version = "v1.0.0" }
@@ -223,7 +223,7 @@ home-snippet = { path = "~/Documents/snippets/home.md" }
 
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success); // Home directory expansion should work and validation should pass
     assert!(output.stdout.contains("✓")); // Should succeed with valid manifest structure
 }
@@ -235,14 +235,14 @@ async fn test_line_endings() {
 
     // Create manifest with different line endings
     let manifest_content = if cfg!(windows) {
-        "[sources]\r\nofficial = \"https://github.com/example-org/ccpm-official.git\"\r\n\r\n[agents]\r\ntest-agent = { source = \"official\", path = \"agents/test.md\", version = \"v1.0.0\" }\r\n"
+        "[sources]\r\nofficial = \"https://github.com/example-org/agpm-official.git\"\r\n\r\n[agents]\r\ntest-agent = { source = \"official\", path = \"agents/test.md\", version = \"v1.0.0\" }\r\n"
     } else {
-        "[sources]\nofficial = \"https://github.com/example-org/ccpm-official.git\"\n\n[agents]\ntest-agent = { source = \"official\", path = \"agents/test.md\", version = \"v1.0.0\" }\n"
+        "[sources]\nofficial = \"https://github.com/example-org/agpm-official.git\"\n\n[agents]\ntest-agent = { source = \"official\", path = \"agents/test.md\", version = \"v1.0.0\" }\n"
     };
 
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 }
@@ -277,7 +277,7 @@ test-agent = {{ source = "official", path = "agents/test-agent.md", version = "v
 
     // This test verifies that git commands work on all platforms
     // The specific git executable name might differ (git vs git.exe)
-    let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
+    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
 
     // Should at least start the installation process (either "Installing" or "Cloning")
     assert!(
@@ -342,9 +342,9 @@ remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1
     fs::set_permissions(&parent_dir, perms).await.unwrap();
 
     let output = project
-        .run_ccpm_with_env(
+        .run_agpm_with_env(
             &["install"],
-            &[("CCPM_CACHE_DIR", restricted_cache.to_str().unwrap())],
+            &[("AGPM_CACHE_DIR", restricted_cache.to_str().unwrap())],
         )
         .unwrap();
     assert!(!output.success);
@@ -372,7 +372,7 @@ async fn test_windows_drive_letters() {
     let manifest_content = format!(
         r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [snippets]
 absolute-snippet = {{ path = "C:\\temp\\snippet.md" }}
@@ -395,7 +395,7 @@ relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(!output.success); // Absolute paths likely don't exist
     assert!(
         output
@@ -447,7 +447,7 @@ concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", 
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Test basic validation first to ensure the setup is correct
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 
@@ -458,11 +458,11 @@ concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", 
         let project_path = project.project_path().to_path_buf();
         let cache_path = project.cache_path().to_path_buf();
         let handle = std::thread::spawn(move || {
-            let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
+            let mut cmd = assert_cmd::Command::cargo_bin("agpm").unwrap();
             cmd.current_dir(&project_path)
-                .env("CCPM_CACHE_DIR", &cache_path)
+                .env("AGPM_CACHE_DIR", &cache_path)
                 .arg("validate")
-                .env("CCPM_PARALLEL_ID", i.to_string())
+                .env("AGPM_PARALLEL_ID", i.to_string())
                 .assert()
                 .success();
         });
@@ -475,7 +475,7 @@ concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", 
     }
 
     // Test that the manifest remains valid after concurrent access
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 }
@@ -497,7 +497,7 @@ async fn test_unicode_filenames() {
 
     project.write_manifest(manifest_content).await.unwrap();
 
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success); // Should handle Unicode gracefully
     assert!(output.stdout.contains("✓"));
 }
@@ -532,7 +532,7 @@ symlink-snippet = {{ path = "{}/snippet.md" }}
         .await
         .unwrap();
 
-    let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Should follow symlinks
     assert!(output.stdout.contains("✓"));
 }
@@ -543,7 +543,7 @@ async fn test_shell_compatibility() {
     let project = TestProject::new().await.unwrap();
     let manifest_content = r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
@@ -551,12 +551,12 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     project.write_manifest(manifest_content).await.unwrap();
 
     // Test that commands work regardless of shell (bash, zsh, cmd, PowerShell)
-    let output = project.run_ccpm(&["--help"]).unwrap();
+    let output = project.run_agpm(&["--help"]).unwrap();
     assert!(output.success);
     assert!(
         output
             .stdout
-            .contains("CCPM is a Git-based package manager")
+            .contains("AGPM is a Git-based package manager")
     );
 }
 
@@ -593,7 +593,7 @@ temp-test-agent = {{ source = "official", path = "agents/temp-test-agent.md", ve
 
     // Test that temp directories are created in platform-appropriate locations
     // For now, we just test that validation succeeds as this validates the manifest structure
-    let output = project.run_ccpm(&["validate"]).unwrap();
+    let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 

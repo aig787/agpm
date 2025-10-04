@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use ccpm::utils::{ensure_dir, atomic_write, MultiPhaseProgress, InstallationPhase};
+//! use agpm::utils::{ensure_dir, atomic_write, MultiPhaseProgress, InstallationPhase};
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -71,7 +71,7 @@ pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_d
 /// # Examples
 ///
 /// ```
-/// use ccpm::utils::is_local_path;
+/// use agpm::utils::is_local_path;
 ///
 /// // Unix-style paths
 /// assert!(is_local_path("/absolute/path"));
@@ -125,7 +125,7 @@ pub fn is_local_path(url: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use ccpm::utils::is_git_url;
+/// use agpm::utils::is_git_url;
 ///
 /// assert!(is_git_url("https://github.com/user/repo.git"));
 /// assert!(is_git_url("git@github.com:user/repo.git"));

@@ -533,7 +533,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -684,7 +684,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -727,7 +727,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();
@@ -1010,7 +1010,7 @@ mod tests {
             .unwrap();
 
         Command::new("git")
-            .args(["config", "user.name", "CCPM Test"])
+            .args(["config", "user.name", "AGPM Test"])
             .current_dir(repo_path)
             .output()
             .unwrap();

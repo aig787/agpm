@@ -1,5 +1,5 @@
 #!/bin/bash
-# Example setup script demonstrating CCPM with a local Git repository
+# Example setup script demonstrating AGPM with a local Git repository
 # This script sets up a complete Claude Code project with agents, snippets,
 # commands, and MCP servers from a local repository
 
@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║          CCPM Example Project Setup Script                         ║${NC}"
+echo -e "${BLUE}║          AGPM Example Project Setup Script                         ║${NC}"
 echo -e "${BLUE}║        Demonstrating Transitive Dependency Resolution              ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -30,8 +30,8 @@ echo "→ Cleaning up previous example (if exists)"
 rm -rf "$PROJECT_DIR"
 
 
-# Ensure ccpm is built
-echo "→ Building ccpm"
+# Ensure agpm is built
+echo "→ Building agpm"
 cd "$(dirname "$SCRIPT_DIR")"
 cargo build --release
 
@@ -39,7 +39,7 @@ cargo build --release
 export PATH="$PWD/target/release:$PATH"
 
 echo ""
-echo -e "${GREEN}✓ Using ccpm from: $(which ccpm)${NC}"
+echo -e "${GREEN}✓ Using agpm from: $(which agpm)${NC}"
 echo ""
 
 # Create project directory
@@ -47,9 +47,9 @@ echo "→ Creating directory: $PROJECT_DIR"
 mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR"
 
-# Initialize CCPM manifest
-echo "→ Initializing CCPM manifest"
-ccpm init
+# Initialize AGPM manifest
+echo "→ Initializing AGPM manifest"
+agpm init
 
 # Show initial project structure
 echo ""
@@ -59,54 +59,54 @@ tree -a -L 4
 # Add the local-deps source (local directory)
 echo ""
 echo "→ Adding local-deps source (local directory)"
-ccpm add source local-deps "$DEPS_DIR"
+agpm add source local-deps "$DEPS_DIR"
 
 # Add the ccpm-community GitHub repository
 echo ""
 echo "→ Adding ccpm-community GitHub repository"
-ccpm add source community "https://github.com/aig787/ccpm-community.git"
+agpm add source community "https://github.com/aig787/ccpm-community.git"
 
 # Add resources with transitive dependencies via commands (using local source)
 echo ""
 echo -e "${YELLOW}→ Adding commands (which have transitive dependencies)${NC}"
 echo "  - git-auto-commit depends on: rust-haiku agent, commit-message snippet"
 echo "  - format-json depends on: javascript-haiku agent, data-validation snippet"
-ccpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
-ccpm add dep command local-deps:commands/format-json.md --name format-json
+agpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
+agpm add dep command local-deps:commands/format-json.md --name format-json
 
 echo ""
 echo -e "${YELLOW}→ Adding agents (which also have dependencies)${NC}"
 echo "  - rust-haiku depends on: error-analysis, unit-test-creation snippets"
 echo "  - javascript-haiku depends on: test-automation, data-validation snippets"
-ccpm add dep agent local-deps:agents/rust-haiku.md --name rust-haiku
-ccpm add dep agent local-deps:agents/javascript-haiku.md --name javascript-haiku
+agpm add dep agent local-deps:agents/rust-haiku.md --name rust-haiku
+agpm add dep agent local-deps:agents/javascript-haiku.md --name javascript-haiku
 
 echo ""
 echo -e "${YELLOW}→ Adding base snippets (dependencies of other resources)${NC}"
-ccpm add dep snippet local-deps:snippets/error-analysis.md --name error-analysis
-ccpm add dep snippet local-deps:snippets/unit-test-creation.md --name unit-tests
-ccpm add dep snippet local-deps:snippets/commit-message.md --name commit-message
-ccpm add dep snippet local-deps:snippets/data-validation.md --name data-validation
-ccpm add dep snippet local-deps:snippets/test-automation.md --name test-automation
+agpm add dep snippet local-deps:snippets/error-analysis.md --name error-analysis
+agpm add dep snippet local-deps:snippets/unit-test-creation.md --name unit-tests
+agpm add dep snippet local-deps:snippets/commit-message.md --name commit-message
+agpm add dep snippet local-deps:snippets/data-validation.md --name data-validation
+agpm add dep snippet local-deps:snippets/test-automation.md --name test-automation
 
 echo ""
 echo "→ Adding 2 scripts via command"
-ccpm add dep script local-deps:scripts/build.sh --name build
-ccpm add dep script local-deps:scripts/test.js --name test
+agpm add dep script local-deps:scripts/build.sh --name build
+agpm add dep script local-deps:scripts/test.js --name test
 
 echo ""
 echo "→ Adding 2 hooks via command"
-ccpm add dep hook local-deps:hooks/pre-tool-use.json --name pre-tool-use
-ccpm add dep hook local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
+agpm add dep hook local-deps:hooks/pre-tool-use.json --name pre-tool-use
+agpm add dep hook local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
 
 echo ""
 echo "→ Adding 2 MCP servers via command"
-ccpm add dep mcp-server local-deps:mcp-servers/filesystem.json --name filesystem
-ccpm add dep mcp-server local-deps:mcp-servers/fetch.json --name fetch
+agpm add dep mcp-server local-deps:mcp-servers/filesystem.json --name filesystem
+agpm add dep mcp-server local-deps:mcp-servers/fetch.json --name fetch
 
 echo ""
-echo "→ Adding remaining resources directly to ccpm.toml"
-cat >> ccpm.toml << 'EOF'
+echo "→ Adding remaining resources directly to agpm.toml"
+cat >> agpm.toml << 'EOF'
 
 [agents]
 # Additional agents from ccpm-community
@@ -136,30 +136,30 @@ EOF
 
 # Show the generated manifest
 echo ""
-echo "→ Generated ccpm.toml:"
-cat ccpm.toml
+echo "→ Generated agpm.toml:"
+cat agpm.toml
 
 # Validate the manifest
 echo ""
 echo "→ Validating manifest"
-ccpm validate
+agpm validate
 
 # Install dependencies
 echo ""
-echo "→ Installing dependencies with CCPM"
+echo "→ Installing dependencies with AGPM"
 # Remove lockfile since we appended to the manifest
-rm -f ccpm.lock
-ccpm install
+rm -f agpm.lock
+agpm install
 
 # List installed resources
 echo ""
 echo "→ Listing installed resources"
-ccpm list
+agpm list
 
 # Update dependencies
 echo ""
-echo "→ Updating dependathies with CCPM"
-ccpm update
+echo "→ Updating dependathies with AGPM"
+agpm update
 
 
 echo ""
@@ -169,7 +169,7 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo "Your Claude Code project '$PROJECT_NAME' is ready:"
 echo ""
-ccpm tree
+agpm tree
 
 # Show final structure
 echo ""

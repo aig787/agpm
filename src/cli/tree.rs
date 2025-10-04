@@ -19,27 +19,27 @@
 //!
 //! Display the full dependency tree:
 //! ```bash
-//! ccpm tree
+//! agpm tree
 //! ```
 //!
 //! Limit tree depth:
 //! ```bash
-//! ccpm tree --depth 2
+//! agpm tree --depth 2
 //! ```
 //!
 //! Show tree for a specific package:
 //! ```bash
-//! ccpm tree --package my-agent
+//! agpm tree --package my-agent
 //! ```
 //!
 //! Show only duplicates:
 //! ```bash
-//! ccpm tree --duplicates
+//! agpm tree --duplicates
 //! ```
 //!
 //! Output as JSON:
 //! ```bash
-//! ccpm tree --format json
+//! agpm tree --format json
 //! ```
 //!
 //! # Output Format
@@ -84,8 +84,8 @@ pub struct TreeCommand {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm tree --depth 1    # Show only direct dependencies
-    /// ccpm tree --depth 3    # Show up to 3 levels
+    /// agpm tree --depth 1    # Show only direct dependencies
+    /// agpm tree --depth 3    # Show up to 3 levels
     /// ```
     #[arg(short = 'd', long)]
     depth: Option<usize>,
@@ -121,8 +121,8 @@ pub struct TreeCommand {
     /// # Examples
     ///
     /// ```bash
-    /// ccpm tree --package my-agent
-    /// ccpm tree -p code-reviewer
+    /// agpm tree --package my-agent
+    /// agpm tree -p code-reviewer
     /// ```
     #[arg(short = 'p', long)]
     package: Option<String>,
@@ -167,7 +167,7 @@ impl TreeCommand {
 
         // Find manifest file
         let manifest_path = find_manifest_with_optional(manifest_path)
-            .context("No ccpm.toml found. Please create one to define your dependencies.")?;
+            .context("No agpm.toml found. Please create one to define your dependencies.")?;
 
         self.execute_from_path(manifest_path).await
     }
@@ -185,7 +185,7 @@ impl TreeCommand {
         }
 
         let project_dir = manifest_path.parent().unwrap();
-        let lockfile_path = project_dir.join("ccpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         // Derive project name from directory
         let project_name = project_dir
@@ -200,7 +200,7 @@ impl TreeCommand {
                 println!("{{}}");
             } else {
                 println!("No lockfile found.");
-                println!("⚠️  Run 'ccpm install' first to generate ccpm.lock");
+                println!("⚠️  Run 'agpm install' first to generate agpm.lock");
             }
             return Ok(());
         }
