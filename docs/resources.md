@@ -187,7 +187,7 @@ After installation, `.mcp.json` contains both user and AGPM-managed servers:
         "--root",
         "./data"
       ],
-      "_ccpm": {
+      "_agpm": {
         "managed": true,
         "config_file": ".claude/agpm/mcp-servers/filesystem.json",
         "installed_at": "2024-01-15T10:30:00Z"

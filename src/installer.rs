@@ -1962,35 +1962,35 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     add_resource_paths(&lockfile.mcp_servers);
 
     // Read existing gitignore if it exists
-    let mut before_ccpm_section = Vec::new();
-    let mut after_ccpm_section = Vec::new();
+    let mut before_agpm_section = Vec::new();
+    let mut after_agpm_section = Vec::new();
 
     if gitignore_path.exists() {
         let content = fs::read_to_string(&gitignore_path)
             .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
 
-        let mut in_ccpm_section = false;
-        let mut past_ccpm_section = false;
+        let mut in_agpm_section = false;
+        let mut past_agpm_section = false;
 
         for line in content.lines() {
             if line == "# AGPM managed entries - do not edit below this line" {
-                in_ccpm_section = true;
+                in_agpm_section = true;
                 continue;
             } else if line == "# End of AGPM managed entries" {
-                in_ccpm_section = false;
-                past_ccpm_section = true;
+                in_agpm_section = false;
+                past_agpm_section = true;
                 continue;
             }
 
-            if !in_ccpm_section && !past_ccpm_section {
+            if !in_agpm_section && !past_agpm_section {
                 // Preserve everything before AGPM section exactly as-is
-                before_ccpm_section.push(line.to_string());
-            } else if in_ccpm_section {
+                before_agpm_section.push(line.to_string());
+            } else if in_agpm_section {
                 // Skip existing AGPM entries (they'll be replaced)
                 continue;
             } else {
                 // Preserve everything after AGPM section exactly as-is
-                after_ccpm_section.push(line.to_string());
+                after_agpm_section.push(line.to_string());
             }
         }
     }
@@ -1999,13 +1999,13 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     let mut new_content = String::new();
 
     // Add everything before AGPM section exactly as it was
-    if !before_ccpm_section.is_empty() {
-        for line in &before_ccpm_section {
+    if !before_agpm_section.is_empty() {
+        for line in &before_agpm_section {
             new_content.push_str(line);
             new_content.push('\n');
         }
         // Add blank line before AGPM section if the previous content doesn't end with one
-        if !before_ccpm_section.is_empty() && !before_ccpm_section.last().unwrap().trim().is_empty()
+        if !before_agpm_section.is_empty() && !before_agpm_section.last().unwrap().trim().is_empty()
         {
             new_content.push('\n');
         }
@@ -2035,16 +2035,16 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     new_content.push_str("# End of AGPM managed entries\n");
 
     // Add everything after AGPM section exactly as it was
-    if !after_ccpm_section.is_empty() {
+    if !after_agpm_section.is_empty() {
         new_content.push('\n');
-        for line in &after_ccpm_section {
+        for line in &after_agpm_section {
             new_content.push_str(line);
             new_content.push('\n');
         }
     }
 
     // If this is a new file, add a basic header
-    if before_ccpm_section.is_empty() && after_ccpm_section.is_empty() {
+    if before_agpm_section.is_empty() && after_agpm_section.is_empty() {
         let mut default_content = String::new();
         default_content.push_str("# .gitignore - AGPM managed entries\n");
         default_content.push_str("# AGPM entries are automatically generated\n");

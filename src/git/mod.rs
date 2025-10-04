@@ -633,8 +633,8 @@ impl GitRepo {
             .map_err(|e| {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
-                if let Some(ccpm_err) = e.downcast_ref::<AgpmError>()
-                    && matches!(ccpm_err, AgpmError::GitCheckoutFailed { .. })
+                if let Some(agpm_err) = e.downcast_ref::<AgpmError>()
+                    && matches!(agpm_err, AgpmError::GitCheckoutFailed { .. })
                 {
                     return e;
                 }
