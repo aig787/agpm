@@ -1063,7 +1063,7 @@ impl GitRepo {
             return if std::path::Path::new(path).exists() {
                 Ok(())
             } else {
-                Err(anyhow::anyhow!("Local path does not exist: {}", path))
+                Err(anyhow::anyhow!("Local path does not exist: {path}"))
             };
         }
 
@@ -1099,7 +1099,7 @@ impl GitRepo {
             check_cmd
                 .execute_success()
                 .await
-                .map_err(|e| anyhow::anyhow!("Bare repository has no refs available: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Bare repository has no refs available: {e}"))?;
         }
 
         Ok(())
@@ -1232,7 +1232,7 @@ impl GitRepo {
         &self,
         worktree_path: impl AsRef<Path>,
         reference: Option<&str>,
-    ) -> Result<GitRepo> {
+    ) -> Result<Self> {
         self.create_worktree_with_context(worktree_path, reference, None)
             .await
     }
@@ -1256,7 +1256,7 @@ impl GitRepo {
         worktree_path: impl AsRef<Path>,
         reference: Option<&str>,
         context: Option<&str>,
-    ) -> Result<GitRepo> {
+    ) -> Result<Self> {
         let worktree_path = worktree_path.as_ref();
 
         // Ensure parent directory exists
@@ -1303,9 +1303,9 @@ impl GitRepo {
             let result = cmd.execute_success().await;
 
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     // Initialize and update submodules in the new worktree
-                    let worktree_repo = GitRepo::new(worktree_path);
+                    let worktree_repo = Self::new(worktree_path);
 
                     // Initialize submodules
                     let mut init_cmd = GitCommand::new()
@@ -1382,9 +1382,9 @@ impl GitRepo {
                         }
 
                         match force_cmd.execute_success().await {
-                            Ok(_) => {
+                            Ok(()) => {
                                 // Initialize and update submodules in the new worktree
-                                let worktree_repo = GitRepo::new(worktree_path);
+                                let worktree_repo = Self::new(worktree_path);
 
                                 let mut init_cmd = GitCommand::new()
                                     .args(["submodule", "init"])
@@ -1432,9 +1432,9 @@ impl GitRepo {
                         let head_result = head_cmd.execute_success().await;
 
                         match head_result {
-                            Ok(_) => {
+                            Ok(()) => {
                                 // Initialize and update submodules in the new worktree
-                                let worktree_repo = GitRepo::new(worktree_path);
+                                let worktree_repo = Self::new(worktree_path);
 
                                 // Initialize submodules
                                 let mut init_cmd = GitCommand::new()
@@ -1486,8 +1486,7 @@ impl GitRepo {
                             || error_str.contains("unknown revision"))
                     {
                         return Err(anyhow::anyhow!(
-                            "Invalid version or reference '{}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository",
-                            ref_name
+                            "Invalid version or reference '{ref_name}': Failed to checkout reference - the specified version/tag/branch does not exist in the repository"
                         ));
                     }
 
@@ -1747,7 +1746,7 @@ impl GitRepo {
         let ref_to_resolve = if !reference.contains('/') && reference != "HEAD" {
             // Looks like a branch name (not a tag or special ref)
             // Try origin/branch first
-            let origin_ref = format!("origin/{}", reference);
+            let origin_ref = format!("origin/{reference}");
             if GitCommand::rev_parse(&origin_ref)
                 .current_dir(&self.path)
                 .execute_stdout()
@@ -1768,21 +1767,17 @@ impl GitRepo {
             .current_dir(&self.path)
             .execute_stdout()
             .await
-            .with_context(|| format!("Failed to resolve reference '{}' to SHA", reference))?;
+            .with_context(|| format!("Failed to resolve reference '{reference}' to SHA"))?;
 
         // Ensure we have a full SHA (sometimes rev-parse can return short SHAs)
         if sha.len() < 40 {
             // Request the full SHA explicitly
             let full_sha = GitCommand::new()
-                .args([
-                    "rev-parse",
-                    "--verify",
-                    &format!("{}^{{commit}}", reference),
-                ])
+                .args(["rev-parse", "--verify", &format!("{reference}^{{commit}}")])
                 .current_dir(&self.path)
                 .execute_stdout()
                 .await
-                .with_context(|| format!("Failed to get full SHA for reference '{}'", reference))?;
+                .with_context(|| format!("Failed to get full SHA for reference '{reference}'"))?;
             Ok(full_sha)
         } else {
             Ok(sha)
@@ -2339,10 +2334,9 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
             let repo_name = &url[last_slash + 1..];
             let repo_name = repo_name.trim_end_matches(".git");
             return Ok(("local".to_string(), repo_name.to_string()));
-        } else {
-            let repo_name = url.trim_end_matches(".git");
-            return Ok(("local".to_string(), repo_name.to_string()));
         }
+        let repo_name = url.trim_end_matches(".git");
+        return Ok(("local".to_string(), repo_name.to_string()));
     }
 
     // Handle SSH URLs like git@github.com:user/repo.git

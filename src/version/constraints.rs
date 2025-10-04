@@ -282,9 +282,7 @@ impl VersionConstraint {
                     || trimmed.starts_with('<')
                 {
                     return Err(anyhow::anyhow!(
-                        "Invalid semver constraint '{}': {}",
-                        trimmed,
-                        e
+                        "Invalid semver constraint '{trimmed}': {e}"
                     ));
                 }
                 // Otherwise it might be a git ref, continue
@@ -495,7 +493,7 @@ impl VersionConstraint {
     /// During version resolution, if any constraint in a set allows prereleases,
     /// the entire constraint set will consider prerelease versions as candidates.
     #[must_use]
-    pub fn allows_prerelease(&self) -> bool {
+    pub const fn allows_prerelease(&self) -> bool {
         matches!(self, Self::LatestPrerelease | Self::GitRef(_))
     }
 }
@@ -611,7 +609,7 @@ impl ConstraintSet {
     ///
     /// Returns a new `ConstraintSet` with no constraints
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             constraints: Vec::new(),
         }

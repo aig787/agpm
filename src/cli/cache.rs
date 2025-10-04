@@ -326,7 +326,7 @@ impl CacheCommand {
         if let Ok(removed) = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await
             && removed > 0
         {
-            println!("  Removed {} stale lock files", removed);
+            println!("  Removed {removed} stale lock files");
         }
 
         cache.clear_all().await?;
@@ -379,16 +379,13 @@ impl CacheCommand {
         println!("🔍 Scanning for unused cache entries...");
 
         // Find manifest to get active sources
-        let active_sources = match find_manifest_with_optional(manifest_path) {
-            Ok(manifest_path) => {
-                let manifest = Manifest::load(&manifest_path)?;
-                manifest.sources.keys().cloned().collect::<Vec<_>>()
-            }
-            Err(_) => {
-                // No manifest found, can't determine what's in use
-                println!("⚠️  No agpm.toml found. Use --all to clear entire cache.");
-                return Ok(());
-            }
+        let active_sources = if let Ok(manifest_path) = find_manifest_with_optional(manifest_path) {
+            let manifest = Manifest::load(&manifest_path)?;
+            manifest.sources.keys().cloned().collect::<Vec<_>>()
+        } else {
+            // No manifest found, can't determine what's in use
+            println!("⚠️  No agpm.toml found. Use --all to clear entire cache.");
+            return Ok(());
         };
 
         let removed = cache.clean_unused(&active_sources).await?;
@@ -402,10 +399,10 @@ impl CacheCommand {
         if removed > 0 || lock_removed > 0 {
             let mut messages = Vec::new();
             if removed > 0 {
-                messages.push(format!("{} unused cache entries", removed));
+                messages.push(format!("{removed} unused cache entries"));
             }
             if lock_removed > 0 {
-                messages.push(format!("{} stale lock files", lock_removed));
+                messages.push(format!("{lock_removed} stale lock files"));
             }
             println!(
                 "{}",

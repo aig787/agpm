@@ -368,8 +368,7 @@ impl ListCommand {
                 "agents" | "snippets" => {}
                 _ => {
                     return Err(anyhow::anyhow!(
-                        "Invalid type '{}'. Valid types are: agents, snippets",
-                        t
+                        "Invalid type '{t}'. Valid types are: agents, snippets"
                     ));
                 }
             }
@@ -381,8 +380,7 @@ impl ListCommand {
                 "name" | "version" | "source" | "type" => {}
                 _ => {
                     return Err(anyhow::anyhow!(
-                        "Invalid sort field '{}'. Valid fields are: name, version, source, type",
-                        field
+                        "Invalid sort field '{field}'. Valid fields are: name, version, source, type"
                     ));
                 }
             }
@@ -512,7 +510,7 @@ impl ListCommand {
         // Check if there's a type filter
         if let Some(ref t) = self.r#type {
             let type_str = resource_type.to_string();
-            return t == &type_str || t == &format!("{}s", type_str);
+            return t == &type_str || t == &format!("{type_str}s");
         }
 
         // Check individual flags

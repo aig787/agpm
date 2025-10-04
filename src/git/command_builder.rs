@@ -309,13 +309,13 @@ impl GitCommand {
     ///
     /// When stdio is inherited, you cannot use [`execute`](Self::execute) to
     /// capture output. Use [`execute_success`](Self::execute_success) instead.
-    pub fn inherit_stdio(mut self) -> Self {
+    pub const fn inherit_stdio(mut self) -> Self {
         self.capture_output = false;
         self
     }
 
     /// Set a custom timeout for the command (None for no timeout)
-    pub fn with_timeout(mut self, duration: Option<Duration>) -> Self {
+    pub const fn with_timeout(mut self, duration: Option<Duration>) -> Self {
         self.timeout_duration = duration;
         self
     }
@@ -411,53 +411,49 @@ impl GitCommand {
 
         let output_future = cmd.output();
 
-        let output = match self.timeout_duration {
-            Some(duration) => match timeout(duration, output_future).await {
-                Ok(result) => {
-                    tracing::trace!(target: "git", "Command completed within timeout");
-                    result.context(format!("Failed to execute git {}", full_args.join(" ")))?
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        target: "git",
-                        "Command timed out after {} seconds: git {}",
+        let output = if let Some(duration) = self.timeout_duration {
+            if let Ok(result) = timeout(duration, output_future).await {
+                tracing::trace!(target: "git", "Command completed within timeout");
+                result.context(format!("Failed to execute git {}", full_args.join(" ")))?
+            } else {
+                tracing::warn!(
+                    target: "git",
+                    "Command timed out after {} seconds: git {}",
+                    duration.as_secs(),
+                    full_args.join(" ")
+                );
+                // Extract the actual git operation (skip -C and path if present)
+                let git_operation =
+                    if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
+                        full_args
+                            .get(2)
+                            .cloned()
+                            .unwrap_or_else(|| "unknown".to_string())
+                    } else {
+                        full_args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "unknown".to_string())
+                    };
+                return Err(AgpmError::GitCommandError {
+                    operation: git_operation,
+                    stderr: format!(
+                        "Git command timed out after {} seconds. This may indicate:\n\
+                        - Network connectivity issues\n\
+                        - Authentication prompts waiting for input\n\
+                        - Large repository operations taking too long\n\
+                        Try running the command manually: git {}",
                         duration.as_secs(),
                         full_args.join(" ")
-                    );
-                    // Extract the actual git operation (skip -C and path if present)
-                    let git_operation =
-                        if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
-                            full_args
-                                .get(2)
-                                .cloned()
-                                .unwrap_or_else(|| "unknown".to_string())
-                        } else {
-                            full_args
-                                .first()
-                                .cloned()
-                                .unwrap_or_else(|| "unknown".to_string())
-                        };
-                    return Err(AgpmError::GitCommandError {
-                        operation: git_operation,
-                        stderr: format!(
-                            "Git command timed out after {} seconds. This may indicate:\n\
-                                - Network connectivity issues\n\
-                                - Authentication prompts waiting for input\n\
-                                - Large repository operations taking too long\n\
-                                Try running the command manually: git {}",
-                            duration.as_secs(),
-                            full_args.join(" ")
-                        ),
-                    }
-                    .into());
+                    ),
                 }
-            },
-            None => {
-                tracing::trace!(target: "git", "Executing command without timeout");
-                output_future
-                    .await
-                    .context(format!("Failed to execute git {}", full_args.join(" ")))?
+                .into());
             }
+        } else {
+            tracing::trace!(target: "git", "Executing command without timeout");
+            output_future
+                .await
+                .context(format!("Failed to execute git {}", full_args.join(" ")))?
         };
 
         if !output.status.success() {
@@ -501,7 +497,7 @@ impl GitCommand {
             } else if effective_args.first().is_some_and(|arg| arg == "worktree") {
                 let subcommand = effective_args.get(1).cloned().unwrap_or_default();
                 AgpmError::GitCommandError {
-                    operation: format!("worktree {}", subcommand),
+                    operation: format!("worktree {subcommand}"),
                     stderr: if stderr.is_empty() {
                         stdout.to_string()
                     } else {
@@ -785,9 +781,9 @@ impl GitCommand {
         // Local repositories (file://, absolute paths, relative paths) need full clones
         // to work properly with worktrees, especially when they're bare repositories
         let is_local = url.starts_with("file://")
-            || url.starts_with("/")
-            || url.starts_with(".")
-            || url.starts_with("~")
+            || url.starts_with('/')
+            || url.starts_with('.')
+            || url.starts_with('~')
             || (url.len() > 1 && url.chars().nth(1) == Some(':')); // Windows paths like C:
 
         if !is_local {

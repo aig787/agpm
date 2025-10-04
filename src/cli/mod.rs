@@ -41,7 +41,7 @@
 //! agpm init
 //!
 //! # 2. Add sources and dependencies
-//! agpm add source official https://github.com/org/ccpm-resources.git
+//! agpm add source official https://github.com/org/agpm-resources.git
 //! agpm add dep official:agents/code-reviewer.md@v1.0.0 --agent
 //!
 //! # 3. Install dependencies
@@ -122,6 +122,7 @@ mod config;
 mod init;
 mod install;
 mod list;
+mod migrate;
 mod outdated;
 mod remove;
 mod tree;
@@ -435,6 +436,7 @@ pub struct Cli {
 /// - [`Cache`](Commands::Cache): Manage Git repository cache
 /// - [`Config`](Commands::Config): Manage global configuration
 /// - [`Upgrade`](Commands::Upgrade): Self-update AGPM to newer versions
+/// - [`Migrate`](Commands::Migrate): Migrate from legacy CCPM naming to AGPM
 ///
 /// # Command Execution
 ///
@@ -462,6 +464,7 @@ pub struct Cli {
 /// # System management
 /// agpm cache info              # Show cache information
 /// agpm config show             # Show configuration
+/// agpm migrate                 # Migrate from CCPM to AGPM
 /// ```
 #[derive(Subcommand)]
 enum Commands {
@@ -572,6 +575,13 @@ enum Commands {
     ///
     /// See [`config::ConfigCommand`] for detailed options and behavior.
     Config(config::ConfigCommand),
+
+    /// Migrate from legacy CCPM naming to AGPM.
+    ///
+    /// Detects and renames ccpm.toml and ccpm.lock files to agpm.toml
+    /// and agpm.lock respectively. This is a one-time migration command
+    /// for projects upgrading from the legacy CCPM naming.
+    Migrate(migrate::MigrateCommand),
 }
 
 impl Cli {
@@ -740,6 +750,7 @@ impl Cli {
                 let config_path = config.config_path.as_ref().map(PathBuf::from);
                 cmd.execute(config_path).await
             }
+            Commands::Migrate(cmd) => cmd.execute().await,
         }
     }
 

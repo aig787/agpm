@@ -346,7 +346,7 @@ async fn test_system_limits() {
     let mut manifest_content = String::from(
         r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 "#,
@@ -402,7 +402,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 "#;
     fs::write(project.project_path().join("agpm.lock"), partial_lockfile)
         .await
@@ -562,7 +562,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 
 [[agents]]
@@ -601,7 +601,7 @@ async fn test_git_command_missing() {
     // Create a manifest that requires git operations
     let manifest_content = r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" }

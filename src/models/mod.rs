@@ -104,27 +104,27 @@ pub enum DependencyType {
 impl DependencyType {
     /// Get the common dependency specification
     #[must_use]
-    pub fn common(&self) -> &DependencySpec {
+    pub const fn common(&self) -> &DependencySpec {
         match self {
-            DependencyType::Agent(dep) => &dep.common,
-            DependencyType::Snippet(dep) => &dep.common,
-            DependencyType::Command(dep) => &dep.common,
-            DependencyType::Script(dep) => &dep.common,
-            DependencyType::Hook(dep) => &dep.common,
-            DependencyType::McpServer(dep) => &dep.common,
+            Self::Agent(dep) => &dep.common,
+            Self::Snippet(dep) => &dep.common,
+            Self::Command(dep) => &dep.common,
+            Self::Script(dep) => &dep.common,
+            Self::Hook(dep) => &dep.common,
+            Self::McpServer(dep) => &dep.common,
         }
     }
 
     /// Get the resource type as a string
     #[must_use]
-    pub fn resource_type(&self) -> &'static str {
+    pub const fn resource_type(&self) -> &'static str {
         match self {
-            DependencyType::Agent(_) => "agent",
-            DependencyType::Snippet(_) => "snippet",
-            DependencyType::Command(_) => "command",
-            DependencyType::Script(_) => "script",
-            DependencyType::Hook(_) => "hook",
-            DependencyType::McpServer(_) => "mcp-server",
+            Self::Agent(_) => "agent",
+            Self::Snippet(_) => "snippet",
+            Self::Command(_) => "command",
+            Self::Script(_) => "script",
+            Self::Hook(_) => "hook",
+            Self::McpServer(_) => "mcp-server",
         }
     }
 }

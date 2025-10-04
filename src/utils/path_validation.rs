@@ -127,7 +127,7 @@ pub fn safe_relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
 
     target_canonical
         .strip_prefix(&base_canonical)
-        .map(|p| p.to_path_buf())
+        .map(std::path::Path::to_path_buf)
         .map_err(|_| {
             anyhow!(
                 "Cannot create relative path from {} to {}",

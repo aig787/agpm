@@ -56,7 +56,7 @@ impl VersionCheckCache {
         };
 
         Self {
-            latest_version: latest_version.clone(),
+            latest_version,
             current_version,
             checked_at: Utc::now(),
             update_available,
@@ -72,7 +72,7 @@ impl VersionCheckCache {
     }
 
     /// Mark this update as notified and increment the count.
-    pub fn mark_notified(&mut self) {
+    pub const fn mark_notified(&mut self) {
         self.notified = true;
         self.notification_count += 1;
     }
@@ -96,7 +96,7 @@ impl VersionCheckCache {
         let hours_since_check = (Utc::now() - self.checked_at).num_hours();
         let backoff_hours = 24 * (1 << self.notification_count.min(3)); // 24h, 48h, 96h, 192h max
 
-        hours_since_check >= backoff_hours as i64
+        hours_since_check >= i64::from(backoff_hours)
     }
 }
 
@@ -153,8 +153,7 @@ impl VersionChecker {
         let cache_path = if let Ok(path) = std::env::var("AGPM_CONFIG_PATH") {
             PathBuf::from(path)
                 .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| PathBuf::from(".agpm"))
+                .map_or_else(|| PathBuf::from(".agpm"), std::path::Path::to_path_buf)
                 .join(".version_cache")
         } else {
             dirs::home_dir()
@@ -240,10 +239,9 @@ impl VersionChecker {
                             latest_version
                         );
                         return Ok(Some(latest_version));
-                    } else {
-                        // Update cache without notification
-                        self.save_cache(&new_cache).await?;
                     }
+                    // Update cache without notification
+                    self.save_cache(&new_cache).await?;
                 }
                 Ok(None) => {
                     // No update available, update cache
@@ -364,7 +362,7 @@ impl VersionChecker {
     ///
     /// * `latest_version` - The new version available for upgrade
     pub fn display_update_notification(latest_version: &str) {
-        use colored::*;
+        use colored::Colorize;
 
         let current_version = env!("CARGO_PKG_VERSION");
 
@@ -396,12 +394,9 @@ impl VersionChecker {
     pub fn format_version_info(current: &str, latest: Option<&str>) -> String {
         match latest {
             Some(v) if v != current => {
-                format!(
-                    "Current version: {}\nLatest version:  {} (update available)",
-                    current, v
-                )
+                format!("Current version: {current}\nLatest version:  {v} (update available)")
             }
-            _ => format!("Current version: {} (up to date)", current),
+            _ => format!("Current version: {current} (up to date)"),
         }
     }
 }

@@ -73,7 +73,7 @@ pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
     ErrorContext {
         error: AgpmError::GitCommandError {
             operation: command.to_string(),
-            stderr: format!("Git {} operation failed", command),
+            stderr: format!("Git {command} operation failed"),
         },
         suggestion: match command {
             "clone" => {
@@ -86,7 +86,7 @@ pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
             "status" => Some("Ensure you're in a valid git repository".to_string()),
             _ => Some("Check that git is installed and accessible".to_string()),
         },
-        details: repo.map(|r| format!("Repository: {}", r)),
+        details: repo.map(|r| format!("Repository: {r}")),
     }
 }
 
@@ -117,7 +117,7 @@ pub fn manifest_error_context(operation: &str, details: Option<&str>) -> ErrorCo
             reason: details.unwrap_or("Validation failed").to_string(),
         },
         _ => AgpmError::Other {
-            message: format!("Manifest operation '{}' failed", operation),
+            message: format!("Manifest operation '{operation}' failed"),
         },
     };
 
@@ -131,7 +131,7 @@ pub fn manifest_error_context(operation: &str, details: Option<&str>) -> ErrorCo
             }
             _ => None,
         },
-        details: details.map(|d| d.to_string()),
+        details: details.map(std::string::ToString::to_string),
     }
 }
 
@@ -182,10 +182,10 @@ pub fn network_error_context(operation: &str, url: Option<&str>) -> ErrorContext
     ErrorContext {
         error: AgpmError::NetworkError {
             operation: operation.to_string(),
-            reason: format!("Network {} failed", operation),
+            reason: format!("Network {operation} failed"),
         },
         suggestion: Some("Check your internet connection and try again".to_string()),
-        details: url.map(|u| format!("URL: {}", u)),
+        details: url.map(|u| format!("URL: {u}")),
     }
 }
 
@@ -208,7 +208,7 @@ pub fn config_error_context(config_type: &str, issue: &str) -> ErrorContext {
 
     ErrorContext {
         error: AgpmError::ConfigError {
-            message: format!("Configuration error in {} config: {}", config_type, issue),
+            message: format!("Configuration error in {config_type} config: {issue}"),
         },
         suggestion: match config_type {
             "global" => Some("Check ~/.agpm/config.toml for correct settings".to_string()),
@@ -243,8 +243,7 @@ pub fn permission_error_context(resource: &str, operation: &str) -> ErrorContext
             path: resource.to_string(),
         },
         suggestion: Some(format!(
-            "Check that you have {} permissions for: {}",
-            operation, resource
+            "Check that you have {operation} permissions for: {resource}"
         )),
         details: if cfg!(windows) {
             Some("On Windows, you may need to run as Administrator".to_string())

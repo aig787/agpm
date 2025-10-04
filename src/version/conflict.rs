@@ -32,7 +32,7 @@ impl fmt::Display for VersionConflict {
         for req in &self.conflicting_requirements {
             writeln!(f, "  - {} requires {}", req.required_by, req.requirement)?;
             if let Some(v) = &req.resolved_version {
-                writeln!(f, "    (resolved to {})", v)?;
+                writeln!(f, "    (resolved to {v})")?;
             }
         }
         Ok(())
@@ -200,10 +200,10 @@ impl ConflictDetector {
         intersection.is_none_or(|i| !i.is_empty())
     }
 
-    /// Convert a semver::VersionReq to pubgrub::Ranges<Version>
+    /// Convert a `semver::VersionReq` to `pubgrub::Ranges`<Version>
     ///
-    /// In semver, multiple comparators in a single requirement are ANDed together (intersection),
-    /// not ORed (union). For example, ">=5.0.0, <6.0.0" means [5.0.0, 6.0.0), not the entire number line.
+    /// In semver, multiple comparators in a single requirement are `ANDed` together (intersection),
+    /// not `ORed` (union). For example, ">=5.0.0, <6.0.0" means [5.0.0, 6.0.0), not the entire number line.
     fn version_req_to_ranges(&self, req: &VersionReq) -> Ranges<Version> {
         let comparators = &req.comparators;
 
@@ -217,7 +217,9 @@ impl ConflictDetector {
 
         for comp in comparators {
             // Build Version with prerelease and build metadata
-            let base_version = if !comp.pre.is_empty() {
+            let base_version = if comp.pre.is_empty() {
+                Version::new(comp.major, comp.minor.unwrap_or(0), comp.patch.unwrap_or(0))
+            } else {
                 Version {
                     major: comp.major,
                     minor: comp.minor.unwrap_or(0),
@@ -225,8 +227,6 @@ impl ConflictDetector {
                     pre: comp.pre.clone(),
                     build: Default::default(),
                 }
-            } else {
-                Version::new(comp.major, comp.minor.unwrap_or(0), comp.patch.unwrap_or(0))
             };
 
             let comp_range = match comp.op {
@@ -337,7 +337,10 @@ impl ConflictDetector {
         let conflicts = self.detect_conflicts();
 
         if !conflicts.is_empty() {
-            let conflict_messages: Vec<String> = conflicts.iter().map(|c| c.to_string()).collect();
+            let conflict_messages: Vec<String> = conflicts
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
 
             return Err(AgpmError::Other {
                 message: format!(
@@ -353,7 +356,7 @@ impl ConflictDetector {
             let versions = available_versions
                 .get(resource)
                 .ok_or_else(|| AgpmError::Other {
-                    message: format!("No versions available for resource: {}", resource),
+                    message: format!("No versions available for resource: {resource}"),
                 })?;
 
             let best_version = self.find_best_version(versions, requirements)?;
@@ -384,7 +387,7 @@ impl ConflictDetector {
 
         if candidates.is_empty() {
             return Err(AgpmError::Other {
-                message: format!("No version satisfies all requirements: {:?}", requirements),
+                message: format!("No version satisfies all requirements: {requirements:?}"),
             }
             .into());
         }

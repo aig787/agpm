@@ -197,7 +197,7 @@ pub struct GlobalConfig {
     pub upgrade: UpgradeConfig,
 }
 
-fn is_default_upgrade_config(config: &UpgradeConfig) -> bool {
+const fn is_default_upgrade_config(config: &UpgradeConfig) -> bool {
     // Skip serializing if it's the default config
     !config.check_on_startup
         && config.check_interval == 86400
@@ -422,7 +422,7 @@ impl GlobalConfig {
     /// - **Windows**: `%LOCALAPPDATA%\agpm\config.toml`
     /// - **Unix/macOS**: `~/.agpm/config.toml`
     ///
-    /// Note: Environment variable overrides are deprecated. Use the load_with_optional()
+    /// Note: Environment variable overrides are deprecated. Use the `load_with_optional()`
     /// method with an explicit path instead for better thread safety.
     ///
     /// # Examples
@@ -798,7 +798,7 @@ impl GlobalConfigManager {
     /// let manager = GlobalConfigManager::with_path(PathBuf::from("/tmp/test.toml"));
     /// ```
     #[must_use]
-    pub fn with_path(path: PathBuf) -> Self {
+    pub const fn with_path(path: PathBuf) -> Self {
         Self { config: None, path }
     }
 

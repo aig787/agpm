@@ -681,7 +681,7 @@ impl RedundancyDetector {
     /// Currently returns an empty vector. Future implementation will return
     /// detected transitive redundancies.
     #[must_use]
-    pub fn check_transitive_redundancies(&self) -> Vec<Redundancy> {
+    pub const fn check_transitive_redundancies(&self) -> Vec<Redundancy> {
         // TODO: When we add support for dependencies having their own dependencies,
         // we'll need to check for redundancies across the entire dependency tree
         Vec::new()

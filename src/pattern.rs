@@ -129,7 +129,7 @@ impl PatternMatcher {
     /// ```
     pub fn new(pattern_str: &str) -> Result<Self> {
         let pattern = Pattern::new(pattern_str)
-            .with_context(|| format!("Invalid glob pattern: {}", pattern_str))?;
+            .with_context(|| format!("Invalid glob pattern: {pattern_str}"))?;
 
         Ok(Self {
             pattern,
@@ -192,12 +192,12 @@ impl PatternMatcher {
         let mut matches = Vec::new();
         let base_path = base_path
             .canonicalize()
-            .with_context(|| format!("Failed to canonicalize path: {:?}", base_path))?;
+            .with_context(|| format!("Failed to canonicalize path: {base_path:?}"))?;
 
         for entry in WalkDir::new(&base_path)
             .follow_links(false) // Security: don't follow symlinks
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
 
@@ -336,7 +336,7 @@ impl PatternResolver {
     /// ```
     ///
     /// [`exclude`]: PatternResolver::exclude
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             exclude_patterns: Vec::new(),
         }
@@ -380,7 +380,7 @@ impl PatternResolver {
     /// ```
     pub fn exclude(&mut self, pattern: &str) -> Result<()> {
         let pattern = Pattern::new(pattern)
-            .with_context(|| format!("Invalid exclusion pattern: {}", pattern))?;
+            .with_context(|| format!("Invalid exclusion pattern: {pattern}"))?;
         self.exclude_patterns.push(pattern);
         Ok(())
     }
@@ -593,17 +593,17 @@ pub fn extract_resource_name(path: &Path) -> String {
 pub fn validate_pattern_safety(pattern: &str) -> Result<()> {
     // Check for path traversal attempts
     if pattern.contains("..") {
-        anyhow::bail!("Pattern contains path traversal (..): {}", pattern);
+        anyhow::bail!("Pattern contains path traversal (..): {pattern}");
     }
 
     // Check for absolute paths on Unix
     if cfg!(unix) && pattern.starts_with('/') {
-        anyhow::bail!("Pattern contains absolute path: {}", pattern);
+        anyhow::bail!("Pattern contains absolute path: {pattern}");
     }
 
     // Check for absolute paths on Windows
     if cfg!(windows) && (pattern.contains(':') || pattern.starts_with('\\')) {
-        anyhow::bail!("Pattern contains absolute path: {}", pattern);
+        anyhow::bail!("Pattern contains absolute path: {pattern}");
     }
 
     Ok(())

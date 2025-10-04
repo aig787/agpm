@@ -183,8 +183,7 @@ async fn add_dependency_with_manifest_path(
         // Check if dependency already exists
         if manifest.mcp_servers.contains_key(&name) && !common.force {
             return Err(anyhow!(
-                "MCP server '{}' already exists in manifest. Use --force to overwrite",
-                name
+                "MCP server '{name}' already exists in manifest. Use --force to overwrite"
             ));
         }
 
@@ -206,9 +205,7 @@ async fn add_dependency_with_manifest_path(
         // Check if dependency already exists
         if section.contains_key(&name) && !common.force {
             return Err(anyhow!(
-                "{} '{}' already exists in manifest. Use --force to overwrite",
-                resource_type,
-                name
+                "{resource_type} '{name}' already exists in manifest. Use --force to overwrite"
             ));
         }
 

@@ -61,10 +61,10 @@ echo ""
 echo "→ Adding local-deps source (local directory)"
 agpm add source local-deps "$DEPS_DIR"
 
-# Add the ccpm-community GitHub repository
+# Add the agpm-community GitHub repository
 echo ""
-echo "→ Adding ccpm-community GitHub repository"
-agpm add source community "https://github.com/aig787/ccpm-community.git"
+echo "→ Adding agpm-community GitHub repository"
+agpm add source community "https://github.com/aig787/agpm-community.git"
 
 # Add resources with transitive dependencies via commands (using local source)
 echo ""
@@ -109,7 +109,7 @@ echo "→ Adding remaining resources directly to agpm.toml"
 cat >> agpm.toml << 'EOF'
 
 [agents]
-# Additional agents from ccpm-community
+# Additional agents from agpm-community
 api-designer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
 backend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md", version = "^v0.0.1" }
 frontend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md", version = "=v0.0.1" }

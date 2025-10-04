@@ -402,7 +402,7 @@ impl UpdateCommand {
 
         // Complete resolving phase
         if !self.quiet && !self.no_progress && total_deps > 0 {
-            multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
+            multi_phase.complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
         }
 
         // Compare lockfiles to see what changed
@@ -468,92 +468,91 @@ impl UpdateCommand {
                 return Err(anyhow::anyhow!(
                     "Dry-run detected updates available (exit 1)"
                 ));
-            } else {
-                // Install all updated resources first, before saving lockfile
-                if !self.quiet && !self.no_progress && !updates.is_empty() {
-                    multi_phase.start_phase(
-                        InstallationPhase::Installing,
-                        Some(&format!("({} resources)", updates.len())),
-                    );
-                }
+            }
 
-                let (install_count, checksums) = install_resources(
-                    ResourceFilter::Updated(updates.clone()),
-                    &new_lockfile,
-                    &manifest,
-                    project_dir,
-                    cache,
-                    false,             // don't force refresh for updates
-                    self.max_parallel, // use provided or default concurrency
-                    if self.quiet || self.no_progress {
-                        None
-                    } else {
-                        Some(multi_phase.clone())
-                    },
-                )
-                .await?;
+            // Install all updated resources first, before saving lockfile
+            if !self.quiet && !self.no_progress && !updates.is_empty() {
+                multi_phase.start_phase(
+                    InstallationPhase::Installing,
+                    Some(&format!("({} resources)", updates.len())),
+                );
+            }
 
-                // Update lockfile with checksums in-memory
-                for (name, checksum) in checksums {
-                    new_lockfile.update_resource_checksum(&name, &checksum);
-                }
+            let (install_count, checksums) = install_resources(
+                ResourceFilter::Updated(updates.clone()),
+                &new_lockfile,
+                &manifest,
+                project_dir,
+                cache,
+                false,             // don't force refresh for updates
+                self.max_parallel, // use provided or default concurrency
+                if self.quiet || self.no_progress {
+                    None
+                } else {
+                    Some(multi_phase.clone())
+                },
+            )
+            .await?;
 
-                // Complete installation phase
-                if install_count > 0 && !self.quiet && !self.no_progress {
-                    multi_phase
-                        .complete_phase(Some(&format!("Updated {} resources", install_count)));
-                }
+            // Update lockfile with checksums in-memory
+            for (name, checksum) in checksums {
+                new_lockfile.update_resource_checksum(&name, &checksum);
+            }
 
-                // Start finalizing phase
-                if !self.quiet && !self.no_progress && install_count > 0 {
-                    multi_phase.start_phase(InstallationPhase::Finalizing, None);
-                }
+            // Complete installation phase
+            if install_count > 0 && !self.quiet && !self.no_progress {
+                multi_phase.complete_phase(Some(&format!("Updated {install_count} resources")));
+            }
 
-                // Save the lockfile once with checksums and error handling
-                match new_lockfile.save(&lockfile_path) {
-                    Ok(()) => {
-                        // Lockfile saved successfully (no progress needed for this quick operation)
+            // Start finalizing phase
+            if !self.quiet && !self.no_progress && install_count > 0 {
+                multi_phase.start_phase(InstallationPhase::Finalizing, None);
+            }
 
-                        // Update .gitignore if enabled
-                        let gitignore_enabled = manifest.target.gitignore;
-                        if gitignore_enabled {
-                            update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
-                        }
+            // Save the lockfile once with checksums and error handling
+            match new_lockfile.save(&lockfile_path) {
+                Ok(()) => {
+                    // Lockfile saved successfully (no progress needed for this quick operation)
 
-                        // Complete finalizing phase
-                        if !self.quiet && !self.no_progress && install_count > 0 {
-                            multi_phase.complete_phase(Some("Update finalized"));
-                        }
-
-                        // Clear the multi-phase display before final message
-                        if !self.quiet && !self.no_progress {
-                            multi_phase.clear();
-                        }
-
-                        if !self.quiet && !self.no_progress && install_count > 0 {
-                            println!("\n✓ Updated {} resources", install_count);
-                        }
+                    // Update .gitignore if enabled
+                    let gitignore_enabled = manifest.target.gitignore;
+                    if gitignore_enabled {
+                        update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
                     }
-                    Err(e) => {
-                        if self.backup {
-                            // Restore from backup
-                            let backup_path = lockfile_path.with_extension("lock.backup");
-                            if backup_path.exists() {
-                                if let Err(restore_err) =
-                                    tokio::fs::copy(&backup_path, &lockfile_path).await
-                                {
-                                    if !self.quiet && !self.no_progress {
-                                        eprintln!("✗ Failed to save updated lockfile: {}", e);
-                                        eprintln!("✗ Failed to restore backup: {}", restore_err);
-                                    }
-                                } else if !self.quiet && !self.no_progress {
-                                    eprintln!("✗ Failed to save updated lockfile: {}", e);
-                                    println!("ℹ️  Rolled back to previous lockfile");
+
+                    // Complete finalizing phase
+                    if !self.quiet && !self.no_progress && install_count > 0 {
+                        multi_phase.complete_phase(Some("Update finalized"));
+                    }
+
+                    // Clear the multi-phase display before final message
+                    if !self.quiet && !self.no_progress {
+                        multi_phase.clear();
+                    }
+
+                    if !self.quiet && !self.no_progress && install_count > 0 {
+                        println!("\n✓ Updated {install_count} resources");
+                    }
+                }
+                Err(e) => {
+                    if self.backup {
+                        // Restore from backup
+                        let backup_path = lockfile_path.with_extension("lock.backup");
+                        if backup_path.exists() {
+                            if let Err(restore_err) =
+                                tokio::fs::copy(&backup_path, &lockfile_path).await
+                            {
+                                if !self.quiet && !self.no_progress {
+                                    eprintln!("✗ Failed to save updated lockfile: {e}");
+                                    eprintln!("✗ Failed to restore backup: {restore_err}");
                                 }
+                            } else if !self.quiet && !self.no_progress {
+                                eprintln!("✗ Failed to save updated lockfile: {e}");
+                                println!("ℹ️  Rolled back to previous lockfile");
                             }
                         }
-                        return Err(e.context("Update failed"));
                     }
+                    return Err(e.context("Update failed"));
                 }
             }
         }

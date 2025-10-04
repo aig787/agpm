@@ -302,7 +302,7 @@ impl Source {
     /// assert!(source.description.is_none());
     /// ```
     #[must_use]
-    pub fn new(name: String, url: String) -> Self {
+    pub const fn new(name: String, url: String) -> Self {
         Self {
             name,
             url,
@@ -1665,14 +1665,14 @@ impl SourceManager {
             if std::path::Path::new(path).exists() {
                 return Ok(());
             }
-            return Err(anyhow::anyhow!("Local path does not exist: {}", path));
+            return Err(anyhow::anyhow!("Local path does not exist: {path}"));
         }
 
         // For other URLs, try to create a GitRepo object and verify it's accessible
         // This is a lightweight check - we don't actually clone the repo
         match crate::git::GitRepo::verify_url(url).await {
             Ok(()) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!("Source not accessible: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Source not accessible: {e}")),
         }
     }
 }

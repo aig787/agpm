@@ -566,140 +566,126 @@ pub enum AgpmError {
 impl Clone for AgpmError {
     fn clone(&self) -> Self {
         match self {
-            AgpmError::GitCommandError { operation, stderr } => AgpmError::GitCommandError {
+            Self::GitCommandError { operation, stderr } => Self::GitCommandError {
                 operation: operation.clone(),
                 stderr: stderr.clone(),
             },
-            AgpmError::GitNotFound => AgpmError::GitNotFound,
-            AgpmError::GitRepoInvalid { path } => AgpmError::GitRepoInvalid { path: path.clone() },
-            AgpmError::GitAuthenticationFailed { url } => {
-                AgpmError::GitAuthenticationFailed { url: url.clone() }
+            Self::GitNotFound => Self::GitNotFound,
+            Self::GitRepoInvalid { path } => Self::GitRepoInvalid { path: path.clone() },
+            Self::GitAuthenticationFailed { url } => {
+                Self::GitAuthenticationFailed { url: url.clone() }
             }
-            AgpmError::GitCloneFailed { url, reason } => AgpmError::GitCloneFailed {
+            Self::GitCloneFailed { url, reason } => Self::GitCloneFailed {
                 url: url.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::GitCheckoutFailed { reference, reason } => AgpmError::GitCheckoutFailed {
+            Self::GitCheckoutFailed { reference, reason } => Self::GitCheckoutFailed {
                 reference: reference.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::ConfigError { message } => AgpmError::ConfigError {
+            Self::ConfigError { message } => Self::ConfigError {
                 message: message.clone(),
             },
-            AgpmError::ManifestNotFound => AgpmError::ManifestNotFound,
-            AgpmError::ManifestParseError { file, reason } => AgpmError::ManifestParseError {
+            Self::ManifestNotFound => Self::ManifestNotFound,
+            Self::ManifestParseError { file, reason } => Self::ManifestParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::ManifestValidationError { reason } => AgpmError::ManifestValidationError {
+            Self::ManifestValidationError { reason } => Self::ManifestValidationError {
                 reason: reason.clone(),
             },
-            AgpmError::LockfileParseError { file, reason } => AgpmError::LockfileParseError {
+            Self::LockfileParseError { file, reason } => Self::LockfileParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::ResourceNotFound { name } => {
-                AgpmError::ResourceNotFound { name: name.clone() }
-            }
-            AgpmError::ResourceFileNotFound { path, source_name } => {
-                AgpmError::ResourceFileNotFound {
-                    path: path.clone(),
-                    source_name: source_name.clone(),
-                }
-            }
-            AgpmError::SourceNotFound { name } => AgpmError::SourceNotFound { name: name.clone() },
-            AgpmError::SourceUnreachable { name, url } => AgpmError::SourceUnreachable {
+            Self::ResourceNotFound { name } => Self::ResourceNotFound { name: name.clone() },
+            Self::ResourceFileNotFound { path, source_name } => Self::ResourceFileNotFound {
+                path: path.clone(),
+                source_name: source_name.clone(),
+            },
+            Self::SourceNotFound { name } => Self::SourceNotFound { name: name.clone() },
+            Self::SourceUnreachable { name, url } => Self::SourceUnreachable {
                 name: name.clone(),
                 url: url.clone(),
             },
-            AgpmError::InvalidVersionConstraint { constraint } => {
-                AgpmError::InvalidVersionConstraint {
-                    constraint: constraint.clone(),
-                }
-            }
-            AgpmError::VersionNotFound { resource, version } => AgpmError::VersionNotFound {
+            Self::InvalidVersionConstraint { constraint } => Self::InvalidVersionConstraint {
+                constraint: constraint.clone(),
+            },
+            Self::VersionNotFound { resource, version } => Self::VersionNotFound {
                 resource: resource.clone(),
                 version: version.clone(),
             },
-            AgpmError::AlreadyInstalled { name } => {
-                AgpmError::AlreadyInstalled { name: name.clone() }
-            }
-            AgpmError::InvalidResourceType { resource_type } => AgpmError::InvalidResourceType {
+            Self::AlreadyInstalled { name } => Self::AlreadyInstalled { name: name.clone() },
+            Self::InvalidResourceType { resource_type } => Self::InvalidResourceType {
                 resource_type: resource_type.clone(),
             },
-            AgpmError::InvalidResourceStructure { file, reason } => {
-                AgpmError::InvalidResourceStructure {
-                    file: file.clone(),
-                    reason: reason.clone(),
-                }
-            }
-            AgpmError::CircularDependency { chain } => AgpmError::CircularDependency {
+            Self::InvalidResourceStructure { file, reason } => Self::InvalidResourceStructure {
+                file: file.clone(),
+                reason: reason.clone(),
+            },
+            Self::CircularDependency { chain } => Self::CircularDependency {
                 chain: chain.clone(),
             },
-            AgpmError::DependencyResolutionFailed { reason } => {
-                AgpmError::DependencyResolutionFailed {
-                    reason: reason.clone(),
-                }
-            }
-            AgpmError::NetworkError { operation, reason } => AgpmError::NetworkError {
+            Self::DependencyResolutionFailed { reason } => Self::DependencyResolutionFailed {
+                reason: reason.clone(),
+            },
+            Self::NetworkError { operation, reason } => Self::NetworkError {
                 operation: operation.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::FileSystemError { operation, path } => AgpmError::FileSystemError {
+            Self::FileSystemError { operation, path } => Self::FileSystemError {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            AgpmError::PermissionDenied { operation, path } => AgpmError::PermissionDenied {
+            Self::PermissionDenied { operation, path } => Self::PermissionDenied {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            AgpmError::DirectoryNotEmpty { path } => {
-                AgpmError::DirectoryNotEmpty { path: path.clone() }
-            }
-            AgpmError::InvalidDependency { name, reason } => AgpmError::InvalidDependency {
+            Self::DirectoryNotEmpty { path } => Self::DirectoryNotEmpty { path: path.clone() },
+            Self::InvalidDependency { name, reason } => Self::InvalidDependency {
                 name: name.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::InvalidResource { name, reason } => AgpmError::InvalidResource {
+            Self::InvalidResource { name, reason } => Self::InvalidResource {
                 name: name.clone(),
                 reason: reason.clone(),
             },
-            AgpmError::DependencyNotMet {
+            Self::DependencyNotMet {
                 name,
                 required,
                 found,
-            } => AgpmError::DependencyNotMet {
+            } => Self::DependencyNotMet {
                 name: name.clone(),
                 required: required.clone(),
                 found: found.clone(),
             },
-            AgpmError::ConfigNotFound { path } => AgpmError::ConfigNotFound { path: path.clone() },
-            AgpmError::ChecksumMismatch {
+            Self::ConfigNotFound { path } => Self::ConfigNotFound { path: path.clone() },
+            Self::ChecksumMismatch {
                 name,
                 expected,
                 actual,
-            } => AgpmError::ChecksumMismatch {
+            } => Self::ChecksumMismatch {
                 name: name.clone(),
                 expected: expected.clone(),
                 actual: actual.clone(),
             },
-            AgpmError::PlatformNotSupported { operation } => AgpmError::PlatformNotSupported {
+            Self::PlatformNotSupported { operation } => Self::PlatformNotSupported {
                 operation: operation.clone(),
             },
             // For errors that don't implement Clone, convert to Other
-            AgpmError::IoError(e) => AgpmError::Other {
+            Self::IoError(e) => Self::Other {
                 message: format!("IO error: {e}"),
             },
-            AgpmError::TomlError(e) => AgpmError::Other {
+            Self::TomlError(e) => Self::Other {
                 message: format!("TOML parsing error: {e}"),
             },
-            AgpmError::TomlSerError(e) => AgpmError::Other {
+            Self::TomlSerError(e) => Self::Other {
                 message: format!("TOML serialization error: {e}"),
             },
-            AgpmError::SemverError(e) => AgpmError::Other {
+            Self::SemverError(e) => Self::Other {
                 message: format!("Semver parsing error: {e}"),
             },
-            AgpmError::Other { message } => AgpmError::Other {
+            Self::Other { message } => Self::Other {
                 message: message.clone(),
             },
         }
@@ -794,7 +780,7 @@ impl ErrorContext {
     /// [`with_suggestion`]: ErrorContext::with_suggestion
     /// [`with_details`]: ErrorContext::with_details
     #[must_use]
-    pub fn new(error: AgpmError) -> Self {
+    pub const fn new(error: AgpmError) -> Self {
         Self {
             error,
             suggestion: None,
@@ -1063,7 +1049,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     let chain: Vec<String> = error
         .chain()
         .skip(1) // Skip the root cause which is already in to_string()
-        .map(|e| e.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     if !chain.is_empty() {

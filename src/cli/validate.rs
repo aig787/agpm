@@ -231,7 +231,7 @@ pub struct ValidateCommand {
 /// // For automation/CI
 /// let format = OutputFormat::Json;
 /// ```
-#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     /// Human-readable text output with colors and formatting.
     ///
@@ -574,11 +574,11 @@ impl ValidateCommand {
                         validation_results.errors = errors;
                         validation_results.warnings = warnings;
                         println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                        return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                        return Err(anyhow::anyhow!("Source not accessible: {e}"));
                     } else if !self.quiet {
                         println!("{} {}", "✗".red(), error_msg);
                     }
-                    return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                    return Err(anyhow::anyhow!("Source not accessible: {e}"));
                 }
             };
 
@@ -600,11 +600,11 @@ impl ValidateCommand {
                         validation_results.errors = errors;
                         validation_results.warnings = warnings;
                         println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                        return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                        return Err(anyhow::anyhow!("Source not accessible: {e}"));
                     } else if !self.quiet {
                         println!("{} {}", "✗".red(), error_msg);
                     }
-                    return Err(anyhow::anyhow!("Source not accessible: {}", e));
+                    return Err(anyhow::anyhow!("Source not accessible: {e}"));
                 }
             }
         }
@@ -738,11 +738,11 @@ impl ValidateCommand {
                             validation_results.errors = errors;
                             validation_results.warnings = warnings;
                             println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                            return Err(anyhow::anyhow!("Invalid lockfile syntax: {}", e));
+                            return Err(anyhow::anyhow!("Invalid lockfile syntax: {e}"));
                         } else if !self.quiet {
                             println!("{} {}", "✗".red(), error_msg);
                         }
-                        return Err(anyhow::anyhow!("Invalid lockfile syntax: {}", e));
+                        return Err(anyhow::anyhow!("Invalid lockfile syntax: {e}"));
                     }
                 }
             } else {

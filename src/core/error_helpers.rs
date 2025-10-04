@@ -80,7 +80,7 @@ pub trait FileOperations {
     }
 }
 
-/// Implement FileOperations for a unit struct to enable trait usage
+/// Implement `FileOperations` for a unit struct to enable trait usage
 pub struct FileOps;
 impl FileOperations for FileOps {}
 
@@ -102,7 +102,7 @@ pub trait ManifestOperations {
     }
 }
 
-/// Implement ManifestOperations for a unit struct to enable trait usage
+/// Implement `ManifestOperations` for a unit struct to enable trait usage
 pub struct ManifestOps;
 impl ManifestOperations for ManifestOps {}
 
@@ -126,7 +126,7 @@ pub trait MarkdownOperations {
     }
 }
 
-/// Implement MarkdownOperations for a unit struct to enable trait usage
+/// Implement `MarkdownOperations` for a unit struct to enable trait usage
 pub struct MarkdownOps;
 impl MarkdownOperations for MarkdownOps {}
 
@@ -151,7 +151,7 @@ pub trait LockfileOperations {
     }
 }
 
-/// Implement LockfileOperations for a unit struct to enable trait usage
+/// Implement `LockfileOperations` for a unit struct to enable trait usage
 pub struct LockfileOps;
 impl LockfileOperations for LockfileOps {}
 
@@ -177,7 +177,7 @@ pub trait JsonOperations {
     }
 }
 
-/// Implement JsonOperations for a unit struct to enable trait usage
+/// Implement `JsonOperations` for a unit struct to enable trait usage
 pub struct JsonOps;
 impl JsonOperations for JsonOps {}
 

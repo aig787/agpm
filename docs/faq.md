@@ -333,7 +333,7 @@ AGPM is tested and supported on:
 
 ### Where can I find example resources?
 Check out community repositories:
-- [ccpm-community](https://github.com/aig787/agpm-community) - Official community resources
+- [agpm-community](https://github.com/aig787/agpm-community) - Official community resources
 - Search GitHub for repositories with "agpm" topics
 
 ## Still Have Questions?

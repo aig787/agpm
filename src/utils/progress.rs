@@ -1,19 +1,19 @@
 //! Progress indicators and user interface utilities
 //!
 //! This module provides a unified progress system for AGPM operations using the
-//! MultiPhaseProgress approach. All progress tracking goes through phases to ensure
+//! `MultiPhaseProgress` approach. All progress tracking goes through phases to ensure
 //! consistent user experience across different operations.
 //!
 //! # Features
 //!
-//! - **Unified progress**: All operations use MultiPhaseProgress for consistency
+//! - **Unified progress**: All operations use `MultiPhaseProgress` for consistency
 //! - **Phase-based tracking**: Installation/update operations broken into logical phases
 //! - **CI/quiet mode support**: Automatically disables in non-interactive environments
 //! - **Thread safety**: Safe to use across async tasks and parallel operations
 //!
 //! # Configuration
 //!
-//! Progress indicators are now controlled via the MultiPhaseProgress constructor
+//! Progress indicators are now controlled via the `MultiPhaseProgress` constructor
 //! parameter rather than environment variables for better thread safety.
 //!
 //! # Examples
@@ -62,7 +62,7 @@ pub enum InstallationPhase {
 
 impl InstallationPhase {
     /// Get a human-readable description of the phase
-    pub fn description(&self) -> &'static str {
+    pub const fn description(&self) -> &'static str {
         match self {
             Self::SyncingSources => "Syncing sources",
             Self::ResolvingDependencies => "Resolving dependencies",
@@ -73,7 +73,7 @@ impl InstallationPhase {
     }
 
     /// Get the spinner prefix for this phase
-    pub fn spinner_prefix(&self) -> &'static str {
+    pub const fn spinner_prefix(&self) -> &'static str {
         match self {
             Self::SyncingSources => "⏳",
             Self::ResolvingDependencies => "🔍",
@@ -88,7 +88,7 @@ impl InstallationPhase {
 /// with completed phases showing as static messages
 #[derive(Clone)]
 pub struct MultiPhaseProgress {
-    /// MultiProgress container from indicatif
+    /// `MultiProgress` container from indicatif
     multi: Arc<indicatif::MultiProgress>,
     /// Current active spinner/progress bar
     current_bar: Arc<Mutex<Option<IndicatifBar>>>,
@@ -118,7 +118,7 @@ impl MultiPhaseProgress {
             } else {
                 format!("{} {}", phase.spinner_prefix(), phase.description())
             };
-            println!("{}", phase_msg);
+            println!("{phase_msg}");
             return;
         }
 
@@ -238,7 +238,7 @@ impl MultiPhaseProgress {
                 return;
             }
             if let Some(msg) = message {
-                println!("✓ {}", msg);
+                println!("✓ {msg}");
             }
             return;
         }
@@ -252,7 +252,7 @@ impl MultiPhaseProgress {
 
             // Set the final message
             let final_message = if let Some(msg) = message {
-                format!("✓ {}", msg)
+                format!("✓ {msg}")
             } else {
                 "✓ Phase complete".to_string()
             };
@@ -263,7 +263,7 @@ impl MultiPhaseProgress {
             // Use suspend to print the completion message outside of the MultiProgress
             // This ensures it stays visible
             self.multi.suspend(|| {
-                println!("{}", final_message);
+                println!("{final_message}");
             });
         }
     }
@@ -300,7 +300,7 @@ pub fn collect_dependency_names(manifest: &Manifest) -> Vec<String> {
     manifest
         .all_dependencies()
         .iter()
-        .map(|(name, _)| name.to_string())
+        .map(|(name, _)| (*name).to_string())
         .collect()
 }
 

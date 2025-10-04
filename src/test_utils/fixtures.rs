@@ -299,7 +299,7 @@ pub struct GitRepoFixture {
 impl GitRepoFixture {
     /// Create a new git repository fixture
     #[must_use]
-    pub fn new(path: PathBuf) -> Self {
+    pub const fn new(path: PathBuf) -> Self {
         Self {
             path,
             files: Vec::new(),

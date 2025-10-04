@@ -664,15 +664,13 @@ impl MarkdownDocument {
                     // Parsing failed - emit warning and treat entire document as content
                     if let Some(ctx) = context {
                         eprintln!(
-                            "⚠️  Warning: Unable to parse YAML frontmatter in '{}'. \
-                            The document will be processed without metadata. Error: {}",
-                            ctx, err
+                            "⚠️  Warning: Unable to parse YAML frontmatter in '{ctx}'. \
+                            The document will be processed without metadata. Error: {err}"
                         );
                     } else {
                         eprintln!(
                             "⚠️  Warning: Unable to parse YAML frontmatter. \
-                            The document will be processed without metadata. Error: {}",
-                            err
+                            The document will be processed without metadata. Error: {err}"
                         );
                     }
 
@@ -707,15 +705,13 @@ impl MarkdownDocument {
                     // TOML parsing failed - emit warning and treat entire document as content
                     if let Some(ctx) = context {
                         eprintln!(
-                            "⚠️  Warning: Unable to parse TOML frontmatter in '{}'. \
-                            The document will be processed without metadata. Error: {}",
-                            ctx, err
+                            "⚠️  Warning: Unable to parse TOML frontmatter in '{ctx}'. \
+                            The document will be processed without metadata. Error: {err}"
                         );
                     } else {
                         eprintln!(
                             "⚠️  Warning: Unable to parse TOML frontmatter. \
-                            The document will be processed without metadata. Error: {}",
-                            err
+                            The document will be processed without metadata. Error: {err}"
                         );
                     }
 

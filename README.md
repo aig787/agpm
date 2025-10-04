@@ -3,7 +3,8 @@
 > ⚠️ **Beta Software**: This project is in active development and may contain breaking changes. Use with caution in
 > production environments.
 
-A Git-based package manager for Claude Code and other agentic tools that enables reproducible installations using lockfile-based
+A Git-based package manager for Claude Code and other agentic tools that enables reproducible installations using
+lockfile-based
 dependency management, similar to Cargo.
 
 ## Features
@@ -14,13 +15,9 @@ dependency management, similar to Cargo.
 - 🔒 **Cargo-style lockfile handling** - Auto-updates by default, strict validation with `--frozen`
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
-- 🧹 **Automatic artifact cleanup** - Old files removed when paths change
-- ⚠️ **Path conflict detection** - Prevents multiple dependencies from overwriting the same file
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
-- 🛡️ **Circular dependency detection** - Prevents circular references with comprehensive error reporting
-- 🧩 **Intelligent conflict resolution** - Automatic version resolution with transparent logging
 
 ## Quick Start
 
@@ -122,22 +119,26 @@ agpm validate --format json
 
 #### Transitive Dependencies and Conflict Resolution
 
-AGPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare dependencies in their metadata, and AGPM automatically resolves the entire dependency tree.
+AGPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare
+dependencies in their metadata, and AGPM automatically resolves the entire dependency tree.
 
 **What is a Conflict?**
 
 A conflict occurs when the same resource (same source and path) is required at different versions:
+
 - **Direct conflict**: Your manifest requires `helper.md@v1.0.0` and `helper.md@v2.0.0`
 - **Transitive conflict**: Agent A depends on `helper.md@v1.0.0`, Agent B depends on `helper.md@v2.0.0`
 
 **Automatic Resolution Strategy:**
 
 When conflicts are detected, AGPM automatically resolves them:
+
 1. **Specific over "latest"**: If one version is specific and another is "latest", use the specific version
 2. **Higher version**: When both are specific versions, use the higher version
 3. **Transparent logging**: All conflict resolutions are logged for visibility
 
 **Example Conflict Resolution:**
+
 ```text
 Direct dependencies:
   - app-agent requires helper.md v1.0.0
@@ -161,22 +162,27 @@ Error: Version conflict for agents/helper.md
   resolution: no compatible tag satisfies both constraints
 ```
 
-Use `agpm validate --resolve --format json` or `RUST_LOG=debug agpm install` to see the exact dependency chain. Typical fixes:
+Use `agpm validate --resolve --format json` or `RUST_LOG=debug agpm install` to see the exact dependency chain. Typical
+fixes:
+
 - Pin the manifest entry to a single version (`version = "v2.0.0"`) and run `agpm install` to auto-update.
 - Split competing resources into separate manifests or disable the conflicting dependency in one branch.
 - If a transitive dependency is too new, override it by forking the source repo or requesting an upstream fix.
-- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs cleanly.
+- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs
+  cleanly.
 
 **Circular Dependencies:**
 
 AGPM detects and prevents circular dependencies in the dependency graph:
+
 ```text
 Error: Circular dependency detected: A → B → C → A
 ```
 
 **No Conflicts:**
 
-When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph and installs resources in topological order (dependencies before dependents).
+When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph
+and installs resources in topological order (dependencies before dependents).
 
 See the [Command Reference](docs/command-reference.md#add-dependency) for all supported dependency formats.
 
@@ -185,6 +191,7 @@ See the [Command Reference](docs/command-reference.md#add-dependency) for all su
 Resources can declare their own dependencies within their files, creating a complete dependency graph:
 
 **Markdown files (.md)** use YAML frontmatter:
+
 ```markdown
 ---
 title: My Agent
@@ -202,9 +209,12 @@ dependencies:
 ```
 
 **JSON files (.json)** use a top-level `dependencies` field:
+
 ```json
 {
-  "events": ["SessionStart"],
+  "events": [
+    "SessionStart"
+  ],
   "type": "command",
   "command": "echo 'Starting session'",
   "dependencies": {
@@ -219,16 +229,19 @@ dependencies:
 ```
 
 **Key Features:**
+
 - Dependencies inherit the source from their parent resource
 - Version is optional - defaults to parent's version if not specified
 - Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
 - Graph-based resolution with topological ordering ensures correct installation order
 - Circular dependency detection prevents infinite loops
-- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the parent entry in `agpm.toml`
+- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the
+  parent entry in `agpm.toml`
 
 **Lockfile Format:**
 
 Dependencies are tracked in `agpm.lock` using the format `resource_type/name@version`:
+
 ```toml
 [[commands]]
 name = "my-command"
@@ -254,6 +267,7 @@ dependencies = [
 | `agpm remove`   | Remove sources or dependencies                               |
 | `agpm config`   | Manage global configuration                                  |
 | `agpm cache`    | Manage the Git cache                                         |
+| `agpm migrate`  | Migrate from legacy CCPM naming to AGPM                      |
 
 Run `agpm --help` for full command reference.
 
@@ -369,10 +383,9 @@ AGPM is actively developed with comprehensive test coverage and automated releas
 - ✅ All core commands implemented
 - ✅ Cross-platform support (Windows, macOS, Linux)
 - ✅ Comprehensive test suite (70%+ coverage)
-- ✅ Specialized Rust development agents (standard/advanced tiers)
 - ✅ Automated semantic releases with conventional commits
 - ✅ Cross-platform binary builds for all releases
-- ✅ Publishing to crates.io (automated via semantic-release)
+- ✅ Publishing to crates.io
 
 ### Automated Releases
 

@@ -140,10 +140,10 @@ impl DependencyGraph {
             {
                 let cycle_str = cycle
                     .iter()
-                    .map(|n| n.display_name())
+                    .map(DependencyNode::display_name)
                     .collect::<Vec<_>>()
                     .join(" → ");
-                return Err(anyhow!("Circular dependency detected: {}", cycle_str));
+                return Err(anyhow!("Circular dependency detected: {cycle_str}"));
             }
         }
 
@@ -152,7 +152,7 @@ impl DependencyGraph {
 
     /// DFS visit for cycle detection.
     ///
-    /// Returns Some(cycle_path) if a cycle is detected, None otherwise.
+    /// Returns `Some(cycle_path)` if a cycle is detected, None otherwise.
     fn dfs_visit(
         &self,
         node: NodeIndex,
@@ -302,19 +302,19 @@ impl DependencyGraph {
         if !visited.insert(node.clone()) {
             // Already visited - indicate circular reference
             let child_prefix = if is_last {
-                format!("{}    ", prefix)
+                format!("{prefix}    ")
             } else {
-                format!("{}│   ", prefix)
+                format!("{prefix}│   ")
             };
-            result.push_str(&format!("{}└── (circular reference)\n", child_prefix));
+            result.push_str(&format!("{child_prefix}└── (circular reference)\n"));
             return;
         }
 
         let deps = self.get_direct_deps(node);
         let child_prefix = if is_last {
-            format!("{}    ", prefix)
+            format!("{prefix}    ")
         } else {
-            format!("{}│   ", prefix)
+            format!("{prefix}│   ")
         };
 
         for (i, dep) in deps.iter().enumerate() {

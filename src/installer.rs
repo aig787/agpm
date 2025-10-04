@@ -59,7 +59,7 @@ use std::path::PathBuf;
 ///
 /// This type alias simplifies the return type of parallel installation functions
 /// that need to return either success information or error details with context.
-/// It was introduced in AGPM v0.3.0 to resolve clippy::type_complexity warnings
+/// It was introduced in AGPM v0.3.0 to resolve `clippy::type_complexity` warnings
 /// while maintaining clear semantics for installation results.
 ///
 /// # Success Variant: `Ok((String, bool, String))`
@@ -248,11 +248,7 @@ pub async fn install_resource(
             .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
 
         // Check if this is a local directory source (no SHA or empty SHA)
-        let is_local_source = entry
-            .resolved_commit
-            .as_deref()
-            .map(|commit| commit.is_empty())
-            .unwrap_or(true);
+        let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
 
         let cache_dir = if is_local_source {
             // Local directory source - use the URL as the path directly
@@ -595,7 +591,7 @@ pub async fn install_resources_parallel(
     let pb = Arc::new(pb.clone());
 
     // Update message for installation phase
-    pb.set_message(format!("Installing 0/{} resources", total));
+    pb.set_message(format!("Installing 0/{total} resources"));
 
     let shared_cache = Arc::new(cache.clone());
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
@@ -626,7 +622,7 @@ pub async fn install_resources_parallel(
                             *count += 1;
                         }
                         let count = *installed_count.lock().await;
-                        pb.set_message(format!("Installing {}/{} resources", count, total));
+                        pb.set_message(format!("Installing {count}/{total} resources"));
                         pb.inc(1);
                         Ok((entry.name.clone(), actually_installed, checksum))
                     }
@@ -1207,7 +1203,7 @@ pub enum ResourceFilter {
 /// Returns a tuple of:
 /// - The number of resources that were actually installed (new or updated content).
 ///   Resources that already exist with identical content are not counted.
-/// - A vector of (resource_name, checksum) pairs for all processed resources
+/// - A vector of (`resource_name`, checksum) pairs for all processed resources
 ///
 /// # Errors
 ///
@@ -1379,9 +1375,7 @@ pub async fn install_resources(
     // Process installations in parallel
     let results: Vec<InstallResult> = stream::iter(all_entries)
         .map(|(entry, resource_dir)| {
-            let entry = entry.clone();
             let project_dir = project_dir.to_path_buf();
-            let resource_dir = resource_dir.to_string();
             let installed_count = Arc::clone(&installed_count);
             let cache = cache.clone();
             let progress = progress.clone();
@@ -1410,10 +1404,7 @@ pub async fn install_resources(
 
                     if let Some(ref pm) = progress {
                         let count = *installed_count.lock().await;
-                        pm.update_current_message(&format!(
-                            "Installing {}/{} resources",
-                            count, total
-                        ));
+                        pm.update_current_message(&format!("Installing {count}/{total} resources"));
                         pm.increment_progress(1);
                     }
                 }
@@ -1468,7 +1459,7 @@ pub async fn install_resources(
     if let Some(ref pm) = progress
         && final_count > 0
     {
-        pm.complete_phase(Some(&format!("Installed {} resources", final_count)));
+        pm.complete_phase(Some(&format!("Installed {final_count} resources")));
     }
 
     Ok((final_count, checksums))
@@ -1717,7 +1708,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///
 /// # Arguments
 ///
-/// * `updates` - Vector of tuples containing (name, old_version, new_version) for each updated resource
+/// * `updates` - Vector of tuples containing (name, `old_version`, `new_version`) for each updated resource
 /// * `lockfile` - Lockfile containing all available resources (updated resources must exist here)
 /// * `manifest` - Project manifest providing configuration and target directories
 /// * `project_dir` - Root directory where resources will be installed
@@ -2099,7 +2090,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// # Cleanup Strategy
 ///
 /// The function uses a **set-based difference algorithm**:
-/// 1. Collects all `installed_at` paths from the new lockfile into a HashSet
+/// 1. Collects all `installed_at` paths from the new lockfile into a `HashSet`
 /// 2. Iterates through old lockfile resources
 /// 3. For each old path not in the new set:
 ///    - Removes the file if it exists
@@ -2214,12 +2205,12 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// # Performance
 ///
 /// - **Time Complexity**: O(n + m) where n = old resources, m = new resources
-/// - **Space Complexity**: O(m) for the HashSet of new paths
+/// - **Space Complexity**: O(m) for the `HashSet` of new paths
 /// - **I/O Operations**: One file removal per obsolete artifact
 /// - **Directory Cleanup**: Walks up parent directories once per removed file
 ///
 /// The function is highly efficient as it:
-/// - Uses HashSet for O(1) path lookups
+/// - Uses `HashSet` for O(1) path lookups
 /// - Only performs I/O for files that actually exist
 /// - Cleans directories recursively but stops at first non-empty directory
 ///
@@ -2416,7 +2407,7 @@ pub async fn cleanup_removed_artifacts(
 /// Result: .claude/agents/ remains (empty but preserved)
 /// ```
 ///
-/// ## Integration with cleanup_removed_artifacts
+/// ## Integration with `cleanup_removed_artifacts`
 ///
 /// This function is called automatically by [`cleanup_removed_artifacts`]
 /// after each file removal:
@@ -2528,7 +2519,7 @@ async fn cleanup_empty_dirs(file_path: &std::path::Path) -> Result<()> {
 
         // Try to remove the directory (will only succeed if empty)
         match tokio::fs::remove_dir(dir).await {
-            Ok(_) => {
+            Ok(()) => {
                 // Directory was empty and removed, continue up
                 current = dir.parent();
             }

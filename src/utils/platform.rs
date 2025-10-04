@@ -90,7 +90,7 @@ use std::path::{Path, PathBuf};
 /// - Platform-specific error messages
 /// - Command execution differences
 #[must_use]
-pub fn is_windows() -> bool {
+pub const fn is_windows() -> bool {
     cfg!(windows)
 }
 
@@ -143,7 +143,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
         } else {
             "On Unix/Linux: Check that the HOME environment variable is set"
         };
-        anyhow::anyhow!("Could not determine home directory.\n\n{}", platform_help)
+        anyhow::anyhow!("Could not determine home directory.\n\n{platform_help}")
     })
 }
 
@@ -190,7 +190,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 /// - [`command_exists`] to check if Git is available
 /// - System PATH configuration for Git availability
 #[must_use]
-pub fn get_git_command() -> &'static str {
+pub const fn get_git_command() -> &'static str {
     if is_windows() { "git.exe" } else { "git" }
 }
 
@@ -261,17 +261,15 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
         // Handle Windows-style user expansion like ~username
         if is_windows() && path.len() > 1 && !path.starts_with("~/") {
             return Err(anyhow::anyhow!(
-                "Invalid path: {}\n\n\
+                "Invalid path: {path}\n\n\
                 Windows tilde expansion only supports '~/' for current user home directory.\n\
-                Use '~/' followed by a relative path, like '~/Documents/file.txt'",
-                path
+                Use '~/' followed by a relative path, like '~/Documents/file.txt'"
             ));
         }
         return Err(anyhow::anyhow!(
-            "Invalid path: {}\n\n\
+            "Invalid path: {path}\n\n\
             Tilde expansion only supports '~/' for home directory.\n\
-            Use '~/' followed by a relative path, like '~/Documents/file.txt'",
-            path
+            Use '~/' followed by a relative path, like '~/Documents/file.txt'"
         ));
     } else {
         PathBuf::from(path)
@@ -778,7 +776,7 @@ pub fn get_cache_dir() -> Result<PathBuf> {
         } else {
             "On Linux: Check that the XDG_CACHE_HOME or HOME environment variable is set"
         };
-        anyhow::anyhow!("Could not determine cache directory.\n\n{}", platform_help)
+        anyhow::anyhow!("Could not determine cache directory.\n\n{platform_help}")
     })
 }
 
@@ -848,7 +846,7 @@ pub fn get_data_dir() -> Result<PathBuf> {
         } else {
             "On Linux: Check that the XDG_DATA_HOME or HOME environment variable is set"
         };
-        anyhow::anyhow!("Could not determine data directory.\n\n{}", platform_help)
+        anyhow::anyhow!("Could not determine data directory.\n\n{platform_help}")
     })
 }
 
@@ -1029,7 +1027,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 /// - [`command_exists`] for checking shell availability
 /// - [`std::process::Command`] for safe command execution
 #[must_use]
-pub fn get_shell_command() -> (&'static str, &'static str) {
+pub const fn get_shell_command() -> (&'static str, &'static str) {
     if is_windows() {
         ("cmd", "/C")
     } else {
@@ -1117,9 +1115,7 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
         for ch in path.chars() {
             if INVALID_CHARS.contains(&ch) || ch.is_control() {
                 return Err(anyhow::anyhow!(
-                    "Invalid character '{}' in path: {}\\n\\n\\\n                    Windows paths cannot contain: < > : \" | ? * or control characters",
-                    ch,
-                    path
+                    "Invalid character '{ch}' in path: {path}\\n\\n\\\n                    Windows paths cannot contain: < > : \" | ? * or control characters"
                 ));
             }
         }
@@ -1242,8 +1238,7 @@ pub fn safe_join(base: &Path, path: &str) -> Result<PathBuf> {
         let normalized = crate::utils::fs::normalize_path(&joined);
         if !normalized.starts_with(base) {
             return Err(anyhow::anyhow!(
-                "Path traversal detected in: {}\\n\\n\\\n                Attempted to access path outside base directory",
-                path
+                "Path traversal detected in: {path}\\n\\n\\\n                Attempted to access path outside base directory"
             ));
         }
     }

@@ -246,7 +246,7 @@ impl InstallCommand {
     /// // cmd can now be executed with execute_from_path()
     /// ```
     #[allow(dead_code)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             no_lock: false,
             frozen: false,
@@ -274,7 +274,7 @@ impl InstallCommand {
     /// // cmd will execute without progress bars or status messages
     /// ```
     #[allow(dead_code)]
-    pub fn new_quiet() -> Self {
+    pub const fn new_quiet() -> Self {
         Self {
             no_lock: false,
             frozen: false,
@@ -343,7 +343,7 @@ impl InstallCommand {
     /// To get started, create a agpm.toml file with your dependencies:
     ///
     /// [sources]
-    /// official = "https://github.com/example-org/ccpm-official.git"
+    /// official = "https://github.com/example-org/agpm-official.git"
     ///
     /// [agents]
     /// my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
@@ -354,7 +354,7 @@ impl InstallCommand {
 "No agpm.toml found in current directory or any parent directory.\n\n\
             To get started, create a agpm.toml file with your dependencies:\n\n\
             [sources]\n\
-            official = \"https://github.com/example-org/ccpm-official.git\"\n\n\
+            official = \"https://github.com/example-org/agpm-official.git\"\n\n\
             [agents]\n\
             my-agent = { source = \"official\", path = \"agents/my-agent.md\", version = \"v1.0.0\" }"
         })?;
@@ -395,9 +395,8 @@ impl InstallCommand {
             if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
                 return Err(anyhow::anyhow!(
                     "Lockfile has critical issues in --frozen mode:\n\n\
-                     {}\n\n\
-                     Hint: Fix the issue or remove --frozen flag.",
-                    reason
+                     {reason}\n\n\
+                     Hint: Fix the issue or remove --frozen flag."
                 ));
             }
         }
@@ -460,7 +459,7 @@ impl InstallCommand {
             if self.frozen {
                 // Use existing lockfile as-is
                 if !self.quiet {
-                    println!("✓ Using frozen lockfile ({} dependencies)", total_deps);
+                    println!("✓ Using frozen lockfile ({total_deps} dependencies)");
                 }
                 existing
             } else {
@@ -475,7 +474,7 @@ impl InstallCommand {
                 // Complete resolving phase
                 if !self.quiet && !self.no_progress && total_deps > 0 {
                     multi_phase
-                        .complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
+                        .complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
                 }
 
                 result
@@ -491,7 +490,7 @@ impl InstallCommand {
 
             // Complete resolving phase
             if !self.quiet && !self.no_progress && total_deps > 0 {
-                multi_phase.complete_phase(Some(&format!("Resolved {} dependencies", total_deps)));
+                multi_phase.complete_phase(Some(&format!("Resolved {total_deps} dependencies")));
             }
 
             result
@@ -531,13 +530,13 @@ impl InstallCommand {
             if !self.quiet && !self.no_progress {
                 multi_phase.start_phase(
                     InstallationPhase::Installing,
-                    Some(&format!("({} resources)", total_resources)),
+                    Some(&format!("({total_resources} resources)")),
                 );
             }
 
             let max_concurrency = self.max_parallel.unwrap_or_else(|| {
                 let cores = std::thread::available_parallelism()
-                    .map(|n| n.get())
+                    .map(std::num::NonZero::get)
                     .unwrap_or(4);
                 std::cmp::max(10, cores * 2)
             });
@@ -563,7 +562,7 @@ impl InstallCommand {
 
                     // Complete installation phase
                     if count > 0 && !self.quiet && !self.no_progress {
-                        multi_phase.complete_phase(Some(&format!("Installed {} resources", count)));
+                        multi_phase.complete_phase(Some(&format!("Installed {count} resources")));
                     }
                     count
                 }
@@ -595,7 +594,7 @@ impl InstallCommand {
                     if server_count == 1 {
                         println!("✓ Configured 1 MCP server");
                     } else {
-                        println!("✓ Configured {} MCP servers", server_count);
+                        println!("✓ Configured {server_count} MCP servers");
                     }
                 }
             }
@@ -724,7 +723,9 @@ impl InstallCommand {
                     new_entry.source.as_deref(),
                 ) {
                     // Check if it was updated
-                    if old_entry.resolved_commit != new_entry.resolved_commit {
+                    if old_entry.resolved_commit == new_entry.resolved_commit {
+                        unchanged_count += 1;
+                    } else {
                         let old_version = old_entry
                             .version
                             .clone()
@@ -739,8 +740,6 @@ impl InstallCommand {
                             old_version,
                             new_version,
                         ));
-                    } else {
-                        unchanged_count += 1;
                     }
                 } else {
                     // New resource
@@ -786,7 +785,7 @@ impl InstallCommand {
                             "  {} {} ({})",
                             "+".green(),
                             name.cyan(),
-                            format!("{} {}", resource_type, version).dimmed()
+                            format!("{resource_type} {version}").dimmed()
                         );
                     }
                     println!();
@@ -804,7 +803,7 @@ impl InstallCommand {
                 if unchanged_count > 0 {
                     println!(
                         "{}",
-                        format!("{} unchanged resources", unchanged_count).dimmed()
+                        format!("{unchanged_count} unchanged resources").dimmed()
                     );
                 }
 

@@ -138,7 +138,7 @@ pub mod backup;
 pub mod config;
 /// Core self-update implementation.
 ///
-/// Contains the main SelfUpdater struct that handles downloading and installing
+/// Contains the main `SelfUpdater` struct that handles downloading and installing
 /// AGPM updates from GitHub releases with proper version management and safety checks.
 pub mod self_updater;
 /// Download verification and integrity checking.

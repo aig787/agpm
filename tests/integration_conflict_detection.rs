@@ -22,7 +22,7 @@ async fn test_exact_version_conflict_blocks_install() {
         &manifest_path,
         r#"
 [sources]
-community = "https://github.com/aig787/ccpm-community.git"
+community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
 # Same path, different versions - should conflict

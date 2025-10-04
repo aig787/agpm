@@ -741,7 +741,7 @@ async fn test_validate_with_warnings() {
     // Create manifest with no dependencies (triggers "no dependencies" warning)
     let manifest_content = r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
@@ -761,7 +761,7 @@ async fn test_validate_strict_mode() {
     // Create manifest with no dependencies (triggers "no dependencies" warning)
     let manifest_content = r#"
 [sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 

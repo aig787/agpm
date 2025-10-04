@@ -121,7 +121,7 @@ pub struct MatcherGroup {
 ///
 /// # Returns
 ///
-/// A HashMap mapping hook names to their configurations. If the directory
+/// A `HashMap` mapping hook names to their configurations. If the directory
 /// doesn't exist, returns an empty map.
 ///
 /// # Errors
@@ -234,24 +234,22 @@ fn convert_to_claude_format(
                 // Session event without matcher - add to first group or create new one
                 if let Some(first_group) = event_vec.first_mut() {
                     // Add to existing group if it has no matcher
-                    if !first_group.as_object().unwrap().contains_key("matcher") {
-                        if let Some(hooks_array) =
-                            first_group.get_mut("hooks").and_then(|h| h.as_array_mut())
-                        {
-                            // Check for duplicates before adding
-                            let hook_exists = hooks_array.iter().any(|existing_hook| {
-                                existing_hook.get("command") == hook_obj.get("command")
-                                    && existing_hook.get("type") == hook_obj.get("type")
-                            });
-                            if !hook_exists {
-                                hooks_array.push(hook_obj);
-                            }
-                        }
-                    } else {
+                    if first_group.as_object().unwrap().contains_key("matcher") {
                         // Create new group for session events
                         event_vec.push(json!({
                             "hooks": [hook_obj]
                         }));
+                    } else if let Some(hooks_array) =
+                        first_group.get_mut("hooks").and_then(|h| h.as_array_mut())
+                    {
+                        // Check for duplicates before adding
+                        let hook_exists = hooks_array.iter().any(|existing_hook| {
+                            existing_hook.get("command") == hook_obj.get("command")
+                                && existing_hook.get("type") == hook_obj.get("type")
+                        });
+                        if !hook_exists {
+                            hooks_array.push(hook_obj);
+                        }
                     }
                 } else {
                     // Create first group for session events
@@ -322,22 +320,19 @@ pub async fn install_hooks(
 
     if hooks_changed {
         // Count actual configured hooks (after deduplication)
-        let configured_count = claude_hooks
-            .as_object()
-            .map(|events| {
-                events
-                    .values()
-                    .filter_map(|event_groups| event_groups.as_array())
-                    .map(|groups| {
-                        groups
-                            .iter()
-                            .filter_map(|group| group.get("hooks")?.as_array())
-                            .map(|hooks| hooks.len())
-                            .sum::<usize>()
-                    })
-                    .sum::<usize>()
-            })
-            .unwrap_or(0);
+        let configured_count = claude_hooks.as_object().map_or(0, |events| {
+            events
+                .values()
+                .filter_map(|event_groups| event_groups.as_array())
+                .map(|groups| {
+                    groups
+                        .iter()
+                        .filter_map(|group| group.get("hooks")?.as_array())
+                        .map(std::vec::Vec::len)
+                        .sum::<usize>()
+                })
+                .sum::<usize>()
+        });
 
         // Update settings with hooks (replaces existing hooks completely)
         settings.hooks = Some(claude_hooks);
@@ -346,10 +341,7 @@ pub async fn install_hooks(
         settings.save(&settings_path)?;
 
         if configured_count > 0 {
-            println!(
-                "✓ Configured {} hook(s) in .claude/settings.local.json",
-                configured_count
-            );
+            println!("✓ Configured {configured_count} hook(s) in .claude/settings.local.json");
         }
     }
 
@@ -455,7 +447,7 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     // Validate matcher regex if present
     if let Some(ref matcher) = config.matcher {
         regex::Regex::new(matcher)
-            .with_context(|| format!("Invalid regex pattern in matcher: {}", matcher))?;
+            .with_context(|| format!("Invalid regex pattern in matcher: {matcher}"))?;
     }
 
     // Validate hook type

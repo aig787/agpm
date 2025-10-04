@@ -44,7 +44,7 @@
 //! - **SHA-based deduplication**: Worktrees keyed by commit SHA, not version reference
 //! - **Centralized resolution**: `VersionResolver` handles batch SHA resolution upfront
 //! - **Maximum reuse**: Multiple tags/branches pointing to same commit share one worktree
-//! - **Instance-level caching**: WorktreeState tracks creation across threads
+//! - **Instance-level caching**: `WorktreeState` tracks creation across threads
 //! - **Per-worktree file locking**: Fine-grained locks prevent creation conflicts
 //! - **Direct parallelism control**: `--max-parallel` flag controls concurrency
 //! - **Command-instance fetch caching**: Single fetch per repository per command
@@ -237,7 +237,7 @@ use tokio::sync::{Mutex, RwLock};
 ///
 /// Components:
 /// - `cache_dir_hash`: First 8 hex chars of cache directory path hash
-/// - `owner_repo`: Parsed from Git URL (e.g., "github_owner_project")
+/// - `owner_repo`: Parsed from Git URL (e.g., "`github_owner_project`")
 /// - `version`: Git reference (tag, branch, commit, or "HEAD")
 ///
 /// This format ensures isolation between:
@@ -890,8 +890,7 @@ impl Cache {
         // Validate SHA format
         if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(anyhow::anyhow!(
-                "Invalid SHA format: expected 40 hex characters, got '{}'",
-                sha
+                "Invalid SHA format: expected 40 hex characters, got '{sha}'"
             ));
         }
 
@@ -991,7 +990,10 @@ impl Cache {
             .join("sources")
             .join(format!("{owner}_{repo}.git"));
 
-        if !bare_repo_dir.exists() {
+        if bare_repo_dir.exists() {
+            // Fetch to ensure we have the SHA
+            self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
+        } else {
             let lock_name = format!("{owner}_{repo}");
             let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
 
@@ -1011,9 +1013,6 @@ impl Cache {
                     .await
                     .ok();
             }
-        } else {
-            // Fetch to ensure we have the SHA
-            self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
         }
 
         let bare_repo = GitRepo::new(&bare_repo_dir);
@@ -1025,7 +1024,7 @@ impl Cache {
             .join(format!("{owner}_{repo}_{sha_short}"));
 
         // Acquire worktree creation lock
-        let worktree_lock_name = format!("worktree-{}-{}-{}", owner, repo, sha_short);
+        let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
         let _worktree_lock = CacheLock::acquire(&self.cache_dir, &worktree_lock_name).await?;
 
         // Re-check after lock
@@ -1059,7 +1058,7 @@ impl Cache {
         // Lock bare repo for worktree creation
         // Hold the lock through cache update to prevent git state corruption
         // when multiple worktrees are created concurrently for the same repo
-        let bare_repo_lock_name = format!("bare-repo-{}_{}", owner, repo);
+        let bare_repo_lock_name = format!("bare-repo-{owner}_{repo}");
         let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
 
         // Create worktree using SHA directly
@@ -1152,7 +1151,7 @@ impl Cache {
         let source_dir = self
             .cache_dir
             .join("sources")
-            .join(format!("{}_{}.git", owner, repo)); // Always use .git suffix for bare repos
+            .join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
@@ -1259,7 +1258,7 @@ impl Cache {
         // Clone as a bare repository for better concurrency and worktree support
         GitRepo::clone_bare(url, target)
             .await
-            .with_context(|| format!("Failed to clone repository from {}", url))?;
+            .with_context(|| format!("Failed to clone repository from {url}"))?;
 
         // Debug: List what was cloned
         if cfg!(test)
@@ -1886,7 +1885,7 @@ impl Cache {
         let lock_path = self
             .cache_dir
             .join(".locks")
-            .join(format!("{}.fetch.lock", safe_name));
+            .join(format!("{safe_name}.fetch.lock"));
 
         // Ensure lock directory exists
         if let Some(parent) = lock_path.parent() {
@@ -1938,7 +1937,7 @@ impl Cache {
                     bare_repo_path.display(),
                     is_fetched,
                     fetched.len(),
-                    &*fetched as *const _
+                    &raw const *fetched
                 );
             }
             is_fetched
@@ -1982,7 +1981,7 @@ impl Cache {
                     ctx,
                     bare_repo_path.display(),
                     fetched.len(),
-                    &*fetched as *const _
+                    &raw const *fetched
                 );
             }
         }

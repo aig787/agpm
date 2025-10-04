@@ -28,8 +28,8 @@
 //! # Named source repositories (optional)
 //! [sources]
 //! # Git repository URLs mapped to convenient names
-//! official = "https://github.com/example-org/ccpm-official.git"
-//! community = "https://github.com/community/ccpm-resources.git"
+//! official = "https://github.com/example-org/agpm-official.git"
+//! community = "https://github.com/community/agpm-resources.git"
 //! private = "git@github.com:company/private-resources.git"
 //!
 //! # Installation target directories (optional)
@@ -74,8 +74,8 @@
 //! ```toml
 //! [sources]
 //! # HTTPS URLs (recommended for public repositories)
-//! official = "https://github.com/owner/ccpm-resources.git"
-//! community = "https://gitlab.com/group/ccpm-community.git"
+//! official = "https://github.com/owner/agpm-resources.git"
+//! community = "https://gitlab.com/group/agpm-community.git"
 //!
 //! # SSH URLs (for private repositories with key authentication)
 //! private = "git@github.com:company/private-resources.git"
@@ -784,7 +784,7 @@ fn default_hooks_dir() -> String {
     ".claude/agpm/hooks".to_string()
 }
 
-fn default_gitignore() -> bool {
+const fn default_gitignore() -> bool {
     true
 }
 
@@ -1499,7 +1499,7 @@ impl Manifest {
             if dep.is_pattern() {
                 crate::pattern::validate_pattern_safety(dep.get_path()).map_err(|e| {
                     crate::core::AgpmError::ManifestValidationError {
-                        reason: format!("Invalid pattern in dependency '{}': {}", name, e),
+                        reason: format!("Invalid pattern in dependency '{name}': {e}"),
                     }
                 })?;
             }
@@ -1617,8 +1617,7 @@ impl Manifest {
                     if other_name != name && other_name.to_lowercase() == normalized {
                         return Err(crate::core::AgpmError::ManifestValidationError {
                             reason: format!(
-                                "Case conflict: '{}' and '{}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique.",
-                                name, other_name
+                                "Case conflict: '{name}' and '{other_name}' would map to the same file on case-insensitive filesystems. To ensure portability across platforms, resource names must be case-insensitively unique."
                             ),
                         }
                         .into());
@@ -1665,9 +1664,9 @@ impl Manifest {
     /// guaranteed to be stable across runs.
     /// Get dependencies for a specific resource type
     ///
-    /// Returns the HashMap of dependencies for the specified resource type.
+    /// Returns the `HashMap` of dependencies for the specified resource type.
     /// Note: MCP servers return None as they use a different dependency type.
-    pub fn get_dependencies(
+    pub const fn get_dependencies(
         &self,
         resource_type: crate::core::ResourceType,
     ) -> Option<&HashMap<String, ResourceDependency>> {
@@ -1743,7 +1742,7 @@ impl Manifest {
 
     /// Get all dependencies including MCP servers.
     ///
-    /// All resource types now use standard ResourceDependency, so no conversion needed.
+    /// All resource types now use standard `ResourceDependency`, so no conversion needed.
     #[must_use]
     pub fn all_dependencies_with_mcp(
         &self,
@@ -1833,7 +1832,7 @@ impl Manifest {
             .or_else(|| self.commands.get(name))
     }
 
-    /// Find a dependency by name from any section (alias for get_dependency).
+    /// Find a dependency by name from any section (alias for `get_dependency`).
     ///
     /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
     /// with the specified name, returning the first match found.
@@ -2033,7 +2032,7 @@ impl Manifest {
 
     /// Add or update an MCP server configuration.
     ///
-    /// MCP servers now use standard ResourceDependency format,
+    /// MCP servers now use standard `ResourceDependency` format,
     /// pointing to JSON configuration files in source repositories.
     ///
     /// # Examples
@@ -2096,8 +2095,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_source(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.source.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.source.as_deref(),
         }
     }
 
@@ -2133,8 +2132,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_target(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.target.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.target.as_deref(),
         }
     }
 
@@ -2170,8 +2169,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_filename(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => d.filename.as_deref(),
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.filename.as_deref(),
         }
     }
 
@@ -2217,8 +2216,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
-            ResourceDependency::Simple(path) => path,
-            ResourceDependency::Detailed(d) => &d.path,
+            Self::Simple(path) => path,
+            Self::Detailed(d) => &d.path,
         }
     }
 
@@ -2315,8 +2314,8 @@ impl ResourceDependency {
     #[must_use]
     pub fn get_version(&self) -> Option<&str> {
         match self {
-            ResourceDependency::Simple(_) => None,
-            ResourceDependency::Detailed(d) => {
+            Self::Simple(_) => None,
+            Self::Detailed(d) => {
                 // Precedence: rev > branch > version
                 d.rev
                     .as_deref()
@@ -2675,6 +2674,10 @@ pub fn find_manifest_from(mut current: PathBuf) -> Result<PathBuf> {
         }
 
         if !current.pop() {
+            // Check for legacy CCPM files before returning error
+            if let Some(migration_msg) = crate::cli::common::check_for_legacy_ccpm_files() {
+                return Err(anyhow::anyhow!("{migration_msg}"));
+            }
             return Err(crate::core::AgpmError::ManifestNotFound.into());
         }
     }
@@ -2703,7 +2706,7 @@ mod tests {
         let mut manifest = Manifest::new();
         manifest.add_source(
             "official".to_string(),
-            "https://github.com/example-org/ccpm-official.git".to_string(),
+            "https://github.com/example-org/agpm-official.git".to_string(),
         );
         manifest.add_dependency(
             "test-agent".to_string(),

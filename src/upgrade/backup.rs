@@ -285,7 +285,7 @@ impl BackupManager {
 
         while attempts < MAX_ATTEMPTS {
             match self.attempt_restore().await {
-                Ok(_) => {
+                Ok(()) => {
                     info!("Successfully restored from backup");
                     return Ok(());
                 }
@@ -302,7 +302,7 @@ impl BackupManager {
             }
         }
 
-        bail!("Failed to restore backup after {} attempts", MAX_ATTEMPTS)
+        bail!("Failed to restore backup after {MAX_ATTEMPTS} attempts")
     }
 
     /// Attempt a single restoration operation.

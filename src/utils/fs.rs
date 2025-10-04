@@ -1564,7 +1564,7 @@ pub fn write_text_file(path: &Path, content: &str) -> Result<()> {
 /// * `path` - The path to the JSON file
 ///
 /// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+/// * `T` - The type to deserialize into (must implement `DeserializeOwned`)
 ///
 /// # Returns
 /// The parsed JSON data
@@ -1615,7 +1615,7 @@ where
 /// * `path` - The path to the TOML file
 ///
 /// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+/// * `T` - The type to deserialize into (must implement `DeserializeOwned`)
 ///
 /// # Returns
 /// The parsed TOML data
@@ -1663,7 +1663,7 @@ where
 /// * `path` - The path to the YAML file
 ///
 /// # Type Parameters
-/// * `T` - The type to deserialize into (must implement DeserializeOwned)
+/// * `T` - The type to deserialize into (must implement `DeserializeOwned`)
 ///
 /// # Returns
 /// The parsed YAML data
@@ -1711,7 +1711,7 @@ where
 /// * `content` - The content to write to the file
 ///
 /// # Returns
-/// A TempPath that will delete the file when dropped
+/// A `TempPath` that will delete the file when dropped
 ///
 /// # Errors
 /// Returns an error if the temp file cannot be created
@@ -1744,7 +1744,7 @@ pub fn file_exists_and_readable(path: &Path) -> bool {
 /// * `path` - The path to the file
 ///
 /// # Returns
-/// The modification time as a SystemTime
+/// The modification time as a `SystemTime`
 ///
 /// # Errors
 /// Returns an error if the file metadata cannot be read

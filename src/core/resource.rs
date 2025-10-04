@@ -195,7 +195,7 @@ pub enum ResourceType {
     /// Hook configuration files
     ///
     /// Hooks define event-based automation in Claude Code. They are JSON files
-    /// that configure scripts to run at specific events (PreToolUse, PostToolUse, etc.)
+    /// that configure scripts to run at specific events (`PreToolUse`, `PostToolUse`, etc.)
     /// and are merged into settings.local.json
     Hook,
     // Future resource types can be added here
@@ -208,7 +208,7 @@ impl ResourceType {
     /// for iterating over all resource types when processing manifests, lockfiles,
     /// or performing batch operations.
     ///
-    /// The order is guaranteed to be stable: Agent, Snippet, Command, McpServer, Script, Hook
+    /// The order is guaranteed to be stable: Agent, Snippet, Command, `McpServer`, Script, Hook
     ///
     /// # Examples
     ///
@@ -223,14 +223,14 @@ impl ResourceType {
     /// // Count total resource types
     /// assert_eq!(ResourceType::all().len(), 6);
     /// ```
-    pub const fn all() -> &'static [ResourceType] {
+    pub const fn all() -> &'static [Self] {
         &[
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::McpServer,
-            ResourceType::Script,
-            ResourceType::Hook,
+            Self::Agent,
+            Self::Snippet,
+            Self::Command,
+            Self::McpServer,
+            Self::Script,
+            Self::Hook,
         ]
     }
 
@@ -248,12 +248,12 @@ impl ResourceType {
     /// ```
     pub const fn to_plural(&self) -> &'static str {
         match self {
-            ResourceType::Agent => "agents",
-            ResourceType::Snippet => "snippets",
-            ResourceType::Command => "commands",
-            ResourceType::Script => "scripts",
-            ResourceType::Hook => "hooks",
-            ResourceType::McpServer => "mcp-servers",
+            Self::Agent => "agents",
+            Self::Snippet => "snippets",
+            Self::Command => "commands",
+            Self::Script => "scripts",
+            Self::Hook => "hooks",
+            Self::McpServer => "mcp-servers",
         }
     }
 
@@ -296,14 +296,14 @@ impl ResourceType {
     /// [`Script`]: ResourceType::Script
     /// [`Hook`]: ResourceType::Hook
     #[must_use]
-    pub fn default_directory(&self) -> &str {
+    pub const fn default_directory(&self) -> &str {
         match self {
-            ResourceType::Agent => ".claude/agents",
-            ResourceType::Snippet => ".claude/agpm/snippets",
-            ResourceType::Command => ".claude/commands",
-            ResourceType::McpServer => ".claude/agpm/mcp-servers",
-            ResourceType::Script => ".claude/agpm/scripts",
-            ResourceType::Hook => ".claude/agpm/hooks",
+            Self::Agent => ".claude/agents",
+            Self::Snippet => ".claude/agpm/snippets",
+            Self::Command => ".claude/commands",
+            Self::McpServer => ".claude/agpm/mcp-servers",
+            Self::Script => ".claude/agpm/scripts",
+            Self::Hook => ".claude/agpm/hooks",
         }
     }
 }
@@ -311,12 +311,12 @@ impl ResourceType {
 impl std::fmt::Display for ResourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResourceType::Agent => write!(f, "agent"),
-            ResourceType::Snippet => write!(f, "snippet"),
-            ResourceType::Command => write!(f, "command"),
-            ResourceType::McpServer => write!(f, "mcp-server"),
-            ResourceType::Script => write!(f, "script"),
-            ResourceType::Hook => write!(f, "hook"),
+            Self::Agent => write!(f, "agent"),
+            Self::Snippet => write!(f, "snippet"),
+            Self::Command => write!(f, "command"),
+            Self::McpServer => write!(f, "mcp-server"),
+            Self::Script => write!(f, "script"),
+            Self::Hook => write!(f, "hook"),
         }
     }
 }
@@ -326,12 +326,12 @@ impl std::str::FromStr for ResourceType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "agent" | "agents" => Ok(ResourceType::Agent),
-            "snippet" | "snippets" => Ok(ResourceType::Snippet),
-            "command" | "commands" => Ok(ResourceType::Command),
-            "mcp-server" | "mcp-servers" | "mcpserver" | "mcp" => Ok(ResourceType::McpServer),
-            "script" | "scripts" => Ok(ResourceType::Script),
-            "hook" | "hooks" => Ok(ResourceType::Hook),
+            "agent" | "agents" => Ok(Self::Agent),
+            "snippet" | "snippets" => Ok(Self::Snippet),
+            "command" | "commands" => Ok(Self::Command),
+            "mcp-server" | "mcp-servers" | "mcpserver" | "mcp" => Ok(Self::McpServer),
+            "script" | "scripts" => Ok(Self::Script),
+            "hook" | "hooks" => Ok(Self::Hook),
             _ => Err(crate::core::AgpmError::InvalidResourceType {
                 resource_type: s.to_string(),
             }),

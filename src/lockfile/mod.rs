@@ -321,7 +321,7 @@ use crate::utils::fs::atomic_write;
 /// println!("{}", reason);
 /// // Output: "Dependency 'my-agent' (agent) is in manifest but missing from lockfile"
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StalenessReason {
     /// A dependency is in the manifest but not in the lockfile.
     /// This indicates the lockfile is incomplete and needs regeneration.
@@ -381,17 +381,16 @@ pub enum StalenessReason {
 impl std::fmt::Display for StalenessReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StalenessReason::MissingDependency {
+            Self::MissingDependency {
                 name,
                 resource_type,
             } => {
                 write!(
                     f,
-                    "Dependency '{}' ({}) is in manifest but missing from lockfile",
-                    name, resource_type
+                    "Dependency '{name}' ({resource_type}) is in manifest but missing from lockfile"
                 )
             }
-            StalenessReason::VersionChanged {
+            Self::VersionChanged {
                 name,
                 resource_type,
                 old_version,
@@ -399,11 +398,10 @@ impl std::fmt::Display for StalenessReason {
             } => {
                 write!(
                     f,
-                    "Dependency '{}' ({}) version changed from '{}' to '{}'",
-                    name, resource_type, old_version, new_version
+                    "Dependency '{name}' ({resource_type}) version changed from '{old_version}' to '{new_version}'"
                 )
             }
-            StalenessReason::PathChanged {
+            Self::PathChanged {
                 name,
                 resource_type,
                 old_path,
@@ -411,30 +409,27 @@ impl std::fmt::Display for StalenessReason {
             } => {
                 write!(
                     f,
-                    "Dependency '{}' ({}) path changed from '{}' to '{}'",
-                    name, resource_type, old_path, new_path
+                    "Dependency '{name}' ({resource_type}) path changed from '{old_path}' to '{new_path}'"
                 )
             }
-            StalenessReason::SourceUrlChanged {
+            Self::SourceUrlChanged {
                 name,
                 old_url,
                 new_url,
             } => {
                 write!(
                     f,
-                    "Source repository '{}' URL changed from '{}' to '{}'",
-                    name, old_url, new_url
+                    "Source repository '{name}' URL changed from '{old_url}' to '{new_url}'"
                 )
             }
-            StalenessReason::DuplicateEntries {
+            Self::DuplicateEntries {
                 name,
                 resource_type,
                 count,
             } => {
                 write!(
                     f,
-                    "Found {} duplicate entries for dependency '{}' ({})",
-                    count, name, resource_type
+                    "Found {count} duplicate entries for dependency '{name}' ({resource_type})"
                 )
             }
         }
@@ -584,7 +579,7 @@ pub struct LockFile {
 /// ```toml
 /// [[sources]]
 /// name = "community"
-/// url = "https://github.com/example/ccpm-community.git"
+/// url = "https://github.com/example/agpm-community.git"
 /// commit = "a1b2c3d4e5f6789abcdef0123456789abcdef012"
 /// fetched_at = "2024-01-15T10:30:00Z"
 /// ```
@@ -778,7 +773,7 @@ impl LockFile {
     /// assert!(lockfile.snippets.is_empty());
     /// ```
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             version: Self::CURRENT_VERSION,
             sources: Vec::new(),
@@ -1029,13 +1024,13 @@ impl LockFile {
                     content.push_str(&format!("installed_at = {:?}\n", resource.installed_at));
                     // Always include dependencies field, even if empty (matches Cargo.lock format)
                     content.push_str("dependencies = [");
-                    if !resource.dependencies.is_empty() {
-                        content.push('\n');
-                        for dep in &resource.dependencies {
-                            content.push_str(&format!("    {:?},\n", dep));
-                        }
+                    if resource.dependencies.is_empty() {
                         content.push_str("]\n\n");
                     } else {
+                        content.push('\n');
+                        for dep in &resource.dependencies {
+                            content.push_str(&format!("    {dep:?},\n"));
+                        }
                         content.push_str("]\n\n");
                     }
                 }
@@ -1474,7 +1469,7 @@ impl LockFile {
     /// Get mutable locked resources for a specific resource type
     ///
     /// Returns a mutable slice of locked resources for the specified type.
-    pub fn get_resources_mut(
+    pub const fn get_resources_mut(
         &mut self,
         resource_type: crate::core::ResourceType,
     ) -> &mut Vec<LockedResource> {
@@ -2081,7 +2076,7 @@ mod tests {
         // Add a source
         lockfile.add_source(
             "official".to_string(),
-            "https://github.com/example-org/ccpm-official.git".to_string(),
+            "https://github.com/example-org/agpm-official.git".to_string(),
             "abc123".to_string(),
         );
 
@@ -2091,7 +2086,7 @@ mod tests {
             LockedResource {
                 name: "test-agent".to_string(),
                 source: Some("official".to_string()),
-                url: Some("https://github.com/example-org/ccpm-official.git".to_string()),
+                url: Some("https://github.com/example-org/agpm-official.git".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
                 resolved_commit: Some("abc123".to_string()),
@@ -2114,7 +2109,7 @@ mod tests {
         assert_eq!(loaded.agents.len(), 1);
         assert_eq!(
             loaded.get_source("official").unwrap().url,
-            "https://github.com/example-org/ccpm-official.git"
+            "https://github.com/example-org/agpm-official.git"
         );
         assert_eq!(
             loaded.get_resource("test-agent").unwrap().checksum,

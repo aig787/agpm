@@ -229,7 +229,7 @@ use std::path::{Path, PathBuf};
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
 
-/// Type alias for resource lookup key: (ResourceType, name, source).
+/// Type alias for resource lookup key: (`ResourceType`, name, source).
 ///
 /// Used internally by the resolver to uniquely identify resources across different sources.
 /// This enables precise lookups when multiple resources share the same name but come from
@@ -237,7 +237,7 @@ use self::version_resolver::VersionResolver;
 ///
 /// # Components
 ///
-/// * `ResourceType` - The type of resource (Agent, Snippet, Command, Script, Hook, McpServer)
+/// * `ResourceType` - The type of resource (Agent, Snippet, Command, Script, Hook, `McpServer`)
 /// * `String` - The resource name as defined in the manifest
 /// * `Option<String>` - The source name (None for local resources without a source)
 ///
@@ -320,15 +320,15 @@ pub struct DependencyResolver {
     version_resolver: VersionResolver,
     /// Dependency graph tracking which resources depend on which others.
     ///
-    /// Maps from (resource_type, name, source) to a list of dependencies in the format
-    /// "resource_type/name". This is populated during transitive dependency
-    /// resolution and used to fill the dependencies field in LockedResource entries.
+    /// Maps from (`resource_type`, name, source) to a list of dependencies in the format
+    /// "`resource_type/name`". This is populated during transitive dependency
+    /// resolution and used to fill the dependencies field in `LockedResource` entries.
     /// The source is included to prevent cross-source dependency contamination.
     dependency_map: HashMap<(crate::core::ResourceType, String, Option<String>), Vec<String>>,
     /// Resource type cache for transitive dependencies.
     ///
-    /// Maps from (name, source) to ResourceType for transitive dependencies discovered
-    /// during resolution. This allows get_resource_type() to accurately determine the
+    /// Maps from (name, source) to `ResourceType` for transitive dependencies discovered
+    /// during resolution. This allows `get_resource_type()` to accurately determine the
     /// type for transitive dependencies without defaulting to Snippet.
     transitive_types: HashMap<(String, Option<String>), crate::core::ResourceType>,
     /// Conflict detector for identifying version conflicts.
@@ -504,7 +504,7 @@ impl DependencyResolver {
                 resource.installed_at.clone(),
                 resource.resolved_commit.clone(),
             );
-            path_map.entry(key).or_default().push(name.to_string());
+            path_map.entry(key).or_default().push((*name).to_string());
         }
 
         // Now check for actual conflicts: same path but DIFFERENT commits
@@ -527,7 +527,8 @@ impl DependencyResolver {
 
                 // Only a conflict if different commits
                 if commits.len() > 1 {
-                    let names: Vec<String> = resources.iter().map(|(n, _)| n.to_string()).collect();
+                    let names: Vec<String> =
+                        resources.iter().map(|(n, _)| (*n).to_string()).collect();
                     conflicts.push((path, names));
                 }
             }
@@ -693,7 +694,7 @@ impl DependencyResolver {
         let repo = GitRepo::new(repo_path);
         repo.list_tags()
             .await
-            .with_context(|| format!("Failed to list tags from repository at {:?}", repo_path))
+            .with_context(|| format!("Failed to list tags from repository at {repo_path:?}"))
     }
 
     /// Creates worktrees for all resolved SHAs in parallel.
@@ -1100,14 +1101,14 @@ impl DependencyResolver {
         // Add initial dependencies to queue
         for (name, dep) in base_deps {
             let resource_type = self.get_resource_type(name);
-            let source = dep.get_source().map(|s| s.to_string());
+            let source = dep.get_source().map(std::string::ToString::to_string);
             queue.push((name.clone(), dep.clone(), Some(resource_type)));
             all_deps.insert((resource_type, name.clone(), source), dep.clone());
         }
 
         // Process queue to discover transitive dependencies
         while let Some((name, dep, resource_type)) = queue.pop() {
-            let source = dep.get_source().map(|s| s.to_string());
+            let source = dep.get_source().map(std::string::ToString::to_string);
             let resource_type = resource_type
                 .unwrap_or_else(|| self.get_resource_type_with_source(&name, source.as_deref()));
             let key = (resource_type, name.clone(), source.clone());
@@ -1128,8 +1129,7 @@ impl DependencyResolver {
                 Err(e) => {
                     // If we can't fetch the resource, skip its transitive deps
                     eprintln!(
-                        "Warning: Failed to fetch resource '{}' for transitive dependency extraction: {}",
-                        name, e
+                        "Warning: Failed to fetch resource '{name}' for transitive dependency extraction: {e}"
                     );
                     continue;
                 }
@@ -1174,7 +1174,8 @@ impl DependencyResolver {
                         let trans_name = self.generate_dependency_name(&dep_spec.path);
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
-                        let trans_source = trans_dep.get_source().map(|s| s.to_string());
+                        let trans_source =
+                            trans_dep.get_source().map(std::string::ToString::to_string);
                         let from_node =
                             DependencyNode::with_source(resource_type, &name, source.clone());
                         let to_node = DependencyNode::with_source(
@@ -1187,7 +1188,7 @@ impl DependencyResolver {
                         // Track in dependency map (use singular form from enum for dependency references)
                         // Include source to prevent cross-source contamination
                         let from_key = (resource_type, name.clone(), source.clone());
-                        let dep_ref = format!("{}/{}", dep_resource_type, trans_name);
+                        let dep_ref = format!("{dep_resource_type}/{trans_name}");
                         self.dependency_map
                             .entry(from_key)
                             .or_default()
@@ -1274,7 +1275,7 @@ impl DependencyResolver {
                     let source_url = self
                         .source_manager
                         .get_source_url(source_name)
-                        .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+                        .ok_or_else(|| anyhow::anyhow!("Source '{source_name}' not found"))?;
 
                     // Check if this is a local directory source
                     if crate::utils::is_local_path(&source_url) {
@@ -1307,9 +1308,7 @@ impl DependencyResolver {
                                 .get_resolved_sha(source_name, &version)
                                 .ok_or_else(|| {
                                     anyhow::anyhow!(
-                                        "Failed to resolve version for {} @ {}",
-                                        source_name,
-                                        version
+                                        "Failed to resolve version for {source_name} @ {version}"
                                     )
                                 })?
                         };
@@ -1337,7 +1336,7 @@ impl DependencyResolver {
         }
     }
 
-    /// Convert a DependencySpec to a ResourceDependency.
+    /// Convert a `DependencySpec` to a `ResourceDependency`.
     ///
     /// Inherits the source from the parent dependency.
     ///
@@ -1557,7 +1556,7 @@ impl DependencyResolver {
             .await?;
 
         // Resolve each dependency (including transitive ones)
-        for (name, dep) in deps.iter() {
+        for (name, dep) in &deps {
             // Progress is tracked at the phase level
 
             // Check if this is a pattern dependency
@@ -1659,7 +1658,7 @@ impl DependencyResolver {
         if !conflicts.is_empty() {
             let mut error_msg = String::from("Version conflicts detected:\n\n");
             for conflict in &conflicts {
-                error_msg.push_str(&format!("{}\n", conflict));
+                error_msg.push_str(&format!("{conflict}\n"));
             }
             return Err(AgpmError::Other { message: error_msg }.into());
         }
@@ -1725,8 +1724,7 @@ impl DependencyResolver {
             // Pattern dependencies resolve to multiple resources
             // This should be handled by a separate method
             return Err(anyhow::anyhow!(
-                "Pattern dependency '{}' should be resolved using resolve_pattern_dependency",
-                name
+                "Pattern dependency '{name}' should be resolved using resolve_pattern_dependency"
             ));
         }
 
@@ -1762,7 +1760,7 @@ impl DependencyResolver {
                         }
                         _ => "md",
                     };
-                    format!("{}.{}", name, extension)
+                    format!("{name}.{extension}")
                 } else {
                     // Preserve the relative path structure
                     relative_path.to_string_lossy().to_string()
@@ -1794,7 +1792,7 @@ impl DependencyResolver {
                     crate::core::ResourceType::Hook => &self.manifest.target.hooks,
                     crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
-                format!("{}/{}", target_dir, filename)
+                format!("{target_dir}/{filename}")
             };
 
             // For local resources without a source, just use the name (no version suffix)
@@ -1815,7 +1813,7 @@ impl DependencyResolver {
         } else {
             // Remote dependency - need to sync and resolve
             let source_name = dep.get_source().ok_or_else(|| AgpmError::ConfigError {
-                message: format!("Dependency '{}' has no source specified", name),
+                message: format!("Dependency '{name}' has no source specified"),
             })?;
 
             // Get source URL
@@ -1828,39 +1826,36 @@ impl DependencyResolver {
 
             let version_key = dep
                 .get_version()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "HEAD".to_string());
+                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
             let prepared_key = Self::group_key(source_name, &version_key);
 
             // Check if this dependency has been prepared
-            let (resolved_version, resolved_commit) =
+            let (resolved_version, resolved_commit) = if let Some(prepared) =
+                self.prepared_versions.get(&prepared_key)
+            {
+                // Use prepared version
+                (
+                    prepared.resolved_version.clone(),
+                    prepared.resolved_commit.clone(),
+                )
+            } else {
+                // This dependency wasn't prepared (e.g., when called from `agpm add`)
+                // We need to prepare it on-demand
+                let deps = vec![(name.to_string(), dep.clone())];
+                self.prepare_remote_groups(&deps).await?;
+
+                // Now it should be prepared
                 if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
-                    // Use prepared version
                     (
                         prepared.resolved_version.clone(),
                         prepared.resolved_commit.clone(),
                     )
                 } else {
-                    // This dependency wasn't prepared (e.g., when called from `agpm add`)
-                    // We need to prepare it on-demand
-                    let deps = vec![(name.to_string(), dep.clone())];
-                    self.prepare_remote_groups(&deps).await?;
-
-                    // Now it should be prepared
-                    if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
-                        (
-                            prepared.resolved_version.clone(),
-                            prepared.resolved_commit.clone(),
-                        )
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Failed to prepare dependency '{}' from source '{}' @ '{}'",
-                            name,
-                            source_name,
-                            version_key
-                        ));
-                    }
-                };
+                    return Err(anyhow::anyhow!(
+                        "Failed to prepare dependency '{name}' from source '{source_name}' @ '{version_key}'"
+                    ));
+                }
+            };
 
             // Determine resource type from manifest (already returns enum)
             // Use source-aware lookup to correctly resolve transitive dependency types
@@ -1892,7 +1887,7 @@ impl DependencyResolver {
                         }
                         _ => "md",
                     };
-                    format!("{}.{}", name, extension)
+                    format!("{name}.{extension}")
                 } else {
                     // Preserve the relative path structure
                     relative_path.to_string_lossy().to_string()
@@ -1924,7 +1919,7 @@ impl DependencyResolver {
                     crate::core::ResourceType::Hook => &self.manifest.target.hooks,
                     crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
-                format!("{}/{}", target_dir, filename)
+                format!("{target_dir}/{filename}")
             };
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
@@ -1949,7 +1944,7 @@ impl DependencyResolver {
 
     /// Gets the dependencies for a resource from the dependency map.
     ///
-    /// Returns a list of dependencies in the format "resource_type/name".
+    /// Returns a list of dependencies in the format "`resource_type/name`".
     ///
     /// # Parameters
     /// - `name`: The resource name
@@ -1959,7 +1954,7 @@ impl DependencyResolver {
         let key = (
             resource_type,
             name.to_string(),
-            source.map(|s| s.to_string()),
+            source.map(std::string::ToString::to_string),
         );
         self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
@@ -2074,12 +2069,12 @@ impl DependencyResolver {
                             .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("md");
-                        format!("{}.{}", resource_name, extension)
+                        format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
                     };
 
-                let installed_at = format!("{}/{}", target_dir, filename);
+                let installed_at = format!("{target_dir}/{filename}");
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
@@ -2121,8 +2116,7 @@ impl DependencyResolver {
 
             let version_key = dep
                 .get_version()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "HEAD".to_string());
+                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
             let prepared_key = Self::group_key(source_name, &version_key);
 
             let prepared = self
@@ -2130,9 +2124,7 @@ impl DependencyResolver {
                 .get(&prepared_key)
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Prepared state missing for source '{}' @ '{}'. Stage 1 preparation should have populated this entry.",
-                        source_name,
-                        version_key
+                        "Prepared state missing for source '{source_name}' @ '{version_key}'. Stage 1 preparation should have populated this entry."
                     )
                 })?;
 
@@ -2187,12 +2179,12 @@ impl DependencyResolver {
                             .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("md");
-                        format!("{}.{}", resource_name, extension)
+                        format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
                     };
 
-                let installed_at = format!("{}/{}", target_dir, filename);
+                let installed_at = format!("{target_dir}/{filename}");
 
                 // Determine resource type (pattern dependencies inherit from parent name)
                 let resource_type = self.get_resource_type(name);
@@ -2310,7 +2302,10 @@ impl DependencyResolver {
             crate::core::ResourceType::McpServer
         } else {
             // Check transitive_types cache for discovered transitive dependencies
-            let type_key = (name.to_string(), source.map(|s| s.to_string()));
+            let type_key = (
+                name.to_string(),
+                source.map(std::string::ToString::to_string),
+            );
             if let Some(&resource_type) = self.transitive_types.get(&type_key) {
                 return resource_type;
             }
@@ -2712,7 +2707,7 @@ impl DependencyResolver {
         // Build resource identifier: source:path
         let source = dep.get_source().unwrap_or("unknown");
         let path = dep.get_path();
-        let resource_id = format!("{}:{}", source, path);
+        let resource_id = format!("{source}:{path}");
 
         // Get version constraint (None means HEAD/unspecified)
         if let Some(version) = dep.get_version() {
@@ -2742,8 +2737,11 @@ impl DependencyResolver {
         let normalize_path = |path: &str| -> String { path.trim_start_matches("./").to_string() };
 
         // Helper to extract filename from path
-        let extract_filename =
-            |path: &str| -> Option<String> { path.split('/').next_back().map(|s| s.to_string()) };
+        let extract_filename = |path: &str| -> Option<String> {
+            path.split('/')
+                .next_back()
+                .map(std::string::ToString::to_string)
+        };
 
         // Build lookup map from all lockfile entries
         for entry in &lockfile.agents {
@@ -2966,17 +2964,17 @@ impl DependencyResolver {
                                         parent_source.clone(),
                                     )) {
                                         // Found resource in same source - use singular form from enum
-                                        return format!("{}/{}", resource_type, dep_name);
+                                        return format!("{resource_type}/{dep_name}");
                                     }
 
                                     // If not found with same source, try adding .md extension
-                                    let dep_filename_with_ext = format!("{}.md", dep_filename);
+                                    let dep_filename_with_ext = format!("{dep_filename}.md");
                                     if let Some(dep_name) = lookup_map.get(&(
                                         resource_type,
                                         dep_filename_with_ext.clone(),
                                         parent_source.clone(),
                                     )) {
-                                        return format!("{}/{}", resource_type, dep_name);
+                                        return format!("{resource_type}/{dep_name}");
                                     }
 
                                     // Try looking for resource from ANY source (cross-source dependency)
@@ -3107,9 +3105,7 @@ impl DependencyResolver {
 
                 if !self.manifest.sources.contains_key(source_name) {
                     anyhow::bail!(
-                        "Dependency '{}' references undefined source: '{}'",
-                        name,
-                        source_name
+                        "Dependency '{name}' references undefined source: '{source_name}'"
                     );
                 }
             }
@@ -3253,7 +3249,7 @@ impl DependencyResolver {
 ///
 /// For a source repository with categorized resources:
 /// ```text
-/// ccpm-community/
+/// agpm-community/
 /// ├── agents/
 /// │   ├── languages/
 /// │   │   ├── rust/

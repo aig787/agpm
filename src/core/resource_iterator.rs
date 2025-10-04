@@ -24,7 +24,7 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency, TargetConfig};
 use std::collections::HashMap;
 
-/// Extension trait for ResourceType that adds lockfile and manifest operations
+/// Extension trait for `ResourceType` that adds lockfile and manifest operations
 ///
 /// This trait extends the base [`ResourceType`] enum with methods for working with
 /// lockfiles and manifests in a type-safe way. It provides the foundation for
@@ -99,23 +99,23 @@ pub trait ResourceTypeExt {
 impl ResourceTypeExt for ResourceType {
     fn all() -> Vec<ResourceType> {
         vec![
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::McpServer,
-            ResourceType::Script,
-            ResourceType::Hook,
+            Self::Agent,
+            Self::Snippet,
+            Self::Command,
+            Self::McpServer,
+            Self::Script,
+            Self::Hook,
         ]
     }
 
     fn get_lockfile_entries<'a>(&self, lockfile: &'a LockFile) -> &'a [LockedResource] {
         match self {
-            ResourceType::Agent => &lockfile.agents,
-            ResourceType::Snippet => &lockfile.snippets,
-            ResourceType::Command => &lockfile.commands,
-            ResourceType::Script => &lockfile.scripts,
-            ResourceType::Hook => &lockfile.hooks,
-            ResourceType::McpServer => &lockfile.mcp_servers,
+            Self::Agent => &lockfile.agents,
+            Self::Snippet => &lockfile.snippets,
+            Self::Command => &lockfile.commands,
+            Self::Script => &lockfile.scripts,
+            Self::Hook => &lockfile.hooks,
+            Self::McpServer => &lockfile.mcp_servers,
         }
     }
 
@@ -124,23 +124,23 @@ impl ResourceTypeExt for ResourceType {
         lockfile: &'a mut LockFile,
     ) -> &'a mut Vec<LockedResource> {
         match self {
-            ResourceType::Agent => &mut lockfile.agents,
-            ResourceType::Snippet => &mut lockfile.snippets,
-            ResourceType::Command => &mut lockfile.commands,
-            ResourceType::Script => &mut lockfile.scripts,
-            ResourceType::Hook => &mut lockfile.hooks,
-            ResourceType::McpServer => &mut lockfile.mcp_servers,
+            Self::Agent => &mut lockfile.agents,
+            Self::Snippet => &mut lockfile.snippets,
+            Self::Command => &mut lockfile.commands,
+            Self::Script => &mut lockfile.scripts,
+            Self::Hook => &mut lockfile.hooks,
+            Self::McpServer => &mut lockfile.mcp_servers,
         }
     }
 
     fn get_target_dir<'a>(&self, targets: &'a TargetConfig) -> &'a str {
         match self {
-            ResourceType::Agent => targets.agents.as_str(),
-            ResourceType::Snippet => targets.snippets.as_str(),
-            ResourceType::Command => targets.commands.as_str(),
-            ResourceType::Script => targets.scripts.as_str(),
-            ResourceType::Hook => targets.hooks.as_str(),
-            ResourceType::McpServer => targets.mcp_servers.as_str(),
+            Self::Agent => targets.agents.as_str(),
+            Self::Snippet => targets.snippets.as_str(),
+            Self::Command => targets.commands.as_str(),
+            Self::Script => targets.scripts.as_str(),
+            Self::Hook => targets.hooks.as_str(),
+            Self::McpServer => targets.mcp_servers.as_str(),
         }
     }
 
@@ -149,12 +149,12 @@ impl ResourceTypeExt for ResourceType {
         manifest: &'a Manifest,
     ) -> &'a HashMap<String, ResourceDependency> {
         match self {
-            ResourceType::Agent => &manifest.agents,
-            ResourceType::Snippet => &manifest.snippets,
-            ResourceType::Command => &manifest.commands,
-            ResourceType::Script => &manifest.scripts,
-            ResourceType::Hook => &manifest.hooks,
-            ResourceType::McpServer => &manifest.mcp_servers,
+            Self::Agent => &manifest.agents,
+            Self::Snippet => &manifest.snippets,
+            Self::Command => &manifest.commands,
+            Self::Script => &manifest.scripts,
+            Self::Hook => &manifest.hooks,
+            Self::McpServer => &manifest.mcp_servers,
         }
     }
 }
@@ -251,7 +251,7 @@ impl ResourceIterator {
         lockfile: &'a LockFile,
         name: &str,
     ) -> Option<(ResourceType, &'a LockedResource)> {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             if let Some(entry) = resource_type
                 .get_lockfile_entries(lockfile)
                 .iter()
@@ -280,7 +280,7 @@ impl ResourceIterator {
         name: &str,
         source: Option<&str>,
     ) -> Option<(ResourceType, &'a LockedResource)> {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             if let Some(entry) = resource_type
                 .get_lockfile_entries(lockfile)
                 .iter()
@@ -344,7 +344,7 @@ impl ResourceIterator {
     where
         F: FnMut(ResourceType, &LockedResource),
     {
-        for resource_type in ResourceType::all().iter() {
+        for resource_type in ResourceType::all() {
             for entry in resource_type.get_lockfile_entries(lockfile) {
                 f(*resource_type, entry);
             }

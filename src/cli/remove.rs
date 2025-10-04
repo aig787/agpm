@@ -109,7 +109,7 @@ enum RemoveDependencySubcommand {
 }
 
 /// Helper function to get dependencies for a specific resource type
-fn get_dependencies_for_type(
+const fn get_dependencies_for_type(
     manifest: &Manifest,
     resource_type: ResourceType,
 ) -> &HashMap<String, ResourceDependency> {
@@ -124,7 +124,7 @@ fn get_dependencies_for_type(
 }
 
 /// Helper function to get mutable dependencies for a specific resource type
-fn get_dependencies_for_type_mut(
+const fn get_dependencies_for_type_mut(
     manifest: &mut Manifest,
     resource_type: ResourceType,
 ) -> &mut HashMap<String, ResourceDependency> {
@@ -167,7 +167,7 @@ fn get_installed_path_from_lockfile(
             Some(
                 project_root
                     .join(&manifest.target.mcp_servers)
-                    .join(format!("{}.json", name)),
+                    .join(format!("{name}.json")),
             )
         }
         ResourceType::Script => lockfile
@@ -267,7 +267,7 @@ async fn remove_source_with_manifest_path(
 
     // Check if source exists
     if !manifest.sources.contains_key(name) {
-        return Err(anyhow!("Source '{}' not found in manifest", name));
+        return Err(anyhow!("Source '{name}' not found in manifest"));
     }
 
     // Check if source is being used by any dependencies
@@ -279,7 +279,7 @@ async fn remove_source_with_manifest_path(
             let dependencies = get_dependencies_for_type(&manifest, *resource_type);
             for (dep_name, dep) in dependencies {
                 if dep.get_source() == Some(name) {
-                    used_by.push(format!("{} '{}'", resource_type, dep_name));
+                    used_by.push(format!("{resource_type} '{dep_name}'"));
                 }
             }
         }
@@ -370,7 +370,7 @@ async fn remove_source_with_manifest_path(
         lockfile.save(&lockfile_path)?;
     }
 
-    println!("{}", format!("Removed source '{}'", name).green());
+    println!("{}", format!("Removed source '{name}'").green());
 
     Ok(())
 }
@@ -388,7 +388,7 @@ async fn remove_dependency_with_manifest_path(
     // Parse the resource type
     let resource_type: ResourceType = dep_type
         .parse()
-        .map_err(|_| anyhow!("Invalid dependency type: {}", dep_type))?;
+        .map_err(|_| anyhow!("Invalid dependency type: {dep_type}"))?;
 
     // Get the dependencies for this resource type and check if it exists
     let dependencies = get_dependencies_for_type_mut(&mut manifest, resource_type);
@@ -426,10 +426,7 @@ async fn remove_dependency_with_manifest_path(
     )?;
 
     let dep_type_display = dep_type.replace('-', " ");
-    println!(
-        "{}",
-        format!("Removed {} '{}'", dep_type_display, name).green()
-    );
+    println!("{}", format!("Removed {dep_type_display} '{name}'").green());
 
     let project_root = manifest_path.parent().unwrap();
 

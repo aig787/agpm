@@ -45,13 +45,13 @@ impl ChecksumVerifier {
 
         let contents = fs::read(file_path)
             .await
-            .with_context(|| format!("Failed to read file: {:?}", file_path))?;
+            .with_context(|| format!("Failed to read file: {file_path:?}"))?;
 
         let mut hasher = Sha256::new();
         hasher.update(&contents);
         let result = hasher.finalize();
 
-        Ok(format!("{:x}", result))
+        Ok(format!("{result:x}"))
     }
 
     /// Verify a file against an expected checksum.
@@ -89,9 +89,7 @@ impl ChecksumVerifier {
         // Case-insensitive comparison (checksums may be uppercase or lowercase)
         if actual_checksum.to_lowercase() != expected_checksum.to_lowercase() {
             bail!(
-                "Checksum verification failed!\n  Expected: {}\n  Actual:   {}",
-                expected_checksum,
-                actual_checksum
+                "Checksum verification failed!\n  Expected: {expected_checksum}\n  Actual:   {actual_checksum}"
             );
         }
 
@@ -184,15 +182,12 @@ impl ChecksumVerifier {
         checksums_url: &str,
         binary_name: &str,
     ) -> Result<bool> {
-        match Self::fetch_expected_checksum(checksums_url, binary_name).await? {
-            Some(expected) => {
-                Self::verify_checksum(file_path, &expected).await?;
-                Ok(true)
-            }
-            None => {
-                warn!("No checksum available for verification, skipping");
-                Ok(false)
-            }
+        if let Some(expected) = Self::fetch_expected_checksum(checksums_url, binary_name).await? {
+            Self::verify_checksum(file_path, &expected).await?;
+            Ok(true)
+        } else {
+            warn!("No checksum available for verification, skipping");
+            Ok(false)
         }
     }
 }

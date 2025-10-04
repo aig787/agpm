@@ -174,14 +174,14 @@ impl CacheLock {
 
             // Try to acquire exclusive lock (blocking)
             file.lock_exclusive()
-                .with_context(|| format!("Failed to acquire lock for: {}", source_name))?;
+                .with_context(|| format!("Failed to acquire lock for: {source_name}"))?;
 
             Ok(file)
         })
         .await
         .context("Failed to spawn blocking task for lock acquisition")??;
 
-        Ok(CacheLock {
+        Ok(Self {
             _file: file,
             path: lock_path,
         })

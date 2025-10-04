@@ -1,6 +1,7 @@
 //! Common utilities and traits for CLI commands
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use crate::manifest::{Manifest, find_manifest};
@@ -13,10 +14,18 @@ pub trait CommandExecutor: Sized {
         Self: Send,
     {
         async move {
-            let manifest_path = find_manifest().with_context(|| {
-                "No agpm.toml found in current directory or any parent directory. \
-                 Run 'agpm init' to create a new project."
-            })?;
+            let manifest_path = if let Ok(path) = find_manifest() {
+                path
+            } else {
+                // Check if legacy CCPM files exist
+                if let Some(migration_msg) = check_for_legacy_ccpm_files() {
+                    return Err(anyhow::anyhow!("{migration_msg}"));
+                }
+                return Err(anyhow::anyhow!(
+                    "No agpm.toml found in current directory or any parent directory. \
+                     Run 'agpm init' to create a new project."
+                ));
+            };
             self.execute_from_path(manifest_path).await
         }
     }
@@ -90,6 +99,67 @@ impl CommandContext {
         lockfile
             .save(&self.lockfile_path)
             .with_context(|| format!("Failed to save lockfile: {}", self.lockfile_path.display()))
+    }
+}
+
+/// Check for legacy CCPM files and return a migration message if found.
+///
+/// This function searches for ccpm.toml and ccpm.lock files in the current
+/// directory and parent directories, similar to how `find_manifest` works.
+/// If legacy files are found, it returns a helpful error message suggesting
+/// to run the migration command.
+///
+/// # Returns
+///
+/// - `Some(String)` with migration instructions if legacy files are found
+/// - `None` if no legacy files are detected
+pub fn check_for_legacy_ccpm_files() -> Option<String> {
+    check_for_legacy_ccpm_files_from(std::env::current_dir().ok()?)
+}
+
+/// Check for legacy CCPM files starting from a specific directory.
+///
+/// This is the internal implementation that allows for testing without
+/// changing the current working directory.
+fn check_for_legacy_ccpm_files_from(start_dir: PathBuf) -> Option<String> {
+    let current = start_dir;
+    let mut dir = current.as_path();
+
+    loop {
+        let ccpm_toml = dir.join("ccpm.toml");
+        let ccpm_lock = dir.join("ccpm.lock");
+
+        if ccpm_toml.exists() || ccpm_lock.exists() {
+            let mut files = Vec::new();
+            if ccpm_toml.exists() {
+                files.push("ccpm.toml");
+            }
+            if ccpm_lock.exists() {
+                files.push("ccpm.lock");
+            }
+
+            let files_str = files.join(" and ");
+            let location = if dir == current {
+                "current directory".to_string()
+            } else {
+                format!("parent directory: {}", dir.display())
+            };
+
+            return Some(format!(
+                "{}\n\n{} {} found in {}.\n{}\n  {}\n\n{}",
+                "Legacy CCPM files detected!".yellow().bold(),
+                "→".cyan(),
+                files_str,
+                location,
+                "Run the migration command to upgrade:".yellow(),
+                format!("agpm migrate --path {}", dir.display())
+                    .cyan()
+                    .bold(),
+                "Or run 'agpm init' to create a new AGPM project.".dimmed()
+            ));
+        }
+
+        dir = dir.parent()?;
     }
 }
 
@@ -217,5 +287,48 @@ fetched_at = "2024-01-01T00:00:00Z"
         assert!(context.lockfile_path.exists());
         let saved_content = std::fs::read_to_string(&context.lockfile_path).unwrap();
         assert!(saved_content.contains("version = 1"));
+    }
+
+    #[test]
+    fn test_check_for_legacy_ccpm_no_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let result = check_for_legacy_ccpm_files_from(temp_dir.path().to_path_buf());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_check_for_legacy_ccpm_toml_only() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.toml"), "[sources]\n").unwrap();
+
+        let result = check_for_legacy_ccpm_files_from(temp_dir.path().to_path_buf());
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.contains("Legacy CCPM files detected"));
+        assert!(msg.contains("ccpm.toml"));
+        assert!(msg.contains("agpm migrate"));
+    }
+
+    #[test]
+    fn test_check_for_legacy_ccpm_lock_only() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.lock"), "# lock\n").unwrap();
+
+        let result = check_for_legacy_ccpm_files_from(temp_dir.path().to_path_buf());
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.contains("ccpm.lock"));
+    }
+
+    #[test]
+    fn test_check_for_legacy_ccpm_both_files() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.toml"), "[sources]\n").unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.lock"), "# lock\n").unwrap();
+
+        let result = check_for_legacy_ccpm_files_from(temp_dir.path().to_path_buf());
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.contains("ccpm.toml and ccpm.lock"));
     }
 }

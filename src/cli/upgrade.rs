@@ -500,7 +500,7 @@ async fn show_status(updater: &SelfUpdater, version_checker: &VersionChecker) ->
     };
 
     let info = VersionChecker::format_version_info(current_version, latest_version.as_deref());
-    println!("{}", info);
+    println!("{info}");
 
     Ok(())
 }
@@ -533,7 +533,7 @@ async fn check_for_updates(updater: &SelfUpdater, version_checker: &VersionCheck
             );
         }
         Err(e) => {
-            bail!("Failed to check for updates: {}", e);
+            bail!("Failed to check for updates: {e}");
         }
     }
 
@@ -548,7 +548,9 @@ async fn perform_upgrade(
     no_backup: bool,
 ) -> Result<()> {
     // Create backup unless explicitly skipped
-    let backup_manager = if !no_backup {
+    let backup_manager = if no_backup {
+        None
+    } else {
         println!("{}", "Creating backup...".cyan());
         let manager = BackupManager::new(current_exe.to_path_buf());
         manager
@@ -556,17 +558,15 @@ async fn perform_upgrade(
             .await
             .context("Failed to create backup")?;
         Some(manager)
-    } else {
-        None
     };
 
     // Perform the upgrade
     let upgrade_msg = if let Some(version) = target_version {
-        format!("Upgrading to version {}...", version).cyan()
+        format!("Upgrading to version {version}...").cyan()
     } else {
         "Upgrading to latest version...".cyan()
     };
-    println!("{}", upgrade_msg);
+    println!("{upgrade_msg}");
 
     let result = if let Some(version) = target_version {
         updater.update_to_version(version).await
@@ -608,14 +608,14 @@ async fn perform_upgrade(
                 if let Err(restore_err) = manager.restore_backup().await {
                     eprintln!(
                         "{}",
-                        format!("Failed to restore backup: {}", restore_err).red()
+                        format!("Failed to restore backup: {restore_err}").red()
                     );
                     eprintln!("Backup is located at: {}", manager.backup_path().display());
                 } else {
                     println!("{}", "Successfully restored from backup".green());
                 }
             }
-            bail!("Upgrade failed: {}", e);
+            bail!("Upgrade failed: {e}");
         }
     }
 

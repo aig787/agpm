@@ -149,8 +149,7 @@ pub fn find_best_matching_tag(constraint_str: &str, tags: Vec<String>) -> Result
     }
 
     Err(anyhow::anyhow!(
-        "No tag found matching constraint: {}",
-        constraint_str
+        "No tag found matching constraint: {constraint_str}"
     ))
 }
 

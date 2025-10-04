@@ -50,7 +50,7 @@ fn validate_repo_identifier(identifier: &str) -> bool {
         // Prevent consecutive dots or dot-slash combinations
         && !identifier.contains("..")
         && !identifier.contains("./")
-        && !identifier.contains("\\")
+        && !identifier.contains('\\')
 }
 
 /// Validate and sanitize a file path to prevent path traversal attacks.
@@ -77,7 +77,7 @@ fn validate_and_sanitize_path(path: &Path, base_dir: &Path) -> Result<PathBuf> {
         || path_str.starts_with('\\')
         || path_str.contains('\0')
     {
-        bail!("Path contains unsafe traversal patterns: {}", path_str);
+        bail!("Path contains unsafe traversal patterns: {path_str}");
     }
 
     // Get canonical base directory
@@ -134,7 +134,7 @@ fn validate_path_components(path: &Path, base_dir: &Path) -> Result<PathBuf> {
             std::path::Component::Normal(name) => {
                 let name_str = name.to_string_lossy();
                 if name_str.contains('\0') || name_str == "." || name_str == ".." {
-                    bail!("Invalid path component: {}", name_str);
+                    bail!("Invalid path component: {name_str}");
                 }
                 validated_path.push(name);
             }
@@ -365,10 +365,10 @@ impl SelfUpdater {
     /// ```
     pub fn with_repo(repo_owner: &str, repo_name: &str) -> Result<Self> {
         if !validate_repo_identifier(repo_owner) {
-            bail!("Invalid repository owner: {}", repo_owner);
+            bail!("Invalid repository owner: {repo_owner}");
         }
         if !validate_repo_identifier(repo_name) {
-            bail!("Invalid repository name: {}", repo_name);
+            bail!("Invalid repository name: {repo_name}");
         }
 
         Ok(Self {
@@ -408,7 +408,7 @@ impl SelfUpdater {
     /// // Force update (ignores version comparison)
     /// let force_updater = SelfUpdater::new().force(true);
     /// ```
-    pub fn force(mut self, force: bool) -> Self {
+    pub const fn force(mut self, force: bool) -> Self {
         self.force = force;
         self
     }
@@ -421,7 +421,7 @@ impl SelfUpdater {
     /// # Security Implications
     ///
     /// - **Required**: Maximum security, but updates may fail if checksums are unavailable
-    /// - **WarnOnFailure**: Good balance of security and usability (default)
+    /// - **`WarnOnFailure`**: Good balance of security and usability (default)
     /// - **Skip**: Least secure, not recommended for production use
     ///
     /// # Arguments
@@ -441,7 +441,7 @@ impl SelfUpdater {
     /// let fast_updater = SelfUpdater::new()
     ///     .checksum_policy(ChecksumPolicy::Skip);
     /// ```
-    pub fn checksum_policy(mut self, policy: ChecksumPolicy) -> Self {
+    pub const fn checksum_policy(mut self, policy: ChecksumPolicy) -> Self {
         self.checksum_policy = policy;
         self
     }
@@ -752,7 +752,7 @@ impl SelfUpdater {
             ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
             ("windows", "x86_64") => "x86_64-pc-windows-msvc",
             ("windows", "aarch64") => "aarch64-pc-windows-msvc",
-            (os, arch) => bail!("Unsupported platform: {}-{}", os, arch),
+            (os, arch) => bail!("Unsupported platform: {os}-{arch}"),
         };
 
         let extension = if std::env::consts::OS == "windows" {
@@ -761,7 +761,7 @@ impl SelfUpdater {
             "tar.xz"
         };
 
-        let filename = format!("agpm-{}.{}", platform, extension);
+        let filename = format!("agpm-{platform}.{extension}");
         Ok(self.build_github_download_url(version, &filename))
     }
 
@@ -799,7 +799,7 @@ impl SelfUpdater {
                     if let Some(content_length) = response.content_length()
                         && content_length > 100 * 1024 * 1024
                     {
-                        bail!("Archive too large: {} bytes (max 100MB)", content_length);
+                        bail!("Archive too large: {content_length} bytes (max 100MB)");
                     }
 
                     let bytes = response.bytes().await?;
@@ -816,8 +816,7 @@ impl SelfUpdater {
                                 self.verify_checksum(&checksum_url, dest, &bytes).await?;
                             } else {
                                 bail!(
-                                    "Checksum verification required but no checksum available for URL: {}",
-                                    url
+                                    "Checksum verification required but no checksum available for URL: {url}"
                                 );
                             }
                         }
@@ -845,7 +844,7 @@ impl SelfUpdater {
                     delay *= 2; // Exponential backoff
                     retries -= 1;
                 }
-                Err(e) => bail!("Failed to download after retries: {}", e),
+                Err(e) => bail!("Failed to download after retries: {e}"),
             }
         }
     }
@@ -854,7 +853,7 @@ impl SelfUpdater {
     fn get_checksum_url(&self, url: &str) -> Option<String> {
         // GitHub releases have .sha256 files
         if url.contains("github.com") && !url.ends_with(".sha256") {
-            Some(format!("{}.sha256", url))
+            Some(format!("{url}.sha256"))
         } else {
             None
         }
@@ -900,7 +899,7 @@ impl SelfUpdater {
         if expected_checksum.len() != 64
             || !expected_checksum.chars().all(|c| c.is_ascii_hexdigit())
         {
-            bail!("Invalid SHA256 checksum format: {}", expected_checksum);
+            bail!("Invalid SHA256 checksum format: {expected_checksum}");
         }
 
         // Calculate actual checksum
@@ -912,9 +911,7 @@ impl SelfUpdater {
             // Delete the potentially corrupted file
             let _ = tokio::fs::remove_file(file_path).await;
             bail!(
-                "Checksum verification failed! Expected: {}, Got: {}. File may be corrupted or tampered with.",
-                expected_checksum,
-                actual_checksum
+                "Checksum verification failed! Expected: {expected_checksum}, Got: {actual_checksum}. File may be corrupted or tampered with."
             );
         }
 
@@ -950,7 +947,7 @@ impl SelfUpdater {
 
             if total_size > 500 * 1024 * 1024 {
                 // 500MB limit
-                bail!("Archive uncompressed size too large: {} bytes", total_size);
+                bail!("Archive uncompressed size too large: {total_size} bytes");
             }
 
             for i in 0..archive.len() {
@@ -992,91 +989,90 @@ impl SelfUpdater {
                 }
             }
             bail!("Binary not found in archive");
-        } else {
-            // Handle tar.xz archives for Unix
-            // Use system tar command as it's more reliable for xz
-            let output = tokio::process::Command::new("tar")
-                .args([
-                    "-xf",
-                    &archive_path.to_string_lossy(),
-                    "-C",
-                    &temp_dir.to_string_lossy(),
-                ])
-                .output()
-                .await?;
+        }
 
-            if !output.status.success() {
-                bail!(
-                    "Failed to extract archive: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
+        // Handle tar.xz archives for Unix
+        // Use system tar command as it's more reliable for xz
+        let output = tokio::process::Command::new("tar")
+            .args([
+                "-xf",
+                &archive_path.to_string_lossy(),
+                "-C",
+                &temp_dir.to_string_lossy(),
+            ])
+            .output()
+            .await?;
 
-            // Look for the binary in extracted directory structure
-            // The archive contains a directory with the binary inside
-            let mut entries = tokio::fs::read_dir(temp_dir).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let path = entry.path();
+        if !output.status.success() {
+            bail!(
+                "Failed to extract archive: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
 
-                // Use comprehensive path validation
-                let relative_path = match path.strip_prefix(temp_dir) {
-                    Ok(rel) => rel,
-                    Err(_) => {
-                        warn!("Skipping path outside temp directory: {:?}", path);
+        // Look for the binary in extracted directory structure
+        // The archive contains a directory with the binary inside
+        let mut entries = tokio::fs::read_dir(temp_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+
+            // Use comprehensive path validation
+            let relative_path = if let Ok(rel) = path.strip_prefix(temp_dir) {
+                rel
+            } else {
+                warn!("Skipping path outside temp directory: {:?}", path);
+                continue;
+            };
+
+            match validate_and_sanitize_path(relative_path, temp_dir) {
+                Ok(validated_path) => {
+                    // Ensure the validated path matches the original path
+                    if validated_path != path {
+                        warn!("Path validation mismatch, skipping: {:?}", path);
                         continue;
                     }
-                };
+                }
+                Err(e) => {
+                    warn!("Skipping invalid path {:?}: {}", path, e);
+                    continue;
+                }
+            }
 
-                match validate_and_sanitize_path(relative_path, temp_dir) {
-                    Ok(validated_path) => {
-                        // Ensure the validated path matches the original path
-                        if validated_path != path {
-                            warn!("Path validation mismatch, skipping: {:?}", path);
+            if path.is_dir() {
+                // Check inside the directory for the binary
+                let binary_path = path.join(binary_name);
+
+                // Validate the binary path as well
+                if let Ok(metadata) = tokio::fs::metadata(&binary_path).await {
+                    let relative_binary_path = match binary_path.strip_prefix(temp_dir) {
+                        Ok(rel) => rel,
+                        Err(_) => continue,
+                    };
+
+                    match validate_and_sanitize_path(relative_binary_path, temp_dir) {
+                        Ok(_) => {
+                            if metadata.is_file() && metadata.len() < 100 * 1024 * 1024 {
+                                return Ok(binary_path);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Invalid binary path {:?}: {}", binary_path, e);
                             continue;
                         }
                     }
-                    Err(e) => {
-                        warn!("Skipping invalid path {:?}: {}", path, e);
-                        continue;
-                    }
-                }
-
-                if path.is_dir() {
-                    // Check inside the directory for the binary
-                    let binary_path = path.join(binary_name);
-
-                    // Validate the binary path as well
-                    if let Ok(metadata) = tokio::fs::metadata(&binary_path).await {
-                        let relative_binary_path = match binary_path.strip_prefix(temp_dir) {
-                            Ok(rel) => rel,
-                            Err(_) => continue,
-                        };
-
-                        match validate_and_sanitize_path(relative_binary_path, temp_dir) {
-                            Ok(_) => {
-                                if metadata.is_file() && metadata.len() < 100 * 1024 * 1024 {
-                                    return Ok(binary_path);
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Invalid binary path {:?}: {}", binary_path, e);
-                                continue;
-                            }
-                        }
-                    }
-                }
-                // Also check if the file is directly in temp_dir
-                if path.file_name() == Some(std::ffi::OsStr::new(binary_name))
-                    && let Ok(metadata) = tokio::fs::metadata(&path).await
-                    && metadata.is_file()
-                    && metadata.len() < 100 * 1024 * 1024
-                {
-                    return Ok(path);
                 }
             }
-
-            bail!("Binary not found after extraction");
+            // Also check if the file is directly in temp_dir
+            if path.file_name() == Some(std::ffi::OsStr::new(binary_name))
+                && let Ok(metadata) = tokio::fs::metadata(&path).await
+                && metadata.is_file()
+                && metadata.len() < 100 * 1024 * 1024
+            {
+                return Ok(path);
+            }
         }
+
+        bail!("Binary not found after extraction")
     }
 
     /// Replace the current binary with the new one
@@ -1096,13 +1092,13 @@ impl SelfUpdater {
         let mut retries = 3;
         while retries > 0 {
             match tokio::fs::rename(&new_binary, &current_exe).await {
-                Ok(_) => return Ok(()),
+                Ok(()) => return Ok(()),
                 Err(e) if retries > 1 => {
                     warn!("Failed to replace binary, retrying: {}", e);
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     retries -= 1;
                 }
-                Err(e) => bail!("Failed to replace binary: {}", e),
+                Err(e) => bail!("Failed to replace binary: {e}"),
             }
         }
 

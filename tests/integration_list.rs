@@ -21,13 +21,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -213,13 +213,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -275,13 +275,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -336,13 +336,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -397,13 +397,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -458,13 +458,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -518,13 +518,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -579,13 +579,13 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
 [[sources]]
 name = "community"
-url = "https://github.com/example-org/ccpm-community.git"
+url = "https://github.com/example-org/agpm-community.git"
 commit = "def456789abcdef123456789abcdef123456789ab"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -743,7 +743,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -807,7 +807,7 @@ async fn test_list_empty_project() {
 
     // Create minimal manifest with no dependencies
     let minimal_manifest = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 "#;
     project.write_manifest(minimal_manifest).await.unwrap();
 

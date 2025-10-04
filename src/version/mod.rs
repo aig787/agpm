@@ -192,8 +192,9 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
     // Handles patterns like: "v1.0.0", "^v1.0.0", "~v2.1.0", "=v1.0.0", ">=v1.0.0", etc.
     // We match 'v' at the start OR after operators to avoid breaking prerelease tags
     // like "1.0.0-dev.1" or branch names like "develop"
-    use once_cell::sync::Lazy;
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(^|[~^=><])v").unwrap());
+
+    static RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(^|[~^=><])v").unwrap());
 
     let normalized = RE.replace_all(requirement, "$1");
 
@@ -329,7 +330,7 @@ impl VersionResolver {
     /// assert!(resolver.get_latest().is_none());
     /// ```
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             versions: Vec::new(),
         }
@@ -1055,7 +1056,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 
     // Parse requirement (with v-prefix normalization)
     let req = parse_version_req(requirement)
-        .map_err(|e| anyhow::anyhow!("Invalid version requirement '{}': {}", requirement, e))?;
+        .map_err(|e| anyhow::anyhow!("Invalid version requirement '{requirement}': {e}"))?;
 
     Ok(req.matches(&version))
 }
@@ -1219,7 +1220,7 @@ pub mod constraints;
 /// assert_eq!(branch.as_str(), "main");
 /// assert_eq!(commit.as_str(), "abc123def");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum VersionConstraint {
     /// A semantic version tag (e.g., "v1.2.0", "1.0.0")
     Tag(String),
@@ -1265,9 +1266,9 @@ impl VersionConstraint {
     #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
-            VersionConstraint::Tag(s) => s,
-            VersionConstraint::Branch(s) => s,
-            VersionConstraint::Commit(s) => s,
+            Self::Tag(s) => s,
+            Self::Branch(s) => s,
+            Self::Commit(s) => s,
         }
     }
 }

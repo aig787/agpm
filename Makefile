@@ -192,7 +192,7 @@ dist-build:
 
 # Display help
 help:
-	@echo "CCPM Makefile Commands:"
+	@echo "AGPM Makefile Commands:"
 	@echo "  make build         - Build in debug mode"
 	@echo "  make release       - Build in release mode"
 	@echo "  make test          - Run all tests"

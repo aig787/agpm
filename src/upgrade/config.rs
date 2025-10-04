@@ -214,7 +214,7 @@ impl Default for UpgradeConfig {
 ///
 /// Returns `false` to avoid adding network latency to every AGPM invocation.
 /// Users can explicitly enable this or use manual update checking.
-fn default_check_on_startup() -> bool {
+const fn default_check_on_startup() -> bool {
     false // Default to not checking on startup to avoid slowing down the CLI
 }
 
@@ -222,7 +222,7 @@ fn default_check_on_startup() -> bool {
 ///
 /// Returns `86400` (24 hours) to provide daily update notifications while
 /// being respectful of GitHub API rate limits and user attention.
-fn default_check_interval() -> u64 {
+const fn default_check_interval() -> u64 {
     86400 // 24 hours in seconds
 }
 
@@ -230,7 +230,7 @@ fn default_check_interval() -> u64 {
 ///
 /// Returns `true` to maximize safety during upgrades. Backups enable quick
 /// recovery from failed upgrades and add minimal overhead.
-fn default_auto_backup() -> bool {
+const fn default_auto_backup() -> bool {
     true // Always create backups for safety
 }
 
@@ -238,7 +238,7 @@ fn default_auto_backup() -> bool {
 ///
 /// Returns `true` to ensure download integrity and provide security against
 /// corrupted or tampered binaries. Verification adds minimal overhead.
-fn default_verify_checksum() -> bool {
+const fn default_verify_checksum() -> bool {
     true // Always verify checksums for security
 }
 

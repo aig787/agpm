@@ -114,13 +114,13 @@ impl VersionResolver {
     /// * `version` - Version specification (tag, branch, commit, or None for HEAD)
     pub fn add_version(&mut self, source: &str, url: &str, version: Option<&str>) {
         let version_key = version.unwrap_or("HEAD").to_string();
-        let key = (source.to_string(), version_key.clone());
+        let key = (source.to_string(), version_key);
 
         // Only add if not already present (deduplication)
         self.entries.entry(key).or_insert_with(|| VersionEntry {
             source: source.to_string(),
             url: url.to_string(),
-            version: version.map(|v| v.to_string()),
+            version: version.map(std::string::ToString::to_string),
             resolved_sha: None,
             resolved_version: None,
         });
@@ -222,8 +222,7 @@ impl VersionResolver {
             // Repository must have been pre-synced
             let repo_path = self.bare_repos.get(&source)
                 .ok_or_else(|| anyhow::anyhow!(
-                    "Repository for source '{}' was not pre-synced. Call pre_sync_sources() first.",
-                    source
+                    "Repository for source '{source}' was not pre-synced. Call pre_sync_sources() first."
                 ))?
                 .clone();
 
@@ -246,8 +245,7 @@ impl VersionResolver {
 
                         if tags.is_empty() {
                             return Err(anyhow::anyhow!(
-                                "No tags found in repository for constraint '{}'",
-                                version
+                                "No tags found in repository for constraint '{version}'"
                             ));
                         }
 
@@ -255,8 +253,7 @@ impl VersionResolver {
                         crate::resolver::version_resolution::find_best_matching_tag(version, tags)
                             .with_context(|| {
                             format!(
-                                "Failed to resolve version constraint '{}' for source '{}'",
-                                version, source
+                                "Failed to resolve version constraint '{version}' for source '{source}'"
                             )
                         })?
                     } else {
@@ -281,8 +278,7 @@ impl VersionResolver {
                             .await
                             .with_context(|| {
                                 format!(
-                                    "Failed to resolve version '{}' for source '{}'",
-                                    version_str, source
+                                    "Failed to resolve version '{version_str}' for source '{source}'"
                                 )
                             })?,
                     )
@@ -322,7 +318,7 @@ impl VersionResolver {
             .cache
             .get_or_clone_source(source, url, None)
             .await
-            .with_context(|| format!("Failed to prepare repository for source '{}'", source))?;
+            .with_context(|| format!("Failed to prepare repository for source '{source}'"))?;
 
         let repo = GitRepo::new(&repo_path);
 
@@ -372,7 +368,7 @@ impl VersionResolver {
         self.resolved.get(&key).map(|rv| rv.sha.clone())
     }
 
-    /// Gets all resolved SHAs as a HashMap
+    /// Gets all resolved SHAs as a `HashMap`
     ///
     /// Useful for bulk operations or debugging.
     pub fn get_all_resolved(&self) -> HashMap<(String, String), String> {
@@ -384,8 +380,8 @@ impl VersionResolver {
 
     /// Gets all resolved versions with both SHA and resolved reference
     ///
-    /// Returns a HashMap with (source, version) -> ResolvedVersion
-    pub fn get_all_resolved_full(&self) -> &HashMap<(String, String), ResolvedVersion> {
+    /// Returns a `HashMap` with (source, version) -> `ResolvedVersion`
+    pub const fn get_all_resolved_full(&self) -> &HashMap<(String, String), ResolvedVersion> {
         &self.resolved
     }
 
@@ -491,7 +487,7 @@ impl VersionResolver {
                 .cache
                 .get_or_clone_source(&source, &url, None)
                 .await
-                .with_context(|| format!("Failed to sync repository for source '{}'", source))?;
+                .with_context(|| format!("Failed to sync repository for source '{source}'"))?;
 
             // Store bare repo path for later use in resolve_all
             self.bare_repos.insert(source.clone(), repo_path);

@@ -640,6 +640,37 @@ agpm cache clean --all
 agpm cache list
 ```
 
+### `agpm migrate`
+
+Migrate from legacy CCPM naming to AGPM. This is a one-time migration command for projects upgrading from the legacy CCPM naming scheme.
+
+```bash
+agpm migrate [OPTIONS]
+
+Options:
+  -p, --path <PATH>    Path to directory containing ccpm.toml/ccpm.lock (default: current directory)
+      --dry-run        Show what would be renamed without actually renaming files
+  -h, --help           Print help information
+```
+
+**Examples:**
+```bash
+# Migrate in current directory
+agpm migrate
+
+# Migrate with custom path
+agpm migrate --path /path/to/project
+
+# Dry run to preview changes
+agpm migrate --dry-run
+```
+
+**Behavior:**
+- Detects `ccpm.toml` and `ccpm.lock` files in the specified directory
+- Renames them to `agpm.toml` and `agpm.lock` respectively
+- Fails with an error if target files already exist (conflict detection)
+- Provides clear feedback and next steps after migration
+
 ## Resource Types
 
 AGPM manages six types of resources with optimized parallel installation:

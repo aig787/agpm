@@ -20,7 +20,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -52,7 +52,7 @@ async fn test_outdated_with_updates_available() {
 
     // Create manifest with version constraints
     let manifest_content = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
@@ -65,7 +65,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -133,7 +133,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -185,7 +185,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 
@@ -219,7 +219,7 @@ async fn test_outdated_specific_dependencies() {
 
     // Create manifest with multiple dependencies
     let manifest_content = r#"[sources]
-official = "https://github.com/example-org/ccpm-official.git"
+official = "https://github.com/example-org/agpm-official.git"
 
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
@@ -233,7 +233,7 @@ version = 1
 
 [[sources]]
 name = "official"
-url = "https://github.com/example-org/ccpm-official.git"
+url = "https://github.com/example-org/agpm-official.git"
 commit = "abc123456789abcdef123456789abcdef12345678"
 fetched_at = "2024-01-01T00:00:00Z"
 

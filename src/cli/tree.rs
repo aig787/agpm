@@ -244,7 +244,7 @@ impl TreeCommand {
     }
 
     /// Check if a resource type should be shown based on filters
-    fn should_show_resource_type(&self, resource_type: ResourceType) -> bool {
+    const fn should_show_resource_type(&self, resource_type: ResourceType) -> bool {
         // If no type filters are set, show all types
         let any_filter = self.agents
             || self.snippets
@@ -325,21 +325,17 @@ impl TreeCommand {
             .as_deref()
             .map(|v| format!(" {}", v.bright_black()))
             .unwrap_or_default();
-        let source_str = node
-            .source
-            .as_deref()
-            .map(|s| format!(" ({})", s.bright_black()))
-            .unwrap_or_else(|| " (local)".bright_black().to_string());
+        let source_str = node.source.as_deref().map_or_else(
+            || " (local)".bright_black().to_string(),
+            |s| format!(" ({})", s.bright_black()),
+        );
         let dup_marker = if is_duplicate {
             " (*)".bright_black().to_string()
         } else {
             String::new()
         };
 
-        println!(
-            "{}{}{}/{}{}{}{}",
-            prefix, connector, type_str, name_str, version_str, source_str, dup_marker
-        );
+        println!("{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{dup_marker}");
 
         // If this is a duplicate and we're deduplicating, don't show children
         if is_duplicate {
@@ -352,9 +348,9 @@ impl TreeCommand {
         // Print children
         if !node.dependencies.is_empty() {
             let child_prefix = if is_last {
-                format!("{}    ", prefix)
+                format!("{prefix}    ")
             } else {
-                format!("{}│   ", prefix)
+                format!("{prefix}│   ")
             };
 
             for (i, dep_id) in node.dependencies.iter().enumerate() {
@@ -505,7 +501,7 @@ impl DependencyTree {
     fn has_duplicates_recursive(&self, node: &TreeNode, seen: &mut HashSet<String>) -> bool {
         let node_id = format!("{}/{}", node.resource_type, node.name);
 
-        if !seen.insert(node_id.clone()) {
+        if !seen.insert(node_id) {
             return true;
         }
 
@@ -528,7 +524,7 @@ struct TreeBuilder<'a> {
 }
 
 impl<'a> TreeBuilder<'a> {
-    fn new(lockfile: &'a LockFile, project_name: String) -> Self {
+    const fn new(lockfile: &'a LockFile, project_name: String) -> Self {
         Self {
             lockfile,
             project_name,
@@ -545,7 +541,7 @@ impl<'a> TreeBuilder<'a> {
             let node = self.build_node(found, cmd)?;
             let node_id = self.node_id(&node);
 
-            nodes.insert(node_id.clone(), node.clone());
+            nodes.insert(node_id, node.clone());
             self.build_dependencies(&node, &mut nodes, cmd)?;
             roots.push(node);
         } else {
@@ -634,7 +630,7 @@ impl<'a> TreeBuilder<'a> {
             }
         }
 
-        Err(anyhow::anyhow!("Package '{}' not found in lockfile", name))
+        Err(anyhow::anyhow!("Package '{name}' not found in lockfile"))
     }
 
     fn build_node(&self, resource: &LockedResource, _cmd: &TreeCommand) -> Result<TreeNode> {

@@ -42,8 +42,8 @@ examples/projects/
 # Claude
 **/.claude/settings.local.json
 
-# CCPM managed directories
-.claude/ccpm/
+# AGPM managed directories
+.claude/agpm/
 
 # Windows reserved device names (prevent sync issues)
 NUL

@@ -57,8 +57,8 @@
 //! ```toml
 //! # Define source repositories
 //! [sources]
-//! community = "https://github.com/aig787/ccpm-community.git"
-//! official = "https://github.com/example-org/ccpm-official.git"
+//! community = "https://github.com/aig787/agpm-community.git"
+//! official = "https://github.com/example-org/agpm-official.git"
 //!
 //! # Install individual resources
 //! [agents]

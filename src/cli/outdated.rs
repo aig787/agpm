@@ -629,20 +629,19 @@ impl OutdatedCommand {
 
         // 1. Load manifest and lockfile
         let manifest = Manifest::load(&manifest_path)
-            .with_context(|| format!("Failed to load manifest from {:?}", manifest_path))?;
+            .with_context(|| format!("Failed to load manifest from {manifest_path:?}"))?;
 
         let lockfile_path = manifest_path.with_file_name("agpm.lock");
 
         // Check if lockfile exists first - the outdated command requires it
         if !lockfile_path.exists() {
             return Err(anyhow::anyhow!(
-                "No lockfile found at {:?}. Run 'agpm install' first to create a lockfile.",
-                lockfile_path
+                "No lockfile found at {lockfile_path:?}. Run 'agpm install' first to create a lockfile."
             ));
         }
 
         let lockfile = LockFile::load(&lockfile_path)
-            .with_context(|| format!("Failed to load lockfile from {:?}", lockfile_path))?;
+            .with_context(|| format!("Failed to load lockfile from {lockfile_path:?}"))?;
 
         // 2. Initialize cache and resolver
         let cache = Cache::new().context("Failed to initialize cache")?;
@@ -652,10 +651,10 @@ impl OutdatedCommand {
             .context("Failed to create dependency resolver")?;
 
         // 4. Pre-sync sources if not skipped
-        let progress = if !self.no_progress {
-            Some(MultiPhaseProgress::new(!self.no_progress))
-        } else {
+        let progress = if self.no_progress {
             None
+        } else {
+            Some(MultiPhaseProgress::new(!self.no_progress))
         };
 
         if !self.no_fetch {
@@ -825,13 +824,12 @@ impl OutdatedCommand {
         // Get the source
         let source_name = dep
             .get_source()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {} has no source", name))?;
+            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no source"))?;
 
         // Get the version constraint
         let constraint_str = dep
             .get_version()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "latest".to_string());
+            .map_or_else(|| "latest".to_string(), std::string::ToString::to_string);
         let constraint = VersionConstraint::parse(&constraint_str)?;
 
         // Get available versions from the repository
@@ -839,7 +837,7 @@ impl OutdatedCommand {
         let source_url = manifest
             .sources
             .get(source_name)
-            .ok_or_else(|| anyhow::anyhow!("Source {} not found in manifest", source_name))?;
+            .ok_or_else(|| anyhow::anyhow!("Source {source_name} not found in manifest"))?;
 
         // Parse the Git URL to get owner and repo name
         let (owner, repo) = parse_git_url(source_url)
@@ -850,7 +848,7 @@ impl OutdatedCommand {
         let bare_repo_path = cache
             .get_cache_location()
             .join("sources")
-            .join(format!("{}_{}.git", owner, repo));
+            .join(format!("{owner}_{repo}.git"));
 
         if !bare_repo_path.exists() {
             debug!(
@@ -884,14 +882,10 @@ impl OutdatedCommand {
         let version_str = locked
             .version
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {} has no version in lockfile", name))?;
+            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no version in lockfile"))?;
         let current_str = version_str.trim_start_matches('v');
-        let current_version = semver::Version::parse(current_str).with_context(|| {
-            format!(
-                "Failed to parse current version {} for {}",
-                version_str, name
-            )
-        })?;
+        let current_version = semver::Version::parse(current_str)
+            .with_context(|| format!("Failed to parse current version {version_str} for {name}"))?;
 
         // Find latest within constraint
         let latest_compatible = semver_versions
@@ -909,13 +903,8 @@ impl OutdatedCommand {
 
         // Format versions with 'v' prefix if original had it
         let format_version = |v: &semver::Version| {
-            if locked
-                .version
-                .as_ref()
-                .map(|s| s.starts_with('v'))
-                .unwrap_or(false)
-            {
-                format!("v{}", v)
+            if locked.version.as_ref().is_some_and(|s| s.starts_with('v')) {
+                format!("v{v}")
             } else {
                 v.to_string()
             }

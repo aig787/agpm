@@ -1,6 +1,6 @@
 //! Configuration management for AGPM
 //!
-//! This module provides comprehensive configuration management for the AGent Package Manager (AGPM).
+//! This module provides comprehensive configuration management for the `AGent` Package Manager (AGPM).
 //! It handles project manifests, global user configuration, and resource metadata with a focus on
 //! security, cross-platform compatibility, and reproducible builds.
 //!
