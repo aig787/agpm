@@ -435,57 +435,17 @@ impl DependencyResolver {
         _name: &str,
         entry: LockedResource,
     ) {
-        // Helper to check if an existing entry should be updated
-        // Match on name and source to find the resource to update.
-        // Version is not included because we want to replace old versions with new ones.
-        let should_update = |existing: &LockedResource| {
-            existing.name == entry.name && existing.source == entry.source
-        };
+        // Get the appropriate resource collection based on the entry's type
+        let resources = lockfile.get_resources_mut(entry.resource_type);
 
-        // Use the resource_type field from the entry itself
-        match entry.resource_type {
-            crate::core::ResourceType::Agent => {
-                if let Some(existing) = lockfile.agents.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.agents.push(entry);
-                }
-            }
-            crate::core::ResourceType::Snippet => {
-                if let Some(existing) = lockfile.snippets.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.snippets.push(entry);
-                }
-            }
-            crate::core::ResourceType::Command => {
-                if let Some(existing) = lockfile.commands.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.commands.push(entry);
-                }
-            }
-            crate::core::ResourceType::Script => {
-                if let Some(existing) = lockfile.scripts.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.scripts.push(entry);
-                }
-            }
-            crate::core::ResourceType::Hook => {
-                if let Some(existing) = lockfile.hooks.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.hooks.push(entry);
-                }
-            }
-            crate::core::ResourceType::McpServer => {
-                if let Some(existing) = lockfile.mcp_servers.iter_mut().find(|e| should_update(e)) {
-                    *existing = entry;
-                } else {
-                    lockfile.mcp_servers.push(entry);
-                }
-            }
+        // Find existing entry by name and source (excluding version to allow updates)
+        if let Some(existing) = resources
+            .iter_mut()
+            .find(|e| e.name == entry.name && e.source == entry.source)
+        {
+            *existing = entry;
+        } else {
+            resources.push(entry);
         }
     }
 

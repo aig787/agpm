@@ -187,6 +187,13 @@ impl TreeCommand {
         let project_dir = manifest_path.parent().unwrap();
         let lockfile_path = project_dir.join("ccpm.lock");
 
+        // Derive project name from directory
+        let project_name = project_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("project")
+            .to_string();
+
         // Check if lockfile exists
         if !lockfile_path.exists() {
             if self.format == "json" {
@@ -202,7 +209,7 @@ impl TreeCommand {
         let lockfile = LockFile::load(&lockfile_path).context("Failed to load lockfile")?;
 
         // Build and display tree
-        let builder = TreeBuilder::new(&lockfile);
+        let builder = TreeBuilder::new(&lockfile, project_name);
         let tree = builder.build(&self)?;
 
         match self.format.as_str() {
@@ -517,11 +524,15 @@ impl DependencyTree {
 /// Builds the dependency tree from the lockfile
 struct TreeBuilder<'a> {
     lockfile: &'a LockFile,
+    project_name: String,
 }
 
 impl<'a> TreeBuilder<'a> {
-    fn new(lockfile: &'a LockFile) -> Self {
-        Self { lockfile }
+    fn new(lockfile: &'a LockFile, project_name: String) -> Self {
+        Self {
+            lockfile,
+            project_name,
+        }
     }
 
     fn build(&self, cmd: &TreeCommand) -> Result<DependencyTree> {
@@ -608,7 +619,7 @@ impl<'a> TreeBuilder<'a> {
         }
 
         Ok(DependencyTree {
-            project_name: "project".to_string(), // TODO: Get from manifest
+            project_name: self.project_name.clone(),
             nodes,
             roots,
         })
@@ -906,9 +917,8 @@ mod tests {
 
     #[test]
     fn test_node_id() {
-        let builder = TreeBuilder {
-            lockfile: &LockFile::new(),
-        };
+        let lockfile = LockFile::new();
+        let builder = TreeBuilder::new(&lockfile, "test-project".to_string());
 
         // Test with source and version
         let node = TreeNode {
