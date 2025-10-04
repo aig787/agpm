@@ -1058,7 +1058,7 @@ mcp-servers = ".claude/ccpm/mcp-servers"
 [mcp-servers]
 test-mcp = "{}"
 "#,
-            mcp_file_path.display()
+            mcp_file_path.display().to_string().replace('\\', "/")
         );
 
         std::fs::write(&manifest_path, manifest_content).unwrap();
@@ -1110,7 +1110,7 @@ test = "{}"
 
 [commands]
 "#,
-            test_file.display()
+            test_file.display().to_string().replace('\\', "/")
         );
 
         std::fs::write(&manifest_path, manifest_content).unwrap();
@@ -1194,7 +1194,7 @@ existing-agent = "{}"
 
 [commands]
 "#,
-            original_agent_file.display()
+            original_agent_file.display().to_string().replace('\\', "/")
         );
         std::fs::write(&manifest_path, manifest_content).unwrap();
 
