@@ -102,6 +102,9 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
     source_repo.commit_all("Version 2.0.0").unwrap();
     source_repo.tag_version("v2.0.0").unwrap();
 
+    // Ensure we're on 'main' branch (git's default branch name varies)
+    source_repo.git.ensure_branch("main").unwrap();
+
     // Create develop branch
     source_repo.git.create_branch("develop").unwrap();
     source_repo
@@ -203,12 +206,15 @@ async fn test_different_branches_conflict_blocks_install() {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
-    // Create initial commit on main
+    // Create initial commit
     source_repo
         .add_resource("agents", "test-agent", "# Test Agent - Main")
         .await
         .unwrap();
     source_repo.commit_all("Initial commit").unwrap();
+
+    // Ensure we're on 'main' branch (git's default branch name varies)
+    source_repo.git.ensure_branch("main").unwrap();
 
     // Create develop branch with different content
     source_repo.git.create_branch("develop").unwrap();

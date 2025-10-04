@@ -103,6 +103,19 @@ impl TestGit {
         Ok(())
     }
 
+    /// Ensure we're on a specific branch, creating it if it doesn't exist
+    /// This is useful when the default branch name is unknown (master vs main)
+    pub fn ensure_branch(&self, branch_name: &str) -> Result<()> {
+        // Try to checkout the branch first
+        if self.checkout(branch_name).is_ok() {
+            return Ok(());
+        }
+
+        // Branch doesn't exist, create it from current HEAD
+        self.create_branch(branch_name)?;
+        Ok(())
+    }
+
     /// Set the HEAD to point to a branch (making it the default branch)
     pub fn set_head(&self, branch_name: &str) -> Result<()> {
         self.run_git_command(

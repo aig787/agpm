@@ -345,11 +345,8 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
         .await?;
     source_repo.commit_all("Add agent")?;
 
-    // Ensure we're on main branch (commit creates it automatically in modern git)
-    // Try to checkout main, create it if it doesn't exist
-    if source_repo.git.checkout("main").is_err() {
-        source_repo.git.create_branch("main")?;
-    }
+    // Ensure we're on main branch (git's default branch name varies)
+    source_repo.git.ensure_branch("main")?;
 
     // Create manifest
     let manifest = format!(
@@ -418,11 +415,8 @@ async fn test_install_allows_branch_references() -> Result<()> {
         .await?;
     source_repo.commit_all("Initial commit")?;
 
-    // Ensure we're on main branch (commit creates it automatically in modern git)
-    // Try to checkout main, create it if it doesn't exist
-    if source_repo.git.checkout("main").is_err() {
-        source_repo.git.create_branch("main")?;
-    }
+    // Ensure we're on main branch (git's default branch name varies)
+    source_repo.git.ensure_branch("main")?;
 
     // Get the bare URL for stable file:// serving
     let bare_url = source_repo.bare_file_url(project.sources_path())?;

@@ -65,9 +65,8 @@ async fn setup_git_repo_with_versions(repo: &TestSourceRepo) -> Result<String> {
     git.commit("Version 2.0.0 - Breaking changes")?;
     git.tag("v2.0.0")?;
 
-    if git.checkout("main").is_err() {
-        git.checkout("master")?;
-    }
+    // Ensure we're on 'main' branch (git's default branch name varies)
+    git.ensure_branch("main")?;
 
     git.create_branch("develop")?;
 
@@ -96,9 +95,8 @@ async fn setup_git_repo_with_versions(repo: &TestSourceRepo) -> Result<String> {
     git.add_all()?;
     git.commit("Add feature agent")?;
 
-    if git.checkout("main").is_err() {
-        git.checkout("master")?;
-    }
+    // Ensure we're on 'main' branch (git's default branch name varies)
+    git.ensure_branch("main")?;
 
     Ok(v1_commit)
 }
@@ -505,9 +503,8 @@ async fn test_lockfile_records_correct_version_info() {
     let feature_commit = {
         source_repo.git.checkout("feature/new-agent").unwrap();
         let commit = source_repo.git.get_commit_hash().unwrap();
-        if source_repo.git.checkout("main").is_err() {
-            source_repo.git.checkout("master").unwrap();
-        }
+        // Ensure we're on 'main' branch (git's default branch name varies)
+        source_repo.git.ensure_branch("main").unwrap();
         commit
     };
 
