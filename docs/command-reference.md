@@ -810,7 +810,7 @@ react-hooks = { source = "community", path = "snippets/react-hooks.md", version 
 # agpm.toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
-tools = "https://github.com/myorg/ccpm-tools.git"
+tools = "https://github.com/myorg/agpm-tools.git"
 local = "./local-resources"
 
 [agents]
