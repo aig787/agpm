@@ -206,6 +206,7 @@ use crate::manifest::Manifest;
 use crate::utils::fs::ensure_dir;
 use crate::utils::security::validate_path_security;
 use anyhow::{Context, Result};
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1221,7 +1222,7 @@ impl SourceManager {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn sync_by_url(&mut self, url: &str) -> Result<GitRepo> {
+    pub async fn sync_by_url(&self, url: &str) -> Result<GitRepo> {
         // Generate a cache directory based on the URL
         let (owner, repo_name) =
             parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
@@ -1334,20 +1335,56 @@ impl SourceManager {
     }
 
     /// Sync multiple sources by URL in parallel
-    pub async fn sync_multiple_by_url(&mut self, urls: &[String]) -> Result<Vec<GitRepo>> {
+    ///
+    /// Executes all sync operations concurrently using tokio tasks. Each sync operation
+    /// uses file-level locking via `CacheLock` to ensure thread safety, preventing
+    /// concurrent modifications to the same repository.
+    ///
+    /// # Performance
+    ///
+    /// This method provides significant performance improvements when syncing multiple
+    /// repositories, especially over network connections. All sync operations execute
+    /// concurrently, limited only by system resources and network bandwidth.
+    ///
+    /// # Thread Safety
+    ///
+    /// - Each repository sync acquires a file-based lock to prevent concurrent access
+    /// - Different repositories can sync simultaneously without blocking each other
+    /// - Lock contention only occurs if the same repository is synced multiple times
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use ccpm::source::SourceManager;
+    /// # use tempfile::TempDir;
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let temp = TempDir::new()?;
+    /// # let mut manager = SourceManager::new_with_cache(temp.path().to_path_buf());
+    /// let urls = vec![
+    ///     "https://github.com/example/repo1.git".to_string(),
+    ///     "https://github.com/example/repo2.git".to_string(),
+    ///     "https://github.com/example/repo3.git".to_string(),
+    /// ];
+    /// let repos = manager.sync_multiple_by_url(&urls).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn sync_multiple_by_url(&self, urls: &[String]) -> Result<Vec<GitRepo>> {
         if urls.is_empty() {
             return Ok(Vec::new());
         }
 
-        // For now, sync sequentially
-        // TODO: Use tokio::join_all for parallel execution
-        let mut repos = Vec::new();
-        for url in urls.iter() {
-            let repo = self.sync_by_url(url).await?;
-            repos.push(repo);
-        }
+        // Create async tasks for each URL
+        let futures: Vec<_> = urls
+            .iter()
+            .map(|url| async move { self.sync_by_url(url).await })
+            .collect();
 
-        Ok(repos)
+        // Execute all syncs in parallel and collect results
+        let results = join_all(futures).await;
+
+        // Convert Vec<Result<GitRepo>> to Result<Vec<GitRepo>>
+        results.into_iter().collect()
     }
 
     /// Enables a source for use in operations.
@@ -2072,7 +2109,7 @@ mod tests {
     async fn test_sync_by_url_invalid_url() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         let result = manager.sync_by_url("not-a-valid-url").await;
         assert!(result.is_err());
@@ -2082,7 +2119,7 @@ mod tests {
     async fn test_sync_multiple_by_url_empty() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         let result = manager.sync_multiple_by_url(&[]).await;
         assert!(result.is_ok());
@@ -2126,7 +2163,7 @@ mod tests {
             .output()
             .unwrap();
 
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         let urls = vec![
             format!("file://{}", repo_dir.display()),
@@ -2372,7 +2409,7 @@ mod tests {
         std::fs::create_dir(&local_dir).unwrap();
         std::fs::write(local_dir.join("test.md"), "# Test Resource").unwrap();
 
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         // Test absolute path
         let result = manager.sync_by_url(&local_dir.to_string_lossy()).await;
@@ -2396,7 +2433,7 @@ mod tests {
     async fn test_sync_local_path_not_exist() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         // Try to sync non-existent local path
         let result = manager.sync_by_url("/non/existent/path").await;
@@ -2415,7 +2452,7 @@ mod tests {
         std::fs::create_dir(&plain_dir).unwrap();
         std::fs::write(plain_dir.join("test.md"), "# Test").unwrap();
 
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         // file:// URL should fail for non-git directory
         let file_url = format!("file://{}", plain_dir.display());
@@ -2435,7 +2472,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
 
-        let mut manager = SourceManager::new_with_cache(cache_dir.clone());
+        let manager = SourceManager::new_with_cache(cache_dir.clone());
 
         // Test that blacklisted system paths are blocked
         let blacklisted_paths = vec!["/etc/passwd", "/System/Library", "/private/etc/hosts"];
@@ -2490,7 +2527,7 @@ mod tests {
         let symlink_path = deps_dir.join("malicious_link");
         symlink(&sensitive_dir, &symlink_path).unwrap();
 
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         // Try to access the symlink directly as a local path
         let result = manager.sync_by_url(symlink_path.to_str().unwrap()).await;
@@ -2508,7 +2545,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path().join("cache");
 
-        let mut manager = SourceManager::new_with_cache(cache_dir);
+        let manager = SourceManager::new_with_cache(cache_dir);
 
         // With blacklist approach, temp directories are allowed
         // So this test verifies that normal development paths work
