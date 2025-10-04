@@ -134,9 +134,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     );
     project.write_manifest(&manifest_v2).await?;
 
-    project
-        .run_ccpm(&["install", "--regenerate"])?
-        .assert_success();
+    project.run_ccpm(&["install"])?.assert_success();
 
     // Verify v2 is now installed
     // Files use basename from path, not dependency name
@@ -144,7 +142,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
         fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
     assert!(
         installed_v2.contains("v2"),
-        "Should have v2 installed after regenerate"
+        "Should have v2 installed after auto-update"
     );
 
     Ok(())

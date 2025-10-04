@@ -288,10 +288,9 @@ impl ValidateCommand {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
+    /// ```ignore
     /// use ccpm::cli::validate::{ValidateCommand, OutputFormat};
     ///
-    /// # tokio_test::block_on(async {
     /// let cmd = ValidateCommand {
     ///     file: None,
     ///     resolve: true,
@@ -304,8 +303,6 @@ impl ValidateCommand {
     ///     strict: false,
     /// };
     /// // cmd.execute().await?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// # }));
     /// ```
     pub async fn execute(self) -> Result<()> {
         self.execute_with_manifest_path(None).await

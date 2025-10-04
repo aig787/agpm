@@ -46,16 +46,14 @@ ccpm init --force
 
 ### `ccpm install`
 
-Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
+Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
 ccpm install [OPTIONS]
 
 Options:
-  -f, --force                    Bypass lockfile staleness checks and force installation
-      --regenerate               Delete and regenerate the lockfile from scratch
       --no-lock                  Don't write lockfile after installation
-      --frozen                   Use exact lockfile versions without updates
+      --frozen                   Require exact lockfile match (like cargo build --locked)
       --no-cache                 Bypass cache and fetch directly from sources
       --max-parallel <NUMBER>    Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>     Path to ccpm.toml (default: ./ccpm.toml)
@@ -64,17 +62,11 @@ Options:
 
 **Examples:**
 ```bash
-# Standard installation
+# Standard installation (auto-updates lockfile)
 ccpm install
 
-# Use exact lockfile versions (CI/production)
+# CI/production mode - fail if lockfile out of sync (like cargo build --locked)
 ccpm install --frozen
-
-# Bypass lockfile staleness checks (useful when you know lockfile is safe)
-ccpm install --force
-
-# Regenerate lockfile from scratch (removes and recreates)
-ccpm install --regenerate
 
 # Install without creating lockfile
 ccpm install --no-lock
@@ -91,7 +83,7 @@ ccpm install --manifest-path ./configs/ccpm.toml
 
 ### `ccpm update`
 
-Update dependencies to latest versions within version constraints.
+Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions.
 
 ```bash
 ccpm update [OPTIONS] [DEPENDENCY]
@@ -100,7 +92,6 @@ Arguments:
   [DEPENDENCY]    Update specific dependency (default: update all)
 
 Options:
-  -f, --force                 Bypass lockfile staleness checks and force update
       --dry-run               Preview changes without applying
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
@@ -357,6 +348,8 @@ If `--name` is not provided, the dependency name is automatically derived from t
 - `/path/to/helper.md` → name: "helper"
 
 For pattern dependencies, you should typically provide a custom name since multiple files will be installed.
+
+See the [Manifest Reference](manifest-reference.md) for inline table fields (`branch`, `rev`, `target`, `filename`, MCP settings) and advanced configuration after the dependency is added.
 
 ### `ccpm remove`
 

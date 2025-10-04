@@ -250,10 +250,14 @@ ccpm cache info
 # Check for conflicts
 ccpm validate --resolve
 
-# Update constraints in ccpm.toml
-# Then regenerate lockfile
+# Optional: inspect the graph
+ccpm validate --resolve --format json
+
+# Auto-update the lockfile after adjusting constraints
 ccpm install
 ```
+
+If the error reports incompatible constraints, update `ccpm.toml` (or the resource metadata) so all dependents agree on a version. Prefer explicitly pinning the parent entry; CCPM will propagate that version to transitive dependencies. For duplicate install paths reported during resolution, add a `filename` or `target` override so each dependency gets a unique destination.
 
 ### Can I uninstall resources?
 CCPM doesn't have an uninstall command. To remove resources:

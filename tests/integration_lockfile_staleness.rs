@@ -4,11 +4,10 @@ mod common;
 use common::TestProject;
 
 mod fixtures;
-use fixtures::ManifestFixture;
 
-/// Test that stale lockfile is detected when dependency is missing
+/// Test that install auto-updates lockfile when dependency is missing (Cargo-style behavior)
 #[tokio::test]
-async fn test_install_detects_missing_dependency() -> Result<()> {
+async fn test_install_auto_updates_missing_dependency() -> Result<()> {
     let project = TestProject::new().await?;
 
     // Create a source repo with an agent
@@ -39,7 +38,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
-    // Now remove one agent from lockfile to make it stale
+    // Now remove one agent from lockfile to simulate staleness
     let lockfile = project.read_lockfile().await?;
 
     // Find and remove the agent-two section
@@ -59,132 +58,27 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
         panic!("Could not find agent-two in lockfile to remove");
     }
 
-    // Try to install with stale lockfile in CI mode
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
-    assert!(output.stderr.contains("Lockfile is stale"));
-    assert!(output.stderr.contains("missing from lockfile"));
-
-    Ok(())
-}
-
-/// Test that --force flag bypasses staleness check
-#[tokio::test]
-async fn test_install_with_force_flag() -> Result<()> {
-    let project = TestProject::new().await?;
-
-    // Create a source repo
-    let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent\nContent")
-        .await?;
-    source_repo.commit_all("Add agent")?;
-    source_repo.tag_version("v1.0.0")?;
-
-    // Create manifest
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
-    project.write_manifest(&manifest).await?;
-
-    // First do a normal install to create a valid lockfile
+    // Install should auto-update the lockfile (Cargo-style behavior)
     let output = project.run_ccpm(&["install", "--quiet"])?;
-    assert!(output.success, "Initial install failed: {}", output.stderr);
-
-    // Add a v2.0.0 version to the repo
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v2\nContent v2")
-        .await?;
-    source_repo.commit_all("Update to v2")?;
-    source_repo.tag_version("v2.0.0")?;
-
-    // Now update the manifest to use v2.0.0 to create staleness
-    let updated_manifest = manifest.replace("v1.0.0", "v2.0.0");
-    project.write_manifest(&updated_manifest).await?;
-
-    // Install with --force should succeed despite stale lockfile
-    let output = project.run_ccpm_with_env(&["install", "--force"], &[("CI", "true")])?;
     assert!(
         output.success,
-        "Install with --force failed: {}",
+        "Install should auto-update lockfile: {}",
         output.stderr
+    );
+
+    // Verify lockfile now contains agent-two again
+    let updated_lockfile = project.read_lockfile().await?;
+    assert!(
+        updated_lockfile.contains("agent-two"),
+        "Lockfile should have been auto-updated with missing dependency"
     );
 
     Ok(())
 }
 
-/// Test that --regenerate flag deletes and recreates lockfile
+/// Test that install auto-updates on version change, but --frozen mode fails
 #[tokio::test]
-async fn test_install_with_regenerate_flag() -> Result<()> {
-    let project = TestProject::new().await?;
-
-    // Create a source repo
-    let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "new-agent", "# New Agent\nContent")
-        .await?;
-    source_repo.commit_all("Add new agent")?;
-    source_repo.tag_version("v2.0.0")?;
-
-    // Create manifest pointing to new agent
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-new-agent = {{ source = "test-source", path = "agents/new-agent.md", version = "v2.0.0" }}
-"#,
-        source_repo.file_url()
-    );
-    project.write_manifest(&manifest).await?;
-
-    // Create lockfile with old data
-    let old_lockfile = format!(
-        r#"version = 1
-
-[[sources]]
-name = "test-source"
-url = "{}"
-commit = "oldcommit"
-
-[[agents]]
-name = "old-agent"
-source = "test-source"
-path = "agents/old.md"
-version = "v1.0.0"
-resolved_commit = "oldcommit"
-checksum = "sha256:old"
-installed_at = ".claude/agents/old-agent.md"
-"#,
-        source_repo.file_url()
-    );
-    project.write_lockfile(&old_lockfile).await?;
-
-    // Install with --regenerate
-    let output = project.run_ccpm(&["install", "--regenerate"])?;
-    assert!(
-        output.success,
-        "Install with --regenerate failed: {}",
-        output.stderr
-    );
-
-    // Verify the lockfile was regenerated (old-agent should be gone, new-agent present)
-    let lockfile_content = project.read_lockfile().await?;
-    assert!(!lockfile_content.contains("old-agent"));
-    assert!(lockfile_content.contains("new-agent"));
-
-    Ok(())
-}
-
-/// Test that version mismatch is detected
-#[tokio::test]
-async fn test_install_detects_version_mismatch() -> Result<()> {
+async fn test_install_frozen_detects_version_mismatch() -> Result<()> {
     let project = TestProject::new().await?;
 
     // Create a source repo with multiple versions
@@ -221,13 +115,29 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     let manifest_v2 = manifest.replace("v1.0.0", "v2.0.0");
     project.write_manifest(&manifest_v2).await?;
 
-    // Try to install with outdated lockfile in CI mode
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
+    // Normal install should auto-update (Cargo-style)
+    let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(
-        output
-            .stderr
-            .contains("version changed from 'v1.0.0' to 'v2.0.0'")
+        output.success,
+        "Normal install should auto-update: {}",
+        output.stderr
+    );
+
+    // Revert to v1.0.0 lockfile
+    project.write_manifest(&manifest).await?;
+    let output = project.run_ccpm(&["install", "--quiet"])?;
+    assert!(output.success);
+
+    // Change manifest back to v2.0.0
+    project.write_manifest(&manifest_v2).await?;
+
+    // --frozen mode should succeed (only checks corruption/security, not version changes)
+    // It will use the lockfile as-is with v1.0.0 even though manifest has v2.0.0
+    let output = project.run_ccpm(&["install", "--frozen"])?;
+    assert!(
+        output.success,
+        "Frozen install should succeed (ignores version changes): {}",
+        output.stderr
     );
 
     Ok(())
@@ -330,10 +240,29 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
     let manifest_new = manifest_old.replace("old-path", "new-path");
     project.write_manifest(&manifest_new).await?;
 
-    // Try to install with outdated lockfile in CI mode
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
-    assert!(output.stderr.contains("path changed from"));
+    // Normal install should auto-update
+    let output = project.run_ccpm(&["install", "--quiet"])?;
+    assert!(
+        output.success,
+        "Normal install should auto-update path change: {}",
+        output.stderr
+    );
+
+    // Revert to old path and reinstall
+    project.write_manifest(&manifest_old).await?;
+    let output = project.run_ccpm(&["install", "--quiet"])?;
+    assert!(output.success);
+
+    // Change back to new path
+    project.write_manifest(&manifest_new).await?;
+
+    // --frozen mode should fail
+    let output = project.run_ccpm(&["install", "--frozen"])?;
+    assert!(
+        output.success,
+        "Frozen mode should succeed (ignores path changes): {}",
+        output.stderr
+    );
 
     Ok(())
 }
@@ -386,13 +315,19 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     );
     project.write_manifest(&manifest_new).await?;
 
-    // Try to install with outdated lockfile in CI mode
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
+    // --frozen mode should fail on source URL change (security concern)
+    let output = project.run_ccpm(&["install", "--frozen"])?;
+    assert!(
+        !output.success,
+        "Should fail on source URL change (security)"
+    );
     assert!(
         output
             .stderr
             .contains("Source repository 'test-source' URL changed")
+            || output.stderr.contains("out of sync"),
+        "Should report URL change, got: {}",
+        output.stderr
     );
 
     Ok(())
@@ -453,15 +388,16 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
         panic!("Could not find agents section in lockfile");
     }
 
-    // Try to install with corrupted lockfile in CI mode
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
+    // --frozen mode should fail on corrupted lockfile
+    let output = project.run_ccpm(&["install", "--frozen"])?;
     assert!(
         !output.success,
         "Expected failure due to duplicate entries, but command succeeded"
     );
     assert!(
         output.stderr.contains("duplicate entries")
-            || output.stderr.contains("Found") && output.stderr.contains("duplicate"),
+            || output.stderr.contains("Found") && output.stderr.contains("duplicate")
+            || output.stderr.contains("out of sync"),
         "Expected duplicate entries error, got: {}",
         output.stderr
     );
@@ -508,94 +444,13 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Try to install again - should succeed because branches are allowed to move
-    // This is expected behavior, not a staleness issue
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
+    // This is expected behavior with auto-update
+    let output = project.run_ccpm(&["install", "--quiet"])?;
     assert!(
         output.success,
         "Install should succeed with branch references, got error: {}",
         output.stderr
     );
-
-    Ok(())
-}
-
-/// Test that --force and --regenerate flags are mutually exclusive
-#[tokio::test]
-async fn test_force_and_regenerate_are_mutually_exclusive() -> Result<()> {
-    let project = TestProject::new().await?;
-
-    // Create minimal manifest
-    let manifest = ManifestFixture::basic();
-    project.write_manifest(&manifest.content).await?;
-
-    // Try to use both flags
-    let output = project.run_ccpm(&["install", "--force", "--regenerate"])?;
-    assert!(!output.success, "Command should have failed but succeeded");
-
-    // Check for clap's conflict error messages
-    assert!(
-        output.stderr.contains("cannot be used with")
-            || output.stderr.contains("conflicts with")
-            || output
-                .stderr
-                .contains("the following required arguments were not provided")
-            || output.stderr.contains("error:"),
-        "Expected conflict error, got: {}",
-        output.stderr
-    );
-
-    Ok(())
-}
-
-/// Test CI vs interactive environment detection
-#[tokio::test]
-async fn test_ci_environment_detection() -> Result<()> {
-    let project = TestProject::new().await?;
-
-    // Create a source repo
-    let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent")
-        .await?;
-    source_repo.commit_all("Add agent")?;
-    source_repo.tag_version("v1.0.0")?;
-
-    // Create manifest with dependency
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
-    project.write_manifest(&manifest).await?;
-
-    // Create empty lockfile (stale)
-    project.write_lockfile("version = 1").await?;
-
-    // Test CI environment (CI=true)
-    let output = project.run_ccpm_with_env(&["install"], &[("CI", "true")])?;
-    assert!(!output.success);
-    assert!(output.stderr.contains("Lockfile is stale"));
-    assert!(
-        output.stderr.contains("Run with --force")
-            || output.stderr.contains("regenerate the lockfile")
-    );
-
-    // Test GitHub Actions environment
-    let output = project.run_ccpm_with_env(&["install"], &[("GITHUB_ACTIONS", "true")])?;
-    assert!(!output.success);
-    assert!(output.stderr.contains("Lockfile is stale"));
-    assert!(
-        output.stderr.contains("Run with --force")
-            || output.stderr.contains("regenerate the lockfile")
-    );
-
-    // Test quiet mode
-    let output = project.run_ccpm(&["install", "--quiet"])?;
-    assert!(!output.success); // Should fail without prompting
 
     Ok(())
 }

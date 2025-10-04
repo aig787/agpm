@@ -245,7 +245,7 @@ impl ResourceIterator {
     /// # Warning
     /// This method only matches by name and may return the wrong resource
     /// when multiple sources provide resources with the same name.
-    /// Consider using [`find_resource_by_name_and_source`] instead when
+    /// Consider using [`Self::find_resource_by_name_and_source`] instead when
     /// source information is available.
     pub fn find_resource_by_name<'a>(
         lockfile: &'a LockFile,

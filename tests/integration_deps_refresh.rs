@@ -313,7 +313,11 @@ installed_at = "agents/my-agent.md"
     .unwrap();
 
     let output = project.run_ccpm(&["update", "--check"]).unwrap();
-    assert!(output.success);
+    // Should exit with code 1 when updates are available (useful for CI)
+    assert!(
+        !output.success,
+        "Expected exit code 1 when updates available"
+    );
     assert!(
         output.stdout.contains("Found")
             || output.stdout.contains("update")
@@ -409,38 +413,6 @@ installed_at = "snippets/utils.md"
     assert!(lockfile_content.contains("my-agent"));
     assert!(lockfile_content.contains("helper"));
     assert!(lockfile_content.contains("utils"));
-}
-
-/// Test update with --force flag to ignore constraints
-#[tokio::test]
-async fn test_update_force_ignore_constraints() {
-    let project = TestProject::new().await.unwrap();
-    let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
-
-    // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
-
-    let output = project.run_ccpm(&["update", "--force"]).unwrap();
-    assert!(output.success);
-    assert!(
-        output.stdout.contains("Found")
-            || output.stdout.contains("update")
-            || output.stdout.contains("Performing fresh install")
-    );
 }
 
 /// Test update with backup/rollback capability
@@ -615,9 +587,16 @@ installed_at = "snippets/utils.md"
         .unwrap();
 
     let output = project.run_ccpm(&["update", "--dry-run"]).unwrap();
-    assert!(output.success);
-    // Note: dry-run functionality may not be implemented yet
-    // assert!(output.stdout.contains("Would update") || output.stdout.contains("(dry run)"));
+    // Should exit with code 1 when updates are available (useful for CI)
+    assert!(
+        !output.success,
+        "Expected exit code 1 when updates available"
+    );
+    assert!(
+        output.stdout.contains("Would update") || output.stdout.contains("(dry run)"),
+        "Expected dry-run output, got: {}",
+        output.stdout
+    );
 
     // Verify lockfile wasn't actually modified
     let current_lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))
@@ -739,7 +718,6 @@ async fn test_update_help() {
         .success()
         .stdout(predicate::str::contains("Update installed resources"))
         .stdout(predicate::str::contains("--check"))
-        .stdout(predicate::str::contains("--force"))
         .stdout(predicate::str::contains("--dry-run"))
         .stdout(predicate::str::contains("--backup"))
         .stdout(predicate::str::contains("--verbose"))

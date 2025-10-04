@@ -130,7 +130,6 @@ async fn test_gitignore_enabled_by_default() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -177,7 +176,6 @@ async fn test_gitignore_explicitly_enabled() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -222,7 +220,6 @@ async fn test_gitignore_disabled() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -282,7 +279,6 @@ temp/
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -351,7 +347,6 @@ debug/
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -497,7 +492,6 @@ installed_at = ".claude/agents/internal.md"
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -546,7 +540,6 @@ async fn test_gitignore_empty_lockfile() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -592,7 +585,6 @@ async fn test_gitignore_idempotent() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -609,7 +601,6 @@ async fn test_gitignore_idempotent() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -656,7 +647,6 @@ async fn test_gitignore_switch_enabled_disabled() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -676,7 +666,6 @@ async fn test_gitignore_switch_enabled_disabled() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -707,7 +696,6 @@ async fn test_gitignore_switch_enabled_disabled() {
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 
@@ -741,7 +729,7 @@ async fn test_gitignore_actually_ignored_by_git() {
         .unwrap();
 
     project
-        .run_ccpm(&["install", "--quiet", "--force"])
+        .run_ccpm(&["install", "--quiet"])
         .unwrap()
         .assert_success();
 
@@ -829,7 +817,7 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
         .unwrap();
 
     project
-        .run_ccpm(&["install", "--quiet", "--force"])
+        .run_ccpm(&["install", "--quiet"])
         .unwrap()
         .assert_success();
 
@@ -921,7 +909,6 @@ user-file.txt
         .unwrap()
         .arg("install")
         .arg("--quiet")
-        .arg("--force")
         .current_dir(project_dir)
         .assert();
 

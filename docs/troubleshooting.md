@@ -105,11 +105,15 @@ RUST_LOG=debug ccpm validate --resolve
 
 ### Lockfile Out of Sync
 
+- Check the exact staleness reason with `ccpm validate --check-lock`.
+- Rerun `ccpm install` to regenerate the lockfile; the resolver keeps existing versions unless the manifest or upstream reference changed.
+- Remove `ccpm.lock` only when you intentionally want a clean rebuild (e.g., recovering from manual edits or corruption).
+
 ```bash
-# Regenerate lockfile
+# Regenerate lockfile in place
 ccpm install
 
-# Force update all dependencies
+# Last resort: rebuild from scratch
 rm ccpm.lock
 ccpm install
 ```

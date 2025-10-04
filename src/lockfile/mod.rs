@@ -745,7 +745,7 @@ pub struct LockedResource {
     /// Resource type (agent, snippet, command, etc.)
     ///
     /// This field is populated during deserialization based on which TOML section
-    /// the resource came from ([[agents]], [[snippets]], etc.) and is used internally
+    /// the resource came from (`[[agents]]`, `[[snippets]]`, etc.) and is used internally
     /// for determining the correct lockfile section when adding/updating entries.
     ///
     /// It is never serialized to the lockfile - the section header provides this information.
@@ -1696,33 +1696,19 @@ impl LockFile {
     /// Validate the lockfile against a manifest to detect staleness.
     ///
     /// Checks if the lockfile is consistent with the current manifest and detects
-    /// common staleness indicators that require lockfile regeneration. This prevents
-    /// installation issues caused by stale or corrupted lockfiles.
+    /// common staleness indicators that require lockfile regeneration. Performs
+    /// comprehensive validation similar to Cargo's `--locked` mode.
     ///
     /// # Arguments
     ///
     /// * `manifest` - The current project manifest to validate against
-    /// * `strict` - Enable strict mode for CI/production (checks missing deps, version/path changes)
+    /// * `strict` - If true, check version/path changes; if false, only check corruption and security
     ///
     /// # Returns
     ///
     /// * `Ok(None)` - Lockfile is valid and up-to-date
     /// * `Ok(Some(StalenessReason))` - Lockfile is stale and needs regeneration
     /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
-    ///
-    /// # Strict vs Lenient Mode
-    ///
-    /// **Strict Mode (CI/Production)**: Enabled with `strict = true`
-    /// - Fails if manifest dependencies are missing from lockfile
-    /// - Fails if dependency versions have changed
-    /// - Fails if dependency paths have changed
-    /// - Ensures reproducible installations
-    ///
-    /// **Lenient Mode (Development)**: Enabled with `strict = false`
-    /// - Allows missing dependencies (installed additively)
-    /// - Allows version/path changes (require explicit `ccpm update`)
-    /// - Extra lockfile entries are allowed (for transitive dependencies)
-    /// - More user-friendly for iterative development
     ///
     /// # Examples
     ///
@@ -1734,22 +1720,19 @@ impl LockFile {
     /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
     /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
     ///
-    /// // Lenient mode for development
-    /// match lockfile.validate_against_manifest(&manifest, false)? {
-    ///     None => println!("Lockfile is up-to-date"),
-    ///     Some(reason) => {
-    ///         println!("Lockfile is stale: {}", reason);
-    ///         println!("Run 'ccpm install' to regenerate it");
-    ///     }
-    /// }
-    ///
-    /// // Strict mode for CI
+    /// // Strict mode: check everything including version/path changes
     /// match lockfile.validate_against_manifest(&manifest, true)? {
     ///     None => println!("Lockfile is valid"),
     ///     Some(reason) => {
-    ///         eprintln!("ERROR: {}", reason);
-    ///         std::process::exit(1);
+    ///         eprintln!("Lockfile is stale: {}", reason);
+    ///         eprintln!("Run 'ccpm install' to auto-update it");
     ///     }
+    /// }
+    ///
+    /// // Lenient mode: only check corruption and security (for --frozen)
+    /// match lockfile.validate_against_manifest(&manifest, false)? {
+    ///     None => println!("Lockfile has no critical issues"),
+    ///     Some(reason) => eprintln!("Critical issue: {}", reason),
     /// }
     /// # Ok(())
     /// # }
@@ -1758,11 +1741,13 @@ impl LockFile {
     /// # Staleness Detection
     ///
     /// The method checks for several staleness indicators:
-    /// - **Duplicate entries**: Multiple entries for the same dependency (always checked)
-    /// - **Source URL changes**: Source URLs changed in manifest (always checked)
-    /// - **Missing dependencies**: Manifest has deps not in lockfile (strict mode only)
-    /// - **Version changes**: Same dependency with different version constraint (strict mode only)
-    /// - **Path changes**: Same dependency with different source path (strict mode only)
+    /// - **Duplicate entries**: Multiple entries for the same dependency (corruption) - always checked
+    /// - **Source URL changes**: Source URLs changed in manifest (security concern) - always checked
+    /// - **Missing dependencies**: Manifest has deps not in lockfile - only in strict mode
+    /// - **Version changes**: Same dependency with different version constraint - only in strict mode
+    /// - **Path changes**: Same dependency with different source path - only in strict mode
+    ///
+    /// Note: Extra lockfile entries are allowed (for transitive dependencies).
     pub fn validate_against_manifest(
         &self,
         manifest: &crate::manifest::Manifest,
@@ -1790,9 +1775,8 @@ impl LockFile {
             }
         }
 
-        // In strict mode (CI), also check for missing dependencies, version changes, and path changes
+        // In strict mode, also check for missing dependencies, version changes, and path changes
         if strict {
-            // For each resource type, check if all manifest dependencies exist in lockfile
             for resource_type in crate::core::ResourceType::all() {
                 if let Some(manifest_deps) = manifest.get_dependencies(*resource_type) {
                     for (name, dep) in manifest_deps {
@@ -1836,16 +1820,44 @@ impl LockFile {
             }
         }
 
-        // In lenient mode, the lockfile is NOT considered stale for:
-        // - Missing dependencies (will be installed additively)
-        // - Version changes (require explicit `ccpm update`)
-        // - Path changes (require explicit `ccpm update`)
-        // - Extra entries (could be transitive dependencies)
-        //
-        // This makes the tool less aggressive and more user-friendly,
-        // matching the behavior of npm/yarn/cargo.
-
+        // Extra lockfile entries are allowed (for transitive dependencies)
         Ok(None)
+    }
+
+    /// Check if the lockfile is stale relative to the manifest.
+    ///
+    /// This is a convenience method that returns a simple boolean instead of
+    /// the detailed `StalenessReason`. Useful for quick staleness checks.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest` - The current project manifest to validate against
+    /// * `strict` - If true, check version/path changes; if false, only check corruption and security
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Lockfile is stale and needs updating
+    /// * `Ok(false)` - Lockfile is valid and up-to-date
+    /// * `Err(anyhow::Error)` - Validation failed due to IO or parse error
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use std::path::Path;
+    /// # use ccpm::lockfile::LockFile;
+    /// # use ccpm::manifest::Manifest;
+    /// # fn example() -> anyhow::Result<()> {
+    /// let lockfile = LockFile::load(Path::new("ccpm.lock"))?;
+    /// let manifest = Manifest::load(Path::new("ccpm.toml"))?;
+    ///
+    /// if lockfile.is_stale(&manifest, true)? {
+    ///     println!("Lockfile needs updating");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn is_stale(&self, manifest: &crate::manifest::Manifest, strict: bool) -> Result<bool> {
+        Ok(self.validate_against_manifest(manifest, strict)?.is_some())
     }
 
     /// Detect duplicate entries within the lockfile itself.
@@ -1969,143 +1981,6 @@ impl Default for LockFile {
     /// It creates a fresh lockfile with no sources or resources.
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Check if the lockfile is stale and prompt for regeneration.
-///
-/// This function performs comprehensive staleness detection and provides
-/// user-friendly error messages with clear action steps. It's designed to
-/// be called at the start of install/update operations to prevent issues
-/// from corrupted or outdated lockfiles.
-///
-/// # Arguments
-///
-/// * `lockfile_path` - Path to the lockfile to validate
-/// * `manifest_path` - Path to the manifest to validate against
-/// * `allow_prompt` - Whether to show interactive prompts (false for CI/scripts)
-///
-/// # Returns
-///
-/// * `Ok(true)` - Lockfile is valid or user chose to continue
-/// * `Ok(false)` - Lockfile is stale and user chose to abort
-/// * `Err(anyhow::Error)` - IO error or validation failed
-///
-/// # Behavior
-///
-/// 1. Load both lockfile and manifest
-/// 2. Validate lockfile against manifest
-/// 3. If stale, show detailed error message
-/// 4. If `allow_prompt`, ask user whether to regenerate
-/// 5. Return decision for caller to handle
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use std::path::Path;
-/// use ccpm::lockfile::check_staleness;
-///
-/// # fn example() -> anyhow::Result<()> {
-/// match check_staleness(
-///     Path::new("ccpm.lock"),
-///     Path::new("ccpm.toml"),
-///     true  // allow prompts
-/// )? {
-///     true => println!("Proceeding with operation"),
-///     false => {
-///         println!("Operation cancelled by user");
-///         std::process::exit(1);
-///     }
-/// }
-/// # Ok(())
-/// # }
-/// ```
-///
-/// # Error Messages
-///
-/// The function provides detailed, actionable error messages:
-///
-/// ```text
-/// Error: Lockfile is stale and needs regeneration
-///
-/// Reason: Found 127 duplicate entries for dependency 'utils' (command)
-///
-/// This usually happens when:
-/// - Lockfile was corrupted during a previous operation
-/// - Multiple ccpm processes ran simultaneously
-/// - Pattern dependencies resolved incorrectly
-///
-/// To fix this issue:
-/// - Delete ccpm.lock and run 'ccpm install' to regenerate
-/// - Or run 'ccpm install --regenerate' to regenerate automatically
-///
-/// Continue anyway? (y/N):
-/// ```
-pub fn check_staleness(
-    lockfile_path: &Path,
-    manifest_path: &Path,
-    allow_prompt: bool,
-) -> Result<bool> {
-    // Load lockfile (returns empty if doesn't exist, which is fine)
-    let lockfile = LockFile::load(lockfile_path)?;
-
-    // Load manifest
-    let manifest = crate::manifest::Manifest::load(manifest_path)?;
-
-    // Check for staleness (use strict mode when not allowing prompts, i.e., in CI)
-    match lockfile.validate_against_manifest(&manifest, !allow_prompt)? {
-        None => Ok(true), // Lockfile is valid
-        Some(reason) => {
-            // Show detailed error message
-            eprintln!("Error: Lockfile is stale and needs regeneration\n");
-            eprintln!("Reason: {}\n", reason);
-
-            eprintln!("This usually happens when:");
-            match &reason {
-                StalenessReason::DuplicateEntries { .. } => {
-                    eprintln!("- Lockfile was corrupted during a previous operation");
-                    eprintln!("- Multiple ccpm processes ran simultaneously");
-                    eprintln!("- Pattern dependencies resolved incorrectly");
-                }
-                StalenessReason::SourceUrlChanged { .. } => {
-                    eprintln!("- Source repository URLs were updated in ccpm.toml");
-                    eprintln!("- Repository was moved or renamed");
-                }
-                StalenessReason::MissingDependency { .. } => {
-                    eprintln!("- Dependencies were added to ccpm.toml");
-                    eprintln!("- Lockfile was manually edited");
-                }
-                StalenessReason::VersionChanged { .. } => {
-                    eprintln!("- Dependency versions were changed in ccpm.toml");
-                    eprintln!("- Version constraints were updated");
-                }
-                StalenessReason::PathChanged { .. } => {
-                    eprintln!("- Dependency paths were changed in ccpm.toml");
-                    eprintln!("- Resources were moved in the source repository");
-                }
-            }
-
-            eprintln!("\nTo fix this issue:");
-            eprintln!("- Delete ccpm.lock and run 'ccpm install' to regenerate");
-            eprintln!("- Or run 'ccpm install --regenerate' to regenerate automatically");
-            eprintln!("- Or run 'ccpm install --force' to ignore this check");
-
-            if allow_prompt {
-                eprint!("\nContinue anyway? (y/N): ");
-                use std::io::{self, Write};
-                io::stdout().flush()?;
-
-                let mut input = String::new();
-                io::stdin().read_line(&mut input)?;
-                let input = input.trim().to_lowercase();
-
-                Ok(input == "y" || input == "yes")
-            } else {
-                eprintln!("\nOperation cancelled due to stale lockfile.");
-                eprintln!("Run with --force to bypass this check, or regenerate the lockfile.");
-                Ok(false)
-            }
-        }
     }
 }
 

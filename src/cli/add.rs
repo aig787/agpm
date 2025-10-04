@@ -513,11 +513,9 @@ async fn install_single_dependency(
     // This ensures proper transitive dependency resolution
     println!("Installing dependency...");
 
-    // Create an install command with regenerate=true to skip staleness checks
-    // This is necessary because we just added a new dependency to the manifest,
-    // so the lockfile is intentionally stale and needs regeneration
-    let mut install_cmd = crate::cli::install::InstallCommand::new();
-    install_cmd.regenerate = true; // Skip staleness check since we're adding a new dep
+    // Create an install command to install the new dependency
+    // The install command will auto-update the lockfile with the new dependency
+    let install_cmd = crate::cli::install::InstallCommand::new();
 
     // Run the install command which will:
     // 1. Resolve all dependencies including transitive ones

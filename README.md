@@ -8,10 +8,10 @@ dependency management, similar to Cargo.
 
 ## Features
 
-- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo/npm with staleness detection
+- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo with auto-update
 - 🌐 **Git-based distribution** - Install from any Git repository (GitHub, GitLab, Bitbucket)
 - 🚀 **No central registry** - Fully decentralized approach
-- 🔒 **Lockfile staleness detection** - Automatic detection of outdated or inconsistent lockfiles
+- 🔒 **Cargo-style lockfile handling** - Auto-updates by default, strict validation with `--frozen`
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🧹 **Automatic artifact cleanup** - Old files removed when paths change
@@ -74,17 +74,11 @@ react-utils = { source = "community", path = "snippets/react/*.md", version = "^
 ### Install Dependencies
 
 ```bash
-# Install all dependencies and generate lockfile
+# Install all dependencies (auto-updates lockfile like Cargo)
 ccpm install
 
-# Use exact lockfile versions (for CI/CD)
+# Use exact lockfile versions (for CI/CD - like cargo build --locked)
 ccpm install --frozen
-
-# Force installation when lockfile is stale
-ccpm install --force
-
-# Regenerate lockfile from scratch
-ccpm install --regenerate
 
 # Control parallelism (default: max(10, 2 × CPU cores))
 ccpm install --max-parallel 8
@@ -156,6 +150,23 @@ Transitive dependencies:
 → Resolved: Using helper.md v2.0.0 (higher version)
 ```
 
+**When Auto-Resolution Fails:**
+
+If constraints have no compatible version, installation stops with an error similar to:
+
+```text
+Error: Version conflict for agents/helper.md
+  requested: v1.0.0 (manifest)
+  requested: v2.0.0 (transitive via agents/deploy.md)
+  resolution: no compatible tag satisfies both constraints
+```
+
+Use `ccpm validate --resolve --format json` or `RUST_LOG=debug ccpm install` to see the exact dependency chain. Typical fixes:
+- Pin the manifest entry to a single version (`version = "v2.0.0"`) and run `ccpm install` to auto-update.
+- Split competing resources into separate manifests or disable the conflicting dependency in one branch.
+- If a transitive dependency is too new, override it by forking the source repo or requesting an upstream fix.
+- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs cleanly.
+
 **Circular Dependencies:**
 
 CCPM detects and prevents circular dependencies in the dependency graph:
@@ -213,6 +224,7 @@ dependencies:
 - Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
 - Graph-based resolution with topological ordering ensures correct installation order
 - Circular dependency detection prevents infinite loops
+- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the parent entry in `ccpm.toml`
 
 **Lockfile Format:**
 
@@ -264,6 +276,7 @@ CCPM manages six types of resources:
 - 🔧 **[Resources Guide](docs/resources.md)** - Working with different resource types
 - 🔢 **[Versioning Guide](docs/versioning.md)** - Version constraints and Git references
 - ⚙️ **[Configuration Guide](docs/configuration.md)** - Global config and authentication
+- 🗂️ **[Manifest Reference](docs/manifest-reference.md)** - Field-by-field manifest schema and CLI mapping
 - 🏗️ **[Architecture](docs/architecture.md)** - Technical details and design decisions
 - ❓ **[FAQ](docs/faq.md)** - Frequently asked questions
 - 🐛 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
