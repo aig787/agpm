@@ -16,8 +16,10 @@ Create a GitHub pull request following these guidelines:
 1. Verify prerequisites:
    - Check for uncommitted changes to tracked files: `git diff --quiet && git diff --cached --quiet`
    - If there are uncommitted changes, STOP and inform the user to commit or stash them first
-   - Check that current branch is pushed to remote: `git rev-parse --abbrev-ref --symbolic-full-name @{u}`
-   - If not pushed, push with: `git push -u origin $(git branch --show-current)`
+   - Check if branch exists on remote: `git ls-remote --heads origin $(git branch --show-current)`
+   - If branch doesn't exist on remote, push with: `git push -u origin $(git branch --show-current)`
+   - If branch exists, check if local is ahead: `git rev-list --count origin/$(git branch --show-current)..HEAD`
+   - If local is ahead (count > 0), push with: `git push origin $(git branch --show-current)`
    - Check that `gh` CLI is installed and authenticated
 
 2. Determine the base branch:
@@ -84,8 +86,9 @@ Create a GitHub pull request following these guidelines:
 ## Important Notes
 
 - Always check for uncommitted changes first - abort if any exist
+- Check if branch exists on remote using `git ls-remote`, not tracking configuration (important for worktrees)
+- Push branch if it doesn't exist on remote or if local is ahead
 - Always analyze the FULL diff from base branch, not just the latest commit
 - The PR title should summarize the entire PR, considering all commits
 - Ensure the description provides clear context for reviewers
 - Test plan should be actionable and specific to the changes
-- Always verify branch is pushed before attempting to create PR
