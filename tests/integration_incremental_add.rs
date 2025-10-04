@@ -35,7 +35,7 @@ scripts = ".claude/ccpm/scripts"
 hooks = ".claude/ccpm/hooks"
 gitignore = true
 "#,
-        resources_dir.display()
+        resources_dir.display().to_string().replace('\\', "/")
     );
     fs::write(project_dir.join("ccpm.toml"), manifest_content).await?;
 
