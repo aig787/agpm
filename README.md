@@ -1,9 +1,9 @@
-# AGPM - Claude Code Package Manager
+# AGPM - AGentic Package Manager
 
 > ⚠️ **Beta Software**: This project is in active development and may contain breaking changes. Use with caution in
 > production environments.
 
-A Git-based package manager for Claude Code resources that enables reproducible installations using lockfile-based
+A Git-based package manager for Claude Code and other agentic tools that enables reproducible installations using lockfile-based
 dependency management, similar to Cargo.
 
 ## Features
