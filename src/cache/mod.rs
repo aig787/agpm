@@ -1057,6 +1057,8 @@ impl Cache {
         }
 
         // Lock bare repo for worktree creation
+        // Hold the lock through cache update to prevent git state corruption
+        // when multiple worktrees are created concurrently for the same repo
         let bare_repo_lock_name = format!("bare-repo-{}_{}", owner, repo);
         let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
 
@@ -1065,8 +1067,7 @@ impl Cache {
             .create_worktree_with_context(&worktree_path, Some(sha), context)
             .await;
 
-        drop(_bare_repo_lock);
-
+        // Keep lock held until cache is updated to ensure git state is fully settled
         match worktree_result {
             Ok(_) => {
                 let mut cache_write = self.worktree_cache.write().await;
@@ -1076,11 +1077,13 @@ impl Cache {
                 );
                 self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path)
                     .await?;
+                // Lock automatically dropped here
                 Ok(worktree_path)
             }
             Err(e) => {
                 let mut cache_write = self.worktree_cache.write().await;
                 cache_write.remove(&cache_key);
+                // Lock automatically dropped here
                 Err(e)
             }
         }
