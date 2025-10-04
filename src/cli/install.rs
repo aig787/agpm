@@ -497,8 +497,8 @@ impl InstallCommand {
             result
         };
 
-        // Check for tag movement if we have both old and new lockfiles
-        let old_lockfile = if !self.frozen && !self.regenerate && lockfile_path.exists() {
+        // Check for tag movement if we have both old and new lockfiles (skip in frozen mode)
+        let old_lockfile = if !self.frozen && lockfile_path.exists() {
             // Load the old lockfile for comparison
             if let Ok(old) = LockFile::load(&lockfile_path) {
                 detect_tag_movement(&old, &lockfile, self.quiet);
@@ -600,29 +600,29 @@ impl InstallCommand {
                 }
             }
 
-        // Clean up removed or moved artifacts AFTER successful installation
-        // This ensures we don't delete old files if installation fails
-        if installation_error.is_none()
-            && let Some(old) = old_lockfile
-            && let Ok(removed) =
-                crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
-                    .await
-            && !removed.is_empty()
-            && !self.quiet
-        {
-            println!(
-                "🗑️  Cleaned up {} moved or removed artifact(s)",
-                removed.len()
-            );
-        }
+            // Clean up removed or moved artifacts AFTER successful installation
+            // This ensures we don't delete old files if installation fails
+            if installation_error.is_none()
+                && let Some(old) = old_lockfile
+                && let Ok(removed) =
+                    crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
+                        .await
+                && !removed.is_empty()
+                && !self.quiet
+            {
+                println!(
+                    "🗑️  Cleaned up {} moved or removed artifact(s)",
+                    removed.len()
+                );
+            }
 
-        // Start finalizing phase
-        if !self.quiet
-            && !self.no_progress
-            && (installed_count > 0 || hook_count > 0 || server_count > 0)
-        {
-            multi_phase.start_phase(InstallationPhase::Finalizing, None);
-        }
+            // Start finalizing phase
+            if !self.quiet
+                && !self.no_progress
+                && (installed_count > 0 || hook_count > 0 || server_count > 0)
+            {
+                multi_phase.start_phase(InstallationPhase::Finalizing, None);
+            }
 
             if !self.no_lock {
                 // Save lockfile with checksums (no progress needed for this quick operation)

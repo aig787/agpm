@@ -114,10 +114,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
     assert!(installed_v1.contains("v1"), "Should have v1 installed");
 
     // Now add a new version in the source repo
-    fs::write(
-        source_repo.path.join("agents/test.md"),
-        "# Test Agent v2",
-    ).await?;
+    fs::write(source_repo.path.join("agents/test.md"), "# Test Agent v2").await?;
     git.add_all()?;
     git.commit("Update to v2")?;
     git.tag("v2.0.0")?;

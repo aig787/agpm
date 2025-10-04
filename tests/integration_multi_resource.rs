@@ -626,12 +626,8 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
             .join(".claude/ccpm/snippets/base.md")
             .exists()
     );
-    let snippet_content = fs::read_to_string(
-        project
-            .project_path()
-            .join(".claude/ccpm/snippets/base.md"),
-    )
-    .await?;
+    let snippet_content =
+        fs::read_to_string(project.project_path().join(".claude/ccpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
     assert!(
@@ -640,12 +636,8 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
             .join(".claude/agents/dependent.md")
             .exists()
     );
-    let agent_content = fs::read_to_string(
-        project
-            .project_path()
-            .join(".claude/agents/dependent.md"),
-    )
-    .await?;
+    let agent_content =
+        fs::read_to_string(project.project_path().join(".claude/agents/dependent.md")).await?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));
 
     Ok(())

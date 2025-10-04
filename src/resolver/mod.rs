@@ -521,8 +521,9 @@ impl DependencyResolver {
     fn detect_target_conflicts(&self, lockfile: &LockFile) -> Result<()> {
         use std::collections::HashMap;
 
-        // Map of installed_at path -> list of dependency names
-        let mut path_map: HashMap<String, Vec<String>> = HashMap::new();
+        // Map of (installed_at path, resolved_commit) -> list of dependency names
+        // Two dependencies with the same path AND same commit are NOT a conflict
+        let mut path_map: HashMap<(String, Option<String>), Vec<String>> = HashMap::new();
 
         // Collect all resources from lockfile
         let all_resources: Vec<(&str, &LockedResource)> = lockfile
@@ -536,19 +537,40 @@ impl DependencyResolver {
             .chain(lockfile.mcp_servers.iter().map(|r| (r.name.as_str(), r)))
             .collect();
 
-        // Build the path map
-        for (name, resource) in all_resources {
-            path_map
-                .entry(resource.installed_at.clone())
-                .or_default()
-                .push(name.to_string());
+        // Build the path map with commit information
+        for (name, resource) in &all_resources {
+            let key = (
+                resource.installed_at.clone(),
+                resource.resolved_commit.clone(),
+            );
+            path_map.entry(key).or_default().push(name.to_string());
         }
 
-        // Find conflicts (paths with multiple dependencies)
-        let conflicts: Vec<_> = path_map
-            .iter()
-            .filter(|(_, names)| names.len() > 1)
-            .collect();
+        // Now check for actual conflicts: same path but DIFFERENT commits
+        // Group by path only to find potential conflicts
+        let mut path_only_map: HashMap<String, Vec<(&str, &LockedResource)>> = HashMap::new();
+        for (name, resource) in &all_resources {
+            path_only_map
+                .entry(resource.installed_at.clone())
+                .or_default()
+                .push((name, resource));
+        }
+
+        // Find conflicts (same path with different commits)
+        let mut conflicts: Vec<(String, Vec<String>)> = Vec::new();
+        for (path, resources) in path_only_map {
+            if resources.len() > 1 {
+                // Check if they have different commits
+                let commits: std::collections::HashSet<_> =
+                    resources.iter().map(|(_, r)| &r.resolved_commit).collect();
+
+                // Only a conflict if different commits
+                if commits.len() > 1 {
+                    let names: Vec<String> = resources.iter().map(|(n, _)| n.to_string()).collect();
+                    conflicts.push((path, names));
+                }
+            }
+        }
 
         if !conflicts.is_empty() {
             // Build a detailed error message
@@ -1766,9 +1788,11 @@ impl DependencyResolver {
                 // If a relative path exists, preserve it; otherwise use dependency name
                 if relative_path.as_os_str().is_empty() || relative_path == dep_path {
                     // No relative path preserved, use default filename
-                    let extension = match resource_type.as_str() {
-                        "hook" | "mcp-server" => "json",
-                        "script" => {
+                    let extension = match resource_type {
+                        crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                            "json"
+                        }
+                        crate::core::ResourceType::Script => {
                             // Scripts maintain their original extension
                             dep_path
                                 .extension()
@@ -1787,14 +1811,13 @@ impl DependencyResolver {
             // Determine the target directory
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the default resource directory
-                let base_target = match resource_type.as_str() {
-                    "agent" => &self.manifest.target.agents,
-                    "snippet" => &self.manifest.target.snippets,
-                    "command" => &self.manifest.target.commands,
-                    "script" => &self.manifest.target.scripts,
-                    "hook" => &self.manifest.target.hooks,
-                    "mcp-server" => &self.manifest.target.mcp_servers,
-                    _ => &self.manifest.target.snippets,
+                let base_target = match resource_type {
+                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                    crate::core::ResourceType::Command => &self.manifest.target.commands,
+                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
                 format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                     .replace("//", "/")
@@ -1895,9 +1918,11 @@ impl DependencyResolver {
                 // If a relative path exists, preserve it; otherwise use dependency name
                 if relative_path.as_os_str().is_empty() || relative_path == dep_path {
                     // No relative path preserved, use default filename
-                    let extension = match resource_type.as_str() {
-                        "hook" | "mcp-server" => "json",
-                        "script" => {
+                    let extension = match resource_type {
+                        crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                            "json"
+                        }
+                        crate::core::ResourceType::Script => {
                             // Scripts maintain their original extension
                             dep_path
                                 .extension()
@@ -1916,14 +1941,13 @@ impl DependencyResolver {
             // Determine the target directory
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the default resource directory
-                let base_target = match resource_type.as_str() {
-                    "agent" => &self.manifest.target.agents,
-                    "snippet" => &self.manifest.target.snippets,
-                    "command" => &self.manifest.target.commands,
-                    "script" => &self.manifest.target.scripts,
-                    "hook" => &self.manifest.target.hooks,
-                    "mcp-server" => &self.manifest.target.mcp_servers,
-                    _ => &self.manifest.target.snippets,
+                let base_target = match resource_type {
+                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                    crate::core::ResourceType::Command => &self.manifest.target.commands,
+                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                 };
                 format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                     .replace("//", "/")
@@ -2059,14 +2083,13 @@ impl DependencyResolver {
                 // Determine the target directory
                 let target_dir = if let Some(custom_target) = dep.get_target() {
                     // Custom target is relative to the default resource directory
-                    let base_target = match resource_type.as_str() {
-                        "agent" => &self.manifest.target.agents,
-                        "snippet" => &self.manifest.target.snippets,
-                        "command" => &self.manifest.target.commands,
-                        "script" => &self.manifest.target.scripts,
-                        "hook" => &self.manifest.target.hooks,
-                        "mcp-server" => &self.manifest.target.mcp_servers,
-                        _ => &self.manifest.target.snippets,
+                    let base_target = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                     };
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                         .replace("//", "/")
@@ -2173,14 +2196,13 @@ impl DependencyResolver {
                 // Determine the target directory
                 let target_dir = if let Some(custom_target) = dep.get_target() {
                     // Custom target is relative to the default resource directory
-                    let base_target = match resource_type.as_str() {
-                        "agent" => &self.manifest.target.agents,
-                        "snippet" => &self.manifest.target.snippets,
-                        "command" => &self.manifest.target.commands,
-                        "script" => &self.manifest.target.scripts,
-                        "hook" => &self.manifest.target.hooks,
-                        "mcp-server" => &self.manifest.target.mcp_servers,
-                        _ => &self.manifest.target.snippets,
+                    let base_target = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
                     };
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
                         .replace("//", "/")
@@ -3188,20 +3210,21 @@ impl DependencyResolver {
 /// ```no_run
 /// use std::path::{Path, PathBuf};
 /// # use ccpm::resolver::extract_relative_path;
+/// # use ccpm::core::ResourceType;
 ///
 /// // Resource type prefix is removed
 /// let path = Path::new("snippets/directives/thing.md");
-/// let result = extract_relative_path(path, "snippet");
+/// let result = extract_relative_path(path, &ResourceType::Snippet);
 /// assert_eq!(result, PathBuf::from("directives/thing.md"));
 ///
 /// // No matching prefix - path unchanged
 /// let path = Path::new("directives/thing.md");
-/// let result = extract_relative_path(path, "snippet");
+/// let result = extract_relative_path(path, &ResourceType::Snippet);
 /// assert_eq!(result, PathBuf::from("directives/thing.md"));
 ///
 /// // Works with deeply nested directories
 /// let path = Path::new("agents/ai/helper.md");
-/// let result = extract_relative_path(path, "agent");
+/// let result = extract_relative_path(path, &ResourceType::Agent);
 /// assert_eq!(result, PathBuf::from("ai/helper.md"));
 /// ```
 ///
@@ -3210,10 +3233,11 @@ impl DependencyResolver {
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
 /// # use ccpm::resolver::extract_relative_path;
+/// # use ccpm::core::ResourceType;
 ///
 /// // Multi-level nested directories are fully preserved
 /// let path = Path::new("agents/languages/rust/expert.md");
-/// let result = extract_relative_path(path, "agent");
+/// let result = extract_relative_path(path, &ResourceType::Agent);
 /// assert_eq!(result, PathBuf::from("languages/rust/expert.md"));
 /// // This will install to: .claude/agents/languages/rust/expert.md
 /// ```
@@ -3226,6 +3250,7 @@ impl DependencyResolver {
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
 /// # use ccpm::resolver::extract_relative_path;
+/// # use ccpm::core::ResourceType;
 ///
 /// // Example: glob pattern "agents/**/*.md" matches these paths
 /// let matched_paths = vec![
@@ -3237,7 +3262,7 @@ impl DependencyResolver {
 ///
 /// for path_str in matched_paths {
 ///     let path = Path::new(path_str);
-///     let relative = extract_relative_path(path, "agent");
+///     let relative = extract_relative_path(path, &ResourceType::Agent);
 ///     // Produces: "rust/expert.md", "rust/testing.md", "python/async.md", "go/concurrency.md"
 ///     // Each installs to: .claude/agents/<relative_path>
 /// }
@@ -3325,16 +3350,15 @@ impl DependencyResolver {
 ///
 /// - **v0.3.18**: Introduced to support relative path preservation during installation
 /// - Works in conjunction with updated lockfile `installed_at` path generation
-pub fn extract_relative_path(path: &Path, resource_type: &str) -> PathBuf {
+pub fn extract_relative_path(path: &Path, resource_type: &crate::core::ResourceType) -> PathBuf {
     // Convert resource type to expected directory name
     let expected_prefix = match resource_type {
-        "agent" => "agents",
-        "snippet" => "snippets",
-        "command" => "commands",
-        "script" => "scripts",
-        "hook" => "hooks",
-        "mcp-server" => "mcp-servers",
-        _ => return path.to_path_buf(),
+        crate::core::ResourceType::Agent => "agents",
+        crate::core::ResourceType::Snippet => "snippets",
+        crate::core::ResourceType::Command => "commands",
+        crate::core::ResourceType::Script => "scripts",
+        crate::core::ResourceType::Hook => "hooks",
+        crate::core::ResourceType::McpServer => "mcp-servers",
     };
 
     // Check if path starts with the expected prefix
