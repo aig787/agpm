@@ -274,6 +274,7 @@ agent-dev = {{ source = "test-repo", path = "agents/test-agent.md", branch = "de
 ///
 /// This verifies that "main", "Main", and "MAIN" are treated as the same branch
 /// on case-insensitive filesystems (Windows, macOS default).
+/// On case-sensitive filesystems (Linux), we need to create both branches to test this.
 #[tokio::test]
 async fn test_same_branch_different_case_no_conflict() {
     let project = TestProject::new().await.unwrap();
@@ -288,6 +289,17 @@ async fn test_same_branch_different_case_no_conflict() {
 
     // Ensure we're on 'main' branch (git's default branch name varies)
     source_repo.git.ensure_branch("main").unwrap();
+
+    // On case-sensitive filesystems (Linux), Git allows branches with different case.
+    // On case-insensitive filesystems (macOS, Windows), "main" and "Main" are the same.
+    // Try to create "Main" branch - if it succeeds, we're on a case-sensitive filesystem.
+    if source_repo.git.create_branch("Main").is_ok() {
+        // We successfully created "Main" - we're on case-sensitive filesystem (Linux)
+        // The new branch is already created from main's current commit, so we're good
+        // Just go back to main
+        source_repo.git.checkout("main").unwrap();
+    }
+    // If create_branch failed, we're on case-insensitive (macOS/Windows) and "Main" == "main"
 
     // Create manifest with same resource using different case for branch name
     let manifest = format!(
