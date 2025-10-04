@@ -73,9 +73,18 @@ pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_d
 /// ```
 /// use ccpm::utils::is_local_path;
 ///
+/// // Unix-style paths
 /// assert!(is_local_path("/absolute/path"));
 /// assert!(is_local_path("./relative/path"));
 /// assert!(is_local_path("../parent/path"));
+///
+/// // Windows-style paths (with drive letters or UNC)
+/// assert!(is_local_path("C:/Users/path"));
+/// assert!(is_local_path("C:\\Users\\path"));
+/// assert!(is_local_path("//server/share"));
+/// assert!(is_local_path("\\\\server\\share"));
+///
+/// // Git URLs (not local paths)
 /// assert!(!is_local_path("https://github.com/user/repo.git"));
 /// assert!(!is_local_path("git@github.com:user/repo.git"));
 /// assert!(!is_local_path("file:///path/to/repo.git"));
@@ -83,8 +92,30 @@ pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_d
 #[must_use]
 pub fn is_local_path(url: &str) -> bool {
     // file:// URLs are Git repository URLs, not local paths
-    !url.starts_with("file://")
-        && (url.starts_with('/') || url.starts_with("./") || url.starts_with("../"))
+    if url.starts_with("file://") {
+        return false;
+    }
+
+    // Unix-style absolute or relative paths
+    if url.starts_with('/') || url.starts_with("./") || url.starts_with("../") {
+        return true;
+    }
+
+    // Windows-style paths
+    // Check for drive letter (e.g., C:/ or C:\)
+    if url.len() >= 2 {
+        let chars: Vec<char> = url.chars().collect();
+        if chars[0].is_ascii_alphabetic() && chars[1] == ':' {
+            return true;
+        }
+    }
+
+    // Check for UNC paths (e.g., //server/share or \\server\share)
+    if url.starts_with("//") || url.starts_with("\\\\") {
+        return true;
+    }
+
+    false
 }
 
 /// Determines if a given URL is a Git repository URL (including file:// URLs).
