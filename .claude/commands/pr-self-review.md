@@ -63,9 +63,12 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
    - Then use the Task tool to delegate to specialized agents IN PARALLEL:
      * Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
      * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and best practices
-     * Use Task with subagent_type="rust-test-standard" to analyze test coverage and quality
+     * Use Task with subagent_type="rust-test-standard" to analyze test coverage, quality, and isolation (TestProject usage)
      * Use Task with subagent_type="rust-doc-standard" to review documentation completeness
      * Only escalate to advanced agents (rust-expert-advanced, rust-troubleshooter-advanced) if initial review finds complex issues
+   - **CRITICAL TEST CHECK**: Search for tests using global cache:
+     * Look for files matching pattern: `TempDir::new()` + `Command::cargo_bin()` but NOT `TestProject` or `Cache::with_dir()`
+     * This prevents race conditions in parallel CI test execution
    - Example Task invocation:
      ```
      Task(description="Review code quality", 
@@ -125,7 +128,9 @@ Perform a comprehensive pull request review for the CCPM project based on the ar
 
    **Testing**:
    - New functionality has tests
-   - Tests follow isolation requirements
+   - Tests follow isolation requirements (use TestProject, not global cache)
+   - **CRITICAL**: All integration tests MUST use `TestProject` for cache isolation
+   - Check for tests using `TempDir::new()` with `Command::cargo_bin()` but no `TestProject` or `Cache::with_dir()`
    - Platform-specific tests handled correctly
 
    **Documentation**:
