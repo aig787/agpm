@@ -1,5 +1,5 @@
 use predicates::prelude::*;
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -9,20 +9,22 @@ use fixtures::ManifestFixture;
 /// Test installing from a manifest when no lockfile exists
 #[tokio::test]
 async fn test_install_creates_lockfile() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repositories
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
+        .await
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -43,7 +45,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 "#,
         official_url, community_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
@@ -58,10 +60,10 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 
     // Verify lockfile was created
     let lockfile_path = project.project_path().join("ccpm.lock");
-    FileAssert::exists(&lockfile_path);
+    FileAssert::exists(&lockfile_path).await;
 
     // Verify lockfile content structure
-    let lockfile_content = fs::read_to_string(&lockfile_path).unwrap();
+    let lockfile_content = fs::read_to_string(&lockfile_path).await.unwrap();
     assert!(lockfile_content.contains("version = 1"));
     assert!(lockfile_content.contains("[[sources]]"));
     assert!(lockfile_content.contains("[[agents]]"));
@@ -72,21 +74,23 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 /// Test installing when lockfile already exists
 #[tokio::test]
 async fn test_install_with_existing_lockfile() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repositories
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let official_sha = official_repo.git.get_commit_hash().unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
+        .await
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -108,7 +112,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 "#,
         official_url, community_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create a matching lockfile with the actual commit SHAs
     let lockfile_content = format!(
@@ -148,7 +152,9 @@ installed_at = ".claude/agents/helper.md"
         official_url, official_sha, community_url, community_sha, official_sha, community_sha
     );
 
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     // Run install command
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
@@ -163,15 +169,15 @@ installed_at = ".claude/agents/helper.md"
 
     // Verify agents directory was created and populated
     let agents_dir = project.project_path().join(".claude").join("agents");
-    DirAssert::exists(&agents_dir);
-    DirAssert::contains_file(&agents_dir, "my-agent.md");
-    DirAssert::contains_file(&agents_dir, "helper.md");
+    DirAssert::exists(&agents_dir).await;
+    DirAssert::contains_file(&agents_dir, "my-agent.md").await;
+    DirAssert::contains_file(&agents_dir, "helper.md").await;
 }
 
 /// Test install command without ccpm.toml
-#[test]
-fn test_install_without_manifest() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_install_without_manifest() {
+    let project = TestProject::new().await.unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -183,11 +189,11 @@ fn test_install_without_manifest() {
 }
 
 /// Test install with invalid manifest syntax
-#[test]
-fn test_install_invalid_manifest_syntax() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_install_invalid_manifest_syntax() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::invalid_syntax().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -199,11 +205,11 @@ fn test_install_invalid_manifest_syntax() {
 }
 
 /// Test install with missing required fields in manifest
-#[test]
-fn test_install_missing_manifest_fields() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_install_missing_manifest_fields() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::missing_fields().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -217,23 +223,26 @@ fn test_install_missing_manifest_fields() {
 /// Test install with --parallel flag
 #[tokio::test]
 async fn test_install_parallel_flag() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repositories with multiple files
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils Snippet\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Add resources").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
+        .await
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -254,7 +263,7 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 "#,
         official_url, community_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
@@ -276,17 +285,18 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
 /// Test install with local dependencies
 #[tokio::test]
 async fn test_install_local_dependencies() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create local files referenced in manifest
     // The manifest expects ../local-agents/helper.md relative to project
     let parent_dir = project.project_path().parent().unwrap();
     let local_agents_dir = parent_dir.join("local-agents");
-    fs::create_dir_all(&local_agents_dir).unwrap();
+    fs::create_dir_all(&local_agents_dir).await.unwrap();
     fs::write(
         local_agents_dir.join("helper.md"),
         "# Local Agent Helper\n\nThis is a local agent.",
     )
+    .await
     .unwrap();
 
     // Create local snippet in project directory
@@ -295,12 +305,14 @@ async fn test_install_local_dependencies() {
             "snippets/local-utils.md",
             "# Local Utils\n\nThis is a local snippet.",
         )
+        .await
         .unwrap();
 
     // Add official source for the remote dependency
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -321,7 +333,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
 "#,
         official_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
@@ -335,7 +347,9 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     );
 
     // Verify lockfile was created and contains all dependencies
-    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock")).unwrap();
+    let lockfile_content = fs::read_to_string(project.project_path().join("ccpm.lock"))
+        .await
+        .unwrap();
     assert!(lockfile_content.contains("my-agent")); // remote dependency
     assert!(lockfile_content.contains("local-agent")); // local dependency
     assert!(lockfile_content.contains("local-utils")); // local dependency
@@ -359,12 +373,13 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
 /// Test install with verbose output
 #[tokio::test]
 async fn test_install_verbose() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source with required file
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -381,7 +396,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 "#,
         official_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command with verbose flag
     let output = project
@@ -400,12 +415,13 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 /// Test install with quiet output
 #[tokio::test]
 async fn test_install_quiet() {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create mock source repository
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -422,7 +438,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 "#,
         official_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command with quiet flag
     let output = project
@@ -432,9 +448,9 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 }
 
 /// Test install with network simulation failure
-#[test]
-fn test_install_network_failure() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_install_network_failure() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a manifest with non-existent local sources to simulate failure
     let manifest_content = r#"
@@ -444,7 +460,7 @@ official = "file:///non/existent/path/to/repo"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -460,8 +476,8 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test install help command
-#[test]
-fn test_install_help() {
+#[tokio::test]
+async fn test_install_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
     cmd.arg("install")
         .arg("--help")
@@ -476,17 +492,18 @@ fn test_install_help() {
 }
 
 /// Test install with corrupted lockfile
-#[test]
-fn test_install_corrupted_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_install_corrupted_lockfile() {
+    let project = TestProject::new().await.unwrap();
     let manifest_content = ManifestFixture::basic().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
     fs::write(
         project.project_path().join("ccpm.lock"),
         "corrupted content",
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["install", "--no-cache"]).unwrap();

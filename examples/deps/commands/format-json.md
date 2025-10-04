@@ -7,6 +7,11 @@ tags:
   - json
   - formatting
   - validation
+dependencies:
+  agents:
+    - path: agents/javascript-haiku.md
+  snippets:
+    - path: snippets/data-validation.md
 ---
 
 # Format JSON

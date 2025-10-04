@@ -888,6 +888,8 @@ test-agent = "../test/agent.md"
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
             installed_at: "agents/test-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -1014,7 +1016,6 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         lockfile.sources.push(LockedSource {
             name: "test-source".to_string(),
             url: "https://github.com/test/repo.git".to_string(),
-            commit: "abc123".to_string(),
             fetched_at: "2024-01-01T00:00:00Z".to_string(),
         });
 
@@ -1028,6 +1029,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:test".to_string(),
             installed_at: ".claude/agents/test-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1040,6 +1043,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:test".to_string(),
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Snippet,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1149,6 +1154,8 @@ test-hook = "../test/hook.json"
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
             installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Script,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1159,6 +1166,8 @@ test-hook = "../test/hook.json"
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
             installed_at: ".claude/ccpm/hooks/test-hook.json".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Hook,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1215,7 +1224,6 @@ test-snippet = "../local/snippet.md"
         lockfile.sources.push(LockedSource {
             name: "test-source".to_string(),
             url: "https://github.com/test/repo.git".to_string(),
-            commit: "abc123".to_string(),
             fetched_at: chrono::Utc::now().to_rfc3339(),
         });
         lockfile.agents.push(LockedResource {
@@ -1227,6 +1235,8 @@ test-snippet = "../local/snippet.md"
             resolved_commit: Some("abc123".to_string()),
             checksum: "sha256:test".to_string(),
             installed_at: "agents/test-agent.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1237,6 +1247,8 @@ test-snippet = "../local/snippet.md"
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
             installed_at: "snippets/test-snippet.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Snippet,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1433,6 +1445,8 @@ test-script = "../test/script.sh"
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
             installed_at: ".claude/ccpm/scripts/test-script.sh".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Script,
         });
         lockfile.save(&lockfile_path).unwrap();
 

@@ -1,4 +1,4 @@
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -6,9 +6,9 @@ use common::TestProject;
 use fixtures::{LockfileFixture, ManifestFixture};
 
 /// Test handling of network timeout errors
-#[test]
-fn test_network_timeout() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_network_timeout() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with non-existent local path to simulate network-like failure
     let manifest_content = r#"
@@ -18,7 +18,7 @@ official = "file:///non/existent/path/to/repo"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // This should fail trying to access the non-existent source
     let output = project.run_ccpm(&["install"]).unwrap();
@@ -36,14 +36,15 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test handling of disk space errors
-#[test]
-fn test_disk_space_error() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_disk_space_error() {
+    let project = TestProject::new().await.unwrap();
 
     // Create test source with mock agent
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "large-agent", "# Large Agent\n\nA test agent")
+        .await
         .unwrap();
     source_repo.commit_all("Add large agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -59,12 +60,14 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Simulate disk space issues by pointing to invalid cache directory
     // Use a file path instead of directory path to trigger an error
     let invalid_cache_file = project.project_path().join("invalid_cache_file.txt");
-    fs::write(&invalid_cache_file, "This is a file, not a directory").unwrap();
+    fs::write(&invalid_cache_file, "This is a file, not a directory")
+        .await
+        .unwrap();
 
     // Note: TestProject uses its own cache dir, so we'd need to modify the test approach
     // For now, let's test that a valid install works and adapt the test
@@ -73,15 +76,19 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
 }
 
 /// Test handling of corrupted git repositories
-#[test]
-fn test_corrupted_git_repo() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_corrupted_git_repo() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a corrupted git repository in the sources directory
     let fake_repo_dir = project.sources_path().join("official");
-    fs::create_dir_all(&fake_repo_dir).unwrap();
-    fs::create_dir_all(fake_repo_dir.join(".git")).unwrap();
-    fs::write(fake_repo_dir.join(".git/config"), "corrupted config").unwrap();
+    fs::create_dir_all(&fake_repo_dir).await.unwrap();
+    fs::create_dir_all(fake_repo_dir.join(".git"))
+        .await
+        .unwrap();
+    fs::write(fake_repo_dir.join(".git/config"), "corrupted config")
+        .await
+        .unwrap();
 
     // Create a manifest that references this corrupted repo
     let manifest_content = format!(
@@ -94,7 +101,7 @@ test-agent = {{ source = "official", path = "agents/test.md", version = "v1.0.0"
 "#,
         fake_repo_dir.display().to_string().replace('\\', "/")
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -109,9 +116,9 @@ test-agent = {{ source = "official", path = "agents/test.md", version = "v1.0.0"
 }
 
 /// Test handling of authentication failures
-#[test]
-fn test_authentication_failure() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_authentication_failure() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with non-existent local repository to simulate access failure
     let manifest_content = r#"
@@ -121,7 +128,7 @@ private = "file:///restricted/private/repo"
 [agents]
 secret-agent = { source = "private", path = "agents/secret.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -135,16 +142,16 @@ secret-agent = { source = "private", path = "agents/secret.md", version = "v1.0.
 }
 
 /// Test handling of malformed markdown files - now succeeds with warning
-#[test]
-fn test_malformed_markdown() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_malformed_markdown() {
+    let project = TestProject::new().await.unwrap();
 
     // Create local manifest with malformed markdown
     let manifest_content = r#"
 [agents]
 broken-agent = { path = "./agents/broken.md" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create malformed markdown with invalid frontmatter
     let malformed_content = r"---
@@ -157,6 +164,7 @@ invalid yaml: [ unclosed
 ";
     project
         .create_local_resource("agents/broken.md", malformed_content)
+        .await
         .unwrap();
 
     // Now malformed markdown should succeed but emit a warning
@@ -193,16 +201,17 @@ invalid yaml: [ unclosed
 
 /// Test handling of conflicting file permissions
 #[cfg(unix)]
-#[test]
-fn test_permission_conflicts() {
+#[tokio::test]
+async fn test_permission_conflicts() {
     use std::os::unix::fs::PermissionsExt;
 
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create test source with agent
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -218,17 +227,17 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create .claude/agents directory with read-only permissions (default installation path)
     let claude_dir = project.project_path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
+    fs::create_dir_all(&claude_dir).await.unwrap();
     let agents_dir = claude_dir.join("agents");
-    fs::create_dir_all(&agents_dir).unwrap();
+    fs::create_dir_all(&agents_dir).await.unwrap();
 
-    let mut perms = fs::metadata(&agents_dir).unwrap().permissions();
+    let mut perms = fs::metadata(&agents_dir).await.unwrap().permissions();
     perms.set_mode(0o444); // Read-only
-    fs::set_permissions(&agents_dir, perms).unwrap();
+    fs::set_permissions(&agents_dir, perms).await.unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -240,24 +249,26 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 
     // Restore permissions for cleanup
     if agents_dir.exists() {
-        let mut perms = fs::metadata(&agents_dir).unwrap().permissions();
+        let mut perms = fs::metadata(&agents_dir).await.unwrap().permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&agents_dir, perms).unwrap();
+        fs::set_permissions(&agents_dir, perms).await.unwrap();
     }
 }
 
 /// Test handling of invalid version specifications
-#[test]
-fn test_invalid_version_specs() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_invalid_version_specs() {
+    let project = TestProject::new().await.unwrap();
 
     // Create test source with valid agents
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "invalid", "# Test Agent")
+        .await
         .unwrap();
     source_repo
         .add_resource("agents", "malformed", "# Test Agent")
+        .await
         .unwrap();
     source_repo.commit_all("Add test agents").unwrap();
     source_repo.tag_version("v0.1.0").unwrap();
@@ -275,7 +286,7 @@ malformed-constraint = {{ source = "official", path = "agents/malformed.md", ver
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -292,9 +303,9 @@ malformed-constraint = {{ source = "official", path = "agents/malformed.md", ver
 }
 
 /// Test handling of circular dependency detection
-#[test]
-fn test_circular_dependency_detection() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_circular_dependency_detection() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with local files to avoid network access
     // Circular dependencies would be detected at the manifest level, not requiring actual sources
@@ -303,14 +314,16 @@ fn test_circular_dependency_detection() {
 agent_a = { path = "./agents/a.md" }
 agent_b = { path = "./agents/b.md" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create the local files
     project
         .create_local_resource("agents/a.md", "# Agent A")
+        .await
         .unwrap();
     project
         .create_local_resource("agents/b.md", "# Agent B")
+        .await
         .unwrap();
 
     // Test that validation succeeds (no circular dependencies in this simple case)
@@ -325,9 +338,9 @@ agent_b = { path = "./agents/b.md" }
 }
 
 /// Test handling of exceeding system limits
-#[test]
-fn test_system_limits() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_system_limits() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with many dependencies to test limits
     let mut manifest_content = String::from(
@@ -346,7 +359,7 @@ official = "https://github.com/example-org/ccpm-official.git"
         ));
     }
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     output.assert_success(); // Should handle gracefully
@@ -360,9 +373,9 @@ official = "https://github.com/example-org/ccpm-official.git"
 }
 
 /// Test handling of interrupted operations
-#[test]
-fn test_interrupted_operation() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_interrupted_operation() {
+    let project = TestProject::new().await.unwrap();
 
     // Create local manifest
     let manifest_content = r#"
@@ -372,12 +385,14 @@ local-agent = { path = "./agents/local.md" }
 [snippets]
 local-snippet = { path = "./snippets/local.md" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
     project
         .create_local_resource("agents/local.md", "# Local Agent")
+        .await
         .unwrap();
     project
         .create_local_resource("snippets/local.md", "# Local Snippet")
+        .await
         .unwrap();
 
     // Create partial lockfile to simulate interrupted operation
@@ -389,7 +404,9 @@ version = 1
 name = "official"
 url = "https://github.com/example-org/ccpm-official.git"
 "#;
-    fs::write(project.project_path().join("ccpm.lock"), partial_lockfile).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), partial_lockfile)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -404,9 +421,9 @@ url = "https://github.com/example-org/ccpm-official.git"
 }
 
 /// Test handling of invalid URL formats
-#[test]
-fn test_invalid_urls() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_invalid_urls() {
+    let project = TestProject::new().await.unwrap();
 
     let manifest_content = r#"
 [sources]
@@ -417,7 +434,7 @@ malformed_path = "/path/without/git/repo"
 [agents]
 test-agent = { source = "invalid_url", path = "agents/test.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -432,9 +449,9 @@ test-agent = { source = "invalid_url", path = "agents/test.md", version = "v1.0.
 }
 
 /// Test handling of extremely large files
-#[test]
-fn test_large_file_handling() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_large_file_handling() {
+    let project = TestProject::new().await.unwrap();
 
     // Create large content (1MB+)
     let large_content = format!(
@@ -443,9 +460,10 @@ fn test_large_file_handling() {
     );
 
     // Create test source with large file
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "my-agent", &large_content)
+        .await
         .unwrap();
     source_repo.commit_all("Add large agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -461,7 +479,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Large files should be handled correctly
     let output = project.run_ccpm(&["install"]).unwrap();
@@ -469,9 +487,9 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 }
 
 /// Test handling of filesystem corruption
-#[test]
-fn test_filesystem_corruption() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_filesystem_corruption() {
+    let project = TestProject::new().await.unwrap();
 
     // Create local manifest
     let manifest_content = r#"
@@ -481,17 +499,21 @@ local-agent = { path = "./agents/local.md" }
 [snippets]
 local-snippet = { path = "./snippets/local.md" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
     project
         .create_local_resource("agents/local.md", "# Local Agent")
+        .await
         .unwrap();
     project
         .create_local_resource("snippets/local.md", "# Local Snippet")
+        .await
         .unwrap();
 
     // Create lockfile with null bytes (filesystem corruption simulation)
     let corrupted_lockfile = "version = 1\n\0\0\0corrupted\0data\n";
-    fs::write(project.project_path().join("ccpm.lock"), corrupted_lockfile).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), corrupted_lockfile)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -506,9 +528,9 @@ local-snippet = { path = "./snippets/local.md" }
 }
 
 /// Test handling of missing dependencies in lockfile
-#[test]
-fn test_missing_lockfile_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_missing_lockfile_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Create local manifest with multiple dependencies
     let manifest_content = r#"
@@ -519,15 +541,18 @@ helper = { path = "./agents/helper.md" }
 [snippets]
 utils = { path = "./snippets/utils.md" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
     project
         .create_local_resource("agents/local.md", "# Local Agent")
+        .await
         .unwrap();
     project
         .create_local_resource("agents/helper.md", "# Helper")
+        .await
         .unwrap();
     project
         .create_local_resource("snippets/utils.md", "# Utils")
+        .await
         .unwrap();
 
     // Create lockfile missing some dependencies from manifest
@@ -552,6 +577,7 @@ installed_at = "agents/local-agent.md"
         project.project_path().join("ccpm.lock"),
         incomplete_lockfile,
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
@@ -568,9 +594,9 @@ installed_at = "agents/local-agent.md"
 }
 
 /// Test handling of git command not found
-#[test]
-fn test_git_command_missing() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_git_command_missing() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a manifest that requires git operations
     let manifest_content = r#"
@@ -580,7 +606,7 @@ official = "https://github.com/example-org/ccpm-official.git"
 [agents]
 test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Set PATH to a location that doesn't contain git
     let output = project
@@ -605,9 +631,9 @@ test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" 
 }
 
 /// Test handling of invalid configuration files
-#[test]
-fn test_invalid_config_files() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_invalid_config_files() {
+    let project = TestProject::new().await.unwrap();
 
     // Create completely invalid TOML
     let invalid_toml = r#"
@@ -615,7 +641,7 @@ this is not valid toml at all
 [unclosed section
 key = "value without closing quote
 "#;
-    project.write_manifest(invalid_toml).unwrap();
+    project.write_manifest(invalid_toml).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -630,17 +656,19 @@ key = "value without closing quote
 }
 
 /// Test recovery from partial installations
-#[test]
-fn test_partial_installation_recovery() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_partial_installation_recovery() {
+    let project = TestProject::new().await.unwrap();
 
     // Create test source
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     source_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     source_repo.commit_all("Add test resources").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -659,16 +687,19 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create partial installation (only some files)
     project
         .create_local_resource("agents/my-agent.md", "# Partial agent")
+        .await
         .unwrap();
 
     // Create lockfile indicating complete installation
     let lockfile_content = LockfileFixture::basic().content;
-    fs::write(project.project_path().join("ccpm.lock"), lockfile_content).unwrap();
+    fs::write(project.project_path().join("ccpm.lock"), lockfile_content)
+        .await
+        .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded"); // Should detect missing files
@@ -680,14 +711,15 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test handling of concurrent lockfile modifications
-#[test]
-fn test_concurrent_lockfile_modification() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_concurrent_lockfile_modification() {
+    let project = TestProject::new().await.unwrap();
 
     // Create test source
-    let source_repo = project.create_source_repo("official").unwrap();
+    let source_repo = project.create_source_repo("official").await.unwrap();
     source_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -703,7 +735,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 "#,
         source_url
     );
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // This test mainly checks that the system can handle lockfile operations
     // In a real concurrent scenario, we'd expect either success or a conflict detection
@@ -712,12 +744,12 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
 }
 
 /// Test error message quality and helpfulness
-#[test]
-fn test_helpful_error_messages() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_helpful_error_messages() {
+    let project = TestProject::new().await.unwrap();
 
     let manifest_content = ManifestFixture::missing_fields().content;
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");

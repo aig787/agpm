@@ -2,7 +2,7 @@
 //! Tests system behavior under various concurrency scenarios
 
 use anyhow::Result;
-use std::{fs, time::Duration};
+use std::time::Duration;
 use tokio::time::Instant;
 
 mod common;
@@ -12,10 +12,10 @@ use common::TestProject;
 /// Test system stability with very high --max-parallel values
 #[tokio::test]
 async fn test_extreme_parallelism() -> Result<()> {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create moderate number of dependencies
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     for i in 0..10 {
         official_repo
             .add_resource(
@@ -23,6 +23,7 @@ async fn test_extreme_parallelism() -> Result<()> {
                 &format!("extreme-agent-{:02}", i),
                 &format!("# Extreme Agent {:02}\n\nA test agent", i),
             )
+            .await
             .unwrap();
     }
     official_repo.commit_all("Initial commit").unwrap();
@@ -46,7 +47,7 @@ official = "{}"
         ));
     }
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test with extremely high parallelism (should be throttled by system)
     let output = project
@@ -71,14 +72,16 @@ official = "{}"
 /// Test rapid sequential operations with caching
 #[tokio::test]
 async fn test_rapid_sequential_operations() -> Result<()> {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "rapid-agent-1", "# Rapid Agent 1\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "rapid-agent-2", "# Rapid Agent 2\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource(
@@ -86,6 +89,7 @@ async fn test_rapid_sequential_operations() -> Result<()> {
             "rapid-snippet",
             "# Rapid Snippet\n\nA test snippet",
         )
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -106,7 +110,7 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
         source_url
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Rapid sequence of operations
     let operations = [
@@ -158,9 +162,9 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 /// Test mixed parallelism levels across operations
 #[tokio::test]
 async fn test_mixed_parallelism_levels() -> Result<()> {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     for i in 0..8 {
         official_repo
             .add_resource(
@@ -168,6 +172,7 @@ async fn test_mixed_parallelism_levels() -> Result<()> {
                 &format!("mixed-agent-{:02}", i),
                 &format!("# Mixed Agent {:02}\n\nA test agent", i),
             )
+            .await
             .unwrap();
     }
     official_repo.commit_all("Initial commit").unwrap();
@@ -191,14 +196,14 @@ official = "{}"
         ));
     }
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test various parallelism levels
     let parallelism_levels = [1, 2, 4, 8];
 
     for &level in &parallelism_levels {
         // Clean slate for each test
-        let _ = fs::remove_dir_all(project.project_path().join(".claude"));
+        let _ = tokio::fs::remove_dir_all(project.project_path().join(".claude")).await;
 
         let start = Instant::now();
         let output = project
@@ -227,10 +232,10 @@ official = "{}"
 /// Test parallelism with resource contention
 #[tokio::test]
 async fn test_parallelism_resource_contention() -> Result<()> {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
     // Create a single source repository with many agents
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     for i in 0..15 {
         official_repo
             .add_resource(
@@ -238,6 +243,7 @@ async fn test_parallelism_resource_contention() -> Result<()> {
                 &format!("contention-agent-{:02}", i),
                 &format!("# Contention Agent {:02}\n\nA test agent", i),
             )
+            .await
             .unwrap();
     }
     official_repo.commit_all("Initial commit").unwrap();
@@ -262,7 +268,7 @@ official = "{}"
         ));
     }
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // High parallelism with single source should work efficiently
     let start = Instant::now();
@@ -296,14 +302,16 @@ official = "{}"
 /// Test system graceful handling of parallelism limits
 #[tokio::test]
 async fn test_parallelism_graceful_limits() -> Result<()> {
-    let project = TestProject::new().unwrap();
+    let project = TestProject::new().await.unwrap();
 
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "limit-agent-1", "# Limit Agent 1\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("agents", "limit-agent-2", "# Limit Agent 2\n\nA test agent")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -321,7 +329,7 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
         source_url
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test various edge cases that should be handled gracefully
     let test_cases = [
@@ -333,7 +341,7 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
 
     for (max_parallel, description) in test_cases {
         // Clean for each test
-        let _ = fs::remove_dir_all(project.project_path().join(".claude"));
+        let _ = tokio::fs::remove_dir_all(project.project_path().join(".claude")).await;
 
         let output = project
             .run_ccpm(&["install", "--max-parallel", max_parallel])

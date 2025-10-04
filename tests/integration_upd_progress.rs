@@ -5,12 +5,12 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
 use tempfile::TempDir;
+use tokio::fs;
 
 /// Test that update command uses proper phases when updating dependencies
-#[test]
-fn test_update_progress_phases() {
+#[tokio::test]
+async fn test_update_progress_phases() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
@@ -22,12 +22,16 @@ test_source = "../test_resources"
 [agents]
 test_agent = { path = "../test_resources/agent.md" }
 "#;
-    fs::write(project_dir.join("ccpm.toml"), manifest_content).unwrap();
+    fs::write(project_dir.join("ccpm.toml"), manifest_content)
+        .await
+        .unwrap();
 
     // Create the test resource directory and file
     let resource_dir = project_dir.parent().unwrap().join("test_resources");
-    fs::create_dir_all(&resource_dir).unwrap();
-    fs::write(resource_dir.join("agent.md"), "# Test Agent").unwrap();
+    fs::create_dir_all(&resource_dir).await.unwrap();
+    fs::write(resource_dir.join("agent.md"), "# Test Agent")
+        .await
+        .unwrap();
 
     // Run install first to create lockfile
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
@@ -62,13 +66,15 @@ test_agent = { path = "../test_resources/agent.md" }
 }
 
 /// Test that update handles empty manifest correctly
-#[test]
-fn test_update_empty_manifest() {
+#[tokio::test]
+async fn test_update_empty_manifest() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
     // Create empty manifest
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n").unwrap();
+    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+        .await
+        .unwrap();
 
     // Run install first
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
@@ -87,13 +93,15 @@ fn test_update_empty_manifest() {
 }
 
 /// Test that update without lockfile performs fresh install
-#[test]
-fn test_update_no_lockfile_fresh_install() {
+#[tokio::test]
+async fn test_update_no_lockfile_fresh_install() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
     // Create manifest without running install
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n").unwrap();
+    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+        .await
+        .unwrap();
 
     // Ensure no lockfile exists
     assert!(!project_dir.join("ccpm.lock").exists());
@@ -121,21 +129,26 @@ fn test_update_no_lockfile_fresh_install() {
 }
 
 /// Test that dry-run mode doesn't modify files
-#[test]
-fn test_update_dry_run_no_modifications() {
+#[tokio::test]
+async fn test_update_dry_run_no_modifications() {
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
     // Create manifest and lockfile
-    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n").unwrap();
+    fs::write(project_dir.join("ccpm.toml"), "[sources]\n[agents]\n")
+        .await
+        .unwrap();
 
     fs::write(
         project_dir.join("ccpm.lock"),
         "version = 1\nsources = []\nagents = []\n",
     )
+    .await
     .unwrap();
 
-    let original_lock = fs::read_to_string(project_dir.join("ccpm.lock")).unwrap();
+    let original_lock = fs::read_to_string(project_dir.join("ccpm.lock"))
+        .await
+        .unwrap();
 
     // Run update with --dry-run
     let mut cmd = Command::cargo_bin("ccpm").unwrap();
@@ -146,6 +159,8 @@ fn test_update_dry_run_no_modifications() {
         .success();
 
     // Lockfile should be unchanged
-    let current_lock = fs::read_to_string(project_dir.join("ccpm.lock")).unwrap();
+    let current_lock = fs::read_to_string(project_dir.join("ccpm.lock"))
+        .await
+        .unwrap();
     assert_eq!(original_lock, current_lock);
 }

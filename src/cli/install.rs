@@ -8,12 +8,14 @@
 //! # Features
 //!
 //! - **Dependency Resolution**: Resolves all dependencies defined in the manifest
+//! - **Transitive Dependencies**: Automatically discovers and installs dependencies declared in resource files
 //! - **Lockfile Management**: Generates and maintains `ccpm.lock` for reproducible builds
 //! - **Worktree-Based Parallel Installation**: Uses Git worktrees for safe concurrent resource installation
 //! - **Multi-Phase Progress Tracking**: Shows detailed progress with phase transitions and real-time updates
 //! - **Resource Validation**: Validates markdown files and content during installation
 //! - **Cache Support**: Advanced cache with instance-level optimizations and worktree management
 //! - **Concurrency Control**: User-configurable parallelism via `--max-parallel` flag
+//! - **Cycle Detection**: Prevents circular dependency loops in transitive dependency graphs
 //!
 //! # Examples
 //!
@@ -42,22 +44,37 @@
 //! ccpm install --no-cache
 //! ```
 //!
+//! Install only direct dependencies (skip transitive):
+//! ```bash
+//! ccpm install --no-transitive
+//! ```
+//!
+//! Preview installation without making changes:
+//! ```bash
+//! ccpm install --dry-run
+//! ```
+//!
 //! # Installation Process
 //!
 //! 1. **Manifest Loading**: Reads `ccpm.toml` to understand dependencies
-//! 2. **Dependency Resolution**: Resolves versions and creates dependency graph
-//! 3. **Worktree Preparation**: Pre-creates Git worktrees for optimal parallel access
-//! 4. **Parallel Resource Installation**: Installs resources concurrently using isolated worktrees
-//! 5. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
-//! 6. **Configuration Updates**: Updates hooks and MCP server configurations as needed
-//! 7. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
-//! 8. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
+//! 2. **Source Synchronization**: Clones/fetches Git repositories for all sources
+//! 3. **Dependency Resolution**: Resolves versions and creates dependency graph
+//! 4. **Transitive Discovery**: Extracts dependencies from resource files (YAML/JSON metadata)
+//! 5. **Cycle Detection**: Validates dependency graph for circular references
+//! 6. **Worktree Preparation**: Pre-creates Git worktrees for optimal parallel access
+//! 7. **Parallel Resource Installation**: Installs resources concurrently using isolated worktrees
+//! 8. **Progress Coordination**: Updates multi-phase progress tracking throughout installation
+//! 9. **Configuration Updates**: Updates hooks and MCP server configurations as needed
+//! 10. **Lockfile Generation**: Creates or updates `ccpm.lock` with checksums and metadata
+//! 11. **Artifact Cleanup**: Removes old artifacts from removed or relocated dependencies
 //!
 //! # Error Conditions
 //!
 //! - No manifest file found in project
 //! - Invalid manifest syntax or structure
 //! - Dependency resolution conflicts
+//! - Circular dependency loops detected
+//! - Invalid transitive dependency metadata (malformed YAML/JSON)
 //! - Network or Git access issues
 //! - File system permissions or disk space issues
 //! - Invalid resource file format
@@ -175,32 +192,39 @@ pub struct InstallCommand {
     #[arg(short, long)]
     quiet: bool,
 
-    /// Force installation even if lockfile is stale
-    ///
-    /// Bypasses lockfile staleness checks and continues with installation
-    /// even if the lockfile appears corrupted or out-of-sync with the manifest.
-    /// This can be useful for recovery from lockfile corruption, but may
-    /// result in unexpected dependency versions being installed.
-    ///
-    /// Use with caution - consider deleting ccpm.lock and running a clean
-    /// install instead.
-    #[arg(long)]
-    force: bool,
-
-    /// Regenerate lockfile from scratch
-    ///
-    /// Deletes the existing lockfile (if any) and performs a fresh resolution
-    /// of all dependencies. This is useful when the lockfile is corrupted or
-    /// when you want to update all dependencies to their latest compatible
-    /// versions within constraints.
-    ///
-    /// This is safer than --force as it performs proper dependency resolution.
-    #[arg(long)]
-    regenerate: bool,
-
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
+
+    /// Don't resolve transitive dependencies
+    ///
+    /// When enabled, only direct dependencies from the manifest will be installed.
+    /// Transitive dependencies declared within resource files (via YAML frontmatter
+    /// or JSON fields) will be ignored. This can be useful for faster installations
+    /// when you know transitive dependencies are already satisfied or for debugging
+    /// dependency issues.
+    #[arg(long)]
+    no_transitive: bool,
+
+    /// Preview installation without making changes
+    ///
+    /// Shows what would be installed, including new dependencies and lockfile changes,
+    /// but doesn't modify any files. Useful for reviewing changes before applying them,
+    /// especially in CI/CD pipelines to detect when dependencies would change.
+    ///
+    /// When enabled:
+    /// - Resolves all dependencies normally
+    /// - Shows what resources would be installed
+    /// - Shows lockfile changes (new entries, version updates)
+    /// - Does NOT write the lockfile
+    /// - Does NOT install any resources
+    /// - Does NOT update .gitignore
+    ///
+    /// Exit codes:
+    /// - 0: No changes would be made
+    /// - 1: Changes would be made (useful for CI checks)
+    #[arg(long)]
+    dry_run: bool,
 }
 
 impl InstallCommand {
@@ -229,9 +253,9 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: false,
-            force: false,
-            regenerate: false,
             no_progress: false,
+            no_transitive: false,
+            dry_run: false,
         }
     }
 
@@ -257,9 +281,9 @@ impl InstallCommand {
             no_cache: false,
             max_parallel: None,
             quiet: true,
-            force: false,
-            regenerate: false,
             no_progress: true,
+            no_transitive: false,
+            dry_run: false,
         }
     }
 
@@ -359,38 +383,22 @@ impl InstallCommand {
 
         let manifest = Manifest::load(&manifest_path)?;
 
-        // Handle lockfile regeneration
+        // In --frozen mode, check for corruption and security issues only
         let lockfile_path = manifest_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join("ccpm.lock");
-        if self.regenerate && lockfile_path.exists() {
-            if !self.quiet {
-                println!("🗑️  Removing existing lockfile for regeneration");
-            }
-            std::fs::remove_file(&lockfile_path).with_context(|| {
-                format!(
-                    "Failed to remove existing lockfile: {}",
-                    lockfile_path.display()
-                )
-            })?;
-        }
 
-        // Check for lockfile staleness unless --force, --regenerate, or --frozen is used (only if lockfile exists)
-        if !self.force && !self.regenerate && !self.frozen {
-            // Only check staleness if lockfile exists
-            if lockfile_path.exists() {
-                // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
-                let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-                let is_tty = is_terminal::IsTerminal::is_terminal(&std::io::stdin());
-                let allow_prompt = !self.quiet && !is_ci && is_tty;
-
-                if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)?
-                {
-                    return Err(anyhow::anyhow!(
-                        "Installation cancelled due to stale lockfile"
-                    ));
-                }
+        if self.frozen && lockfile_path.exists() {
+            // Check for critical issues (corruption/security) but not version/path changes
+            let lockfile = LockFile::load(&lockfile_path)?;
+            if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
+                return Err(anyhow::anyhow!(
+                    "Lockfile has critical issues in --frozen mode:\n\n\
+                     {}\n\n\
+                     Hint: Fix the issue or remove --frozen flag.",
+                    reason
+                ));
             }
         }
         let total_deps = manifest.all_dependencies().len();
@@ -479,7 +487,7 @@ impl InstallCommand {
             }
 
             // Fresh resolution
-            let result = resolver.resolve().await?;
+            let result = resolver.resolve_with_options(!self.no_transitive).await?;
 
             // Complete resolving phase
             if !self.quiet && !self.no_progress && total_deps > 0 {
@@ -489,8 +497,8 @@ impl InstallCommand {
             result
         };
 
-        // Check for tag movement if we have both old and new lockfiles
-        let old_lockfile = if !self.frozen && !self.regenerate && lockfile_path.exists() {
+        // Check for tag movement if we have both old and new lockfiles (skip in frozen mode)
+        let old_lockfile = if !self.frozen && lockfile_path.exists() {
             // Load the old lockfile for comparison
             if let Ok(old) = LockFile::load(&lockfile_path) {
                 detect_tag_movement(&old, &lockfile, self.quiet);
@@ -501,6 +509,11 @@ impl InstallCommand {
         } else {
             None
         };
+
+        // Handle dry-run mode: show what would be installed without making changes
+        if self.dry_run {
+            return self.handle_dry_run(&lockfile, &lockfile_path, &multi_phase);
+        }
 
         let total_resources = ResourceIterator::count_total_resources(&lockfile);
 
@@ -530,7 +543,6 @@ impl InstallCommand {
             });
 
             // Install resources using the main installation function
-            // Note: We capture the error to return later, after updating gitignore
             match install_resources(
                 ResourceFilter::All,
                 &lockfile,
@@ -556,79 +568,81 @@ impl InstallCommand {
                     count
                 }
                 Err(e) => {
-                    // Save the error to return later, but continue to update gitignore
+                    // Save the error to return immediately - don't continue with hooks/mcp/gitignore
                     installation_error = Some(e);
                     0
                 }
             }
         };
 
-        // Handle hooks if present
-        if !lockfile.hooks.is_empty() {
-            // Actually install and configure hooks
-            crate::hooks::install_hooks(&manifest, actual_project_dir).await?;
-            hook_count = lockfile.hooks.len();
-        }
+        // Only proceed with hooks, MCP, and finalization if installation succeeded
+        if installation_error.is_none() {
+            // Handle hooks if present
+            if !lockfile.hooks.is_empty() {
+                // Actually install and configure hooks
+                crate::hooks::install_hooks(&manifest, actual_project_dir).await?;
+                hook_count = lockfile.hooks.len();
+            }
 
-        // Handle MCP servers if present
-        if !lockfile.mcp_servers.is_empty() {
-            // Configure MCP servers by updating .mcp.json
-            let mcp_servers_dir = actual_project_dir.join(&manifest.target.mcp_servers);
-            crate::mcp::configure_mcp_servers(actual_project_dir, &mcp_servers_dir).await?;
+            // Handle MCP servers if present
+            if !lockfile.mcp_servers.is_empty() {
+                // Configure MCP servers by updating .mcp.json
+                let mcp_servers_dir = actual_project_dir.join(&manifest.target.mcp_servers);
+                crate::mcp::configure_mcp_servers(actual_project_dir, &mcp_servers_dir).await?;
 
-            server_count = lockfile.mcp_servers.len();
-            if !self.quiet {
-                if server_count == 1 {
-                    println!("✓ Configured 1 MCP server");
-                } else {
-                    println!("✓ Configured {} MCP servers", server_count);
+                server_count = lockfile.mcp_servers.len();
+                if !self.quiet {
+                    if server_count == 1 {
+                        println!("✓ Configured 1 MCP server");
+                    } else {
+                        println!("✓ Configured {} MCP servers", server_count);
+                    }
                 }
             }
-        }
 
-        // Clean up removed or moved artifacts AFTER successful installation
-        // This ensures we don't delete old files if installation fails
-        if installation_error.is_none()
-            && let Some(old) = old_lockfile
-            && let Ok(removed) =
-                crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
-                    .await
-            && !removed.is_empty()
-            && !self.quiet
-        {
-            println!(
-                "🗑️  Cleaned up {} moved or removed artifact(s)",
-                removed.len()
-            );
-        }
+            // Clean up removed or moved artifacts AFTER successful installation
+            // This ensures we don't delete old files if installation fails
+            if installation_error.is_none()
+                && let Some(old) = old_lockfile
+                && let Ok(removed) =
+                    crate::installer::cleanup_removed_artifacts(&old, &lockfile, actual_project_dir)
+                        .await
+                && !removed.is_empty()
+                && !self.quiet
+            {
+                println!(
+                    "🗑️  Cleaned up {} moved or removed artifact(s)",
+                    removed.len()
+                );
+            }
 
-        // Start finalizing phase
-        if !self.quiet
-            && !self.no_progress
-            && (installed_count > 0 || hook_count > 0 || server_count > 0)
-        {
-            multi_phase.start_phase(InstallationPhase::Finalizing, None);
-        }
+            // Start finalizing phase
+            if !self.quiet
+                && !self.no_progress
+                && (installed_count > 0 || hook_count > 0 || server_count > 0)
+            {
+                multi_phase.start_phase(InstallationPhase::Finalizing, None);
+            }
 
-        if !self.no_lock {
-            // Save lockfile (no progress needed for this quick operation)
-            lockfile.save(&lockfile_path).with_context(|| {
-                format!("Failed to save lockfile to {}", lockfile_path.display())
-            })?;
-        }
+            if !self.no_lock {
+                // Save lockfile with checksums (no progress needed for this quick operation)
+                lockfile.save(&lockfile_path).with_context(|| {
+                    format!("Failed to save lockfile to {}", lockfile_path.display())
+                })?;
+            }
 
-        // Update .gitignore if needed and not disabled
-        // This happens even if installation failed, based on lockfile entries
-        if manifest.target.gitignore {
-            update_gitignore(&lockfile, actual_project_dir, true)?;
-        }
+            // Update .gitignore only if installation succeeded
+            if manifest.target.gitignore {
+                update_gitignore(&lockfile, actual_project_dir, true)?;
+            }
 
-        // Complete finalizing phase
-        if !self.quiet
-            && !self.no_progress
-            && (installed_count > 0 || hook_count > 0 || server_count > 0)
-        {
-            multi_phase.complete_phase(Some("Installation complete!"));
+            // Complete finalizing phase
+            if !self.quiet
+                && !self.no_progress
+                && (installed_count > 0 || hook_count > 0 || server_count > 0)
+            {
+                multi_phase.complete_phase(Some("Installation complete!"));
+            }
         }
 
         // Return the installation error if there was one
@@ -649,6 +663,172 @@ impl InstallCommand {
             && server_count == 0
         {
             println!("\nNo dependencies to install");
+        }
+
+        Ok(())
+    }
+
+    /// Handles dry-run mode by comparing lockfiles and displaying what would change.
+    ///
+    /// This method compares the resolved lockfile with the existing lockfile (if any)
+    /// to determine what would be installed, updated, or added. It displays a summary
+    /// of the changes without modifying any files.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_lockfile` - The newly resolved lockfile
+    /// * `lockfile_path` - Path to the lockfile on disk
+    /// * `multi_phase` - Progress tracker for clearing display
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if no changes would be made (exit code 0)
+    /// - `Err(anyhow::Error)` with exit code 1 if changes would be made
+    ///
+    /// # Exit Codes
+    ///
+    /// - 0: No changes would be made
+    /// - 1: Changes would be made (useful for CI pipelines)
+    fn handle_dry_run(
+        &self,
+        new_lockfile: &LockFile,
+        lockfile_path: &Path,
+        multi_phase: &std::sync::Arc<crate::utils::progress::MultiPhaseProgress>,
+    ) -> Result<()> {
+        use colored::Colorize;
+
+        // Clear progress display
+        if !self.quiet && !self.no_progress {
+            multi_phase.clear();
+        }
+
+        // Track changes
+        let mut new_resources = Vec::new();
+        let mut updated_resources = Vec::new();
+        let mut unchanged_count = 0;
+
+        // Load existing lockfile if it exists
+        let existing_lockfile = if lockfile_path.exists() {
+            LockFile::load(lockfile_path).ok()
+        } else {
+            None
+        };
+
+        // Compare lockfiles to find changes
+        if let Some(existing) = existing_lockfile.as_ref() {
+            ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
+                // Find corresponding entry in existing lockfile
+                if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
+                    existing,
+                    &new_entry.name,
+                    new_entry.source.as_deref(),
+                ) {
+                    // Check if it was updated
+                    if old_entry.resolved_commit != new_entry.resolved_commit {
+                        let old_version = old_entry
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "latest".to_string());
+                        let new_version = new_entry
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "latest".to_string());
+                        updated_resources.push((
+                            resource_type.to_string(),
+                            new_entry.name.clone(),
+                            old_version,
+                            new_version,
+                        ));
+                    } else {
+                        unchanged_count += 1;
+                    }
+                } else {
+                    // New resource
+                    new_resources.push((
+                        resource_type.to_string(),
+                        new_entry.name.clone(),
+                        new_entry
+                            .version
+                            .clone()
+                            .unwrap_or_else(|| "latest".to_string()),
+                    ));
+                }
+            });
+        } else {
+            // No existing lockfile, everything is new
+            ResourceIterator::for_each_resource(new_lockfile, |resource_type, new_entry| {
+                new_resources.push((
+                    resource_type.to_string(),
+                    new_entry.name.clone(),
+                    new_entry
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "latest".to_string()),
+                ));
+            });
+        }
+
+        // Display results
+        let has_changes = !new_resources.is_empty() || !updated_resources.is_empty();
+
+        if !self.quiet {
+            if has_changes {
+                println!(
+                    "{}",
+                    "Dry run - the following changes would be made:".yellow()
+                );
+                println!();
+
+                if !new_resources.is_empty() {
+                    println!("{}", "New resources:".green().bold());
+                    for (resource_type, name, version) in &new_resources {
+                        println!(
+                            "  {} {} ({})",
+                            "+".green(),
+                            name.cyan(),
+                            format!("{} {}", resource_type, version).dimmed()
+                        );
+                    }
+                    println!();
+                }
+
+                if !updated_resources.is_empty() {
+                    println!("{}", "Updated resources:".yellow().bold());
+                    for (resource_type, name, old_ver, new_ver) in &updated_resources {
+                        print!("  {} {} {} → ", "~".yellow(), name.cyan(), old_ver.yellow());
+                        println!("{} ({})", new_ver.green(), resource_type.dimmed());
+                    }
+                    println!();
+                }
+
+                if unchanged_count > 0 {
+                    println!(
+                        "{}",
+                        format!("{} unchanged resources", unchanged_count).dimmed()
+                    );
+                }
+
+                println!();
+                println!(
+                    "{}",
+                    format!(
+                        "Total: {} new, {} updated, {} unchanged",
+                        new_resources.len(),
+                        updated_resources.len(),
+                        unchanged_count
+                    )
+                    .bold()
+                );
+                println!();
+                println!("{}", "No files were modified (dry-run mode)".yellow());
+            } else {
+                println!("✓ {}", "No changes would be made".green());
+            }
+        }
+
+        // Return error with special exit code if there are changes (useful for CI)
+        if has_changes {
+            return Err(anyhow::anyhow!("Dry-run detected changes (exit 1)"));
         }
 
         Ok(())
@@ -831,9 +1011,9 @@ mod tests {
             no_cache: false,
             max_parallel: None,
             quiet: false,
-            force: false,
-            regenerate: false,
             no_progress: false,
+            no_transitive: false,
+            dry_run: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -856,7 +1036,7 @@ This is a test agent.",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "local-agent".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "local-agent.md".into(),
                 version: None,
@@ -866,7 +1046,8 @@ This is a test agent.",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -914,7 +1095,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "test-agent".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "test-agent.md".into(),
                 version: None,
@@ -924,7 +1105,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -941,6 +1123,8 @@ Body",
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at: ".claude/agents/test-agent.md".into(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -956,9 +1140,9 @@ Body",
             no_cache: false,
             max_parallel: None,
             quiet: false,
-            force: false,
-            regenerate: false,
             no_progress: false,
+            no_transitive: false,
+            dry_run: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -974,7 +1158,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "missing".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "missing.md".into(),
                 version: None,
@@ -984,7 +1168,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1010,7 +1195,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.snippets.insert(
             "single".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "single-snippet.md".into(),
                 version: None,
@@ -1020,7 +1205,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1048,7 +1234,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.commands.insert(
             "cmd".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "single-command.md".into(),
                 version: None,
@@ -1058,7 +1244,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 
@@ -1075,6 +1262,59 @@ Body",
     }
 
     #[tokio::test]
+    async fn test_install_dry_run_mode() {
+        let temp = TempDir::new().unwrap();
+        let manifest_path = temp.path().join("ccpm.toml");
+        let lockfile_path = temp.path().join("ccpm.lock");
+        let agent_file = temp.path().join("test-agent.md");
+
+        // Create a local file for the agent
+        fs::write(&agent_file, "# Test Agent\nBody").unwrap();
+
+        let mut manifest = Manifest::new();
+        manifest.agents.insert(
+            "test-agent".into(),
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: None,
+                path: "test-agent.md".into(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: None,
+                dependencies: None,
+            })),
+        );
+        manifest.save(&manifest_path).unwrap();
+
+        let cmd = InstallCommand {
+            no_lock: false,
+            frozen: false,
+            no_cache: false,
+            max_parallel: None,
+            quiet: true, // Suppress output in test
+            no_progress: true,
+            no_transitive: false,
+            dry_run: true,
+        };
+
+        // In dry-run mode, this should return an error indicating changes would be made
+        let result = cmd.execute_from_path(Some(&manifest_path)).await;
+
+        // Should return an error because changes would be made
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Dry-run detected changes"));
+
+        // Lockfile should NOT be created in dry-run mode
+        assert!(!lockfile_path.exists());
+        // Resource should NOT be installed
+        assert!(!temp.path().join(".claude/agents/test-agent.md").exists());
+    }
+
+    #[tokio::test]
     async fn test_install_summary_with_mcp_servers() {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("ccpm.toml");
@@ -1088,7 +1328,7 @@ Body",
         let mut manifest = Manifest::new();
         manifest.agents.insert(
             "summary".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "summary-agent.md".into(),
                 version: None,
@@ -1098,11 +1338,12 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.add_mcp_server(
             "test-mcp".into(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: "mcp/test-mcp.json".into(),
                 version: None,
@@ -1112,7 +1353,8 @@ Body",
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
         manifest.save(&manifest_path).unwrap();
 

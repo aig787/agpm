@@ -32,6 +32,11 @@
 //! ccpm update --dry-run
 //! ```
 //!
+//! Check for available updates (exit code 1 if updates available):
+//! ```bash
+//! ccpm update --check
+//! ```
+//!
 //! Force update ignoring constraints:
 //! ```bash
 //! ccpm update --force
@@ -160,6 +165,10 @@ pub struct UpdateCommand {
     ///
     /// Shows a detailed list of what would be updated, including version
     /// changes and affected files, but doesn't modify anything.
+    ///
+    /// Exit codes:
+    /// - 0: No updates available
+    /// - 1: Updates are available (useful for CI checks)
     #[arg(long, conflicts_with = "check")]
     pub dry_run: bool,
 
@@ -167,15 +176,12 @@ pub struct UpdateCommand {
     ///
     /// Similar to --dry-run but with minimal output, suitable for scripts
     /// and automated checks.
+    ///
+    /// Exit codes:
+    /// - 0: No updates available
+    /// - 1: Updates are available (useful for CI checks)
     #[arg(long, conflicts_with = "dry_run")]
     pub check: bool,
-
-    /// Ignore version constraints when updating.
-    ///
-    /// WARNING: This may break compatibility with your code if dependencies
-    /// introduce breaking changes. Use with caution.
-    #[arg(long)]
-    pub force: bool,
 
     /// Create a backup of the lockfile before updating.
     ///
@@ -272,7 +278,7 @@ impl UpdateCommand {
     /// };
     /// // cmd.execute_with_manifest_path(None).await?;
     /// # Ok::<(), anyhow::Error>(())
-    /// # });
+    /// # }));
     /// ```
     /// Execute the update command with an optional manifest path
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
@@ -311,20 +317,8 @@ impl UpdateCommand {
             )
         })?;
 
-        // Check for lockfile staleness unless --force is used
-        let lockfile_path = project_dir.join("ccpm.lock");
-        if !self.force && lockfile_path.exists() {
-            // Check staleness - allow prompts in interactive mode, deny in CI/quiet mode
-            let is_ci = std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok();
-            let is_tty = is_terminal::IsTerminal::is_terminal(&std::io::stdin());
-            let allow_prompt = !self.quiet && !is_ci && is_tty;
-
-            if !crate::lockfile::check_staleness(&lockfile_path, &manifest_path, allow_prompt)? {
-                return Err(anyhow::anyhow!("Update cancelled due to stale lockfile"));
-            }
-        }
-
         // Load existing lockfile or perform fresh install if missing
+        let lockfile_path = project_dir.join("ccpm.lock");
         let existing_lockfile = if lockfile_path.exists() {
             LockFile::load(&lockfile_path)?
         } else {
@@ -414,9 +408,13 @@ impl UpdateCommand {
         // Compare lockfiles to see what changed
         let mut updates = Vec::new();
         ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
-            if let Some((_, old_entry)) =
-                ResourceIterator::find_resource_by_name(&existing_lockfile, &new_entry.name)
-                && old_entry.resolved_commit != new_entry.resolved_commit
+            // Use (name, source) pair for correct matching when multiple sources
+            // provide resources with the same name
+            if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
+                &existing_lockfile,
+                &new_entry.name,
+                new_entry.source.as_deref(),
+            ) && old_entry.resolved_commit != new_entry.resolved_commit
             {
                 let old_version = old_entry
                     .version
@@ -426,7 +424,12 @@ impl UpdateCommand {
                     .version
                     .clone()
                     .unwrap_or_else(|| "latest".to_string());
-                updates.push((new_entry.name.clone(), old_version, new_version));
+                updates.push((
+                    new_entry.name.clone(),
+                    new_entry.source.clone(),
+                    old_version,
+                    new_version,
+                ));
             }
         });
 
@@ -442,7 +445,7 @@ impl UpdateCommand {
 
             if !self.quiet && !self.no_progress {
                 println!(); // Add spacing
-                for (name, old_ver, new_ver) in &updates {
+                for (name, _source, old_ver, new_ver) in &updates {
                     println!(
                         "  {} {} → {}",
                         name.cyan(),
@@ -461,56 +464,55 @@ impl UpdateCommand {
                         println!("{} {}", "Would update".green(), "(dry run)".yellow());
                     }
                 }
+                // Return with error to indicate updates are available (exit code 1 for CI)
+                return Err(anyhow::anyhow!(
+                    "Dry-run detected updates available (exit 1)"
+                ));
             } else {
-                // Save updated lockfile with error handling and rollback
+                // Install all updated resources first, before saving lockfile
+                if !self.quiet && !self.no_progress && !updates.is_empty() {
+                    multi_phase.start_phase(
+                        InstallationPhase::Installing,
+                        Some(&format!("({} resources)", updates.len())),
+                    );
+                }
+
+                let (install_count, checksums) = install_resources(
+                    ResourceFilter::Updated(updates.clone()),
+                    &new_lockfile,
+                    &manifest,
+                    project_dir,
+                    cache,
+                    false,             // don't force refresh for updates
+                    self.max_parallel, // use provided or default concurrency
+                    if self.quiet || self.no_progress {
+                        None
+                    } else {
+                        Some(multi_phase.clone())
+                    },
+                )
+                .await?;
+
+                // Update lockfile with checksums in-memory
+                for (name, checksum) in checksums {
+                    new_lockfile.update_resource_checksum(&name, &checksum);
+                }
+
+                // Complete installation phase
+                if install_count > 0 && !self.quiet && !self.no_progress {
+                    multi_phase
+                        .complete_phase(Some(&format!("Updated {} resources", install_count)));
+                }
+
+                // Start finalizing phase
+                if !self.quiet && !self.no_progress && install_count > 0 {
+                    multi_phase.start_phase(InstallationPhase::Finalizing, None);
+                }
+
+                // Save the lockfile once with checksums and error handling
                 match new_lockfile.save(&lockfile_path) {
                     Ok(()) => {
                         // Lockfile saved successfully (no progress needed for this quick operation)
-
-                        // Install all updated resources using main installation function
-                        if !self.quiet && !self.no_progress && !updates.is_empty() {
-                            multi_phase.start_phase(
-                                InstallationPhase::Installing,
-                                Some(&format!("({} resources)", updates.len())),
-                            );
-                        }
-
-                        let (install_count, checksums) = install_resources(
-                            ResourceFilter::Updated(updates.clone()),
-                            &new_lockfile,
-                            &manifest,
-                            project_dir,
-                            cache,
-                            false,             // don't force refresh for updates
-                            self.max_parallel, // use provided or default concurrency
-                            if self.quiet || self.no_progress {
-                                None
-                            } else {
-                                Some(multi_phase.clone())
-                            },
-                        )
-                        .await?;
-
-                        // Update lockfile with checksums
-                        for (name, checksum) in checksums {
-                            new_lockfile.update_resource_checksum(&name, &checksum);
-                        }
-
-                        // Complete installation phase
-                        if install_count > 0 && !self.quiet && !self.no_progress {
-                            multi_phase.complete_phase(Some(&format!(
-                                "Updated {} resources",
-                                install_count
-                            )));
-                        }
-
-                        // Start finalizing phase
-                        if !self.quiet && !self.no_progress && install_count > 0 {
-                            multi_phase.start_phase(InstallationPhase::Finalizing, None);
-                        }
-
-                        // Save the updated lockfile again with checksums
-                        new_lockfile.save(&lockfile_path)?;
 
                         // Update .gitignore if enabled
                         let gitignore_enabled = manifest.target.gitignore;
@@ -541,11 +543,11 @@ impl UpdateCommand {
                                     tokio::fs::copy(&backup_path, &lockfile_path).await
                                 {
                                     if !self.quiet && !self.no_progress {
-                                        eprintln!("✗ Update failed: {}", e);
+                                        eprintln!("✗ Failed to save updated lockfile: {}", e);
                                         eprintln!("✗ Failed to restore backup: {}", restore_err);
                                     }
                                 } else if !self.quiet && !self.no_progress {
-                                    eprintln!("✗ Update failed: {}", e);
+                                    eprintln!("✗ Failed to save updated lockfile: {}", e);
                                     println!("ℹ️  Rolled back to previous lockfile");
                                 }
                             }
@@ -575,7 +577,6 @@ mod tests {
             dependencies: vec![],
             dry_run: false,
             check: false,
-            force: false,
             backup: false,
             verbose: false,
             quiet: true,       // Quiet by default for tests
@@ -595,7 +596,7 @@ mod tests {
         let mut agents = HashMap::new();
         agents.insert(
             "test-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("test-source".to_string()),
                 path: "agents/test-agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -605,7 +606,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         Manifest {
@@ -628,7 +630,6 @@ mod tests {
             sources: vec![LockedSource {
                 name: "test-source".to_string(),
                 url: "file:///tmp/test-repo".to_string(),
-                commit: "abc123456789".to_string(),
                 fetched_at: "2023-01-01T00:00:00Z".to_string(),
             }],
             agents: vec![LockedResource {
@@ -640,6 +641,8 @@ mod tests {
                 resolved_commit: Some("abc123456789".to_string()),
                 checksum: "sha256:test123".to_string(),
                 installed_at: "agents/test-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -832,27 +835,6 @@ mod tests {
         // In check mode, lockfile should not be modified
         let current_content = fs::read_to_string(&lockfile_path).unwrap();
         assert_eq!(original_content, current_content);
-    }
-
-    #[tokio::test]
-    async fn test_execute_force_mode() {
-        let temp = TempDir::new().unwrap();
-        let manifest_path = temp.path().join("ccpm.toml");
-        let lockfile_path = temp.path().join("ccpm.lock");
-
-        // Create manifest and existing lockfile
-        let manifest = create_test_manifest();
-        let lockfile = create_test_lockfile();
-        manifest.save(&manifest_path).unwrap();
-        lockfile.save(&lockfile_path).unwrap();
-
-        let mut cmd = create_update_command();
-        cmd.force = true;
-
-        let _result = cmd.execute_from_path(manifest_path).await;
-
-        // Force mode logic is exercised through the resolver
-        // Test verifies the flag is properly passed through
     }
 
     #[tokio::test]
@@ -1091,7 +1073,6 @@ mod tests {
             dependencies: vec![],
             dry_run: false,
             check: false,
-            force: false,
             backup: false,
             verbose: false,
             quiet: false,
@@ -1102,7 +1083,6 @@ mod tests {
         assert!(cmd.dependencies.is_empty());
         assert!(!cmd.dry_run);
         assert!(!cmd.check);
-        assert!(!cmd.force);
         assert!(!cmd.backup);
         assert!(!cmd.verbose);
         assert!(!cmd.quiet);
@@ -1114,7 +1094,6 @@ mod tests {
             dependencies: vec!["dep1".to_string(), "dep2".to_string()],
             dry_run: true,
             check: true,
-            force: true,
             backup: true,
             verbose: true,
             quiet: true,
@@ -1125,7 +1104,6 @@ mod tests {
         assert_eq!(cmd.dependencies.len(), 2);
         assert!(cmd.dry_run);
         assert!(cmd.check);
-        assert!(cmd.force);
         assert!(cmd.backup);
         assert!(cmd.verbose);
         assert!(cmd.quiet);

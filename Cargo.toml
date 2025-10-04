@@ -46,6 +46,8 @@ once_cell = "1.21.3"
 dashmap = "6.1"
 reqwest = { version = "0.12", features = ["json"] }
 zip = "2.2"
+petgraph = "0.8.2"
+pubgrub = { version = "0.3.0", default-features = false }
 
 [dev-dependencies]
 assert_cmd = "2.0"

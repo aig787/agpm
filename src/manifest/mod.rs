@@ -13,6 +13,7 @@
 //! - Support for multiple Git-based source repositories
 //! - Local and remote dependency resolution
 //! - Version constraint specification and validation
+//! - Transitive dependency resolution from resource metadata
 //! - Cross-platform path handling and installation
 //! - MCP (Model Context Protocol) server configuration management
 //! - Atomic file operations for reliability
@@ -345,6 +346,76 @@
 //! 9. **Validate regularly**: Run `ccpm validate` before commits
 //! 10. **Use lockfiles**: Commit `ccpm.lock` for reproducible builds
 //!
+//! ## Transitive Dependencies
+//!
+//! Resources can declare their own dependencies within their files using structured
+//! metadata. This enables automatic dependency resolution without manual manifest updates.
+//!
+//! ### Supported Formats
+//!
+//! #### Markdown Files (YAML Frontmatter)
+//!
+//! ```markdown
+//! ---
+//! dependencies:
+//!   agents:
+//!     - path: agents/helper.md
+//!       version: v1.0.0
+//!     - path: agents/reviewer.md
+//!   snippets:
+//!     - path: snippets/utils.md
+//! ---
+//!
+//! # My Command Documentation
+//! ...
+//! ```
+//!
+//! #### JSON Files (Top-Level Field)
+//!
+//! ```json
+//! {
+//!   "events": ["UserPromptSubmit"],
+//!   "type": "command",
+//!   "command": ".claude/ccpm/scripts/test.js",
+//!   "dependencies": {
+//!     "scripts": [
+//!       { "path": "scripts/test-runner.sh", "version": "v1.0.0" },
+//!       { "path": "scripts/validator.py" }
+//!     ],
+//!     "agents": [
+//!       { "path": "agents/code-analyzer.md", "version": "~1.2.0" }
+//!     ]
+//!   }
+//! }
+//! ```
+//!
+//! ### Key Features
+//!
+//! - **Automatic Discovery**: Dependencies extracted during resolution
+//! - **Version Inheritance**: If no version specified, parent's version is used
+//! - **Same-Source Model**: Transitive deps inherit parent's source repository
+//! - **Cycle Detection**: Circular dependency loops are detected and prevented
+//! - **Topological Ordering**: Dependencies installed in correct order
+//! - **Optional Resolution**: Can be disabled with `--no-transitive` flag
+//!
+//! ### Data Structures
+//!
+//! Transitive dependencies are represented by:
+//! - [`DependencySpec`]: Individual dependency specification (path + optional version)
+//! - [`DependencyMetadata`]: Collection of dependencies by resource type
+//! - [`DetailedDependency::dependencies`]: Field storing extracted transitive deps
+//!
+//! ### Processing Flow
+//!
+//! 1. Manifest dependencies are resolved first
+//! 2. Resource files are checked for metadata (YAML frontmatter or JSON fields)
+//! 3. Discovered dependencies are added to dependency graph
+//! 4. Graph is validated for cycles
+//! 5. Dependencies are resolved in topological order
+//! 6. All resources (direct + transitive) are installed
+//!
+//! See [`dependency_spec`] module for detailed specification formats.
+//!
 //! ## Error Handling
 //!
 //! The manifest module provides comprehensive error handling with:
@@ -405,10 +476,14 @@
 //! }
 //! ```
 
+pub mod dependency_spec;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+pub use dependency_spec::{DependencyMetadata, DependencySpec};
 
 /// The main manifest file structure representing a complete `ccpm.toml` file.
 ///
@@ -772,6 +847,11 @@ fn default_gitignore() -> bool {
 /// which means deserialization tries the `Detailed` variant first, then
 /// falls back to `Simple`. This is efficient for the expected usage patterns
 /// where detailed dependencies are more common in larger projects.
+///
+/// # Memory Layout
+///
+/// The `Detailed` variant is boxed to reduce the size of the enum from 264 bytes
+/// to 24 bytes, improving memory efficiency when many dependencies are stored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ResourceDependency {
@@ -814,7 +894,9 @@ pub enum ResourceDependency {
     /// Git references, and explicit source mapping.
     ///
     /// See [`DetailedDependency`] for field-level documentation.
-    Detailed(DetailedDependency),
+    ///
+    /// Note: This variant is boxed to reduce the overall size of the enum.
+    Detailed(Box<DetailedDependency>),
 }
 
 /// Detailed dependency specification with full control over source resolution.
@@ -1101,6 +1183,20 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+
+    /// Transitive dependencies on other resources.
+    ///
+    /// This field is populated from metadata extracted from the resource file itself
+    /// (YAML frontmatter in .md files or JSON fields in .json files).
+    /// Maps resource type to list of dependency specifications.
+    ///
+    /// Example:
+    /// ```toml
+    /// # This would be extracted from the file's frontmatter/JSON, not specified in ccpm.toml
+    /// # { "agents": [{"path": "agents/helper.md", "version": "v1.0.0"}] }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
 }
 
 impl Manifest {
@@ -1358,7 +1454,7 @@ impl Manifest {
     /// // This will fail validation (missing source)
     /// manifest.add_dependency(
     ///     "remote".to_string(),
-    ///     ResourceDependency::Detailed(DetailedDependency {
+    ///     ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///         source: Some("missing".to_string()),
     ///         path: "agent.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
@@ -1368,7 +1464,8 @@ impl Manifest {
     ///         args: None,
     ///         target: None,
     ///         filename: None,
-    ///     }),
+    ///         dependencies: None,
+    ///     })),
     ///     true
     /// );
     /// assert!(manifest.validate().is_err());
@@ -1851,10 +1948,10 @@ impl Manifest {
     ///     true  // is_agent = true
     /// );
     ///
-    /// // Add remote snippet dependency  
+    /// // Add remote snippet dependency
     /// manifest.add_dependency(
     ///     "utils".to_string(),
-    ///     ResourceDependency::Detailed(DetailedDependency {
+    ///     ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///         source: Some("community".to_string()),
     ///         path: "snippets/utils.md".to_string(),
     ///         version: Some("v1.0.0".to_string()),
@@ -1864,7 +1961,8 @@ impl Manifest {
     ///         args: None,
     ///         target: None,
     ///         filename: None,
-    ///     }),
+    ///         dependencies: None,
+    ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
     /// ```
@@ -1973,7 +2071,7 @@ impl ResourceDependency {
     /// assert!(local.get_source().is_none());
     ///
     /// // Remote dependency - has source
-    /// let remote = ResourceDependency::Detailed(DetailedDependency {
+    /// let remote = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -1983,7 +2081,8 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
     ///
@@ -2013,7 +2112,7 @@ impl ResourceDependency {
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom target
-    /// let custom = ResourceDependency::Detailed(DetailedDependency {
+    /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -2023,7 +2122,8 @@ impl ResourceDependency {
     ///     command: None,
     ///     args: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
     /// // Dependency without custom target
@@ -2049,7 +2149,7 @@ impl ResourceDependency {
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom filename
-    /// let custom = ResourceDependency::Detailed(DetailedDependency {
+    /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -2059,7 +2159,8 @@ impl ResourceDependency {
     ///     command: None,
     ///     args: None,
     ///     target: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
     ///
     /// // Dependency without custom filename
@@ -2091,8 +2192,8 @@ impl ResourceDependency {
     /// let local = ResourceDependency::Simple("../shared/helper.md".to_string());
     /// assert_eq!(local.get_path(), "../shared/helper.md");
     ///
-    /// // Remote dependency - repository path  
-    /// let remote = ResourceDependency::Detailed(DetailedDependency {
+    /// // Remote dependency - repository path
+    /// let remote = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/code-reviewer.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -2102,7 +2203,8 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
     ///
@@ -2146,7 +2248,7 @@ impl ResourceDependency {
     /// ```rust,no_run
     /// use ccpm::manifest::{ResourceDependency, DetailedDependency};
     ///
-    /// let dep = ResourceDependency::Detailed(DetailedDependency {
+    /// let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),  // This is ignored
@@ -2156,7 +2258,8 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
     /// ```
@@ -2171,7 +2274,7 @@ impl ResourceDependency {
     /// assert!(local.get_version().is_none());
     ///
     /// // Remote dependency with version
-    /// let versioned = ResourceDependency::Detailed(DetailedDependency {
+    /// let versioned = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -2181,11 +2284,12 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
     /// // Remote dependency with branch reference
-    /// let branch_ref = ResourceDependency::Detailed(DetailedDependency {
+    /// let branch_ref = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("repo".to_string()),
     ///     path: "file.md".to_string(),
     ///     version: None,
@@ -2195,7 +2299,8 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
     ///
@@ -2239,7 +2344,7 @@ impl ResourceDependency {
     /// assert!(local.is_local());
     ///
     /// // Remote dependency
-    /// let remote = ResourceDependency::Detailed(DetailedDependency {
+    /// let remote = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("official".to_string()),
     ///     path: "agents/tool.md".to_string(),
     ///     version: Some("v1.0.0".to_string()),
@@ -2249,11 +2354,12 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert!(!remote.is_local());
     ///
     /// // Local detailed dependency (no source specified)
-    /// let local_detailed = ResourceDependency::Detailed(DetailedDependency {
+    /// let local_detailed = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: None,
     ///     path: "../shared/tool.md".to_string(),
     ///     version: None,
@@ -2263,7 +2369,8 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     filename: None,
-    /// });
+    ///     dependencies: None,
+    /// }));
     /// assert!(local_detailed.is_local());
     /// ```
     ///
@@ -2600,7 +2707,7 @@ mod tests {
         );
         manifest.add_dependency(
             "test-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2610,7 +2717,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
 
@@ -2637,7 +2745,7 @@ mod tests {
         // Add dependency with undefined source - should fail validation
         manifest.add_dependency(
             "remote-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("undefined".to_string()),
                 path: "agent.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2647,7 +2755,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             true,
         );
         assert!(manifest.validate().is_err());
@@ -2668,7 +2777,7 @@ mod tests {
         assert!(simple_dep.get_version().is_none());
         assert!(simple_dep.is_local());
 
-        let detailed_dep = ResourceDependency::Detailed(DetailedDependency {
+        let detailed_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/test.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -2678,7 +2787,8 @@ mod tests {
             args: None,
             target: None,
             filename: None,
-        });
+            dependencies: None,
+        }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
         assert_eq!(detailed_dep.get_version(), Some("v1.0.0"));
@@ -2792,7 +2902,7 @@ mod tests {
         );
         manifest.add_typed_dependency(
             "deploy".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("community".to_string()),
                 path: "commands/deploy.md".to_string(),
                 version: Some("v2.0.0".to_string()),
@@ -2802,7 +2912,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             crate::core::ResourceType::Command,
         );
 
@@ -2837,7 +2948,7 @@ mod tests {
         // Add an MCP server (now using standard ResourceDependency)
         manifest.add_mcp_server(
             "test-server".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("npm".to_string()),
                 path: "mcp-servers/test-server.json".to_string(),
                 version: Some("latest".to_string()),
@@ -2847,7 +2958,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         assert_eq!(manifest.mcp_servers.len(), 1);
@@ -2895,7 +3007,7 @@ mod tests {
 
     #[test]
     fn test_dependency_with_custom_target() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/tool.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -2905,7 +3017,8 @@ mod tests {
             args: None,
             target: Some("custom/tools".to_string()),
             filename: None,
-        });
+            dependencies: None,
+        }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
         assert_eq!(dep.get_source(), Some("official"));
@@ -2914,7 +3027,7 @@ mod tests {
 
     #[test]
     fn test_dependency_without_custom_target() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/tool.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -2924,7 +3037,8 @@ mod tests {
             args: None,
             target: None,
             filename: None,
-        });
+            dependencies: None,
+        }));
 
         assert!(dep.get_target().is_none());
     }
@@ -2949,7 +3063,7 @@ mod tests {
         // Add dependency with custom target
         manifest.add_typed_dependency(
             "special-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/special.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -2959,7 +3073,8 @@ mod tests {
                 command: None,
                 args: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
             crate::core::ResourceType::Agent,
         );
 
@@ -2977,7 +3092,7 @@ mod tests {
 
     #[test]
     fn test_dependency_with_custom_filename() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/tool.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -2987,7 +3102,8 @@ mod tests {
             args: None,
             target: None,
             filename: Some("ai-assistant.md".to_string()),
-        });
+            dependencies: None,
+        }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
         assert_eq!(dep.get_source(), Some("official"));
@@ -2996,7 +3112,7 @@ mod tests {
 
     #[test]
     fn test_dependency_without_custom_filename() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/tool.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -3006,7 +3122,8 @@ mod tests {
             args: None,
             target: None,
             filename: None,
-        });
+            dependencies: None,
+        }));
 
         assert!(dep.get_filename().is_none());
     }
@@ -3031,7 +3148,7 @@ mod tests {
         // Add dependency with custom filename
         manifest.add_typed_dependency(
             "my-agent".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("official".to_string()),
                 path: "agents/complex-name.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3041,7 +3158,8 @@ mod tests {
                 rev: None,
                 command: None,
                 args: None,
-            }),
+                dependencies: None,
+            })),
             crate::core::ResourceType::Agent,
         );
 
@@ -3059,7 +3177,7 @@ mod tests {
 
     #[test]
     fn test_pattern_dependency() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("repo".to_string()),
             path: "agents/**/*.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -3069,7 +3187,8 @@ mod tests {
             args: None,
             target: None,
             filename: None,
-        });
+            dependencies: None,
+        }));
 
         assert!(dep.is_pattern());
         assert_eq!(dep.get_path(), "agents/**/*.md");
@@ -3087,7 +3206,7 @@ mod tests {
         // Valid pattern dependency (uses glob characters in path)
         manifest.agents.insert(
             "ai-agents".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("repo".to_string()),
                 path: "agents/ai/*.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3097,7 +3216,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         assert!(manifest.validate().is_ok());
@@ -3105,7 +3225,7 @@ mod tests {
         // Valid: regular dependency (no glob characters)
         manifest.agents.insert(
             "regular".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("repo".to_string()),
                 path: "agents/test.md".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3115,7 +3235,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let result = manifest.validate();
@@ -3133,7 +3254,7 @@ mod tests {
         // Pattern with path traversal (using path field now)
         manifest.agents.insert(
             "unsafe".to_string(),
-            ResourceDependency::Detailed(DetailedDependency {
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: Some("repo".to_string()),
                 path: "../../../etc/*.conf".to_string(),
                 version: Some("v1.0.0".to_string()),
@@ -3143,7 +3264,8 @@ mod tests {
                 args: None,
                 target: None,
                 filename: None,
-            }),
+                dependencies: None,
+            })),
         );
 
         let result = manifest.validate();
@@ -3153,7 +3275,7 @@ mod tests {
 
     #[test]
     fn test_dependency_with_both_target_and_filename() {
-        let dep = ResourceDependency::Detailed(DetailedDependency {
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
             source: Some("official".to_string()),
             path: "agents/tool.md".to_string(),
             version: Some("v1.0.0".to_string()),
@@ -3163,7 +3285,8 @@ mod tests {
             args: None,
             target: Some("tools/ai".to_string()),
             filename: Some("assistant.markdown".to_string()),
-        });
+            dependencies: None,
+        }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));
         assert_eq!(dep.get_filename(), Some("assistant.markdown"));

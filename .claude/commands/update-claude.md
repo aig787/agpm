@@ -1,6 +1,6 @@
 ---
 allowed-tools: Task, Bash(git diff:*), Bash(git status:*), Bash(git log:*), Bash(git show:*), Bash(cargo tree:*), Bash(cargo:*), Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
-description: Review changes and update CLAUDE.md to reflect current architecture and implementation
+description: Review changes and update CLAUDE.md and AGENTS.md to reflect current architecture and implementation
 argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only report needed updates
 ---
 
@@ -12,11 +12,11 @@ argument-hint: [ --check-only | --auto-update ] - e.g., "--check-only" to only r
 
 ## Your task
 
-Review the current changes and ensure CLAUDE.md accurately reflects the project's architecture, implementation details, and development guidelines. **IMPORTANT**: CLAUDE.md must remain under 20,000 characters total.
+Review the current changes and ensure both CLAUDE.md and AGENTS.md accurately reflect the project's architecture, implementation details, and development guidelines. **IMPORTANT**: Each file must remain under 20,000 characters total.
 
 1. Parse the update mode from arguments:
    - `--check-only`: Only report what needs updating without making changes
-   - `--auto-update`: Make necessary updates to CLAUDE.md (default)
+   - `--auto-update`: Make necessary updates to CLAUDE.md and AGENTS.md (default)
    - Arguments: $ARGUMENTS
 
 2. Analyze the git diff to understand architectural and implementation changes:
@@ -52,9 +52,9 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
      * Validating design decisions
      * Suggesting improvements to module structure
 
-3. Read the current CLAUDE.md and identify sections that may need updates:
+3. Read the current CLAUDE.md and AGENTS.md and identify sections that may need updates:
 
-   **Critical sections to check**:
+   **Critical sections to check in CLAUDE.md**:
    - **Project Structure**: New modules, renamed directories, reorganization
    - **Core Commands**: New commands, changed options, removed functionality
    - **Available Agents**: Claude Code agents in `.claude/agents/` directory
@@ -66,6 +66,13 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - **Development Guidelines**: Updated practices or requirements
    - **Example Formats**: ccpm.toml and ccpm.lock format changes
    - **Build and Release**: New build steps or requirements
+
+   **Key sections to check in AGENTS.md**:
+   - **Scope & Tone**: Ensure the introduction reflects current Codex workflows and guardrails
+   - **Architecture & Workflow Summaries**: Confirm explanations stay in sync with CLAUDE.md updates
+   - **Testing & Development Guidance**: Keep instructions aligned with current practices
+   - **Path Conventions**: Ensure `.claude/...` and Windows path examples remain accurate
+   - **Cross-References**: Verify references to CLAUDE.md or other docs remain correct
 
 4. Perform systematic checks:
 
@@ -81,6 +88,12 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Verify agent descriptions match their actual capabilities
    - Document agent delegation patterns (which agents call others)
    - Include agent specializations and when to use each
+
+   **AGENTS.md Verification**:
+   - Ensure the document's scope stays focused on Codex-relevant architecture and workflows
+   - Confirm cross-references to CLAUDE.md and other docs are accurate
+   - Align development and testing guidance with updates captured in CLAUDE.md
+   - Verify path conventions and platform notes mirror current implementation requirements
 
    **Dependency Verification**:
    - Check Cargo.toml for dependency changes
@@ -100,9 +113,9 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Ensure CI/CD matrix information is current
    - Update test command examples if changed
 
-5. Based on the changes, determine what CLAUDE.md updates are needed:
+5. Based on the changes, determine what updates are needed in CLAUDE.md and AGENTS.md:
 
-   **Types of updates to make**:
+   **Updates to consider for CLAUDE.md**:
    - Add new modules to project structure
    - Update module responsibilities if refactored
    - Document available Claude Code agents and their roles
@@ -116,6 +129,12 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Update error handling patterns
    - Add or update agent documentation section
 
+   **Updates to consider for AGENTS.md**:
+   - Refresh the Codex-focused overview when workflows or guardrails change
+   - Update architecture, testing, or workflow notes to mirror significant project shifts
+   - Adjust path conventions, platform notes, or security guidelines shared with CLAUDE.md
+   - Capture new lessons or constraints applicable to Codex contributors
+
 6. Apply updates based on mode:
 
    **Check-only mode (--check-only)**:
@@ -123,6 +142,7 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - List modules not documented or incorrectly described
    - Show dependencies missing from documentation
    - Identify outdated implementation details
+   - Highlight AGENTS.md sections requiring updates alongside CLAUDE.md findings
    - Provide suggested updates without applying them
 
    **Auto-update mode (--auto-update or default)**:
@@ -131,25 +151,26 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Update command documentation to match CLI
    - Fix implementation detail inaccuracies
    - Add documentation for new architectural decisions
+   - Update AGENTS.md to mirror Codex-relevant changes captured in CLAUDE.md
    - Preserve existing valuable context and lessons learned
 
-7. Maintain CLAUDE.md quality and purpose:
-   - **CRITICAL**: Keep file under 20,000 characters total
-   - Keep focus on helping AI assistants understand the codebase
-   - Preserve "Lessons Learned" and "Design Decisions" sections
-   - Maintain detailed explanations of complex algorithms
-   - Keep security rules prominent and clear
-   - Ensure cross-platform considerations are documented
+7. Maintain CLAUDE.md and AGENTS.md quality and purpose:
+   - **CRITICAL**: Keep each file under 20,000 characters total
+   - Keep focus on helping AI assistants understand the codebase and Codex workflows
+   - Preserve "Lessons Learned" and "Design Decisions" sections in CLAUDE.md, and Codex guidance in AGENTS.md
+   - Maintain detailed explanations of complex algorithms and resource flows
+   - Keep security rules and platform considerations prominent and clear
+   - Ensure cross-platform considerations are documented across both files
    - Don't remove historical context that explains "why"
-   - If file exceeds 20k characters, prioritize removing:
+   - If either file exceeds 20k characters, prioritize removing:
      * Verbose examples (use concise versions)
      * Redundant information covered in other docs
      * Overly detailed dependency lists
      * Long code examples (reference files instead)
 
-8. Special sections in CLAUDE.md to verify:
+8. Special sections to verify:
 
-   **Available Claude Code Agents**:
+   **Available Claude Code Agents (CLAUDE.md)**:
    - Document all agents in `.claude/agents/` directory
    - Include agent descriptions and specializations
    - Document delegation patterns between agents
@@ -160,6 +181,12 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
      * `rust-doc-standard`/`rust-doc-advanced`: Documentation and docstrings
      * `rust-test-standard`/`rust-test-advanced`: Test fixes and test infrastructure
      * `rust-troubleshooter-standard`/`rust-troubleshooter-advanced`: Debugging and troubleshooting
+
+   **Codex Guidance (AGENTS.md)**:
+   - Keep the Codex overview aligned with current project goals and constraints
+   - Ensure architecture, workflow, and testing notes stay synchronized with CLAUDE.md updates
+   - Reinforce critical path conventions and security considerations that Codex contributors must follow
+   - Verify cross-references to CLAUDE.md and other docs remain accurate
 
    **Implementation Lessons Learned**:
    - Keep valuable insights from development
@@ -188,12 +215,12 @@ Review the current changes and ensure CLAUDE.md accurately reflects the project'
    - Validate that module descriptions align with code comments
 
 10. Final character count check:
-   - After all edits, check the file size with `wc -c CLAUDE.md`
-   - If over 20,000 characters, further condense:
+   - After all edits, check the file sizes with `wc -c CLAUDE.md` and `wc -c AGENTS.md`
+   - If either exceeds 20,000 characters, further condense:
      * Remove verbose sections
      * Use bullet points instead of paragraphs
      * Reference other docs instead of duplicating content
-   - Target: Keep under 20,000 characters while maintaining essential information
+   - Target: Keep each file under 20,000 characters while maintaining essential information
 
 Examples of changes requiring CLAUDE.md updates:
 - Adding new `src/` module → Update Project Structure and Module Structure
@@ -207,7 +234,14 @@ Examples of changes requiring CLAUDE.md updates:
 - Discovering new cross-platform issue → Update platform considerations
 - Learning from bug/issue → Add to Implementation Lessons Learned
 
+Examples of changes requiring AGENTS.md updates:
+- Revising Codex workflows or guardrails → Update the introductory scope
+- Significant architecture or dependency changes → Synchronize summaries with CLAUDE.md
+- Shifting testing or development practices → Refresh Testing & Development sections
+- Adjusting security or path handling expectations → Update related notes for Codex contributors
+- Documentation restructuring elsewhere → Keep cross-references accurate
+
 Examples of usage:
-- `/update-claude-md` - automatically update CLAUDE.md based on changes
-- `/update-claude-md --check-only` - report what needs updating without changes
-- `/update-claude-md --auto-update` - explicitly update CLAUDE.md (same as default)
+- `/update-claude-md` - automatically update CLAUDE.md and AGENTS.md based on changes
+- `/update-claude-md --check-only` - report what needs updating in both files without changes
+- `/update-claude-md --auto-update` - explicitly update CLAUDE.md and AGENTS.md (same as default)

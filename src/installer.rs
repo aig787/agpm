@@ -53,6 +53,7 @@
 
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 /// Type alias for complex installation result tuples to improve code readability.
 ///
@@ -177,6 +178,7 @@ use std::fs;
 /// use ccpm::installer::install_resource;
 /// use ccpm::lockfile::LockedResource;
 /// use ccpm::cache::Cache;
+/// use ccpm::core::ResourceType;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -190,6 +192,8 @@ use std::fs;
 ///     resolved_commit: Some("abc123".to_string()),
 ///     checksum: "sha256:...".to_string(),
 ///     installed_at: ".claude/agents/example.md".to_string(),
+///     dependencies: vec![],
+///     resource_type: ResourceType::Agent,
 /// };
 ///
 /// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
@@ -238,44 +242,55 @@ pub async fn install_resource(
     };
 
     let new_content = if let Some(source_name) = &entry.source {
-        // Remote resource - use cache (with optional force refresh)
         let url = entry
             .url
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Remote resource {} has no URL", entry.name))?;
+            .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
 
-        // Always use SHA-based worktree creation
-        // The resolver should have already resolved all versions to SHAs
-        let sha = entry
+        // Check if this is a local directory source (no SHA or empty SHA)
+        let is_local_source = entry
             .resolved_commit
             .as_deref()
-            .filter(|commit| *commit != "local")
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+            .map(|commit| commit.is_empty())
+            .unwrap_or(true);
+
+        let cache_dir = if is_local_source {
+            // Local directory source - use the URL as the path directly
+            PathBuf::from(url)
+        } else {
+            // Git-based resource - use SHA-based worktree creation
+            let sha = entry
+                .resolved_commit
+                .as_deref()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Resource {} missing resolved commit SHA. Run 'ccpm update' to regenerate lockfile.",
+                        entry.name
+                    )
+                })?;
+
+            // Validate SHA format
+            if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow::anyhow!(
+                    "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
+                    sha,
                     entry.name
-                )
-            })?;
+                ));
+            }
 
-        // Validate SHA format
-        if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(anyhow::anyhow!(
-                "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
-                sha,
-                entry.name
-            ));
-        }
-
-        let mut cache_dir = cache
-            .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
-            .await?;
-
-        if force_refresh {
-            let _ = cache.cleanup_worktree(&cache_dir).await;
-            cache_dir = cache
+            let mut cache_dir = cache
                 .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
                 .await?;
-        }
+
+            if force_refresh {
+                let _ = cache.cleanup_worktree(&cache_dir).await;
+                cache_dir = cache
+                    .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
+                    .await?;
+            }
+
+            cache_dir
+        };
 
         // Read the content from the source
         let source_path = cache_dir.join(&entry.path);
@@ -374,6 +389,7 @@ pub async fn install_resource(
 /// use ccpm::installer::install_resource_with_progress;
 /// use ccpm::lockfile::LockedResource;
 /// use ccpm::cache::Cache;
+/// use ccpm::core::ResourceType;
 /// use ccpm::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
@@ -389,6 +405,8 @@ pub async fn install_resource(
 ///     resolved_commit: Some("abc123".to_string()),
 ///     checksum: "sha256:...".to_string(),
 ///     installed_at: ".claude/agents/example.md".to_string(),
+///     dependencies: vec![],
+///     resource_type: ResourceType::Agent,
 /// };
 ///
 /// let (installed, checksum) = install_resource_with_progress(
@@ -1101,8 +1119,8 @@ pub async fn install_resources_parallel_with_progress(
 /// use ccpm::installer::ResourceFilter;
 ///
 /// let updates = vec![
-///     ("agent1".to_string(), "v1.0.0".to_string(), "v1.1.0".to_string()),
-///     ("tool2".to_string(), "v2.1.0".to_string(), "v2.2.0".to_string()),
+///     ("agent1".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
+///     ("tool2".to_string(), Some("community".to_string()), "v2.1.0".to_string(), "v2.2.0".to_string()),
 /// ];
 /// let filter = ResourceFilter::Updated(updates);
 /// // This will install only agent1 and tool2
@@ -1130,9 +1148,10 @@ pub enum ResourceFilter {
     /// This option processes only the resources specified in the update list,
     /// allowing for efficient incremental updates. Each tuple contains:
     /// - Resource name
+    /// - Source name (None for local resources)
     /// - Old version (for tracking)
     /// - New version (to install)
-    Updated(Vec<(String, String, String)>),
+    Updated(Vec<(String, Option<String>, String, String)>),
 }
 
 /// Resource installation function supporting multiple progress configurations.
@@ -1243,7 +1262,7 @@ pub enum ResourceFilter {
 /// # let manifest = Manifest::default();
 /// # let project_dir = Path::new(".");
 /// # let cache = Cache::new()?;
-/// let updates = vec![("agent1".to_string(), "v1.0".to_string(), "v1.1".to_string())];
+/// let updates = vec![("agent1".to_string(), None, "v1.0".to_string(), "v1.1".to_string())];
 ///
 /// let (count, _checksums) = install_resources(
 ///     ResourceFilter::Updated(updates),
@@ -1283,9 +1302,13 @@ pub async fn install_resources(
         ResourceFilter::Updated(ref updates) => {
             // Collect only the updated entries
             let mut entries = Vec::new();
-            for (name, _, _) in updates {
+            for (name, source, _, _) in updates {
                 if let Some((resource_type, entry)) =
-                    ResourceIterator::find_resource_by_name(lockfile, name)
+                    ResourceIterator::find_resource_by_name_and_source(
+                        lockfile,
+                        name,
+                        source.as_deref(),
+                    )
                 {
                     let target_dir = resource_type.get_target_dir(&manifest.target);
                     entries.push((entry.clone(), target_dir.to_string()));
@@ -1735,9 +1758,9 @@ pub async fn install_resources_with_dynamic_progress(
 ///
 /// // Define which resources to update
 /// let updates = vec![
-///     ("ai-agent".to_string(), "v1.0.0".to_string(), "v1.1.0".to_string()),
-///     ("helper-tool".to_string(), "v2.0.0".to_string(), "v2.1.0".to_string()),
-///     ("data-processor".to_string(), "v1.5.0".to_string(), "v1.6.0".to_string()),
+///     ("ai-agent".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
+///     ("helper-tool".to_string(), Some("community".to_string()), "v2.0.0".to_string(), "v2.1.0".to_string()),
+///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
 /// let count = install_updated_resources(
@@ -1791,7 +1814,7 @@ pub async fn install_resources_with_dynamic_progress(
 /// The function uses atomic error handling - if any resource fails, the entire
 /// operation fails and detailed error information is provided.
 pub async fn install_updated_resources(
-    updates: &[(String, String, String)], // (name, old_version, new_version)
+    updates: &[(String, Option<String>, String, String)], // (name, source, old_version, new_version)
     lockfile: &LockFile,
     manifest: &Manifest,
     project_dir: &Path,
@@ -1807,9 +1830,9 @@ pub async fn install_updated_resources(
 
     // Collect all entries to install
     let mut entries_to_install = Vec::new();
-    for (name, _, _) in updates {
+    for (name, source, _, _) in updates {
         if let Some((resource_type, entry)) =
-            ResourceIterator::find_resource_by_name(lockfile, name)
+            ResourceIterator::find_resource_by_name_and_source(lockfile, name, source.as_deref())
         {
             let target_dir = resource_type.get_target_dir(&manifest.target);
             entries_to_install.push((entry.clone(), target_dir.to_string()));
@@ -2539,6 +2562,8 @@ mod tests {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at: String::new(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }
         } else {
             LockedResource {
@@ -2550,6 +2575,8 @@ mod tests {
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:test".to_string(),
                 installed_at: String::new(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
             }
         }
     }
@@ -2800,6 +2827,7 @@ mod tests {
         // Define updates (only agent is updated)
         let updates = vec![(
             "test-agent".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v1.1.0".to_string(),
         )];
@@ -2845,6 +2873,7 @@ mod tests {
 
         let updates = vec![(
             "test-command".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v2.0.0".to_string(),
         )];
@@ -3055,6 +3084,7 @@ mod tests {
         // Try to update a resource that doesn't exist
         let updates = vec![(
             "non-existent".to_string(),
+            None, // source
             "v1.0.0".to_string(),
             "v2.0.0".to_string(),
         )];

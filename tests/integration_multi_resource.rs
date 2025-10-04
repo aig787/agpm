@@ -1,21 +1,22 @@
 use anyhow::Result;
-use std::fs;
+use std::fs as sync_fs;
 use std::path::Path;
+use tokio::fs;
 use tracing::debug;
 
 mod common;
 mod fixtures;
 use common::TestProject;
 
-#[test]
-fn test_install_multiple_resources_with_versions() -> Result<()> {
+#[tokio::test]
+async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Initialize test logging
     ccpm::test_utils::init_test_logging(None);
 
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create a source repository using test utilities
-    let source_repo = project.create_source_repo("test_repo")?;
+    let source_repo = project.create_source_repo("test_repo").await?;
 
     // Create initial resources and commit (v1.0.0)
     create_v1_resources(&source_repo.path)?;
@@ -108,7 +109,7 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
         repo_url
     );
 
-    project.write_manifest(&manifest_content)?;
+    project.write_manifest(&manifest_content).await?;
 
     // Log the manifest content and working directory for debugging
     debug!("Generated manifest content:\n{}", manifest_content);
@@ -125,19 +126,23 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     verify_file_contains(
         &project.project_path().join(".claude/agents/alpha.md"),
         "Agent Alpha v1.0.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/agents/beta.md"),
         "Agent Beta v2.0.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/agents/gamma.md"),
         "Agent Gamma v4.0.0",
-    )?; // v4.0.0
+    )
+    .await?; // v4.0.0
     verify_file_contains(
         &project.project_path().join(".claude/agents/delta.md"),
         "Agent Delta v3.1.0",
-    )?;
+    )
+    .await?;
 
     // Check snippets (4 resources)
     // Files use basename from path, not dependency name
@@ -146,61 +151,72 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
             .project_path()
             .join(".claude/ccpm/snippets/snippet1.md"),
         "Snippet 1 v1.0.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/snippets/snippet2.md"),
         "Snippet 2 v1.1.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/snippets/snippet3.md"),
         "Snippet 3 v3.0.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/snippets/snippet4.md"),
         "Snippet 4 v4.0.0",
-    )?;
+    )
+    .await?;
 
     // Check commands (4 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
         &project.project_path().join(".claude/commands/deploy.md"),
         "Deploy Command v2.1.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/commands/build.md"),
         "Build Command v3.2.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/commands/test.md"),
         "Test Command v3.2.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/commands/lint.md"),
         "Lint Command v4.0.0",
-    )?;
+    )
+    .await?;
 
     // Check scripts (3 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
         &project.project_path().join(".claude/ccpm/scripts/build.sh"),
         "Build Script v1.2.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project.project_path().join(".claude/ccpm/scripts/test.js"),
         "Test Script v2.2.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/scripts/deploy.py"),
         "Deploy Script v3.0.0",
-    )?;
+    )
+    .await?;
 
     // Check hooks (2 resources)
     verify_file_contains(
@@ -208,13 +224,15 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
             .project_path()
             .join(".claude/ccpm/hooks/pre-commit.json"),
         "Pre-commit hook v2.1.0",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/hooks/post-commit.json"),
         "Post-commit hook v3.1.0",
-    )?;
+    )
+    .await?;
 
     // Check MCP servers (3 resources)
     verify_file_contains(
@@ -222,23 +240,26 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
             .project_path()
             .join(".claude/ccpm/mcp-servers/filesystem.json"),
         "\"version\": \"v2.2.0\"",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/mcp-servers/postgres.json"),
         "\"version\": \"v3.0.0\"",
-    )?;
+    )
+    .await?;
     verify_file_contains(
         &project
             .project_path()
             .join(".claude/ccpm/mcp-servers/redis.json"),
         "\"version\": \"v4.0.0\"",
-    )?;
+    )
+    .await?;
 
     // Verify lockfile was created
     assert!(project.project_path().join("ccpm.lock").exists());
-    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock"))?;
+    let lockfile = fs::read_to_string(project.project_path().join("ccpm.lock")).await?;
 
     // Check that lockfile contains all 20 resources
     assert!(lockfile.contains("[[agents]]"));
@@ -300,9 +321,9 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
 }
 
 // Helper function to verify file contains expected content
-fn verify_file_contains(path: &Path, expected: &str) -> Result<()> {
+async fn verify_file_contains(path: &Path, expected: &str) -> Result<()> {
     assert!(path.exists(), "File should exist: {:?}", path);
-    let content = fs::read_to_string(path)?;
+    let content = fs::read_to_string(path).await?;
     assert!(
         content.contains(expected),
         "File {:?} should contain '{}', but got: {}",
@@ -315,58 +336,58 @@ fn verify_file_contains(path: &Path, expected: &str) -> Result<()> {
 
 fn create_v1_resources(repo_dir: &Path) -> Result<()> {
     // Create agents
-    fs::create_dir_all(repo_dir.join("agents"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("agents"))?;
+    sync_fs::write(
         repo_dir.join("agents/alpha.md"),
         "# Agent Alpha v1.0.0\n\nInitial alpha agent",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/beta.md"),
         "# Agent Beta v1.0.0\n\nInitial beta agent",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v1.0.0\n\nInitial gamma agent",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/delta.md"),
         "# Agent Delta v1.0.0\n\nInitial delta agent",
     )?;
 
     // Create snippets
-    fs::create_dir_all(repo_dir.join("snippets"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("snippets"))?;
+    sync_fs::write(
         repo_dir.join("snippets/snippet1.md"),
         "# Snippet 1 v1.0.0\n\nInitial snippet one",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet2.md"),
         "# Snippet 2 v1.0.0\n\nInitial snippet two",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet3.md"),
         "# Snippet 3 v1.0.0\n\nInitial snippet three",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet4.md"),
         "# Snippet 4 v1.0.0\n\nInitial snippet four",
     )?;
 
     // Create commands
-    fs::create_dir_all(repo_dir.join("commands"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("commands"))?;
+    sync_fs::write(
         repo_dir.join("commands/deploy.md"),
         "# Deploy Command v1.0.0\n\nInitial deploy",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/build.md"),
         "# Build Command v1.0.0\n\nInitial build",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/test.md"),
         "# Test Command v1.0.0\n\nInitial test",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/lint.md"),
         "# Lint Command v1.0.0\n\nInitial lint",
     )?;
@@ -376,7 +397,7 @@ fn create_v1_resources(repo_dir: &Path) -> Result<()> {
 
 fn update_snippets_v1_1(repo_dir: &Path) -> Result<()> {
     // Update snippet2 only
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet2.md"),
         "# Snippet 2 v1.1.0\n\nUpdated snippet two",
     )?;
@@ -385,16 +406,16 @@ fn update_snippets_v1_1(repo_dir: &Path) -> Result<()> {
 
 fn update_scripts_v1_2(repo_dir: &Path) -> Result<()> {
     // Add scripts
-    fs::create_dir_all(repo_dir.join("scripts"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("scripts"))?;
+    sync_fs::write(
         repo_dir.join("scripts/build.sh"),
         "#!/bin/bash\n# Build Script v1.2.0\necho 'Building...'",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("scripts/test.js"),
         "// Test Script v1.2.0\nconsole.log('Testing...');",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("scripts/deploy.py"),
         "#!/usr/bin/env python\n# Deploy Script v1.2.0\nprint('Deploying...')",
     )?;
@@ -403,11 +424,11 @@ fn update_scripts_v1_2(repo_dir: &Path) -> Result<()> {
 
 fn update_agents_v2(repo_dir: &Path) -> Result<()> {
     // Update beta and gamma agents
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/beta.md"),
         "# Agent Beta v2.0.0\n\nMajor update to beta",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v2.0.0\n\nMajor update to gamma",
     )?;
@@ -416,22 +437,22 @@ fn update_agents_v2(repo_dir: &Path) -> Result<()> {
 
 fn update_command_v2_1(repo_dir: &Path) -> Result<()> {
     // Update deploy command and add hooks
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/deploy.md"),
         "# Deploy Command v2.1.0\n\nEnhanced deploy",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v2.1.0\n\nGamma v2.1.0",
     )?;
 
     // Add hooks
-    fs::create_dir_all(repo_dir.join("hooks"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("hooks"))?;
+    sync_fs::write(
         repo_dir.join("hooks/pre-commit.json"),
         r#"{"events": ["PreToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Pre-commit hook'", "description": "Pre-commit hook v2.1.0"}"#,
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("hooks/post-commit.json"),
         r#"{"events": ["PostToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Post-commit hook'", "description": "Post-commit hook v2.1.0"}"#,
     )?;
@@ -440,21 +461,21 @@ fn update_command_v2_1(repo_dir: &Path) -> Result<()> {
 
 fn update_mcp_v2_2(repo_dir: &Path) -> Result<()> {
     // Update test script and add MCP servers
-    fs::write(
+    sync_fs::write(
         repo_dir.join("scripts/test.js"),
         "// Test Script v2.2.0\nconsole.log('Testing v2.2...');",
     )?;
 
-    fs::create_dir_all(repo_dir.join("mcp-servers"))?;
-    fs::write(
+    sync_fs::create_dir_all(repo_dir.join("mcp-servers"))?;
+    sync_fs::write(
         repo_dir.join("mcp-servers/filesystem.json"),
         r#"{"name": "filesystem", "version": "v2.2.0", "type": "filesystem"}"#,
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("mcp-servers/postgres.json"),
         r#"{"name": "postgres", "version": "v2.2.0", "type": "database"}"#,
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("mcp-servers/redis.json"),
         r#"{"name": "redis", "version": "v2.2.0", "type": "cache"}"#,
     )?;
@@ -463,15 +484,15 @@ fn update_mcp_v2_2(repo_dir: &Path) -> Result<()> {
 
 fn update_major_v3(repo_dir: &Path) -> Result<()> {
     // Major updates to multiple resources
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet3.md"),
         "# Snippet 3 v3.0.0\n\nMajor snippet three",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("scripts/deploy.py"),
         "#!/usr/bin/env python\n# Deploy Script v3.0.0\nprint('Deploying v3...')",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("mcp-servers/postgres.json"),
         r#"{"name": "postgres", "version": "v3.0.0", "type": "database", "features": ["ssl"]}"#,
     )?;
@@ -480,11 +501,11 @@ fn update_major_v3(repo_dir: &Path) -> Result<()> {
 
 fn update_additional_v3_1(repo_dir: &Path) -> Result<()> {
     // Update delta agent and post-commit hook
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/delta.md"),
         "# Agent Delta v3.1.0\n\nDelta enhanced v3.1",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("hooks/post-commit.json"),
         r#"{"events": ["PostToolUse"], "matcher": ".*", "type": "command", "command": "echo 'Post-commit v3.1'", "description": "Post-commit hook v3.1.0"}"#,
     )?;
@@ -493,11 +514,11 @@ fn update_additional_v3_1(repo_dir: &Path) -> Result<()> {
 
 fn update_commands_v3_2(repo_dir: &Path) -> Result<()> {
     // Add new commands
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/build.md"),
         "# Build Command v3.2.0\n\nBuild automation v3.2",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/test.md"),
         "# Test Command v3.2.0\n\nTest runner v3.2",
     )?;
@@ -506,37 +527,37 @@ fn update_commands_v3_2(repo_dir: &Path) -> Result<()> {
 
 fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
     // Breaking changes v4.0.0
-    fs::write(
+    sync_fs::write(
         repo_dir.join("snippets/snippet4.md"),
         "# Snippet 4 v4.0.0\n\nBreaking snippet four",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("commands/lint.md"),
         "# Lint Command v4.0.0\n\nLinter v4.0",
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("mcp-servers/redis.json"),
         r#"{"name": "redis", "version": "v4.0.0", "type": "cache", "breaking": true}"#,
     )?;
-    fs::write(
+    sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v4.0.0\n\nGamma breaking v4.0",
     )?;
     Ok(())
 }
 
-#[test]
-fn test_install_with_version_conflicts() -> Result<()> {
+#[tokio::test]
+async fn test_install_with_version_conflicts() -> Result<()> {
     // Initialize test logging
     ccpm::test_utils::init_test_logging(None);
 
-    let project = TestProject::new()?;
+    let project = TestProject::new().await?;
 
     // Create a source repository using test utilities
-    let source_repo = project.create_source_repo("conflict_repo")?;
+    let source_repo = project.create_source_repo("conflict_repo").await?;
 
     // Create resources with dependencies
-    fs::create_dir_all(source_repo.path.join("agents"))?;
+    fs::create_dir_all(source_repo.path.join("agents")).await?;
     fs::write(
         source_repo.path.join("agents/dependent.md"),
         r#"---
@@ -546,13 +567,15 @@ dependencies:
 # Dependent Agent
 
 Requires snippet-base v1.0.0"#,
-    )?;
+    )
+    .await?;
 
-    fs::create_dir_all(source_repo.path.join("snippets"))?;
+    fs::create_dir_all(source_repo.path.join("snippets")).await?;
     fs::write(
         source_repo.path.join("snippets/base.md"),
         "# Base Snippet v1.0.0\n\nBase functionality",
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Initial with v1.0.0")?;
     source_repo.tag_version("v1.0.0")?;
@@ -561,7 +584,8 @@ Requires snippet-base v1.0.0"#,
     fs::write(
         source_repo.path.join("snippets/base.md"),
         "# Base Snippet v2.0.0\n\nBreaking changes",
-    )?;
+    )
+    .await?;
 
     source_repo.commit_all("Update to v2.0.0")?;
     source_repo.tag_version("v2.0.0")?;
@@ -581,7 +605,7 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
         repo_url
     );
 
-    fs::write(project.project_path().join("ccpm.toml"), &manifest_content)?;
+    fs::write(project.project_path().join("ccpm.toml"), &manifest_content).await?;
 
     // Log the manifest content and working directory for debugging
     debug!(
@@ -603,7 +627,7 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
             .exists()
     );
     let snippet_content =
-        fs::read_to_string(project.project_path().join(".claude/ccpm/snippets/base.md"))?;
+        fs::read_to_string(project.project_path().join(".claude/ccpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
     assert!(
@@ -613,7 +637,7 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
             .exists()
     );
     let agent_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/dependent.md"))?;
+        fs::read_to_string(project.project_path().join(".claude/agents/dependent.md")).await?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));
 
     Ok(())

@@ -8,16 +8,19 @@ dependency management, similar to Cargo.
 
 ## Features
 
-- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo/npm with staleness detection
+- 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo with auto-update
 - 🌐 **Git-based distribution** - Install from any Git repository (GitHub, GitLab, Bitbucket)
 - 🚀 **No central registry** - Fully decentralized approach
-- 🔒 **Lockfile staleness detection** - Automatic detection of outdated or inconsistent lockfiles
+- 🔒 **Cargo-style lockfile handling** - Auto-updates by default, strict validation with `--frozen`
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🧹 **Automatic artifact cleanup** - Old files removed when paths change
 - ⚠️ **Path conflict detection** - Prevents multiple dependencies from overwriting the same file
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
+- 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
+- 🛡️ **Circular dependency detection** - Prevents circular references with comprehensive error reporting
+- 🧩 **Intelligent conflict resolution** - Automatic version resolution with transparent logging
 
 ## Quick Start
 
@@ -71,17 +74,11 @@ react-utils = { source = "community", path = "snippets/react/*.md", version = "^
 ### Install Dependencies
 
 ```bash
-# Install all dependencies and generate lockfile
+# Install all dependencies (auto-updates lockfile like Cargo)
 ccpm install
 
-# Use exact lockfile versions (for CI/CD)
+# Use exact lockfile versions (for CI/CD - like cargo build --locked)
 ccpm install --frozen
-
-# Force installation when lockfile is stale
-ccpm install --force
-
-# Regenerate lockfile from scratch
-ccpm install --regenerate
 
 # Control parallelism (default: max(10, 2 × CPU cores))
 ccpm install --max-parallel 8
@@ -108,7 +105,139 @@ ccpm add dep script ../shared/scripts/build.sh
 ccpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
 ```
 
+### Dependency Validation
+
+CCPM provides comprehensive validation and automatic conflict resolution:
+
+```bash
+# Basic manifest validation
+ccpm validate
+
+# Full validation with all checks
+ccpm validate --resolve --sources --paths --check-lock
+
+# JSON output for CI/CD integration
+ccpm validate --format json
+```
+
+#### Transitive Dependencies and Conflict Resolution
+
+CCPM supports **transitive dependencies** - when your dependencies have their own dependencies. Resources can declare dependencies in their metadata, and CCPM automatically resolves the entire dependency tree.
+
+**What is a Conflict?**
+
+A conflict occurs when the same resource (same source and path) is required at different versions:
+- **Direct conflict**: Your manifest requires `helper.md@v1.0.0` and `helper.md@v2.0.0`
+- **Transitive conflict**: Agent A depends on `helper.md@v1.0.0`, Agent B depends on `helper.md@v2.0.0`
+
+**Automatic Resolution Strategy:**
+
+When conflicts are detected, CCPM automatically resolves them:
+1. **Specific over "latest"**: If one version is specific and another is "latest", use the specific version
+2. **Higher version**: When both are specific versions, use the higher version
+3. **Transparent logging**: All conflict resolutions are logged for visibility
+
+**Example Conflict Resolution:**
+```text
+Direct dependencies:
+  - app-agent requires helper.md v1.0.0
+  - tool-agent requires helper.md v2.0.0
+→ Resolved: Using helper.md v2.0.0 (higher version)
+
+Transitive dependencies:
+  - agent-a → depends on → helper.md v1.5.0
+  - agent-b → depends on → helper.md v2.0.0
+→ Resolved: Using helper.md v2.0.0 (higher version)
+```
+
+**When Auto-Resolution Fails:**
+
+If constraints have no compatible version, installation stops with an error similar to:
+
+```text
+Error: Version conflict for agents/helper.md
+  requested: v1.0.0 (manifest)
+  requested: v2.0.0 (transitive via agents/deploy.md)
+  resolution: no compatible tag satisfies both constraints
+```
+
+Use `ccpm validate --resolve --format json` or `RUST_LOG=debug ccpm install` to see the exact dependency chain. Typical fixes:
+- Pin the manifest entry to a single version (`version = "v2.0.0"`) and run `ccpm install` to auto-update.
+- Split competing resources into separate manifests or disable the conflicting dependency in one branch.
+- If a transitive dependency is too new, override it by forking the source repo or requesting an upstream fix.
+- For duplicate install paths reported during expansion, add `filename` or `target` overrides so each resource installs cleanly.
+
+**Circular Dependencies:**
+
+CCPM detects and prevents circular dependencies in the dependency graph:
+```text
+Error: Circular dependency detected: A → B → C → A
+```
+
+**No Conflicts:**
+
+When there are no conflicts, all dependencies are installed as requested. The system builds a complete dependency graph and installs resources in topological order (dependencies before dependents).
+
 See the [Command Reference](docs/command-reference.md#add-dependency) for all supported dependency formats.
+
+### Declaring Dependencies in Resource Files
+
+Resources can declare their own dependencies within their files, creating a complete dependency graph:
+
+**Markdown files (.md)** use YAML frontmatter:
+```markdown
+---
+title: My Agent
+description: An example agent with dependencies
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/utils.md
+      version: v2.0.0
+---
+
+# Agent content here
+```
+
+**JSON files (.json)** use a top-level `dependencies` field:
+```json
+{
+  "events": ["SessionStart"],
+  "type": "command",
+  "command": "echo 'Starting session'",
+  "dependencies": {
+    "commands": [
+      {
+        "path": "commands/setup.md",
+        "version": "v1.0.0"
+      }
+    ]
+  }
+}
+```
+
+**Key Features:**
+- Dependencies inherit the source from their parent resource
+- Version is optional - defaults to parent's version if not specified
+- Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
+- Graph-based resolution with topological ordering ensures correct installation order
+- Circular dependency detection prevents infinite loops
+- Override transitive version mismatches by declaring an explicit `version` in the resource metadata or by pinning the parent entry in `ccpm.toml`
+
+**Lockfile Format:**
+
+Dependencies are tracked in `ccpm.lock` using the format `resource_type/name@version`:
+```toml
+[[commands]]
+name = "my-command"
+path = "commands/my-command.md"
+dependencies = [
+    "agents/helper@v1.0.0",
+    "snippets/utils@v2.0.0"
+]
+```
 
 ## Core Commands
 
@@ -147,6 +276,7 @@ CCPM manages six types of resources:
 - 🔧 **[Resources Guide](docs/resources.md)** - Working with different resource types
 - 🔢 **[Versioning Guide](docs/versioning.md)** - Version constraints and Git references
 - ⚙️ **[Configuration Guide](docs/configuration.md)** - Global config and authentication
+- 🗂️ **[Manifest Reference](docs/manifest-reference.md)** - Field-by-field manifest schema and CLI mapping
 - 🏗️ **[Architecture](docs/architecture.md)** - Technical details and design decisions
 - ❓ **[FAQ](docs/faq.md)** - Frequently asked questions
 - 🐛 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions

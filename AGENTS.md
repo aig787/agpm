@@ -1,6 +1,11 @@
-# CLAUDE.md - CCPM Project Context
+# AGENTS.md - CCPM Project Context (Codex)
 
 **IMPORTANT**: This file must remain under 20,000 characters.
+
+This document mirrors the CCPM context from `CLAUDE.md` but focuses on architecture, workflows, and guardrails that are
+especially relevant when contributing through Codex. CCPM is still the Claude Code Package Manager, so references to
+`.claude/...` paths and Claude-specific resource types remain accurate; Codex contributors should respect them when
+working in this repository.
 
 ## Overview
 
@@ -22,14 +27,14 @@ reproducible installations from Git repositories.
 
 ```
 src/
-├── cli/         # Command implementations (install, update, outdated, upgrade, etc.)
+├── cli/         # Command implementations
 ├── cache/       # Instance-level caching + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
-├── hooks/       # Claude Code hooks
-├── installer.rs # Parallel resource installation + artifact cleanup
-├── lockfile/    # ccpm.lock management + staleness detection
+├── hooks/       # Hook integrations for Claude Code environments
+├── installer.rs # Parallel resource installation
+├── lockfile/    # ccpm.lock management
 ├── manifest/    # ccpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
@@ -39,57 +44,16 @@ src/
 ├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
 ├── resolver/    # Dependency + version resolution
-│   ├── mod.rs                # Core resolution logic with transitive support + relative path handling
+│   ├── mod.rs                # Core dependency resolution logic with transitive support
 │   ├── dependency_graph.rs   # Graph-based transitive dependency resolution
 │   ├── version_resolution.rs # Version constraint handling
 │   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
 ├── test_utils/  # Test infrastructure
-├── upgrade/     # Self-update functionality
-│   ├── mod.rs          # Upgrade orchestration
-│   ├── self_updater.rs # Binary update logic
-│   ├── version_check.rs # Version comparison
-│   ├── backup.rs       # Backup management
-│   ├── config.rs       # Update configuration
-│   ├── verification.rs # Checksum verification
-│   └── tests.rs        # Upgrade tests
 ├── utils/       # Cross-platform utilities + progress management
-├── version/     # Version constraints + semver parsing
+├── version/     # Version constraints
 └── tests/       # Integration tests
 ```
-
-## Rust Agents
-
-### Standard (Fast)
-
-- `rust-expert-standard`: Implementation, refactoring
-- `rust-linting-standard`: Formatting, clippy
-- `rust-doc-standard`: Documentation
-- `rust-test-standard`: Test fixes
-- `rust-troubleshooter-standard`: Debugging
-
-### Advanced (Complex)
-
-- `rust-expert-advanced`: Architecture, optimization
-- `rust-linting-advanced`: Complex refactoring
-- `rust-doc-advanced`: Architectural docs
-- `rust-test-advanced`: Property testing, fuzzing
-- `rust-troubleshooter-advanced`: Memory, UB
-
-**Always use Task tool to delegate to agents.**
-
-## Commands
-
-- `/commit`: Git commit with conventional messages
-- `/lint`: Format and clippy (--all-targets)
-- `/pr-self-review`: PR analysis with commit range support
-- `/update-all`: Update all docs in parallel
-- `/update-claude`: Update CLAUDE.md (max 20k chars)
-- `/update-docstrings`: Update Rust docstrings
-- `/update-docs`: Update README and docs/
-- `/execute`: Execute saved commands
-- `/checkpoint`: Create development checkpoints with git stash
-- `/squash`: Interactive commit squashing with code analysis
 
 ## CLI Commands
 
@@ -162,21 +126,8 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
 - **Single fetch per repo per command**: Command-instance fetch tracking
 - **Enhanced dependency parsing** with manifest context for better local vs Git detection
-- **Lockfile staleness detection** (v0.3.17): Automatic detection and handling of stale lockfiles
-- **Self-update capability** (v0.3.15+): Platform-specific binary updates with backup/rollback
-- **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
-- **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
-- **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
-
-## Breaking Changes (v0.3.18+)
-
-### Custom Target Behavior
-- **Old**: Custom targets were relative to project root
-- **New**: Custom targets are relative to default resource directory (e.g., `.claude/agents/`)
-- **Migration**: Update custom targets to use paths relative to resource directory, not project root
-- **Rationale**: Prevents naming conflicts between different resource types
 
 ## Resolver Architecture
 
@@ -234,9 +185,20 @@ dependencies:
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
 
+### Conflict Detection
+
+Conflict detection is integrated into the core resolution logic (`resolver::mod.rs`):
+
+**Types Detected**:
+
+- **Version conflicts**: Same resource with incompatible version constraints
+- **Duplicate resources**: Resources resolved to same installation path
+
+**Design**: Conflicts are detected during resolution phase and reported as errors, preventing ambiguous installations
+
 ## Windows Path Gotchas
 
-- Absolute paths: `C:\path` or `\\server\share`
+- Absolute paths: `C:\\path` or `\\server\share`
 - file:// URLs use forward slashes
 - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
 - Test on real Windows (not WSL)
@@ -287,20 +249,13 @@ community = "https://github.com/aig787/ccpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
 [agents]
-# Single file dependency - installs as .claude/agents/example.md (basename from path)
+# Single file dependency
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 local-agent = { path = "../local-agents/helper.md" }  # Direct local path
-
-# Nested paths preserve directory structure (v0.3.18+)
-# "agents/ai/gpt.md" → ".claude/agents/ai/gpt.md" (preserves ai/ subdirectory)
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }
 
 # Pattern-based dependencies (glob patterns in path field)
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # All AI agents
 review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }  # All review agents recursively
-
-# Custom target (v0.3.18+ BREAKING: relative to .claude/agents/, not project root)
-special = { source = "community", path = "agents/special.md", target = "custom/special.md" }
 
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
@@ -334,16 +289,7 @@ path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example.md"  # Uses basename from path (v0.3.18+)
-
-[[agents]]
-name = "ai-helper"
-source = "community"
-path = "agents/ai/gpt.md"
-version = "v1.0.0"
-resolved_commit = "abc123..."
-checksum = "sha256:..."
-installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirectory structure
+installed_at = ".claude/agents/example-agent.md"
 # Similar format for snippets, commands, scripts, hooks, mcp-servers
 ```
 

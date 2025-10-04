@@ -199,6 +199,16 @@ With the centralized VersionResolver, the lockfile provides:
 - **SHA-based reproducibility**: Same SHA always produces identical installations
 - **Worktree optimization data**: Enables efficient cache reuse on subsequent installs
 
+### Lockfile Staleness Checks
+
+CCPM tracks whether `ccpm.lock` still matches the manifest and the resolution rules that produced it. Both `ccpm install` and `ccpm validate --check-lock` run the same validation logic:
+
+- **Always checked**: duplicate lockfile entries (corruption) and changed source URLs (security risk).
+- **Strict-mode checks** (`ccpm install`, `ccpm validate --check-lock`): missing dependencies that now exist in the manifest, version constraint changes, or path changes compared to what the lockfile previously captured.
+- **Lenient mode** (`ccpm install --frozen`): only the always-checked issues; anything else causes the command to exit instead of regenerating.
+
+When validation reports a staleness reason, run `ccpm install` (without `--frozen`) to regenerate the lockfile. The resolver reuses prior resolutions whenever possible, so versions stay unchanged unless the manifest or upstream reference moved.
+
 ## Common Scenarios
 
 ### Development vs Production
@@ -335,6 +345,8 @@ ccpm validate --resolve
 
 # Update version constraints in ccpm.toml to resolve
 ```
+
+If no shared version exists, synchronize the manifest constraints (for example, bump every dependent to the same tag) or pin the dependency to a specific commit with `rev = "<sha>"`. You can inspect the resolver output with `ccpm validate --resolve --format json` to see which dependency introduced the incompatible requirement.
 
 ### Lockfile Out of Sync
 

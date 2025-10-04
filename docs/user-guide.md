@@ -72,12 +72,30 @@ nested = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0
 # → Installed as: .claude/agents/ai/helper.md (preserves ai/ subdirectory)
 ```
 
+See the [Manifest Reference](manifest-reference.md) for a complete field-by-field breakdown and CLI mapping guidance.
+
 ### Lockfile (ccpm.lock)
 
 The lockfile records exact versions for reproducible installations:
 - Generated automatically by `ccpm install`
 - Should be committed to version control
 - Ensures team members get identical versions
+
+#### Lifecycle and Guarantees
+
+- `ccpm install` always re-runs dependency resolution using the current manifest and lockfile. If nothing has changed, it writes the same resolved versions and SHAs back to disk—versions do **not** automatically advance just because you reinstalled.
+- Resolution only diverges when the manifest changed, a tag/branch now points somewhere else, or a dependency was missing from the previous lockfile.
+- Use `ccpm install --no-lock` when you want to verify installs without touching `ccpm.lock` (e.g., local experiments).
+- Use `ccpm install --frozen` in CI or release pipelines to assert that the existing lockfile matches the manifest exactly. The command fails instead of regenerating when staleness is detected.
+
+#### Detecting Staleness
+
+CCPM automatically checks for stale lockfiles during install and via `ccpm validate --check-lock`:
+- Duplicate entries or source URL drift (security-critical issues)
+- Manifest entries missing from the lockfile
+- Version/path changes that have not been resolved yet
+
+If any of these occur, rerun `ccpm install` (without `--frozen`) to regenerate the lockfile so teammates stay in sync.
 
 ### Sources
 
@@ -300,6 +318,132 @@ review-agents = { source = "community", path = "agents/**/review*.md", version =
 # snippets/python/django/models.md → .claude/ccpm/snippets/python/django/models.md
 python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
 ```
+
+During `ccpm install`, CCPM expands each glob, installs every concrete match, and records them individually in `ccpm.lock` under the pattern dependency. Lockfile entries use the `resource_type/name@resolved_version` format so you can track the exact files that were installed.
+
+> **Tip**: Pair pattern entries with descriptive keys (like `ai-agents`) and review the resolved output with `ccpm list` or by inspecting `ccpm.lock` to confirm the matches.
+
+## Transitive Dependencies
+
+Resources can declare their own dependencies, and CCPM will automatically resolve the entire dependency tree.
+
+### Declaring Dependencies
+
+**In Markdown files (.md)**, use YAML frontmatter:
+```markdown
+---
+title: My Agent
+description: Helper agent with dependencies
+dependencies:
+  agents:
+    - path: agents/utils.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/helpers.md
+---
+
+# Agent content here
+```
+
+**In JSON files (.json)**, use a top-level field:
+```json
+{
+  "events": ["SessionStart"],
+  "type": "command",
+  "command": "echo 'Starting'",
+  "dependencies": {
+    "commands": [
+      {"path": "commands/setup.md", "version": "v1.0.0"}
+    ]
+  }
+}
+```
+
+### How It Works
+
+1. **Automatic Discovery**: When installing resources, CCPM scans their contents for dependency declarations
+2. **Graph Building**: All dependencies (direct and transitive) are collected into a dependency graph
+3. **Cycle Detection**: Circular dependencies are detected and reported as errors
+4. **Topological Ordering**: Dependencies are installed before their dependents
+5. **Version Resolution**: Conflicts are automatically resolved using the highest compatible version
+
+### Dependency Inheritance
+
+Transitive dependencies inherit properties from their parent:
+- **Source**: Always inherits from the parent resource's source
+- **Version**: Defaults to parent's version if not specified
+
+### Example
+
+```toml
+# ccpm.toml
+[sources]
+community = "https://github.com/aig787/ccpm-community.git"
+
+[commands]
+deploy = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
+```
+
+If `deploy.md` declares:
+```markdown
+---
+dependencies:
+  agents:
+    - path: agents/deploy-helper.md
+  snippets:
+    - path: snippets/aws-utils.md
+      version: v2.0.0
+---
+```
+
+Running `ccpm install` will automatically install:
+1. `deploy.md` (direct dependency)
+2. `agents/deploy-helper.md` (transitive, inherits v1.0.0)
+3. `snippets/aws-utils.md` (transitive, uses v2.0.0)
+
+### Resource-Specific Notes
+
+- **Scripts & hooks**: Transitive scripts inherit the parent's source but still require executable permissions. Hooks declared in metadata merge into `.claude/settings.local.json`; use `target` or `filename` overrides in the manifest if two hooks would collide.
+- **MCP servers**: Transitive MCP definitions inherit `command`/`args` from the file itself. Edit the manifest entry if you need to override runtime arguments.
+- **Version overrides**: If a downstream resource needs a different version than its parent, specify `version:` in the resource metadata. CCPM will prioritize the explicit value over inheritance.
+
+### Lockfile Tracking
+
+Transitive dependencies are tracked in `ccpm.lock`:
+```toml
+[[commands]]
+name = "deploy"
+path = "commands/deploy.md"
+version = "v1.0.0"
+dependencies = [
+    "agents/deploy-helper@v1.0.0",
+    "snippets/aws-utils@v2.0.0"
+]
+```
+
+### Conflict Resolution
+
+When multiple resources depend on the same resource, CCPM attempts to converge on a single version:
+- Compatible constraints resolve to the highest satisfying tag and the decision is logged in the CLI output.
+- Incompatible constraints (`v1` vs `v2` with no overlap) make the install fail with a detailed error.
+- Duplicate install paths (for example, two patterns resolving to `.claude/agents/reviewer.md`) also trigger a hard error.
+
+Typical failure output:
+
+```text
+Error: Version conflict for agents/helper.md
+  requested: v1.0.0 (manifest)
+  requested: v2.0.0 (transitive via agents/deploy.md)
+  resolution: no compatible tag satisfies both constraints
+```
+
+**Troubleshooting steps:**
+1. Run `ccpm validate --resolve --format json` to see the dependency graph CCPM built.
+2. If the conflict is transitive, update the declaring resource's metadata to pin a specific `version` or fork the dependency.
+3. If it is direct, align your manifest constraints (e.g., bump both to `v2.0.0`) and run `ccpm install` to auto-update the lockfile.
+4. For duplicate install paths, add `filename` or `target` overrides so the files land in distinct locations.
+
+After making changes, re-run `ccpm install` to refresh `ccpm.lock`. Use `RUST_LOG=debug` when you need the full resolver trace.
 
 ## Resource Organization
 

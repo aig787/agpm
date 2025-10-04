@@ -1,5 +1,5 @@
 use predicates::prelude::*;
-use std::fs;
+use tokio::fs;
 
 mod common;
 mod fixtures;
@@ -7,24 +7,27 @@ use common::TestProject;
 use fixtures::ManifestFixture;
 
 /// Test validating a valid manifest
-#[test]
-fn test_validate_valid_manifest() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_valid_manifest() {
+    let project = TestProject::new().await.unwrap();
 
     // Create mock sources
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await
         .unwrap();
     community_repo.commit_all("Initial commit").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -50,7 +53,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -59,9 +62,9 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test validating manifest without project
-#[test]
-fn test_validate_no_manifest() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_no_manifest() {
+    let project = TestProject::new().await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(!output.success);
@@ -70,11 +73,11 @@ fn test_validate_no_manifest() {
 }
 
 /// Test validating manifest with invalid syntax
-#[test]
-fn test_validate_invalid_syntax() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_invalid_syntax() {
+    let project = TestProject::new().await.unwrap();
     let manifest = ManifestFixture::invalid_syntax();
-    project.write_manifest(&manifest.content).unwrap();
+    project.write_manifest(&manifest.content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(!output.success);
@@ -84,11 +87,11 @@ fn test_validate_invalid_syntax() {
 }
 
 /// Test validating manifest with missing required fields
-#[test]
-fn test_validate_missing_fields() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_missing_fields() {
+    let project = TestProject::new().await.unwrap();
     let manifest = ManifestFixture::missing_fields();
-    project.write_manifest(&manifest.content).unwrap();
+    project.write_manifest(&manifest.content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(!output.success);
@@ -101,24 +104,27 @@ fn test_validate_missing_fields() {
 // Would check if manifest has conflicting version requirements
 
 /// Test validating with --sources flag to check source availability
-#[test]
-fn test_validate_sources() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_sources() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await
         .unwrap();
     community_repo.commit_all("Initial commit").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -144,7 +150,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--sources"]).unwrap();
     assert!(output.success);
@@ -153,9 +159,9 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test validating sources that are not accessible
-#[test]
-fn test_validate_inaccessible_sources() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_inaccessible_sources() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest with file:// URLs pointing to non-existent sources
     let manifest_content = r#"
@@ -171,7 +177,7 @@ helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#;
 
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--sources"]).unwrap();
     assert!(!output.success);
@@ -180,24 +186,27 @@ utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test validating with --dependencies flag to check dependency resolution
-#[test]
-fn test_validate_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories with the required files
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await
         .unwrap();
     community_repo.commit_all("Initial commit").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -223,7 +232,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success);
@@ -233,18 +242,19 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 
 /// Test validating dependencies that don't exist in sources\
 /// Note: Current implementation validates source accessibility but not individual file existence
-#[test]
-fn test_validate_missing_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_missing_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories but without the required files
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource(
             "agents",
             "other-agent",
             "# Other Agent\n\nA different agent",
         )
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
@@ -265,7 +275,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Current implementation validates source accessibility, not file existence
@@ -274,30 +284,32 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test validating with --paths flag to check local file references
-#[test]
-fn test_validate_local_paths() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_local_paths() {
+    let project = TestProject::new().await.unwrap();
     let manifest = ManifestFixture::with_local();
-    project.write_manifest(&manifest.content).unwrap();
+    project.write_manifest(&manifest.content).await.unwrap();
 
     // Create the local files referenced in the manifest
     // ../local-agents/helper.md (relative to project directory)
     let project_parent = project.project_path().parent().unwrap();
     let local_agents_dir = project_parent.join("local-agents");
-    fs::create_dir_all(&local_agents_dir).unwrap();
+    fs::create_dir_all(&local_agents_dir).await.unwrap();
     fs::write(
         local_agents_dir.join("helper.md"),
         "# Helper Agent\n\nThis is a test agent.",
     )
+    .await
     .unwrap();
 
     // ./snippets/local-utils.md (relative to project directory)
     let snippets_dir = project.project_path().join("snippets");
-    fs::create_dir_all(&snippets_dir).unwrap();
+    fs::create_dir_all(&snippets_dir).await.unwrap();
     fs::write(
         snippets_dir.join("local-utils.md"),
         "# Local Utils Snippet\n\nThis is a test snippet.",
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["validate", "--paths"]).unwrap();
@@ -307,11 +319,11 @@ fn test_validate_local_paths() {
 }
 
 /// Test validating local paths that don't exist
-#[test]
-fn test_validate_missing_local_paths() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_missing_local_paths() {
+    let project = TestProject::new().await.unwrap();
     let manifest = ManifestFixture::with_local();
-    project.write_manifest(&manifest.content).unwrap();
+    project.write_manifest(&manifest.content).await.unwrap();
 
     // Don't create the local files to test validation failure
 
@@ -324,24 +336,27 @@ fn test_validate_missing_local_paths() {
 }
 
 /// Test validating with --lockfile flag to check lockfile consistency
-#[test]
-fn test_validate_lockfile_consistent() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_lockfile_consistent() {
+    let project = TestProject::new().await.unwrap();
 
     // Create mock sources
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await
         .unwrap();
     community_repo.commit_all("Initial commit").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -367,7 +382,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create a matching lockfile
     let lockfile_content = format!(
@@ -420,6 +435,7 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
@@ -429,9 +445,9 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test validating inconsistent lockfile
-#[test]
-fn test_validate_lockfile_inconsistent() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_lockfile_inconsistent() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest
     let manifest_content = r#"
@@ -441,7 +457,7 @@ official = "file:///fake/url"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create lockfile that doesn't match manifest
     let inconsistent_lockfile = r#"
@@ -467,6 +483,7 @@ installed_at = "agents/different.md"
         project.project_path().join("ccpm.lock"),
         inconsistent_lockfile,
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
@@ -476,9 +493,9 @@ installed_at = "agents/different.md"
 }
 
 /// Test validating corrupted lockfile
-#[test]
-fn test_validate_corrupted_lockfile() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_corrupted_lockfile() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a basic manifest
     let manifest_content = r#"
@@ -488,13 +505,14 @@ official = "file:///fake/url"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     // Create corrupted lockfile
     fs::write(
         project.project_path().join("ccpm.lock"),
         "corrupted content",
     )
+    .await
     .unwrap();
 
     let output = project.run_ccpm(&["validate", "--check-lock"]).unwrap();
@@ -505,24 +523,27 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test validating with --resolve and --check-lock flags (comprehensive validation)
-#[test]
-fn test_validate_all() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_all() {
+    let project = TestProject::new().await.unwrap();
 
     // Add mock source repositories
-    let official_repo = project.create_source_repo("official").unwrap();
+    let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
         .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
+        .await
         .unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
+        .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
-    let community_repo = project.create_source_repo("community").unwrap();
+    let community_repo = project.create_source_repo("community").await.unwrap();
     community_repo
         .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
+        .await
         .unwrap();
     community_repo.commit_all("Initial commit").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
@@ -548,7 +569,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#
     );
 
-    project.write_manifest(&manifest_content).unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create a matching lockfile
     let lockfile_content = format!(
@@ -601,6 +622,7 @@ installed_at = "snippets/utils.md"
         project.project_path().join("ccpm.lock"),
         lockfile_content.trim(),
     )
+    .await
     .unwrap();
 
     let output = project
@@ -611,9 +633,9 @@ installed_at = "snippets/utils.md"
 }
 
 /// Test validating with verbose output
-#[test]
-fn test_validate_verbose() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_verbose() {
+    let project = TestProject::new().await.unwrap();
 
     let manifest_content = r#"
 [sources]
@@ -622,7 +644,7 @@ official = "file:///fake/url"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--verbose"]).unwrap();
     assert!(output.success);
@@ -631,9 +653,9 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test validating with quiet output
-#[test]
-fn test_validate_quiet() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_quiet() {
+    let project = TestProject::new().await.unwrap();
 
     let manifest_content = r#"
 [sources]
@@ -642,7 +664,7 @@ official = "file:///fake/url"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--quiet"]).unwrap();
     assert!(output.success);
@@ -651,9 +673,9 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test validating with JSON output format
-#[test]
-fn test_validate_json_output() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_json_output() {
+    let project = TestProject::new().await.unwrap();
 
     let manifest_content = r#"
 [sources]
@@ -662,7 +684,7 @@ official = "file:///fake/url"
 [agents]
 my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--format", "json"]).unwrap();
     assert!(output.success);
@@ -673,9 +695,9 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 }
 
 /// Test validating specific file path
-#[test]
-fn test_validate_specific_file() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_specific_file() {
+    let project = TestProject::new().await.unwrap();
 
     // Create a manifest that uses file:// URLs
     let sources_path_str = project
@@ -699,7 +721,9 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
 
     let manifest_path = project.project_path().join("ccpm.toml");
-    fs::write(&manifest_path, manifest_content.trim()).unwrap();
+    fs::write(&manifest_path, manifest_content.trim())
+        .await
+        .unwrap();
 
     let output = project
         .run_ccpm(&["validate", manifest_path.to_str().unwrap()])
@@ -710,20 +734,16 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 }
 
 /// Test validating with warnings (non-critical issues)
-#[test]
-fn test_validate_with_warnings() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_with_warnings() {
+    let project = TestProject::new().await.unwrap();
 
-    // Create manifest with potential warnings (e.g., outdated version constraints)
+    // Create manifest with no dependencies (triggers "no dependencies" warning)
     let manifest_content = r#"
 [sources]
 official = "https://github.com/example-org/ccpm-official.git"
-
-[agents]
-old-agent = { source = "official", path = "agents/old.md", version = "v0.1.0" }
-deprecated-agent = { source = "official", path = "agents/deprecated.md", version = "~0.5.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -734,19 +754,16 @@ deprecated-agent = { source = "official", path = "agents/deprecated.md", version
 }
 
 /// Test validating with --strict flag (treat warnings as errors)
-#[test]
-fn test_validate_strict_mode() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_strict_mode() {
+    let project = TestProject::new().await.unwrap();
 
-    // Create manifest with warnings
+    // Create manifest with no dependencies (triggers "no dependencies" warning)
     let manifest_content = r#"
 [sources]
 official = "https://github.com/example-org/ccpm-official.git"
-
-[agents]
-old-agent = { source = "official", path = "agents/old.md", version = "v0.1.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--strict"]).unwrap();
     assert!(!output.success);
@@ -756,8 +773,8 @@ old-agent = { source = "official", path = "agents/old.md", version = "v0.1.0" }
 }
 
 /// Test validate help command
-#[test]
-fn test_validate_help() {
+#[tokio::test]
+async fn test_validate_help() {
     let mut cmd = assert_cmd::Command::cargo_bin("ccpm").unwrap();
     cmd.arg("validate")
         .arg("--help")
@@ -768,15 +785,15 @@ fn test_validate_help() {
 }
 
 /// Test validating empty manifest
-#[test]
-fn test_validate_empty_manifest() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_empty_manifest() {
+    let project = TestProject::new().await.unwrap();
 
     // Create minimal/empty manifest
     let empty_manifest = r"
 # Empty manifest
 ";
-    project.write_manifest(empty_manifest).unwrap();
+    project.write_manifest(empty_manifest).await.unwrap();
 
     let output = project.run_ccpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -787,9 +804,9 @@ fn test_validate_empty_manifest() {
 }
 
 /// Test validating with circular dependencies (if supported)
-#[test]
-fn test_validate_circular_dependencies() {
-    let project = TestProject::new().unwrap();
+#[tokio::test]
+async fn test_validate_circular_dependencies() {
+    let project = TestProject::new().await.unwrap();
 
     // Create manifest that could lead to circular dependencies
     let manifest_content = r#"
@@ -801,7 +818,7 @@ source2 = "https://github.com/test/repo2.git"
 agent-a = { source = "source1", path = "agents/a.md", version = "v1.0.0" }
 agent-b = { source = "source2", path = "agents/b.md", version = "v1.0.0" }
 "#;
-    project.write_manifest(manifest_content).unwrap();
+    project.write_manifest(manifest_content).await.unwrap();
 
     let output = project.run_ccpm(&["validate", "--dependencies"]).unwrap();
     assert!(output.success); // Should handle gracefully

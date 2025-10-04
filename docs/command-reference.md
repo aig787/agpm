@@ -46,16 +46,14 @@ ccpm init --force
 
 ### `ccpm install`
 
-Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
+Install dependencies from `ccpm.toml` and generate/update `ccpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
 ccpm install [OPTIONS]
 
 Options:
-  -f, --force                    Bypass lockfile staleness checks and force installation
-      --regenerate               Delete and regenerate the lockfile from scratch
       --no-lock                  Don't write lockfile after installation
-      --frozen                   Use exact lockfile versions without updates
+      --frozen                   Require exact lockfile match (like cargo build --locked)
       --no-cache                 Bypass cache and fetch directly from sources
       --max-parallel <NUMBER>    Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>     Path to ccpm.toml (default: ./ccpm.toml)
@@ -64,17 +62,11 @@ Options:
 
 **Examples:**
 ```bash
-# Standard installation
+# Standard installation (auto-updates lockfile)
 ccpm install
 
-# Use exact lockfile versions (CI/production)
+# CI/production mode - fail if lockfile out of sync (like cargo build --locked)
 ccpm install --frozen
-
-# Bypass lockfile staleness checks (useful when you know lockfile is safe)
-ccpm install --force
-
-# Regenerate lockfile from scratch (removes and recreates)
-ccpm install --regenerate
 
 # Install without creating lockfile
 ccpm install --no-lock
@@ -91,7 +83,7 @@ ccpm install --manifest-path ./configs/ccpm.toml
 
 ### `ccpm update`
 
-Update dependencies to latest versions within version constraints.
+Update dependencies to latest versions within version constraints. Always regenerates the lockfile with resolved versions.
 
 ```bash
 ccpm update [OPTIONS] [DEPENDENCY]
@@ -100,7 +92,6 @@ Arguments:
   [DEPENDENCY]    Update specific dependency (default: update all)
 
 Options:
-  -f, --force                 Bypass lockfile staleness checks and force update
       --dry-run               Preview changes without applying
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
@@ -235,6 +226,83 @@ ccpm list --format json
 ccpm list --manifest-path ./configs/ccpm.toml
 ```
 
+### `ccpm tree`
+
+Display dependency trees for installed resources with transitive dependencies. Visualizes the complete dependency graph similar to `cargo tree`, helping identify duplicate or redundant dependencies.
+
+```bash
+ccpm tree [OPTIONS]
+
+Options:
+  -d, --depth <NUMBER>        Maximum depth to display (unlimited if not specified)
+  -f, --format <FORMAT>       Output format: tree, json, text [default: tree]
+  -p, --package <NAME>        Show tree for specific package only
+      --duplicates            Show only duplicate dependencies
+      --no-dedupe             Don't deduplicate repeated dependencies
+      --agents                Show only agents
+      --snippets              Show only snippets
+      --commands              Show only commands
+      --scripts               Show only scripts
+      --hooks                 Show only hooks
+      --mcp-servers           Show only MCP servers
+  -i, --invert                Invert tree to show what depends on each package
+      --manifest-path <PATH>  Path to ccpm.toml (default: ./ccpm.toml)
+  -h, --help                  Print help information
+```
+
+**Examples:**
+```bash
+# Display full dependency tree
+ccpm tree
+
+# Limit tree depth to 2 levels
+ccpm tree --depth 2
+
+# Show tree for specific package
+ccpm tree --package my-agent
+
+# Show only duplicate dependencies
+ccpm tree --duplicates
+
+# JSON output for scripting
+ccpm tree --format json
+
+# Show only agents and their dependencies
+ccpm tree --agents
+
+# Invert tree to see what depends on each package
+ccpm tree --invert
+
+# Show tree without deduplication
+ccpm tree --no-dedupe
+```
+
+**Output Format:**
+
+The tree format displays dependencies hierarchically with these elements:
+- Package name with type prefix (agent/, snippet/, command/, etc.)
+- Version information
+- Source repository in parentheses
+- `(*)` marker indicates duplicate dependency (shown once by default)
+
+**Example Tree Output:**
+```text
+my-project
+├── agent/code-reviewer v1.0.0 (community)
+│   ├── agent/rust-helper v1.0.0 (community)
+│   └── snippet/utils v2.1.0 (community)
+├── command/git-commit v1.0.0 (local)
+│   ├── agent/rust-helper v1.0.0 (community) (*)
+│   └── snippet/commit-msg v1.0.0 (local)
+└── snippet/logging v1.5.0 (community)
+
+(*) = duplicate dependency
+```
+
+**JSON Format:**
+
+Use `--format json` for programmatic access to dependency information, which includes complete metadata about each dependency and its relationships.
+
 ### `ccpm validate`
 
 Validate `ccpm.toml` syntax and dependency resolution.
@@ -357,6 +425,8 @@ If `--name` is not provided, the dependency name is automatically derived from t
 - `/path/to/helper.md` → name: "helper"
 
 For pattern dependencies, you should typically provide a custom name since multiple files will be installed.
+
+See the [Manifest Reference](manifest-reference.md) for inline table fields (`branch`, `rev`, `target`, `filename`, MCP settings) and advanced configuration after the dependency is added.
 
 ### `ccpm remove`
 

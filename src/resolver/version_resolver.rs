@@ -231,8 +231,14 @@ impl VersionResolver {
 
             // Resolve each version for this source
             for (version_str, mut entry) in versions {
-                // First check if this is a version constraint
-                let resolved_ref = if let Some(ref version) = entry.version {
+                // Check if this is a local directory source (not a Git repository)
+                let is_local = crate::utils::is_local_path(&entry.url);
+
+                // For local directory sources, we don't resolve versions - just use "local"
+                let resolved_ref = if is_local {
+                    "local".to_string()
+                } else if let Some(ref version) = entry.version {
+                    // First check if this is a version constraint
                     if crate::resolver::version_resolution::is_version_constraint(version) {
                         // Resolve constraint to actual tag first
                         // Note: get_or_clone_source already fetched, so tags should be available
@@ -248,34 +254,54 @@ impl VersionResolver {
                         // Find best matching tag
                         crate::resolver::version_resolution::find_best_matching_tag(version, tags)
                             .with_context(|| {
-                            format!("Failed to resolve version constraint '{}'", version)
+                            format!(
+                                "Failed to resolve version constraint '{}' for source '{}'",
+                                version, source
+                            )
                         })?
                     } else {
                         // Not a constraint, use as-is
                         version.clone()
                     }
                 } else {
-                    // No version specified, use HEAD
-                    "HEAD".to_string()
+                    // No version specified for Git source, resolve HEAD to actual branch name
+                    repo.get_default_branch()
+                        .await
+                        .unwrap_or_else(|_| "main".to_string())
                 };
 
-                // Now resolve the actual ref to SHA
-                let sha = repo
-                    .resolve_to_sha(Some(&resolved_ref))
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "Failed to resolve version '{}' for source '{}'",
-                            version_str, source
-                        )
-                    })?;
+                // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
+                let sha = if is_local {
+                    // Local directories don't have commit SHAs
+                    None
+                } else {
+                    // Resolve the actual ref to SHA for Git repositories
+                    Some(
+                        repo.resolve_to_sha(Some(&resolved_ref))
+                            .await
+                            .with_context(|| {
+                                format!(
+                                    "Failed to resolve version '{}' for source '{}'",
+                                    version_str, source
+                                )
+                            })?,
+                    )
+                };
 
                 // Store the resolved SHA and version
-                entry.resolved_sha = Some(sha.clone());
+                entry.resolved_sha = sha.clone();
                 entry.resolved_version = Some(resolved_ref.clone());
                 let key = (source.clone(), version_str);
-                self.resolved
-                    .insert(key, ResolvedVersion { sha, resolved_ref });
+                // Only insert into resolved map if we have a SHA (Git sources only)
+                if let Some(sha_value) = sha {
+                    self.resolved.insert(
+                        key,
+                        ResolvedVersion {
+                            sha: sha_value,
+                            resolved_ref,
+                        },
+                    );
+                }
             }
         }
 
@@ -309,9 +335,18 @@ impl VersionResolver {
             )
         })?;
 
+        // Determine the resolved reference name
+        let resolved_ref = if let Some(v) = version {
+            v.to_string()
+        } else {
+            // When no version is specified, resolve HEAD to the actual branch name
+            repo.get_default_branch()
+                .await
+                .unwrap_or_else(|_| "main".to_string())
+        };
+
         // Cache the result
         let version_key = version.unwrap_or("HEAD").to_string();
-        let resolved_ref = version.unwrap_or("HEAD").to_string();
         let key = (source.to_string(), version_key);
         self.resolved.insert(
             key,

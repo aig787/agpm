@@ -157,8 +157,48 @@
 
 use crate::git::GitRepo;
 use anyhow::{Context, Result};
+use regex::Regex;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+
+/// Parse a version requirement string, normalizing 'v' prefixes.
+///
+/// This helper function provides centralized semver parsing that handles both
+/// prefixed (`v1.0.0`, `^v1.0.0`) and unprefixed (`1.0.0`, `^1.0.0`) version strings.
+///
+/// # Arguments
+///
+/// * `requirement` - Version requirement string (e.g., "^v1.0.0", "~2.1.0", ">=v1.0.0")
+///
+/// # Returns
+///
+/// A parsed `VersionReq` if the requirement is valid semver syntax.
+///
+/// # Examples
+///
+/// ```
+/// use ccpm::version::parse_version_req;
+///
+/// // All of these parse successfully:
+/// assert!(parse_version_req("1.0.0").is_ok());
+/// assert!(parse_version_req("v1.0.0").is_ok());
+/// assert!(parse_version_req("^1.0.0").is_ok());
+/// assert!(parse_version_req("^v1.0.0").is_ok());
+/// assert!(parse_version_req("~v2.1.0").is_ok());
+/// assert!(parse_version_req(">=v1.0.0").is_ok());
+/// ```
+pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error> {
+    // Strip 'v' prefix from version requirements
+    // Handles patterns like: "v1.0.0", "^v1.0.0", "~v2.1.0", "=v1.0.0", ">=v1.0.0", etc.
+    // We match 'v' at the start OR after operators to avoid breaking prerelease tags
+    // like "1.0.0-dev.1" or branch names like "develop"
+    use once_cell::sync::Lazy;
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(^|[~^=><])v").unwrap());
+
+    let normalized = RE.replace_all(requirement, "$1");
+
+    VersionReq::parse(&normalized)
+}
 
 /// Version information extracted from a Git tag.
 ///
@@ -495,8 +535,8 @@ impl VersionResolver {
                 .cloned());
         }
 
-        // Try as semantic version requirement
-        if let Ok(req) = VersionReq::parse(requirement) {
+        // Try as semantic version requirement using centralized parser
+        if let Ok(req) = parse_version_req(requirement) {
             return Ok(self
                 .versions
                 .iter()
@@ -1013,8 +1053,9 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
     // Parse version
     let version = Version::parse(version.trim_start_matches('v'))?;
 
-    // Parse requirement
-    let req = VersionReq::parse(requirement)?;
+    // Parse requirement (with v-prefix normalization)
+    let req = parse_version_req(requirement)
+        .map_err(|e| anyhow::anyhow!("Invalid version requirement '{}': {}", requirement, e))?;
 
     Ok(req.matches(&version))
 }
@@ -1114,7 +1155,7 @@ pub fn parse_version_constraint(constraint: &str) -> VersionConstraint {
 
     // Check if it's a semantic version or version requirement
     if Version::parse(constraint.trim_start_matches('v')).is_ok()
-        || VersionReq::parse(constraint).is_ok()
+        || parse_version_req(constraint).is_ok()
         || constraint == "latest"
     {
         return VersionConstraint::Tag(constraint.to_string());
@@ -1130,6 +1171,13 @@ pub fn parse_version_constraint(constraint: &str) -> VersionConstraint {
 /// versions, finding newer versions, and determining latest releases from version
 /// collections. See the module documentation for detailed usage examples.
 pub mod comparison;
+
+/// Version conflict detection and circular dependency detection.
+///
+/// The [`conflict`] module provides sophisticated conflict analysis for version
+/// requirements, detecting incompatible version constraints and circular dependencies
+/// in the dependency graph.
+pub mod conflict;
 
 /// Version constraint parsing, sets, and resolution system.
 ///
