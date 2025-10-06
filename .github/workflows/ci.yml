@@ -43,7 +43,7 @@ jobs:
     name: Test Suite
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-2022-arm, macos-latest]
         rust: [stable]
     runs-on: ${{ matrix.os }}
     steps:
@@ -67,7 +67,7 @@ jobs:
     name: Documentation Tests
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, windows-2022-arm, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -112,6 +112,10 @@ jobs:
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            binary_name: agpm.exe
+
+          - os: windows-2022-arm # Native ARM64 Windows runner
+            target: aarch64-pc-windows-msvc
             binary_name: agpm.exe
 
           - os: macos-latest

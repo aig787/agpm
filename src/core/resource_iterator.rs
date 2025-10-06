@@ -630,10 +630,12 @@ mod tests {
         assert_eq!(entries.len(), 2);
 
         assert_eq!(entries[0].0.name, "test-agent");
-        assert_eq!(entries[0].1, ".claude/agents");
+        // Normalize path separators for cross-platform testing
+        assert_eq!(entries[0].1.replace('\\', "/"), ".claude/agents");
 
         assert_eq!(entries[1].0.name, "test-snippet");
-        assert_eq!(entries[1].1, ".claude/agpm/snippets");
+        // Normalize path separators for cross-platform testing
+        assert_eq!(entries[1].1.replace('\\', "/"), ".claude/agpm/snippets");
     }
 
     #[test]

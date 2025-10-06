@@ -3904,8 +3904,13 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "custom-agent");
         // Verify the custom target is relative to the default agents directory
-        assert!(agent.installed_at.contains(".claude/agents/integrations/custom"));
-        assert_eq!(agent.installed_at, ".claude/agents/integrations/custom/custom-agent.md");
+        // Normalize path separators for cross-platform testing
+        let normalized_path = agent.installed_at.replace('\\', "/");
+        assert!(normalized_path.contains(".claude/agents/integrations/custom"));
+        assert_eq!(
+            normalized_path,
+            ".claude/agents/integrations/custom/custom-agent.md"
+        );
     }
 
     #[tokio::test]
@@ -3941,7 +3946,9 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "standard-agent");
         // Verify the default target is used
-        assert_eq!(agent.installed_at, ".claude/agents/standard-agent.md");
+        // Normalize path separators for cross-platform testing
+        let normalized_path = agent.installed_at.replace('\\', "/");
+        assert_eq!(normalized_path, ".claude/agents/standard-agent.md");
     }
 
     #[tokio::test]
@@ -3977,7 +3984,9 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "my-agent");
         // Verify the custom filename is used
-        assert_eq!(agent.installed_at, ".claude/agents/ai-assistant.txt");
+        // Normalize path separators for cross-platform testing
+        let normalized_path = agent.installed_at.replace('\\', "/");
+        assert_eq!(normalized_path, ".claude/agents/ai-assistant.txt");
     }
 
     #[tokio::test]
@@ -4014,7 +4023,12 @@ mod tests {
         assert_eq!(agent.name, "special-tool");
         // Verify both custom target and filename are used
         // Custom target is relative to default agents directory
-        assert_eq!(agent.installed_at, ".claude/agents/tools/ai/assistant.markdown");
+        // Normalize path separators for cross-platform testing
+        let normalized_path = agent.installed_at.replace('\\', "/");
+        assert_eq!(
+            normalized_path,
+            ".claude/agents/tools/ai/assistant.markdown"
+        );
     }
 
     #[tokio::test]
@@ -4051,7 +4065,9 @@ mod tests {
         let script = &lockfile.snippets[0];
         assert_eq!(script.name, "analyzer");
         // Verify custom filename is used (with custom extension)
-        assert_eq!(script.installed_at, ".claude/agpm/snippets/analyze.py");
+        // Normalize path separators for cross-platform testing
+        let normalized_path = script.installed_at.replace('\\', "/");
+        assert_eq!(normalized_path, ".claude/agpm/snippets/analyze.py");
     }
 
     // ============ NEW TESTS FOR UNCOVERED AREAS ============
@@ -4470,7 +4486,9 @@ mod tests {
 
         // Check that hooks are installed to the correct location
         for hook in &lockfile.hooks {
-            assert!(hook.installed_at.contains(".claude/agpm/hooks/"));
+            // Normalize path separators for cross-platform testing
+            let normalized_path = hook.installed_at.replace('\\', "/");
+            assert!(normalized_path.contains(".claude/agpm/hooks/"));
             assert!(hook.installed_at.ends_with(".json"));
         }
     }
@@ -4527,7 +4545,9 @@ mod tests {
 
         // Check that MCP servers are tracked correctly
         for server in &lockfile.mcp_servers {
-            assert!(server.installed_at.contains(".claude/agpm/mcp-servers/"));
+            // Normalize path separators for cross-platform testing
+            let normalized_path = server.installed_at.replace('\\', "/");
+            assert!(normalized_path.contains(".claude/agpm/mcp-servers/"));
             assert!(server.installed_at.ends_with(".json"));
         }
     }
@@ -4555,7 +4575,9 @@ mod tests {
 
         // Check that commands are installed to the correct location
         for command in &lockfile.commands {
-            assert!(command.installed_at.contains(".claude/commands/"));
+            // Normalize path separators for cross-platform testing
+            let normalized_path = command.installed_at.replace('\\', "/");
+            assert!(normalized_path.contains(".claude/commands/"));
             assert!(command.installed_at.ends_with(".md"));
         }
     }

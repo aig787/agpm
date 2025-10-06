@@ -175,6 +175,8 @@ mod tests {
         {
             #[cfg(target_arch = "x86_64")]
             let target = "x86_64-pc-windows-msvc";
+            #[cfg(target_arch = "aarch64")]
+            let target = "aarch64-pc-windows-msvc";
             assert!(target.contains("windows"));
         }
 
