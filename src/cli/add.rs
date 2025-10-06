@@ -452,6 +452,7 @@ fn parse_dependency_spec(
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         ))
     } else if is_local_path {
@@ -501,35 +502,38 @@ async fn install_single_dependency(
     // 3. Update the lockfile with proper dependency tracking
     install_cmd.execute_with_manifest_path(Some(manifest_path.to_path_buf())).await?;
 
-    println!(
-        "{}",
-        format!(
-            "✓ Installed {} '{}' to {}",
-            resource_type,
-            name,
-            project_root
-                .join(match resource_type {
-                    "agent" => &manifest.target.agents,
-                    "snippet" => &manifest.target.snippets,
-                    "command" => &manifest.target.commands,
-                    "script" => &manifest.target.scripts,
-                    "hook" => &manifest.target.hooks,
-                    "mcp-server" => &manifest.target.mcp_servers,
-                    _ => ".claude",
-                })
-                .join(format!(
-                    "{}.{}",
-                    name,
-                    match resource_type {
-                        "hook" | "mcp-server" => "json",
-                        "script" => "sh", // This is approximate, actual extension preserved during install
-                        _ => "md",
-                    }
-                ))
-                .display()
-        )
-        .green()
-    );
+    #[allow(deprecated)]
+    {
+        println!(
+            "{}",
+            format!(
+                "✓ Installed {} '{}' to {}",
+                resource_type,
+                name,
+                project_root
+                    .join(match resource_type {
+                        "agent" => &manifest.target.agents,
+                        "snippet" => &manifest.target.snippets,
+                        "command" => &manifest.target.commands,
+                        "script" => &manifest.target.scripts,
+                        "hook" => &manifest.target.hooks,
+                        "mcp-server" => &manifest.target.mcp_servers,
+                        _ => ".claude",
+                    })
+                    .join(format!(
+                        "{}.{}",
+                        name,
+                        match resource_type {
+                            "hook" | "mcp-server" => "json",
+                            "script" => "sh", // This is approximate, actual extension preserved during install
+                            _ => "md",
+                        }
+                    ))
+                    .display()
+            )
+            .green()
+        );
+    }
 
     Ok(())
 }

@@ -98,6 +98,7 @@ use crate::core::ResourceIterator;
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{ResourceDependency, find_manifest_with_optional};
+use crate::mcp::handlers::McpHandler;
 use crate::resolver::DependencyResolver;
 
 /// Command to install Claude Code resources from manifest dependencies.
@@ -574,14 +575,66 @@ impl InstallCommand {
                 hook_count = lockfile.hooks.len();
             }
 
-            // Handle MCP servers if present
+            // Handle MCP servers if present - group by artifact type
             if !lockfile.mcp_servers.is_empty() {
-                // Configure MCP servers by updating .mcp.json
-                let mcp_servers_dir = actual_project_dir.join(&manifest.target.mcp_servers);
-                crate::mcp::configure_mcp_servers(actual_project_dir, &mcp_servers_dir).await?;
+                use std::collections::HashMap;
 
-                server_count = lockfile.mcp_servers.len();
-                if !self.quiet {
+                // Group MCP servers by artifact type
+                let mut servers_by_type: HashMap<String, Vec<&crate::lockfile::LockedResource>> =
+                    HashMap::new();
+                for server in &lockfile.mcp_servers {
+                    servers_by_type
+                        .entry(server.artifact_type.clone())
+                        .or_default()
+                        .push(server);
+                }
+
+                // Configure MCP servers for each artifact type using appropriate handler
+                for (artifact_type, servers) in servers_by_type {
+                    if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
+                        // Get artifact base directory
+                        let artifact_base = if let Some(artifact_path) = manifest
+                            .get_artifact_type_config(&artifact_type)
+                            .map(|c| &c.path)
+                        {
+                            actual_project_dir.join(artifact_path)
+                        } else {
+                            // Fallback to legacy target config for backward compatibility
+                            #[allow(deprecated)]
+                            actual_project_dir.join(match artifact_type.as_str() {
+                                "claude-code" => ".claude",
+                                "opencode" => ".opencode",
+                                _ => continue, // Skip unknown types
+                            })
+                        };
+
+                        // Get installation directory if handler requires file installation
+                        let mcp_servers_dir = if handler.requires_file_installation() {
+                            Some(handler.get_installation_dir(actual_project_dir, &artifact_base))
+                        } else {
+                            None
+                        };
+
+                        // Configure MCP servers using the handler
+                        handler
+                            .configure_mcp_servers(
+                                actual_project_dir,
+                                &artifact_base,
+                                mcp_servers_dir.as_deref(),
+                            )
+                            .await
+                            .with_context(|| {
+                                format!(
+                                    "Failed to configure MCP servers for artifact type '{}'",
+                                    artifact_type
+                                )
+                            })?;
+
+                        server_count += servers.len();
+                    }
+                }
+
+                if server_count > 0 && !self.quiet {
                     if server_count == 1 {
                         println!("✓ Configured 1 MCP server");
                     } else {
@@ -619,6 +672,7 @@ impl InstallCommand {
             }
 
             // Update .gitignore only if installation succeeded
+            #[allow(deprecated)]
             if manifest.target.gitignore {
                 update_gitignore(&lockfile, actual_project_dir, true)?;
             }
@@ -993,6 +1047,7 @@ This is a test agent.",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1052,6 +1107,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1071,6 +1127,7 @@ Body",
                 installed_at: ".claude/agents/test-agent.md".into(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1115,6 +1172,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1149,6 +1207,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1188,6 +1247,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1224,6 +1284,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1278,6 +1339,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.add_mcp_server(
@@ -1293,6 +1355,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();

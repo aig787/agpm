@@ -164,7 +164,14 @@ fn get_installed_path_from_lockfile(
             .map(|c| project_root.join(&c.installed_at)),
         ResourceType::McpServer => {
             // MCP servers have config files in the directory specified by manifest.target.mcp_servers
-            Some(project_root.join(&manifest.target.mcp_servers).join(format!("{name}.json")))
+            #[allow(deprecated)]
+            {
+                Some(
+                    project_root
+                        .join(&manifest.target.mcp_servers)
+                        .join(format!("{name}.json")),
+                )
+            }
         }
         ResourceType::Script => lockfile
             .scripts
@@ -853,6 +860,8 @@ test-agent = "../test/agent.md"
             installed_at: "agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -988,6 +997,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             installed_at: ".claude/agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1002,6 +1013,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1086,6 +1099,8 @@ test-hook = "../test/hook.json"
             installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1098,6 +1113,8 @@ test-hook = "../test/hook.json"
             installed_at: ".claude/agpm/hooks/test-hook.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1167,6 +1184,8 @@ test-snippet = "../local/snippet.md"
             installed_at: "agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1179,6 +1198,8 @@ test-snippet = "../local/snippet.md"
             installed_at: "snippets/test-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1357,6 +1378,8 @@ test-script = "../test/script.sh"
             installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
+
+            artifact_type: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

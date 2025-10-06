@@ -884,6 +884,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -906,6 +907,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -945,6 +947,8 @@ mod tests {
             installed_at: "agents/code-reviewer.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -958,6 +962,8 @@ mod tests {
             installed_at: "agents/local-helper.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add snippets
@@ -972,6 +978,8 @@ mod tests {
             installed_at: "snippets/utils.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile
@@ -1296,6 +1304,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let dep_with_different_source =
@@ -1310,6 +1319,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
@@ -1349,6 +1359,8 @@ mod tests {
             installed_at: "test.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1362,6 +1374,8 @@ mod tests {
             installed_at: "test.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         };
 
         let entry_without_source = LockedResource {
@@ -1375,6 +1389,8 @@ mod tests {
             installed_at: "test.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1400,6 +1416,8 @@ mod tests {
             installed_at: "test.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1573,6 +1591,8 @@ mod tests {
             installed_at: "agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");
