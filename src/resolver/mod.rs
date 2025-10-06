@@ -1740,6 +1740,7 @@ impl DependencyResolver {
             };
 
             // Determine the target directory using artifact configuration
+            // Normalize to forward slashes for cross-platform consistency in lockfile
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
                 if let Some(artifact_path) = self
@@ -1787,7 +1788,8 @@ impl DependencyResolver {
                     };
                     format!("{target_dir}/{filename}")
                 }
-            };
+            }
+            .replace('\\', "/");
 
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
@@ -1889,6 +1891,7 @@ impl DependencyResolver {
             };
 
             // Determine the target directory using artifact configuration
+            // Normalize to forward slashes for cross-platform consistency in lockfile
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
                 if let Some(artifact_path) = self
@@ -1936,7 +1939,8 @@ impl DependencyResolver {
                     };
                     format!("{target_dir}/{filename}")
                 }
-            };
+            }
+            .replace('\\', "/");
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
             // Multiple entries with the same name but different sources can coexist

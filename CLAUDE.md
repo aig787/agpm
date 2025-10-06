@@ -139,6 +139,7 @@ Dev: assert_cmd, predicates
   Test both modes.
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
+- **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
 
 ## Build & CI
 
@@ -271,10 +272,39 @@ code-helper = { source = "community", path = "agents/code/helper.md", version = 
 standard = { source = "community", path = "agents/standard.md", version = "^v1.0.0" }
 ```
 
-## Windows Path Gotchas
+## Cross-Platform Path Handling
+
+**CRITICAL**: AGPM must work identically on Windows, macOS, and Linux.
+
+### Path Separator Rules
+
+1. **Forward slashes ONLY** in these contexts:
+   - Lockfile `installed_at` fields (cross-platform consistency)
+   - `.gitignore` entries (Git requirement)
+   - TOML manifest files (platform-independent)
+   - Any serialized/stored path representation
+
+2. **Use `Path::display()` carefully**:
+   - `Path::display()` produces platform-specific separators (backslashes on Windows)
+   - Always normalize with `.replace('\\', "/")` when storing paths
+   - Example: `format!("{}/{}", artifact_path.display(), filename).replace('\\', "/")`
+
+3. **Runtime path operations**:
+   - Use `Path`/`PathBuf` for filesystem operations (automatic platform handling)
+   - Only convert to strings when storing/serializing
+   - Use `join()` instead of string concatenation
+
+### Testing Path Handling
+
+- **Integration tests must pass on Windows**: CI runs all tests on Windows, macOS, Linux
+- **Don't hardcode path separators in test assertions**: Use forward slashes in expected values
+- **TestProject helper handles paths correctly**: Always use `TestProject::new()` in tests
+- **Don't manually create lockfiles in tests**: Let `agpm install` generate them naturally
+
+### Windows-Specific Gotchas
 
 - Absolute paths: `C:\path` or `\\server\share`
-- file:// URLs use forward slashes
+- file:// URLs use forward slashes (even on Windows)
 - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
 - Test on real Windows (not WSL)
 

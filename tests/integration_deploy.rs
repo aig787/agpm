@@ -143,9 +143,14 @@ checksum = "sha256:38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e
 installed_at = ".claude/agents/helper.md"
 artifact_type = "claude-code"
 "#,
-        official_url, official_sha, community_url, community_sha,
-        official_url, official_sha,  // my-agent url and commit
-        community_url, community_sha  // helper url and commit
+        official_url,
+        official_sha,
+        community_url,
+        community_sha,
+        official_url,
+        official_sha, // my-agent url and commit
+        community_url,
+        community_sha // helper url and commit
     );
 
     fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();

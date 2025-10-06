@@ -613,8 +613,10 @@ async fn test_gitignore_actually_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
-    project.write_lockfile(&create_test_lockfile().await).await.unwrap();
+    project
+        .write_manifest(&create_test_manifest(true, &source_dir).await)
+        .await
+        .unwrap();
 
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
@@ -682,8 +684,10 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project.write_manifest(&create_test_manifest(false, &source_dir).await).await.unwrap();
-    project.write_lockfile(&create_test_lockfile().await).await.unwrap();
+    project
+        .write_manifest(&create_test_manifest(false, &source_dir).await)
+        .await
+        .unwrap();
 
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 

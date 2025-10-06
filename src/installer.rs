@@ -2027,7 +2027,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
             path.clone()
         };
 
-        new_content.push_str(&ignore_path);
+        // Normalize to forward slashes for .gitignore (Git expects forward slashes on all platforms)
+        let normalized_path = ignore_path.replace('\\', "/");
+
+        new_content.push_str(&normalized_path);
         new_content.push('\n');
     }
 
@@ -2057,7 +2060,9 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
             } else {
                 path.clone()
             };
-            default_content.push_str(&ignore_path);
+            // Normalize to forward slashes for .gitignore (Git expects forward slashes on all platforms)
+            let normalized_path = ignore_path.replace('\\', "/");
+            default_content.push_str(&normalized_path);
             default_content.push('\n');
         }
 
