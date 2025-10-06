@@ -495,13 +495,10 @@ agent = {{ source = "updatetest", path = "agents/agent.md", version = "agents-^v
     );
 
     // Verify file was updated
-    let installed_content = fs::read_to_string(
-        project
-            .project_path()
-            .join(".claude/agents/agent.md"),
-    )
-    .await
-    .unwrap();
+    let installed_content =
+        fs::read_to_string(project.project_path().join(".claude/agents/agent.md"))
+            .await
+            .unwrap();
     assert!(
         installed_content.contains("Updated content v1.5.0"),
         "Installed file should have updated content"
