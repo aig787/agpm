@@ -331,10 +331,7 @@ impl ListCommand {
 
         // For consistency with execute(), require the manifest to exist
         if !manifest_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Manifest file {} not found",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
         let project_dir = manifest_path.parent().unwrap();
@@ -560,10 +557,7 @@ impl ListCommand {
             match sort_field.as_str() {
                 "name" => items.sort_by(|a, b| a.name.cmp(&b.name)),
                 "version" => items.sort_by(|a, b| {
-                    a.version
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.version.as_deref().unwrap_or(""))
+                    a.version.as_deref().unwrap_or("").cmp(b.version.as_deref().unwrap_or(""))
                 }),
                 "source" => items.sort_by(|a, b| {
                     a.source
@@ -639,26 +633,17 @@ impl ListCommand {
             .iter()
             .map(|item| {
                 let mut obj = HashMap::new();
-                obj.insert(
-                    "name".to_string(),
-                    serde_yaml::Value::String(item.name.clone()),
-                );
+                obj.insert("name".to_string(), serde_yaml::Value::String(item.name.clone()));
                 obj.insert(
                     "type".to_string(),
                     serde_yaml::Value::String(item.resource_type.clone()),
                 );
 
                 if let Some(ref source) = item.source {
-                    obj.insert(
-                        "source".to_string(),
-                        serde_yaml::Value::String(source.clone()),
-                    );
+                    obj.insert("source".to_string(), serde_yaml::Value::String(source.clone()));
                 }
                 if let Some(ref version) = item.version {
-                    obj.insert(
-                        "version".to_string(),
-                        serde_yaml::Value::String(version.clone()),
-                    );
+                    obj.insert("version".to_string(), serde_yaml::Value::String(version.clone()));
                 }
                 if let Some(ref path) = item.path {
                     obj.insert("path".to_string(), serde_yaml::Value::String(path.clone()));
@@ -722,10 +707,7 @@ impl ListCommand {
             let show_snippets = self.should_show_resource_type(crate::core::ResourceType::Snippet);
 
             if show_agents {
-                let agents: Vec<_> = items
-                    .iter()
-                    .filter(|i| i.resource_type == "agent")
-                    .collect();
+                let agents: Vec<_> = items.iter().filter(|i| i.resource_type == "agent").collect();
                 if !agents.is_empty() {
                     println!("{}:", "Agents".cyan().bold());
                     for item in agents {
@@ -736,10 +718,8 @@ impl ListCommand {
             }
 
             if show_snippets {
-                let snippets: Vec<_> = items
-                    .iter()
-                    .filter(|i| i.resource_type == "snippet")
-                    .collect();
+                let snippets: Vec<_> =
+                    items.iter().filter(|i| i.resource_type == "snippet").collect();
                 if !snippets.is_empty() {
                     println!("{}:", "Snippets".cyan().bold());
                     for item in snippets {
@@ -882,10 +862,9 @@ mod tests {
         let mut manifest = crate::manifest::Manifest::new();
 
         // Add sources
-        manifest.sources.insert(
-            "official".to_string(),
-            "https://github.com/example/official.git".to_string(),
-        );
+        manifest
+            .sources
+            .insert("official".to_string(), "https://github.com/example/official.git".to_string());
         manifest.sources.insert(
             "community".to_string(),
             "https://github.com/example/community.git".to_string(),
@@ -1153,12 +1132,7 @@ mod tests {
 
         let result = cmd.validate_arguments();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid sort field")
-        );
+        assert!(result.unwrap_err().to_string().contains("Invalid sort field"));
     }
 
     #[test]
@@ -1608,10 +1582,7 @@ mod tests {
         assert_eq!(list_item.version, Some("v1.0.0".to_string()));
         assert_eq!(list_item.path, Some("agents/test.md".to_string()));
         assert_eq!(list_item.resource_type, "agent");
-        assert_eq!(
-            list_item.installed_at,
-            Some("agents/test-agent.md".to_string())
-        );
+        assert_eq!(list_item.installed_at, Some("agents/test-agent.md".to_string()));
         assert_eq!(list_item.checksum, Some("sha256:def456".to_string()));
         assert_eq!(list_item.resolved_commit, Some("abc123".to_string()));
     }

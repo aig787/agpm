@@ -54,11 +54,7 @@ dependencies:
 
 This command depends on an agent and a snippet.
 "#;
-    fs::write(
-        resources_dir.join("commands/test-command.md"),
-        command_content,
-    )
-    .await?;
+    fs::write(resources_dir.join("commands/test-command.md"), command_content).await?;
 
     // Create agent file with its own transitive dependency in local source
     let agent_content = r#"---
@@ -76,11 +72,8 @@ This agent depends on a helper snippet.
     fs::write(resources_dir.join("agents/test-agent.md"), agent_content).await?;
 
     // Create snippet files in local source
-    fs::write(
-        resources_dir.join("snippets/test-snippet.md"),
-        "# Test Snippet\n\nA test snippet.",
-    )
-    .await?;
+    fs::write(resources_dir.join("snippets/test-snippet.md"), "# Test Snippet\n\nA test snippet.")
+        .await?;
     fs::write(
         resources_dir.join("snippets/helper-snippet.md"),
         "# Helper Snippet\n\nA helper snippet.",
@@ -96,24 +89,14 @@ async fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str)
     let lockfile: toml::Value = toml::from_str(&lockfile_content).unwrap();
 
     // Search in all resource type arrays
-    for resource_type in &[
-        "agents",
-        "snippets",
-        "commands",
-        "scripts",
-        "hooks",
-        "mcp_servers",
-    ] {
+    for resource_type in &["agents", "snippets", "commands", "scripts", "hooks", "mcp_servers"] {
         if let Some(resources) = lockfile.get(resource_type).and_then(|v| v.as_array()) {
             for resource in resources {
                 if let Some(name) = resource.get("name").and_then(|v| v.as_str())
                     && name == resource_name
                 {
                     if let Some(deps) = resource.get("dependencies").and_then(|v| v.as_array()) {
-                        return deps
-                            .iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect();
+                        return deps.iter().filter_map(|v| v.as_str().map(String::from)).collect();
                     }
                     return Vec::new();
                 }
@@ -140,9 +123,7 @@ async fn test_incremental_add_preserves_transitive_dependencies() {
         .arg("--name")
         .arg("test-command");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Added command 'test-command'"));
+    cmd.assert().success().stdout(predicate::str::contains("Added command 'test-command'"));
 
     // Verify lockfile has transitive dependencies
     assert!(lockfile_path.exists(), "Lockfile should be created");
@@ -169,9 +150,7 @@ async fn test_incremental_add_preserves_transitive_dependencies() {
         .arg("--name")
         .arg("test-agent");
 
-    cmd2.assert()
-        .success()
-        .stdout(predicate::str::contains("Added agent 'test-agent'"));
+    cmd2.assert().success().stdout(predicate::str::contains("Added agent 'test-agent'"));
 
     // CRITICAL: Verify command still has its dependencies after agent becomes a base dep
     let command_deps_after = get_lockfile_dependencies(&lockfile_path, "test-command").await;
@@ -220,10 +199,7 @@ async fn test_incremental_add_chain_of_three_dependencies() {
         .success();
 
     let command_deps_step1 = get_lockfile_dependencies(&lockfile_path, "test-command").await;
-    assert!(
-        !command_deps_step1.is_empty(),
-        "Command should have dependencies"
-    );
+    assert!(!command_deps_step1.is_empty(), "Command should have dependencies");
 
     // Add agent explicitly (was transitive, now base)
     let mut cmd2 = Command::cargo_bin("agpm").unwrap();
@@ -240,14 +216,8 @@ async fn test_incremental_add_chain_of_three_dependencies() {
     let command_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-command").await;
     let agent_deps_step2 = get_lockfile_dependencies(&lockfile_path, "test-agent").await;
 
-    assert!(
-        !command_deps_step2.is_empty(),
-        "Command deps should persist after step 2"
-    );
-    assert!(
-        !agent_deps_step2.is_empty(),
-        "Agent should have dependencies"
-    );
+    assert!(!command_deps_step2.is_empty(), "Command deps should persist after step 2");
+    assert!(!agent_deps_step2.is_empty(), "Agent should have dependencies");
 
     // Add helper-snippet explicitly (was transitive of agent, now base)
     let mut cmd3 = Command::cargo_bin("agpm").unwrap();
@@ -280,9 +250,7 @@ async fn test_incremental_add_chain_of_three_dependencies() {
         "Command -> Agent dependency should be maintained"
     );
     assert!(
-        agent_deps_final
-            .iter()
-            .any(|d| d.contains("helper-snippet")),
+        agent_deps_final.iter().any(|d| d.contains("helper-snippet")),
         "Agent -> Snippet dependency should be maintained"
     );
 }
@@ -311,12 +279,7 @@ dependencies:
 
 This command also uses test-snippet.
 "#;
-    fs::write(
-        resources_dir.join("commands/second-command.md"),
-        command2_content,
-    )
-    .await
-    .unwrap();
+    fs::write(resources_dir.join("commands/second-command.md"), command2_content).await.unwrap();
 
     let lockfile_path = project_dir.join("agpm.lock");
 
@@ -350,14 +313,8 @@ This command also uses test-snippet.
     let cmd1_deps = get_lockfile_dependencies(&lockfile_path, "test-command").await;
     let cmd2_deps = get_lockfile_dependencies(&lockfile_path, "second-command").await;
 
-    assert!(
-        !cmd1_deps.is_empty(),
-        "First command should have dependencies"
-    );
-    assert!(
-        !cmd2_deps.is_empty(),
-        "Second command should have dependencies"
-    );
+    assert!(!cmd1_deps.is_empty(), "First command should have dependencies");
+    assert!(!cmd2_deps.is_empty(), "Second command should have dependencies");
 
     // Now add the shared snippet explicitly
     Command::cargo_bin("agpm")

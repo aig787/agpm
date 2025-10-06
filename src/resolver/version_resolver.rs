@@ -211,19 +211,18 @@ impl VersionResolver {
         let mut by_source: HashMap<String, Vec<(String, VersionEntry)>> = HashMap::new();
 
         for (key, entry) in &self.entries {
-            by_source
-                .entry(entry.source.clone())
-                .or_default()
-                .push((key.1.clone(), entry.clone()));
+            by_source.entry(entry.source.clone()).or_default().push((key.1.clone(), entry.clone()));
         }
 
         // Process each source
         for (source, versions) in by_source {
             // Repository must have been pre-synced
-            let repo_path = self.bare_repos.get(&source)
-                .ok_or_else(|| anyhow::anyhow!(
-                    "Repository for source '{source}' was not pre-synced. Call pre_sync_sources() first."
-                ))?
+            let repo_path = self
+                .bare_repos
+                .get(&source)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Repository for source '{source}' was not pre-synced. Call pre_sync_sources() first.")
+                })?
                 .clone();
 
             let repo = GitRepo::new(&repo_path);
@@ -251,20 +250,14 @@ impl VersionResolver {
 
                         // Find best matching tag
                         crate::resolver::version_resolution::find_best_matching_tag(version, tags)
-                            .with_context(|| {
-                            format!(
-                                "Failed to resolve version constraint '{version}' for source '{source}'"
-                            )
-                        })?
+                            .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
                     } else {
                         // Not a constraint, use as-is
                         version.clone()
                     }
                 } else {
                     // No version specified for Git source, resolve HEAD to actual branch name
-                    repo.get_default_branch()
-                        .await
-                        .unwrap_or_else(|_| "main".to_string())
+                    repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
                 };
 
                 // For local sources, don't resolve SHA. For Git sources, resolve ref to actual SHA
@@ -273,15 +266,9 @@ impl VersionResolver {
                     None
                 } else {
                     // Resolve the actual ref to SHA for Git repositories
-                    Some(
-                        repo.resolve_to_sha(Some(&resolved_ref))
-                            .await
-                            .with_context(|| {
-                                format!(
-                                    "Failed to resolve version '{version_str}' for source '{source}'"
-                                )
-                            })?,
-                    )
+                    Some(repo.resolve_to_sha(Some(&resolved_ref)).await.with_context(|| {
+                        format!("Failed to resolve version '{version_str}' for source '{source}'")
+                    })?)
                 };
 
                 // Store the resolved SHA and version
@@ -336,9 +323,7 @@ impl VersionResolver {
             v.to_string()
         } else {
             // When no version is specified, resolve HEAD to the actual branch name
-            repo.get_default_branch()
-                .await
-                .unwrap_or_else(|_| "main".to_string())
+            repo.get_default_branch().await.unwrap_or_else(|_| "main".to_string())
         };
 
         // Cache the result
@@ -372,10 +357,7 @@ impl VersionResolver {
     ///
     /// Useful for bulk operations or debugging.
     pub fn get_all_resolved(&self) -> HashMap<(String, String), String> {
-        self.resolved
-            .iter()
-            .map(|(k, v)| (k.clone(), v.sha.clone()))
-            .collect()
+        self.resolved.iter().map(|(k, v)| (k.clone(), v.sha.clone())).collect()
     }
 
     /// Gets all resolved versions with both SHA and resolved reference
@@ -601,10 +583,7 @@ mod tests {
 
         // Verify retrieval
         assert!(resolver.is_resolved("test_source", "v1.0.0"));
-        assert_eq!(
-            resolver.get_resolved_sha("test_source", "v1.0.0"),
-            Some(sha.to_string())
-        );
+        assert_eq!(resolver.get_resolved_sha("test_source", "v1.0.0"), Some(sha.to_string()));
         assert!(!resolver.is_resolved("test_source", "v2.0.0"));
     }
 }

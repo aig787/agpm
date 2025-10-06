@@ -47,7 +47,14 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                 source: Some(format!("repo_{}", repo_idx)),
                 url: Some(repo_url.clone()),
                 path: format!("agents/agent_{:03}.md", i),
-                version: Some(if i % 3 == 0 { "v1.0.0" } else { "v2.0.0" }.to_string()),
+                version: Some(
+                    if i % 3 == 0 {
+                        "v1.0.0"
+                    } else {
+                        "v2.0.0"
+                    }
+                    .to_string(),
+                ),
                 resolved_commit: None,
                 checksum: format!("sha256:r{}a{}", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
@@ -81,27 +88,16 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     debug!("Installation completed in {:?}", duration);
     assert_eq!(count, total_agents);
 
-    println!(
-        "✅ Successfully installed {} agents in {:?}",
-        total_agents, duration
-    );
+    println!("✅ Successfully installed {} agents in {:?}", total_agents, duration);
     println!("   Average: {:?} per agent", duration / total_agents as u32);
-    println!(
-        "   Rate: {:.1} agents/second",
-        total_agents as f64 / duration.as_secs_f64()
-    );
+    println!("   Rate: {:.1} agents/second", total_agents as f64 / duration.as_secs_f64());
 
     // Verify a sample of files
     for repo_idx in 0..5 {
         for i in (0..100).step_by(10) {
             let path =
                 project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
-            assert!(
-                path.exists(),
-                "Agent from repo {} #{} should exist",
-                repo_idx,
-                i
-            );
+            assert!(path.exists(), "Agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
@@ -124,17 +120,10 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
 /// Helper to create a large test repository with many files and multiple tags
 async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize) -> Result<()> {
     // Initialize repository
-    GitCommand::init()
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::init().current_dir(path).execute_success().await?;
 
     // Set default branch to main
-    GitCommand::new()
-        .args(["checkout", "-b", "main"])
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::new().args(["checkout", "-b", "main"]).current_dir(path).execute_success().await?;
 
     // Configure git
     GitCommand::new()
@@ -197,10 +186,7 @@ async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize
     }
 
     // Initial commit
-    GitCommand::add(".")
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::add(".").current_dir(path).execute_success().await?;
 
     GitCommand::commit("Initial commit with all agents")
         .current_dir(path)
@@ -208,11 +194,7 @@ async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize
         .await?;
 
     // Create v1.0.0 tag
-    GitCommand::new()
-        .args(["tag", "v1.0.0"])
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::new().args(["tag", "v1.0.0"]).current_dir(path).execute_success().await?;
 
     // Make some changes for v2.0.0
     for i in 0..5 {
@@ -230,22 +212,12 @@ async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize
         .await?;
     }
 
-    GitCommand::add(".")
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::add(".").current_dir(path).execute_success().await?;
 
-    GitCommand::commit("Update for v2.0.0")
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::commit("Update for v2.0.0").current_dir(path).execute_success().await?;
 
     // Create v2.0.0 tag
-    GitCommand::new()
-        .args(["tag", "v2.0.0"])
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::new().args(["tag", "v2.0.0"]).current_dir(path).execute_success().await?;
 
     // More changes for v3.0.0
     for i in 5..10 {
@@ -263,22 +235,12 @@ async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize
         .await?;
     }
 
-    GitCommand::add(".")
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::add(".").current_dir(path).execute_success().await?;
 
-    GitCommand::commit("Update for v3.0.0")
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::commit("Update for v3.0.0").current_dir(path).execute_success().await?;
 
     // Create v3.0.0 tag
-    GitCommand::new()
-        .args(["tag", "v3.0.0"])
-        .current_dir(path)
-        .execute_success()
-        .await?;
+    GitCommand::new().args(["tag", "v3.0.0"]).current_dir(path).execute_success().await?;
 
     Ok(())
 }
@@ -331,10 +293,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     let manifest = Manifest::new();
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    println!(
-        "📦 Installing initial version (v1.0.0) of {} agents",
-        total_agents
-    );
+    println!("📦 Installing initial version (v1.0.0) of {} agents", total_agents);
     let start_install = std::time::Instant::now();
 
     let (count, _) = install_resources(
@@ -396,30 +355,16 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     let update_duration = start_update.elapsed();
     assert_eq!(update_count, total_agents);
 
-    println!(
-        "✅ Successfully updated {} agents in {:?}",
-        total_agents, update_duration
-    );
-    println!(
-        "   Average: {:?} per agent",
-        update_duration / total_agents as u32
-    );
-    println!(
-        "   Rate: {:.1} agents/second",
-        total_agents as f64 / update_duration.as_secs_f64()
-    );
+    println!("✅ Successfully updated {} agents in {:?}", total_agents, update_duration);
+    println!("   Average: {:?} per agent", update_duration / total_agents as u32);
+    println!("   Rate: {:.1} agents/second", total_agents as f64 / update_duration.as_secs_f64());
 
     // Verify files are updated (check a sample)
     for repo_idx in 0..5 {
         for i in (0..5).step_by(1) {
             let path =
                 project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
-            assert!(
-                path.exists(),
-                "Updated agent from repo {} #{} should exist",
-                repo_idx,
-                i
-            );
+            assert!(path.exists(), "Updated agent from repo {} #{} should exist", repo_idx, i);
 
             // For the first 5 agents of each repo, they should have v2.0.0 content
             let content = fs::read_to_string(&path).await?;
@@ -549,33 +494,17 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     let duration = start.elapsed();
     assert_eq!(count, total_resources);
 
-    println!(
-        "✅ Successfully installed {} resources in {:?}",
-        total_resources, duration
-    );
-    println!(
-        "   Local file:// repos: {} agents",
-        total_resources - community_agents.len()
-    );
+    println!("✅ Successfully installed {} resources in {:?}", total_resources, duration);
+    println!("   Local file:// repos: {} agents", total_resources - community_agents.len());
     println!("   Remote https:// repo: {} agents", community_agents.len());
-    println!(
-        "   Average: {:?} per resource",
-        duration / total_resources as u32
-    );
+    println!("   Average: {:?} per resource", duration / total_resources as u32);
 
     // Verify local files exist
     for repo_idx in 0..2 {
         for i in (0..50).step_by(10) {
-            let path = project_dir.join(format!(
-                ".claude/agents/local_repo{}_agent_{:03}.md",
-                repo_idx, i
-            ));
-            assert!(
-                path.exists(),
-                "Local agent from repo {} #{} should exist",
-                repo_idx,
-                i
-            );
+            let path = project_dir
+                .join(format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
+            assert!(path.exists(), "Local agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
@@ -706,15 +635,9 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     let duration = start.elapsed();
     assert_eq!(count, total_agents);
 
-    println!(
-        "✅ Successfully installed {} community agents in {:?}",
-        total_agents, duration
-    );
+    println!("✅ Successfully installed {} community agents in {:?}", total_agents, duration);
     println!("   Average: {:?} per agent", duration / total_agents as u32);
-    println!(
-        "   Rate: {:.1} agents/second",
-        total_agents as f64 / duration.as_secs_f64()
-    );
+    println!("   Rate: {:.1} agents/second", total_agents as f64 / duration.as_secs_f64());
 
     // Verify all community agents were installed
     for (name, _) in community_agents.iter() {
@@ -723,11 +646,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
         // Verify the file has content (not empty)
         let content = fs::read_to_string(&path).await?;
-        assert!(
-            !content.is_empty(),
-            "Community agent '{}' should have content",
-            name
-        );
+        assert!(!content.is_empty(), "Community agent '{}' should have content", name);
         assert!(
             content.contains("# ") || content.contains("## "),
             "Community agent '{}' should look like a valid markdown file",
@@ -891,18 +810,10 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         let agent_name_base = community_agents[i % community_agents.len()].0;
         let unique_filename = format!("{}-{:03}.md", agent_name_base, i);
         let agent_path = agents_dir.join(&unique_filename);
-        assert!(
-            agent_path.exists(),
-            "Agent {} should exist",
-            unique_filename
-        );
+        assert!(agent_path.exists(), "Agent {} should exist", unique_filename);
 
         let content = tokio::fs::read_to_string(&agent_path).await?;
-        assert!(
-            !content.is_empty(),
-            "Agent {} should have content",
-            unique_filename
-        );
+        assert!(!content.is_empty(), "Agent {} should have content", unique_filename);
         assert!(
             content.contains("# ") || content.contains("## "),
             "Agent '{}' should look like a valid markdown file",

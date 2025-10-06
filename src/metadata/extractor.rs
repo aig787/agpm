@@ -50,7 +50,11 @@ impl MetadataExtractor {
         }
 
         // Find the end of frontmatter
-        let search_start = if content.starts_with("---\n") { 4 } else { 5 };
+        let search_start = if content.starts_with("---\n") {
+            4
+        } else {
+            5
+        };
 
         let end_pattern = if content.contains("\r\n") {
             "\r\n---\r\n"

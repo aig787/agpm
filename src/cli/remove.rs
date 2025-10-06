@@ -164,11 +164,7 @@ fn get_installed_path_from_lockfile(
             .map(|c| project_root.join(&c.installed_at)),
         ResourceType::McpServer => {
             // MCP servers have config files in the directory specified by manifest.target.mcp_servers
-            Some(
-                project_root
-                    .join(&manifest.target.mcp_servers)
-                    .join(format!("{name}.json")),
-            )
+            Some(project_root.join(&manifest.target.mcp_servers).join(format!("{name}.json")))
         }
         ResourceType::Script => lockfile
             .scripts
@@ -228,28 +224,29 @@ impl RemoveCommand {
     /// ```
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         match self.command {
-            RemoveSubcommand::Source { name, force } => {
-                remove_source_with_manifest_path(&name, force, manifest_path).await
-            }
+            RemoveSubcommand::Source {
+                name,
+                force,
+            } => remove_source_with_manifest_path(&name, force, manifest_path).await,
             RemoveSubcommand::Dep(dep_command) => match dep_command {
-                RemoveDependencySubcommand::Agent { name } => {
-                    remove_dependency_with_manifest_path(&name, "agent", manifest_path).await
-                }
-                RemoveDependencySubcommand::Snippet { name } => {
-                    remove_dependency_with_manifest_path(&name, "snippet", manifest_path).await
-                }
-                RemoveDependencySubcommand::Command { name } => {
-                    remove_dependency_with_manifest_path(&name, "command", manifest_path).await
-                }
-                RemoveDependencySubcommand::McpServer { name } => {
-                    remove_dependency_with_manifest_path(&name, "mcp-server", manifest_path).await
-                }
-                RemoveDependencySubcommand::Script { name } => {
-                    remove_dependency_with_manifest_path(&name, "script", manifest_path).await
-                }
-                RemoveDependencySubcommand::Hook { name } => {
-                    remove_dependency_with_manifest_path(&name, "hook", manifest_path).await
-                }
+                RemoveDependencySubcommand::Agent {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "agent", manifest_path).await,
+                RemoveDependencySubcommand::Snippet {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "snippet", manifest_path).await,
+                RemoveDependencySubcommand::Command {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "command", manifest_path).await,
+                RemoveDependencySubcommand::McpServer {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "mcp-server", manifest_path).await,
+                RemoveDependencySubcommand::Script {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "script", manifest_path).await,
+                RemoveDependencySubcommand::Hook {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "hook", manifest_path).await,
             },
         }
     }
@@ -297,10 +294,7 @@ async fn remove_source_with_manifest_path(
     manifest.sources.remove(name);
 
     // Save the manifest
-    atomic_write(
-        &manifest_path,
-        toml::to_string_pretty(&manifest)?.as_bytes(),
-    )?;
+    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
 
     // Update lockfile to remove entries from this source
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
@@ -349,21 +343,11 @@ async fn remove_source_with_manifest_path(
         lockfile.sources.retain(|s| s.name != name);
 
         // Remove all dependencies from this source for all resource types
-        lockfile
-            .agents
-            .retain(|a| a.source.as_deref() != Some(name));
-        lockfile
-            .snippets
-            .retain(|s| s.source.as_deref() != Some(name));
-        lockfile
-            .commands
-            .retain(|c| c.source.as_deref() != Some(name));
-        lockfile
-            .mcp_servers
-            .retain(|m| m.source.as_deref() != Some(name));
-        lockfile
-            .scripts
-            .retain(|s| s.source.as_deref() != Some(name));
+        lockfile.agents.retain(|a| a.source.as_deref() != Some(name));
+        lockfile.snippets.retain(|s| s.source.as_deref() != Some(name));
+        lockfile.commands.retain(|c| c.source.as_deref() != Some(name));
+        lockfile.mcp_servers.retain(|m| m.source.as_deref() != Some(name));
+        lockfile.scripts.retain(|s| s.source.as_deref() != Some(name));
         lockfile.hooks.retain(|h| h.source.as_deref() != Some(name));
 
         // Save the updated lockfile
@@ -386,9 +370,8 @@ async fn remove_dependency_with_manifest_path(
     let mut manifest = Manifest::load(&manifest_path)?;
 
     // Parse the resource type
-    let resource_type: ResourceType = dep_type
-        .parse()
-        .map_err(|_| anyhow!("Invalid dependency type: {dep_type}"))?;
+    let resource_type: ResourceType =
+        dep_type.parse().map_err(|_| anyhow!("Invalid dependency type: {dep_type}"))?;
 
     // Get the dependencies for this resource type and check if it exists
     let dependencies = get_dependencies_for_type_mut(&mut manifest, resource_type);
@@ -397,12 +380,7 @@ async fn remove_dependency_with_manifest_path(
         let type_display = dep_type.replace('-', " ");
         return Err(anyhow!(
             "{} '{}' not found in manifest",
-            type_display
-                .chars()
-                .next()
-                .unwrap()
-                .to_uppercase()
-                .collect::<String>()
+            type_display.chars().next().unwrap().to_uppercase().collect::<String>()
                 + &type_display[1..],
             name
         ));
@@ -412,18 +390,11 @@ async fn remove_dependency_with_manifest_path(
     let removed = dependencies.remove(name).is_some();
 
     if !removed {
-        return Err(anyhow!(
-            "{} '{}' not found in manifest",
-            dep_type.replace('-', " "),
-            name
-        ));
+        return Err(anyhow!("{} '{}' not found in manifest", dep_type.replace('-', " "), name));
     }
 
     // Save the manifest
-    atomic_write(
-        &manifest_path,
-        toml::to_string_pretty(&manifest)?.as_bytes(),
-    )?;
+    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
 
     let dep_type_display = dep_type.replace('-', " ");
     println!("{}", format!("Removed {dep_type_display} '{name}'").green());
@@ -846,12 +817,7 @@ post-commit = "../test/another_hook.json"
         )
         .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid dependency type")
-        );
+        assert!(result.unwrap_err().to_string().contains("Invalid dependency type"));
     }
 
     #[tokio::test]
@@ -900,11 +866,7 @@ test-agent = "../test/agent.md"
 
         // Verify the agent was removed from lockfile
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(
-            updated_lockfile.agents.len(),
-            0,
-            "Agent should be removed from lockfile"
-        );
+        assert_eq!(updated_lockfile.agents.len(), 0, "Agent should be removed from lockfile");
     }
 
     #[tokio::test]
@@ -975,9 +937,7 @@ test = "https://github.com/test/repo.git"
                 force: false,
             },
         };
-        let result = cmd
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = cmd.execute_with_manifest_path(Some(manifest_path.clone())).await;
         assert!(result.is_ok());
     }
 
@@ -1058,14 +1018,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         std::fs::write(&snippet_file, "# Test Snippet").unwrap();
 
         // Verify files exist
-        assert!(
-            agent_file.exists(),
-            "Agent file should exist before removal"
-        );
-        assert!(
-            snippet_file.exists(),
-            "Snippet file should exist before removal"
-        );
+        assert!(agent_file.exists(), "Agent file should exist before removal");
+        assert!(snippet_file.exists(), "Snippet file should exist before removal");
 
         // Remove the snippet
         remove_dependency_with_manifest_path(
@@ -1077,15 +1031,9 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
         .unwrap();
 
         // Verify snippet file was deleted
-        assert!(
-            !snippet_file.exists(),
-            "Snippet file should be deleted after removal"
-        );
+        assert!(!snippet_file.exists(), "Snippet file should be deleted after removal");
         // Agent file should still exist
-        assert!(
-            agent_file.exists(),
-            "Agent file should still exist after snippet removal"
-        );
+        assert!(agent_file.exists(), "Agent file should still exist after snippet removal");
 
         // Remove the source (should remove remaining agent)
         remove_source_with_manifest_path("test-source", true, Some(manifest_path.clone()))
@@ -1093,28 +1041,13 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             .unwrap();
 
         // Verify agent file was also deleted
-        assert!(
-            !agent_file.exists(),
-            "Agent file should be deleted after source removal"
-        );
+        assert!(!agent_file.exists(), "Agent file should be deleted after source removal");
 
         // Verify lockfile was updated
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(
-            updated_lockfile.agents.len(),
-            0,
-            "No agents should remain in lockfile"
-        );
-        assert_eq!(
-            updated_lockfile.snippets.len(),
-            0,
-            "No snippets should remain in lockfile"
-        );
-        assert_eq!(
-            updated_lockfile.sources.len(),
-            0,
-            "No sources should remain in lockfile"
-        );
+        assert_eq!(updated_lockfile.agents.len(), 0, "No agents should remain in lockfile");
+        assert_eq!(updated_lockfile.snippets.len(), 0, "No snippets should remain in lockfile");
+        assert_eq!(updated_lockfile.sources.len(), 0, "No sources should remain in lockfile");
     }
 
     #[tokio::test]
@@ -1259,16 +1192,8 @@ test-snippet = "../local/snippet.md"
 
         // Verify lockfile was updated
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(
-            updated_lockfile.snippets.len(),
-            0,
-            "Snippet should be removed from lockfile"
-        );
-        assert_eq!(
-            updated_lockfile.agents.len(),
-            1,
-            "Agent should still be in lockfile"
-        );
+        assert_eq!(updated_lockfile.snippets.len(), 0, "Snippet should be removed from lockfile");
+        assert_eq!(updated_lockfile.agents.len(), 1, "Agent should still be in lockfile");
 
         // Remove the agent
         let result = remove_dependency_with_manifest_path(
@@ -1281,16 +1206,8 @@ test-snippet = "../local/snippet.md"
 
         // Verify lockfile was updated again
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(
-            updated_lockfile.agents.len(),
-            0,
-            "Agent should be removed from lockfile"
-        );
-        assert_eq!(
-            updated_lockfile.sources.len(),
-            1,
-            "Source should still be in lockfile"
-        );
+        assert_eq!(updated_lockfile.agents.len(), 0, "Agent should be removed from lockfile");
+        assert_eq!(updated_lockfile.sources.len(), 1, "Source should still be in lockfile");
 
         // Remove the source
         let result =
@@ -1300,11 +1217,7 @@ test-snippet = "../local/snippet.md"
 
         // Verify source was removed from lockfile
         let updated_lockfile = LockFile::load(&lockfile_path).unwrap();
-        assert_eq!(
-            updated_lockfile.sources.len(),
-            0,
-            "Source should be removed from lockfile"
-        );
+        assert_eq!(updated_lockfile.sources.len(), 0, "Source should be removed from lockfile");
     }
 
     #[tokio::test]

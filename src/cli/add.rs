@@ -105,8 +105,18 @@ impl AddCommand {
         manifest_path: Option<std::path::PathBuf>,
     ) -> Result<()> {
         match self.command {
-            AddSubcommand::Source { name, url } => {
-                add_source_with_manifest_path(SourceSpec { name, url }, manifest_path).await
+            AddSubcommand::Source {
+                name,
+                url,
+            } => {
+                add_source_with_manifest_path(
+                    SourceSpec {
+                        name,
+                        url,
+                    },
+                    manifest_path,
+                )
+                .await
             }
             AddSubcommand::Dep(dep_command) => {
                 let dep_type = match dep_command {
@@ -134,27 +144,16 @@ async fn add_source_with_manifest_path(
 
     // Check if source already exists
     if manifest.sources.contains_key(&source.name) {
-        return Err(anyhow!(
-            "Source '{}' already exists in manifest",
-            source.name
-        ));
+        return Err(anyhow!("Source '{}' already exists in manifest", source.name));
     }
 
     // Add the source
-    manifest
-        .sources
-        .insert(source.name.clone(), source.url.clone());
+    manifest.sources.insert(source.name.clone(), source.url.clone());
 
     // Save the manifest
-    atomic_write(
-        &manifest_path,
-        toml::to_string_pretty(&manifest)?.as_bytes(),
-    )?;
+    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
 
-    println!(
-        "{}",
-        format!("Added source '{}' → {}", source.name, source.url).green()
-    );
+    println!("{}", format!("Added source '{}' → {}", source.name, source.url).green());
 
     Ok(())
 }
@@ -188,9 +187,7 @@ async fn add_dependency_with_manifest_path(
         }
 
         // Add to manifest (MCP servers now use standard ResourceDependency)
-        manifest
-            .mcp_servers
-            .insert(name.clone(), dependency.clone());
+        manifest.mcp_servers.insert(name.clone(), dependency.clone());
     } else {
         // Handle regular resources (agents, snippets, commands, scripts, hooks)
         let section = match &dep_type {
@@ -214,10 +211,7 @@ async fn add_dependency_with_manifest_path(
     }
 
     // Save the manifest
-    atomic_write(
-        &manifest_path,
-        toml::to_string_pretty(&manifest)?.as_bytes(),
-    )?;
+    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
 
     println!("{}", format!("Added {resource_type} '{name}'").green());
 
@@ -416,11 +410,7 @@ fn parse_dependency_spec(
         let version = captures.get(3).map(|m| m.as_str().to_string());
 
         let name = custom_name.clone().unwrap_or_else(|| {
-            Path::new(&path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string()
+            Path::new(&path).file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string()
         });
 
         // Check if the source is a local path by looking up the source URL in the manifest
@@ -473,22 +463,14 @@ fn parse_dependency_spec(
         };
 
         let name = custom_name.clone().unwrap_or_else(|| {
-            Path::new(path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string()
+            Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string()
         });
 
         Ok((name, ResourceDependency::Simple(path.to_string())))
     } else {
         // Treat as simple path
         let name = custom_name.clone().unwrap_or_else(|| {
-            Path::new(spec)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string()
+            Path::new(spec).file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string()
         });
 
         Ok((name, ResourceDependency::Simple(spec.to_string())))
@@ -502,9 +484,8 @@ async fn install_single_dependency(
     manifest: &Manifest,
     manifest_path: &Path,
 ) -> Result<()> {
-    let project_root = manifest_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
+    let project_root =
+        manifest_path.parent().ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
 
     // Use the install command's logic for a single dependency
     // This ensures proper transitive dependency resolution
@@ -518,9 +499,7 @@ async fn install_single_dependency(
     // 1. Resolve all dependencies including transitive ones
     // 2. Install all required files
     // 3. Update the lockfile with proper dependency tracking
-    install_cmd
-        .execute_with_manifest_path(Some(manifest_path.to_path_buf()))
-        .await?;
+    install_cmd.execute_with_manifest_path(Some(manifest_path.to_path_buf())).await?;
 
     println!(
         "{}",
@@ -636,12 +615,9 @@ existing-mcp = "../local/mcp-servers/existing.json"
         let test_file = temp_dir.path().join("test.md");
         std::fs::write(&test_file, "# Test").unwrap();
 
-        let (name, dep) = parse_dependency_spec(
-            test_file.to_str().unwrap(),
-            &Some("my-agent".to_string()),
-            None,
-        )
-        .unwrap();
+        let (name, dep) =
+            parse_dependency_spec(test_file.to_str().unwrap(), &Some("my-agent".to_string()), None)
+                .unwrap();
 
         assert_eq!(name, "my-agent");
         if let ResourceDependency::Simple(path) = dep {
@@ -692,9 +668,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
     fn test_parse_dependency_local_source_no_default_version() {
         // Create a test manifest with a local source
         let mut manifest = Manifest::new();
-        manifest
-            .sources
-            .insert("local-src".to_string(), "/path/to/local".to_string());
+        manifest.sources.insert("local-src".to_string(), "/path/to/local".to_string());
 
         let (name, dep) =
             parse_dependency_spec("local-src:path/to/file.md", &None, Some(&manifest)).unwrap();
@@ -744,9 +718,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             },
         };
 
-        let result = add_command
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         assert!(result.is_ok(), "Failed to execute add source: {result:?}");
 
@@ -782,9 +754,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         };
 
         // Execute the command - this should now succeed with local files
-        let result = add_command
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local agent: {result:?}");
@@ -816,9 +786,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local snippet: {result:?}");
@@ -850,9 +818,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         // This should succeed since we're using a local file
         assert!(result.is_ok(), "Failed to add local command: {result:?}");
@@ -887,9 +853,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
             })),
         };
 
-        let result = add_command
-            .execute_with_manifest_path(Some(manifest_path.clone()))
-            .await;
+        let result = add_command.execute_with_manifest_path(Some(manifest_path.clone())).await;
 
         assert!(result.is_ok(), "Failed to add MCP server: {result:?}");
 
@@ -898,13 +862,8 @@ existing-mcp = "../local/mcp-servers/existing.json"
         assert!(manifest.mcp_servers.contains_key("test-mcp"));
 
         // Check that the file was installed
-        let installed_path = temp_dir
-            .path()
-            .join(".claude/agpm/mcp-servers/test-mcp.json");
-        assert!(
-            installed_path.exists(),
-            "MCP server config should be installed"
-        );
+        let installed_path = temp_dir.path().join(".claude/agpm/mcp-servers/test-mcp.json");
+        assert!(installed_path.exists(), "MCP server config should be installed");
 
         // Note: The install command writes to .mcp.json, not .claude/settings.local.json
         // This is the correct behavior as per the MCP module documentation
@@ -929,10 +888,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
         // Verify source was added
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(manifest.sources.contains_key("new-source"));
-        assert_eq!(
-            manifest.sources.get("new-source").unwrap(),
-            "https://github.com/new/repo.git"
-        );
+        assert_eq!(manifest.sources.get("new-source").unwrap(), "https://github.com/new/repo.git");
     }
 
     #[tokio::test]
@@ -1067,19 +1023,11 @@ test-mcp = "{}"
             install_single_dependency("test-mcp", "mcp-server", &manifest, &manifest_path).await;
 
         // MCP servers should install successfully via full install command
-        assert!(
-            result.is_ok(),
-            "MCP server installation should succeed: {result:?}"
-        );
+        assert!(result.is_ok(), "MCP server installation should succeed: {result:?}");
 
         // Check that the MCP server config was created
-        let mcp_config_path = temp_dir
-            .path()
-            .join(".claude/agpm/mcp-servers/test-mcp.json");
-        assert!(
-            mcp_config_path.exists(),
-            "MCP server config file should be created"
-        );
+        let mcp_config_path = temp_dir.path().join(".claude/agpm/mcp-servers/test-mcp.json");
+        assert!(mcp_config_path.exists(), "MCP server config file should be created");
     }
 
     #[tokio::test]
@@ -1124,10 +1072,7 @@ test = "{}"
 
         // The full install command handles this gracefully by using manifest defaults
         // So this now succeeds, as the install command will find the dependency in agents
-        assert!(
-            result.is_ok(),
-            "Install should succeed with full command: {result:?}"
-        );
+        assert!(result.is_ok(), "Install should succeed with full command: {result:?}");
     }
 
     #[tokio::test]
@@ -1157,10 +1102,7 @@ test-agent = { source = "nonexistent-source", path = "agents/test.md", version =
         let manifest_result = Manifest::load(&manifest_path);
 
         // Should fail during manifest loading due to source validation
-        assert!(
-            manifest_result.is_err(),
-            "Should fail to load manifest with nonexistent source"
-        );
+        assert!(manifest_result.is_err(), "Should fail to load manifest with nonexistent source");
         let error_msg = manifest_result.err().unwrap().to_string();
         assert!(error_msg.contains("nonexistent-source") || error_msg.contains("not defined"));
     }
@@ -1211,10 +1153,7 @@ existing-agent = "{}"
         let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
         // This should succeed since we're using force flag and a local file
-        assert!(
-            result.is_ok(),
-            "Failed to add agent with force flag: {result:?}"
-        );
+        assert!(result.is_ok(), "Failed to add agent with force flag: {result:?}");
 
         // Verify the agent was overwritten in the manifest
         let manifest = Manifest::load(&manifest_path).unwrap();
@@ -1344,22 +1283,14 @@ existing-agent = "{}"
 
         let result = add_dependency_with_manifest_path(dep_type, Some(manifest_path.clone())).await;
 
-        assert!(
-            result.is_ok(),
-            "Failed to add MCP server with file: {result:?}"
-        );
+        assert!(result.is_ok(), "Failed to add MCP server with file: {result:?}");
 
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(manifest.mcp_servers.contains_key("file-mcp"));
 
         // Check that the file was installed
-        let installed_path = temp_dir
-            .path()
-            .join(".claude/agpm/mcp-servers/file-mcp.json");
-        assert!(
-            installed_path.exists(),
-            "MCP server config should be installed"
-        );
+        let installed_path = temp_dir.path().join(".claude/agpm/mcp-servers/file-mcp.json");
+        assert!(installed_path.exists(), "MCP server config should be installed");
 
         // Note: The install command writes to .mcp.json, not .claude/settings.local.json
         // This is the correct behavior as per the MCP module documentation

@@ -24,11 +24,7 @@ impl TestGit {
             .with_context(|| action.to_string())?;
 
         if !output.status.success() {
-            bail!(
-                "{} failed: {}",
-                action,
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("{} failed: {}", action, String::from_utf8_lossy(&output.stderr));
         }
 
         Ok(output)
@@ -75,10 +71,7 @@ impl TestGit {
 
     /// Create a tag
     pub fn tag(&self, tag_name: &str) -> Result<()> {
-        self.run_git_command(
-            &["tag", tag_name],
-            &format!("Failed to create tag: {}", tag_name),
-        )?;
+        self.run_git_command(&["tag", tag_name], &format!("Failed to create tag: {}", tag_name))?;
         Ok(())
     }
 

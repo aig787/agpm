@@ -240,11 +240,7 @@ use crate::version::constraints::VersionConstraint;
 /// # }
 /// ```
 #[derive(Debug, Args)]
-#[command(
-    about = "Check for available updates to installed dependencies",
-    author,
-    version
-)]
+#[command(about = "Check for available updates to installed dependencies", author, version)]
 pub struct OutdatedCommand {
     /// Specific dependencies to check (checks all if omitted)
     #[arg(value_name = "DEPENDENCY")]
@@ -669,20 +665,15 @@ impl OutdatedCommand {
                 .map(|(name, dep)| (name.to_string(), dep.clone()))
                 .collect();
 
-            resolver
-                .pre_sync_sources(&deps)
-                .await
-                .context("Failed to sync sources")?;
+            resolver.pre_sync_sources(&deps).await.context("Failed to sync sources")?;
 
             // Progress is automatically handled by MultiPhaseProgress
         }
 
         // 5. Check each dependency for updates
         if let Some(ref progress) = progress {
-            progress.start_phase(
-                InstallationPhase::ResolvingDependencies,
-                Some("Checking versions"),
-            );
+            progress
+                .start_phase(InstallationPhase::ResolvingDependencies, Some("Checking versions"));
         }
 
         let mut outdated_deps = Vec::new();
@@ -696,9 +687,8 @@ impl OutdatedCommand {
 
             debug!("Checking dependency: {}", name);
 
-            if let Some(outdated_info) = self
-                .check_dependency(name, locked, &manifest, &cache, &resolver)
-                .await?
+            if let Some(outdated_info) =
+                self.check_dependency(name, locked, &manifest, &cache, &resolver).await?
             {
                 outdated_deps.push(outdated_info);
             }
@@ -713,11 +703,7 @@ impl OutdatedCommand {
         self.display_results(&outdated_deps, &summary)?;
 
         // 8. Exit with appropriate code
-        if self.check
-            && outdated_deps
-                .iter()
-                .any(|d| d.has_update || d.has_major_update)
-        {
+        if self.check && outdated_deps.iter().any(|d| d.has_update || d.has_major_update) {
             std::process::exit(1);
         }
 
@@ -822,9 +808,8 @@ impl OutdatedCommand {
         }
 
         // Get the source
-        let source_name = dep
-            .get_source()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no source"))?;
+        let source_name =
+            dep.get_source().ok_or_else(|| anyhow::anyhow!("Dependency {name} has no source"))?;
 
         // Get the version constraint
         let constraint_str = dep
@@ -845,16 +830,11 @@ impl OutdatedCommand {
 
         // Construct the bare repo path: cache_dir/sources/owner_repo.git
         // Bare repositories have .git suffix in the cache
-        let bare_repo_path = cache
-            .get_cache_location()
-            .join("sources")
-            .join(format!("{owner}_{repo}.git"));
+        let bare_repo_path =
+            cache.get_cache_location().join("sources").join(format!("{owner}_{repo}.git"));
 
         if !bare_repo_path.exists() {
-            debug!(
-                "Repository not found in cache at {:?}, skipping",
-                bare_repo_path
-            );
+            debug!("Repository not found in cache at {:?}, skipping", bare_repo_path);
             return Ok(None);
         }
 
@@ -931,10 +911,7 @@ impl OutdatedCommand {
             name: name.to_string(),
             resource_type: resource_type.to_string(),
             source: source_name.to_string(),
-            current: locked
-                .version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string()),
+            current: locked.version.clone().unwrap_or_else(|| "unknown".to_string()),
             latest: format_version(&latest_compatible),
             latest_available: format_version(&latest_available),
             constraint: constraint_str,
@@ -1236,10 +1213,7 @@ impl OutdatedCommand {
                 dep.latest_available.normal()
             };
 
-            println!(
-                "{:<30} {:<12} {:<12} {:<12}",
-                name, dep.current, latest, available
-            );
+            println!("{:<30} {:<12} {:<12} {:<12}", name, dep.current, latest, available);
         }
 
         // Print summary
@@ -1257,10 +1231,7 @@ impl OutdatedCommand {
                 summary.with_major_updates.to_string().cyan()
             );
         }
-        println!(
-            "  {} dependencies are up to date",
-            summary.up_to_date.to_string().green()
-        );
+        println!("  {} dependencies are up to date", summary.up_to_date.to_string().green());
 
         Ok(())
     }

@@ -50,11 +50,7 @@ pub trait FileOperations {
         let from = from.as_ref();
         let to = to.as_ref();
         std::fs::copy(from, to).with_context(|| {
-            format!(
-                "Failed to copy file from {} to {}",
-                from.display(),
-                to.display()
-            )
+            format!("Failed to copy file from {} to {}", from.display(), to.display())
         })
     }
 
@@ -145,9 +141,7 @@ pub trait LockfileOperations {
         path: impl AsRef<Path>,
     ) -> Result<()> {
         let path = path.as_ref();
-        lockfile
-            .save(path)
-            .with_context(|| format!("Failed to save lockfile: {}", path.display()))
+        lockfile.save(path).with_context(|| format!("Failed to save lockfile: {}", path.display()))
     }
 }
 
@@ -419,10 +413,7 @@ This is a test agent.
 
         let markdown =
             MarkdownOps::parse_markdown_with_context(markdown_content, &md_path).unwrap();
-        assert_eq!(
-            markdown.content.trim(),
-            "# Test Agent\n\nThis is a test agent."
-        );
+        assert_eq!(markdown.content.trim(), "# Test Agent\n\nThis is a test agent.");
         assert!(markdown.get_title().is_some());
         assert_eq!(markdown.get_title().unwrap(), "Test Agent");
 
@@ -430,10 +421,7 @@ This is a test agent.
         let simple_content = "# Simple Agent\n\nThis is simple.";
         let simple_markdown =
             MarkdownOps::parse_markdown_with_context(simple_content, &md_path).unwrap();
-        assert_eq!(
-            simple_markdown.content.trim(),
-            "# Simple Agent\n\nThis is simple."
-        );
+        assert_eq!(simple_markdown.content.trim(), "# Simple Agent\n\nThis is simple.");
         // get_title() should extract title from the # heading
         assert_eq!(simple_markdown.get_title().unwrap(), "Simple Agent");
 
@@ -441,10 +429,7 @@ This is a test agent.
         let plain_content = "This is plain content without headings.";
         let plain_markdown =
             MarkdownOps::parse_markdown_with_context(plain_content, &md_path).unwrap();
-        assert_eq!(
-            plain_markdown.content.trim(),
-            "This is plain content without headings."
-        );
+        assert_eq!(plain_markdown.content.trim(), "This is plain content without headings.");
         assert!(plain_markdown.get_title().is_none());
 
         // Test case - invalid YAML frontmatter now succeeds but without metadata
@@ -486,11 +471,7 @@ This is a test agent for reading.
         // Test reading markdown with context
         let markdown = MarkdownOps::read_markdown_with_context(&md_path).unwrap();
         assert_eq!(markdown.get_title().unwrap(), "Test Agent");
-        assert!(
-            markdown
-                .content
-                .contains("This is a test agent for reading")
-        );
+        assert!(markdown.content.contains("This is a test agent for reading"));
 
         // Test error case - non-existent file
         let missing_path = temp.path().join("missing.md");

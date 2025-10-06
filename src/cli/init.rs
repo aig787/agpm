@@ -232,11 +232,7 @@ impl InitCommand {
             println!("{} Updated .gitignore with AGPM entries", "✓".green());
         }
 
-        println!(
-            "{} Initialized agpm.toml at {}",
-            "✓".green(),
-            manifest_path.display()
-        );
+        println!("{} Initialized agpm.toml at {}", "✓".green(), manifest_path.display());
 
         println!("\n{}", "Next steps:".cyan());
         println!("  Add dependencies with {}:", "agpm add".bright_white());

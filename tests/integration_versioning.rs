@@ -16,16 +16,10 @@ async fn setup_git_repo_with_versions(repo: &TestSourceRepo) -> Result<String> {
     fs::create_dir_all(repo_path.join("snippets")).await?;
 
     // Create v1.0.0 content
-    fs::write(
-        repo_path.join("agents/example.md"),
-        "# Example Agent v1.0.0\nInitial version",
-    )
-    .await?;
-    fs::write(
-        repo_path.join("snippets/utils.md"),
-        "# Utils Snippet v1.0.0\nInitial version",
-    )
-    .await?;
+    fs::write(repo_path.join("agents/example.md"), "# Example Agent v1.0.0\nInitial version")
+        .await?;
+    fs::write(repo_path.join("snippets/utils.md"), "# Utils Snippet v1.0.0\nInitial version")
+        .await?;
 
     // Commit and tag v1.0.0
     git.add_all()?;
@@ -36,31 +30,20 @@ async fn setup_git_repo_with_versions(repo: &TestSourceRepo) -> Result<String> {
     let v1_commit = git.get_commit_hash()?;
 
     // Create v1.1.0 content
-    fs::write(
-        repo_path.join("agents/example.md"),
-        "# Example Agent v1.1.0\nMinor update",
-    )
-    .await?;
+    fs::write(repo_path.join("agents/example.md"), "# Example Agent v1.1.0\nMinor update").await?;
     git.add_all()?;
     git.commit("Version 1.1.0")?;
     git.tag("v1.1.0")?;
 
     // Create v1.2.0 content
-    fs::write(
-        repo_path.join("agents/example.md"),
-        "# Example Agent v1.2.0\nAnother minor update",
-    )
-    .await?;
+    fs::write(repo_path.join("agents/example.md"), "# Example Agent v1.2.0\nAnother minor update")
+        .await?;
     git.add_all()?;
     git.commit("Version 1.2.0")?;
     git.tag("v1.2.0")?;
 
     // Create v2.0.0 content
-    fs::write(
-        repo_path.join("agents/example.md"),
-        "# Example Agent v2.0.0\nMajor version",
-    )
-    .await?;
+    fs::write(repo_path.join("agents/example.md"), "# Example Agent v2.0.0\nMajor version").await?;
     git.add_all()?;
     git.commit("Version 2.0.0 - Breaking changes")?;
     git.tag("v2.0.0")?;
@@ -86,11 +69,8 @@ async fn setup_git_repo_with_versions(repo: &TestSourceRepo) -> Result<String> {
 
     git.create_branch("feature/new-agent")?;
 
-    fs::write(
-        repo_path.join("agents/feature.md"),
-        "# Feature Agent\nNew feature in progress",
-    )
-    .await?;
+    fs::write(repo_path.join("agents/feature.md"), "# Feature Agent\nNew feature in progress")
+        .await?;
 
     git.add_all()?;
     git.commit("Add feature agent")?;
@@ -127,9 +107,8 @@ example = {{ source = "versioned", path = "agents/example.md", version = "v1.0.0
     output.assert_success();
 
     // Check installed file contains v1.0.0 content
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(!installed.contains("v1.1.0"));
     assert!(!installed.contains("v2.0.0"));
@@ -159,9 +138,8 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
     output.assert_success();
 
     // Should get v1.2.0 (highest compatible version)
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -190,9 +168,8 @@ example = {{ source = "versioned", path = "agents/example.md", version = "~1.1.0
     output.assert_success();
 
     // Should get v1.1.0 (only patch updates allowed)
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.1.0"));
     assert!(!installed.contains("v1.2.0"));
 }
@@ -224,19 +201,12 @@ experimental = {{ source = "versioned", path = "agents/experimental.md", branch 
     // Check we got develop branch content
     // Files use basename from path, not dependency name
     let example_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-            .await
-            .unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(example_content.contains("Development"));
     assert!(example_content.contains("Unstable"));
 
     // Check experimental agent exists (only in develop branch)
-    assert!(
-        project
-            .project_path()
-            .join(".claude/agents/experimental.md")
-            .exists()
-    );
+    assert!(project.project_path().join(".claude/agents/experimental.md").exists());
 }
 
 #[tokio::test]
@@ -264,9 +234,7 @@ feature = {{ source = "versioned", path = "agents/feature.md", branch = "feature
 
     // Check feature agent was installed
     let feature_content =
-        fs::read_to_string(project.project_path().join(".claude/agents/feature.md"))
-            .await
-            .unwrap();
+        fs::read_to_string(project.project_path().join(".claude/agents/feature.md")).await.unwrap();
     assert!(feature_content.contains("Feature Agent"));
     assert!(feature_content.contains("New feature in progress"));
 }
@@ -298,9 +266,8 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 
     // Should get exact v1.0.0 content
     // Files use basename from path, not dependency name
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.0.0"));
     assert!(installed.contains("Initial version"));
 }
@@ -330,9 +297,8 @@ any = {{ source = "versioned", path = "agents/example.md", version = "*" }}
 
     // Should get v2.0.0 (highest available)
     // Files use basename from path, not dependency name
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -362,10 +328,7 @@ pinned = {{ source = "versioned", path = "agents/example.md", rev = "{}" }}
 
     let output = project.run_agpm(&["install"]).unwrap();
     // Should fail due to version conflict - same resource with different versions
-    assert!(
-        !output.success,
-        "Expected install to fail due to version conflicts"
-    );
+    assert!(!output.success, "Expected install to fail due to version conflicts");
 
     // Verify error message mentions the conflict
     assert!(
@@ -400,9 +363,8 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
     output.assert_success();
 
     // Should get v2.0.0 (highest that satisfies >=1.1.0)
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v2.0.0"));
 }
 
@@ -430,9 +392,8 @@ example = {{ source = "versioned", path = "agents/example.md", version = ">=1.1.
     output.assert_success();
 
     // Should get v1.2.0 (highest that satisfies the range)
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -485,10 +446,7 @@ dev = {{ source = "versioned", path = "agents/example.md", branch = "develop" }}
         panic!("Failed to read file {file_path:?}: {e}");
     });
     println!("File content after update: {updated:?}");
-    assert!(
-        updated.contains("Updated Development"),
-        "File content: {updated}"
-    );
+    assert!(updated.contains("Updated Development"), "File content: {updated}");
     assert!(updated.contains("Newer unstable"));
 }
 
@@ -613,23 +571,18 @@ example = {{ source = "versioned", path = "agents/example.md", version = "^1.0.0
     let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
-    let lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let lockfile = fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     assert!(lockfile.contains("version = \"v1.2.0\""));
 
     // Delete installed files
-    fs::remove_dir_all(project.project_path().join(".claude"))
-        .await
-        .unwrap();
+    fs::remove_dir_all(project.project_path().join(".claude")).await.unwrap();
 
     // Run frozen install - should use lockfile version (v1.2.0) not latest (v2.0.0)
     let output = project.run_agpm(&["install", "--frozen"]).unwrap();
     output.assert_success();
 
-    let installed = fs::read_to_string(project.project_path().join(".claude/agents/example.md"))
-        .await
-        .unwrap();
+    let installed =
+        fs::read_to_string(project.project_path().join(".claude/agents/example.md")).await.unwrap();
     assert!(installed.contains("v1.2.0"));
     assert!(!installed.contains("v2.0.0"));
 }
@@ -700,9 +653,7 @@ version-two = {{ source = "versioned", path = "snippets/utils.md", version = "v1
     // Custom target "v1" becomes ".claude/agents/v1/example.md"
     // Custom target "v2" becomes ".claude/snippets/v2/utils.md"
     let v1_path = project.project_path().join(".claude/agents/v1/example.md");
-    let v2_path = project
-        .project_path()
-        .join(".claude/agpm/snippets/v2/utils.md");
+    let v2_path = project.project_path().join(".claude/agpm/snippets/v2/utils.md");
 
     let v1 = fs::read_to_string(&v1_path)
         .await

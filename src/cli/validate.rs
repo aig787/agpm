@@ -409,10 +409,7 @@ impl ValidateCommand {
                 println!("{} {}", "✗".red(), error_msg);
             }
 
-            return Err(anyhow::anyhow!(
-                "Manifest file {} not found",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
         // Validation results for JSON output
@@ -898,10 +895,7 @@ mod tests {
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -970,10 +964,7 @@ mod tests {
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -999,10 +990,7 @@ mod tests {
 
         // Create manifest with a source dependency that needs resolving
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "test-agent".to_string(),
             crate::manifest::ResourceDependency::Detailed(Box::new(
@@ -1146,10 +1134,7 @@ mod tests {
 
         // Create valid manifest
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -1225,10 +1210,7 @@ mod tests {
         let manifest_path = custom_dir.join("custom.toml");
 
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -1567,10 +1549,7 @@ mod tests {
 
         // Create manifest with local file:// URL to avoid network access
         let mut manifest = crate::manifest::Manifest::new();
-        let source_url = format!(
-            "file://{}",
-            source_dir.display().to_string().replace('\\', "/")
-        );
+        let source_url = format!("file://{}", source_dir.display().to_string().replace('\\', "/"));
         manifest.add_source("test".to_string(), source_url);
         manifest.save(&manifest_path).unwrap();
 
@@ -1888,10 +1867,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         // Create manifest with v0.x versions (potentially outdated)
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "old-agent".to_string(),
             crate::manifest::ResourceDependency::Detailed(Box::new(
@@ -1935,10 +1911,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         // Create manifest with dependency that will fail to resolve
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/nonexistent/repo.git".to_string(),
-        );
+        manifest
+            .add_source("test".to_string(), "https://github.com/nonexistent/repo.git".to_string());
         manifest.add_dependency(
             "failing-agent".to_string(),
             crate::manifest::ResourceDependency::Detailed(Box::new(
@@ -1984,10 +1958,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         // Create manifest with dependencies that will fail resolution
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "my-agent".to_string(),
             crate::manifest::ResourceDependency::Detailed(Box::new(
@@ -2054,14 +2025,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let nonexistent_path2 = temp.path().join("nonexistent2");
 
         // Convert to file:// URLs with proper formatting for Windows
-        let url1 = format!(
-            "file://{}",
-            nonexistent_path1.display().to_string().replace('\\', "/")
-        );
-        let url2 = format!(
-            "file://{}",
-            nonexistent_path2.display().to_string().replace('\\', "/")
-        );
+        let url1 = format!("file://{}", nonexistent_path1.display().to_string().replace('\\', "/"));
+        let url2 = format!("file://{}", nonexistent_path2.display().to_string().replace('\\', "/"));
 
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_source("official".to_string(), url1);
@@ -2096,14 +2061,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let nonexistent_path2 = temp.path().join("nonexistent2");
 
         // Convert to file:// URLs with proper formatting for Windows
-        let url1 = format!(
-            "file://{}",
-            nonexistent_path1.display().to_string().replace('\\', "/")
-        );
-        let url2 = format!(
-            "file://{}",
-            nonexistent_path2.display().to_string().replace('\\', "/")
-        );
+        let url1 = format!("file://{}", nonexistent_path1.display().to_string().replace('\\', "/"));
+        let url2 = format!("file://{}", nonexistent_path2.display().to_string().replace('\\', "/"));
 
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_source("official".to_string(), url1);
@@ -2466,10 +2425,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         // Create manifest with some content for summary
         let mut manifest = crate::manifest::Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "test-agent".to_string(),
             crate::manifest::ResourceDependency::Simple("test.md".to_string()),
@@ -2564,9 +2520,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
-        manifest
-            .sources
-            .insert("invalid".to_string(), "not-a-valid-url".to_string());
+        manifest.sources.insert("invalid".to_string(), "not-a-valid-url".to_string());
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -2797,10 +2751,9 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
-        manifest.agents.insert(
-            "test-agent".to_string(),
-            ResourceDependency::Simple("agent.md".to_string()),
-        );
+        manifest
+            .agents
+            .insert("test-agent".to_string(), ResourceDependency::Simple("agent.md".to_string()));
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -2900,10 +2853,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let mut manifest = Manifest::new();
         // Add the source that's referenced
-        manifest.sources.insert(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.agents.insert(
             "old-agent".to_string(),
             ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
@@ -3011,18 +2961,15 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         // Create manifest with multiple dependencies
         let mut manifest = Manifest::new();
-        manifest.agents.insert(
-            "agent1".to_string(),
-            ResourceDependency::Simple("agent1.md".to_string()),
-        );
-        manifest.agents.insert(
-            "agent2".to_string(),
-            ResourceDependency::Simple("agent2.md".to_string()),
-        );
-        manifest.snippets.insert(
-            "snippet1".to_string(),
-            ResourceDependency::Simple("snippet1.md".to_string()),
-        );
+        manifest
+            .agents
+            .insert("agent1".to_string(), ResourceDependency::Simple("agent1.md".to_string()));
+        manifest
+            .agents
+            .insert("agent2".to_string(), ResourceDependency::Simple("agent2.md".to_string()));
+        manifest
+            .snippets
+            .insert("snippet1".to_string(), ResourceDependency::Simple("snippet1.md".to_string()));
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile missing some dependencies
@@ -3130,18 +3077,13 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let manifest_path = temp.path().join("agpm.toml");
 
         let mut manifest = Manifest::new();
-        manifest.sources.insert(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.agents.insert(
-            "agent1".to_string(),
-            ResourceDependency::Simple("agent.md".to_string()),
-        );
-        manifest.snippets.insert(
-            "snippet1".to_string(),
-            ResourceDependency::Simple("snippet.md".to_string()),
-        );
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest
+            .agents
+            .insert("agent1".to_string(), ResourceDependency::Simple("agent.md".to_string()));
+        manifest
+            .snippets
+            .insert("snippet1".to_string(), ResourceDependency::Simple("snippet.md".to_string()));
         manifest.save(&manifest_path).unwrap();
 
         let cmd = ValidateCommand {

@@ -266,13 +266,21 @@ impl VersionConstraint {
                 && !version_str.starts_with('<')
                 && !version_str.starts_with('=')
             {
-                return Ok(Self::Exact { prefix, version });
+                return Ok(Self::Exact {
+                    prefix,
+                    version,
+                });
             }
         }
 
         // Try to parse as version requirement (with v-prefix normalization)
         match crate::version::parse_version_req(version_str) {
-            Ok(req) => return Ok(Self::Requirement { prefix, req }),
+            Ok(req) => {
+                return Ok(Self::Requirement {
+                    prefix,
+                    req,
+                });
+            }
             Err(e) => {
                 // If it looks like a semver constraint but failed to parse, return error
                 if version_str.starts_with('^')
@@ -281,9 +289,7 @@ impl VersionConstraint {
                     || version_str.starts_with('>')
                     || version_str.starts_with('<')
                 {
-                    return Err(anyhow::anyhow!(
-                        "Invalid semver constraint '{trimmed}': {e}"
-                    ));
+                    return Err(anyhow::anyhow!("Invalid semver constraint '{trimmed}': {e}"));
                 }
                 // Otherwise it might be a git ref, continue
             }
@@ -331,8 +337,14 @@ impl VersionConstraint {
     #[must_use]
     pub fn matches(&self, version: &Version) -> bool {
         match self {
-            Self::Exact { version: v, .. } => v == version,
-            Self::Requirement { req, .. } => req.matches(version),
+            Self::Exact {
+                version: v,
+                ..
+            } => v == version,
+            Self::Requirement {
+                req,
+                ..
+            } => req.matches(version),
             Self::GitRef(_) => false, // Git refs don't match semver versions
         }
     }
@@ -442,7 +454,14 @@ impl VersionConstraint {
     pub fn matches_version_info(&self, version_info: &crate::version::VersionInfo) -> bool {
         // Check prefix first
         let constraint_prefix = match self {
-            Self::Exact { prefix, .. } | Self::Requirement { prefix, .. } => prefix.as_ref(),
+            Self::Exact {
+                prefix,
+                ..
+            }
+            | Self::Requirement {
+                prefix,
+                ..
+            } => prefix.as_ref(),
             _ => None,
         };
 
@@ -498,11 +517,17 @@ impl VersionConstraint {
     #[must_use]
     pub fn to_version_req(&self) -> Option<VersionReq> {
         match self {
-            Self::Exact { version, .. } => {
+            Self::Exact {
+                version,
+                ..
+            } => {
                 // Create an exact version requirement
                 VersionReq::parse(&format!("={version}")).ok()
             }
-            Self::Requirement { req, .. } => Some(req.clone()),
+            Self::Requirement {
+                req,
+                ..
+            } => Some(req.clone()),
             Self::GitRef(_) => None, // Git refs cannot be converted to version requirements
         }
     }
@@ -552,14 +577,20 @@ impl VersionConstraint {
 impl fmt::Display for VersionConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Exact { prefix, version } => {
+            Self::Exact {
+                prefix,
+                version,
+            } => {
                 if let Some(p) = prefix {
                     write!(f, "{p}-{version}")
                 } else {
                     write!(f, "{version}")
                 }
             }
-            Self::Requirement { prefix, req } => {
+            Self::Requirement {
+                prefix,
+                req,
+            } => {
                 if let Some(p) = prefix {
                     write!(f, "{p}-{req}")
                 } else {
@@ -886,9 +917,7 @@ impl ConstraintSet {
     /// - If `true`: Prerelease versions are included in selection
     #[must_use]
     pub fn allows_prerelease(&self) -> bool {
-        self.constraints
-            .iter()
-            .any(VersionConstraint::allows_prerelease)
+        self.constraints.iter().any(VersionConstraint::allows_prerelease)
     }
 
     /// Check if a new constraint would conflict with existing constraints.
@@ -965,16 +994,34 @@ impl ConstraintSet {
                 }
                 // For Requirement constraints, different prefixes = no conflict
                 (
-                    VersionConstraint::Exact { prefix: p1, .. },
-                    VersionConstraint::Requirement { prefix: p2, .. },
+                    VersionConstraint::Exact {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Requirement {
+                        prefix: p2,
+                        ..
+                    },
                 )
                 | (
-                    VersionConstraint::Requirement { prefix: p1, .. },
-                    VersionConstraint::Exact { prefix: p2, .. },
+                    VersionConstraint::Requirement {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Exact {
+                        prefix: p2,
+                        ..
+                    },
                 )
                 | (
-                    VersionConstraint::Requirement { prefix: p1, .. },
-                    VersionConstraint::Requirement { prefix: p2, .. },
+                    VersionConstraint::Requirement {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Requirement {
+                        prefix: p2,
+                        ..
+                    },
                 ) => {
                     // Different prefixes = different namespaces, no conflict
                     if p1 != p2 {
@@ -1147,10 +1194,7 @@ impl ConstraintResolver {
     pub fn add_constraint(&mut self, dependency: &str, constraint: &str) -> Result<()> {
         let parsed = VersionConstraint::parse(constraint)?;
 
-        self.constraints
-            .entry(dependency.to_string())
-            .or_default()
-            .add(parsed)?;
+        self.constraints.entry(dependency.to_string()).or_default().add(parsed)?;
 
         Ok(())
     }
@@ -1250,18 +1294,14 @@ impl ConstraintResolver {
         let mut resolved = HashMap::new();
 
         for (dep, constraint_set) in &self.constraints {
-            let versions = available_versions
-                .get(dep)
-                .ok_or_else(|| AgpmError::Other {
-                    message: format!("No versions available for dependency: {dep}"),
-                })?;
+            let versions = available_versions.get(dep).ok_or_else(|| AgpmError::Other {
+                message: format!("No versions available for dependency: {dep}"),
+            })?;
 
             let best_match =
-                constraint_set
-                    .find_best_match(versions)
-                    .ok_or_else(|| AgpmError::Other {
-                        message: format!("No version satisfies constraints for dependency: {dep}"),
-                    })?;
+                constraint_set.find_best_match(versions).ok_or_else(|| AgpmError::Other {
+                    message: format!("No version satisfies constraints for dependency: {dep}"),
+                })?;
 
             resolved.insert(dep.clone(), best_match.clone());
         }
@@ -1333,10 +1373,8 @@ mod tests {
     #[test]
     fn test_constraint_set() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse(">=1.0.0").unwrap())
-            .unwrap();
-        set.add(VersionConstraint::parse("<2.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse(">=1.0.0").unwrap()).unwrap();
+        set.add(VersionConstraint::parse("<2.0.0").unwrap()).unwrap();
 
         let v090 = Version::parse("0.9.0").unwrap();
         let v100 = Version::parse("1.0.0").unwrap();
@@ -1352,8 +1390,7 @@ mod tests {
     #[test]
     fn test_find_best_match() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
 
         let versions = vec![
             Version::parse("0.9.0").unwrap(),
@@ -1421,14 +1458,8 @@ mod tests {
         );
 
         let resolved = resolver.resolve(&available).unwrap();
-        assert_eq!(
-            resolved.get("dep1"),
-            Some(&Version::parse("1.5.0").unwrap())
-        );
-        assert_eq!(
-            resolved.get("dep2"),
-            Some(&Version::parse("2.1.5").unwrap())
-        );
+        assert_eq!(resolved.get("dep1"), Some(&Version::parse("1.5.0").unwrap()));
+        assert_eq!(resolved.get("dep2"), Some(&Version::parse("2.1.5").unwrap()));
     }
 
     #[test]
@@ -1531,8 +1562,7 @@ mod tests {
     #[test]
     fn test_constraint_set_with_prereleases() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::GitRef("main".to_string()))
-            .unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         let v100_pre = Version::parse("1.0.0-alpha.1").unwrap();
         let v100 = Version::parse("1.0.0").unwrap();
@@ -1548,13 +1578,9 @@ mod tests {
     #[test]
     fn test_constraint_set_no_matches() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse(">=2.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse(">=2.0.0").unwrap()).unwrap();
 
-        let versions = vec![
-            Version::parse("1.0.0").unwrap(),
-            Version::parse("1.5.0").unwrap(),
-        ];
+        let versions = vec![Version::parse("1.0.0").unwrap(), Version::parse("1.5.0").unwrap()];
 
         let best = set.find_best_match(&versions);
         assert!(best.is_none());
@@ -1591,8 +1617,7 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // Add first git ref
-        set.add(VersionConstraint::GitRef("main".to_string()))
-            .unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         // Try to add conflicting git ref
         let result = set.add(VersionConstraint::GitRef("develop".to_string()));
@@ -1641,8 +1666,7 @@ mod tests {
     #[test]
     fn test_constraint_set_prerelease_filtering() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
 
         let versions = vec![
             Version::parse("1.0.0-alpha.1").unwrap(),
@@ -1684,10 +1708,8 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // These shouldn't conflict as they are different types
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
-        set.add(VersionConstraint::GitRef("main".to_string()))
-            .unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         // Should have 2 constraints
         assert_eq!(set.constraints.len(), 2);
@@ -1710,7 +1732,10 @@ mod tests {
         // Prefixed exact version
         let constraint = VersionConstraint::parse("agents-v1.0.0").unwrap();
         match constraint {
-            VersionConstraint::Exact { prefix, version } => {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
                 assert_eq!(prefix, Some("agents".to_string()));
                 assert_eq!(version, Version::parse("1.0.0").unwrap());
             }
@@ -1720,7 +1745,10 @@ mod tests {
         // Prefixed requirement
         let constraint = VersionConstraint::parse("agents-^v1.0.0").unwrap();
         match constraint {
-            VersionConstraint::Requirement { prefix, req } => {
+            VersionConstraint::Requirement {
+                prefix,
+                req,
+            } => {
                 assert_eq!(prefix, Some("agents".to_string()));
                 assert!(req.matches(&Version::parse("1.5.0").unwrap()));
                 assert!(!req.matches(&Version::parse("2.0.0").unwrap()));
@@ -1731,7 +1759,10 @@ mod tests {
         // Unprefixed constraint (backward compatible)
         let constraint = VersionConstraint::parse("^1.0.0").unwrap();
         match constraint {
-            VersionConstraint::Requirement { prefix, .. } => {
+            VersionConstraint::Requirement {
+                prefix,
+                ..
+            } => {
                 assert_eq!(prefix, None);
             }
             _ => panic!("Expected Requirement constraint"),
@@ -1799,8 +1830,7 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // Add prefixed constraint
-        set.add(VersionConstraint::parse("agents-^v1.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse("agents-^v1.0.0").unwrap()).unwrap();
 
         // Different prefix should not conflict
         let result = set.add(VersionConstraint::parse("snippets-^v1.0.0").unwrap());
@@ -1812,9 +1842,7 @@ mod tests {
 
         // Different prefixes for Exact constraints
         let mut exact_set = ConstraintSet::new();
-        exact_set
-            .add(VersionConstraint::parse("agents-v1.0.0").unwrap())
-            .unwrap();
+        exact_set.add(VersionConstraint::parse("agents-v1.0.0").unwrap()).unwrap();
 
         // Different prefix, same version - should not conflict
         let result = exact_set.add(VersionConstraint::parse("snippets-v1.0.0").unwrap());
@@ -1826,7 +1854,10 @@ mod tests {
         // Multiple hyphens in prefix
         let constraint = VersionConstraint::parse("my-cool-agent-v1.0.0").unwrap();
         match constraint {
-            VersionConstraint::Exact { prefix, version } => {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
                 assert_eq!(prefix, Some("my-cool-agent".to_string()));
                 assert_eq!(version, Version::parse("1.0.0").unwrap());
             }
@@ -1836,7 +1867,10 @@ mod tests {
         // Prefix ending with 'v'
         let constraint = VersionConstraint::parse("tool-v-v1.0.0").unwrap();
         match constraint {
-            VersionConstraint::Exact { prefix, version } => {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
                 assert_eq!(prefix, Some("tool-v".to_string()));
                 assert_eq!(version, Version::parse("1.0.0").unwrap());
             }

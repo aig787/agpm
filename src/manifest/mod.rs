@@ -600,11 +600,7 @@ pub struct Manifest {
     /// `.claude/agpm/mcp-servers/` and configured in `.mcp.json`.
     ///
     /// See [`ResourceDependency`] for specification format details.
-    #[serde(
-        default,
-        skip_serializing_if = "HashMap::is_empty",
-        rename = "mcp-servers"
-    )]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "mcp-servers")]
     pub mcp_servers: HashMap<String, ResourceDependency>,
 
     /// Script dependencies mapping names to their specifications.
@@ -1538,9 +1534,9 @@ impl Manifest {
                                 "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
                                 Plain directory dependencies do not support versions. \n\
                             Remove the 'version' field or use a git source instead."
-                        ),
-                    }
-                    .into());
+                            ),
+                        }
+                        .into());
                     }
                 }
             }
@@ -1554,7 +1550,9 @@ impl Manifest {
                 if let Some(existing_version) = seen_deps.get(name) {
                     if existing_version != version {
                         return Err(crate::core::AgpmError::ManifestValidationError {
-                            reason: format!("Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"),
+                            reason: format!(
+                                "Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"
+                            ),
                         }
                         .into());
                     }
@@ -1579,9 +1577,7 @@ impl Manifest {
             && !expanded_url.starts_with("../")
             {
                 return Err(crate::core::AgpmError::ManifestValidationError {
-                    reason: format!(
-                        "Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"
-                    ),
+                    reason: format!("Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"),
                 }
                 .into());
             }
@@ -2319,10 +2315,7 @@ impl ResourceDependency {
             Self::Simple(_) => None,
             Self::Detailed(d) => {
                 // Precedence: rev > branch > version
-                d.rev
-                    .as_deref()
-                    .or(d.branch.as_deref())
-                    .or(d.version.as_deref())
+                d.rev.as_deref().or(d.branch.as_deref()).or(d.version.as_deref())
             }
         }
     }
@@ -2486,9 +2479,7 @@ fn expand_url(url: &str) -> Result<String> {
                 } else {
                     Ok(format!(
                         "file://{}",
-                        std::env::current_dir()?
-                            .join(expanded_path)
-                            .to_string_lossy()
+                        std::env::current_dir()?.join(expanded_path).to_string_lossy()
                     ))
                 }
             }
@@ -2767,10 +2758,8 @@ mod tests {
         assert!(manifest.validate().is_err());
 
         // Add the source - should now be valid
-        manifest.add_source(
-            "undefined".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest
+            .add_source("undefined".to_string(), "https://github.com/test/repo.git".to_string());
         assert!(manifest.validate().is_ok());
     }
 
@@ -2824,18 +2813,9 @@ mod tests {
         let mut manifest = Manifest::new();
 
         // Valid URLs
-        manifest.add_source(
-            "http".to_string(),
-            "http://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_source(
-            "https".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_source(
-            "ssh".to_string(),
-            "git@github.com:test/repo.git".to_string(),
-        );
+        manifest.add_source("http".to_string(), "http://github.com/test/repo.git".to_string());
+        manifest.add_source("https".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.add_source("ssh".to_string(), "git@github.com:test/repo.git".to_string());
         assert!(manifest.validate().is_ok());
 
         // Invalid URL
@@ -3203,10 +3183,9 @@ mod tests {
     #[test]
     fn test_pattern_dependency_validation() {
         let mut manifest = Manifest::new();
-        manifest.sources.insert(
-            "repo".to_string(),
-            "https://github.com/example/repo.git".to_string(),
-        );
+        manifest
+            .sources
+            .insert("repo".to_string(), "https://github.com/example/repo.git".to_string());
 
         // Valid pattern dependency (uses glob characters in path)
         manifest.agents.insert(
@@ -3251,10 +3230,9 @@ mod tests {
     #[test]
     fn test_pattern_dependency_with_path_traversal() {
         let mut manifest = Manifest::new();
-        manifest.sources.insert(
-            "repo".to_string(),
-            "https://github.com/example/repo.git".to_string(),
-        );
+        manifest
+            .sources
+            .insert("repo".to_string(), "https://github.com/example/repo.git".to_string());
 
         // Pattern with path traversal (using path field now)
         manifest.agents.insert(

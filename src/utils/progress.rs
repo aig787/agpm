@@ -132,12 +132,8 @@ impl MultiPhaseProgress {
         let spinner = self.multi.add(IndicatifBar::new_spinner());
 
         // Format the phase message
-        let phase_msg = format!(
-            "{} {} {}",
-            phase.spinner_prefix(),
-            phase.description(),
-            message.unwrap_or("")
-        );
+        let phase_msg =
+            format!("{} {} {}", phase.spinner_prefix(), phase.description(), message.unwrap_or(""));
 
         // Configure spinner style
         let style = IndicatifStyle::default_spinner()
@@ -160,12 +156,7 @@ impl MultiPhaseProgress {
             if !self.enabled {
                 return;
             }
-            println!(
-                "{} {} (0/{})",
-                phase.spinner_prefix(),
-                phase.description(),
-                total
-            );
+            println!("{} {} (0/{})", phase.spinner_prefix(), phase.description(), total);
             return;
         }
 
@@ -297,11 +288,7 @@ impl MultiPhaseProgress {
 
 /// Helper function to collect dependency names from a manifest
 pub fn collect_dependency_names(manifest: &Manifest) -> Vec<String> {
-    manifest
-        .all_dependencies()
-        .iter()
-        .map(|(name, _)| (*name).to_string())
-        .collect()
+    manifest.all_dependencies().iter().map(|(name, _)| (*name).to_string()).collect()
 }
 
 #[cfg(test)]
@@ -310,40 +297,22 @@ mod tests {
 
     #[test]
     fn test_installation_phase_description() {
-        assert_eq!(
-            InstallationPhase::SyncingSources.description(),
-            "Syncing sources"
-        );
+        assert_eq!(InstallationPhase::SyncingSources.description(), "Syncing sources");
         assert_eq!(
             InstallationPhase::ResolvingDependencies.description(),
             "Resolving dependencies"
         );
-        assert_eq!(
-            InstallationPhase::Installing.description(),
-            "Installing resources"
-        );
-        assert_eq!(
-            InstallationPhase::InstallingResources.description(),
-            "Installing resources"
-        );
-        assert_eq!(
-            InstallationPhase::Finalizing.description(),
-            "Finalizing installation"
-        );
+        assert_eq!(InstallationPhase::Installing.description(), "Installing resources");
+        assert_eq!(InstallationPhase::InstallingResources.description(), "Installing resources");
+        assert_eq!(InstallationPhase::Finalizing.description(), "Finalizing installation");
     }
 
     #[test]
     fn test_installation_phase_spinner_prefix() {
         assert_eq!(InstallationPhase::SyncingSources.spinner_prefix(), "⏳");
-        assert_eq!(
-            InstallationPhase::ResolvingDependencies.spinner_prefix(),
-            "🔍"
-        );
+        assert_eq!(InstallationPhase::ResolvingDependencies.spinner_prefix(), "🔍");
         assert_eq!(InstallationPhase::Installing.spinner_prefix(), "📦");
-        assert_eq!(
-            InstallationPhase::InstallingResources.spinner_prefix(),
-            "📦"
-        );
+        assert_eq!(InstallationPhase::InstallingResources.spinner_prefix(), "📦");
         assert_eq!(InstallationPhase::Finalizing.spinner_prefix(), "✨");
     }
 

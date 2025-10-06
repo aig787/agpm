@@ -191,7 +191,11 @@ pub fn get_home_dir() -> Result<PathBuf> {
 /// - System PATH configuration for Git availability
 #[must_use]
 pub const fn get_git_command() -> &'static str {
-    if is_windows() { "git.exe" } else { "git" }
+    if is_windows() {
+        "git.exe"
+    } else {
+        "git"
+    }
 }
 
 /// Resolves a path with tilde expansion and environment variable substitution.
@@ -920,9 +924,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
     if path_str.len() > 260 && !path_str.starts_with(r"\\?\") {
         // Convert to absolute path if relative
         let absolute_path = if path.is_relative() {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(path)
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
         } else {
             path.to_path_buf()
         };

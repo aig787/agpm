@@ -58,9 +58,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list"]).unwrap();
     output
@@ -121,9 +119,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--format", "table"]).unwrap();
     output
@@ -155,9 +151,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--format", "json"]).unwrap();
     assert!(output.success);
@@ -188,9 +182,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--format", "yaml"]).unwrap();
     assert!(output.success);
@@ -250,9 +242,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--format", "compact"]).unwrap();
     output
@@ -312,9 +302,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--type", "agents"]).unwrap();
     assert!(output.success);
@@ -373,9 +361,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--type", "snippets"]).unwrap();
     assert!(output.success);
@@ -434,9 +420,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--source", "official"]).unwrap();
     assert!(output.success);
@@ -495,9 +479,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--search", "agent"]).unwrap();
     assert!(output.success);
@@ -555,9 +537,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--detailed"]).unwrap();
     assert!(output.success);
@@ -616,9 +596,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5f6a"
 installed_at = "snippets/utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Create some installed files to match lockfile
     let agents_dir = project.project_path().join("agents");
@@ -626,15 +604,9 @@ installed_at = "snippets/utils.md"
     fs::create_dir_all(&agents_dir).await.unwrap();
     fs::create_dir_all(&snippets_dir).await.unwrap();
 
-    fs::write(agents_dir.join("my-agent.md"), "# My Agent")
-        .await
-        .unwrap();
-    fs::write(agents_dir.join("helper.md"), "# Helper Agent")
-        .await
-        .unwrap();
-    fs::write(snippets_dir.join("utils.md"), "# Utils Snippet")
-        .await
-        .unwrap();
+    fs::write(agents_dir.join("my-agent.md"), "# My Agent").await.unwrap();
+    fs::write(agents_dir.join("helper.md"), "# Helper Agent").await.unwrap();
+    fs::write(snippets_dir.join("utils.md"), "# Utils Snippet").await.unwrap();
 
     let output = project.run_agpm(&["list", "--files"]).unwrap();
     assert!(output.success);
@@ -663,9 +635,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--sort", "name"]).unwrap();
     assert!(output.success);
@@ -692,9 +662,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--sort", "version"]).unwrap();
     assert!(output.success);
@@ -721,9 +689,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--sort", "source"]).unwrap();
     assert!(output.success);
@@ -770,9 +736,7 @@ version = "local"
 checksum = "sha256:local987654321fedcba987654321fedcba987654321fedcba"
 installed_at = "snippets/local-utils.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list"]).unwrap();
     assert!(output.success);
@@ -789,9 +753,7 @@ async fn test_list_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "List installed Claude Code resources",
-        ))
+        .stdout(predicate::str::contains("List installed Claude Code resources"))
         .stdout(predicate::str::contains("--format"))
         .stdout(predicate::str::contains("--source"))
         .stdout(predicate::str::contains("--detailed"))
@@ -815,9 +777,7 @@ official = "https://github.com/example-org/agpm-official.git"
     let empty_lockfile = r#"# Auto-generated lockfile - DO NOT EDIT
 version = 1
 "#;
-    fs::write(project.project_path().join("agpm.lock"), empty_lockfile)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), empty_lockfile).await.unwrap();
 
     let output = project.run_agpm(&["list"]).unwrap();
     assert!(output.success);
@@ -836,12 +796,7 @@ async fn test_list_corrupted_lockfile() {
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        "corrupted content",
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), "corrupted content").await.unwrap();
 
     let output = project.run_agpm(&["list"]).unwrap();
     assert!(!output.success);
@@ -873,9 +828,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/my-agent.md"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["list", "--format", "invalid"]).unwrap();
     assert!(!output.success);

@@ -284,11 +284,7 @@ impl WorktreeRegistry {
             Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(err) => {
-                tracing::warn!(
-                    "Failed to load worktree registry from {}: {}",
-                    path.display(),
-                    err
-                );
+                tracing::warn!("Failed to load worktree registry from {}: {}", path.display(), err);
                 Self::default()
             }
         }
@@ -622,14 +618,9 @@ impl Cache {
     /// ```
     pub async fn ensure_cache_dir(&self) -> Result<()> {
         if !self.cache_dir.exists() {
-            async_fs::create_dir_all(&self.cache_dir)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to create cache directory at {}",
-                        self.cache_dir.display()
-                    )
-                })?;
+            async_fs::create_dir_all(&self.cache_dir).await.with_context(|| {
+                format!("Failed to create cache directory at {}", self.cache_dir.display())
+            })?;
         }
         Ok(())
     }
@@ -786,11 +777,9 @@ impl Cache {
         // Just remove the directory - don't call git worktree remove
         // This is much faster and git will clean up its references later
         if worktree_path.exists() {
-            tokio::fs::remove_dir_all(worktree_path)
-                .await
-                .with_context(|| {
-                    format!("Failed to remove worktree directory: {worktree_path:?}")
-                })?;
+            tokio::fs::remove_dir_all(worktree_path).await.with_context(|| {
+                format!("Failed to remove worktree directory: {worktree_path:?}")
+            })?;
             self.remove_worktree_record_by_path(worktree_path).await?;
         }
         Ok(())
@@ -985,10 +974,7 @@ impl Cache {
         }
 
         // Get bare repository (fetches if needed)
-        let bare_repo_dir = self
-            .cache_dir
-            .join("sources")
-            .join(format!("{owner}_{repo}.git"));
+        let bare_repo_dir = self.cache_dir.join("sources").join(format!("{owner}_{repo}.git"));
 
         if bare_repo_dir.exists() {
             // Fetch to ensure we have the SHA
@@ -1009,19 +995,15 @@ impl Cache {
                 }
 
                 GitRepo::clone_bare_with_context(url, &bare_repo_dir, context).await?;
-                Self::configure_connection_pooling(&bare_repo_dir)
-                    .await
-                    .ok();
+                Self::configure_connection_pooling(&bare_repo_dir).await.ok();
             }
         }
 
         let bare_repo = GitRepo::new(&bare_repo_dir);
 
         // Create worktree path using SHA
-        let worktree_path = self
-            .cache_dir
-            .join("worktrees")
-            .join(format!("{owner}_{repo}_{sha_short}"));
+        let worktree_path =
+            self.cache_dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}"));
 
         // Acquire worktree creation lock
         let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
@@ -1030,12 +1012,8 @@ impl Cache {
         // Re-check after lock
         if worktree_path.exists() {
             let mut cache_write = self.worktree_cache.write().await;
-            cache_write.insert(
-                cache_key.clone(),
-                WorktreeState::Ready(worktree_path.clone()),
-            );
-            self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path)
-                .await?;
+            cache_write.insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
+            self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
             return Ok(worktree_path);
         }
 
@@ -1062,20 +1040,15 @@ impl Cache {
         let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
 
         // Create worktree using SHA directly
-        let worktree_result = bare_repo
-            .create_worktree_with_context(&worktree_path, Some(sha), context)
-            .await;
+        let worktree_result =
+            bare_repo.create_worktree_with_context(&worktree_path, Some(sha), context).await;
 
         // Keep lock held until cache is updated to ensure git state is fully settled
         match worktree_result {
             Ok(_) => {
                 let mut cache_write = self.worktree_cache.write().await;
-                cache_write.insert(
-                    cache_key.clone(),
-                    WorktreeState::Ready(worktree_path.clone()),
-                );
-                self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path)
-                    .await?;
+                cache_write.insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
+                self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
                 // Lock automatically dropped here
                 Ok(worktree_path)
             }
@@ -1148,10 +1121,7 @@ impl Cache {
         // This ensures we have ONE repository that's shared by all operations
         let (owner, repo) =
             crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
-        let source_dir = self
-            .cache_dir
-            .join("sources")
-            .join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
+        let source_dir = self.cache_dir.join("sources").join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
@@ -1368,8 +1338,7 @@ impl Cache {
         source_path: &str,
         target_path: &Path,
     ) -> Result<()> {
-        self.copy_resource_with_output(source_dir, source_path, target_path, false)
-            .await
+        self.copy_resource_with_output(source_dir, source_path, target_path, false).await
     }
 
     /// Copies a resource file with optional installation output messages.
@@ -1483,15 +1452,9 @@ impl Cache {
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
 
-        async_fs::copy(&source_file, target_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to copy {} to {}",
-                    source_file.display(),
-                    target_path.display()
-                )
-            })?;
+        async_fs::copy(&source_file, target_path).await.with_context(|| {
+            format!("Failed to copy {} to {}", source_file.display(), target_path.display())
+        })?;
 
         if show_output {
             println!("  ✅ Installed {}", target_path.display());
@@ -1595,10 +1558,8 @@ impl Cache {
             .await
             .with_context(|| "Failed to read cache directory")?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .with_context(|| "Failed to read directory entry")?
+        while let Some(entry) =
+            entries.next_entry().await.with_context(|| "Failed to read directory entry")?
         {
             let path = entry.path();
             if path.is_dir() {
@@ -1882,10 +1843,7 @@ impl Cache {
             .unwrap_or("unknown")
             .replace(['/', '\\', ':'], "_");
 
-        let lock_path = self
-            .cache_dir
-            .join(".locks")
-            .join(format!("{safe_name}.fetch.lock"));
+        let lock_path = self.cache_dir.join(".locks").join(format!("{safe_name}.fetch.lock"));
 
         // Ensure lock directory exists
         if let Some(parent) = lock_path.parent() {
@@ -2114,10 +2072,7 @@ mod tests {
 
         // Copy resource
         let dest = temp_dir.path().join("dest.md");
-        cache
-            .copy_resource(&source_dir, "resource.md", &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, "resource.md", &dest).await.unwrap();
 
         assert!(dest.exists());
         let content = std::fs::read_to_string(&dest).unwrap();
@@ -2138,10 +2093,7 @@ mod tests {
 
         // Copy resource using relative path from source_dir
         let dest = temp_dir.path().join("dest.md");
-        cache
-            .copy_resource(&source_dir, "nested/path/resource.md", &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, "nested/path/resource.md", &dest).await.unwrap();
 
         assert!(dest.exists());
         let content = std::fs::read_to_string(&dest).unwrap();
@@ -2158,9 +2110,7 @@ mod tests {
 
         // Try to copy non-existent resource
         let dest = temp_dir.path().join("dest.md");
-        let result = cache
-            .copy_resource(&source_dir, "nonexistent.md", &dest)
-            .await;
+        let result = cache.copy_resource(&source_dir, "nonexistent.md", &dest).await;
 
         assert!(result.is_err());
         assert!(!dest.exists());
@@ -2199,10 +2149,7 @@ mod tests {
 
         // Copy to a destination with non-existent parent directories
         let dest = temp_dir.path().join("deep").join("nested").join("dest.md");
-        cache
-            .copy_resource(&source_dir, "file.md", &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, "file.md", &dest).await.unwrap();
 
         assert!(dest.exists());
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "content");
@@ -2220,18 +2167,12 @@ mod tests {
 
         // Test with output flag false
         let dest1 = temp_dir.path().join("dest1.md");
-        cache
-            .copy_resource_with_output(&source_dir, "file.md", &dest1, false)
-            .await
-            .unwrap();
+        cache.copy_resource_with_output(&source_dir, "file.md", &dest1, false).await.unwrap();
         assert!(dest1.exists());
 
         // Test with output flag true
         let dest2 = temp_dir.path().join("dest2.md");
-        cache
-            .copy_resource_with_output(&source_dir, "file.md", &dest2, true)
-            .await
-            .unwrap();
+        cache.copy_resource_with_output(&source_dir, "file.md", &dest2, true).await.unwrap();
         assert!(dest2.exists());
     }
 
@@ -2293,10 +2234,7 @@ mod tests {
         std::fs::write(&dest, "old content").unwrap();
 
         // Copy should overwrite
-        cache
-            .copy_resource(&source_dir, "file.md", &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, "file.md", &dest).await.unwrap();
 
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "new content");
     }
@@ -2314,10 +2252,7 @@ mod tests {
 
         // Copy resource
         let dest = temp_dir.path().join("dest.md");
-        cache
-            .copy_resource(&source_dir, special_name, &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, special_name, &dest).await.unwrap();
 
         assert!(dest.exists());
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "content");
@@ -2369,10 +2304,7 @@ mod tests {
 
         // Copy using relative path
         let dest = temp_dir.path().join("my-agent.md");
-        cache
-            .copy_resource(&source_dir, "agents/helper.md", &dest)
-            .await
-            .unwrap();
+        cache.copy_resource(&source_dir, "agents/helper.md", &dest).await.unwrap();
 
         assert!(dest.exists());
         assert_eq!(std::fs::read_to_string(&dest).unwrap(), "# Helper Agent");

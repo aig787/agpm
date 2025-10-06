@@ -70,13 +70,7 @@ mod cli_tests {
         // Test that all commands can be parsed
         let commands = vec![
             vec!["agpm", "init"],
-            vec![
-                "agpm",
-                "add",
-                "source",
-                "test",
-                "https://github.com/test/repo.git",
-            ],
+            vec!["agpm", "add", "source", "test", "https://github.com/test/repo.git"],
             vec!["agpm", "install"],
             vec!["agpm", "update"],
             vec!["agpm", "list"],
@@ -358,10 +352,7 @@ test-source = "https://github.com/test/repo.git"
         let result = cli.execute().await;
 
         // Should fail because source doesn't exist
-        assert!(
-            result.is_err(),
-            "Remove command should fail for non-existent source"
-        );
+        assert!(result.is_err(), "Remove command should fail for non-existent source");
     }
 
     #[tokio::test]

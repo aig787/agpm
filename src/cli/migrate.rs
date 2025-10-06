@@ -51,9 +51,7 @@ impl MigrateCommand {
     /// - `Err(anyhow::Error)` if migration failed
     pub async fn execute(self) -> Result<()> {
         let dir = self.path.as_deref().unwrap_or_else(|| Path::new("."));
-        let dir = dir
-            .canonicalize()
-            .context("Failed to resolve directory path")?;
+        let dir = dir.canonicalize().context("Failed to resolve directory path")?;
 
         println!("🔍 Checking for legacy CCPM files in: {}", dir.display());
 
@@ -119,10 +117,7 @@ impl MigrateCommand {
             println!("✅ {}", "Renamed ccpm.lock → agpm.lock".green());
         }
 
-        println!(
-            "\n🎉 {}",
-            "Migration completed successfully!".green().bold()
-        );
+        println!("\n🎉 {}", "Migration completed successfully!".green().bold());
         println!(
             "\n💡 Next steps:\n  • Review the renamed files\n  • Run {} to verify\n  • Commit the changes to version control",
             "agpm validate".cyan()

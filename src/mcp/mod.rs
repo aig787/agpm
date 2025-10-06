@@ -134,10 +134,8 @@ impl ClaudeSettings {
         // Create a backup if the file exists
         if path.exists() {
             // Put backup in .claude/agpm directory
-            let agpm_dir = path
-                .parent()
-                .ok_or_else(|| anyhow!("Invalid settings path"))?
-                .join("agpm");
+            let agpm_dir =
+                path.parent().ok_or_else(|| anyhow!("Invalid settings path"))?.join("agpm");
 
             // Ensure .claude/agpm directory exists
             if !agpm_dir.exists() {
@@ -148,10 +146,7 @@ impl ClaudeSettings {
 
             let backup_path = agpm_dir.join("settings.local.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
-                format!(
-                    "Failed to create backup of settings at: {}",
-                    backup_path.display()
-                )
+                format!("Failed to create backup of settings at: {}", backup_path.display())
             })?;
         }
 
@@ -175,10 +170,7 @@ impl ClaudeSettings {
 
         // Read all .json files from the mcp-servers directory
         for entry in std::fs::read_dir(mcp_servers_dir).with_context(|| {
-            format!(
-                "Failed to read MCP servers directory: {}",
-                mcp_servers_dir.display()
-            )
+            format!("Failed to read MCP servers directory: {}", mcp_servers_dir.display())
         })? {
             let entry = entry?;
             let path = entry.path();
@@ -204,12 +196,8 @@ impl ClaudeSettings {
         // Update MCP servers, preserving user-managed ones
         if let Some(servers) = &mut self.mcp_servers {
             // Remove old AGPM-managed servers
-            servers.retain(|_, config| {
-                config
-                    .agpm_metadata
-                    .as_ref()
-                    .is_none_or(|meta| !meta.managed)
-            });
+            servers
+                .retain(|_, config| config.agpm_metadata.as_ref().is_none_or(|meta| !meta.managed));
 
             // Add all AGPM-managed servers
             servers.extend(agpm_servers);
@@ -333,12 +321,8 @@ impl McpConfig {
     ///
     /// This is useful for cleanup operations.
     pub fn remove_all_managed(&mut self) {
-        self.mcp_servers.retain(|_, config| {
-            config
-                .agpm_metadata
-                .as_ref()
-                .is_none_or(|meta| !meta.managed)
-        });
+        self.mcp_servers
+            .retain(|_, config| config.agpm_metadata.as_ref().is_none_or(|meta| !meta.managed));
     }
 
     /// Get all AGPM-managed servers.
@@ -346,12 +330,7 @@ impl McpConfig {
     pub fn get_managed_servers(&self) -> HashMap<String, &McpServerConfig> {
         self.mcp_servers
             .iter()
-            .filter(|(_, config)| {
-                config
-                    .agpm_metadata
-                    .as_ref()
-                    .is_some_and(|meta| meta.managed)
-            })
+            .filter(|(_, config)| config.agpm_metadata.as_ref().is_some_and(|meta| meta.managed))
             .map(|(name, config)| (name.clone(), config))
             .collect()
     }
@@ -862,18 +841,10 @@ mod tests {
     fn test_mcp_config_save_creates_backup() {
         let temp = tempdir().unwrap();
         let config_path = temp.path().join("mcp.json");
-        let backup_path = temp
-            .path()
-            .join(".claude")
-            .join("agpm")
-            .join(".mcp.json.backup");
+        let backup_path = temp.path().join(".claude").join("agpm").join(".mcp.json.backup");
 
         // Create initial file
-        fs::write(
-            &config_path,
-            r#"{"mcpServers": {"old": {"command": "old"}}}"#,
-        )
-        .unwrap();
+        fs::write(&config_path, r#"{"mcpServers": {"old": {"command": "old"}}}"#).unwrap();
 
         let config = McpConfig::default();
         config.save(&config_path).unwrap();
@@ -1002,10 +973,7 @@ mod tests {
         assert!(config.mcp_servers.contains_key("updating-server"));
         let server = &config.mcp_servers["updating-server"];
         assert_eq!(server.command, Some("new-command".to_string()));
-        assert_eq!(
-            server.agpm_metadata.as_ref().unwrap().version,
-            Some("v2.0.0".to_string())
-        );
+        assert_eq!(server.agpm_metadata.as_ref().unwrap().version, Some("v2.0.0".to_string()));
     }
 
     #[test]
@@ -1327,10 +1295,7 @@ mod tests {
 
         assert_eq!(deserialized.permissions, settings.permissions);
         assert_eq!(deserialized.mcp_servers.as_ref().unwrap().len(), 1);
-        assert_eq!(
-            deserialized.other.get("custom"),
-            settings.other.get("custom")
-        );
+        assert_eq!(deserialized.other.get("custom"), settings.other.get("custom"));
     }
 
     #[test]
@@ -1673,11 +1638,7 @@ mod tests {
     fn test_mcp_config_save_backup() {
         let temp = tempfile::TempDir::new().unwrap();
         let config_path = temp.path().join(".mcp.json");
-        let backup_path = temp
-            .path()
-            .join(".claude")
-            .join("agpm")
-            .join(".mcp.json.backup");
+        let backup_path = temp.path().join(".claude").join("agpm").join(".mcp.json.backup");
 
         // Create initial config
         let config1 = McpConfig::default();

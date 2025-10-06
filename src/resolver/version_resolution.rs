@@ -206,9 +206,7 @@ pub fn find_best_matching_tag(constraint_str: &str, tags: Vec<String>) -> Result
         }
     }
 
-    Err(anyhow::anyhow!(
-        "No tag found matching constraint: {constraint_str}"
-    ))
+    Err(anyhow::anyhow!("No tag found matching constraint: {constraint_str}"))
 }
 
 #[cfg(test)]
@@ -285,12 +283,7 @@ mod tests {
 
         let result = find_best_matching_tag("^3.0.0", tags);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No tag found matching")
-        );
+        assert!(result.unwrap_err().to_string().contains("No tag found matching"));
     }
 
     #[test]
@@ -421,20 +414,12 @@ mod tests {
         // No tags with "commands" prefix
         let result = find_best_matching_tag("commands-^v1.0.0", tags);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No tags found with matching prefix")
-        );
+        assert!(result.unwrap_err().to_string().contains("No tags found with matching prefix"));
     }
 
     #[test]
     fn test_parse_prefixed_tags_with_hyphens() {
-        let tags = vec![
-            "my-cool-agent-v1.0.0".to_string(),
-            "tool-v-v2.0.0".to_string(),
-        ];
+        let tags = vec!["my-cool-agent-v1.0.0".to_string(), "tool-v-v2.0.0".to_string()];
 
         let versions = parse_tags_to_versions(tags);
 

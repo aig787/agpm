@@ -126,21 +126,15 @@ impl ChecksumVerifier {
 
         // Use reqwest to download the checksums file
         let client = reqwest::Client::new();
-        let response = client
-            .get(checksums_url)
-            .send()
-            .await
-            .context("Failed to fetch checksums file")?;
+        let response =
+            client.get(checksums_url).send().await.context("Failed to fetch checksums file")?;
 
         if !response.status().is_success() {
             warn!("Failed to fetch checksums file: HTTP {}", response.status());
             return Ok(None);
         }
 
-        let content = response
-            .text()
-            .await
-            .context("Failed to read checksums file content")?;
+        let content = response.text().await.context("Failed to read checksums file content")?;
 
         // Parse the checksums file
         for line in content.lines() {
@@ -203,15 +197,10 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(b"Hello, World!").unwrap();
 
-        let checksum = ChecksumVerifier::compute_sha256(temp_file.path())
-            .await
-            .unwrap();
+        let checksum = ChecksumVerifier::compute_sha256(temp_file.path()).await.unwrap();
 
         // Known SHA256 of "Hello, World!"
-        assert_eq!(
-            checksum,
-            "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
-        );
+        assert_eq!(checksum, "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
     }
 
     #[tokio::test]
@@ -220,14 +209,10 @@ mod tests {
         temp_file.write_all(b"Test content").unwrap();
 
         // Compute actual checksum first
-        let actual = ChecksumVerifier::compute_sha256(temp_file.path())
-            .await
-            .unwrap();
+        let actual = ChecksumVerifier::compute_sha256(temp_file.path()).await.unwrap();
 
         // Now verify with the correct checksum
-        ChecksumVerifier::verify_checksum(temp_file.path(), &actual)
-            .await
-            .unwrap();
+        ChecksumVerifier::verify_checksum(temp_file.path(), &actual).await.unwrap();
     }
 
     #[tokio::test]
@@ -239,12 +224,7 @@ mod tests {
 
         let result = ChecksumVerifier::verify_checksum(temp_file.path(), wrong_checksum).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Checksum verification failed")
-        );
+        assert!(result.unwrap_err().to_string().contains("Checksum verification failed"));
     }
 
     #[tokio::test]
@@ -257,11 +237,7 @@ mod tests {
         let uppercase = "532EAABD9574880DBF76B9B8CC00832C20A6EC113D682299550D7A6E0F345E25";
 
         // Both should succeed
-        ChecksumVerifier::verify_checksum(temp_file.path(), lowercase)
-            .await
-            .unwrap();
-        ChecksumVerifier::verify_checksum(temp_file.path(), uppercase)
-            .await
-            .unwrap();
+        ChecksumVerifier::verify_checksum(temp_file.path(), lowercase).await.unwrap();
+        ChecksumVerifier::verify_checksum(temp_file.path(), uppercase).await.unwrap();
     }
 }

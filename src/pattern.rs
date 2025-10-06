@@ -184,10 +184,7 @@ impl PatternMatcher {
     /// # }
     /// ```
     pub fn find_matches(&self, base_path: &Path) -> Result<Vec<PathBuf>> {
-        debug!(
-            "Searching for pattern '{}' in {:?}",
-            self.original_pattern, base_path
-        );
+        debug!("Searching for pattern '{}' in {:?}", self.original_pattern, base_path);
 
         let mut matches = Vec::new();
         let base_path = base_path
@@ -214,11 +211,7 @@ impl PatternMatcher {
             }
         }
 
-        debug!(
-            "Found {} matches for pattern '{}'",
-            matches.len(),
-            self.original_pattern
-        );
+        debug!("Found {} matches for pattern '{}'", matches.len(), self.original_pattern);
         Ok(matches)
     }
 
@@ -440,10 +433,7 @@ impl PatternResolver {
         if !self.exclude_patterns.is_empty() {
             matches.retain(|path| {
                 let path_str = path.to_string_lossy();
-                !self
-                    .exclude_patterns
-                    .iter()
-                    .any(|exclude| exclude.matches(&path_str))
+                !self.exclude_patterns.iter().any(|exclude| exclude.matches(&path_str))
             });
         }
 
@@ -539,10 +529,7 @@ impl Default for PatternResolver {
 /// assert_eq!(extract_resource_name(Path::new("/")), "unknown");
 /// ```
 pub fn extract_resource_name(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string()
+    path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string()
 }
 
 /// Validates that a pattern is safe and doesn't contain path traversal attempts.
@@ -721,11 +708,8 @@ mod tests {
         fs::write(base_path.join("README.md"), "").unwrap();
 
         let resolver = PatternResolver::new();
-        let patterns = vec![
-            "agents/*.md".to_string(),
-            "snippets/*.md".to_string(),
-            "*.md".to_string(),
-        ];
+        let patterns =
+            vec!["agents/*.md".to_string(), "snippets/*.md".to_string(), "*.md".to_string()];
 
         let matches = resolver.resolve_multiple(&patterns, base_path).unwrap();
         assert_eq!(matches.len(), 3);
@@ -736,19 +720,10 @@ mod tests {
 
     #[test]
     fn test_extract_resource_name_from_paths() {
-        assert_eq!(
-            extract_resource_name(Path::new("agents/helper.md")),
-            "helper"
-        );
+        assert_eq!(extract_resource_name(Path::new("agents/helper.md")), "helper");
         assert_eq!(extract_resource_name(Path::new("test.md")), "test");
-        assert_eq!(
-            extract_resource_name(Path::new("path/to/resource.txt")),
-            "resource"
-        );
-        assert_eq!(
-            extract_resource_name(Path::new("noextension")),
-            "noextension"
-        );
+        assert_eq!(extract_resource_name(Path::new("path/to/resource.txt")), "resource");
+        assert_eq!(extract_resource_name(Path::new("noextension")), "noextension");
     }
 
     #[test]

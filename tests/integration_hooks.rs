@@ -23,11 +23,8 @@ async fn test_hooks_install_and_format() -> Result<()> {
         "command": "echo 'Session started'",
         "description": "Session start hook"
     });
-    fs::write(
-        hooks_dir.join("session-start.json"),
-        serde_json::to_string_pretty(&session_hook)?,
-    )
-    .await?;
+    fs::write(hooks_dir.join("session-start.json"), serde_json::to_string_pretty(&session_hook)?)
+        .await?;
 
     // Create PreToolUse hook (with matcher)
     let pre_tool_hook = serde_json::json!({
@@ -38,11 +35,8 @@ async fn test_hooks_install_and_format() -> Result<()> {
         "timeout": 5000,
         "description": "Pre-tool use hook"
     });
-    fs::write(
-        hooks_dir.join("pre-tool-use.json"),
-        serde_json::to_string_pretty(&pre_tool_hook)?,
-    )
-    .await?;
+    fs::write(hooks_dir.join("pre-tool-use.json"), serde_json::to_string_pretty(&pre_tool_hook)?)
+        .await?;
 
     source_repo.commit_all("Add test hooks")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -75,58 +69,30 @@ tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
     let hooks = settings.get("hooks").expect("Should have hooks section");
 
     // Test SessionStart hook (no matcher)
-    let session_start = hooks
-        .get("SessionStart")
-        .expect("Should have SessionStart")
-        .as_array()
-        .unwrap();
+    let session_start =
+        hooks.get("SessionStart").expect("Should have SessionStart").as_array().unwrap();
     assert_eq!(session_start.len(), 1);
-    assert!(
-        session_start[0].get("matcher").is_none(),
-        "SessionStart should not have matcher"
-    );
+    assert!(session_start[0].get("matcher").is_none(), "SessionStart should not have matcher");
 
     let session_commands = session_start[0].get("hooks").unwrap().as_array().unwrap();
     assert_eq!(session_commands.len(), 1);
     assert_eq!(
-        session_commands[0]
-            .get("command")
-            .unwrap()
-            .as_str()
-            .unwrap(),
+        session_commands[0].get("command").unwrap().as_str().unwrap(),
         "echo 'Session started'"
     );
 
     // Test PreToolUse hook (with matcher)
-    let pre_tool_use = hooks
-        .get("PreToolUse")
-        .expect("Should have PreToolUse")
-        .as_array()
-        .unwrap();
+    let pre_tool_use = hooks.get("PreToolUse").expect("Should have PreToolUse").as_array().unwrap();
     assert_eq!(pre_tool_use.len(), 1);
-    assert_eq!(
-        pre_tool_use[0].get("matcher").unwrap().as_str().unwrap(),
-        "Bash|Write"
-    );
+    assert_eq!(pre_tool_use[0].get("matcher").unwrap().as_str().unwrap(), "Bash|Write");
 
     let pre_tool_commands = pre_tool_use[0].get("hooks").unwrap().as_array().unwrap();
     assert_eq!(pre_tool_commands.len(), 1);
     assert_eq!(
-        pre_tool_commands[0]
-            .get("command")
-            .unwrap()
-            .as_str()
-            .unwrap(),
+        pre_tool_commands[0].get("command").unwrap().as_str().unwrap(),
         "echo 'Before tool use'"
     );
-    assert_eq!(
-        pre_tool_commands[0]
-            .get("timeout")
-            .unwrap()
-            .as_u64()
-            .unwrap(),
-        5000
-    );
+    assert_eq!(pre_tool_commands[0].get("timeout").unwrap().as_u64().unwrap(), 5000);
 
     Ok(())
 }
@@ -149,16 +115,8 @@ async fn test_hooks_deduplication() -> Result<()> {
         "command": "agpm update",
         "description": "Update AGPM"
     });
-    fs::write(
-        hooks_dir.join("hook1.json"),
-        serde_json::to_string_pretty(&session_hook)?,
-    )
-    .await?;
-    fs::write(
-        hooks_dir.join("hook2.json"),
-        serde_json::to_string_pretty(&session_hook)?,
-    )
-    .await?;
+    fs::write(hooks_dir.join("hook1.json"), serde_json::to_string_pretty(&session_hook)?).await?;
+    fs::write(hooks_dir.join("hook2.json"), serde_json::to_string_pretty(&session_hook)?).await?;
 
     source_repo.commit_all("Add duplicate hooks")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -195,15 +153,8 @@ second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
 
     // That group should have only one hook (deduplicated)
     let hook_commands = session_start[0].get("hooks").unwrap().as_array().unwrap();
-    assert_eq!(
-        hook_commands.len(),
-        1,
-        "Identical hooks should be deduplicated"
-    );
-    assert_eq!(
-        hook_commands[0].get("command").unwrap().as_str().unwrap(),
-        "agpm update"
-    );
+    assert_eq!(hook_commands.len(), 1, "Identical hooks should be deduplicated");
+    assert_eq!(hook_commands[0].get("command").unwrap().as_str().unwrap(), "agpm update");
 
     Ok(())
 }
@@ -226,11 +177,8 @@ async fn test_hooks_unknown_event_type() -> Result<()> {
         "command": "echo 'future event'",
         "description": "Testing future event type"
     });
-    fs::write(
-        hooks_dir.join("future-hook.json"),
-        serde_json::to_string_pretty(&future_hook)?,
-    )
-    .await?;
+    fs::write(hooks_dir.join("future-hook.json"), serde_json::to_string_pretty(&future_hook)?)
+        .await?;
 
     source_repo.commit_all("Add future hook")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -261,25 +209,16 @@ future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
     let hooks = settings.get("hooks").expect("Should have hooks section");
 
     // Should have the FutureEvent
-    let future_event = hooks
-        .get("FutureEvent")
-        .expect("Should have FutureEvent")
-        .as_array()
-        .unwrap();
+    let future_event =
+        hooks.get("FutureEvent").expect("Should have FutureEvent").as_array().unwrap();
     assert_eq!(future_event.len(), 1);
 
     // Should have no matcher for this event type
-    assert!(
-        future_event[0].get("matcher").is_none(),
-        "FutureEvent should not have matcher"
-    );
+    assert!(future_event[0].get("matcher").is_none(), "FutureEvent should not have matcher");
 
     let commands = future_event[0].get("hooks").unwrap().as_array().unwrap();
     assert_eq!(commands.len(), 1);
-    assert_eq!(
-        commands[0].get("command").unwrap().as_str().unwrap(),
-        "echo 'future event'"
-    );
+    assert_eq!(commands[0].get("command").unwrap().as_str().unwrap(), "echo 'future event'");
 
     Ok(())
 }
@@ -340,11 +279,8 @@ async fn test_hooks_no_change_no_message() -> Result<()> {
         "command": "echo 'test hook'",
         "description": "Test hook"
     });
-    fs::write(
-        hooks_dir.join("session-start.json"),
-        serde_json::to_string_pretty(&session_hook)?,
-    )
-    .await?;
+    fs::write(hooks_dir.join("session-start.json"), serde_json::to_string_pretty(&session_hook)?)
+        .await?;
 
     source_repo.commit_all("Add test hook")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;

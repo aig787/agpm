@@ -223,9 +223,7 @@ pub async fn install_resource(
 ) -> Result<(bool, String)> {
     // Determine destination path
     let dest_path = if entry.installed_at.is_empty() {
-        project_dir
-            .join(resource_dir)
-            .join(format!("{}.md", entry.name))
+        project_dir.join(resource_dir).join(format!("{}.md", entry.name))
     } else {
         project_dir.join(&entry.installed_at)
     };
@@ -234,9 +232,7 @@ pub async fn install_resource(
     let existing_checksum = if dest_path.exists() {
         // Use blocking task for checksum calculation to avoid blocking the async runtime
         let path = dest_path.clone();
-        tokio::task::spawn_blocking(move || LockFile::compute_checksum(&path))
-            .await??
-            .into()
+        tokio::task::spawn_blocking(move || LockFile::compute_checksum(&path)).await??.into()
     } else {
         None
     };
@@ -255,15 +251,9 @@ pub async fn install_resource(
             PathBuf::from(url)
         } else {
             // Git-based resource - use SHA-based worktree creation
-            let sha = entry
-                .resolved_commit
-                .as_deref()
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.",
-                        entry.name
-                    )
-                })?;
+            let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.", entry.name)
+            })?;
 
             // Validate SHA format
             if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -647,10 +637,8 @@ pub async fn install_resources_parallel(
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|(name, error)| format!("  {name}: {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
@@ -1060,10 +1048,8 @@ pub async fn install_resources_parallel_with_progress(
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|(name, error)| format!("  {name}: {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
@@ -1436,16 +1422,11 @@ pub async fn install_resources(
     if !errors.is_empty() {
         // Complete phase with error message
         if let Some(ref pm) = progress {
-            pm.complete_phase(Some(&format!(
-                "Failed to install {} resources",
-                errors.len()
-            )));
+            pm.complete_phase(Some(&format!("Failed to install {} resources", errors.len())));
         }
 
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|(name, error)| format!("  {name}: {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
@@ -1677,10 +1658,8 @@ pub async fn install_resources_with_dynamic_progress(
             progress.finish_and_clear();
         }
 
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|(name, error)| format!("  {name}: {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
@@ -2271,11 +2250,8 @@ pub async fn cleanup_removed_artifacts(
     let mut removed = Vec::new();
 
     // Collect all installed paths from new lockfile
-    let new_paths: HashSet<String> = new_lockfile
-        .all_resources()
-        .into_iter()
-        .map(|r| r.installed_at.clone())
-        .collect();
+    let new_paths: HashSet<String> =
+        new_lockfile.all_resources().into_iter().map(|r| r.installed_at.clone()).collect();
 
     // Check each old resource
     for old_resource in old_lockfile.all_resources() {
@@ -2588,11 +2564,7 @@ mod tests {
 
         // Install the resource
         let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
-        assert!(
-            result.is_ok(),
-            "Failed to install local resource: {:?}",
-            result
-        );
+        assert!(result.is_ok(), "Failed to install local resource: {:?}", result);
 
         // Should be installed the first time
         let (installed, _checksum) = result.unwrap();
@@ -2779,16 +2751,8 @@ mod tests {
 
         // Verify all files were installed (using default directories)
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(
-            project_dir
-                .join(".claude/agpm/snippets/test-snippet.md")
-                .exists()
-        );
-        assert!(
-            project_dir
-                .join(".claude/commands/test-command.md")
-                .exists()
-        );
+        assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
+        assert!(project_dir.join(".claude/commands/test-command.md").exists());
     }
 
     #[tokio::test]
@@ -2837,11 +2801,7 @@ mod tests {
 
         assert_eq!(count, 1, "Should install 1 updated resource");
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(
-            !project_dir
-                .join(".claude/snippets/test-snippet.md")
-                .exists()
-        ); // Not updated
+        assert!(!project_dir.join(".claude/snippets/test-snippet.md").exists()); // Not updated
     }
 
     #[tokio::test]
@@ -2882,11 +2842,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(count, 1);
-        assert!(
-            project_dir
-                .join(".claude/commands/test-command.md")
-                .exists()
-        );
+        assert!(project_dir.join(".claude/commands/test-command.md").exists());
     }
 
     #[tokio::test]
@@ -2985,10 +2941,7 @@ mod tests {
 
         // Check that .gitignore was NOT created
         let gitignore_path = project_dir.join(".gitignore");
-        assert!(
-            !gitignore_path.exists(),
-            "Gitignore should not be created when disabled"
-        );
+        assert!(!gitignore_path.exists(), "Gitignore should not be created when disabled");
     }
 
     #[tokio::test]

@@ -13,10 +13,7 @@ async fn test_install_creates_lockfile() {
 
     // Create mock source repositories
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -28,9 +25,7 @@ async fn test_install_creates_lockfile() {
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     // Create manifest with file:// URLs (no git server needed)
     let manifest_content = format!(
@@ -78,10 +73,7 @@ async fn test_install_with_existing_lockfile() {
 
     // Create mock source repositories
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -94,9 +86,7 @@ async fn test_install_with_existing_lockfile() {
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
     let community_sha = community_repo.git.get_commit_hash().unwrap();
 
     // Create manifest with file:// URLs
@@ -152,9 +142,7 @@ installed_at = ".claude/agents/helper.md"
         official_url, official_sha, community_url, community_sha, official_sha, community_sha
     );
 
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Run install command
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
@@ -227,10 +215,7 @@ async fn test_install_parallel_flag() {
 
     // Create mock source repositories with multiple files
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo
         .add_resource("snippets", "utils", "# Utils Snippet\n\nA test snippet")
         .await
@@ -246,9 +231,7 @@ async fn test_install_parallel_flag() {
         .unwrap();
     community_repo.commit_all("Add helper agent").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     // Create manifest with file:// URLs (no git server needed)
     let manifest_content = format!(
@@ -292,12 +275,9 @@ async fn test_install_local_dependencies() {
     let parent_dir = project.project_path().parent().unwrap();
     let local_agents_dir = parent_dir.join("local-agents");
     fs::create_dir_all(&local_agents_dir).await.unwrap();
-    fs::write(
-        local_agents_dir.join("helper.md"),
-        "# Local Agent Helper\n\nThis is a local agent.",
-    )
-    .await
-    .unwrap();
+    fs::write(local_agents_dir.join("helper.md"), "# Local Agent Helper\n\nThis is a local agent.")
+        .await
+        .unwrap();
 
     // Create local snippet in project directory
     project
@@ -310,10 +290,7 @@ async fn test_install_local_dependencies() {
 
     // Add official source for the remote dependency
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -347,9 +324,8 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     );
 
     // Verify lockfile was created and contains all dependencies
-    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let lockfile_content =
+        fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     assert!(lockfile_content.contains("my-agent")); // remote dependency
     assert!(lockfile_content.contains("local-agent")); // local dependency
     assert!(lockfile_content.contains("local-utils")); // local dependency
@@ -359,11 +335,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     assert!(agents_dir.join("my-agent.md").exists());
     assert!(agents_dir.join("local-agent.md").exists());
 
-    let snippets_dir = project
-        .project_path()
-        .join(".claude")
-        .join("agpm")
-        .join("snippets");
+    let snippets_dir = project.project_path().join(".claude").join("agpm").join("snippets");
     assert!(snippets_dir.join("local-utils.md").exists());
 }
 
@@ -377,10 +349,7 @@ async fn test_install_verbose() {
 
     // Create mock source with required file
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -399,9 +368,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command with verbose flag
-    let output = project
-        .run_agpm(&["install", "--no-cache", "--verbose"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--no-cache", "--verbose"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -419,10 +386,7 @@ async fn test_install_quiet() {
 
     // Create mock source repository
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Add my agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -441,9 +405,7 @@ my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Run install command with quiet flag
-    let output = project
-        .run_agpm(&["install", "--no-cache", "--quiet"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--no-cache", "--quiet"]).unwrap();
     output.assert_success();
 }
 
@@ -467,9 +429,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     assert!(
         output.stderr.contains("Failed to clone")
             || output.stderr.contains("does not exist")
-            || output
-                .stderr
-                .contains("Local repository path does not exist"),
+            || output.stderr.contains("Local repository path does not exist"),
         "Expected clone failure error, got: {}",
         output.stderr
     );
@@ -483,9 +443,7 @@ async fn test_install_help() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Install Claude Code resources from manifest",
-        ))
+        .stdout(predicate::str::contains("Install Claude Code resources from manifest"))
         .stdout(predicate::str::contains("--max-parallel"))
         .stdout(predicate::str::contains("--no-lock"))
         .stdout(predicate::str::contains("--frozen"));
@@ -499,12 +457,7 @@ async fn test_install_corrupted_lockfile() {
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        "corrupted content",
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), "corrupted content").await.unwrap();
 
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");

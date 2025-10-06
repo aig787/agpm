@@ -260,11 +260,7 @@ pub fn split_prefix_and_version(s: &str) -> (Option<String>, &str) {
         // Check for 'v' followed by digit (version prefix)
         if ch == 'v' {
             // Look ahead to check next character (O(1) operation)
-            if s[byte_idx..]
-                .chars()
-                .nth(1)
-                .is_some_and(|next| next.is_ascii_digit())
-            {
+            if s[byte_idx..].chars().nth(1).is_some_and(|next| next.is_ascii_digit()) {
                 return split_at_index(s, byte_idx);
             }
         }
@@ -519,7 +515,9 @@ impl VersionResolver {
         // Sort versions in descending order (newest first)
         versions.sort_by(|a, b| b.version.cmp(&a.version));
 
-        Ok(Self { versions })
+        Ok(Self {
+            versions,
+        })
     }
 
     /// Parse a Git tag string into an optional prefix and semantic version.
@@ -643,11 +641,8 @@ impl VersionResolver {
         let (prefix, version_str) = split_prefix_and_version(requirement);
 
         // Filter versions by prefix first
-        let matching_prefix: Vec<&Arc<VersionInfo>> = self
-            .versions
-            .iter()
-            .filter(|v| v.prefix.as_ref() == prefix.as_ref())
-            .collect();
+        let matching_prefix: Vec<&Arc<VersionInfo>> =
+            self.versions.iter().filter(|v| v.prefix.as_ref() == prefix.as_ref()).collect();
 
         // Try exact version match (with or without 'v' prefix)
         if let Ok(exact_version) = Version::parse(version_str.trim_start_matches('v')) {
@@ -960,11 +955,7 @@ impl VersionResolver {
     /// - User interfaces that hide development versions by default
     #[must_use]
     pub fn list_stable(&self) -> Vec<Arc<VersionInfo>> {
-        self.versions
-            .iter()
-            .filter(|v| !v.prerelease)
-            .map(Arc::clone)
-            .collect()
+        self.versions.iter().filter(|v| !v.prerelease).map(Arc::clone).collect()
     }
 
     /// Check if a specific version constraint can be resolved.
@@ -1520,14 +1511,8 @@ mod tests {
             parse_version_constraint("^1.0.0"),
             VersionConstraint::Tag("^1.0.0".to_string())
         );
-        assert_eq!(
-            parse_version_constraint("*"),
-            VersionConstraint::Tag("*".to_string())
-        );
-        assert_eq!(
-            parse_version_constraint("main"),
-            VersionConstraint::Branch("main".to_string())
-        );
+        assert_eq!(parse_version_constraint("*"), VersionConstraint::Tag("*".to_string()));
+        assert_eq!(parse_version_constraint("main"), VersionConstraint::Branch("main".to_string()));
         assert_eq!(
             parse_version_constraint("latest"),
             VersionConstraint::Branch("latest".to_string())
@@ -1632,10 +1617,7 @@ mod tests {
             split_prefix_and_version("tool-v-v1.0.0"),
             (Some("tool-v".to_string()), "v1.0.0")
         );
-        assert_eq!(
-            split_prefix_and_version("a-b-c-v1.0.0"),
-            (Some("a-b-c".to_string()), "v1.0.0")
-        );
+        assert_eq!(split_prefix_and_version("a-b-c-v1.0.0"), (Some("a-b-c".to_string()), "v1.0.0"));
         assert_eq!(
             split_prefix_and_version("prefix-~1.0.0"),
             (Some("prefix".to_string()), "~1.0.0")
@@ -1658,10 +1640,7 @@ mod tests {
             (Some("agent2".to_string()), "v1.0.0")
         );
         // Digit after hyphen is treated as version start
-        assert_eq!(
-            split_prefix_and_version("tool-123"),
-            (Some("tool".to_string()), "123")
-        );
+        assert_eq!(split_prefix_and_version("tool-123"), (Some("tool".to_string()), "123"));
         // 'v' followed by digit takes precedence
         assert_eq!(
             split_prefix_and_version("abc-v2-agent-v1.0.0"),
@@ -1680,15 +1659,9 @@ mod tests {
             split_prefix_and_version("агенты-v1.0.0"),
             (Some("агенты".to_string()), "v1.0.0")
         );
-        assert_eq!(
-            split_prefix_and_version("工具-v1.0.0"),
-            (Some("工具".to_string()), "v1.0.0")
-        );
+        assert_eq!(split_prefix_and_version("工具-v1.0.0"), (Some("工具".to_string()), "v1.0.0"));
         // Unicode prefixes without version pattern
-        assert_eq!(
-            split_prefix_and_version("агенты-2.0.0"),
-            (Some("агенты".to_string()), "2.0.0")
-        );
+        assert_eq!(split_prefix_and_version("агенты-2.0.0"), (Some("агенты".to_string()), "2.0.0"));
 
         // String ending with 'v' (tests panic fix)
         assert_eq!(split_prefix_and_version("prefix-v"), (None, "prefix-v"));
@@ -1742,25 +1715,16 @@ mod tests {
         assert_eq!(resolver.versions.len(), 7);
 
         // Check prefixes are correctly extracted
-        let agents_versions: Vec<_> = resolver
-            .versions
-            .iter()
-            .filter(|v| v.prefix == Some("agents".to_string()))
-            .collect();
+        let agents_versions: Vec<_> =
+            resolver.versions.iter().filter(|v| v.prefix == Some("agents".to_string())).collect();
         assert_eq!(agents_versions.len(), 3);
 
-        let snippets_versions: Vec<_> = resolver
-            .versions
-            .iter()
-            .filter(|v| v.prefix == Some("snippets".to_string()))
-            .collect();
+        let snippets_versions: Vec<_> =
+            resolver.versions.iter().filter(|v| v.prefix == Some("snippets".to_string())).collect();
         assert_eq!(snippets_versions.len(), 2);
 
-        let unprefixed_versions: Vec<_> = resolver
-            .versions
-            .iter()
-            .filter(|v| v.prefix.is_none())
-            .collect();
+        let unprefixed_versions: Vec<_> =
+            resolver.versions.iter().filter(|v| v.prefix.is_none()).collect();
         assert_eq!(unprefixed_versions.len(), 2);
     }
 

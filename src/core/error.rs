@@ -566,87 +566,163 @@ pub enum AgpmError {
 impl Clone for AgpmError {
     fn clone(&self) -> Self {
         match self {
-            Self::GitCommandError { operation, stderr } => Self::GitCommandError {
+            Self::GitCommandError {
+                operation,
+                stderr,
+            } => Self::GitCommandError {
                 operation: operation.clone(),
                 stderr: stderr.clone(),
             },
             Self::GitNotFound => Self::GitNotFound,
-            Self::GitRepoInvalid { path } => Self::GitRepoInvalid { path: path.clone() },
-            Self::GitAuthenticationFailed { url } => {
-                Self::GitAuthenticationFailed { url: url.clone() }
-            }
-            Self::GitCloneFailed { url, reason } => Self::GitCloneFailed {
+            Self::GitRepoInvalid {
+                path,
+            } => Self::GitRepoInvalid {
+                path: path.clone(),
+            },
+            Self::GitAuthenticationFailed {
+                url,
+            } => Self::GitAuthenticationFailed {
+                url: url.clone(),
+            },
+            Self::GitCloneFailed {
+                url,
+                reason,
+            } => Self::GitCloneFailed {
                 url: url.clone(),
                 reason: reason.clone(),
             },
-            Self::GitCheckoutFailed { reference, reason } => Self::GitCheckoutFailed {
+            Self::GitCheckoutFailed {
+                reference,
+                reason,
+            } => Self::GitCheckoutFailed {
                 reference: reference.clone(),
                 reason: reason.clone(),
             },
-            Self::ConfigError { message } => Self::ConfigError {
+            Self::ConfigError {
+                message,
+            } => Self::ConfigError {
                 message: message.clone(),
             },
             Self::ManifestNotFound => Self::ManifestNotFound,
-            Self::ManifestParseError { file, reason } => Self::ManifestParseError {
+            Self::ManifestParseError {
+                file,
+                reason,
+            } => Self::ManifestParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            Self::ManifestValidationError { reason } => Self::ManifestValidationError {
+            Self::ManifestValidationError {
+                reason,
+            } => Self::ManifestValidationError {
                 reason: reason.clone(),
             },
-            Self::LockfileParseError { file, reason } => Self::LockfileParseError {
+            Self::LockfileParseError {
+                file,
+                reason,
+            } => Self::LockfileParseError {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            Self::ResourceNotFound { name } => Self::ResourceNotFound { name: name.clone() },
-            Self::ResourceFileNotFound { path, source_name } => Self::ResourceFileNotFound {
+            Self::ResourceNotFound {
+                name,
+            } => Self::ResourceNotFound {
+                name: name.clone(),
+            },
+            Self::ResourceFileNotFound {
+                path,
+                source_name,
+            } => Self::ResourceFileNotFound {
                 path: path.clone(),
                 source_name: source_name.clone(),
             },
-            Self::SourceNotFound { name } => Self::SourceNotFound { name: name.clone() },
-            Self::SourceUnreachable { name, url } => Self::SourceUnreachable {
+            Self::SourceNotFound {
+                name,
+            } => Self::SourceNotFound {
+                name: name.clone(),
+            },
+            Self::SourceUnreachable {
+                name,
+                url,
+            } => Self::SourceUnreachable {
                 name: name.clone(),
                 url: url.clone(),
             },
-            Self::InvalidVersionConstraint { constraint } => Self::InvalidVersionConstraint {
+            Self::InvalidVersionConstraint {
+                constraint,
+            } => Self::InvalidVersionConstraint {
                 constraint: constraint.clone(),
             },
-            Self::VersionNotFound { resource, version } => Self::VersionNotFound {
+            Self::VersionNotFound {
+                resource,
+                version,
+            } => Self::VersionNotFound {
                 resource: resource.clone(),
                 version: version.clone(),
             },
-            Self::AlreadyInstalled { name } => Self::AlreadyInstalled { name: name.clone() },
-            Self::InvalidResourceType { resource_type } => Self::InvalidResourceType {
+            Self::AlreadyInstalled {
+                name,
+            } => Self::AlreadyInstalled {
+                name: name.clone(),
+            },
+            Self::InvalidResourceType {
+                resource_type,
+            } => Self::InvalidResourceType {
                 resource_type: resource_type.clone(),
             },
-            Self::InvalidResourceStructure { file, reason } => Self::InvalidResourceStructure {
+            Self::InvalidResourceStructure {
+                file,
+                reason,
+            } => Self::InvalidResourceStructure {
                 file: file.clone(),
                 reason: reason.clone(),
             },
-            Self::CircularDependency { chain } => Self::CircularDependency {
+            Self::CircularDependency {
+                chain,
+            } => Self::CircularDependency {
                 chain: chain.clone(),
             },
-            Self::DependencyResolutionFailed { reason } => Self::DependencyResolutionFailed {
+            Self::DependencyResolutionFailed {
+                reason,
+            } => Self::DependencyResolutionFailed {
                 reason: reason.clone(),
             },
-            Self::NetworkError { operation, reason } => Self::NetworkError {
+            Self::NetworkError {
+                operation,
+                reason,
+            } => Self::NetworkError {
                 operation: operation.clone(),
                 reason: reason.clone(),
             },
-            Self::FileSystemError { operation, path } => Self::FileSystemError {
+            Self::FileSystemError {
+                operation,
+                path,
+            } => Self::FileSystemError {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            Self::PermissionDenied { operation, path } => Self::PermissionDenied {
+            Self::PermissionDenied {
+                operation,
+                path,
+            } => Self::PermissionDenied {
                 operation: operation.clone(),
                 path: path.clone(),
             },
-            Self::DirectoryNotEmpty { path } => Self::DirectoryNotEmpty { path: path.clone() },
-            Self::InvalidDependency { name, reason } => Self::InvalidDependency {
+            Self::DirectoryNotEmpty {
+                path,
+            } => Self::DirectoryNotEmpty {
+                path: path.clone(),
+            },
+            Self::InvalidDependency {
+                name,
+                reason,
+            } => Self::InvalidDependency {
                 name: name.clone(),
                 reason: reason.clone(),
             },
-            Self::InvalidResource { name, reason } => Self::InvalidResource {
+            Self::InvalidResource {
+                name,
+                reason,
+            } => Self::InvalidResource {
                 name: name.clone(),
                 reason: reason.clone(),
             },
@@ -659,7 +735,11 @@ impl Clone for AgpmError {
                 required: required.clone(),
                 found: found.clone(),
             },
-            Self::ConfigNotFound { path } => Self::ConfigNotFound { path: path.clone() },
+            Self::ConfigNotFound {
+                path,
+            } => Self::ConfigNotFound {
+                path: path.clone(),
+            },
             Self::ChecksumMismatch {
                 name,
                 expected,
@@ -669,7 +749,9 @@ impl Clone for AgpmError {
                 expected: expected.clone(),
                 actual: actual.clone(),
             },
-            Self::PlatformNotSupported { operation } => Self::PlatformNotSupported {
+            Self::PlatformNotSupported {
+                operation,
+            } => Self::PlatformNotSupported {
                 operation: operation.clone(),
             },
             // For errors that don't implement Clone, convert to Other
@@ -685,7 +767,9 @@ impl Clone for AgpmError {
             Self::SemverError(e) => Self::Other {
                 message: format!("Semver parsing error: {e}"),
             },
-            Self::Other { message } => Self::Other {
+            Self::Other {
+                message,
+            } => Self::Other {
                 message: message.clone(),
             },
         }
@@ -998,9 +1082,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
                     operation: "file access".to_string(),
                     path: "unknown".to_string(),
                 })
-                .with_suggestion(
-                    "Try running with elevated permissions (sudo/Administrator) or check file ownership",
-                )
+                .with_suggestion("Try running with elevated permissions (sudo/Administrator) or check file ownership")
                 .with_details("This error occurs when AGPM doesn't have permission to read or write files");
             }
             std::io::ErrorKind::NotFound => {
@@ -1059,7 +1141,9 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         }
     }
 
-    ErrorContext::new(AgpmError::Other { message })
+    ErrorContext::new(AgpmError::Other {
+        message,
+    })
 }
 
 /// Create appropriate [`ErrorContext`] with suggestions for specific AGPM errors
@@ -1206,10 +1290,7 @@ mod tests {
     #[test]
     fn test_error_display() {
         let error = AgpmError::GitNotFound;
-        assert_eq!(
-            error.to_string(),
-            "Git is not installed or not found in PATH"
-        );
+        assert_eq!(error.to_string(), "Git is not installed or not found in PATH");
 
         let error = AgpmError::ResourceNotFound {
             name: "test".to_string(),
@@ -1234,14 +1315,8 @@ mod tests {
             .with_suggestion("Install git using your package manager")
             .with_details("Git is required for AGPM to function");
 
-        assert_eq!(
-            ctx.suggestion,
-            Some("Install git using your package manager".to_string())
-        );
-        assert_eq!(
-            ctx.details,
-            Some("Git is required for AGPM to function".to_string())
-        );
+        assert_eq!(ctx.suggestion, Some("Install git using your package manager".to_string()));
+        assert_eq!(ctx.details, Some("Git is required for AGPM to function".to_string()));
     }
 
     #[test]
@@ -1262,7 +1337,9 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            AgpmError::PermissionDenied { .. } => {}
+            AgpmError::PermissionDenied {
+                ..
+            } => {}
             _ => panic!("Expected PermissionDenied error"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1278,7 +1355,9 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            AgpmError::FileSystemError { .. } => {}
+            AgpmError::FileSystemError {
+                ..
+            } => {}
             _ => panic!("Expected FileSystemError"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1337,11 +1416,7 @@ mod tests {
             url: "https://github.com/test/repo".to_string(),
         });
         assert!(ctx.suggestion.is_some());
-        assert!(
-            ctx.suggestion
-                .unwrap()
-                .contains("Configure git authentication")
-        );
+        assert!(ctx.suggestion.unwrap().contains("Configure git authentication"));
         assert!(ctx.details.is_some());
     }
 
@@ -1453,7 +1528,9 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            AgpmError::FileSystemError { .. } => {}
+            AgpmError::FileSystemError {
+                ..
+            } => {}
             _ => panic!("Expected FileSystemError"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1469,7 +1546,9 @@ mod tests {
 
         let ctx = user_friendly_error(anyhow_error);
         match ctx.error {
-            AgpmError::InvalidResource { .. } => {}
+            AgpmError::InvalidResource {
+                ..
+            } => {}
             _ => panic!("Expected InvalidResource"),
         }
         assert!(ctx.suggestion.is_some());
@@ -1499,7 +1578,9 @@ mod tests {
             let ctx = user_friendly_error(anyhow_error);
 
             match ctx.error {
-                AgpmError::ManifestParseError { .. } => {}
+                AgpmError::ManifestParseError {
+                    ..
+                } => {}
                 _ => panic!("Expected ManifestParseError"),
             }
             assert!(ctx.suggestion.is_some());
@@ -1513,7 +1594,9 @@ mod tests {
         let ctx = user_friendly_error(error);
 
         match ctx.error {
-            AgpmError::Other { message } => {
+            AgpmError::Other {
+                message,
+            } => {
                 assert_eq!(message, "Generic error");
             }
             _ => panic!("Expected Other error"),
@@ -1598,12 +1681,7 @@ mod tests {
                 stderr: "error".to_string(),
             });
             assert!(ctx.suggestion.is_some());
-            assert!(
-                ctx.suggestion
-                    .unwrap()
-                    .to_lowercase()
-                    .contains(expected_text)
-            );
+            assert!(ctx.suggestion.unwrap().to_lowercase().contains(expected_text));
         }
     }
 

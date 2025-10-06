@@ -417,10 +417,7 @@ impl std::fmt::Display for StalenessReason {
                 old_url,
                 new_url,
             } => {
-                write!(
-                    f,
-                    "Source repository '{name}' URL changed from '{old_url}' to '{new_url}'"
-                )
+                write!(f, "Source repository '{name}' URL changed from '{old_url}' to '{new_url}'")
             }
             Self::DuplicateEntries {
                 name,
@@ -2111,10 +2108,7 @@ mod tests {
             loaded.get_source("official").unwrap().url,
             "https://github.com/example-org/agpm-official.git"
         );
-        assert_eq!(
-            loaded.get_resource("test-agent").unwrap().checksum,
-            "sha256:abcdef"
-        );
+        assert_eq!(loaded.get_resource("test-agent").unwrap().checksum, "sha256:abcdef");
     }
 
     #[test]
@@ -2173,12 +2167,7 @@ mod tests {
         // Should fail to load
         let result = LockFile::load(&lockfile_path);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("newer than supported")
-        );
+        assert!(result.unwrap_err().to_string().contains("newer than supported"));
     }
 
     #[test]

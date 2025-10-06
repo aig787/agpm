@@ -25,10 +25,7 @@ pub fn validate_project_path(path: &Path, project_dir: &Path) -> Result<PathBuf>
     let project_canonical = safe_canonicalize(project_dir)?;
 
     if !canonical.starts_with(&project_canonical) {
-        return Err(anyhow!(
-            "Path '{}' escapes project directory",
-            path.display()
-        ));
+        return Err(anyhow!("Path '{}' escapes project directory", path.display()));
     }
 
     Ok(canonical)
@@ -62,8 +59,7 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
         return Err(anyhow!("Path does not exist: {}", path.display()));
     }
 
-    path.canonicalize()
-        .with_context(|| format!("Failed to canonicalize path: {}", path.display()))
+    path.canonicalize().with_context(|| format!("Failed to canonicalize path: {}", path.display()))
 }
 
 /// Ensures a path is within a specific directory boundary.
@@ -125,16 +121,9 @@ pub fn safe_relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
     let base_canonical = safe_canonicalize(base)?;
     let target_canonical = safe_canonicalize(target)?;
 
-    target_canonical
-        .strip_prefix(&base_canonical)
-        .map(std::path::Path::to_path_buf)
-        .map_err(|_| {
-            anyhow!(
-                "Cannot create relative path from {} to {}",
-                base.display(),
-                target.display()
-            )
-        })
+    target_canonical.strip_prefix(&base_canonical).map(std::path::Path::to_path_buf).map_err(|_| {
+        anyhow!("Cannot create relative path from {} to {}", base.display(), target.display())
+    })
 }
 
 /// Ensures a directory exists, creating it if necessary.
@@ -193,10 +182,7 @@ pub fn validate_resource_path(
         {
             let canonical_parent = safe_canonicalize(parent)?;
             if !canonical_parent.starts_with(&canonical_project) {
-                return Err(anyhow!(
-                    "Path '{}' escapes project directory",
-                    full_path.display()
-                ));
+                return Err(anyhow!("Path '{}' escapes project directory", full_path.display()));
             }
         }
     }
@@ -221,9 +207,7 @@ pub fn validate_resource_path(
 /// # Returns
 /// A sanitized version of the file name
 pub fn sanitize_file_name(name: &str) -> String {
-    name.chars()
-        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
-        .collect()
+    name.chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.').collect()
 }
 
 /// Gets the project root directory from a path.
@@ -237,9 +221,7 @@ pub fn sanitize_file_name(name: &str) -> String {
 /// The project root directory if found
 pub fn find_project_root(start_path: &Path) -> Result<PathBuf> {
     let mut current = if start_path.is_file() {
-        start_path
-            .parent()
-            .ok_or_else(|| anyhow!("Invalid start path"))?
+        start_path.parent().ok_or_else(|| anyhow!("Invalid start path"))?
     } else {
         start_path
     };

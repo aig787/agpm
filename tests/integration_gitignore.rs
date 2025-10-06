@@ -112,18 +112,11 @@ async fn test_gitignore_enabled_by_default() {
 
     // Create manifest without explicit gitignore setting (should default to true)
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest_default(&source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest_default(&source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -135,10 +128,7 @@ async fn test_gitignore_enabled_by_default() {
 
     // Check that .gitignore was created
     let gitignore_path = project_dir.join(".gitignore");
-    assert!(
-        gitignore_path.exists(),
-        "Gitignore should be created by default"
-    );
+    assert!(gitignore_path.exists(), "Gitignore should be created by default");
 
     // Check that it has the expected structure
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
@@ -158,18 +148,11 @@ async fn test_gitignore_explicitly_enabled() {
 
     // Create manifest with gitignore = true
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -202,18 +185,11 @@ async fn test_gitignore_disabled() {
 
     // Create manifest with gitignore = false
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(false, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(false, &source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -225,10 +201,7 @@ async fn test_gitignore_disabled() {
 
     // Check that .gitignore was NOT created
     let gitignore_path = project_dir.join(".gitignore");
-    assert!(
-        !gitignore_path.exists(),
-        "Gitignore should not be created when disabled"
-    );
+    assert!(!gitignore_path.exists(), "Gitignore should not be created when disabled");
 }
 
 #[tokio::test]
@@ -242,9 +215,7 @@ async fn test_gitignore_preserves_user_entries() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude"))
-        .await
-        .unwrap();
+    fs::create_dir_all(project_dir.join(".claude")).await.unwrap();
 
     // Create existing gitignore with user entries
     let gitignore_path = project_dir.join(".gitignore");
@@ -261,18 +232,11 @@ temp/
 
     // Create manifest with gitignore enabled
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -306,9 +270,7 @@ async fn test_gitignore_preserves_content_after_agpm_section() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude"))
-        .await
-        .unwrap();
+    fs::create_dir_all(project_dir.join(".claude")).await.unwrap();
 
     // Create existing gitignore with content after AGPM section
     let gitignore_path = project_dir.join(".gitignore");
@@ -329,18 +291,11 @@ debug/
 
     // Create manifest with gitignore enabled
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -385,18 +340,11 @@ async fn test_gitignore_update_command() {
 
     // Create manifest
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create initial lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run update command (which should also update gitignore)
     Command::cargo_bin("agpm")
@@ -469,23 +417,12 @@ installed_at = ".claude/agents/internal.md"
     fs::write(&lockfile_path, lockfile_content).await.unwrap();
 
     // Create directories
-    fs::create_dir_all(project_dir.join(".claude/agents"))
-        .await
-        .unwrap();
-    fs::create_dir_all(project_dir.join("scripts"))
-        .await
-        .unwrap();
+    fs::create_dir_all(project_dir.join(".claude/agents")).await.unwrap();
+    fs::create_dir_all(project_dir.join("scripts")).await.unwrap();
 
     // Create resource files
-    fs::write(project_dir.join("scripts/external.sh"), "#!/bin/bash\n")
-        .await
-        .unwrap();
-    fs::write(
-        project_dir.join(".claude/agents/internal.md"),
-        "# Internal\n",
-    )
-    .await
-    .unwrap();
+    fs::write(project_dir.join("scripts/external.sh"), "#!/bin/bash\n").await.unwrap();
+    fs::write(project_dir.join(".claude/agents/internal.md"), "# Internal\n").await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -500,10 +437,7 @@ installed_at = ".claude/agents/internal.md"
     if gitignore_path.exists() {
         let content = fs::read_to_string(&gitignore_path).await.unwrap();
         // External path should use ../
-        assert!(
-            content.contains("../scripts/external.sh"),
-            "External paths should use ../ prefix"
-        );
+        assert!(content.contains("../scripts/external.sh"), "External paths should use ../ prefix");
         // Internal path should use /
         assert!(
             content.contains(".claude/agents/internal.md"),
@@ -524,12 +458,7 @@ async fn test_gitignore_empty_lockfile() {
 
     // Create manifest
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create empty lockfile
     let lockfile_path = project_dir.join("agpm.lock");
@@ -545,10 +474,7 @@ async fn test_gitignore_empty_lockfile() {
 
     // Check that .gitignore is created even with no resources
     let gitignore_path = project_dir.join(".gitignore");
-    assert!(
-        gitignore_path.exists(),
-        "Gitignore should be created even with empty lockfile"
-    );
+    assert!(gitignore_path.exists(), "Gitignore should be created even with empty lockfile");
 
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(content.contains("AGPM managed entries"));
@@ -567,18 +493,11 @@ async fn test_gitignore_idempotent() {
 
     // Create manifest
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Create lockfile
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")
@@ -612,10 +531,7 @@ async fn test_gitignore_idempotent() {
     };
 
     // Content should be the same (idempotent)
-    assert_eq!(
-        first_content, second_content,
-        "Gitignore should be idempotent"
-    );
+    assert_eq!(first_content, second_content, "Gitignore should be idempotent");
 }
 
 #[tokio::test]
@@ -630,17 +546,10 @@ async fn test_gitignore_switch_enabled_disabled() {
 
     // Start with gitignore enabled
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install with gitignore enabled
     Command::cargo_bin("agpm")
@@ -654,12 +563,7 @@ async fn test_gitignore_switch_enabled_disabled() {
     assert!(gitignore_path.exists(), "Gitignore should be created");
 
     // Now disable gitignore
-    fs::write(
-        &manifest_path,
-        create_test_manifest(false, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(false, &source_dir).await).await.unwrap();
 
     // Run install again
     Command::cargo_bin("agpm")
@@ -670,25 +574,15 @@ async fn test_gitignore_switch_enabled_disabled() {
         .assert();
 
     // Gitignore should still exist (we don't delete it)
-    assert!(
-        gitignore_path.exists(),
-        "Gitignore should still exist when disabled"
-    );
+    assert!(gitignore_path.exists(), "Gitignore should still exist when disabled");
 
     // Re-enable gitignore
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     // Add a user entry to the existing gitignore
     let content = fs::read_to_string(&gitignore_path).await.unwrap();
-    let modified_content = content.replace(
-        "# AGPM managed entries",
-        "user-custom.txt\n\n# AGPM managed entries",
-    );
+    let modified_content =
+        content.replace("# AGPM managed entries", "user-custom.txt\n\n# AGPM managed entries");
     fs::write(&gitignore_path, modified_content).await.unwrap();
 
     // Run install again
@@ -719,31 +613,14 @@ async fn test_gitignore_actually_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project
-        .write_manifest(&create_test_manifest(true, &source_dir).await)
-        .await
-        .unwrap();
-    project
-        .write_lockfile(&create_test_lockfile().await)
-        .await
-        .unwrap();
+    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
+    project.write_lockfile(&create_test_lockfile().await).await.unwrap();
 
-    project
-        .run_agpm(&["install", "--quiet"])
-        .unwrap()
-        .assert_success();
+    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(
-        project_dir
-            .join(".claude/agpm/snippets/test-snippet.md")
-            .exists()
-    );
-    assert!(
-        project_dir
-            .join(".claude/commands/test-command.md")
-            .exists()
-    );
+    assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
+    assert!(project_dir.join(".claude/commands/test-command.md").exists());
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();
@@ -784,13 +661,11 @@ async fn test_gitignore_actually_ignored_by_git() {
         "Agent file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".claude/agpm/snippets/test-snippet.md")
-            .unwrap(),
+        git.check_ignore(".claude/agpm/snippets/test-snippet.md").unwrap(),
         "Snippet file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".claude/commands/test-command.md")
-            .unwrap(),
+        git.check_ignore(".claude/commands/test-command.md").unwrap(),
         "Command file should be ignored by git check-ignore"
     );
 }
@@ -807,31 +682,14 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project
-        .write_manifest(&create_test_manifest(false, &source_dir).await)
-        .await
-        .unwrap();
-    project
-        .write_lockfile(&create_test_lockfile().await)
-        .await
-        .unwrap();
+    project.write_manifest(&create_test_manifest(false, &source_dir).await).await.unwrap();
+    project.write_lockfile(&create_test_lockfile().await).await.unwrap();
 
-    project
-        .run_agpm(&["install", "--quiet"])
-        .unwrap()
-        .assert_success();
+    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(
-        project_dir
-            .join(".claude/agpm/snippets/test-snippet.md")
-            .exists()
-    );
-    assert!(
-        project_dir
-            .join(".claude/commands/test-command.md")
-            .exists()
-    );
+    assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
+    assert!(project_dir.join(".claude/commands/test-command.md").exists());
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();
@@ -875,9 +733,7 @@ async fn test_gitignore_malformed_existing() {
     create_test_source_files(&source_dir).await.unwrap();
 
     // Create .claude directory
-    fs::create_dir_all(project_dir.join(".claude"))
-        .await
-        .unwrap();
+    fs::create_dir_all(project_dir.join(".claude")).await.unwrap();
 
     // Create malformed gitignore (missing end marker)
     let gitignore_path = project_dir.join(".gitignore");
@@ -892,17 +748,10 @@ user-file.txt
 
     // Create manifest and lockfile
     let manifest_path = project_dir.join("agpm.toml");
-    fs::write(
-        &manifest_path,
-        create_test_manifest(true, &source_dir).await,
-    )
-    .await
-    .unwrap();
+    fs::write(&manifest_path, create_test_manifest(true, &source_dir).await).await.unwrap();
 
     let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await)
-        .await
-        .unwrap();
+    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
 
     // Run install command
     Command::cargo_bin("agpm")

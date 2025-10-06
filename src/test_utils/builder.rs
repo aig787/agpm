@@ -133,9 +133,7 @@ impl TestEnvironment {
 
     /// Create a test environment with a manifest
     pub fn with_manifest(manifest: Manifest) -> Result<Self> {
-        TestEnvironmentBuilder::new()?
-            .with_manifest(manifest)
-            .build()
+        TestEnvironmentBuilder::new()?.with_manifest(manifest).build()
     }
 
     /// Load the manifest from the test environment

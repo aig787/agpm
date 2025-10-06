@@ -215,8 +215,7 @@ impl CacheCommand {
     /// - `Err(anyhow::Error)` if cache creation or operation fails
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         let cache = Cache::new()?;
-        self.execute_with_cache_and_manifest(cache, manifest_path)
-            .await
+        self.execute_with_cache_and_manifest(cache, manifest_path).await
     }
 
     /// Execute the cache command with a specific cache instance.
@@ -282,7 +281,9 @@ impl CacheCommand {
         manifest_path: Option<PathBuf>,
     ) -> Result<()> {
         match self.command {
-            Some(CacheSubcommands::Clean { all }) => {
+            Some(CacheSubcommands::Clean {
+                all,
+            }) => {
                 if all {
                     self.clean_all(cache).await
                 } else {
@@ -392,9 +393,8 @@ impl CacheCommand {
 
         // Also clean up stale lock files (older than 1 hour)
         let cache_dir = cache.cache_dir();
-        let lock_removed = crate::cache::lock::cleanup_stale_locks(cache_dir, 3600)
-            .await
-            .unwrap_or(0);
+        let lock_removed =
+            crate::cache::lock::cleanup_stale_locks(cache_dir, 3600).await.unwrap_or(0);
 
         if removed > 0 || lock_removed > 0 {
             let mut messages = Vec::new();
@@ -404,12 +404,7 @@ impl CacheCommand {
             if lock_removed > 0 {
                 messages.push(format!("{lock_removed} stale lock files"));
             }
-            println!(
-                "{}",
-                format!("✅ Removed {}", messages.join(" and "))
-                    .green()
-                    .bold()
-            );
+            println!("{}", format!("✅ Removed {}", messages.join(" and ")).green().bold());
         } else {
             println!("✨ Cache is already clean - no unused entries found");
         }
@@ -618,7 +613,9 @@ mod tests {
         assert!(repo2.exists());
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: true }),
+            command: Some(CacheSubcommands::Clean {
+                all: true,
+            }),
         };
 
         let result = cmd.execute_with_cache(cache).await;
@@ -636,11 +633,7 @@ mod tests {
         // The entire cache directory should be gone
         assert!(
             !temp_dir.path().exists()
-                || temp_dir
-                    .path()
-                    .read_dir()
-                    .map(|mut d| d.next().is_none())
-                    .unwrap_or(false)
+                || temp_dir.path().read_dir().map(|mut d| d.next().is_none()).unwrap_or(false)
         );
     }
 
@@ -653,7 +646,9 @@ mod tests {
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: false }),
+            command: Some(CacheSubcommands::Clean {
+                all: false,
+            }),
         };
 
         // Pass a non-existent manifest path to ensure no manifest is found
@@ -661,9 +656,7 @@ mod tests {
         assert!(!non_existent_manifest.exists());
 
         // Without a manifest, should warn and not clean
-        let result = cmd
-            .execute_with_cache_and_manifest(cache, Some(non_existent_manifest))
-            .await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
         assert!(result.is_ok());
     }
 
@@ -697,12 +690,12 @@ mod tests {
         assert!(unused_cache.exists());
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: false }),
+            command: Some(CacheSubcommands::Clean {
+                all: false,
+            }),
         };
 
-        let result = cmd
-            .execute_with_cache_and_manifest(cache, Some(manifest_path))
-            .await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         // Give a small delay to ensure async removal is completed
@@ -721,7 +714,9 @@ mod tests {
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
 
         // Test that no subcommand defaults to Info
-        let cmd = CacheCommand { command: None };
+        let cmd = CacheCommand {
+            command: None,
+        };
 
         let result = cmd.execute_with_cache(cache).await;
         assert!(result.is_ok());
@@ -800,7 +795,9 @@ mod tests {
 
         // Don't create any cache content
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: true }),
+            command: Some(CacheSubcommands::Clean {
+                all: true,
+            }),
         };
 
         let result = cmd.execute_with_cache(cache).await;
@@ -821,14 +818,8 @@ mod tests {
         // Create manifest with multiple sources
         let manifest = Manifest {
             sources: std::collections::HashMap::from([
-                (
-                    "source1".to_string(),
-                    "https://github.com/test/repo1.git".to_string(),
-                ),
-                (
-                    "source2".to_string(),
-                    "https://github.com/test/repo2.git".to_string(),
-                ),
+                ("source1".to_string(), "https://github.com/test/repo1.git".to_string()),
+                ("source2".to_string(), "https://github.com/test/repo2.git".to_string()),
             ]),
             ..Default::default()
         };
@@ -844,12 +835,12 @@ mod tests {
         std::fs::create_dir_all(&unused_cache).unwrap();
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: false }),
+            command: Some(CacheSubcommands::Clean {
+                all: false,
+            }),
         };
 
-        let result = cmd
-            .execute_with_cache_and_manifest(cache, Some(manifest_path))
-            .await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -903,13 +894,13 @@ mod tests {
         std::fs::create_dir_all(&cache_dir1).unwrap();
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: false }),
+            command: Some(CacheSubcommands::Clean {
+                all: false,
+            }),
         };
 
         // Pass a non-existent manifest path to ensure no manifest is found
-        let result = cmd
-            .execute_with_cache_and_manifest(cache, Some(non_existent_manifest))
-            .await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(non_existent_manifest)).await;
         assert!(result.is_ok());
 
         // Cache should remain untouched without manifest
@@ -991,12 +982,12 @@ mod tests {
         std::fs::create_dir_all(&unused_cache).unwrap();
 
         let cmd = CacheCommand {
-            command: Some(CacheSubcommands::Clean { all: false }),
+            command: Some(CacheSubcommands::Clean {
+                all: false,
+            }),
         };
 
-        let result = cmd
-            .execute_with_cache_and_manifest(cache, Some(manifest_path))
-            .await;
+        let result = cmd.execute_with_cache_and_manifest(cache, Some(manifest_path)).await;
         assert!(result.is_ok());
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

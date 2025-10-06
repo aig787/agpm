@@ -242,9 +242,7 @@ pub fn permission_error_context(resource: &str, operation: &str) -> ErrorContext
             operation: operation.to_string(),
             path: resource.to_string(),
         },
-        suggestion: Some(format!(
-            "Check that you have {operation} permissions for: {resource}"
-        )),
+        suggestion: Some(format!("Check that you have {operation} permissions for: {resource}")),
         details: if cfg!(windows) {
             Some("On Windows, you may need to run as Administrator".to_string())
         } else {
@@ -348,10 +346,7 @@ mod tests {
     #[test]
     fn test_file_error_context() {
         let context = file_error_context("read", Path::new("/tmp/test.txt"));
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::FileSystemError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::FileSystemError { .. }));
         assert!(context.suggestion.is_some());
         assert!(context.details.unwrap().contains("/tmp/test.txt"));
     }
@@ -359,10 +354,7 @@ mod tests {
     #[test]
     fn test_git_error_context() {
         let context = git_error_context("clone", Some("https://github.com/test/repo"));
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::GitCommandError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::GitCommandError { .. }));
         assert!(context.suggestion.unwrap().contains("network"));
         assert!(context.details.unwrap().contains("github.com"));
     }
@@ -384,10 +376,7 @@ mod tests {
     #[test]
     fn test_permission_error_context() {
         let context = permission_error_context("/usr/local", "write");
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::PermissionDenied { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::PermissionDenied { .. }));
         assert!(context.suggestion.unwrap().contains("write permissions"));
         assert!(context.details.is_some());
     }
@@ -396,46 +385,31 @@ mod tests {
     fn test_manifest_error_context_all_operations() {
         // Test load operation
         let context = manifest_error_context("load", None);
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::ManifestNotFound
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::ManifestNotFound));
         assert!(context.suggestion.unwrap().contains("agpm.toml exists"));
 
         // Test parse operation with details
         let context = manifest_error_context("parse", Some("Syntax error at line 10"));
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::ManifestParseError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::ManifestParseError { .. }));
         assert!(context.suggestion.unwrap().contains("valid TOML syntax"));
         assert_eq!(context.details.unwrap(), "Syntax error at line 10");
 
         // Test validate operation
         let context = manifest_error_context("validate", Some("Missing required field"));
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::ManifestValidationError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::ManifestValidationError { .. }));
         assert!(context.suggestion.unwrap().contains("required fields"));
         assert_eq!(context.details.unwrap(), "Missing required field");
 
         // Test unknown operation
         let context = manifest_error_context("unknown", None);
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::Other { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::Other { .. }));
         assert!(context.suggestion.is_none());
     }
 
     #[test]
     fn test_dependency_error_context() {
         let context = dependency_error_context("test-agent", "Version not found");
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::InvalidDependency { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::InvalidDependency { .. }));
         assert!(context.suggestion.unwrap().contains("agpm update"));
         assert_eq!(context.details.unwrap(), "Version not found");
     }
@@ -443,10 +417,7 @@ mod tests {
     #[test]
     fn test_network_error_context() {
         let context = network_error_context("download", Some("https://example.com/file"));
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::NetworkError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::NetworkError { .. }));
         assert!(context.suggestion.unwrap().contains("internet connection"));
         assert!(context.details.unwrap().contains("example.com"));
     }
@@ -455,10 +426,7 @@ mod tests {
     fn test_config_error_context_types() {
         // Test global config
         let context = config_error_context("global", "Invalid format");
-        assert!(matches!(
-            context.error,
-            crate::core::AgpmError::ConfigError { .. }
-        ));
+        assert!(matches!(context.error, crate::core::AgpmError::ConfigError { .. }));
         assert!(context.suggestion.unwrap().contains("~/.agpm/config.toml"));
 
         // Test project config

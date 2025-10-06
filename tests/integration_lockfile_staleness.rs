@@ -12,12 +12,8 @@ async fn test_install_auto_updates_missing_dependency() -> Result<()> {
 
     // Create a source repo with an agent
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "agent-one", "# Agent One\nTest agent one")
-        .await?;
-    source_repo
-        .add_resource("agents", "agent-two", "# Agent Two\nTest agent two")
-        .await?;
+    source_repo.add_resource("agents", "agent-one", "# Agent One\nTest agent one").await?;
+    source_repo.add_resource("agents", "agent-two", "# Agent Two\nTest agent two").await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -60,11 +56,7 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
 
     // Install should auto-update the lockfile (Cargo-style behavior)
     let output = project.run_agpm(&["install", "--quiet"])?;
-    assert!(
-        output.success,
-        "Install should auto-update lockfile: {}",
-        output.stderr
-    );
+    assert!(output.success, "Install should auto-update lockfile: {}", output.stderr);
 
     // Verify lockfile now contains agent-two again
     let updated_lockfile = project.read_lockfile().await?;
@@ -83,15 +75,11 @@ async fn test_install_frozen_detects_version_mismatch() -> Result<()> {
 
     // Create a source repo with multiple versions
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v1\nVersion 1")
-        .await?;
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v1\nVersion 1").await?;
     source_repo.commit_all("Version 1")?;
     source_repo.tag_version("v1.0.0")?;
 
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v2\nVersion 2")
-        .await?;
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v2\nVersion 2").await?;
     source_repo.commit_all("Version 2")?;
     source_repo.tag_version("v2.0.0")?;
 
@@ -117,11 +105,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // Normal install should auto-update (Cargo-style)
     let output = project.run_agpm(&["install", "--quiet"])?;
-    assert!(
-        output.success,
-        "Normal install should auto-update: {}",
-        output.stderr
-    );
+    assert!(output.success, "Normal install should auto-update: {}", output.stderr);
 
     // Revert to v1.0.0 lockfile
     project.write_manifest(&manifest).await?;
@@ -150,12 +134,8 @@ async fn test_install_detects_removed_dependency() -> Result<()> {
 
     // Create a source repo with two agents
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "agent-one", "# Agent One")
-        .await?;
-    source_repo
-        .add_resource("agents", "agent-two", "# Agent Two")
-        .await?;
+    source_repo.add_resource("agents", "agent-one", "# Agent One").await?;
+    source_repo.add_resource("agents", "agent-two", "# Agent Two").await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -196,10 +176,7 @@ agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "
         "Install should succeed with extra lockfile entries for transitive deps: {}",
         output.stderr
     );
-    assert!(
-        !output.stderr.contains("stale"),
-        "Should not report lockfile as stale"
-    );
+    assert!(!output.stderr.contains("stale"), "Should not report lockfile as stale");
 
     Ok(())
 }
@@ -211,12 +188,8 @@ async fn test_install_detects_path_change() -> Result<()> {
 
     // Create a source repo with agent in two locations
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "old-path", "# Agent at old path")
-        .await?;
-    source_repo
-        .add_resource("agents", "new-path", "# Agent at new path")
-        .await?;
+    source_repo.add_resource("agents", "old-path", "# Agent at old path").await?;
+    source_repo.add_resource("agents", "new-path", "# Agent at new path").await?;
     source_repo.commit_all("Add agents")?;
     source_repo.tag_version("v1.0.0")?;
 
@@ -242,11 +215,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 
     // Normal install should auto-update
     let output = project.run_agpm(&["install", "--quiet"])?;
-    assert!(
-        output.success,
-        "Normal install should auto-update path change: {}",
-        output.stderr
-    );
+    assert!(output.success, "Normal install should auto-update path change: {}", output.stderr);
 
     // Revert to old path and reinstall
     project.write_manifest(&manifest_old).await?;
@@ -258,11 +227,7 @@ test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "
 
     // --frozen mode should fail
     let output = project.run_agpm(&["install", "--frozen"])?;
-    assert!(
-        output.success,
-        "Frozen mode should succeed (ignores path changes): {}",
-        output.stderr
-    );
+    assert!(output.success, "Frozen mode should succeed (ignores path changes): {}", output.stderr);
 
     Ok(())
 }
@@ -274,16 +239,12 @@ async fn test_install_detects_source_url_change() -> Result<()> {
 
     // Create two different source repos
     let old_repo = project.create_source_repo("old-repo").await?;
-    old_repo
-        .add_resource("agents", "test-agent", "# Agent from old repo")
-        .await?;
+    old_repo.add_resource("agents", "test-agent", "# Agent from old repo").await?;
     old_repo.commit_all("Add agent")?;
     old_repo.tag_version("v1.0.0")?;
 
     let new_repo = project.create_source_repo("new-repo").await?;
-    new_repo
-        .add_resource("agents", "test-agent", "# Agent from new repo")
-        .await?;
+    new_repo.add_resource("agents", "test-agent", "# Agent from new repo").await?;
     new_repo.commit_all("Add agent")?;
     new_repo.tag_version("v1.0.0")?;
 
@@ -317,14 +278,9 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // --frozen mode should fail on source URL change (security concern)
     let output = project.run_agpm(&["install", "--frozen"])?;
+    assert!(!output.success, "Should fail on source URL change (security)");
     assert!(
-        !output.success,
-        "Should fail on source URL change (security)"
-    );
-    assert!(
-        output
-            .stderr
-            .contains("Source repository 'test-source' URL changed")
+        output.stderr.contains("Source repository 'test-source' URL changed")
             || output.stderr.contains("out of sync"),
         "Should report URL change, got: {}",
         output.stderr
@@ -340,9 +296,7 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
 
     // Create a source repo
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent")
-        .await?;
+    source_repo.add_resource("agents", "test-agent", "# Test Agent").await?;
     source_repo.commit_all("Add agent")?;
 
     // Ensure we're on main branch (git's default branch name varies)
@@ -372,10 +326,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
         let agent_section = &lockfile[agents_pos..];
 
         // Find the end of this agent entry
-        let next_section = agent_section[11..]
-            .find("[[")
-            .unwrap_or(agent_section.len() - 11)
-            + 11;
+        let next_section = agent_section[11..].find("[[").unwrap_or(agent_section.len() - 11) + 11;
         let agent_entry = &agent_section[..next_section];
 
         // Add a duplicate at the end
@@ -387,10 +338,7 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
 
     // --frozen mode should fail on corrupted lockfile
     let output = project.run_agpm(&["install", "--frozen"])?;
-    assert!(
-        !output.success,
-        "Expected failure due to duplicate entries, but command succeeded"
-    );
+    assert!(!output.success, "Expected failure due to duplicate entries, but command succeeded");
     assert!(
         output.stderr.contains("duplicate entries")
             || output.stderr.contains("Found") && output.stderr.contains("duplicate")
@@ -410,9 +358,7 @@ async fn test_install_allows_branch_references() -> Result<()> {
 
     // Create a source repo with a bare clone for stable serving
     let source_repo = project.create_source_repo("test-source").await?;
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v1")
-        .await?;
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v1").await?;
     source_repo.commit_all("Initial commit")?;
 
     // Ensure we're on main branch (git's default branch name varies)

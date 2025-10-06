@@ -6,7 +6,7 @@
 edition = "2024"
 
 # Line width
-max_width = 130
+max_width = 100
 
 # Use small heuristics - "Off" prevents aggressive code condensing
 # This ensures consistent multi-line formatting across rustfmt versions

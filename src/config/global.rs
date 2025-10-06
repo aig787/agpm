@@ -402,11 +402,9 @@ impl GlobalConfig {
                 .with_context(|| format!("Failed to read permissions for {}", path.display()))?
                 .permissions();
             perms.set_mode(0o600); // Owner read/write only, no group/other access
-            async_fs::set_permissions(path, perms)
-                .await
-                .with_context(|| {
-                    format!("Failed to set secure permissions on {}", path.display())
-                })?;
+            async_fs::set_permissions(path, perms).await.with_context(|| {
+                format!("Failed to set secure permissions on {}", path.display())
+            })?;
         }
 
         Ok(())
@@ -799,7 +797,10 @@ impl GlobalConfigManager {
     /// ```
     #[must_use]
     pub const fn with_path(path: PathBuf) -> Self {
-        Self { config: None, path }
+        Self {
+            config: None,
+            path,
+        }
     }
 
     /// Get a reference to the global configuration, loading it if necessary.
@@ -979,62 +980,35 @@ mod tests {
         let config_path = temp.path().join("config.toml");
 
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "test".to_string(),
-            "https://example.com/repo.git".to_string(),
-        );
+        config.add_source("test".to_string(), "https://example.com/repo.git".to_string());
 
         config.save_to(&config_path).await.unwrap();
 
         let loaded = GlobalConfig::load_from(&config_path).await.unwrap();
         assert_eq!(loaded.sources.len(), 1);
-        assert_eq!(
-            loaded.get_source("test"),
-            Some(&"https://example.com/repo.git".to_string())
-        );
+        assert_eq!(loaded.get_source("test"), Some(&"https://example.com/repo.git".to_string()));
     }
 
     #[tokio::test]
     async fn test_merge_sources() {
         let mut global = GlobalConfig::default();
-        global.add_source(
-            "private".to_string(),
-            "https://token@private.com/repo.git".to_string(),
-        );
-        global.add_source(
-            "shared".to_string(),
-            "https://shared.com/repo.git".to_string(),
-        );
+        global.add_source("private".to_string(), "https://token@private.com/repo.git".to_string());
+        global.add_source("shared".to_string(), "https://shared.com/repo.git".to_string());
 
         let mut local = HashMap::new();
-        local.insert(
-            "shared".to_string(),
-            "https://override.com/repo.git".to_string(),
-        );
-        local.insert(
-            "public".to_string(),
-            "https://public.com/repo.git".to_string(),
-        );
+        local.insert("shared".to_string(), "https://override.com/repo.git".to_string());
+        local.insert("public".to_string(), "https://public.com/repo.git".to_string());
 
         let merged = global.merge_sources(&local);
 
         // Global source preserved
-        assert_eq!(
-            merged.get("private"),
-            Some(&"https://token@private.com/repo.git".to_string())
-        );
+        assert_eq!(merged.get("private"), Some(&"https://token@private.com/repo.git".to_string()));
 
         // Local override wins
-        assert_eq!(
-            merged.get("shared"),
-            Some(&"https://override.com/repo.git".to_string())
-        );
+        assert_eq!(merged.get("shared"), Some(&"https://override.com/repo.git".to_string()));
 
         // Local-only source included
-        assert_eq!(
-            merged.get("public"),
-            Some(&"https://public.com/repo.git".to_string())
-        );
+        assert_eq!(merged.get("public"), Some(&"https://public.com/repo.git".to_string()));
     }
 
     #[tokio::test]
@@ -1044,20 +1018,11 @@ mod tests {
         // Add source
         config.add_source("test".to_string(), "https://test.com/repo.git".to_string());
         assert!(config.has_source("test"));
-        assert_eq!(
-            config.get_source("test"),
-            Some(&"https://test.com/repo.git".to_string())
-        );
+        assert_eq!(config.get_source("test"), Some(&"https://test.com/repo.git".to_string()));
 
         // Update source
-        config.add_source(
-            "test".to_string(),
-            "https://updated.com/repo.git".to_string(),
-        );
-        assert_eq!(
-            config.get_source("test"),
-            Some(&"https://updated.com/repo.git".to_string())
-        );
+        config.add_source("test".to_string(), "https://updated.com/repo.git".to_string());
+        assert_eq!(config.get_source("test"), Some(&"https://updated.com/repo.git".to_string()));
 
         // Remove source
         assert!(config.remove_source("test"));

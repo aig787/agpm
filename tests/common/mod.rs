@@ -27,11 +27,7 @@ impl TestGit {
             .with_context(|| action.to_string())?;
 
         if !output.status.success() {
-            bail!(
-                "{} failed: {}",
-                action,
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("{} failed: {}", action, String::from_utf8_lossy(&output.stderr));
         }
 
         Ok(output)
@@ -78,10 +74,7 @@ impl TestGit {
 
     /// Create a tag
     pub fn tag(&self, tag_name: &str) -> Result<()> {
-        self.run_git_command(
-            &["tag", tag_name],
-            &format!("Failed to create tag: {}", tag_name),
-        )?;
+        self.run_git_command(&["tag", tag_name], &format!("Failed to create tag: {}", tag_name))?;
         Ok(())
     }
 
@@ -119,11 +112,7 @@ impl TestGit {
     /// Set the HEAD to point to a branch (making it the default branch)
     pub fn set_head(&self, branch_name: &str) -> Result<()> {
         self.run_git_command(
-            &[
-                "symbolic-ref",
-                "HEAD",
-                &format!("refs/heads/{}", branch_name),
-            ],
+            &["symbolic-ref", "HEAD", &format!("refs/heads/{}", branch_name)],
             &format!("Failed to set HEAD to branch: {}", branch_name),
         )?;
         Ok(())
@@ -153,10 +142,7 @@ impl TestGit {
             .output()
             .context("Failed to create bare repository")?;
         if !output.status.success() {
-            bail!(
-                "Failed to create bare repository: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("Failed to create bare repository: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(())
     }
@@ -342,20 +328,9 @@ impl TestSourceRepo {
 
     /// Create standard test resources
     pub async fn create_standard_resources(&self) -> Result<()> {
-        self.add_resource("agents", "test-agent", "# Test Agent\n\nA test agent")
-            .await?;
-        self.add_resource(
-            "snippets",
-            "test-snippet",
-            "# Test Snippet\n\nA test snippet",
-        )
-        .await?;
-        self.add_resource(
-            "commands",
-            "test-command",
-            "# Test Command\n\nA test command",
-        )
-        .await?;
+        self.add_resource("agents", "test-agent", "# Test Agent\n\nA test agent").await?;
+        self.add_resource("snippets", "test-snippet", "# Test Snippet\n\nA test snippet").await?;
+        self.add_resource("commands", "test-command", "# Test Command\n\nA test command").await?;
         Ok(())
     }
 
@@ -382,12 +357,7 @@ impl TestSourceRepo {
     /// Returns the path to the new bare repository
     pub fn to_bare_repo(&self, target_path: &Path) -> Result<PathBuf> {
         let output = Command::new("git")
-            .args([
-                "clone",
-                "--bare",
-                self.path.to_str().unwrap(),
-                target_path.to_str().unwrap(),
-            ])
+            .args(["clone", "--bare", self.path.to_str().unwrap(), target_path.to_str().unwrap()])
             .output()
             .context("Failed to create bare repository")?;
 
@@ -419,13 +389,8 @@ impl TestSourceRepo {
     /// Get a file:// URL for a bare clone of this repository
     /// Creates the bare repo in the parent's sources directory
     pub fn bare_file_url(&self, sources_dir: &Path) -> Result<String> {
-        let bare_name = format!(
-            "{}.git",
-            self.path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("repo")
-        );
+        let bare_name =
+            format!("{}.git", self.path.file_name().and_then(|n| n.to_str()).unwrap_or("repo"));
         let bare_path = sources_dir.join(bare_name);
         self.to_bare_repo(&bare_path)?;
         let path_str = bare_path.display().to_string().replace('\\', "/");
@@ -444,11 +409,7 @@ pub struct CommandOutput {
 impl CommandOutput {
     /// Assert the command succeeded
     pub fn assert_success(&self) -> &Self {
-        assert!(
-            self.success,
-            "Command failed with code {:?}\nStderr: {}",
-            self.code, self.stderr
-        );
+        assert!(self.success, "Command failed with code {:?}\nStderr: {}", self.code, self.stderr);
         self
     }
 
@@ -503,12 +464,7 @@ impl FileAssert {
         let content = fs::read_to_string(path)
             .await
             .unwrap_or_else(|e| panic!("Failed to read file {}: {}", path.display(), e));
-        assert_eq!(
-            content,
-            expected,
-            "File {} content mismatch",
-            path.display()
-        );
+        assert_eq!(content, expected, "File {} content mismatch", path.display());
     }
 }
 

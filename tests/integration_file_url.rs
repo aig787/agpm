@@ -52,10 +52,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     // Files use basename from path, not dependency name
     let installed_path = project.project_path().join(".claude/agents/test.md");
     let installed_content = fs::read_to_string(installed_path).await?;
-    assert!(
-        installed_content.contains("v2"),
-        "Installed file should be from v2.0.0"
-    );
+    assert!(installed_content.contains("v2"), "Installed file should be from v2.0.0");
 
     let source_head_after = git.get_commit_hash()?;
     assert_eq!(
@@ -65,16 +62,10 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     );
 
     let status = git.status_porcelain()?;
-    assert!(
-        status.trim().is_empty(),
-        "Source repository should have no modifications"
-    );
+    assert!(status.trim().is_empty(), "Source repository should have no modifications");
 
     let source_content = fs::read_to_string(source_repo.path.join("agents/test.md")).await?;
-    assert!(
-        source_content.contains("v1"),
-        "Source repo working directory should remain on v1.0.0"
-    );
+    assert!(source_content.contains("v1"), "Source repo working directory should remain on v1.0.0");
 
     Ok(())
 }
@@ -137,10 +128,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
     // Files use basename from path, not dependency name
     let installed_v2 =
         fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
-    assert!(
-        installed_v2.contains("v2"),
-        "Should have v2 installed after auto-update"
-    );
+    assert!(installed_v2.contains("v2"), "Should have v2 installed after auto-update");
 
     Ok(())
 }
@@ -158,18 +146,11 @@ async fn test_file_url_with_uncommitted_changes() -> Result<()> {
     git.commit("Initial commit")?;
     git.tag("v1.0.0")?;
 
-    fs::write(
-        source_repo.path.join("agents/test.md"),
-        "# Test Agent - Work in Progress",
-    )
-    .await?;
+    fs::write(source_repo.path.join("agents/test.md"), "# Test Agent - Work in Progress").await?;
     fs::write(source_repo.path.join("new_file.txt"), "Uncommitted work").await?;
 
     let status_before = git.status_porcelain()?;
-    assert!(
-        !status_before.trim().is_empty(),
-        "Source repo should have uncommitted changes"
-    );
+    assert!(!status_before.trim().is_empty(), "Source repo should have uncommitted changes");
 
     let file_url = path_to_file_url(git.repo_path()).await;
     let manifest = format!(
@@ -190,10 +171,7 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
     // Files use basename from path, not dependency name
     let installed_content =
         fs::read_to_string(project.project_path().join(".claude/agents/test.md")).await?;
-    assert!(
-        installed_content.contains("v1"),
-        "Install should use committed content"
-    );
+    assert!(installed_content.contains("v1"), "Install should use committed content");
     assert!(
         !installed_content.contains("Work in Progress"),
         "Uncommitted changes must not be installed"

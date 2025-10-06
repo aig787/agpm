@@ -178,21 +178,15 @@ impl TreeCommand {
 
         // Require the manifest to exist
         if !manifest_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Manifest file {} not found",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
         let project_dir = manifest_path.parent().unwrap();
         let lockfile_path = project_dir.join("agpm.lock");
 
         // Derive project name from directory
-        let project_name = project_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("project")
-            .to_string();
+        let project_name =
+            project_dir.file_name().and_then(|n| n.to_str()).unwrap_or("project").to_string();
 
         // Check if lockfile exists
         if !lockfile_path.exists() {
@@ -288,10 +282,7 @@ impl TreeCommand {
         // Print legend if there are duplicates
         if !self.no_dedupe && tree.has_duplicates() {
             println!();
-            println!(
-                "{}",
-                "(*) = duplicate dependency (already shown above)".bright_black()
-            );
+            println!("{}", "(*) = duplicate dependency (already shown above)".bright_black());
         }
     }
 
@@ -315,16 +306,17 @@ impl TreeCommand {
         let is_duplicate = !self.no_dedupe && displayed.contains(&node_id);
 
         // Print connector
-        let connector = if is_last { "└── " } else { "├── " };
+        let connector = if is_last {
+            "└── "
+        } else {
+            "├── "
+        };
 
         // Format node display: type/name version (source)
         let type_str = format!("{}", node.resource_type).bright_black();
         let name_str = node.name.cyan();
-        let version_str = node
-            .version
-            .as_deref()
-            .map(|v| format!(" {}", v.bright_black()))
-            .unwrap_or_default();
+        let version_str =
+            node.version.as_deref().map(|v| format!(" {}", v.bright_black())).unwrap_or_default();
         let source_str = node.source.as_deref().map_or_else(
             || " (local)".bright_black().to_string(),
             |s| format!(" ({})", s.bright_black()),
@@ -448,7 +440,11 @@ impl TreeCommand {
         let indent_str = "  ".repeat(indent);
         let version_str = node.version.as_deref().unwrap_or("latest");
         let source_str = node.source.as_deref().unwrap_or("local");
-        let dup_marker = if is_duplicate { " (*)" } else { "" };
+        let dup_marker = if is_duplicate {
+            " (*)"
+        } else {
+            ""
+        };
 
         println!(
             "{}{}/{} {} ({}){}",
@@ -796,11 +792,7 @@ impl<'a> TreeBuilder<'a> {
             self.count_occurrences(root, &mut counts, &mut seen, nodes);
         }
 
-        counts
-            .iter()
-            .filter(|&(_, &count)| count > 1)
-            .map(|(id, _)| id.clone())
-            .collect()
+        counts.iter().filter(|&(_, &count)| count > 1).map(|(id, _)| id.clone()).collect()
     }
 
     fn count_occurrences(
@@ -881,12 +873,7 @@ mod tests {
 
         let result = cmd.validate_arguments();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("must be at least 1")
-        );
+        assert!(result.unwrap_err().to_string().contains("must be at least 1"));
     }
 
     #[test]
@@ -934,10 +921,7 @@ mod tests {
             source: Some("local-deps".to_string()),
             dependencies: vec![],
         };
-        assert_eq!(
-            builder.node_id(&node_local_source),
-            "local-deps:local-agent"
-        );
+        assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
 
         // Test without source but with local version (should omit @local)
         let node_local = TreeNode {

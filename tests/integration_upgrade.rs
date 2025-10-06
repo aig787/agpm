@@ -101,10 +101,7 @@ async fn test_checksum_computation() -> Result<()> {
     let checksum = ChecksumVerifier::compute_sha256(&file_path).await?;
 
     // Verify against known SHA256 of "Hello, World!"
-    assert_eq!(
-        checksum,
-        "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
-    );
+    assert_eq!(checksum, "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f");
 
     Ok(())
 }
@@ -142,12 +139,7 @@ async fn test_checksum_verification_failure() -> Result<()> {
     // Should fail
     let result = ChecksumVerifier::verify_checksum(&file_path, wrong).await;
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("Checksum verification failed")
-    );
+    assert!(result.unwrap_err().to_string().contains("Checksum verification failed"));
 
     Ok(())
 }
@@ -165,10 +157,7 @@ async fn test_version_checker_caching() -> Result<()> {
 
     // Set up environment to use temp directory
     unsafe {
-        std::env::set_var(
-            "AGPM_CONFIG_PATH",
-            temp_dir.path().join(".agpm").join("config.toml"),
-        );
+        std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join(".agpm").join("config.toml"));
     }
 
     // Test save and load cache
@@ -346,10 +335,7 @@ async fn test_version_cache_expiry() -> Result<()> {
 
     // Set up environment to use temp directory
     unsafe {
-        std::env::set_var(
-            "AGPM_CONFIG_PATH",
-            temp_dir.path().join(".agpm").join("config.toml"),
-        );
+        std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join(".agpm").join("config.toml"));
     }
 
     // Read cache and verify it's old

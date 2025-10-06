@@ -10,21 +10,15 @@ use fixtures::ManifestFixture;
 async fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(String, String)> {
     // Add official source with my-agent and utils
     let official_repo = project.create_source_repo("official").await?;
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await?;
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await?;
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await?;
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await?;
     official_repo.commit_all("Initial commit")?;
     official_repo.tag_version("v1.0.0")?;
     let official_url = official_repo.bare_file_url(project.sources_path())?;
 
     // Add community source with helper
     let community_repo = project.create_source_repo("community").await?;
-    community_repo
-        .add_resource("agents", "helper", "# Helper Agent\n\nA test agent")
-        .await?;
+    community_repo.add_resource("agents", "helper", "# Helper Agent\n\nA test agent").await?;
     community_repo.commit_all("Initial commit")?;
     community_repo.tag_version("v1.0.0")?;
     let community_url = community_repo.bare_file_url(project.sources_path())?;
@@ -103,12 +97,7 @@ checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5
 installed_at = "snippets/utils.md"
 "#
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
@@ -196,21 +185,15 @@ checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5
 installed_at = "snippets/utils.md"
 "#
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["update", "my-agent"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
     // Verify only the specified dependency was updated
-    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let lockfile_content =
+        fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     assert!(lockfile_content.contains("my-agent"));
 }
 
@@ -263,10 +246,7 @@ async fn test_update_check_mode() {
 
     // Add mock source repositories
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
@@ -305,19 +285,11 @@ checksum = "sha256:old3b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f
 installed_at = "agents/my-agent.md"
 "#
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["update", "--check"]).unwrap();
     // Should exit with code 1 when updates are available (useful for CI)
-    assert!(
-        !output.success,
-        "Expected exit code 1 when updates available"
-    );
+    assert!(!output.success, "Expected exit code 1 when updates available");
     assert!(
         output.stdout.contains("Found")
             || output.stdout.contains("update")
@@ -396,20 +368,14 @@ checksum = "sha256:74e6f7298a9c2d168935f58c6b6c5b5ea4c3df6a0b6b8d2e7b2a2b8c3d4e5
 installed_at = "snippets/utils.md"
 "#
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("Found") || output.stdout.contains("update"));
 
-    let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let lockfile_content =
+        fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     assert!(lockfile_content.contains("my-agent"));
     assert!(lockfile_content.contains("helper"));
     assert!(lockfile_content.contains("utils"));
@@ -574,24 +540,15 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "snippets/utils.md"
 "#
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     // Store original lockfile content
-    let original_lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let original_lockfile =
+        fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
 
     let output = project.run_agpm(&["update", "--dry-run"]).unwrap();
     // Should exit with code 1 when updates are available (useful for CI)
-    assert!(
-        !output.success,
-        "Expected exit code 1 when updates available"
-    );
+    assert!(!output.success, "Expected exit code 1 when updates available");
     assert!(
         output.stdout.contains("Would update") || output.stdout.contains("(dry run)"),
         "Expected dry-run output, got: {}",
@@ -599,9 +556,8 @@ installed_at = "snippets/utils.md"
     );
 
     // Verify lockfile wasn't actually modified
-    let current_lockfile = fs::read_to_string(project.project_path().join("agpm.lock"))
-        .await
-        .unwrap();
+    let current_lockfile =
+        fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     assert_eq!(original_lockfile, current_lockfile);
 }
 
@@ -612,11 +568,7 @@ async fn test_update_network_failure() {
 
     // Create manifest with non-existent file:// URLs to simulate network failure
     // Note: file:// URLs must use forward slashes even on Windows
-    let sources_path = project
-        .sources_path()
-        .display()
-        .to_string()
-        .replace('\\', "/");
+    let sources_path = project.sources_path().display().to_string().replace('\\', "/");
     let manifest_content = format!(
         r#"
 [sources]
@@ -632,10 +584,7 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
 "#,
         sources_path, sources_path
     );
-    project
-        .write_manifest(manifest_content.trim())
-        .await
-        .unwrap();
+    project.write_manifest(manifest_content.trim()).await.unwrap();
 
     // Create lockfile with non-existent URLs and matching resources
     let lockfile_content = format!(
@@ -684,12 +633,7 @@ installed_at = "snippets/utils.md"
 "#,
         sources_path, sources_path
     );
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);
@@ -698,9 +642,7 @@ installed_at = "snippets/utils.md"
             || output.stderr.contains("Network error")
             || output.stderr.contains("Source unavailable")
             || output.stderr.contains("Git operation failed")
-            || output
-                .stderr
-                .contains("Local repository path does not exist")
+            || output.stderr.contains("Local repository path does not exist")
             || output.stderr.contains("does not exist")
             || output.stderr.contains("not found"),
         "Expected network/git error, got: {}",
@@ -732,12 +674,9 @@ async fn test_update_corrupted_lockfile() {
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create corrupted lockfile
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        "corrupted lockfile content",
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), "corrupted lockfile content")
+        .await
+        .unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();
     assert!(!output.success);

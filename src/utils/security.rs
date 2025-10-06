@@ -74,9 +74,7 @@ pub fn is_path_blacklisted(path: &Path) -> bool {
 pub fn validate_path_security(path: &Path, check_symlinks: bool) -> anyhow::Result<()> {
     // Check blacklist
     if is_path_blacklisted(path) {
-        return Err(anyhow::anyhow!(
-            "Security error: Access to system directories is not allowed"
-        ));
+        return Err(anyhow::anyhow!("Security error: Access to system directories is not allowed"));
     }
 
     // Check for symlinks if requested
@@ -102,9 +100,7 @@ mod tests {
         // System paths should be blacklisted
         assert!(is_path_blacklisted(Path::new("/etc/passwd")));
         assert!(is_path_blacklisted(Path::new("/sys/kernel")));
-        assert!(is_path_blacklisted(Path::new(
-            "/System/Library/CoreServices"
-        )));
+        assert!(is_path_blacklisted(Path::new("/System/Library/CoreServices")));
         assert!(is_path_blacklisted(Path::new("/private/etc/hosts")));
 
         #[cfg(windows)]
