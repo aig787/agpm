@@ -22,8 +22,7 @@
 //! - **Comparison ranges**: `">=1.0.0"`, `"<2.0.0"`, `">=1.0.0, <2.0.0"`
 //!
 //! ## Special Keywords
-//! - **Latest stable**: `"latest"` or `"*"` - Newest stable version (excludes prereleases)
-//! - **Latest prerelease**: `"latest-prerelease"` - Newest version including prereleases
+//! - **Wildcard**: `"*"` - Matches any version
 //!
 //! ## Git References
 //! - **Branches**: `"main"`, `"develop"`, `"feature/auth"`
@@ -64,10 +63,6 @@
 //! if let Ok(Some(version)) = resolver.resolve("^1.0.0") {
 //!     println!("Resolved caret constraint to: {}", version.tag);
 //! }
-//!
-//! if let Ok(Some(version)) = resolver.resolve("latest") {
-//!     println!("Latest stable version: {}", version.tag);
-//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -85,13 +80,13 @@
 //! // Add constraints for multiple dependencies
 //! resolver.add_constraint("web-framework", "^2.0.0")?;
 //! resolver.add_constraint("database", "~1.5.0")?;
-//! resolver.add_constraint("auth-lib", "latest")?;
+//! resolver.add_constraint("auth-lib", ">=3.0.0")?;
 //!
 //! // Provide available versions
 //! let mut available = HashMap::new();
 //! available.insert("web-framework".to_string(), vec![Version::parse("2.1.0")?]);
 //! available.insert("database".to_string(), vec![Version::parse("1.5.3")?]);
-//! available.insert("auth-lib".to_string(), vec![Version::parse("3.0.0")?]);
+//! available.insert("auth-lib".to_string(), vec![Version::parse("3.2.0")?]);
 //!
 //! // Resolve all dependencies simultaneously
 //! let resolved = resolver.resolve(&available)?;
@@ -135,7 +130,7 @@
 //! AGPM provides sophisticated prerelease version management:
 //!
 //! - **Default exclusion**: Most constraints exclude prereleases for stability
-//! - **Explicit inclusion**: Use `latest-prerelease` or Git refs to include them
+//! - **Explicit inclusion**: Use Git refs to include them
 //! - **Constraint inheritance**: If any constraint allows prereleases, all do
 //! - **Version precedence**: Stable versions are preferred when available
 //!
@@ -160,6 +155,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Parse a version requirement string, normalizing 'v' prefixes.
 ///
@@ -201,6 +197,114 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
     VersionReq::parse(&normalized)
 }
 
+/// Splits a version string into an optional prefix and the version/constraint part.
+///
+/// This function extracts versioned prefixes from tag names and version constraints,
+/// enabling support for prefixed versioning schemes like `agents-v1.0.0` or `snippets-^v2.0.0`.
+/// The prefix can contain hyphens and is separated from the version by detecting where
+/// the version pattern begins.
+///
+/// # Algorithm
+///
+/// Scans left-to-right to find the first occurrence of:
+/// - Constraint operators: `^`, `~`, `=`, `<`, `>`, `!`, `*`
+/// - Version prefix: `v` followed immediately by a digit
+/// - Bare digit (start of version number)
+///
+/// Everything before this point (minus trailing `-`) becomes the prefix.
+///
+/// # Arguments
+///
+/// * `s` - The string to parse (tag name or version constraint)
+///
+/// # Returns
+///
+/// A tuple of `(Option<String>, &str)` where:
+/// - First element is the prefix (if any)
+/// - Second element is the version/constraint string
+///
+/// # Examples
+///
+/// ```
+/// use agpm::version::split_prefix_and_version;
+///
+/// // Prefixed versions
+/// assert_eq!(
+///     split_prefix_and_version("agents-v1.0.0"),
+///     (Some("agents".to_string()), "v1.0.0")
+/// );
+/// assert_eq!(
+///     split_prefix_and_version("my-tool-^v2.0.0"),
+///     (Some("my-tool".to_string()), "^v2.0.0")
+/// );
+///
+/// // Unprefixed versions
+/// assert_eq!(split_prefix_and_version("v1.0.0"), (None, "v1.0.0"));
+/// assert_eq!(split_prefix_and_version("^1.0.0"), (None, "^1.0.0"));
+///
+/// // Edge cases
+/// assert_eq!(
+///     split_prefix_and_version("tool-v-v1.0.0"),
+///     (Some("tool-v".to_string()), "v1.0.0")
+/// );
+/// ```
+#[inline]
+pub fn split_prefix_and_version(s: &str) -> (Option<String>, &str) {
+    // Iterate through characters with their byte indices (O(n) single pass)
+    for (byte_idx, ch) in s.char_indices() {
+        // Check for constraint operators or wildcard
+        if "^~=<>!*".contains(ch) {
+            return split_at_index(s, byte_idx);
+        }
+
+        // Check for 'v' followed by digit (version prefix)
+        if ch == 'v' {
+            // Look ahead to check next character (O(1) operation)
+            if s[byte_idx..]
+                .chars()
+                .nth(1)
+                .is_some_and(|next| next.is_ascii_digit())
+            {
+                return split_at_index(s, byte_idx);
+            }
+        }
+
+        // Check for bare digit (start of version number)
+        // Only treat as version start if:
+        // 1. At position 0 (start of string), OR
+        // 2. Immediately after a hyphen delimiter
+        if ch.is_ascii_digit() {
+            // Check if at start or after hyphen (O(1) operation)
+            let is_version_start = byte_idx == 0 || s[..byte_idx].ends_with('-');
+
+            if is_version_start {
+                return split_at_index(s, byte_idx);
+            }
+        }
+    }
+
+    // No version pattern found, entire string is the version/constraint
+    (None, s)
+}
+
+/// Helper function to split string at an index, extracting prefix if present.
+#[inline]
+fn split_at_index(s: &str, i: usize) -> (Option<String>, &str) {
+    if i == 0 {
+        // Version starts at beginning, no prefix
+        (None, s)
+    } else {
+        // Extract prefix (remove trailing hyphen)
+        let prefix = s[..i].trim_end_matches('-');
+        // Treat empty prefix as None (handles cases like "-v1.0.0")
+        if prefix.is_empty() {
+            (None, &s[i..])
+        } else {
+            (Some(prefix.to_string()), &s[i..])
+        }
+    }
+}
+
 /// Version information extracted from a Git tag.
 ///
 /// `VersionInfo` represents a successfully parsed semantic version from a Git tag,
@@ -210,8 +314,9 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
 ///
 /// # Fields
 ///
+/// - `prefix`: Optional prefix for monorepo-style versioning (e.g., `"agents"` in `agents-v1.0.0`)
 /// - `version`: The parsed semantic version
-/// - `tag`: The original Git tag string (may include prefixes like `v`)
+/// - `tag`: The original Git tag string (may include prefixes like `v` or `agents-v`)
 /// - `prerelease`: Whether this version contains prerelease identifiers
 ///
 /// # Examples
@@ -220,18 +325,34 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
 /// use agpm::version::VersionInfo;
 /// use semver::Version;
 ///
+/// // Standard version without prefix
 /// let info = VersionInfo {
+///     prefix: None,
 ///     version: Version::parse("1.0.0-beta.1").unwrap(),
 ///     tag: "v1.0.0-beta.1".to_string(),
 ///     prerelease: true,
 /// };
 ///
+/// assert_eq!(info.prefix, None);
 /// assert_eq!(info.version.major, 1);
 /// assert_eq!(info.tag, "v1.0.0-beta.1");
 /// assert!(info.prerelease);
+///
+/// // Prefixed version for monorepo
+/// let prefixed = VersionInfo {
+///     prefix: Some("agents".to_string()),
+///     version: Version::parse("2.0.0").unwrap(),
+///     tag: "agents-v2.0.0".to_string(),
+///     prerelease: false,
+/// };
+///
+/// assert_eq!(prefixed.prefix, Some("agents".to_string()));
+/// assert_eq!(prefixed.version.major, 2);
 /// ```
 #[derive(Debug, Clone)]
 pub struct VersionInfo {
+    /// Optional prefix for versioned namespaces (e.g., "agents", "snippets")
+    pub prefix: Option<String>,
     /// The parsed semantic version
     pub version: Version,
     /// The original Git tag string
@@ -258,11 +379,10 @@ pub struct VersionInfo {
 /// # Resolution Strategy
 ///
 /// When resolving version constraints:
-/// 1. **Special keywords** are handled first (`latest`, `latest-prerelease`)
-/// 2. **Exact versions** are matched with or without `v` prefixes
-/// 3. **Semantic ranges** are applied using semver matching rules
-/// 4. **Tag names** are matched exactly as fallback
-/// 5. **Prerelease filtering** is applied based on constraint type
+/// 1. **Exact versions** are matched with or without `v` prefixes
+/// 2. **Semantic ranges** are applied using semver matching rules (e.g., `^1.0.0`, `~2.1.0`)
+/// 3. **Tag/branch names** are matched exactly as fallback (including "latest" - just a name)
+/// 4. **Prerelease filtering** is applied based on constraint type
 ///
 /// # Examples
 ///
@@ -298,10 +418,6 @@ pub struct VersionInfo {
 ///     println!("Caret range resolved to: {} ({})", version.tag, version.version);
 /// }
 ///
-/// if let Some(version) = resolver.resolve("latest")? {
-///     println!("Latest stable: {} (prerelease: {})", version.tag, version.prerelease);
-/// }
-///
 /// if let Some(version) = resolver.resolve("v1.2.3")? {
 ///     println!("Exact match: {}", version.tag);
 /// }
@@ -309,7 +425,7 @@ pub struct VersionInfo {
 /// # }
 /// ```
 pub struct VersionResolver {
-    versions: Vec<VersionInfo>,
+    versions: Vec<Arc<VersionInfo>>,
 }
 
 impl VersionResolver {
@@ -390,12 +506,13 @@ impl VersionResolver {
         let mut versions = Vec::new();
 
         for tag in tags {
-            if let Ok(version) = Self::parse_tag(&tag) {
-                versions.push(VersionInfo {
+            if let Ok((prefix, version)) = Self::parse_tag(&tag) {
+                versions.push(Arc::new(VersionInfo {
+                    prefix,
                     version: version.clone(),
                     tag: tag.clone(),
                     prerelease: !version.pre.is_empty(),
-                });
+                }));
             }
         }
 
@@ -405,17 +522,18 @@ impl VersionResolver {
         Ok(Self { versions })
     }
 
-    /// Parse a Git tag string into a semantic version.
+    /// Parse a Git tag string into an optional prefix and semantic version.
     ///
-    /// This internal method handles the normalization and parsing of Git tag strings
-    /// into semantic versions. It automatically strips common version prefixes and
-    /// attempts to parse the result as a valid semantic version.
+    /// This internal method handles the extraction of versioned prefixes and parsing of
+    /// Git tag strings into semantic versions. It supports both prefixed tags (e.g.,
+    /// `agents-v1.0.0`) and unprefixed tags (e.g., `v1.0.0`).
     ///
-    /// # Normalization Process
+    /// # Parsing Process
     ///
-    /// 1. **Prefix removal**: Strip `v` or `V` prefixes from tag names
-    /// 2. **Semantic parsing**: Parse the cleaned string as a semantic version
-    /// 3. **Error context**: Provide helpful error messages for parsing failures
+    /// 1. **Prefix extraction**: Use `split_prefix_and_version()` to separate prefix from version
+    /// 2. **Version normalization**: Strip `v` or `V` prefixes from version string
+    /// 3. **Semantic parsing**: Parse the cleaned string as a semantic version
+    /// 4. **Error context**: Provide helpful error messages for parsing failures
     ///
     /// # Arguments
     ///
@@ -423,8 +541,11 @@ impl VersionResolver {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Version)` for valid semantic versions, or `Err` with context
-    /// for parsing failures.
+    /// Returns `Ok((Option<String>, Version))` where:
+    /// - First element is the optional prefix
+    /// - Second element is the parsed semantic version
+    ///
+    /// Returns `Err` for invalid semantic versions.
     ///
     /// # Examples
     ///
@@ -433,20 +554,27 @@ impl VersionResolver {
     /// use semver::Version;
     ///
     /// // These would all parse successfully (if the method were public)
-    /// // "v1.0.0" → Version::new(1, 0, 0)
-    /// // "V2.1.3" → Version::new(2, 1, 3)
-    /// // "1.5.0-beta.1" → Version with prerelease
+    /// // "v1.0.0" → (None, Version::new(1, 0, 0))
+    /// // "agents-v2.1.3" → (Some("agents"), Version::new(2, 1, 3))
+    /// // "my-tool-v1.5.0-beta.1" → (Some("my-tool"), Version with prerelease)
     /// ```
     ///
     /// # Implementation Note
     ///
     /// This method is private and used internally by [`from_git_tags`](Self::from_git_tags)
     /// during the tag discovery and parsing process.
-    fn parse_tag(tag: &str) -> Result<Version> {
-        // Remove common version prefixes
-        let cleaned = tag.trim_start_matches('v').trim_start_matches('V');
+    fn parse_tag(tag: &str) -> Result<(Option<String>, Version)> {
+        // Extract prefix and version string
+        let (prefix, version_str) = split_prefix_and_version(tag);
 
-        Version::parse(cleaned).with_context(|| format!("Failed to parse version from tag: {tag}"))
+        // Remove common version prefixes from the version part
+        let cleaned = version_str.trim_start_matches('v').trim_start_matches('V');
+
+        // Parse semantic version
+        let version = Version::parse(cleaned)
+            .with_context(|| format!("Failed to parse version from tag: {tag}"))?;
+
+        Ok((prefix, version))
     }
 
     /// Resolve a version requirement string to a specific version from available tags.
@@ -457,10 +585,9 @@ impl VersionResolver {
     ///
     /// # Constraint Resolution Order
     ///
-    /// 1. **Special keywords**: `"latest"`, `"latest-prerelease"` are handled first
-    /// 2. **Exact versions**: Direct semantic version matches (with/without `v` prefix)
-    /// 3. **Version requirements**: Semver ranges like `"^1.0.0"`, `"~1.2.0"`
-    /// 4. **Tag names**: Exact tag string matching as fallback
+    /// 1. **Exact versions**: Direct semantic version matches (with/without `v` prefix)
+    /// 2. **Version requirements**: Semver ranges like `"^1.0.0"`, `"~1.2.0"`, `"*"`
+    /// 3. **Tag names**: Exact tag string matching as fallback
     ///
     /// # Arguments
     ///
@@ -474,8 +601,7 @@ impl VersionResolver {
     /// # Prerelease Handling
     ///
     /// - **Default behavior**: Prereleases are excluded from semver range matching
-    /// - **Explicit inclusion**: Use `"latest-prerelease"` to include prereleases
-    /// - **Exact matches**: Direct version/tag matches include prereleases
+    /// - **Explicit matches**: Direct version/tag matches include prereleases
     ///
     /// # Examples
     ///
@@ -487,11 +613,6 @@ impl VersionResolver {
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new(PathBuf::from("/path/to/repo"));
     /// let resolver = VersionResolver::from_git_tags(&repo).await?;
-    ///
-    /// // Special keywords
-    /// if let Some(version) = resolver.resolve("latest")? {
-    ///     println!("Latest stable: {}", version.tag);
-    /// }
     ///
     /// // Exact version matching
     /// if let Some(version) = resolver.resolve("1.2.3")? {
@@ -517,39 +638,38 @@ impl VersionResolver {
     /// - **Highest version wins**: Newer semantic versions are preferred
     /// - **Stable over prerelease**: Stable versions preferred unless prereleases explicitly allowed
     /// - **First match for tags**: Tag name matching returns the first occurrence
-    pub fn resolve(&self, requirement: &str) -> Result<Option<VersionInfo>> {
-        // Handle special keywords
-        if requirement == "latest" {
-            return Ok(self.get_latest_stable());
-        }
+    pub fn resolve(&self, requirement: &str) -> Result<Option<Arc<VersionInfo>>> {
+        // Extract prefix and version part (e.g., "agents-^v1.0.0" → (Some("agents"), "^v1.0.0"))
+        let (prefix, version_str) = split_prefix_and_version(requirement);
 
-        if requirement == "latest-prerelease" {
-            return Ok(self.get_latest());
-        }
+        // Filter versions by prefix first
+        let matching_prefix: Vec<&Arc<VersionInfo>> = self
+            .versions
+            .iter()
+            .filter(|v| v.prefix.as_ref() == prefix.as_ref())
+            .collect();
 
         // Try exact version match (with or without 'v' prefix)
-        if let Ok(exact_version) = Version::parse(requirement.trim_start_matches('v')) {
-            return Ok(self
-                .versions
+        if let Ok(exact_version) = Version::parse(version_str.trim_start_matches('v')) {
+            return Ok(matching_prefix
                 .iter()
                 .find(|v| v.version == exact_version)
-                .cloned());
+                .map(|&v| Arc::clone(v)));
         }
 
         // Try as semantic version requirement using centralized parser
-        if let Ok(req) = parse_version_req(requirement) {
-            return Ok(self
-                .versions
+        if let Ok(req) = parse_version_req(version_str) {
+            return Ok(matching_prefix
                 .iter()
                 .filter(|v| !v.prerelease) // Exclude prereleases by default
                 .find(|v| req.matches(&v.version))
-                .cloned());
+                .map(|&v| Arc::clone(v)));
         }
 
-        // Try exact tag match
+        // Try exact tag match (full tag including prefix)
         for version in &self.versions {
             if version.tag == requirement {
-                return Ok(Some(version.clone()));
+                return Ok(Some(Arc::clone(version)));
             }
         }
 
@@ -602,8 +722,8 @@ impl VersionResolver {
     /// - Implementing `latest-prerelease` constraint resolution
     /// - Analyzing the most recent development activity
     #[must_use]
-    pub fn get_latest(&self) -> Option<VersionInfo> {
-        self.versions.first().cloned()
+    pub fn get_latest(&self) -> Option<Arc<VersionInfo>> {
+        self.versions.first().map(Arc::clone)
     }
 
     /// Get the latest stable version excluding prereleases.
@@ -681,8 +801,8 @@ impl VersionResolver {
     /// - Default version selection in package managers
     /// - Stable release identification
     #[must_use]
-    pub fn get_latest_stable(&self) -> Option<VersionInfo> {
-        self.versions.iter().find(|v| !v.prerelease).cloned()
+    pub fn get_latest_stable(&self) -> Option<Arc<VersionInfo>> {
+        self.versions.iter().find(|v| !v.prerelease).map(Arc::clone)
     }
 
     /// List all versions discovered from Git tags.
@@ -762,7 +882,7 @@ impl VersionResolver {
     /// - Debugging version resolution issues
     /// - Implementing custom constraint logic
     #[must_use]
-    pub fn list_all(&self) -> Vec<VersionInfo> {
+    pub fn list_all(&self) -> Vec<Arc<VersionInfo>> {
         self.versions.clone()
     }
 
@@ -839,11 +959,11 @@ impl VersionResolver {
     /// - Compliance requirements that exclude prereleases
     /// - User interfaces that hide development versions by default
     #[must_use]
-    pub fn list_stable(&self) -> Vec<VersionInfo> {
+    pub fn list_stable(&self) -> Vec<Arc<VersionInfo>> {
         self.versions
             .iter()
             .filter(|v| !v.prerelease)
-            .cloned()
+            .map(Arc::clone)
             .collect()
     }
 
@@ -867,8 +987,7 @@ impl VersionResolver {
     /// This method can verify existence of:
     /// - **Exact versions**: `"1.0.0"`, `"v1.2.3"`
     /// - **Version ranges**: `"^1.0.0"`, `"~1.2.0"`, `">=1.0.0"`
-    /// - **Special keywords**: `"latest"`, `"latest-prerelease"`
-    /// - **Tag names**: Exact Git tag matches
+    /// - **Tag/branch names**: Exact Git tag or branch matches (including "latest")
     ///
     /// # Examples
     ///
@@ -888,10 +1007,6 @@ impl VersionResolver {
     ///
     /// if resolver.has_version("^1.0.0") {
     ///     println!("Compatible versions with 1.0.0 exist");
-    /// }
-    ///
-    /// if resolver.has_version("latest") {
-    ///     println!("At least one stable version exists");
     /// }
     ///
     /// // This will likely return false unless you have this exact tag
@@ -971,7 +1086,7 @@ impl Default for VersionResolver {
 ///
 /// # Supported Requirements
 ///
-/// - **Special keywords**: `"latest"`, `"*"` (always match)
+/// - **Special keywords**: `"*"` (wildcard, always matches)
 /// - **Exact versions**: `"1.0.0"` (must match exactly)
 /// - **Caret ranges**: `"^1.0.0"` (compatible within major version)
 /// - **Tilde ranges**: `"~1.2.0"` (compatible within minor version)
@@ -1002,8 +1117,7 @@ impl Default for VersionResolver {
 /// assert!(matches_requirement("1.5.0", ">=1.0.0")?);
 /// assert!(!matches_requirement("0.9.0", ">=1.0.0")?);
 ///
-/// // Special keywords
-/// assert!(matches_requirement("1.2.3", "latest")?);
+/// // Wildcard
 /// assert!(matches_requirement("any.version", "*")?);
 /// # Ok(())
 /// # }
@@ -1027,9 +1141,11 @@ impl Default for VersionResolver {
 ///
 /// # Version Prefix Handling
 ///
-/// The function automatically strips `v` prefixes from version strings:
+/// The function handles both namespace prefixes and `v` prefixes:
 /// - `"v1.0.0"` is treated as `"1.0.0"`
 /// - `"V2.1.3"` is treated as `"2.1.3"`
+/// - `"agents-v1.2.0"` requires `"agents-^v1.0.0"` (prefixes must match)
+/// - Unprefixed versions don't match prefixed requirements and vice versa
 ///
 /// # Error Cases
 ///
@@ -1046,16 +1162,25 @@ impl Default for VersionResolver {
 /// - Testing version constraints programmatically
 /// - Implementing custom version resolution logic
 pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
-    // Handle special keywords
-    if requirement == "latest" || requirement == "*" {
+    // Extract prefixes from both version and requirement
+    let (version_prefix, version_str) = split_prefix_and_version(version);
+    let (req_prefix, req_str) = split_prefix_and_version(requirement);
+
+    // Ensure prefixes match (both None, or both Some with same value)
+    if version_prefix != req_prefix {
+        return Ok(false);
+    }
+
+    // Handle wildcard in the version portion
+    if req_str == "*" {
         return Ok(true);
     }
 
-    // Parse version
-    let version = Version::parse(version.trim_start_matches('v'))?;
+    // Parse version (strip v prefix from version portion)
+    let version = Version::parse(version_str.trim_start_matches('v'))?;
 
     // Parse requirement (with v-prefix normalization)
-    let req = parse_version_req(requirement)
+    let req = parse_version_req(req_str)
         .map_err(|e| anyhow::anyhow!("Invalid version requirement '{requirement}': {e}"))?;
 
     Ok(req.matches(&version))
@@ -1071,8 +1196,8 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 ///
 /// The function uses heuristics to determine constraint types:
 /// 1. **Commit hashes**: 7+ hexadecimal characters (e.g., `"abc123def"`)
-/// 2. **Version/tag specs**: Valid semantic versions or requirements (e.g., `"^1.0.0"`, `"latest"`)
-/// 3. **Branch names**: Everything else (e.g., `"main"`, `"feature/auth"`)
+/// 2. **Version/tag specs**: Valid semantic versions or requirements (e.g., `"^1.0.0"`, `"*"`)
+/// 3. **Branch names**: Everything else (e.g., `"main"`, `"latest"`, `"feature/auth"`)
 ///
 /// # Arguments
 ///
@@ -1097,11 +1222,18 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 /// let constraint = parse_version_constraint("v1.2.3");
 /// assert!(matches!(constraint, VersionConstraint::Tag(_)));
 ///
+/// // Prefixed versions and constraints are also classified as tags
+/// let constraint = parse_version_constraint("agents-v1.2.0");
+/// assert!(matches!(constraint, VersionConstraint::Tag(_)));
+///
+/// let constraint = parse_version_constraint("agents-^v1.0.0");
+/// assert!(matches!(constraint, VersionConstraint::Tag(_)));
+///
 /// // Version requirements are classified as tags
 /// let constraint = parse_version_constraint("^1.0.0");
 /// assert!(matches!(constraint, VersionConstraint::Tag(_)));
 ///
-/// let constraint = parse_version_constraint("latest");
+/// let constraint = parse_version_constraint("*");
 /// assert!(matches!(constraint, VersionConstraint::Tag(_)));
 ///
 /// // Commit hashes are detected by hex pattern
@@ -1131,12 +1263,12 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 /// Version and tag specifications are identified by:
 /// - Valid semantic version parsing (with or without `v` prefix)
 /// - Valid semantic version requirement parsing (ranges, comparisons)
-/// - Special keywords like `"latest"`
+/// - Wildcard `"*"` for any version
 ///
 /// # Branch Name Fallback
 ///
 /// Any string that doesn't match the above patterns is treated as a branch name:
-/// - Simple names: `"main"`, `"develop"`, `"staging"`
+/// - Simple names: `"main"`, `"develop"`, `"staging"`, `"latest"`
 /// - Namespaced branches: `"feature/new-ui"`, `"bugfix/auth-issue"`
 /// - Special characters: `"release/v1.0"`, `"user/name/branch"`
 ///
@@ -1154,10 +1286,13 @@ pub fn parse_version_constraint(constraint: &str) -> VersionConstraint {
         return VersionConstraint::Commit(constraint.to_string());
     }
 
-    // Check if it's a semantic version or version requirement
-    if Version::parse(constraint.trim_start_matches('v')).is_ok()
-        || parse_version_req(constraint).is_ok()
-        || constraint == "latest"
+    // Extract prefix to check the version portion
+    let (_prefix, version_str) = split_prefix_and_version(constraint);
+
+    // Check if the version portion is a semantic version or version requirement
+    if Version::parse(version_str.trim_start_matches('v')).is_ok()
+        || parse_version_req(version_str).is_ok()
+        || version_str == "*"
     {
         return VersionConstraint::Tag(constraint.to_string());
     }
@@ -1276,52 +1411,26 @@ impl VersionConstraint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use crate::test_utils::TestGit;
     use tempfile::TempDir;
 
     fn create_test_repo_with_tags() -> (TempDir, GitRepo) {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        // Use TestGit helper instead of raw Command
+        let git = TestGit::new(repo_path);
+        git.init().unwrap();
+        git.config_user().unwrap();
 
         std::fs::write(repo_path.join("README.md"), "Test").unwrap();
 
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
+        git.add_all().unwrap();
+        git.commit("Initial commit").unwrap();
 
         let tags = vec!["v1.0.0", "v1.1.0", "v1.2.0", "v2.0.0-beta.1", "v2.0.0"];
         for tag in tags {
-            Command::new("git")
-                .args(["tag", tag])
-                .current_dir(repo_path)
-                .output()
-                .unwrap();
+            git.tag(tag).unwrap();
         }
 
         let repo = GitRepo::new(repo_path);
@@ -1343,9 +1452,11 @@ mod tests {
         let (_temp, repo) = create_test_repo_with_tags();
         let resolver = VersionResolver::from_git_tags(&repo).await.unwrap();
 
-        assert_eq!(resolver.resolve("latest").unwrap().unwrap().tag, "v2.0.0");
+        // Exact versions
         assert_eq!(resolver.resolve("1.1.0").unwrap().unwrap().tag, "v1.1.0");
         assert_eq!(resolver.resolve("v1.1.0").unwrap().unwrap().tag, "v1.1.0");
+
+        // Version constraints
         assert_eq!(resolver.resolve("^1.0.0").unwrap().unwrap().tag, "v1.2.0");
         assert_eq!(resolver.resolve("~1.1.0").unwrap().unwrap().tag, "v1.1.0");
     }
@@ -1355,23 +1466,52 @@ mod tests {
         let (_temp, repo) = create_test_repo_with_tags();
         let resolver = VersionResolver::from_git_tags(&repo).await.unwrap();
 
+        // Exact versions
         assert!(resolver.has_version("v1.0.0"));
         assert!(resolver.has_version("1.0.0"));
-        assert!(resolver.has_version("latest"));
+
+        // Non-existent versions (including "latest" - just a tag name)
         assert!(!resolver.has_version("v3.0.0"));
+        assert!(!resolver.has_version("latest"));
+        assert!(!resolver.has_version("latest-prerelease"));
     }
 
     #[tokio::test]
     async fn test_matches_requirement() {
+        // Unprefixed versions
         assert!(matches_requirement("1.2.0", "^1.0.0").unwrap());
         assert!(matches_requirement("v1.2.0", "^1.0.0").unwrap());
         assert!(!matches_requirement("2.0.0", "^1.0.0").unwrap());
-        assert!(matches_requirement("1.2.3", "latest").unwrap());
         assert!(matches_requirement("any.version", "*").unwrap());
     }
 
     #[test]
+    fn test_matches_requirement_with_prefixes() {
+        // Prefixed versions with matching prefixes
+        assert!(matches_requirement("agents-v1.2.0", "agents-^v1.0.0").unwrap());
+        assert!(matches_requirement("agents-v1.2.5", "agents-~v1.2.0").unwrap());
+        assert!(matches_requirement("tool123-v2.0.0", "tool123->=v1.0.0").unwrap());
+
+        // Prefixed versions with wildcard
+        assert!(matches_requirement("agents-v1.2.0", "agents-*").unwrap());
+
+        // Prefixed version doesn't match unprefixed requirement
+        assert!(!matches_requirement("agents-v1.2.0", "^v1.0.0").unwrap());
+
+        // Unprefixed version doesn't match prefixed requirement
+        assert!(!matches_requirement("v1.2.0", "agents-^v1.0.0").unwrap());
+
+        // Different prefixes don't match
+        assert!(!matches_requirement("agents-v1.2.0", "snippets-^v1.0.0").unwrap());
+        assert!(!matches_requirement("tool-v1.0.0", "agent-v1.0.0").unwrap());
+
+        // Prefixed version doesn't satisfy constraint
+        assert!(!matches_requirement("agents-v2.0.0", "agents-^v1.0.0").unwrap());
+    }
+
+    #[test]
     fn test_parse_version_constraint() {
+        // Unprefixed constraints
         assert_eq!(
             parse_version_constraint("v1.0.0"),
             VersionConstraint::Tag("v1.0.0".to_string())
@@ -1381,12 +1521,20 @@ mod tests {
             VersionConstraint::Tag("^1.0.0".to_string())
         );
         assert_eq!(
-            parse_version_constraint("latest"),
-            VersionConstraint::Tag("latest".to_string())
+            parse_version_constraint("*"),
+            VersionConstraint::Tag("*".to_string())
         );
         assert_eq!(
             parse_version_constraint("main"),
             VersionConstraint::Branch("main".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("latest"),
+            VersionConstraint::Branch("latest".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("latest-prerelease"),
+            VersionConstraint::Branch("latest-prerelease".to_string())
         );
         assert_eq!(
             parse_version_constraint("feature/test"),
@@ -1399,6 +1547,34 @@ mod tests {
         assert_eq!(
             parse_version_constraint("1234567890abcdef"),
             VersionConstraint::Commit("1234567890abcdef".to_string())
+        );
+
+        // Prefixed constraints - all should be Tag
+        assert_eq!(
+            parse_version_constraint("agents-v1.2.0"),
+            VersionConstraint::Tag("agents-v1.2.0".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("agents-^v1.0.0"),
+            VersionConstraint::Tag("agents-^v1.0.0".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("snippets-~v2.0.0"),
+            VersionConstraint::Tag("snippets-~v2.0.0".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("tool123-*"),
+            VersionConstraint::Tag("tool123-*".to_string())
+        );
+        assert_eq!(
+            parse_version_constraint("my-cool-tool->=v1.0.0"),
+            VersionConstraint::Tag("my-cool-tool->=v1.0.0".to_string())
+        );
+
+        // Prefixed branches should still be Branch
+        assert_eq!(
+            parse_version_constraint("agents-main"),
+            VersionConstraint::Branch("agents-main".to_string())
         );
     }
 
@@ -1426,5 +1602,217 @@ mod tests {
         for version in stable_versions {
             assert!(!version.prerelease);
         }
+    }
+
+    // ========== Prefix Support Tests ==========
+
+    #[test]
+    fn test_split_prefix_and_version() {
+        // Prefixed versions
+        assert_eq!(
+            split_prefix_and_version("agents-v1.0.0"),
+            (Some("agents".to_string()), "v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("agents-^v1.0.0"),
+            (Some("agents".to_string()), "^v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("my-cool-agent-v2.0.0"),
+            (Some("my-cool-agent".to_string()), "v2.0.0")
+        );
+
+        // Unprefixed versions
+        assert_eq!(split_prefix_and_version("v1.0.0"), (None, "v1.0.0"));
+        assert_eq!(split_prefix_and_version("^v1.0.0"), (None, "^v1.0.0"));
+        assert_eq!(split_prefix_and_version("1.0.0"), (None, "1.0.0"));
+
+        // Edge cases
+        assert_eq!(
+            split_prefix_and_version("tool-v-v1.0.0"),
+            (Some("tool-v".to_string()), "v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("a-b-c-v1.0.0"),
+            (Some("a-b-c".to_string()), "v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("prefix-~1.0.0"),
+            (Some("prefix".to_string()), "~1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_split_prefix_edge_cases() {
+        // Empty prefix - should be treated as None
+        assert_eq!(split_prefix_and_version("-v1.0.0"), (None, "v1.0.0"));
+        assert_eq!(split_prefix_and_version("--v1.0.0"), (None, "v1.0.0"));
+
+        // Prefix with numbers - digits in middle of prefix are preserved
+        assert_eq!(
+            split_prefix_and_version("tool123-v1.0.0"),
+            (Some("tool123".to_string()), "v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("agent2-v1.0.0"),
+            (Some("agent2".to_string()), "v1.0.0")
+        );
+        // Digit after hyphen is treated as version start
+        assert_eq!(
+            split_prefix_and_version("tool-123"),
+            (Some("tool".to_string()), "123")
+        );
+        // 'v' followed by digit takes precedence
+        assert_eq!(
+            split_prefix_and_version("abc-v2-agent-v1.0.0"),
+            (Some("abc".to_string()), "v2-agent-v1.0.0")
+        );
+
+        // Very long prefix (stress test)
+        let long_prefix = "a".repeat(100);
+        let tag = format!("{}-v1.0.0", long_prefix);
+        let (prefix, version) = split_prefix_and_version(&tag);
+        assert_eq!(prefix, Some(long_prefix));
+        assert_eq!(version, "v1.0.0");
+
+        // Unicode in prefixes - note: 'v' followed by digit is detected as version
+        assert_eq!(
+            split_prefix_and_version("агенты-v1.0.0"),
+            (Some("агенты".to_string()), "v1.0.0")
+        );
+        assert_eq!(
+            split_prefix_and_version("工具-v1.0.0"),
+            (Some("工具".to_string()), "v1.0.0")
+        );
+        // Unicode prefixes without version pattern
+        assert_eq!(
+            split_prefix_and_version("агенты-2.0.0"),
+            (Some("агенты".to_string()), "2.0.0")
+        );
+
+        // String ending with 'v' (tests panic fix)
+        assert_eq!(split_prefix_and_version("prefix-v"), (None, "prefix-v"));
+        assert_eq!(split_prefix_and_version("v"), (None, "v"));
+
+        // Multiple hyphens
+        assert_eq!(
+            split_prefix_and_version("my-cool-tool-v1.0.0"),
+            (Some("my-cool-tool".to_string()), "v1.0.0")
+        );
+    }
+
+    fn create_test_repo_with_prefixed_tags() -> (TempDir, GitRepo) {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        // Use TestGit helper instead of raw Command
+        let git = TestGit::new(repo_path);
+        git.init().unwrap();
+        git.config_user().unwrap();
+
+        std::fs::write(repo_path.join("README.md"), "Test").unwrap();
+
+        git.add_all().unwrap();
+        git.commit("Initial commit").unwrap();
+
+        // Create tags with different prefixes
+        let tags = vec![
+            "agents-v1.0.0",
+            "agents-v1.2.0",
+            "agents-v2.0.0",
+            "snippets-v1.0.0",
+            "snippets-v1.5.0",
+            "v1.0.0", // Unprefixed
+            "v2.0.0", // Unprefixed
+        ];
+        for tag in tags {
+            git.tag(tag).unwrap();
+        }
+
+        let repo = GitRepo::new(repo_path);
+        (temp_dir, repo)
+    }
+
+    #[tokio::test]
+    async fn test_prefixed_version_parsing() {
+        let (_temp, repo) = create_test_repo_with_prefixed_tags();
+        let resolver = VersionResolver::from_git_tags(&repo).await.unwrap();
+
+        // Should parse all 7 tags
+        assert_eq!(resolver.versions.len(), 7);
+
+        // Check prefixes are correctly extracted
+        let agents_versions: Vec<_> = resolver
+            .versions
+            .iter()
+            .filter(|v| v.prefix == Some("agents".to_string()))
+            .collect();
+        assert_eq!(agents_versions.len(), 3);
+
+        let snippets_versions: Vec<_> = resolver
+            .versions
+            .iter()
+            .filter(|v| v.prefix == Some("snippets".to_string()))
+            .collect();
+        assert_eq!(snippets_versions.len(), 2);
+
+        let unprefixed_versions: Vec<_> = resolver
+            .versions
+            .iter()
+            .filter(|v| v.prefix.is_none())
+            .collect();
+        assert_eq!(unprefixed_versions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_prefixed_version_resolution() {
+        let (_temp, repo) = create_test_repo_with_prefixed_tags();
+        let resolver = VersionResolver::from_git_tags(&repo).await.unwrap();
+
+        // Prefixed exact version
+        let result = resolver.resolve("agents-v1.2.0").unwrap().unwrap();
+        assert_eq!(result.tag, "agents-v1.2.0");
+        assert_eq!(result.prefix, Some("agents".to_string()));
+
+        // Prefixed constraint - should match highest agents version
+        let result = resolver.resolve("agents-^v1.0.0").unwrap().unwrap();
+        assert_eq!(result.tag, "agents-v1.2.0");
+        assert_eq!(result.prefix, Some("agents".to_string()));
+
+        // Different prefix constraint
+        let result = resolver.resolve("snippets-^v1.0.0").unwrap().unwrap();
+        assert_eq!(result.tag, "snippets-v1.5.0");
+        assert_eq!(result.prefix, Some("snippets".to_string()));
+
+        // Unprefixed constraint should only match unprefixed tags
+        let result = resolver.resolve("^v1.0.0").unwrap().unwrap();
+        assert_eq!(result.tag, "v1.0.0");
+        assert_eq!(result.prefix, None);
+    }
+
+    #[tokio::test]
+    async fn test_prefix_isolation() {
+        let (_temp, repo) = create_test_repo_with_prefixed_tags();
+        let resolver = VersionResolver::from_git_tags(&repo).await.unwrap();
+
+        // agents-^v1.0.0 should NOT match snippets-v1.5.0 even though 1.5.0 > 1.0.0
+        let result = resolver.resolve("agents-^v1.0.0").unwrap().unwrap();
+        assert_eq!(result.prefix, Some("agents".to_string()));
+        assert_ne!(result.tag, "snippets-v1.5.0");
+
+        // Unprefixed constraint should NOT match prefixed tags
+        let result = resolver.resolve("^v1.0.0").unwrap().unwrap();
+        assert_eq!(result.prefix, None);
+        assert!(!result.tag.contains("agents-"));
+        assert!(!result.tag.contains("snippets-"));
+    }
+
+    #[test]
+    fn test_parse_version_req_with_prefix() {
+        // The parse_version_req function should work on the version part only
+        assert!(parse_version_req("^1.0.0").is_ok());
+        assert!(parse_version_req("^v1.0.0").is_ok());
+        assert!(parse_version_req("~2.1.0").is_ok());
+        assert!(parse_version_req(">=1.0.0").is_ok());
     }
 }

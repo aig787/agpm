@@ -1021,8 +1021,9 @@ pub struct DetailedDependency {
     /// # Supported Formats
     ///
     /// - `"v1.0.0"` - Exact semantic version tag
-    /// - `"1.0.0"` - Exact version (v prefix optional)  
-    /// - `"latest"` - Latest available version (determined by Git tags)
+    /// - `"1.0.0"` - Exact version (v prefix optional)
+    /// - `"^1.0.0"` - Semantic version constraint (highest compatible 1.x.x)
+    /// - `"latest"` - Git tag or branch named "latest" (not special - just a name)
     /// - `"main"` - Use main/master branch HEAD
     ///
     /// # Examples
@@ -1030,7 +1031,8 @@ pub struct DetailedDependency {
     /// ```toml
     /// [agents]
     /// stable = { source = "repo", path = "agent.md", version = "v1.0.0" }
-    /// latest = { source = "repo", path = "agent.md", version = "latest" }
+    /// flexible = { source = "repo", path = "agent.md", version = "^1.0.0" }
+    /// latest-tag = { source = "repo", path = "agent.md", version = "latest" }  # If repo has a "latest" tag
     /// main = { source = "repo", path = "agent.md", version = "main" }
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2307,10 +2309,10 @@ impl ResourceDependency {
     ///
     /// Supported version constraint formats include:
     /// - Semantic versions: `"v1.0.0"`, `"1.2.3"`
-    /// - Branch names: `"main"`, `"develop"`, `"feature/new"`
+    /// - Semantic version ranges: `"^1.0.0"`, `"~2.1.0"`
+    /// - Branch names: `"main"`, `"develop"`, `"latest"`, `"feature/new"`
     /// - Git tags: `"release-2023"`, `"stable"`
     /// - Commit SHAs: `"a1b2c3d4e5f6..."`
-    /// - Special values: `"latest"` (resolve to latest tag)
     #[must_use]
     pub fn get_version(&self) -> Option<&str> {
         match self {

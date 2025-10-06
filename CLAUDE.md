@@ -169,6 +169,7 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
+- **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
 
 ## Breaking Changes (v0.3.18+)
 
@@ -233,6 +234,38 @@ dependencies:
 - Version inheritance when not specified
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
+
+## Versioned Prefixes (v0.3.19+)
+
+AGPM supports monorepo-style versioned prefixes, allowing independent semantic versioning for different components within a single repository.
+
+### Syntax
+
+Tags and constraints can include optional prefixes separated from the version by a hyphen:
+- `agents-v1.0.0` - Prefixed tag
+- `agents-^v1.0.0` - Prefixed constraint
+- `my-tool-v2.0.0` - Multi-hyphen prefix
+
+### Prefix Isolation
+
+Prefixes create isolated version namespaces:
+- `agents-^v1.0.0` matches only `agents-v*` tags, not `snippets-v*` or unprefixed `v*`
+- Unprefixed constraints like `^v1.0.0` only match unprefixed tags
+- Different prefixes never conflict with each other
+
+### Examples
+
+```toml
+[agents]
+# Prefixed constraint - matches agents-v1.x.x tags only
+ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "agents-^v1.0.0" }
+
+# Different prefix - independent versioning
+code-helper = { source = "community", path = "agents/code/helper.md", version = "snippets-^v2.0.0" }
+
+# Unprefixed - traditional versioning
+standard = { source = "community", path = "agents/standard.md", version = "^v1.0.0" }
+```
 
 ## Windows Path Gotchas
 
