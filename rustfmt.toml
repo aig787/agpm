@@ -1,0 +1,23 @@
+# Rustfmt configuration for AGPM
+# Ensures consistent formatting across all environments and rustfmt versions
+# Only uses stable features to ensure compatibility
+
+# Edition
+edition = "2024"
+
+# Line width
+max_width = 130
+
+# Use small heuristics - "Off" prevents aggressive code condensing
+# This ensures consistent multi-line formatting across rustfmt versions
+use_small_heuristics = "Off"
+
+# Newlines
+newline_style = "Unix"
+
+# Use field init shorthand if possible (e.g., `x` instead of `x: x`)
+use_field_init_shorthand = true
+
+# Misc
+reorder_imports = true
+reorder_modules = true
