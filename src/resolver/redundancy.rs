@@ -328,6 +328,7 @@ impl RedundancyDetector {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// detector.add_usage("my-helper".to_string(), &remote_dep);
     ///
@@ -814,6 +815,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -830,6 +832,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -863,6 +866,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -879,6 +883,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -908,6 +913,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -924,6 +930,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -975,6 +982,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -991,6 +999,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -1024,6 +1033,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -1040,6 +1050,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 

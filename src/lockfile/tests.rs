@@ -31,8 +31,10 @@ mod lockfile_tests {
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:test".to_string(),
                 installed_at: "agents/test-agent.md".to_string(),
-dependencies: vec![],
-},
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
+            },
             true, // is_agent
         );
 
@@ -65,8 +67,10 @@ dependencies: vec![],
                 resolved_commit: Some("commit1".to_string()),
                 checksum: "sha256:abc".to_string(),
                 installed_at: "agents/agent1.md".to_string(),
-dependencies: vec![],
-},
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
+            },
             true, // is_agent
         );
 
@@ -103,8 +107,10 @@ dependencies: vec![],
                 resolved_commit: None,
                 checksum: "checksum".to_string(),
                 installed_at: "installed.md".to_string(),
-dependencies: vec![],
-},
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
+            },
             true, // is_agent
         );
 
@@ -134,8 +140,10 @@ dependencies: vec![],
                 resolved_commit: None,
                 checksum: "sha256:prod".to_string(),
                 installed_at: "agents/prod-agent.md".to_string(),
-dependencies: vec![],
-},
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
+            },
             true, // is_agent
         );
 
@@ -150,8 +158,10 @@ dependencies: vec![],
                 resolved_commit: None,
                 checksum: "sha256:dev".to_string(),
                 installed_at: "agents/dev-agent.md".to_string(),
-dependencies: vec![],
-},
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
+            },
             true, // is_agent
         );
 

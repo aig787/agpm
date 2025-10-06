@@ -194,6 +194,7 @@ use std::fs;
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
+///     artifact_type: "claude-code".to_string(),
 /// };
 ///
 /// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
@@ -393,6 +394,7 @@ pub async fn install_resource(
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
+///     artifact_type: "claude-code".to_string(),
 /// };
 ///
 /// let (installed, checksum) = install_resource_with_progress(
@@ -1278,7 +1280,7 @@ pub async fn install_resources(
             // Use existing ResourceIterator logic for all entries
             ResourceIterator::collect_all_entries(lockfile, manifest)
                 .into_iter()
-                .map(|(entry, dir)| (entry.clone(), dir.to_string()))
+                .map(|(entry, dir)| (entry.clone(), dir.into_owned()))
                 .collect()
         }
         ResourceFilter::Updated(ref updates) => {
@@ -1292,8 +1294,17 @@ pub async fn install_resources(
                         source.as_deref(),
                     )
                 {
-                    let target_dir = resource_type.get_target_dir(&manifest.target);
-                    entries.push((entry.clone(), target_dir.to_string()));
+                    // Try artifact config first, fall back to legacy target config
+                    let target_dir = if let Some(artifact_path) =
+                        manifest.get_artifact_resource_path(&entry.artifact_type, resource_type)
+                    {
+                        artifact_path.display().to_string()
+                    } else {
+                        // Fall back to legacy target config
+                        #[allow(deprecated)]
+                        resource_type.get_target_dir(&manifest.target).to_string()
+                    };
+                    entries.push((entry.clone(), target_dir));
                 }
             }
             entries
@@ -1804,8 +1815,17 @@ pub async fn install_updated_resources(
         if let Some((resource_type, entry)) =
             ResourceIterator::find_resource_by_name_and_source(lockfile, name, source.as_deref())
         {
-            let target_dir = resource_type.get_target_dir(&manifest.target);
-            entries_to_install.push((entry.clone(), target_dir.to_string()));
+            // Try artifact config first, fall back to legacy target config
+            let target_dir = if let Some(artifact_path) =
+                manifest.get_artifact_resource_path(&entry.artifact_type, resource_type)
+            {
+                artifact_path.display().to_string()
+            } else {
+                // Fall back to legacy target config
+                #[allow(deprecated)]
+                resource_type.get_target_dir(&manifest.target).to_string()
+            };
+            entries_to_install.push((entry.clone(), target_dir));
         }
     }
 
@@ -2531,6 +2551,8 @@ mod tests {
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                artifact_type: "claude-code".to_string(),
             }
         } else {
             LockedResource {
@@ -2544,6 +2566,8 @@ mod tests {
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                artifact_type: "claude-code".to_string(),
             }
         }
     }

@@ -218,14 +218,24 @@ impl ResourceIterator {
     pub fn collect_all_entries<'a>(
         lockfile: &'a LockFile,
         manifest: &'a Manifest,
-    ) -> Vec<(&'a LockedResource, &'a str)> {
+    ) -> Vec<(&'a LockedResource, std::borrow::Cow<'a, str>)> {
         let mut all_entries = Vec::new();
 
         for resource_type in ResourceType::all() {
             let entries = resource_type.get_lockfile_entries(lockfile);
-            let target_dir = resource_type.get_target_dir(&manifest.target);
 
             for entry in entries {
+                // Try artifact config first, fall back to legacy target config
+                let target_dir = if let Some(artifact_path) =
+                    manifest.get_artifact_resource_path(&entry.artifact_type, *resource_type)
+                {
+                    std::borrow::Cow::Owned(artifact_path.display().to_string())
+                } else {
+                    // Fall back to legacy target config with deprecation
+                    #[allow(deprecated)]
+                    std::borrow::Cow::Borrowed(resource_type.get_target_dir(&manifest.target))
+                };
+
                 all_entries.push((entry, target_dir));
             }
         }
@@ -399,6 +409,8 @@ mod tests {
             installed_at: ".claude/agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -412,11 +424,14 @@ mod tests {
             installed_at: ".claude/snippets/test-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile
     }
 
+    #[allow(deprecated)]
     fn create_test_manifest() -> Manifest {
         Manifest {
             target: TargetConfig::default(),
@@ -439,6 +454,8 @@ mod tests {
             installed_at: ".claude/agents/agent1.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -452,6 +469,8 @@ mod tests {
             installed_at: ".claude/agents/agent2.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add commands from source1
@@ -466,6 +485,8 @@ mod tests {
             installed_at: ".claude/commands/command1.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Command,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add scripts
@@ -480,6 +501,8 @@ mod tests {
             installed_at: ".claude/agpm/scripts/script1.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add hooks
@@ -494,6 +517,8 @@ mod tests {
             installed_at: ".claude/agpm/hooks/hook1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add MCP servers
@@ -508,6 +533,8 @@ mod tests {
             installed_at: ".claude/agpm/mcp-servers/mcp1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Add resource without source
@@ -522,6 +549,8 @@ mod tests {
             installed_at: ".claude/agpm/snippets/local-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         lockfile
@@ -562,6 +591,8 @@ mod tests {
             installed_at: ".claude/agents/new-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         // Verify the agent was added
@@ -1009,6 +1040,8 @@ mod tests {
             installed_at: ".claude/agents/local-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            artifact_type: "claude-code".to_string(),
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);
@@ -1037,6 +1070,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_resource_type_get_target_dir() {
         let manifest = create_test_manifest();
         let targets = &manifest.target;

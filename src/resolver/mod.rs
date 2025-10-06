@@ -1333,7 +1333,7 @@ impl DependencyResolver {
                 ))
             }
             ResourceDependency::Detailed(parent_detail) => {
-                // Inherit source from parent
+                // Inherit source and artifact_type from parent
                 Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
                     source: parent_detail.source.clone(),
                     path: spec.path.clone(),
@@ -1345,6 +1345,7 @@ impl DependencyResolver {
                     target: None,
                     filename: None,
                     dependencies: None, // Will be filled when fetched
+                    artifact_type: parent_detail.artifact_type.clone(),
                 })))
             }
         }
@@ -1732,32 +1733,60 @@ impl DependencyResolver {
                 }
             };
 
-            // Determine the target directory
+            // Determine artifact type
+            let artifact_type = match dep {
+                crate::manifest::ResourceDependency::Detailed(d) => &d.artifact_type,
+                _ => "claude-code",
+            };
+
+            // Determine the target directory using artifact configuration
             let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Custom target is relative to the default resource directory
-                let base_target = match resource_type {
-                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                    crate::core::ResourceType::Command => &self.manifest.target.commands,
-                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                };
-                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                    .replace("//", "/")
-                    + "/"
-                    + &filename
+                // Custom target is relative to the artifact's resource directory
+                if let Some(artifact_path) = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                {
+                    let base_target = artifact_path.display().to_string();
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
+                        + "/"
+                        + &filename
+                } else {
+                    // Fallback to legacy target config
+                    #[allow(deprecated)]
+                    let base_target = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
+                    };
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
+                        + "/"
+                        + &filename
+                }
             } else {
-                // Use default target based on resource type
-                let target_dir = match resource_type {
-                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                    crate::core::ResourceType::Command => &self.manifest.target.commands,
-                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                };
-                format!("{target_dir}/{filename}")
+                // Use artifact configuration for default path
+                if let Some(artifact_path) = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                {
+                    format!("{}/{}", artifact_path.display(), filename)
+                } else {
+                    // Fallback to legacy target config
+                    #[allow(deprecated)]
+                    let target_dir = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
+                    };
+                    format!("{target_dir}/{filename}")
+                }
             };
 
             // For local resources without a source, just use the name (no version suffix)
@@ -1774,6 +1803,10 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, None),
                 resource_type,
+                artifact_type: match dep {
+                    crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                    _ => "claude-code".to_string(),
+                },
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -1849,38 +1882,72 @@ impl DependencyResolver {
                 }
             };
 
-            // Determine the target directory
+            // Determine artifact type
+            let artifact_type = match dep {
+                crate::manifest::ResourceDependency::Detailed(d) => &d.artifact_type,
+                _ => "claude-code",
+            };
+
+            // Determine the target directory using artifact configuration
             let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Custom target is relative to the default resource directory
-                let base_target = match resource_type {
-                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                    crate::core::ResourceType::Command => &self.manifest.target.commands,
-                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                };
-                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                    .replace("//", "/")
-                    + "/"
-                    + &filename
+                // Custom target is relative to the artifact's resource directory
+                if let Some(artifact_path) = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                {
+                    let base_target = artifact_path.display().to_string();
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
+                        + "/"
+                        + &filename
+                } else {
+                    // Fallback to legacy target config
+                    #[allow(deprecated)]
+                    let base_target = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
+                    };
+                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                        .replace("//", "/")
+                        + "/"
+                        + &filename
+                }
             } else {
-                // Use default target based on resource type
-                let target_dir = match resource_type {
-                    crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                    crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                    crate::core::ResourceType::Command => &self.manifest.target.commands,
-                    crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                    crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                    crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                };
-                format!("{target_dir}/{filename}")
+                // Use artifact configuration for default path
+                if let Some(artifact_path) = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                {
+                    format!("{}/{}", artifact_path.display(), filename)
+                } else {
+                    // Fallback to legacy target config
+                    #[allow(deprecated)]
+                    let target_dir = match resource_type {
+                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
+                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
+                        crate::core::ResourceType::Command => &self.manifest.target.commands,
+                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
+                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
+                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
+                    };
+                    format!("{target_dir}/{filename}")
+                }
             };
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
             // Multiple entries with the same name but different sources can coexist
             // Version updates replace the existing entry for the same (name, source) pair
             let unique_name = name.to_string();
+
+            // Extract artifact_type from dependency
+            let artifact_type = match dep {
+                crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                _ => "claude-code".to_string(),
+            };
 
             Ok(LockedResource {
                 name: unique_name,
@@ -1893,6 +1960,7 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, Some(source_name)),
                 resource_type,
+                artifact_type,
             })
         }
     }
@@ -1988,6 +2056,7 @@ impl DependencyResolver {
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
                 // Determine the target directory
+                #[allow(deprecated)]
                 let target_dir = if let Some(custom_target) = dep.get_target() {
                     // Custom target is relative to the default resource directory
                     let base_target = match resource_type {
@@ -2046,6 +2115,10 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, None),
                     resource_type,
+                    artifact_type: match dep {
+                        crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                        _ => "claude-code".to_string(),
+                    },
                 });
             }
 
@@ -2095,6 +2168,7 @@ impl DependencyResolver {
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
                 // Determine the target directory
+                #[allow(deprecated)]
                 let target_dir = if let Some(custom_target) = dep.get_target() {
                     // Custom target is relative to the default resource directory
                     let base_target = match resource_type {
@@ -2146,6 +2220,10 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, Some(source_name)),
                     resource_type,
+                    artifact_type: match dep {
+                        crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                        _ => "claude-code".to_string(),
+                    },
                 });
             }
 
@@ -3252,6 +3330,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3269,6 +3348,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3347,6 +3427,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3425,6 +3506,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3526,6 +3608,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3573,6 +3656,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3651,6 +3735,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3729,6 +3814,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3745,6 +3831,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3802,6 +3889,7 @@ mod tests {
                 target: Some("integrations/custom".to_string()),
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3838,6 +3926,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3873,6 +3962,7 @@ mod tests {
                 target: None,
                 filename: Some("ai-assistant.txt".to_string()),
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3908,6 +3998,7 @@ mod tests {
                 target: Some("tools/ai".to_string()),
                 filename: Some("assistant.markdown".to_string()),
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -3944,6 +4035,7 @@ mod tests {
                 target: None,
                 filename: Some("analyze.py".to_string()),
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             false, // script (not agent)
         );
@@ -4073,6 +4165,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true, // agents
         );
@@ -4118,6 +4211,7 @@ mod tests {
                 target: Some("custom/agents".to_string()),
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4226,6 +4320,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4242,6 +4337,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4271,6 +4367,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4287,6 +4384,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4581,6 +4679,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4642,6 +4741,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4732,6 +4832,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4814,6 +4915,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4851,6 +4953,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4868,6 +4971,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -4941,6 +5045,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let new_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -4954,6 +5059,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result = resolver.resolve_version_conflict("test-agent", &existing, &new_dep, "app1");
@@ -4977,6 +5083,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result2 =
@@ -4995,6 +5102,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result3 =
@@ -5021,6 +5129,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5034,6 +5143,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result =
@@ -5077,6 +5187,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5090,6 +5201,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result = resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1");
@@ -5128,6 +5240,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5141,6 +5254,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result =
@@ -5175,6 +5289,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         let result =

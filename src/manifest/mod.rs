@@ -559,8 +559,19 @@ pub struct Manifest {
     /// to the project root. Uses sensible defaults if not specified.
     ///
     /// See [`TargetConfig`] for details on default values and customization.
+    #[deprecated(since = "0.4.0", note = "Use artifacts configuration instead")]
     #[serde(default)]
     pub target: TargetConfig,
+
+    /// Artifact type configurations for multi-tool support.
+    ///
+    /// Maps artifact type names (claude-code, opencode, agpm, custom) to their
+    /// installation configurations. This replaces the old `target` field and
+    /// enables support for multiple tools and custom artifact types.
+    ///
+    /// See [`ArtifactsConfig`] for details on configuration format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<ArtifactsConfig>,
 
     /// Agent dependencies mapping names to their specifications.
     ///
@@ -623,6 +634,147 @@ pub struct Manifest {
     /// See [`ResourceDependency`] for specification format details.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub hooks: HashMap<String, ResourceDependency>,
+}
+
+/// Resource configuration within an artifact type.
+///
+/// Defines the installation path for a specific resource type within an artifact.
+/// The path can be omitted for resources that have special handling (e.g., MCP servers
+/// that merge into configuration files instead of being installed as separate files).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResourceConfig {
+    /// Subdirectory path for this resource type relative to the artifact's base directory.
+    ///
+    /// None means special handling (e.g., MCP servers that merge into config files)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Artifact type configuration.
+///
+/// Defines how a specific artifact type (e.g., claude-code, opencode, agpm)
+/// organizes its resources. Each artifact type has a base directory and
+/// a map of resource types to their subdirectory configurations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactTypeConfig {
+    /// Base directory for this artifact type (e.g., ".claude", ".opencode", ".agpm")
+    pub path: PathBuf,
+
+    /// Map of resource type -> configuration
+    pub resources: HashMap<String, ResourceConfig>,
+}
+
+/// Top-level artifacts configuration.
+///
+/// Maps artifact type names to their configurations. This replaces the old
+/// `[target]` section and enables multi-tool support.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactsConfig {
+    /// Map of artifact type name -> configuration
+    #[serde(flatten)]
+    pub types: HashMap<String, ArtifactTypeConfig>,
+}
+
+impl Default for ArtifactsConfig {
+    fn default() -> Self {
+        use crate::core::ResourceType;
+        let mut types = HashMap::new();
+
+        // Claude Code configuration
+        let mut claude_resources = HashMap::new();
+        claude_resources.insert(
+            ResourceType::Agent.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agents".to_string()),
+            },
+        );
+        claude_resources.insert(
+            ResourceType::Snippet.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agpm/snippets".to_string()),
+            },
+        );
+        claude_resources.insert(
+            ResourceType::Command.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("commands".to_string()),
+            },
+        );
+        claude_resources.insert(
+            ResourceType::Script.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agpm/scripts".to_string()),
+            },
+        );
+        claude_resources.insert(
+            ResourceType::Hook.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agpm/hooks".to_string()),
+            },
+        );
+        claude_resources.insert(
+            ResourceType::McpServer.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agpm/mcp-servers".to_string()),
+            },
+        );
+
+        types.insert(
+            "claude-code".to_string(),
+            ArtifactTypeConfig {
+                path: PathBuf::from(".claude"),
+                resources: claude_resources,
+            },
+        );
+
+        // OpenCode configuration
+        let mut opencode_resources = HashMap::new();
+        opencode_resources.insert(
+            ResourceType::Agent.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agent".to_string()), // Singular
+            },
+        );
+        opencode_resources.insert(
+            ResourceType::Command.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("command".to_string()), // Singular
+            },
+        );
+        opencode_resources.insert(
+            ResourceType::McpServer.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("agpm/mcp-servers".to_string()), // Temporary staging area for merge
+            },
+        );
+
+        types.insert(
+            "opencode".to_string(),
+            ArtifactTypeConfig {
+                path: PathBuf::from(".opencode"),
+                resources: opencode_resources,
+            },
+        );
+
+        // AGPM configuration (snippets only)
+        let mut agpm_resources = HashMap::new();
+        agpm_resources.insert(
+            ResourceType::Snippet.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("snippets".to_string()),
+            },
+        );
+
+        types.insert(
+            "agpm".to_string(),
+            ArtifactTypeConfig {
+                path: PathBuf::from(".agpm"),
+                resources: agpm_resources,
+            },
+        );
+
+        Self { types }
+    }
 }
 
 /// Target directories configuration specifying where resources are installed.
@@ -1195,6 +1347,29 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
+
+    /// Artifact type (claude-code, opencode, agpm, or custom).
+    ///
+    /// Specifies which tool/artifact type this resource is for. This determines
+    /// where the resource is installed and how it's configured.
+    ///
+    /// **Defaults to "claude-code"** for backward compatibility with existing manifests.
+    ///
+    /// Omitted from TOML serialization when the value is "claude-code" (default).
+    #[serde(
+        default = "default_artifact_type",
+        skip_serializing_if = "is_default_artifact_type",
+        rename = "type"
+    )]
+    pub artifact_type: String,
+}
+
+fn default_artifact_type() -> String {
+    "claude-code".to_string()
+}
+
+fn is_default_artifact_type(artifact_type: &str) -> bool {
+    artifact_type == "claude-code"
 }
 
 impl Manifest {
@@ -1222,10 +1397,12 @@ impl Manifest {
     /// assert_eq!(manifest.target.agents, ".claude/agents");
     /// ```
     #[must_use]
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             sources: HashMap::new(),
             target: TargetConfig::default(),
+            artifacts: None,
             agents: HashMap::new(),
             snippets: HashMap::new(),
             commands: HashMap::new(),
@@ -1463,6 +1640,7 @@ impl Manifest {
     ///         target: None,
     ///         filename: None,
     ///         dependencies: None,
+    ///         artifact_type: "claude-code".to_string(),
     ///     })),
     ///     true
     /// );
@@ -1483,6 +1661,30 @@ impl Manifest {
     /// Complex validations (like network connectivity) are not performed
     /// here - those are handled during dependency resolution.
     pub fn validate(&self) -> Result<()> {
+        // Validate artifact type names
+        for artifact_type in self.get_artifacts_config().types.keys() {
+            if artifact_type.contains('/') || artifact_type.contains('\\') {
+                return Err(crate::core::AgpmError::ManifestValidationError {
+                    reason: format!(
+                        "Artifact type name '{artifact_type}' cannot contain path separators ('/' or '\\\\'). \n\
+                        Artifact type names must be simple identifiers without special characters."
+                    ),
+                }
+                .into());
+            }
+
+            // Also check for other potentially problematic characters
+            if artifact_type.contains("..") {
+                return Err(crate::core::AgpmError::ManifestValidationError {
+                    reason: format!(
+                        "Artifact type name '{artifact_type}' cannot contain '..' (path traversal). \n\
+                        Artifact type names must be simple identifiers."
+                    ),
+                }
+                .into());
+            }
+        }
+
         // Check that all referenced sources exist and dependencies have required fields
         for (name, dep) in self.all_dependencies() {
             // Check for empty path
@@ -1624,6 +1826,56 @@ impl Manifest {
             }
         }
 
+        // Validate artifact types and resource type support
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(deps) = self.get_dependencies(*resource_type) {
+                for (name, dep) in deps {
+                    // Get artifact type from dependency (defaults to "claude-code")
+                    let artifact_type = match dep {
+                        ResourceDependency::Detailed(d) => &d.artifact_type,
+                        ResourceDependency::Simple(_) => "claude-code", // Default for simple deps
+                    };
+
+                    // Check if artifact type is configured
+                    if self.get_artifact_type_config(artifact_type).is_none() {
+                        return Err(crate::core::AgpmError::ManifestValidationError {
+                            reason: format!(
+                                "Unknown artifact type '{artifact_type}' for dependency '{name}'.\n\
+                                Available types: {}\n\
+                                Configure custom types in [artifacts] section or use a standard type.",
+                                self.get_artifacts_config().types.keys()
+                                    .map(|s| format!("'{s}'"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        }
+                        .into());
+                    }
+
+                    // Check if resource type is supported by this artifact type
+                    if !self.is_resource_supported(artifact_type, *resource_type) {
+                        let artifact_config = self.get_artifact_type_config(artifact_type).unwrap();
+                        let supported_types: Vec<String> = artifact_config
+                            .resources
+                            .keys()
+                            .map(|s| s.to_string())
+                            .collect();
+
+                        return Err(crate::core::AgpmError::ManifestValidationError {
+                            reason: format!(
+                                "Resource type '{}' is not supported by artifact type '{artifact_type}' for dependency '{name}'.\n\
+                                Supported resource types for '{artifact_type}': {}\n\
+                                Either change the artifact type or use a different resource type.",
+                                resource_type.to_plural(),
+                                supported_types.join(", ")
+                            ),
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -1680,6 +1932,7 @@ impl Manifest {
     }
 
     /// Get the target directory for a specific resource type
+    #[allow(deprecated)]
     pub fn get_target_dir(&self, resource_type: crate::core::ResourceType) -> &str {
         use crate::core::ResourceType;
         match resource_type {
@@ -1690,6 +1943,64 @@ impl Manifest {
             ResourceType::Hook => &self.target.hooks,
             ResourceType::McpServer => &self.target.mcp_servers,
         }
+    }
+
+    /// Get the artifacts configuration, returning default if not specified.
+    ///
+    /// This method provides access to the artifact type configurations which define
+    /// where resources are installed for different tools (claude-code, opencode, agpm).
+    ///
+    /// Returns the configured artifacts or the default configuration if not specified.
+    pub fn get_artifacts_config(&self) -> &ArtifactsConfig {
+        self.artifacts.as_ref().unwrap_or_else(|| {
+            // Return a static default - this is safe because ArtifactsConfig::default() is deterministic
+            static DEFAULT: std::sync::OnceLock<ArtifactsConfig> = std::sync::OnceLock::new();
+            DEFAULT.get_or_init(ArtifactsConfig::default)
+        })
+    }
+
+    /// Get configuration for a specific artifact type.
+    ///
+    /// Returns None if the artifact type is not configured.
+    pub fn get_artifact_type_config(&self, artifact_type: &str) -> Option<&ArtifactTypeConfig> {
+        self.get_artifacts_config().types.get(artifact_type)
+    }
+
+    /// Get the installation path for a resource within an artifact type.
+    ///
+    /// Returns the full installation directory path by combining:
+    /// - Artifact type's base directory (e.g., ".claude", ".opencode")
+    /// - Resource type's subdirectory (e.g., "agents", "command")
+    ///
+    /// Returns None if:
+    /// - The artifact type is not configured
+    /// - The resource type is not supported by this artifact type
+    /// - The resource has no configured path (special handling like MCP merge)
+    pub fn get_artifact_resource_path(
+        &self,
+        artifact_type: &str,
+        resource_type: crate::core::ResourceType,
+    ) -> Option<std::path::PathBuf> {
+        let artifact_config = self.get_artifact_type_config(artifact_type)?;
+        let resource_config = artifact_config.resources.get(resource_type.to_plural())?;
+
+        resource_config
+            .path
+            .as_ref()
+            .map(|subdir| artifact_config.path.join(subdir))
+    }
+
+    /// Check if a resource type is supported by an artifact type.
+    ///
+    /// Returns true if the artifact type has configuration for the given resource type.
+    pub fn is_resource_supported(
+        &self,
+        artifact_type: &str,
+        resource_type: crate::core::ResourceType,
+    ) -> bool {
+        self.get_artifact_type_config(artifact_type)
+            .and_then(|config| config.resources.get(resource_type.to_plural()))
+            .is_some()
     }
 
     /// Returns all dependencies from all resource types.
@@ -1959,6 +2270,7 @@ impl Manifest {
     ///         target: None,
     ///         filename: None,
     ///         dependencies: None,
+    ///         artifact_type: "claude-code".to_string(),
     ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -2079,6 +2391,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -2120,6 +2433,7 @@ impl ResourceDependency {
     ///     args: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
@@ -2157,6 +2471,7 @@ impl ResourceDependency {
     ///     args: None,
     ///     target: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
     ///
@@ -2201,6 +2516,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -2256,6 +2572,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -2282,6 +2599,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -2297,6 +2615,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -2349,6 +2668,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert!(!remote.is_local());
     ///
@@ -2364,6 +2684,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     filename: None,
     ///     dependencies: None,
+    ///     artifact_type: "claude-code".to_string(),
     /// }));
     /// assert!(local_detailed.is_local());
     /// ```
@@ -2714,6 +3035,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -2752,6 +3074,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             true,
         );
@@ -2782,6 +3105,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -2898,6 +3222,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             crate::core::ResourceType::Command,
         );
@@ -2916,6 +3241,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_target_config_commands_dir() {
         let config = TargetConfig::default();
         assert_eq!(config.commands, ".claude/commands");
@@ -2944,6 +3270,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -2980,6 +3307,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_target_config_mcp_servers_dir() {
         let config = TargetConfig::default();
         assert_eq!(config.mcp_servers, ".claude/agpm/mcp-servers");
@@ -3003,6 +3331,7 @@ mod tests {
             target: Some("custom/tools".to_string()),
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
@@ -3023,6 +3352,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert!(dep.get_target().is_none());
@@ -3059,6 +3389,7 @@ mod tests {
                 args: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             crate::core::ResourceType::Agent,
         );
@@ -3088,6 +3419,7 @@ mod tests {
             target: None,
             filename: Some("ai-assistant.md".to_string()),
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
@@ -3108,6 +3440,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert!(dep.get_filename().is_none());
@@ -3144,6 +3477,7 @@ mod tests {
                 command: None,
                 args: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
             crate::core::ResourceType::Agent,
         );
@@ -3173,6 +3507,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert!(dep.is_pattern());
@@ -3201,6 +3536,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -3220,6 +3556,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -3248,6 +3585,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                artifact_type: "claude-code".to_string(),
             })),
         );
 
@@ -3269,9 +3607,157 @@ mod tests {
             target: Some("tools/ai".to_string()),
             filename: Some("assistant.markdown".to_string()),
             dependencies: None,
+            artifact_type: "claude-code".to_string(),
         }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));
         assert_eq!(dep.get_filename(), Some("assistant.markdown"));
+    }
+}
+
+#[cfg(test)]
+mod artifact_type_tests {
+    use super::*;
+
+    #[test]
+    fn test_detailed_dependency_artifact_type_parsing() {
+        let toml_str = r#"
+[agents]
+opencode-helper = { source = "test_repo", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml_str).unwrap();
+
+        let helper = manifest.agents.get("opencode-helper").unwrap();
+
+        match helper {
+            ResourceDependency::Detailed(d) => {
+                assert_eq!(
+                    d.artifact_type, "opencode",
+                    "artifact_type should be 'opencode'"
+                );
+            }
+            _ => panic!("Expected Detailed dependency"),
+        }
+    }
+
+    #[test]
+    fn test_artifact_type_name_validation() {
+        // Test that artifact type names with path separators are rejected
+        let toml_with_slash = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[artifacts."bad/name"]
+path = ".claude"
+
+[artifacts."bad/name".resources.agents]
+path = "agents"
+
+[agents]
+test = { source = "test", path = "agents/test.md", type = "bad/name" }
+"#;
+
+        let manifest: Result<Manifest, _> = toml::from_str(toml_with_slash);
+        assert!(
+            manifest.is_ok(),
+            "Manifest should parse (validation happens in validate())"
+        );
+        let manifest = manifest.unwrap();
+        let result = manifest.validate();
+        assert!(
+            result.is_err(),
+            "Validation should fail for artifact type with forward slash"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("cannot contain path separators"),
+            "Error should mention path separators, got: {}",
+            err
+        );
+
+        // Test backslash
+        let toml_with_backslash = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[artifacts."bad\\name"]
+path = ".claude"
+
+[artifacts."bad\\name".resources.agents]
+path = "agents"
+
+[agents]
+test = { source = "test", path = "agents/test.md", type = "bad\\name" }
+"#;
+
+        let manifest: Result<Manifest, _> = toml::from_str(toml_with_backslash);
+        assert!(
+            manifest.is_ok(),
+            "Manifest should parse (validation happens in validate())"
+        );
+        let manifest = manifest.unwrap();
+        let result = manifest.validate();
+        assert!(
+            result.is_err(),
+            "Validation should fail for artifact type with backslash"
+        );
+
+        // Test path traversal (..)
+        let toml_with_dotdot = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[artifacts."bad..name"]
+path = ".claude"
+
+[artifacts."bad..name".resources.agents]
+path = "agents"
+
+[agents]
+test = { source = "test", path = "agents/test.md", type = "bad..name" }
+"#;
+
+        let manifest: Result<Manifest, _> = toml::from_str(toml_with_dotdot);
+        assert!(
+            manifest.is_ok(),
+            "Manifest should parse (validation happens in validate())"
+        );
+        let manifest = manifest.unwrap();
+        let result = manifest.validate();
+        assert!(
+            result.is_err(),
+            "Validation should fail for artifact type with .."
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("cannot contain '..'"),
+            "Error should mention path traversal, got: {}",
+            err
+        );
+
+        // Test valid artifact type names work
+        let toml_valid = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[artifacts."my-custom-type"]
+path = ".custom"
+
+[artifacts."my-custom-type".resources.agents]
+path = "agents"
+
+[agents]
+test = { source = "test", path = "agents/test.md", version = "v1.0.0", type = "my-custom-type" }
+"#;
+
+        let manifest: Result<Manifest, _> = toml::from_str(toml_valid);
+        assert!(manifest.is_ok(), "Valid manifest should parse");
+        let manifest = manifest.unwrap();
+        let result = manifest.validate();
+        assert!(
+            result.is_ok(),
+            "Valid artifact type name should pass validation"
+        );
     }
 }
