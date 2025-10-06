@@ -6,8 +6,11 @@
 //! - Managing AGPM-controlled MCP server configurations
 //! - Preserving user-managed server configurations
 //! - Safe atomic updates to MCP configuration files
+//! - Multi-tool support via pluggable MCP handlers
 //!
 //! Note: Hooks and permissions are handled separately and stored in `.claude/settings.local.json`
+
+pub mod handlers;
 
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
