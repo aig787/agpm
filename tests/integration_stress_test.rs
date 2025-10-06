@@ -60,6 +60,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
                 resource_type: agpm::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
             });
             total_agents += 1;
         }
@@ -285,6 +286,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
                 resource_type: agpm::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
             });
             total_agents += 1;
         }
@@ -331,6 +333,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
                 resource_type: agpm::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
             });
         }
     }
@@ -434,6 +437,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 installed_at: format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
                 resource_type: agpm::core::ResourceType::Agent,
+                artifact_type: "claude-code".to_string(),
             });
             total_resources += 1;
         }
@@ -465,6 +469,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
             installed_at: format!(".claude/agents/community_agent_{}.md", idx),
             dependencies: vec![],
             resource_type: agpm::core::ResourceType::Agent,
+            artifact_type: "claude-code".to_string(),
         });
         total_resources += 1;
     }
@@ -607,6 +612,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
             installed_at: format!(".claude/agents/{}.md", name),
             dependencies: vec![],
             resource_type: agpm::core::ResourceType::Agent,
+            artifact_type: "claude-code".to_string(),
         });
     }
 
@@ -765,6 +771,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
             installed_at: format!(".claude/agents/{}", unique_filename),
             dependencies: vec![],
             resource_type: agpm::core::ResourceType::Agent,
+            artifact_type: "claude-code".to_string(),
         };
 
         lockfile.agents.push(resource);
