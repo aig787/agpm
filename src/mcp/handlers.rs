@@ -1,4 +1,4 @@
-//! MCP server installation handlers for different artifact types.
+//! MCP server installation handlers for different tools.
 //!
 //! This module provides a pluggable handler system for installing MCP servers
 //! into different tools' configuration formats (Claude Code, OpenCode, etc.).
@@ -8,9 +8,9 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 
-/// Trait for handling MCP server installation for different artifact types.
+/// Trait for handling MCP server installation for different tools.
 ///
-/// Each artifact type (claude-code, opencode, etc.) may have different ways
+/// Each tool (claude-code, opencode, etc.) may have different ways
 /// of managing MCP servers. This trait provides a common interface for:
 /// - Installing MCP server configurations
 /// - Determining where to install files (if applicable)
@@ -35,7 +35,7 @@ pub trait McpHandler: Send + Sync {
     /// # Arguments
     ///
     /// * `project_root` - The project root directory
-    /// * `artifact_base` - The base directory for this artifact type (e.g., `.claude`, `.opencode`)
+    /// * `artifact_base` - The base directory for this tool (e.g., `.claude`, `.opencode`)
     ///
     /// # Returns
     ///
@@ -51,7 +51,7 @@ pub trait McpHandler: Send + Sync {
     /// # Arguments
     ///
     /// * `project_root` - The project root directory
-    /// * `artifact_base` - The base directory for this artifact type
+    /// * `artifact_base` - The base directory for this tool
     /// * `mcp_servers_dir` - Directory containing MCP server JSON files (if applicable)
     ///
     /// # Returns
@@ -69,7 +69,7 @@ pub trait McpHandler: Send + Sync {
     /// # Arguments
     ///
     /// * `project_root` - The project root directory
-    /// * `artifact_base` - The base directory for this artifact type
+    /// * `artifact_base` - The base directory for this tool
     ///
     /// # Returns
     ///
@@ -308,7 +308,7 @@ impl McpHandler for OpenCodeMcpHandler {
     }
 }
 
-/// Concrete MCP handler enum for different artifact types.
+/// Concrete MCP handler enum for different tools.
 ///
 /// This enum wraps all supported MCP handlers and provides a unified interface.
 pub enum ConcreteMcpHandler {
@@ -368,20 +368,20 @@ impl McpHandler for ConcreteMcpHandler {
     }
 }
 
-/// Get the appropriate MCP handler for an artifact type.
+/// Get the appropriate MCP handler for a tool.
 ///
 /// # Arguments
 ///
-/// * `artifact_type` - The artifact type name (e.g., "claude-code", "opencode")
+/// * `artifact_type` - The tool name (e.g., "claude-code", "opencode")
 ///
 /// # Returns
 ///
-/// An MCP handler for the given artifact type, or None if no handler exists.
+/// An MCP handler for the given tool, or None if no handler exists.
 pub fn get_mcp_handler(artifact_type: &str) -> Option<ConcreteMcpHandler> {
     match artifact_type {
         "claude-code" => Some(ConcreteMcpHandler::ClaudeCode(ClaudeCodeMcpHandler)),
         "opencode" => Some(ConcreteMcpHandler::OpenCode(OpenCodeMcpHandler)),
-        _ => None, // Other artifact types don't have MCP support
+        _ => None, // Other tools don't have MCP support
     }
 }
 

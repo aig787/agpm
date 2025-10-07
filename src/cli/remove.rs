@@ -857,7 +857,7 @@ test-agent = "../test/agent.md"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -994,7 +994,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1010,7 +1010,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1096,7 +1096,7 @@ test-hook = "../test/hook.json"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1110,7 +1110,7 @@ test-hook = "../test/hook.json"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1181,7 +1181,7 @@ test-snippet = "../local/snippet.md"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1195,7 +1195,7 @@ test-snippet = "../local/snippet.md"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1375,7 +1375,7 @@ test-script = "../test/script.sh"
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

@@ -583,7 +583,7 @@ impl InstallCommand {
                 let mut servers_by_type: HashMap<String, Vec<&crate::lockfile::LockedResource>> =
                     HashMap::new();
                 for server in &lockfile.mcp_servers {
-                    servers_by_type.entry(server.artifact_type.clone()).or_default().push(server);
+                    servers_by_type.entry(server.tool.clone()).or_default().push(server);
                 }
 
                 // Configure MCP servers for each artifact type using appropriate handler
@@ -591,7 +591,7 @@ impl InstallCommand {
                     if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
                         // Get artifact base directory
                         let artifact_base = if let Some(artifact_path) =
-                            manifest.get_artifact_type_config(&artifact_type).map(|c| &c.path)
+                            manifest.get_tool_config(&artifact_type).map(|c| &c.path)
                         {
                             actual_project_dir.join(artifact_path)
                         } else {
@@ -1043,7 +1043,7 @@ This is a test agent.",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1103,7 +1103,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1123,7 +1123,7 @@ Body",
                 installed_at: ".claude/agents/test-agent.md".into(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1168,7 +1168,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1203,7 +1203,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1243,7 +1243,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1280,7 +1280,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1335,7 +1335,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.add_mcp_server(
@@ -1351,7 +1351,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();

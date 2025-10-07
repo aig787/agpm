@@ -585,14 +585,14 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         );
 
         Manifest {
             sources,
             target: TargetConfig::default(),
-            artifacts: None,
+            tools: None,
             agents,
             snippets: HashMap::new(),
             commands: HashMap::new(),
@@ -624,7 +624,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

@@ -282,7 +282,7 @@ impl TreeCommand {
         // Print legend if there are duplicates
         if !self.no_dedupe && tree.has_duplicates() {
             println!();
-            println!("{}", "(*) = duplicate dependency (already shown above)".bright_black());
+            println!("{}", "(*) = duplicate dependency (already shown above)".blue());
         }
     }
 
@@ -312,22 +312,24 @@ impl TreeCommand {
             "├── "
         };
 
-        // Format node display: type/name version (source)
-        let type_str = format!("{}", node.resource_type).bright_black();
+        // Format node display: type/name version (source) [tool]
+        // Use blue for secondary text - readable on both light and dark backgrounds
+        let type_str = format!("{}", node.resource_type).blue();
         let name_str = node.name.cyan();
         let version_str =
-            node.version.as_deref().map(|v| format!(" {}", v.bright_black())).unwrap_or_default();
+            node.version.as_deref().map(|v| format!(" {}", v.blue())).unwrap_or_default();
         let source_str = node.source.as_deref().map_or_else(
-            || " (local)".bright_black().to_string(),
-            |s| format!(" ({})", s.bright_black()),
+            || " (local)".blue().to_string(),
+            |s| format!(" ({})", s.blue()),
         );
+        let tool_str = format!(" [{}]", node.tool.bright_yellow());
         let dup_marker = if is_duplicate {
-            " (*)".bright_black().to_string()
+            " (*)".blue().to_string()
         } else {
             String::new()
         };
 
-        println!("{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{dup_marker}");
+        println!("{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{dup_marker}");
 
         // If this is a duplicate and we're deduplicating, don't show children
         if is_duplicate {
@@ -401,6 +403,7 @@ impl TreeCommand {
             "type": node.resource_type.to_string(),
             "version": node.version,
             "source": node.source,
+            "tool": node.tool,
             "dependencies": children,
         })
     }
@@ -447,8 +450,8 @@ impl TreeCommand {
         };
 
         println!(
-            "{}{}/{} {} ({}){}",
-            indent_str, node.resource_type, node.name, version_str, source_str, dup_marker
+            "{}{}/{} {} ({}) [{}]{}",
+            indent_str, node.resource_type, node.name, version_str, source_str, node.tool, dup_marker
         );
 
         if is_duplicate {
@@ -472,6 +475,7 @@ struct TreeNode {
     resource_type: ResourceType,
     version: Option<String>,
     source: Option<String>,
+    tool: String,
     dependencies: Vec<String>, // IDs of dependency nodes
 }
 
@@ -595,11 +599,11 @@ impl<'a> TreeBuilder<'a> {
                 }
             }
 
-            // Sort roots by resource type alphabetically, then by name
+            // Sort roots by tool, then by resource type alphabetically, then by name
             roots.sort_by(|a, b| {
-                a.resource_type
-                    .to_string()
-                    .cmp(&b.resource_type.to_string())
+                a.tool
+                    .cmp(&b.tool)
+                    .then_with(|| a.resource_type.to_string().cmp(&b.resource_type.to_string()))
                     .then_with(|| a.name.cmp(&b.name))
             });
         }
@@ -651,6 +655,7 @@ impl<'a> TreeBuilder<'a> {
                         resource_type: dep_resource.resource_type,
                         version: dep_resource.version.clone(),
                         source: dep_resource.source.clone(),
+                        tool: dep_resource.tool.clone(),
                         dependencies: vec![], // Don't need dependencies for ID generation
                     };
                     Some(self.node_id(&dep_node))
@@ -665,6 +670,7 @@ impl<'a> TreeBuilder<'a> {
             resource_type: resource.resource_type,
             version: resource.version.clone(),
             source: resource.source.clone(),
+            tool: resource.tool.clone(),
             dependencies: dependency_node_ids,
         })
     }
@@ -909,6 +915,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("v1.0.0".to_string()),
             source: Some("community".to_string()),
+            tool: "claude-code".to_string(),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
@@ -919,6 +926,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("local".to_string()),
             source: Some("local-deps".to_string()),
+            tool: "claude-code".to_string(),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
@@ -929,6 +937,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("local".to_string()),
             source: None,
+            tool: "claude-code".to_string(),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
@@ -939,6 +948,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: None,
             source: Some("community".to_string()),
+            tool: "claude-code".to_string(),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");
