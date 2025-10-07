@@ -583,19 +583,15 @@ impl InstallCommand {
                 let mut servers_by_type: HashMap<String, Vec<&crate::lockfile::LockedResource>> =
                     HashMap::new();
                 for server in &lockfile.mcp_servers {
-                    servers_by_type
-                        .entry(server.artifact_type.clone())
-                        .or_default()
-                        .push(server);
+                    servers_by_type.entry(server.artifact_type.clone()).or_default().push(server);
                 }
 
                 // Configure MCP servers for each artifact type using appropriate handler
                 for (artifact_type, servers) in servers_by_type {
                     if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
                         // Get artifact base directory
-                        let artifact_base = if let Some(artifact_path) = manifest
-                            .get_artifact_type_config(&artifact_type)
-                            .map(|c| &c.path)
+                        let artifact_base = if let Some(artifact_path) =
+                            manifest.get_artifact_type_config(&artifact_type).map(|c| &c.path)
                         {
                             actual_project_dir.join(artifact_path)
                         } else {

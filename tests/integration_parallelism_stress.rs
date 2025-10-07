@@ -50,9 +50,7 @@ official = "{}"
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Test with extremely high parallelism (should be throttled by system)
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "100"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "100"]).unwrap();
     assert!(output.success);
 
     // Verify all agents installed correctly despite high parallelism
@@ -84,11 +82,7 @@ async fn test_rapid_sequential_operations() -> Result<()> {
         .await
         .unwrap();
     official_repo
-        .add_resource(
-            "snippets",
-            "rapid-snippet",
-            "# Rapid Snippet\n\nA test snippet",
-        )
+        .add_resource("snippets", "rapid-snippet", "# Rapid Snippet\n\nA test snippet")
         .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
@@ -137,24 +131,9 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
 
     // Verify final state
     // Files use basename from path, not dependency name
-    assert!(
-        project
-            .project_path()
-            .join(".claude/agents/rapid-agent-1.md")
-            .exists()
-    );
-    assert!(
-        project
-            .project_path()
-            .join(".claude/agents/rapid-agent-2.md")
-            .exists()
-    );
-    assert!(
-        project
-            .project_path()
-            .join(".agpm/snippets/rapid-snippet.md")
-            .exists()
-    );
+    assert!(project.project_path().join(".claude/agents/rapid-agent-1.md").exists());
+    assert!(project.project_path().join(".claude/agents/rapid-agent-2.md").exists());
+    assert!(project.project_path().join(".agpm/snippets/rapid-snippet.md").exists());
 
     Ok(())
 }
@@ -206,9 +185,7 @@ official = "{}"
         let _ = tokio::fs::remove_dir_all(project.project_path().join(".claude")).await;
 
         let start = Instant::now();
-        let output = project
-            .run_agpm(&["install", "--max-parallel", &level.to_string()])
-            .unwrap();
+        let output = project.run_agpm(&["install", "--max-parallel", &level.to_string()]).unwrap();
         assert!(output.success);
         let duration = start.elapsed();
 
@@ -272,9 +249,7 @@ official = "{}"
 
     // High parallelism with single source should work efficiently
     let start = Instant::now();
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "10"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "10"]).unwrap();
     assert!(output.success);
     let duration = start.elapsed();
 
@@ -343,31 +318,19 @@ agent2 = {{ source = "official", path = "agents/limit-agent-2.md", version = "v1
         // Clean for each test
         let _ = tokio::fs::remove_dir_all(project.project_path().join(".claude")).await;
 
-        let output = project
-            .run_agpm(&["install", "--max-parallel", max_parallel])
-            .unwrap();
-        assert!(
-            output.success,
-            "Failed with {}: {}",
-            max_parallel, description
-        );
+        let output = project.run_agpm(&["install", "--max-parallel", max_parallel]).unwrap();
+        assert!(output.success, "Failed with {}: {}", max_parallel, description);
 
         // Verify installation regardless of parallelism setting
         // Files use basename from path, not dependency name
         assert!(
-            project
-                .project_path()
-                .join(".claude/agents/limit-agent-1.md")
-                .exists(),
+            project.project_path().join(".claude/agents/limit-agent-1.md").exists(),
             "Failed with {}: {}",
             max_parallel,
             description
         );
         assert!(
-            project
-                .project_path()
-                .join(".claude/agents/limit-agent-2.md")
-                .exists(),
+            project.project_path().join(".claude/agents/limit-agent-2.md").exists(),
             "Failed with {}: {}",
             max_parallel,
             description

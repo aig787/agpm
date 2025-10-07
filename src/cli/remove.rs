@@ -166,11 +166,7 @@ fn get_installed_path_from_lockfile(
             // MCP servers have config files in the directory specified by manifest.target.mcp_servers
             #[allow(deprecated)]
             {
-                Some(
-                    project_root
-                        .join(&manifest.target.mcp_servers)
-                        .join(format!("{name}.json")),
-                )
+                Some(project_root.join(&manifest.target.mcp_servers).join(format!("{name}.json")))
             }
         }
         ResourceType::Script => lockfile

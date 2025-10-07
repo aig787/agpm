@@ -172,10 +172,7 @@ impl McpHandler for OpenCodeMcpHandler {
             let mut mcp_servers: std::collections::HashMap<String, super::McpServerConfig> =
                 std::collections::HashMap::new();
             let mut entries = tokio::fs::read_dir(&servers_dir).await.with_context(|| {
-                format!(
-                    "Failed to read MCP servers directory: {}",
-                    servers_dir.display()
-                )
+                format!("Failed to read MCP servers directory: {}", servers_dir.display())
             })?;
 
             while let Some(entry) = entries.next_entry().await? {
@@ -212,10 +209,7 @@ impl McpHandler for OpenCodeMcpHandler {
             // Load or create opencode.json
             let mut opencode_config: serde_json::Value = if opencode_config_path.exists() {
                 crate::utils::read_json_file(&opencode_config_path).with_context(|| {
-                    format!(
-                        "Failed to read OpenCode config: {}",
-                        opencode_config_path.display()
-                    )
+                    format!("Failed to read OpenCode config: {}", opencode_config_path.display())
                 })?
             } else {
                 serde_json::json!({})
@@ -230,9 +224,7 @@ impl McpHandler for OpenCodeMcpHandler {
             let config_obj = opencode_config
                 .as_object_mut()
                 .expect("opencode_config must be an object after is_object() check on line 225");
-            let mcp_section = config_obj
-                .entry("mcp")
-                .or_insert_with(|| serde_json::json!({}));
+            let mcp_section = config_obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
 
             // Merge MCP servers into the mcp section
             if let Some(mcp_obj) = mcp_section.as_object_mut() {
@@ -245,10 +237,7 @@ impl McpHandler for OpenCodeMcpHandler {
             // Save the updated configuration
             crate::utils::write_json_file(&opencode_config_path, &opencode_config, true)
                 .with_context(|| {
-                    format!(
-                        "Failed to write OpenCode config: {}",
-                        opencode_config_path.display()
-                    )
+                    format!("Failed to write OpenCode config: {}", opencode_config_path.display())
                 })?;
 
             Ok(())
@@ -278,10 +267,7 @@ impl McpHandler for OpenCodeMcpHandler {
         if opencode_config_path.exists() {
             let mut opencode_config: serde_json::Value =
                 crate::utils::read_json_file(&opencode_config_path).with_context(|| {
-                    format!(
-                        "Failed to read OpenCode config: {}",
-                        opencode_config_path.display()
-                    )
+                    format!("Failed to read OpenCode config: {}", opencode_config_path.display())
                 })?;
 
             if let Some(config_obj) = opencode_config.as_object_mut()
@@ -295,10 +281,7 @@ impl McpHandler for OpenCodeMcpHandler {
                         serde_json::from_value::<super::McpServerConfig>(server.clone())
                     {
                         // Keep if not managed by AGPM
-                        config
-                            .agpm_metadata
-                            .as_ref()
-                            .is_none_or(|meta| !meta.managed)
+                        config.agpm_metadata.as_ref().is_none_or(|meta| !meta.managed)
                     } else {
                         // Keep if we can't parse it (preserve user data)
                         true

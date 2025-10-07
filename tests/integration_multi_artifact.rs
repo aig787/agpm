@@ -40,10 +40,7 @@ opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = 
 
     // Verify agent installed to .opencode/agent/ (singular)
     let agent_path = project.project_path().join(".opencode/agent/helper.md");
-    assert!(
-        agent_path.exists(),
-        "OpenCode agent should be installed to .opencode/agent/"
-    );
+    assert!(agent_path.exists(), "OpenCode agent should be installed to .opencode/agent/");
 
     let content = fs::read_to_string(&agent_path).await?;
     assert!(content.contains("OpenCode helper agent"));
@@ -90,10 +87,7 @@ deploy = {{ source = "test_repo", path = "commands/deploy.md", version = "v1.0.0
 
     // Verify command installed to .opencode/command/ (singular)
     let command_path = project.project_path().join(".opencode/command/deploy.md");
-    assert!(
-        command_path.exists(),
-        "OpenCode command should be installed to .opencode/command/"
-    );
+    assert!(command_path.exists(), "OpenCode command should be installed to .opencode/command/");
 
     let content = fs::read_to_string(&command_path).await?;
     assert!(content.contains("deployment command"));
@@ -139,40 +133,23 @@ filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", vers
 
     // Verify MCP server merged into opencode.json
     let opencode_config_path = project.project_path().join(".opencode/opencode.json");
-    assert!(
-        opencode_config_path.exists(),
-        "opencode.json should be created"
-    );
+    assert!(opencode_config_path.exists(), "opencode.json should be created");
 
     let config_content = fs::read_to_string(&opencode_config_path).await?;
     let config: serde_json::Value = serde_json::from_str(&config_content)?;
 
     // Verify mcp section exists with filesystem server
-    assert!(
-        config.get("mcp").is_some(),
-        "opencode.json should have mcp section"
-    );
+    assert!(config.get("mcp").is_some(), "opencode.json should have mcp section");
     let mcp = config["mcp"].as_object().unwrap();
-    assert!(
-        mcp.contains_key("filesystem"),
-        "filesystem server should be in mcp section"
-    );
+    assert!(mcp.contains_key("filesystem"), "filesystem server should be in mcp section");
 
     // Verify server config
     let filesystem = &mcp["filesystem"];
     assert_eq!(filesystem["command"], "npx");
-    assert!(
-        filesystem["args"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("-y"))
-    );
+    assert!(filesystem["args"].as_array().unwrap().contains(&serde_json::json!("-y")));
 
     // Verify AGPM metadata is present
-    assert!(
-        filesystem.get("_agpm").is_some(),
-        "Server should have _agpm metadata"
-    );
+    assert!(filesystem.get("_agpm").is_some(), "Server should have _agpm metadata");
     let agpm_meta = filesystem["_agpm"].as_object().unwrap();
     assert_eq!(agpm_meta["managed"], true);
 
@@ -232,32 +209,12 @@ opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", versi
     project.run_agpm(&["install"])?;
 
     // Verify Claude Code resources
-    assert!(
-        project
-            .project_path()
-            .join(".claude/agents/claude-agent.md")
-            .exists()
-    );
-    assert!(
-        project
-            .project_path()
-            .join(".claude/commands/claude-cmd.md")
-            .exists()
-    );
+    assert!(project.project_path().join(".claude/agents/claude-agent.md").exists());
+    assert!(project.project_path().join(".claude/commands/claude-cmd.md").exists());
 
     // Verify OpenCode resources (singular directories)
-    assert!(
-        project
-            .project_path()
-            .join(".opencode/agent/opencode-agent.md")
-            .exists()
-    );
-    assert!(
-        project
-            .project_path()
-            .join(".opencode/command/opencode-cmd.md")
-            .exists()
-    );
+    assert!(project.project_path().join(".opencode/agent/opencode-agent.md").exists());
+    assert!(project.project_path().join(".opencode/command/opencode-cmd.md").exists());
 
     // Verify lockfile has both artifact types
     let lockfile_content = project.read_lockfile().await?;
@@ -300,10 +257,7 @@ example = {{ source = "test_repo", path = "snippets/example.md", version = "v1.0
 
     // This should fail validation because OpenCode doesn't support snippets
     let output = project.run_agpm(&["install"])?;
-    assert!(
-        !output.success,
-        "Should fail when installing unsupported resource type"
-    );
+    assert!(!output.success, "Should fail when installing unsupported resource type");
 
     // Verify error message mentions the unsupported resource type
     let combined_output = format!("{}{}", output.stdout, output.stderr);
@@ -354,9 +308,7 @@ postgres = {{ source = "test_repo", path = "mcp-servers/postgres.json", version 
     project.run_agpm(&["install"])?;
 
     // Verify MCP server files installed to .claude/agpm/mcp-servers/
-    let mcp_server_file = project
-        .project_path()
-        .join(".claude/agpm/mcp-servers/postgres.json");
+    let mcp_server_file = project.project_path().join(".claude/agpm/mcp-servers/postgres.json");
     assert!(mcp_server_file.exists(), "MCP server should be installed");
 
     // Verify merged into .mcp.json
@@ -401,21 +353,15 @@ async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
             }
         }
     });
-    fs::write(
-        opencode_dir.join("opencode.json"),
-        serde_json::to_string_pretty(&user_config)?,
-    )
-    .await?;
+    fs::write(opencode_dir.join("opencode.json"), serde_json::to_string_pretty(&user_config)?)
+        .await?;
 
     let source_repo = project.create_source_repo("test_repo").await?;
 
     // Create AGPM-managed MCP server
     let mcp_dir = source_repo.path.join("mcp-servers");
     sync_fs::create_dir_all(&mcp_dir)?;
-    sync_fs::write(
-        mcp_dir.join("agpm-server.json"),
-        r#"{"command": "agpm", "args": ["serve"]}"#,
-    )?;
+    sync_fs::write(mcp_dir.join("agpm-server.json"), r#"{"command": "agpm", "args": ["serve"]}"#)?;
 
     source_repo.commit_all("Add AGPM server")?;
     source_repo.tag_version("v1.0.0")?;
@@ -439,14 +385,8 @@ agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", ve
     let config: serde_json::Value = serde_json::from_str(&config_content)?;
 
     let mcp = config["mcp"].as_object().unwrap();
-    assert!(
-        mcp.contains_key("user-server"),
-        "User server should be preserved"
-    );
-    assert!(
-        mcp.contains_key("agpm-server"),
-        "AGPM server should be added"
-    );
+    assert!(mcp.contains_key("user-server"), "User server should be preserved");
+    assert!(mcp.contains_key("agpm-server"), "AGPM server should be added");
 
     // Verify user server has no metadata
     assert!(
@@ -455,10 +395,7 @@ agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", ve
     );
 
     // Verify AGPM server has metadata
-    assert!(
-        mcp["agpm-server"].get("_agpm").is_some(),
-        "AGPM server should have _agpm metadata"
-    );
+    assert!(mcp["agpm-server"].get("_agpm").is_some(), "AGPM server should have _agpm metadata");
 
     Ok(())
 }
@@ -473,10 +410,7 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     // Create nested agent structure
     let ai_dir = source_repo.path.join("agents/ai");
     sync_fs::create_dir_all(&ai_dir)?;
-    sync_fs::write(
-        ai_dir.join("gpt.md"),
-        "---\ntitle: GPT Agent\n---\n\nAI agent.",
-    )?;
+    sync_fs::write(ai_dir.join("gpt.md"), "---\ntitle: GPT Agent\n---\n\nAI agent.")?;
 
     source_repo.commit_all("Add nested agent")?;
     source_repo.tag_version("v1.0.0")?;
@@ -500,19 +434,13 @@ opencode-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.
 
     // Verify Claude Code preserves nested structure
     assert!(
-        project
-            .project_path()
-            .join(".claude/agents/ai/gpt.md")
-            .exists(),
+        project.project_path().join(".claude/agents/ai/gpt.md").exists(),
         "Claude Code should preserve ai/ subdirectory"
     );
 
     // Verify OpenCode preserves nested structure (but in singular "agent")
     assert!(
-        project
-            .project_path()
-            .join(".opencode/agent/ai/gpt.md")
-            .exists(),
+        project.project_path().join(".opencode/agent/ai/gpt.md").exists(),
         "OpenCode should preserve ai/ subdirectory in agent/"
     );
 
@@ -552,13 +480,8 @@ config-template = {{ source = "test_repo", path = "snippets/config-template.md",
     project.run_agpm(&["install"])?;
 
     // Verify snippet installed to .agpm/snippets/
-    let snippet_path = project
-        .project_path()
-        .join(".agpm/snippets/config-template.md");
-    assert!(
-        snippet_path.exists(),
-        "AGPM snippet should be installed to .agpm/snippets/"
-    );
+    let snippet_path = project.project_path().join(".agpm/snippets/config-template.md");
+    assert!(snippet_path.exists(), "AGPM snippet should be installed to .agpm/snippets/");
 
     let content = fs::read_to_string(&snippet_path).await?;
     assert!(content.contains("Reusable config template"));

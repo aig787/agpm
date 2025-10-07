@@ -773,7 +773,9 @@ impl Default for ArtifactsConfig {
             },
         );
 
-        Self { types }
+        Self {
+            types,
+        }
     }
 }
 
@@ -1890,11 +1892,8 @@ impl Manifest {
                     // Check if resource type is supported by this artifact type
                     if !self.is_resource_supported(artifact_type, *resource_type) {
                         let artifact_config = self.get_artifact_type_config(artifact_type).unwrap();
-                        let supported_types: Vec<String> = artifact_config
-                            .resources
-                            .keys()
-                            .map(|s| s.to_string())
-                            .collect();
+                        let supported_types: Vec<String> =
+                            artifact_config.resources.keys().map(|s| s.to_string()).collect();
 
                         // Build resource-type-specific suggestions
                         let mut suggestions = Vec::new();
@@ -1959,9 +1958,10 @@ impl Manifest {
                             3. Removing this dependency from your manifest",
                         );
 
-                        return Err(
-                            crate::core::AgpmError::ManifestValidationError { reason }.into()
-                        );
+                        return Err(crate::core::AgpmError::ManifestValidationError {
+                            reason,
+                        }
+                        .into());
                     }
                 }
             }
@@ -2075,10 +2075,7 @@ impl Manifest {
         let artifact_config = self.get_artifact_type_config(artifact_type)?;
         let resource_config = artifact_config.resources.get(resource_type.to_plural())?;
 
-        resource_config
-            .path
-            .as_ref()
-            .map(|subdir| artifact_config.path.join(subdir))
+        resource_config.path.as_ref().map(|subdir| artifact_config.path.join(subdir))
     }
 
     /// Check if a resource type is supported by an artifact type.
@@ -3723,10 +3720,7 @@ opencode-helper = { source = "test_repo", path = "agents/helper.md", version = "
 
         match helper {
             ResourceDependency::Detailed(d) => {
-                assert_eq!(
-                    d.artifact_type, "opencode",
-                    "artifact_type should be 'opencode'"
-                );
+                assert_eq!(d.artifact_type, "opencode", "artifact_type should be 'opencode'");
             }
             _ => panic!("Expected Detailed dependency"),
         }
@@ -3750,16 +3744,10 @@ test = { source = "test", path = "agents/test.md", type = "bad/name" }
 "#;
 
         let manifest: Result<Manifest, _> = toml::from_str(toml_with_slash);
-        assert!(
-            manifest.is_ok(),
-            "Manifest should parse (validation happens in validate())"
-        );
+        assert!(manifest.is_ok(), "Manifest should parse (validation happens in validate())");
         let manifest = manifest.unwrap();
         let result = manifest.validate();
-        assert!(
-            result.is_err(),
-            "Validation should fail for artifact type with forward slash"
-        );
+        assert!(result.is_err(), "Validation should fail for artifact type with forward slash");
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("cannot contain path separators"),
@@ -3783,16 +3771,10 @@ test = { source = "test", path = "agents/test.md", type = "bad\\name" }
 "#;
 
         let manifest: Result<Manifest, _> = toml::from_str(toml_with_backslash);
-        assert!(
-            manifest.is_ok(),
-            "Manifest should parse (validation happens in validate())"
-        );
+        assert!(manifest.is_ok(), "Manifest should parse (validation happens in validate())");
         let manifest = manifest.unwrap();
         let result = manifest.validate();
-        assert!(
-            result.is_err(),
-            "Validation should fail for artifact type with backslash"
-        );
+        assert!(result.is_err(), "Validation should fail for artifact type with backslash");
 
         // Test path traversal (..)
         let toml_with_dotdot = r#"
@@ -3810,16 +3792,10 @@ test = { source = "test", path = "agents/test.md", type = "bad..name" }
 "#;
 
         let manifest: Result<Manifest, _> = toml::from_str(toml_with_dotdot);
-        assert!(
-            manifest.is_ok(),
-            "Manifest should parse (validation happens in validate())"
-        );
+        assert!(manifest.is_ok(), "Manifest should parse (validation happens in validate())");
         let manifest = manifest.unwrap();
         let result = manifest.validate();
-        assert!(
-            result.is_err(),
-            "Validation should fail for artifact type with .."
-        );
+        assert!(result.is_err(), "Validation should fail for artifact type with ..");
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("cannot contain '..'"),
@@ -3846,9 +3822,6 @@ test = { source = "test", path = "agents/test.md", version = "v1.0.0", type = "m
         assert!(manifest.is_ok(), "Valid manifest should parse");
         let manifest = manifest.unwrap();
         let result = manifest.validate();
-        assert!(
-            result.is_ok(),
-            "Valid artifact type name should pass validation"
-        );
+        assert!(result.is_ok(), "Valid artifact type name should pass validation");
     }
 }

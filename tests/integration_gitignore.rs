@@ -614,20 +614,13 @@ async fn test_gitignore_actually_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project
-        .write_manifest(&create_test_manifest(true, &source_dir).await)
-        .await
-        .unwrap();
+    project.write_manifest(&create_test_manifest(true, &source_dir).await).await.unwrap();
 
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
-    assert!(
-        project_dir
-            .join(".claude/commands/test-command.md")
-            .exists()
-    );
+    assert!(project_dir.join(".claude/commands/test-command.md").exists());
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();
@@ -689,20 +682,13 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
 
     let git = project.init_git_repo().unwrap();
 
-    project
-        .write_manifest(&create_test_manifest(false, &source_dir).await)
-        .await
-        .unwrap();
+    project.write_manifest(&create_test_manifest(false, &source_dir).await).await.unwrap();
 
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
     assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
-    assert!(
-        project_dir
-            .join(".claude/commands/test-command.md")
-            .exists()
-    );
+    assert!(project_dir.join(".claude/commands/test-command.md").exists());
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();

@@ -1743,9 +1743,8 @@ impl DependencyResolver {
             // Normalize to forward slashes for cross-platform consistency in lockfile
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
-                if let Some(artifact_path) = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
+                if let Some(artifact_path) =
+                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
                 {
                     let base_target = artifact_path.display().to_string();
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
@@ -1770,9 +1769,8 @@ impl DependencyResolver {
                 }
             } else {
                 // Use artifact configuration for default path
-                if let Some(artifact_path) = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
+                if let Some(artifact_path) =
+                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
                 {
                     format!("{}/{}", artifact_path.display(), filename)
                 } else {
@@ -1894,9 +1892,8 @@ impl DependencyResolver {
             // Normalize to forward slashes for cross-platform consistency in lockfile
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
-                if let Some(artifact_path) = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
+                if let Some(artifact_path) =
+                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
                 {
                     let base_target = artifact_path.display().to_string();
                     format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
@@ -1921,9 +1918,8 @@ impl DependencyResolver {
                 }
             } else {
                 // Use artifact configuration for default path
-                if let Some(artifact_path) = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
+                if let Some(artifact_path) =
+                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
                 {
                     format!("{}/{}", artifact_path.display(), filename)
                 } else {
@@ -3911,10 +3907,7 @@ mod tests {
         // Normalize path separators for cross-platform testing
         let normalized_path = agent.installed_at.replace('\\', "/");
         assert!(normalized_path.contains(".claude/agents/integrations/custom"));
-        assert_eq!(
-            normalized_path,
-            ".claude/agents/integrations/custom/custom-agent.md"
-        );
+        assert_eq!(normalized_path, ".claude/agents/integrations/custom/custom-agent.md");
     }
 
     #[tokio::test]
@@ -4029,10 +4022,7 @@ mod tests {
         // Custom target is relative to default agents directory
         // Normalize path separators for cross-platform testing
         let normalized_path = agent.installed_at.replace('\\', "/");
-        assert_eq!(
-            normalized_path,
-            ".claude/agents/tools/ai/assistant.markdown"
-        );
+        assert_eq!(normalized_path, ".claude/agents/tools/ai/assistant.markdown");
     }
 
     #[tokio::test]

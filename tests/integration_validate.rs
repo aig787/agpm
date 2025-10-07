@@ -775,22 +775,10 @@ utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0", 
     );
     assert!(output.stdout.contains("Artifact type 'opencode' supports:"));
     assert!(output.stdout.contains("💡 Suggestions:"));
-    assert!(
-        output
-            .stdout
-            .contains("Snippets work best with the 'agpm' artifact type")
-    );
-    assert!(
-        output
-            .stdout
-            .contains("Add type='agpm' to this dependency to use shared snippets")
-    );
+    assert!(output.stdout.contains("Snippets work best with the 'agpm' artifact type"));
+    assert!(output.stdout.contains("Add type='agpm' to this dependency to use shared snippets"));
     assert!(output.stdout.contains("You can fix this by:"));
-    assert!(
-        output
-            .stdout
-            .contains("1. Changing the 'type' field to a supported artifact type")
-    );
+    assert!(output.stdout.contains("1. Changing the 'type' field to a supported artifact type"));
 }
 
 /// Test validating manifest with unsupported resource type shows alternative artifact types
@@ -814,15 +802,9 @@ helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", 
 
     // Check for enhanced error message showing alternatives
     assert!(
-        output
-            .stdout
-            .contains("Resource type 'agents' is not supported by artifact type 'agpm'")
+        output.stdout.contains("Resource type 'agents' is not supported by artifact type 'agpm'")
     );
-    assert!(
-        output
-            .stdout
-            .contains("This resource type is supported by artifact types:")
-    );
+    assert!(output.stdout.contains("This resource type is supported by artifact types:"));
     assert!(output.stdout.contains("'claude-code'"));
     assert!(output.stdout.contains("'opencode'"));
 }
