@@ -414,13 +414,7 @@ impl GitRepo {
         // For file:// URLs, clone with all branches to ensure commit availability
         if url.starts_with("file://") {
             cmd = GitCommand::new()
-                .args([
-                    "clone",
-                    "--progress",
-                    "--no-single-branch",
-                    "--recurse-submodules",
-                    url,
-                ])
+                .args(["clone", "--progress", "--no-single-branch", "--recurse-submodules", url])
                 .arg(target_path.display().to_string());
         }
 
@@ -498,17 +492,11 @@ impl GitRepo {
         // Use git fetch with authentication from global config URL if provided
         if let Some(url) = auth_url {
             // Temporarily update the remote URL with auth for this fetch
-            GitCommand::set_remote_url(url)
-                .current_dir(&self.path)
-                .execute_success()
-                .await?;
+            GitCommand::set_remote_url(url).current_dir(&self.path).execute_success().await?;
         }
 
         // Now fetch with the potentially updated URL
-        GitCommand::fetch()
-            .current_dir(&self.path)
-            .execute_success()
-            .await?;
+        GitCommand::fetch().current_dir(&self.path).execute_success().await?;
 
         Ok(())
     }
@@ -592,10 +580,7 @@ impl GitRepo {
     /// [`AgpmError::GitCheckoutFailed`]: crate::core::AgpmError::GitCheckoutFailed
     pub async fn checkout(&self, ref_name: &str) -> Result<()> {
         // Reset to clean state before checkout
-        let reset_result = GitCommand::reset_hard()
-            .current_dir(&self.path)
-            .execute()
-            .await;
+        let reset_result = GitCommand::reset_hard().current_dir(&self.path).execute().await;
 
         if let Err(e) = reset_result {
             // Only warn if it's not a detached HEAD situation (which is normal)
@@ -608,10 +593,8 @@ impl GitRepo {
         // Check if this ref exists as a remote branch
         // If it does, always use -B to ensure we get the latest
         let remote_ref = format!("origin/{ref_name}");
-        let check_remote = GitCommand::verify_ref(&remote_ref)
-            .current_dir(&self.path)
-            .execute()
-            .await;
+        let check_remote =
+            GitCommand::verify_ref(&remote_ref).current_dir(&self.path).execute().await;
 
         if check_remote.is_ok() {
             // Remote branch exists, use -B to force update to latest
@@ -626,11 +609,8 @@ impl GitRepo {
         }
 
         // Not a remote branch, try direct checkout (works for tags and commits)
-        GitCommand::checkout(ref_name)
-            .current_dir(&self.path)
-            .execute_success()
-            .await
-            .map_err(|e| {
+        GitCommand::checkout(ref_name).current_dir(&self.path).execute_success().await.map_err(
+            |e| {
                 // If it's already a GitCheckoutFailed error, return as-is
                 // Otherwise wrap it
                 if let Some(agpm_err) = e.downcast_ref::<AgpmError>()
@@ -643,7 +623,8 @@ impl GitRepo {
                     reason: e.to_string(),
                 }
                 .into()
-            })
+            },
+        )
     }
 
     /// Lists all tags in the repository, sorted by Git's default ordering.
@@ -729,10 +710,7 @@ impl GitRepo {
     pub async fn list_tags(&self) -> Result<Vec<String>> {
         // Check if the directory exists and is a git repo
         if !self.path.exists() {
-            return Err(anyhow::anyhow!(
-                "Repository path does not exist: {:?}",
-                self.path
-            ));
+            return Err(anyhow::anyhow!("Repository path does not exist: {:?}", self.path));
         }
 
         // Check if it's a git repository (either regular or bare)
@@ -829,10 +807,7 @@ impl GitRepo {
     /// [`parse_git_url`]: fn.parse_git_url.html
     /// [`AgpmError::GitCommandError`]: crate::core::AgpmError::GitCommandError
     pub async fn get_remote_url(&self) -> Result<String> {
-        GitCommand::remote_url()
-            .current_dir(&self.path)
-            .execute_stdout()
-            .await
+        GitCommand::remote_url().current_dir(&self.path).execute_stdout().await
     }
 
     /// Checks if the directory contains a valid Git repository.\n    ///
@@ -1088,9 +1063,8 @@ impl GitRepo {
         if fetch_result.is_err() {
             // If fetch fails, it might be because there's no remote
             // Just check if we have any refs at all
-            let mut check_cmd = GitCommand::new()
-                .args(["show-ref", "--head"])
-                .current_dir(&self.path);
+            let mut check_cmd =
+                GitCommand::new().args(["show-ref", "--head"]).current_dir(&self.path);
 
             if let Some(ctx) = context {
                 check_cmd = check_cmd.with_context(ctx);
@@ -1174,20 +1148,14 @@ impl GitRepo {
         // Configure the fetch refspec to ensure all branches are fetched as remote tracking branches
         // This is crucial for file:// URLs and ensures we can resolve origin/branch after fetching
         let _ = GitCommand::new()
-            .args([
-                "config",
-                "remote.origin.fetch",
-                "+refs/heads/*:refs/remotes/origin/*",
-            ])
+            .args(["config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"])
             .current_dir(repo.path())
             .execute_success()
             .await;
 
         // Ensure the bare repo has refs available for worktree creation
         // Also needs context for the fetch operation
-        repo.ensure_bare_repo_has_refs_with_context(context)
-            .await
-            .ok();
+        repo.ensure_bare_repo_has_refs_with_context(context).await.ok();
 
         Ok(repo)
     }
@@ -1233,8 +1201,7 @@ impl GitRepo {
         worktree_path: impl AsRef<Path>,
         reference: Option<&str>,
     ) -> Result<Self> {
-        self.create_worktree_with_context(worktree_path, reference, None)
-            .await
+        self.create_worktree_with_context(worktree_path, reference, None).await
     }
 
     /// Create a new worktree from this repository with logging context.
@@ -1308,9 +1275,8 @@ impl GitRepo {
                     let worktree_repo = Self::new(worktree_path);
 
                     // Initialize submodules
-                    let mut init_cmd = GitCommand::new()
-                        .args(["submodule", "init"])
-                        .current_dir(worktree_path);
+                    let mut init_cmd =
+                        GitCommand::new().args(["submodule", "init"]).current_dir(worktree_path);
 
                     if let Some(ctx) = context {
                         init_cmd = init_cmd.with_context(ctx);
@@ -1558,10 +1524,7 @@ impl GitRepo {
     /// # }
     /// ```
     pub async fn list_worktrees(&self) -> Result<Vec<PathBuf>> {
-        let output = GitCommand::worktree_list()
-            .current_dir(&self.path)
-            .execute_stdout()
-            .await?;
+        let output = GitCommand::worktree_list().current_dir(&self.path).execute_stdout().await?;
 
         let mut worktrees = Vec::new();
         let mut current_worktree: Option<PathBuf> = None;
@@ -2348,10 +2311,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
         let path = &url[colon_pos + 1..];
         let path = path.trim_end_matches(".git");
         if let Some(slash_pos) = path.find('/') {
-            return Ok((
-                path[..slash_pos].to_string(),
-                path[slash_pos + 1..].to_string(),
-            ));
+            return Ok((path[..slash_pos].to_string(), path[slash_pos + 1..].to_string()));
         }
     }
 
@@ -2365,9 +2325,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
         }
     }
 
-    Err(anyhow::anyhow!(
-        "Could not parse repository owner and name from URL"
-    ))
+    Err(anyhow::anyhow!("Could not parse repository owner and name from URL"))
 }
 
 /// Strips authentication information from a Git URL for safe display or logging.

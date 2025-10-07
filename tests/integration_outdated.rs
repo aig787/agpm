@@ -34,15 +34,11 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Run outdated command
     let output = project.run_agpm(&["outdated", "--no-fetch"]).unwrap();
-    output
-        .assert_success()
-        .assert_stdout_contains("All dependencies are up to date!");
+    output.assert_success().assert_stdout_contains("All dependencies are up to date!");
 }
 
 /// Test outdated command with outdated dependencies
@@ -79,9 +75,7 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Note: In a real test, we'd need to mock the Git repository to return available versions
     // For now, this test would need actual network access or mocked Git operations
@@ -147,14 +141,10 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Run outdated command with JSON format
-    let output = project
-        .run_agpm(&["outdated", "--format", "json", "--no-fetch"])
-        .unwrap();
+    let output = project.run_agpm(&["outdated", "--format", "json", "--no-fetch"]).unwrap();
     output.assert_success();
 
     // Check that output is valid JSON
@@ -199,14 +189,10 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/my-agent.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Run outdated command with --check flag
-    let output = project
-        .run_agpm(&["outdated", "--check", "--no-fetch"])
-        .unwrap();
+    let output = project.run_agpm(&["outdated", "--check", "--no-fetch"]).unwrap();
 
     // Should succeed when all dependencies are up to date
     output.assert_success();
@@ -257,13 +243,9 @@ checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 installed_at = "agents/helper.md"
 resource_type = "agent"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     // Run outdated command for specific dependency
-    let output = project
-        .run_agpm(&["outdated", "--no-fetch", "my-agent"])
-        .unwrap();
+    let output = project.run_agpm(&["outdated", "--no-fetch", "my-agent"]).unwrap();
     output.assert_success();
 }

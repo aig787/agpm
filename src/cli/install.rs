@@ -351,7 +351,7 @@ impl InstallCommand {
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
         let manifest_path = find_manifest_with_optional(manifest_path).with_context(|| {
-"No agpm.toml found in current directory or any parent directory.\n\n\
+            "No agpm.toml found in current directory or any parent directory.\n\n\
             To get started, create a agpm.toml file with your dependencies:\n\n\
             [sources]\n\
             official = \"https://github.com/example-org/agpm-official.git\"\n\n\
@@ -375,19 +375,14 @@ impl InstallCommand {
         };
 
         if !manifest_path.exists() {
-            return Err(anyhow::anyhow!(
-                "No agpm.toml found at {}",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("No agpm.toml found at {}", manifest_path.display()));
         }
 
         let manifest = Manifest::load(&manifest_path)?;
 
         // In --frozen mode, check for corruption and security issues only
-        let lockfile_path = manifest_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("agpm.lock");
+        let lockfile_path =
+            manifest_path.parent().unwrap_or_else(|| Path::new(".")).join("agpm.lock");
 
         if self.frozen && lockfile_path.exists() {
             // Check for critical issues (corruption/security) but not version/path changes
@@ -407,9 +402,8 @@ impl InstallCommand {
 
         // Show initial status
 
-        let actual_project_dir = manifest_path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
+        let actual_project_dir =
+            manifest_path.parent().ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
 
         // Check for existing lockfile
         let lockfile_path = actual_project_dir.join("agpm.lock");
@@ -428,10 +422,8 @@ impl InstallCommand {
             DependencyResolver::new_with_global(manifest.clone(), cache.clone()).await?;
 
         // Pre-sync sources phase (if not frozen and we have remote deps)
-        let has_remote_deps = manifest
-            .all_dependencies()
-            .iter()
-            .any(|(_, dep)| dep.get_source().is_some());
+        let has_remote_deps =
+            manifest.all_dependencies().iter().any(|(_, dep)| dep.get_source().is_some());
 
         if !self.frozen && has_remote_deps {
             // Start syncing sources phase
@@ -535,9 +527,8 @@ impl InstallCommand {
             }
 
             let max_concurrency = self.max_parallel.unwrap_or_else(|| {
-                let cores = std::thread::available_parallelism()
-                    .map(std::num::NonZero::get)
-                    .unwrap_or(4);
+                let cores =
+                    std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
                 std::cmp::max(10, cores * 2)
             });
 
@@ -609,10 +600,7 @@ impl InstallCommand {
                 && !removed.is_empty()
                 && !self.quiet
             {
-                println!(
-                    "🗑️  Cleaned up {} moved or removed artifact(s)",
-                    removed.len()
-                );
+                println!("🗑️  Cleaned up {} moved or removed artifact(s)", removed.len());
             }
 
             // Start finalizing phase
@@ -726,14 +714,10 @@ impl InstallCommand {
                     if old_entry.resolved_commit == new_entry.resolved_commit {
                         unchanged_count += 1;
                     } else {
-                        let old_version = old_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string());
-                        let new_version = new_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string());
+                        let old_version =
+                            old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                        let new_version =
+                            new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
                         updated_resources.push((
                             resource_type.to_string(),
                             new_entry.name.clone(),
@@ -746,10 +730,7 @@ impl InstallCommand {
                     new_resources.push((
                         resource_type.to_string(),
                         new_entry.name.clone(),
-                        new_entry
-                            .version
-                            .clone()
-                            .unwrap_or_else(|| "latest".to_string()),
+                        new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
                     ));
                 }
             });
@@ -759,10 +740,7 @@ impl InstallCommand {
                 new_resources.push((
                     resource_type.to_string(),
                     new_entry.name.clone(),
-                    new_entry
-                        .version
-                        .clone()
-                        .unwrap_or_else(|| "latest".to_string()),
+                    new_entry.version.clone().unwrap_or_else(|| "latest".to_string()),
                 ));
             });
         }
@@ -772,10 +750,7 @@ impl InstallCommand {
 
         if !self.quiet {
             if has_changes {
-                println!(
-                    "{}",
-                    "Dry run - the following changes would be made:".yellow()
-                );
+                println!("{}", "Dry run - the following changes would be made:".yellow());
                 println!();
 
                 if !new_resources.is_empty() {
@@ -801,10 +776,7 @@ impl InstallCommand {
                 }
 
                 if unchanged_count > 0 {
-                    println!(
-                        "{}",
-                        format!("{unchanged_count} unchanged resources").dimmed()
-                    );
+                    println!("{}", format!("{unchanged_count} unchanged resources").dimmed());
                 }
 
                 println!();
@@ -914,36 +886,11 @@ fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: 
     }
 
     // Check all resource types
-    check_resources(
-        &old_lockfile.agents,
-        &new_lockfile.agents,
-        ResourceType::Agent,
-        quiet,
-    );
-    check_resources(
-        &old_lockfile.snippets,
-        &new_lockfile.snippets,
-        ResourceType::Snippet,
-        quiet,
-    );
-    check_resources(
-        &old_lockfile.commands,
-        &new_lockfile.commands,
-        ResourceType::Command,
-        quiet,
-    );
-    check_resources(
-        &old_lockfile.scripts,
-        &new_lockfile.scripts,
-        ResourceType::Script,
-        quiet,
-    );
-    check_resources(
-        &old_lockfile.hooks,
-        &new_lockfile.hooks,
-        ResourceType::Hook,
-        quiet,
-    );
+    check_resources(&old_lockfile.agents, &new_lockfile.agents, ResourceType::Agent, quiet);
+    check_resources(&old_lockfile.snippets, &new_lockfile.snippets, ResourceType::Snippet, quiet);
+    check_resources(&old_lockfile.commands, &new_lockfile.commands, ResourceType::Command, quiet);
+    check_resources(&old_lockfile.scripts, &new_lockfile.scripts, ResourceType::Script, quiet);
+    check_resources(&old_lockfile.hooks, &new_lockfile.hooks, ResourceType::Hook, quiet);
     check_resources(
         &old_lockfile.mcp_servers,
         &new_lockfile.mcp_servers,
@@ -1172,10 +1119,7 @@ Body",
         );
         manifest.save(&manifest_path).unwrap();
 
-        let err = InstallCommand::new()
-            .execute_from_path(Some(&manifest_path))
-            .await
-            .unwrap_err();
+        let err = InstallCommand::new().execute_from_path(Some(&manifest_path)).await.unwrap_err();
         assert!(err.to_string().contains("Local file"));
     }
 
@@ -1253,11 +1197,7 @@ Body",
 
         let lockfile = LockFile::load(&temp.path().join("agpm.lock")).unwrap();
         assert_eq!(lockfile.commands.len(), 1);
-        assert!(
-            temp.path()
-                .join(&lockfile.commands[0].installed_at)
-                .exists()
-        );
+        assert!(temp.path().join(&lockfile.commands[0].installed_at).exists());
     }
 
     #[tokio::test]

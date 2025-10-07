@@ -50,9 +50,8 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
 
     // Test different --max-parallel values
     for max_parallel in [1, 2, 4, 8] {
-        let output = project
-            .run_agpm(&["install", "--max-parallel", &max_parallel.to_string()])
-            .unwrap();
+        let output =
+            project.run_agpm(&["install", "--max-parallel", &max_parallel.to_string()]).unwrap();
         assert!(
             output.success,
             "Install failed with max_parallel={}: {}",
@@ -61,24 +60,9 @@ agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.
 
         // Verify installation worked
         // Files use basename from path, not dependency name
-        assert!(
-            project
-                .project_path()
-                .join(".claude/agents/test-agent-1.md")
-                .exists()
-        );
-        assert!(
-            project
-                .project_path()
-                .join(".claude/agents/test-agent-2.md")
-                .exists()
-        );
-        assert!(
-            project
-                .project_path()
-                .join(".claude/agents/test-agent-3.md")
-                .exists()
-        );
+        assert!(project.project_path().join(".claude/agents/test-agent-1.md").exists());
+        assert!(project.project_path().join(".claude/agents/test-agent-2.md").exists());
+        assert!(project.project_path().join(".claude/agents/test-agent-3.md").exists());
 
         // Clean up for next iteration
         let _ = fs::remove_dir_all(project.project_path().join(".claude")).await;
@@ -91,21 +75,15 @@ async fn test_max_parallel_invalid_values() {
     let project = TestProject::new().await.unwrap();
 
     // Test zero value
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "0"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "0"]).unwrap();
     assert!(!output.success);
 
     // Test negative value
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "-1"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "-1"]).unwrap();
     assert!(!output.success);
 
     // Test non-numeric value
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "abc"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "abc"]).unwrap();
     assert!(!output.success);
 }
 
@@ -142,12 +120,7 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
     assert!(output.stdout.contains("Installing") || output.stdout.contains("Installed"));
 
     // Files use basename from path, not dependency name
-    assert!(
-        project
-            .project_path()
-            .join(".claude/agents/test-agent.md")
-            .exists()
-    );
+    assert!(project.project_path().join(".claude/agents/test-agent.md").exists());
 }
 
 /// Test --max-parallel flag on install command only (update doesn't support it)
@@ -178,9 +151,7 @@ agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Install with --max-parallel should work
-    let output = project
-        .run_agpm(&["install", "--max-parallel", "2"])
-        .unwrap();
+    let output = project.run_agpm(&["install", "--max-parallel", "2"]).unwrap();
     assert!(output.success);
 
     // Update command should work without --max-parallel

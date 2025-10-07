@@ -138,11 +138,8 @@ impl DependencyGraph {
             if matches!(colors.get(&node), Some(Color::White))
                 && let Some(cycle) = self.dfs_visit(node, &mut colors, &mut path)
             {
-                let cycle_str = cycle
-                    .iter()
-                    .map(DependencyNode::display_name)
-                    .collect::<Vec<_>>()
-                    .join(" → ");
+                let cycle_str =
+                    cycle.iter().map(DependencyNode::display_name).collect::<Vec<_>>().join(" → ");
                 return Err(anyhow!("Circular dependency detected: {cycle_str}"));
             }
         }
@@ -166,10 +163,7 @@ impl DependencyGraph {
             match colors.get(&neighbor) {
                 Some(Color::Gray) => {
                     // Found a cycle - find where it starts in the path
-                    let cycle_start = path
-                        .iter()
-                        .position(|n| *n == self.graph[neighbor])
-                        .unwrap();
+                    let cycle_start = path.iter().position(|n| *n == self.graph[neighbor]).unwrap();
                     let mut cycle = path[cycle_start..].to_vec();
                     // Add the node again to show the cycle closes
                     cycle.push(self.graph[neighbor].clone());
@@ -246,10 +240,7 @@ impl DependencyGraph {
     /// Returns only the immediate dependencies, not transitive ones.
     pub fn get_direct_deps(&self, node: &DependencyNode) -> Vec<DependencyNode> {
         if let Some(&node_idx) = self.node_map.get(node) {
-            self.graph
-                .neighbors(node_idx)
-                .map(|idx| self.graph[idx].clone())
-                .collect()
+            self.graph.neighbors(node_idx).map(|idx| self.graph[idx].clone()).collect()
         } else {
             Vec::new()
         }
@@ -272,10 +263,7 @@ impl DependencyGraph {
 
     /// Get all nodes in the graph.
     pub fn nodes(&self) -> Vec<DependencyNode> {
-        self.graph
-            .node_indices()
-            .map(|idx| self.graph[idx].clone())
-            .collect()
+        self.graph.node_indices().map(|idx| self.graph[idx].clone()).collect()
     }
 
     /// Build a human-readable dependency tree representation.
@@ -296,7 +284,11 @@ impl DependencyGraph {
         is_last: bool,
         visited: &mut HashSet<DependencyNode>,
     ) {
-        let connector = if is_last { "└── " } else { "├── " };
+        let connector = if is_last {
+            "└── "
+        } else {
+            "├── "
+        };
         result.push_str(&format!("{}{}{}\n", prefix, connector, node.display_name()));
 
         if !visited.insert(node.clone()) {
@@ -443,20 +435,12 @@ mod tests {
             DependencyNode::new(crate::core::ResourceType::Snippet, "D"),
         );
 
-        let deps = graph.get_transitive_deps(&DependencyNode::new(
-            crate::core::ResourceType::Command,
-            "A",
-        ));
+        let deps = graph
+            .get_transitive_deps(&DependencyNode::new(crate::core::ResourceType::Command, "A"));
         assert_eq!(deps.len(), 3);
         assert!(deps.contains(&DependencyNode::new(crate::core::ResourceType::Agent, "B")));
-        assert!(deps.contains(&DependencyNode::new(
-            crate::core::ResourceType::Snippet,
-            "C"
-        )));
-        assert!(deps.contains(&DependencyNode::new(
-            crate::core::ResourceType::Snippet,
-            "D"
-        )));
+        assert!(deps.contains(&DependencyNode::new(crate::core::ResourceType::Snippet, "C")));
+        assert!(deps.contains(&DependencyNode::new(crate::core::ResourceType::Snippet, "D")));
     }
 
     #[test]
@@ -471,12 +455,7 @@ mod tests {
 
         let result = graph.detect_cycles();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Circular dependency")
-        );
+        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
     }
 
     #[test]
@@ -584,11 +563,6 @@ mod tests {
         // Should detect a cycle
         let result = graph.detect_cycles();
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Circular dependency")
-        );
+        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
     }
 }

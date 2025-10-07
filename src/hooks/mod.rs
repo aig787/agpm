@@ -452,9 +452,7 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
 
     // Validate hook type
     if config.hook_type != "command" {
-        return Err(anyhow::anyhow!(
-            "Only 'command' hook type is currently supported"
-        ));
+        return Err(anyhow::anyhow!("Only 'command' hook type is currently supported"));
     }
 
     // Validate that the referenced script exists
@@ -475,10 +473,7 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     if let Some(path) = script_full_path
         && !path.exists()
     {
-        return Err(anyhow::anyhow!(
-            "Hook references non-existent script: {}",
-            config.command
-        ));
+        return Err(anyhow::anyhow!("Hook references non-existent script: {}", config.command));
     }
 
     Ok(())
@@ -503,10 +498,7 @@ mod tests {
             (HookEvent::PreCompact, r#""PreCompact""#),
             (HookEvent::SessionStart, r#""SessionStart""#),
             (HookEvent::SessionEnd, r#""SessionEnd""#),
-            (
-                HookEvent::Other("CustomEvent".to_string()),
-                r#""CustomEvent""#,
-            ),
+            (HookEvent::Other("CustomEvent".to_string()), r#""CustomEvent""#),
         ];
 
         for (event, expected) in events {
@@ -629,16 +621,10 @@ mod tests {
             description: Some("Test hook 2".to_string()),
         };
 
-        fs::write(
-            hooks_dir.join("test-hook1.json"),
-            serde_json::to_string(&config1).unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            hooks_dir.join("test-hook2.json"),
-            serde_json::to_string(&config2).unwrap(),
-        )
-        .unwrap();
+        fs::write(hooks_dir.join("test-hook1.json"), serde_json::to_string(&config1).unwrap())
+            .unwrap();
+        fs::write(hooks_dir.join("test-hook2.json"), serde_json::to_string(&config2).unwrap())
+            .unwrap();
 
         // Also create a non-JSON file that should be ignored
         fs::write(hooks_dir.join("readme.txt"), "This is not a hook").unwrap();
@@ -677,12 +663,7 @@ mod tests {
 
         let result = load_hook_configs(&hooks_dir);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to parse hook config")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to parse hook config"));
     }
 
     #[test]
@@ -700,12 +681,7 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("at least one event")
-        );
+        assert!(result.unwrap_err().to_string().contains("at least one event"));
     }
 
     #[test]
@@ -723,12 +699,7 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid regex pattern")
-        );
+        assert!(result.unwrap_err().to_string().contains("Invalid regex pattern"));
     }
 
     #[test]
@@ -746,12 +717,7 @@ mod tests {
 
         let result = validate_hook_config(&config, temp.path());
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Only 'command' hook type")
-        );
+        assert!(result.unwrap_err().to_string().contains("Only 'command' hook type"));
     }
 
     #[test]
@@ -783,11 +749,7 @@ mod tests {
         let result = validate_hook_config(&config, &hook_json_path);
 
         // Since the script exists at the expected location, this should succeed
-        assert!(
-            result.is_ok(),
-            "Expected validation to succeed, but got: {:?}",
-            result
-        );
+        assert!(result.is_ok(), "Expected validation to succeed, but got: {:?}", result);
     }
 
     #[test]
@@ -804,20 +766,10 @@ mod tests {
         };
 
         // Pass the hook file path
-        let hook_path = temp
-            .path()
-            .join(".claude")
-            .join("agpm")
-            .join("hooks")
-            .join("test.json");
+        let hook_path = temp.path().join(".claude").join("agpm").join("hooks").join("test.json");
         let result = validate_hook_config(&config, &hook_path);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("non-existent script")
-        );
+        assert!(result.unwrap_err().to_string().contains("non-existent script"));
     }
 
     #[test]
@@ -864,11 +816,8 @@ mod tests {
             description: Some("Test hook".to_string()),
         };
 
-        fs::write(
-            hooks_dir.join("test-hook.json"),
-            serde_json::to_string(&hook_config).unwrap(),
-        )
-        .unwrap();
+        fs::write(hooks_dir.join("test-hook.json"), serde_json::to_string(&hook_config).unwrap())
+            .unwrap();
 
         // Create a manifest with hooks
         let mut manifest = crate::manifest::Manifest::default();
@@ -921,11 +870,8 @@ mod tests {
             description: None,
         };
 
-        fs::write(
-            hooks_dir.join("simple-hook.json"),
-            serde_json::to_string(&hook_config).unwrap(),
-        )
-        .unwrap();
+        fs::write(hooks_dir.join("simple-hook.json"), serde_json::to_string(&hook_config).unwrap())
+            .unwrap();
 
         // Create a manifest with a simple dependency
         let mut manifest = crate::manifest::Manifest::default();
@@ -1154,10 +1100,7 @@ mod tests {
         // That group should have only one hook (deduplicated)
         let hooks = session_start[0].get("hooks").unwrap().as_array().unwrap();
         assert_eq!(hooks.len(), 1);
-        assert_eq!(
-            hooks[0].get("command").unwrap().as_str().unwrap(),
-            "agpm update"
-        );
+        assert_eq!(hooks[0].get("command").unwrap().as_str().unwrap(), "agpm update");
     }
 
     #[test]
@@ -1245,10 +1188,7 @@ mod tests {
         // That group should have both hooks
         let hooks = pre_tool[0].get("hooks").unwrap().as_array().unwrap();
         assert_eq!(hooks.len(), 2);
-        assert_eq!(
-            pre_tool[0].get("matcher").unwrap().as_str().unwrap(),
-            "Bash"
-        );
+        assert_eq!(pre_tool[0].get("matcher").unwrap().as_str().unwrap(), "Bash");
     }
 
     #[test]
@@ -1365,20 +1305,14 @@ mod tests {
             assert_eq!(session_start.len(), 1);
 
             let matcher_group = session_start[0].as_object().unwrap();
-            assert_eq!(
-                matcher_group.get("matcher").unwrap().as_str().unwrap(),
-                ".*"
-            );
+            assert_eq!(matcher_group.get("matcher").unwrap().as_str().unwrap(), ".*");
 
             let hooks_array = matcher_group.get("hooks").unwrap().as_array().unwrap();
             assert_eq!(hooks_array.len(), 1);
 
             let hook = hooks_array[0].as_object().unwrap();
             assert_eq!(hook.get("type").unwrap().as_str().unwrap(), "command");
-            assert_eq!(
-                hook.get("command").unwrap().as_str().unwrap(),
-                "agpm update"
-            );
+            assert_eq!(hook.get("command").unwrap().as_str().unwrap(), "agpm update");
 
             // Should NOT have the problematic format where hook name is a top-level key
             assert!(!hooks_obj.contains_key("agpm-update"));

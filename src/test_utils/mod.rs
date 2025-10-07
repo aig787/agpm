@@ -30,10 +30,12 @@
 pub mod builder;
 pub mod environment;
 pub mod fixtures;
+pub mod git_helper;
 
 pub use builder::{TestEnvironment as SimpleTestEnvironment, TestEnvironmentBuilder};
 pub use environment::TestEnvironment;
 pub use fixtures::{GitRepoFixture, LockfileFixture, ManifestFixture, MarkdownFixture};
+pub use git_helper::TestGit;
 
 use std::sync::Once;
 use tracing::Level;

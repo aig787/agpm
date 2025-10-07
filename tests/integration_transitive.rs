@@ -71,14 +71,8 @@ main-app = {{ source = "community", path = "agents/main-app.md", version = "v1.0
 
     // Verify both agents were installed (main + transitive helper)
     let lockfile_content = project.read_lockfile().await?;
-    assert!(
-        lockfile_content.contains("main-app"),
-        "Main agent should be in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("helper"),
-        "Helper agent should be in lockfile (transitive)"
-    );
+    assert!(lockfile_content.contains("main-app"), "Main agent should be in lockfile");
+    assert!(lockfile_content.contains("helper"), "Helper agent should be in lockfile (transitive)");
 
     // Verify both were actually installed to .claude/agents
     let main_app_path = project.project_path().join(".claude/agents/main-app.md");
@@ -118,11 +112,7 @@ async fn test_transitive_cross_source_same_names() -> Result<()> {
     // Create first source repo with a "utils" agent
     let source1_repo = project.create_source_repo("source1").await?;
     source1_repo
-        .add_resource(
-            "agents",
-            "utils",
-            "# Utils from Source 1\n\nSource 1 utilities",
-        )
+        .add_resource("agents", "utils", "# Utils from Source 1\n\nSource 1 utilities")
         .await?;
     source1_repo
         .add_resource(
@@ -146,11 +136,7 @@ Uses utils from same source
     // Create second source repo with different "utils" agent
     let source2_repo = project.create_source_repo("source2").await?;
     source2_repo
-        .add_resource(
-            "agents",
-            "utils",
-            "# Utils from Source 2\n\nSource 2 utilities (different)",
-        )
+        .add_resource("agents", "utils", "# Utils from Source 2\n\nSource 2 utilities (different)")
         .await?;
     source2_repo
         .add_resource(
@@ -287,10 +273,7 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
 
     // Run install - should fail with cycle detection
     let output = project.run_agpm(&["install"])?;
-    assert!(
-        !output.success,
-        "Install should fail due to circular dependency"
-    );
+    assert!(!output.success, "Install should fail due to circular dependency");
     assert!(
         output.stderr.contains("Circular dependency") || output.stderr.contains("cycle"),
         "Error should mention circular dependency or cycle, got: {}",
@@ -399,30 +382,14 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
 
     // Run install - should succeed
     let output = project.run_agpm(&["install"])?;
-    assert!(
-        output.success,
-        "Install should succeed with diamond dependencies: {}",
-        output.stderr
-    );
+    assert!(output.success, "Install should succeed with diamond dependencies: {}", output.stderr);
 
     // Verify all agents are installed
     let lockfile_content = project.read_lockfile().await?;
-    assert!(
-        lockfile_content.contains("agent-a"),
-        "Agent A should be in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("agent-b"),
-        "Agent B should be in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("agent-c"),
-        "Agent C should be in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("agent-d"),
-        "Agent D should be in lockfile"
-    );
+    assert!(lockfile_content.contains("agent-a"), "Agent A should be in lockfile");
+    assert!(lockfile_content.contains("agent-b"), "Agent B should be in lockfile");
+    assert!(lockfile_content.contains("agent-c"), "Agent C should be in lockfile");
+    assert!(lockfile_content.contains("agent-d"), "Agent D should be in lockfile");
 
     // Verify agent-d appears exactly once (no duplication despite two paths to it)
     let agent_d_count = lockfile_content.matches("name = \"agent-d\"").count();

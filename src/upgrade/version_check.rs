@@ -263,10 +263,7 @@ impl VersionChecker {
                 c.mark_notified();
                 self.save_cache(c).await?;
 
-                info!(
-                    "Update available (reminder): {} -> {}",
-                    c.current_version, c.latest_version
-                );
+                info!("Update available (reminder): {} -> {}", c.current_version, c.latest_version);
                 return Ok(Some(c.latest_version.clone()));
             }
         }
@@ -292,10 +289,7 @@ impl VersionChecker {
         // Update cache with the result
         let cache = VersionCheckCache::new(
             self.updater.current_version().to_string(),
-            result
-                .as_ref()
-                .unwrap_or(&self.updater.current_version().to_string())
-                .to_string(),
+            result.as_ref().unwrap_or(&self.updater.current_version().to_string()).to_string(),
         );
         self.save_cache(&cache).await?;
 
@@ -309,9 +303,8 @@ impl VersionChecker {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(&self.cache_path)
-            .await
-            .context("Failed to read version cache")?;
+        let content =
+            fs::read_to_string(&self.cache_path).await.context("Failed to read version cache")?;
 
         let cache: VersionCheckCache =
             serde_json::from_str(&content).context("Failed to parse version cache")?;
@@ -326,14 +319,10 @@ impl VersionChecker {
 
         // Ensure cache directory exists
         if let Some(parent) = self.cache_path.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .context("Failed to create cache directory")?;
+            fs::create_dir_all(parent).await.context("Failed to create cache directory")?;
         }
 
-        fs::write(&self.cache_path, content)
-            .await
-            .context("Failed to write version cache")?;
+        fs::write(&self.cache_path, content).await.context("Failed to write version cache")?;
 
         debug!("Saved version check to cache");
         Ok(())
@@ -345,9 +334,7 @@ impl VersionChecker {
     /// checks to fetch fresh data from GitHub.
     pub async fn clear_cache(&self) -> Result<()> {
         if self.cache_path.exists() {
-            fs::remove_file(&self.cache_path)
-                .await
-                .context("Failed to remove version cache")?;
+            fs::remove_file(&self.cache_path).await.context("Failed to remove version cache")?;
             debug!("Cleared version cache");
         }
         Ok(())
@@ -367,10 +354,7 @@ impl VersionChecker {
         let current_version = env!("CARGO_PKG_VERSION");
 
         eprintln!();
-        eprintln!(
-            "{}",
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
-        );
+        eprintln!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
         eprintln!("{} A new version of AGPM is available!", "📦".bright_cyan());
         eprintln!();
         eprintln!("  Current version: {}", current_version.yellow());
@@ -380,10 +364,7 @@ impl VersionChecker {
         eprintln!();
         eprintln!("  To disable automatic update checks, run:");
         eprintln!("  {}", "agpm config set upgrade.check_interval 0".dimmed());
-        eprintln!(
-            "{}",
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan()
-        );
+        eprintln!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_cyan());
         eprintln!();
     }
 

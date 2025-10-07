@@ -612,10 +612,8 @@ impl RedundancyDetector {
             return String::new();
         }
 
-        let mut message = format!(
-            "\n{} Redundant dependencies detected\n\n",
-            "Warning:".yellow().bold()
-        );
+        let mut message =
+            format!("\n{} Redundant dependencies detected\n\n", "Warning:".yellow().bold());
 
         for redundancy in redundancies {
             message.push_str(&format!("{redundancy}\n"));
@@ -749,11 +747,8 @@ impl RedundancyDetector {
         let mut suggestions = Vec::new();
 
         // Collect all versions being used
-        let versions: Vec<_> = redundancy
-            .usages
-            .iter()
-            .filter_map(|u| u.version.as_ref())
-            .collect();
+        let versions: Vec<_> =
+            redundancy.usages.iter().filter_map(|u| u.version.as_ref()).collect();
 
         if !versions.is_empty() {
             // Suggest using the same version for consistency

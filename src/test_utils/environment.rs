@@ -176,23 +176,11 @@ installed_at = "snippets/utils.md"
 
         // Configure git user for commits (required for git)
         std::process::Command::new("git")
-            .args([
-                "-C",
-                source_dir.to_str().unwrap(),
-                "config",
-                "user.email",
-                "test@example.com",
-            ])
+            .args(["-C", source_dir.to_str().unwrap(), "config", "user.email", "test@example.com"])
             .output()?;
 
         std::process::Command::new("git")
-            .args([
-                "-C",
-                source_dir.to_str().unwrap(),
-                "config",
-                "user.name",
-                "Test User",
-            ])
+            .args(["-C", source_dir.to_str().unwrap(), "config", "user.name", "Test User"])
             .output()?;
 
         // Add markdown files
@@ -206,13 +194,7 @@ installed_at = "snippets/utils.md"
             .output()?;
 
         std::process::Command::new("git")
-            .args([
-                "-C",
-                source_dir.to_str().unwrap(),
-                "commit",
-                "-m",
-                "Initial commit",
-            ])
+            .args(["-C", source_dir.to_str().unwrap(), "commit", "-m", "Initial commit"])
             .output()?;
 
         // Create a v1.0.0 tag for testing version resolution

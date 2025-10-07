@@ -440,9 +440,8 @@ impl DependencyResolver {
         let resources = lockfile.get_resources_mut(entry.resource_type);
 
         // Find existing entry by name and source (excluding version to allow updates)
-        if let Some(existing) = resources
-            .iter_mut()
-            .find(|e| e.name == entry.name && e.source == entry.source)
+        if let Some(existing) =
+            resources.iter_mut().find(|e| e.name == entry.name && e.source == entry.source)
         {
             *existing = entry;
         } else {
@@ -500,10 +499,7 @@ impl DependencyResolver {
 
         // Build the path map with commit information
         for (name, resource) in &all_resources {
-            let key = (
-                resource.installed_at.clone(),
-                resource.resolved_commit.clone(),
-            );
+            let key = (resource.installed_at.clone(), resource.resolved_commit.clone());
             path_map.entry(key).or_default().push((*name).to_string());
         }
 
@@ -511,10 +507,7 @@ impl DependencyResolver {
         // Group by path only to find potential conflicts
         let mut path_only_map: HashMap<String, Vec<(&str, &LockedResource)>> = HashMap::new();
         for (name, resource) in &all_resources {
-            path_only_map
-                .entry(resource.installed_at.clone())
-                .or_default()
-                .push((name, resource));
+            path_only_map.entry(resource.installed_at.clone()).or_default().push((name, resource));
         }
 
         // Find conflicts (same path with different commits)
@@ -636,25 +629,21 @@ impl DependencyResolver {
         for (_, dep) in deps {
             if let Some(source_name) = dep.get_source() {
                 let source_url =
-                    self.source_manager
-                        .get_source_url(source_name)
-                        .ok_or_else(|| AgpmError::SourceNotFound {
+                    self.source_manager.get_source_url(source_name).ok_or_else(|| {
+                        AgpmError::SourceNotFound {
                             name: source_name.to_string(),
-                        })?;
+                        }
+                    })?;
 
                 let version = dep.get_version();
 
                 // Add to version resolver for batch syncing
-                self.version_resolver
-                    .add_version(source_name, &source_url, version);
+                self.version_resolver.add_version(source_name, &source_url, version);
             }
         }
 
         // Pre-sync all sources (performs Git operations)
-        self.version_resolver
-            .pre_sync_sources()
-            .await
-            .context("Failed to sync sources")?;
+        self.version_resolver.pre_sync_sources().await.context("Failed to sync sources")?;
 
         Ok(())
     }
@@ -820,32 +809,25 @@ impl DependencyResolver {
             for (_, dep) in deps {
                 if let Some(source_name) = dep.get_source() {
                     let source_url =
-                        self.source_manager
-                            .get_source_url(source_name)
-                            .ok_or_else(|| AgpmError::SourceNotFound {
+                        self.source_manager.get_source_url(source_name).ok_or_else(|| {
+                            AgpmError::SourceNotFound {
                                 name: source_name.to_string(),
-                            })?;
+                            }
+                        })?;
 
                     let version = dep.get_version();
 
                     // Add to version resolver for batch resolution
-                    self.version_resolver
-                        .add_version(source_name, &source_url, version);
+                    self.version_resolver.add_version(source_name, &source_url, version);
                 }
             }
 
             // If entries were rebuilt, we need to sync sources first
-            self.version_resolver
-                .pre_sync_sources()
-                .await
-                .context("Failed to sync sources")?;
+            self.version_resolver.pre_sync_sources().await.context("Failed to sync sources")?;
         }
 
         // Now resolve all versions to SHAs
-        self.version_resolver
-            .resolve_all()
-            .await
-            .context("Failed to resolve versions to SHAs")?;
+        self.version_resolver.resolve_all().await.context("Failed to resolve versions to SHAs")?;
 
         // Step 3: Create worktrees for all resolved SHAs in parallel
         let prepared_versions = self.create_worktrees_for_resolved_versions().await?;
@@ -857,11 +839,11 @@ impl DependencyResolver {
         for (_, dep) in deps {
             if let Some(source_name) = dep.get_source() {
                 let source_url =
-                    self.source_manager
-                        .get_source_url(source_name)
-                        .ok_or_else(|| AgpmError::SourceNotFound {
+                    self.source_manager.get_source_url(source_name).ok_or_else(|| {
+                        AgpmError::SourceNotFound {
                             name: source_name.to_string(),
-                        })?;
+                        }
+                    })?;
 
                 // Check if this is a local directory source
                 if crate::utils::is_local_path(&source_url) {
@@ -1092,11 +1074,8 @@ impl DependencyResolver {
         > = HashMap::new();
         let mut processed: HashSet<(crate::core::ResourceType, String, Option<String>)> =
             HashSet::new();
-        let mut queue: Vec<(
-            String,
-            ResourceDependency,
-            Option<crate::core::ResourceType>,
-        )> = Vec::new();
+        let mut queue: Vec<(String, ResourceDependency, Option<crate::core::ResourceType>)> =
+            Vec::new();
 
         // Add initial dependencies to queue
         for (name, dep) in base_deps {
@@ -1161,9 +1140,8 @@ impl DependencyResolver {
                 for (dep_resource_type_str, dep_specs) in deps_map {
                     // Convert plural form from YAML (e.g., "agents") to ResourceType enum
                     // The ResourceType::FromStr accepts both plural and singular forms
-                    let dep_resource_type: crate::core::ResourceType = dep_resource_type_str
-                        .parse()
-                        .unwrap_or(crate::core::ResourceType::Snippet);
+                    let dep_resource_type: crate::core::ResourceType =
+                        dep_resource_type_str.parse().unwrap_or(crate::core::ResourceType::Snippet);
 
                     for dep_spec in dep_specs {
                         // Convert DependencySpec to ResourceDependency
@@ -1189,10 +1167,7 @@ impl DependencyResolver {
                         // Include source to prevent cross-source contamination
                         let from_key = (resource_type, name.clone(), source.clone());
                         let dep_ref = format!("{dep_resource_type}/{trans_name}");
-                        self.dependency_map
-                            .entry(from_key)
-                            .or_default()
-                            .push(dep_ref);
+                        self.dependency_map.entry(from_key).or_default().push(dep_ref);
 
                         // Cache the resource type for this transitive dependency
                         let type_key = (trans_name.clone(), trans_source.clone());
@@ -1290,9 +1265,8 @@ impl DependencyResolver {
                         let version = dep.get_version().unwrap_or("main").to_string();
 
                         // Check if we already have this version resolved
-                        let sha = if let Some(prepared) = self
-                            .prepared_versions
-                            .get(&Self::group_key(source_name, &version))
+                        let sha = if let Some(prepared) =
+                            self.prepared_versions.get(&Self::group_key(source_name, &version))
                         {
                             prepared.resolved_commit.clone()
                         } else {
@@ -1363,10 +1337,7 @@ impl DependencyResolver {
                 Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
                     source: parent_detail.source.clone(),
                     path: spec.path.clone(),
-                    version: spec
-                        .version
-                        .clone()
-                        .or_else(|| parent_detail.version.clone()),
+                    version: spec.version.clone().or_else(|| parent_detail.version.clone()),
                     branch: None,
                     rev: None,
                     command: None,
@@ -1382,11 +1353,7 @@ impl DependencyResolver {
     /// Generate a dependency name from a path.
     fn generate_dependency_name(&self, path: &str) -> String {
         // Extract filename without extension
-        Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(path)
-            .to_string()
+        Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path).to_string()
     }
 
     /// Resolve all manifest dependencies into a deterministic lockfile.
@@ -1551,9 +1518,7 @@ impl DependencyResolver {
         self.prepare_remote_groups(&base_deps).await?;
 
         // Resolve transitive dependencies if enabled
-        let deps = self
-            .resolve_transitive_dependencies(&base_deps, enable_transitive)
-            .await?;
+        let deps = self.resolve_transitive_dependencies(&base_deps, enable_transitive).await?;
 
         // Resolve each dependency (including transitive ones)
         for (name, dep) in &deps {
@@ -1660,7 +1625,10 @@ impl DependencyResolver {
             for conflict in &conflicts {
                 error_msg.push_str(&format!("{conflict}\n"));
             }
-            return Err(AgpmError::Other { message: error_msg }.into());
+            return Err(AgpmError::Other {
+                message: error_msg,
+            }
+            .into());
         }
 
         // Post-process dependencies to add version information
@@ -1753,10 +1721,7 @@ impl DependencyResolver {
                         }
                         crate::core::ResourceType::Script => {
                             // Scripts maintain their original extension
-                            dep_path
-                                .extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("sh")
+                            dep_path.extension().and_then(|e| e.to_str()).unwrap_or("sh")
                         }
                         _ => "md",
                     };
@@ -1817,12 +1782,11 @@ impl DependencyResolver {
             })?;
 
             // Get source URL
-            let source_url = self
-                .source_manager
-                .get_source_url(source_name)
-                .ok_or_else(|| AgpmError::SourceNotFound {
+            let source_url = self.source_manager.get_source_url(source_name).ok_or_else(|| {
+                AgpmError::SourceNotFound {
                     name: source_name.to_string(),
-                })?;
+                }
+            })?;
 
             let version_key = dep
                 .get_version()
@@ -1834,10 +1798,7 @@ impl DependencyResolver {
                 self.prepared_versions.get(&prepared_key)
             {
                 // Use prepared version
-                (
-                    prepared.resolved_version.clone(),
-                    prepared.resolved_commit.clone(),
-                )
+                (prepared.resolved_version.clone(), prepared.resolved_commit.clone())
             } else {
                 // This dependency wasn't prepared (e.g., when called from `agpm add`)
                 // We need to prepare it on-demand
@@ -1846,10 +1807,7 @@ impl DependencyResolver {
 
                 // Now it should be prepared
                 if let Some(prepared) = self.prepared_versions.get(&prepared_key) {
-                    (
-                        prepared.resolved_version.clone(),
-                        prepared.resolved_commit.clone(),
-                    )
+                    (prepared.resolved_version.clone(), prepared.resolved_commit.clone())
                 } else {
                     return Err(anyhow::anyhow!(
                         "Failed to prepare dependency '{name}' from source '{source_name}' @ '{version_key}'"
@@ -1880,10 +1838,7 @@ impl DependencyResolver {
                         }
                         crate::core::ResourceType::Script => {
                             // Scripts maintain their original extension
-                            dep_path
-                                .extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("sh")
+                            dep_path.extension().and_then(|e| e.to_str()).unwrap_or("sh")
                         }
                         _ => "md",
                     };
@@ -1951,11 +1906,7 @@ impl DependencyResolver {
     /// - `source`: The source name (None for local dependencies)
     fn get_dependencies_for(&self, name: &str, source: Option<&str>) -> Vec<String> {
         let resource_type = self.get_resource_type_with_source(name, source);
-        let key = (
-            resource_type,
-            name.to_string(),
-            source.map(std::string::ToString::to_string),
-        );
+        let key = (resource_type, name.to_string(), source.map(std::string::ToString::to_string));
         self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
 
@@ -2065,10 +2016,8 @@ impl DependencyResolver {
                 // Use relative path if it exists, otherwise use resource name
                 let filename =
                     if relative_path.as_os_str().is_empty() || relative_path == matched_path {
-                        let extension = matched_path
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("md");
+                        let extension =
+                            matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
                         format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
@@ -2107,12 +2056,11 @@ impl DependencyResolver {
                 message: format!("Pattern dependency '{name}' has no source specified"),
             })?;
 
-            let source_url = self
-                .source_manager
-                .get_source_url(source_name)
-                .ok_or_else(|| AgpmError::SourceNotFound {
+            let source_url = self.source_manager.get_source_url(source_name).ok_or_else(|| {
+                AgpmError::SourceNotFound {
                     name: source_name.to_string(),
-                })?;
+                }
+            })?;
 
             let version_key = dep
                 .get_version()
@@ -2175,10 +2123,8 @@ impl DependencyResolver {
                 // Use relative path if it exists, otherwise use resource name
                 let filename =
                     if relative_path.as_os_str().is_empty() || relative_path == matched_path {
-                        let extension = matched_path
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("md");
+                        let extension =
+                            matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
                         format!("{resource_name}.{extension}")
                     } else {
                         relative_path.to_string_lossy().to_string()
@@ -2302,10 +2248,7 @@ impl DependencyResolver {
             crate::core::ResourceType::McpServer
         } else {
             // Check transitive_types cache for discovered transitive dependencies
-            let type_key = (
-                name.to_string(),
-                source.map(std::string::ToString::to_string),
-            );
+            let type_key = (name.to_string(), source.map(std::string::ToString::to_string));
             if let Some(&resource_type) = self.transitive_types.get(&type_key) {
                 return resource_type;
             }
@@ -2552,11 +2495,7 @@ impl DependencyResolver {
             specific.into_iter().collect()
         } else {
             // Update all dependencies
-            self.manifest
-                .all_dependencies()
-                .iter()
-                .map(|(name, _)| (*name).to_string())
-                .collect()
+            self.manifest.all_dependencies().iter().map(|(name, _)| (*name).to_string()).collect()
         };
 
         // Get all base dependencies including MCP servers (clone to avoid borrow checker issues)
@@ -2575,9 +2514,7 @@ impl DependencyResolver {
         self.prepare_remote_groups(&base_deps).await?;
 
         // Resolve transitive dependencies (always enabled for update to maintain consistency)
-        let deps = self
-            .resolve_transitive_dependencies(&base_deps, true)
-            .await?;
+        let deps = self.resolve_transitive_dependencies(&base_deps, true).await?;
 
         for (name, dep) in deps {
             if !deps_to_check.contains(&name) {
@@ -2712,12 +2649,10 @@ impl DependencyResolver {
         // Get version constraint (None means HEAD/unspecified)
         if let Some(version) = dep.get_version() {
             // Add to conflict detector
-            self.conflict_detector
-                .add_requirement(&resource_id, required_by, version);
+            self.conflict_detector.add_requirement(&resource_id, required_by, version);
         } else {
             // No version specified - use HEAD marker
-            self.conflict_detector
-                .add_requirement(&resource_id, required_by, "HEAD");
+            self.conflict_detector.add_requirement(&resource_id, required_by, "HEAD");
         }
     }
 
@@ -2738,9 +2673,7 @@ impl DependencyResolver {
 
         // Helper to extract filename from path
         let extract_filename = |path: &str| -> Option<String> {
-            path.split('/')
-                .next_back()
-                .map(std::string::ToString::to_string)
+            path.split('/').next_back().map(std::string::ToString::to_string)
         };
 
         // Build lookup map from all lockfile entries
@@ -2748,21 +2681,13 @@ impl DependencyResolver {
             let normalized_path = normalize_path(&entry.path);
             // Store by full path
             lookup_map.insert(
-                (
-                    crate::core::ResourceType::Agent,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Agent, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             // Also store by filename for backward compatibility
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::Agent,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::Agent, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2770,20 +2695,12 @@ impl DependencyResolver {
         for entry in &lockfile.snippets {
             let normalized_path = normalize_path(&entry.path);
             lookup_map.insert(
-                (
-                    crate::core::ResourceType::Snippet,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Snippet, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::Snippet,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::Snippet, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2791,20 +2708,12 @@ impl DependencyResolver {
         for entry in &lockfile.commands {
             let normalized_path = normalize_path(&entry.path);
             lookup_map.insert(
-                (
-                    crate::core::ResourceType::Command,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Command, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::Command,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::Command, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2812,20 +2721,12 @@ impl DependencyResolver {
         for entry in &lockfile.scripts {
             let normalized_path = normalize_path(&entry.path);
             lookup_map.insert(
-                (
-                    crate::core::ResourceType::Script,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Script, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::Script,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::Script, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2833,20 +2734,12 @@ impl DependencyResolver {
         for entry in &lockfile.hooks {
             let normalized_path = normalize_path(&entry.path);
             lookup_map.insert(
-                (
-                    crate::core::ResourceType::Hook,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Hook, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::Hook,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::Hook, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2863,11 +2756,7 @@ impl DependencyResolver {
             );
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
-                    (
-                        crate::core::ResourceType::McpServer,
-                        filename,
-                        entry.source.clone(),
-                    ),
+                    (crate::core::ResourceType::McpServer, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -2879,61 +2768,37 @@ impl DependencyResolver {
 
         for entry in &lockfile.agents {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::Agent,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Agent, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
         for entry in &lockfile.snippets {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::Snippet,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Snippet, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
         for entry in &lockfile.commands {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::Command,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Command, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
         for entry in &lockfile.scripts {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::Script,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Script, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
         for entry in &lockfile.hooks {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::Hook,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::Hook, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
         for entry in &lockfile.mcp_servers {
             resource_info_map.insert(
-                (
-                    crate::core::ResourceType::McpServer,
-                    entry.name.clone(),
-                    entry.source.clone(),
-                ),
+                (crate::core::ResourceType::McpServer, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
             );
         }
@@ -3091,11 +2956,7 @@ impl DependencyResolver {
                 // Check if local path exists or is relative
                 let path = Path::new(dep.get_path());
                 if path.is_absolute() && !path.exists() {
-                    anyhow::bail!(
-                        "Local dependency '{}' not found at: {}",
-                        name,
-                        path.display()
-                    );
+                    anyhow::bail!("Local dependency '{}' not found at: {}", name, path.display());
                 }
             } else {
                 // Verify source exists
@@ -3375,10 +3236,7 @@ mod tests {
     #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies() {
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "official".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
 
         // Add two dependencies with different versions of the same resource
         manifest.add_dependency(
@@ -3423,11 +3281,7 @@ mod tests {
     #[tokio::test]
     async fn test_pre_sync_sources() {
         // Skip test if git is not available
-        if std::process::Command::new("git")
-            .arg("--version")
-            .output()
-            .is_err()
-        {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
             eprintln!("Skipping test: git not available");
             return;
         }
@@ -3438,11 +3292,7 @@ mod tests {
         std::fs::create_dir(&repo_dir).unwrap();
 
         // Initialize git repo
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
 
         std::process::Command::new("git")
             .args(["config", "user.email", "test@example.com"])
@@ -3458,11 +3308,7 @@ mod tests {
 
         // Create test files
         std::fs::create_dir_all(repo_dir.join("agents")).unwrap();
-        std::fs::write(
-            repo_dir.join("agents/test.md"),
-            "# Test Agent\n\nTest content",
-        )
-        .unwrap();
+        std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content").unwrap();
 
         // Commit files
         std::process::Command::new("git")
@@ -3551,17 +3397,11 @@ mod tests {
 
         // Verify resolution succeeded by checking we have resolved versions
         let all_resolved = resolver.version_resolver.get_all_resolved();
-        assert!(
-            !all_resolved.is_empty(),
-            "Resolution should produce resolved versions"
-        );
+        assert!(!all_resolved.is_empty(), "Resolution should produce resolved versions");
 
         // Check that v1.0.0 was resolved to a SHA
         let key = ("test-source".to_string(), "v1.0.0".to_string());
-        assert!(
-            all_resolved.contains_key(&key),
-            "Should have resolved v1.0.0"
-        );
+        assert!(all_resolved.contains_key(&key), "Should have resolved v1.0.0");
 
         let sha = all_resolved.get(&key).unwrap();
         assert_eq!(sha.len(), 40, "SHA should be 40 characters");
@@ -3617,14 +3457,8 @@ mod tests {
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let resolver = DependencyResolver::with_cache(manifest, cache);
 
-        assert_eq!(
-            resolver.get_resource_type("agent1"),
-            crate::core::ResourceType::Agent
-        );
-        assert_eq!(
-            resolver.get_resource_type("snippet1"),
-            crate::core::ResourceType::Snippet
-        );
+        assert_eq!(resolver.get_resource_type("agent1"), crate::core::ResourceType::Agent);
+        assert_eq!(resolver.get_resource_type("snippet1"), crate::core::ResourceType::Snippet);
         // Dev concept removed - no longer testing dev-agent1 and dev-snippet1
     }
 
@@ -3725,10 +3559,7 @@ mod tests {
     #[test]
     fn test_verify_with_progress() {
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "agent".to_string(),
             ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
@@ -3884,10 +3715,7 @@ mod tests {
     #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies_no_redundancy() {
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "official".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
         manifest.add_dependency(
             "agent1".to_string(),
             ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
@@ -3988,15 +3816,8 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert_eq!(agent.name, "custom-agent");
         // Verify the custom target is relative to the default agents directory
-        assert!(
-            agent
-                .installed_at
-                .contains(".claude/agents/integrations/custom")
-        );
-        assert_eq!(
-            agent.installed_at,
-            ".claude/agents/integrations/custom/custom-agent.md"
-        );
+        assert!(agent.installed_at.contains(".claude/agents/integrations/custom"));
+        assert_eq!(agent.installed_at, ".claude/agents/integrations/custom/custom-agent.md");
     }
 
     #[tokio::test]
@@ -4102,10 +3923,7 @@ mod tests {
         assert_eq!(agent.name, "special-tool");
         // Verify both custom target and filename are used
         // Custom target is relative to default agents directory
-        assert_eq!(
-            agent.installed_at,
-            ".claude/agents/tools/ai/assistant.markdown"
-        );
+        assert_eq!(agent.installed_at, ".claude/agents/tools/ai/assistant.markdown");
     }
 
     #[tokio::test]
@@ -4315,11 +4133,7 @@ mod tests {
         // Custom target is relative to default agents directory
         assert_eq!(lockfile.agents.len(), 2);
         for agent in &lockfile.agents {
-            assert!(
-                agent
-                    .installed_at
-                    .starts_with(".claude/agents/custom/agents/")
-            );
+            assert!(agent.installed_at.starts_with(".claude/agents/custom/agents/"));
         }
 
         let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
@@ -4443,10 +4257,7 @@ mod tests {
         // Create a new manifest with agent1 updated to v2.0.0
         let mut updated_manifest = Manifest::new();
         // Use file:// URL to ensure it's treated as a Git source, not a local path
-        updated_manifest.add_source(
-            "test".to_string(),
-            format!("file://{}", source_dir.display()),
-        );
+        updated_manifest.add_source("test".to_string(), format!("file://{}", source_dir.display()));
         updated_manifest.add_dependency(
             "agent1".to_string(),
             ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
@@ -4483,10 +4294,8 @@ mod tests {
         // Now update only agent1
         let cache2 = Cache::with_dir(cache_dir).unwrap();
         let mut resolver2 = DependencyResolver::with_cache(updated_manifest, cache2);
-        let updated_lockfile = resolver2
-            .update(&initial_lockfile, Some(vec!["agent1".to_string()]))
-            .await
-            .unwrap();
+        let updated_lockfile =
+            resolver2.update(&initial_lockfile, Some(vec!["agent1".to_string()])).await.unwrap();
 
         // agent1 should be updated to v2.0.0
         let agent1 = updated_lockfile
@@ -5019,23 +4828,14 @@ mod tests {
         let agent = &lockfile.agents[0];
         assert!(agent.resolved_commit.is_some());
         // The resolved commit should start with our short hash
-        assert!(
-            agent
-                .resolved_commit
-                .as_ref()
-                .unwrap()
-                .starts_with(&commit_hash[..7])
-        );
+        assert!(agent.resolved_commit.as_ref().unwrap().starts_with(&commit_hash[..7]));
     }
 
     #[test]
     #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
     fn test_check_redundancies_with_details() {
         let mut manifest = Manifest::new();
-        manifest.add_source(
-            "official".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
 
         // Add redundant dependencies
         manifest.add_dependency(
@@ -5295,11 +5095,7 @@ mod tests {
         let result = resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1");
         assert!(result.is_ok(), "Should succeed with higher version");
         let resolved = result.unwrap();
-        assert_eq!(
-            resolved.get_version(),
-            Some("v2.0.0"),
-            "Should use higher semver version"
-        );
+        assert_eq!(resolved.get_version(), Some("v2.0.0"), "Should use higher semver version");
 
         // Test reverse order
         let result2 =

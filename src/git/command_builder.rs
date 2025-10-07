@@ -425,15 +425,9 @@ impl GitCommand {
                 // Extract the actual git operation (skip -C and path if present)
                 let git_operation =
                     if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
-                        full_args
-                            .get(2)
-                            .cloned()
-                            .unwrap_or_else(|| "unknown".to_string())
+                        full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
                     } else {
-                        full_args
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "unknown".to_string())
+                        full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
                     };
                 return Err(AgpmError::GitCommandError {
                     operation: git_operation,
@@ -451,9 +445,7 @@ impl GitCommand {
             }
         } else {
             tracing::trace!(target: "git", "Executing command without timeout");
-            output_future
-                .await
-                .context(format!("Failed to execute git {}", full_args.join(" ")))?
+            output_future.await.context(format!("Failed to execute git {}", full_args.join(" ")))?
         };
 
         if !output.status.success() {
@@ -541,15 +533,9 @@ impl GitCommand {
         // Log performance for expensive operations
         if elapsed.as_secs() > 1 {
             let operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
-                full_args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string())
+                full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
             } else {
-                full_args
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string())
+                full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
             };
 
             if let Some(ref ctx) = self.context {
@@ -560,15 +546,9 @@ impl GitCommand {
         } else if elapsed.as_millis() > 100 {
             // Log debug for moderately slow operations
             let operation = if full_args.first() == Some(&"-C".to_string()) && full_args.len() > 2 {
-                full_args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string())
+                full_args.get(2).cloned().unwrap_or_else(|| "unknown".to_string())
             } else {
-                full_args
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string())
+                full_args.first().cloned().unwrap_or_else(|| "unknown".to_string())
             };
 
             if let Some(ref ctx) = self.context {
@@ -578,7 +558,10 @@ impl GitCommand {
             }
         }
 
-        Ok(GitCommandOutput { stdout, stderr })
+        Ok(GitCommandOutput {
+            stdout,
+            stderr,
+        })
     }
 
     /// Execute the command and return only stdout as a trimmed string
@@ -771,11 +754,7 @@ impl GitCommand {
     /// ```
     pub fn clone_bare(url: &str, target: impl AsRef<Path>) -> Self {
         let mut cmd = Self::new();
-        let mut args = vec![
-            "clone".to_string(),
-            "--bare".to_string(),
-            "--progress".to_string(),
-        ];
+        let mut args = vec!["clone".to_string(), "--bare".to_string(), "--progress".to_string()];
 
         // Only use partial clone for remote repositories
         // Local repositories (file://, absolute paths, relative paths) need full clones
@@ -1029,10 +1008,7 @@ mod tests {
 
         assert!(result.is_ok(), "Git --version should succeed");
         let output = result.unwrap();
-        assert!(
-            !output.stdout.is_empty(),
-            "Git version should produce stdout"
-        );
+        assert!(!output.stdout.is_empty(), "Git version should produce stdout");
         // When run with RUST_LOG=debug, this should produce:
         // - "Executing git command: git --version"
         // - "Git command completed successfully"
@@ -1050,10 +1026,7 @@ mod tests {
         let cmd = GitCommand::clone("https://example.com/repo.git", "/tmp/target");
         assert_eq!(cmd.args[0], "clone");
         assert_eq!(cmd.args[1], "--progress");
-        assert!(
-            cmd.args
-                .contains(&"https://example.com/repo.git".to_string())
-        );
+        assert!(cmd.args.contains(&"https://example.com/repo.git".to_string()));
     }
 
     #[test]

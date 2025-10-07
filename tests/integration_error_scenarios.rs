@@ -26,9 +26,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     assert!(
         output.stderr.contains("Failed to clone")
             || output.stderr.contains("Git operation failed")
-            || output
-                .stderr
-                .contains("Local repository path does not exist")
+            || output.stderr.contains("Local repository path does not exist")
             || output.stderr.contains("does not exist"),
         "Expected error about clone failure, got: {}",
         output.stderr
@@ -65,9 +63,7 @@ large-agent = {{ source = "official", path = "agents/large-agent.md", version = 
     // Simulate disk space issues by pointing to invalid cache directory
     // Use a file path instead of directory path to trigger an error
     let invalid_cache_file = project.project_path().join("invalid_cache_file.txt");
-    fs::write(&invalid_cache_file, "This is a file, not a directory")
-        .await
-        .unwrap();
+    fs::write(&invalid_cache_file, "This is a file, not a directory").await.unwrap();
 
     // Note: TestProject uses its own cache dir, so we'd need to modify the test approach
     // For now, let's test that a valid install works and adapt the test
@@ -83,12 +79,8 @@ async fn test_corrupted_git_repo() {
     // Create a corrupted git repository in the sources directory
     let fake_repo_dir = project.sources_path().join("official");
     fs::create_dir_all(&fake_repo_dir).await.unwrap();
-    fs::create_dir_all(fake_repo_dir.join(".git"))
-        .await
-        .unwrap();
-    fs::write(fake_repo_dir.join(".git/config"), "corrupted config")
-        .await
-        .unwrap();
+    fs::create_dir_all(fake_repo_dir.join(".git")).await.unwrap();
+    fs::write(fake_repo_dir.join(".git/config"), "corrupted config").await.unwrap();
 
     // Create a manifest that references this corrupted repo
     let manifest_content = format!(
@@ -162,10 +154,7 @@ invalid yaml: [ unclosed
 
 # Broken Agent
 ";
-    project
-        .create_local_resource("agents/broken.md", malformed_content)
-        .await
-        .unwrap();
+    project.create_local_resource("agents/broken.md", malformed_content).await.unwrap();
 
     // Now malformed markdown should succeed but emit a warning
     let output = project.run_agpm(&["install"]).unwrap();
@@ -177,21 +166,15 @@ invalid yaml: [ unclosed
 
     // Check that a warning was emitted about invalid frontmatter
     assert!(
-        output
-            .stderr
-            .contains("Warning: Unable to parse YAML frontmatter")
-            || output
-                .stderr
-                .contains("Warning: Unable to parse TOML frontmatter"),
+        output.stderr.contains("Warning: Unable to parse YAML frontmatter")
+            || output.stderr.contains("Warning: Unable to parse TOML frontmatter"),
         "Expected warning about invalid frontmatter, got: {}",
         output.stderr
     );
 
     // Verify the file was installed despite invalid frontmatter
     // Default installation path is .claude/agents/
-    let installed_path = project
-        .project_path()
-        .join(".claude/agents/broken-agent.md");
+    let installed_path = project.project_path().join(".claude/agents/broken-agent.md");
     assert!(
         installed_path.exists(),
         "File should be installed despite invalid frontmatter at: {:?}",
@@ -209,10 +192,7 @@ async fn test_permission_conflicts() {
 
     // Create test source with agent
     let source_repo = project.create_source_repo("official").await.unwrap();
-    source_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
@@ -262,14 +242,8 @@ async fn test_invalid_version_specs() {
 
     // Create test source with valid agents
     let source_repo = project.create_source_repo("official").await.unwrap();
-    source_repo
-        .add_resource("agents", "invalid", "# Test Agent")
-        .await
-        .unwrap();
-    source_repo
-        .add_resource("agents", "malformed", "# Test Agent")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "invalid", "# Test Agent").await.unwrap();
+    source_repo.add_resource("agents", "malformed", "# Test Agent").await.unwrap();
     source_repo.commit_all("Add test agents").unwrap();
     source_repo.tag_version("v0.1.0").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
@@ -317,20 +291,12 @@ agent_b = { path = "./agents/b.md" }
     project.write_manifest(manifest_content).await.unwrap();
 
     // Create the local files
-    project
-        .create_local_resource("agents/a.md", "# Agent A")
-        .await
-        .unwrap();
-    project
-        .create_local_resource("agents/b.md", "# Agent B")
-        .await
-        .unwrap();
+    project.create_local_resource("agents/a.md", "# Agent A").await.unwrap();
+    project.create_local_resource("agents/b.md", "# Agent B").await.unwrap();
 
     // Test that validation succeeds (no circular dependencies in this simple case)
     let output = project.run_agpm(&["validate"]).unwrap();
-    output
-        .assert_success()
-        .assert_stdout_contains("Valid manifest");
+    output.assert_success().assert_stdout_contains("Valid manifest");
 
     // Test that install works with local files
     let output = project.run_agpm(&["install"]).unwrap();
@@ -386,14 +352,8 @@ local-agent = { path = "./agents/local.md" }
 local-snippet = { path = "./snippets/local.md" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
-    project
-        .create_local_resource("agents/local.md", "# Local Agent")
-        .await
-        .unwrap();
-    project
-        .create_local_resource("snippets/local.md", "# Local Snippet")
-        .await
-        .unwrap();
+    project.create_local_resource("agents/local.md", "# Local Agent").await.unwrap();
+    project.create_local_resource("snippets/local.md", "# Local Snippet").await.unwrap();
 
     // Create partial lockfile to simulate interrupted operation
     let partial_lockfile = r#"
@@ -404,9 +364,7 @@ version = 1
 name = "official"
 url = "https://github.com/example-org/agpm-official.git"
 "#;
-    fs::write(project.project_path().join("agpm.lock"), partial_lockfile)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), partial_lockfile).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -454,17 +412,12 @@ async fn test_large_file_handling() {
     let project = TestProject::new().await.unwrap();
 
     // Create large content (1MB+)
-    let large_content = format!(
-        "---\ntype: agent\nname: my-agent\n---\n\n{}",
-        "# Large Agent\n\n".repeat(50000)
-    );
+    let large_content =
+        format!("---\ntype: agent\nname: my-agent\n---\n\n{}", "# Large Agent\n\n".repeat(50000));
 
     // Create test source with large file
     let source_repo = project.create_source_repo("official").await.unwrap();
-    source_repo
-        .add_resource("agents", "my-agent", &large_content)
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "my-agent", &large_content).await.unwrap();
     source_repo.commit_all("Add large agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
@@ -500,20 +453,12 @@ local-agent = { path = "./agents/local.md" }
 local-snippet = { path = "./snippets/local.md" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
-    project
-        .create_local_resource("agents/local.md", "# Local Agent")
-        .await
-        .unwrap();
-    project
-        .create_local_resource("snippets/local.md", "# Local Snippet")
-        .await
-        .unwrap();
+    project.create_local_resource("agents/local.md", "# Local Agent").await.unwrap();
+    project.create_local_resource("snippets/local.md", "# Local Snippet").await.unwrap();
 
     // Create lockfile with null bytes (filesystem corruption simulation)
     let corrupted_lockfile = "version = 1\n\0\0\0corrupted\0data\n";
-    fs::write(project.project_path().join("agpm.lock"), corrupted_lockfile)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), corrupted_lockfile).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -542,18 +487,9 @@ helper = { path = "./agents/helper.md" }
 utils = { path = "./snippets/utils.md" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
-    project
-        .create_local_resource("agents/local.md", "# Local Agent")
-        .await
-        .unwrap();
-    project
-        .create_local_resource("agents/helper.md", "# Helper")
-        .await
-        .unwrap();
-    project
-        .create_local_resource("snippets/utils.md", "# Utils")
-        .await
-        .unwrap();
+    project.create_local_resource("agents/local.md", "# Local Agent").await.unwrap();
+    project.create_local_resource("agents/helper.md", "# Helper").await.unwrap();
+    project.create_local_resource("snippets/utils.md", "# Utils").await.unwrap();
 
     // Create lockfile missing some dependencies from manifest
     let incomplete_lockfile = r#"
@@ -573,12 +509,7 @@ installed_at = "agents/local-agent.md"
 
 # Missing 'helper' and 'utils' from manifest
 "#;
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        incomplete_lockfile,
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), incomplete_lockfile).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -609,13 +540,8 @@ test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" 
     project.write_manifest(manifest_content).await.unwrap();
 
     // Set PATH to a location that doesn't contain git
-    let output = project
-        .run_agpm_with_env(&["install"], &[("PATH", "/nonexistent")])
-        .unwrap();
-    assert!(
-        !output.success,
-        "Command should fail when git is not available"
-    );
+    let output = project.run_agpm_with_env(&["install"], &[("PATH", "/nonexistent")]).unwrap();
+    assert!(!output.success, "Command should fail when git is not available");
 
     // The error could be about git not found, file access, or command execution
     assert!(
@@ -662,14 +588,8 @@ async fn test_partial_installation_recovery() {
 
     // Create test source
     let source_repo = project.create_source_repo("official").await.unwrap();
-    source_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    source_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    source_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     source_repo.commit_all("Add test resources").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
@@ -690,16 +610,11 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create partial installation (only some files)
-    project
-        .create_local_resource("agents/my-agent.md", "# Partial agent")
-        .await
-        .unwrap();
+    project.create_local_resource("agents/my-agent.md", "# Partial agent").await.unwrap();
 
     // Create lockfile indicating complete installation
     let lockfile_content = LockfileFixture::basic().content;
-    fs::write(project.project_path().join("agpm.lock"), lockfile_content)
-        .await
-        .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded"); // Should detect missing files
@@ -717,10 +632,7 @@ async fn test_concurrent_lockfile_modification() {
 
     // Create test source
     let source_repo = project.create_source_repo("official").await.unwrap();
-    source_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
     source_repo.commit_all("Add my agent").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
@@ -753,10 +665,7 @@ async fn test_helpful_error_messages() {
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
-    assert!(
-        output.stderr.contains("error:"),
-        "Expected error indicator in stderr"
-    ); // Error indicator
+    assert!(output.stderr.contains("error:"), "Expected error indicator in stderr"); // Error indicator
     assert!(
         output.stderr.contains("Missing required field")
             || output.stderr.contains("Invalid manifest")

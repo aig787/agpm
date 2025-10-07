@@ -299,10 +299,7 @@ impl UpdateCommand {
 
         // For consistency with execute(), require the manifest to exist
         if !manifest_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Manifest file {} not found",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
         let project_dir = manifest_path.parent().unwrap();
@@ -359,10 +356,8 @@ impl UpdateCommand {
         let total_deps = ResourceIterator::count_manifest_dependencies(&manifest);
 
         // Start syncing sources phase (if we have remote deps)
-        let has_remote_deps = manifest
-            .all_dependencies()
-            .iter()
-            .any(|(_, dep)| dep.get_source().is_some());
+        let has_remote_deps =
+            manifest.all_dependencies().iter().any(|(_, dep)| dep.get_source().is_some());
 
         if !self.quiet && !self.no_progress && has_remote_deps {
             multi_phase.start_phase(InstallationPhase::SyncingSources, None);
@@ -396,9 +391,7 @@ impl UpdateCommand {
             multi_phase.start_phase(InstallationPhase::ResolvingDependencies, None);
         }
 
-        let mut new_lockfile = resolver
-            .update(&existing_lockfile, deps_to_update.clone())
-            .await?;
+        let mut new_lockfile = resolver.update(&existing_lockfile, deps_to_update.clone()).await?;
 
         // Complete resolving phase
         if !self.quiet && !self.no_progress && total_deps > 0 {
@@ -416,14 +409,8 @@ impl UpdateCommand {
                 new_entry.source.as_deref(),
             ) && old_entry.resolved_commit != new_entry.resolved_commit
             {
-                let old_version = old_entry
-                    .version
-                    .clone()
-                    .unwrap_or_else(|| "latest".to_string());
-                let new_version = new_entry
-                    .version
-                    .clone()
-                    .unwrap_or_else(|| "latest".to_string());
+                let old_version = old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                let new_version = new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
                 updates.push((
                     new_entry.name.clone(),
                     new_entry.source.clone(),
@@ -446,12 +433,7 @@ impl UpdateCommand {
             if !self.quiet && !self.no_progress {
                 println!(); // Add spacing
                 for (name, _source, old_ver, new_ver) in &updates {
-                    println!(
-                        "  {} {} → {}",
-                        name.cyan(),
-                        old_ver.yellow(),
-                        new_ver.green()
-                    );
+                    println!("  {} {} → {}", name.cyan(), old_ver.yellow(), new_ver.green());
                 }
             }
 
@@ -465,9 +447,7 @@ impl UpdateCommand {
                     }
                 }
                 // Return with error to indicate updates are available (exit code 1 for CI)
-                return Err(anyhow::anyhow!(
-                    "Dry-run detected updates available (exit 1)"
-                ));
+                return Err(anyhow::anyhow!("Dry-run detected updates available (exit 1)"));
             }
 
             // Install all updated resources first, before saving lockfile
@@ -587,10 +567,7 @@ mod tests {
     // Helper function to create a test manifest with dependencies
     fn create_test_manifest() -> Manifest {
         let mut sources = HashMap::new();
-        sources.insert(
-            "test-source".to_string(),
-            "file:///tmp/test-repo".to_string(),
-        );
+        sources.insert("test-source".to_string(), "file:///tmp/test-repo".to_string());
 
         let mut agents = HashMap::new();
         agents.insert(
@@ -657,9 +634,7 @@ mod tests {
         assert!(!non_existent_manifest.exists());
 
         let cmd = create_update_command();
-        let result = cmd
-            .execute_with_manifest_path(Some(non_existent_manifest))
-            .await;
+        let result = cmd.execute_with_manifest_path(Some(non_existent_manifest)).await;
 
         assert!(result.is_err());
         let error_msg = format!("{}", result.unwrap_err());

@@ -10,8 +10,7 @@
 //!
 //! - **Exact versions**: `"1.0.0"` - Matches exactly the specified version
 //! - **Semantic version ranges**: `"^1.0.0"`, `"~1.2.0"`, `">=1.0.0"` - Uses semver ranges
-//! - **Latest keywords**: `"latest"` (stable), `"latest-prerelease"` (any)
-//! - **Git references**: `"main"`, `"feature/branch"`, `"abc123"` - Git branches, tags, or commits
+//! - **Git references**: `"main"`, `"feature/branch"`, `"abc123"`, `"latest"` - Git branches, tags, or commits
 //!
 //! # Constraint Resolution
 //!
@@ -86,9 +85,8 @@
 //! | `>=1.0.0` | Greater than or equal | `">=1.0.0"` |
 //! | `<2.0.0` | Less than | `"<2.0.0"` |
 //! | `>=1.0.0, <2.0.0` | Range constraint | Multiple constraints |
-//! | `latest` | Latest stable version | No prereleases |
-//! | `latest-prerelease` | Latest version including prereleases | Includes alpha, beta, RC |
 //! | `main` | Git branch reference | Branch name |
+//! | `latest` | Git tag or branch name | Just a regular ref |
 //! | `v1.0.0` | Git tag reference | Tag name |
 //! | `abc123` | Git commit reference | Commit hash (full or abbreviated) |
 //!
@@ -105,7 +103,7 @@
 //! # Prerelease Version Handling
 //!
 //! - **Default behavior**: Prereleases (alpha, beta, RC) are excluded from resolution
-//! - **Explicit inclusion**: Use `latest-prerelease` or Git references to include prereleases
+//! - **Explicit inclusion**: Use Git references to include prereleases
 //! - **Version ranges**: Prereleases only match if explicitly specified in range
 //! - **Constraint sets**: If any constraint allows prereleases, the entire set does
 //!
@@ -134,9 +132,7 @@ use crate::core::AgpmError;
 ///
 /// - [`Exact`](Self::Exact): Matches exactly one specific semantic version
 /// - [`Requirement`](Self::Requirement): Matches versions using semver ranges
-/// - [`Latest`](Self::Latest): Matches the newest stable version available
-/// - [`LatestPrerelease`](Self::LatestPrerelease): Matches newest version including prereleases
-/// - [`GitRef`](Self::GitRef): Matches specific Git branches, tags, or commit hashes
+/// - [`GitRef`](Self::GitRef): Matches specific Git branches, tags, or commit hashes (including "latest")
 ///
 /// # Examples
 ///
@@ -149,8 +145,8 @@ use crate::core::AgpmError;
 /// let caret = VersionConstraint::parse("^1.0.0")?; // Compatible versions
 /// let tilde = VersionConstraint::parse("~1.2.0")?; // Patch-level compatible
 /// let range = VersionConstraint::parse(">=1.0.0, <2.0.0")?; // Version range
-/// let latest = VersionConstraint::parse("latest")?;
 /// let branch = VersionConstraint::parse("main")?;
+/// let latest_tag = VersionConstraint::parse("latest")?; // Just a tag name
 /// let commit = VersionConstraint::parse("abc123def")?;
 ///
 /// // Test version matching
@@ -162,9 +158,7 @@ use crate::core::AgpmError;
 /// # Prerelease Handling
 ///
 /// By default, most constraints exclude prerelease versions to ensure stability:
-/// - `Latest` only matches stable versions (no `-alpha`, `-beta`, `-rc` suffixes)
-/// - `LatestPrerelease` includes all versions including prereleases
-/// - `GitRef` constraints allow prereleases since they reference specific commits
+/// - `GitRef` constraints (including "latest" tag names) may reference any commit
 ///
 /// # Git Reference Matching
 ///
@@ -172,21 +166,28 @@ use crate::core::AgpmError;
 /// - Branch names: `"main"`, `"develop"`, `"feature/auth"`
 /// - Tag names: `"v1.0.0"`, `"release-2023-01"`
 /// - Commit hashes: `"abc123def456"` (full or abbreviated)
+///
+/// # Prefix Support (Monorepo Versioning)
+///
+/// Constraints can include optional prefixes for monorepo-style versioning:
+/// - `"agents-v1.0.0"`: Exact version with prefix
+/// - `"agents-^v1.0.0"`: Compatible version range with prefix
+/// - Prefixed constraints only match tags with the same prefix
 #[derive(Debug, Clone)]
 pub enum VersionConstraint {
-    /// Exact version match (e.g., "1.0.0")
-    Exact(Version),
+    /// Exact version match with optional prefix (e.g., "1.0.0", "agents-v1.0.0")
+    Exact {
+        prefix: Option<String>,
+        version: Version,
+    },
 
-    /// Semantic version requirement (e.g., "^1.0.0", "~1.2.0", ">=1.0.0")
-    Requirement(VersionReq),
+    /// Semantic version requirement with optional prefix (e.g., "^1.0.0", "agents-^v1.0.0")
+    Requirement {
+        prefix: Option<String>,
+        req: VersionReq,
+    },
 
-    /// Latest stable version
-    Latest,
-
-    /// Latest version including prereleases
-    LatestPrerelease,
-
-    /// Git tag or branch name
+    /// Git tag or branch name (including "latest" - it's just a tag name)
     GitRef(String),
 }
 
@@ -199,10 +200,10 @@ impl VersionConstraint {
     ///
     /// # Parsing Logic
     ///
-    /// 1. **Special keywords**: `"latest"`, `"*"`, `"latest-prerelease"`
+    /// 1. **Special keywords**: `"*"` (wildcard for any version)
     /// 2. **Exact versions**: `"1.0.0"`, `"v1.0.0"` (without range operators)
     /// 3. **Version requirements**: `"^1.0.0"`, `"~1.2.0"`, `">=1.0.0"`, `"<2.0.0"`
-    /// 4. **Git references**: Any string that doesn't match the above patterns
+    /// 4. **Git references**: Any string that doesn't match the above patterns (including "latest")
     ///
     /// # Arguments
     ///
@@ -229,13 +230,12 @@ impl VersionConstraint {
     /// let range = VersionConstraint::parse(">1.0.0, <2.0.0")?; // Range
     ///
     /// // Special keywords
-    /// let latest = VersionConstraint::parse("latest")?;     // Latest stable
     /// let any = VersionConstraint::parse("*")?;             // Any version
-    /// let latest_pre = VersionConstraint::parse("latest-prerelease")?;
     ///
     /// // Git references
     /// let branch = VersionConstraint::parse("main")?;       // Branch name
     /// let tag = VersionConstraint::parse("release-v1")?;    // Tag name
+    /// let latest = VersionConstraint::parse("latest")?;     // Just a tag/branch name
     /// let commit = VersionConstraint::parse("abc123def")?;  // Commit hash
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -247,43 +247,49 @@ impl VersionConstraint {
     pub fn parse(constraint: &str) -> Result<Self> {
         let trimmed = constraint.trim();
 
-        // Check for special keywords
-        if trimmed == "latest" || trimmed == "*" {
-            return Ok(Self::Latest);
-        }
+        // Extract prefix from constraint first (e.g., "agents-^v1.0.0" → (Some("agents"), "^v1.0.0"))
+        let (prefix, version_str) = crate::version::split_prefix_and_version(trimmed);
 
-        if trimmed == "latest-prerelease" {
-            return Ok(Self::LatestPrerelease);
+        // Check for wildcard in the version portion (supports both "*" and "agents-*")
+        if version_str == "*" {
+            // Wildcard means any version - treat as a GitRef that matches everything
+            return Ok(Self::GitRef(trimmed.to_string()));
         }
 
         // Try to parse as exact version (with or without 'v' prefix)
-        let version_str = trimmed.strip_prefix('v').unwrap_or(trimmed);
-        if let Ok(version) = Version::parse(version_str) {
+        let cleaned_version_str = version_str.strip_prefix('v').unwrap_or(version_str);
+        if let Ok(version) = Version::parse(cleaned_version_str) {
             // Check if it's a range operator
-            if !trimmed.starts_with('^')
-                && !trimmed.starts_with('~')
-                && !trimmed.starts_with('>')
-                && !trimmed.starts_with('<')
-                && !trimmed.starts_with('=')
+            if !version_str.starts_with('^')
+                && !version_str.starts_with('~')
+                && !version_str.starts_with('>')
+                && !version_str.starts_with('<')
+                && !version_str.starts_with('=')
             {
-                return Ok(Self::Exact(version));
+                return Ok(Self::Exact {
+                    prefix,
+                    version,
+                });
             }
         }
 
         // Try to parse as version requirement (with v-prefix normalization)
-        match crate::version::parse_version_req(trimmed) {
-            Ok(req) => return Ok(Self::Requirement(req)),
+        match crate::version::parse_version_req(version_str) {
+            Ok(req) => {
+                return Ok(Self::Requirement {
+                    prefix,
+                    req,
+                });
+            }
             Err(e) => {
                 // If it looks like a semver constraint but failed to parse, return error
-                if trimmed.starts_with('^')
-                    || trimmed.starts_with('~')
-                    || trimmed.starts_with('=')
-                    || trimmed.starts_with('>')
-                    || trimmed.starts_with('<')
+                if version_str.starts_with('^')
+                    || version_str.starts_with('~')
+                    || version_str.starts_with('=')
+                    || version_str.starts_with('>')
+                    || version_str.starts_with('<')
                 {
-                    return Err(anyhow::anyhow!(
-                        "Invalid semver constraint '{trimmed}': {e}"
-                    ));
+                    return Err(anyhow::anyhow!("Invalid semver constraint '{trimmed}': {e}"));
                 }
                 // Otherwise it might be a git ref, continue
             }
@@ -300,8 +306,6 @@ impl VersionConstraint {
     ///
     /// - **Exact**: Version must match exactly
     /// - **Requirement**: Version must satisfy the semver range
-    /// - **Latest**: Version must be stable (no prerelease components)
-    /// - **`LatestPrerelease`**: Any version matches (selection happens during resolution)
     /// - **`GitRef`**: Never matches semantic versions (Git refs are matched separately)
     ///
     /// # Arguments
@@ -322,10 +326,6 @@ impl VersionConstraint {
     /// let version = Version::parse("1.2.3")?;
     ///
     /// assert!(constraint.matches(&version)); // 1.2.3 is compatible with ^1.0.0
-    ///
-    /// let prerelease = Version::parse("1.0.0-alpha.1")?;
-    /// let latest = VersionConstraint::parse("latest")?;
-    /// assert!(!latest.matches(&prerelease)); // Latest excludes prereleases
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     ///
@@ -337,11 +337,15 @@ impl VersionConstraint {
     #[must_use]
     pub fn matches(&self, version: &Version) -> bool {
         match self {
-            Self::Exact(v) => v == version,
-            Self::Requirement(req) => req.matches(version),
-            Self::Latest => version.pre.is_empty(), // Latest excludes prereleases
-            Self::LatestPrerelease => true,         // Any version matches
-            Self::GitRef(_) => false,               // Git refs don't match semver versions
+            Self::Exact {
+                version: v,
+                ..
+            } => v == version,
+            Self::Requirement {
+                req,
+                ..
+            } => req.matches(version),
+            Self::GitRef(_) => false, // Git refs don't match semver versions
         }
     }
 
@@ -387,6 +391,89 @@ impl VersionConstraint {
         }
     }
 
+    /// Check if a VersionInfo satisfies this constraint, including prefix matching.
+    ///
+    /// This method performs comprehensive matching that considers both the prefix
+    /// (for monorepo-style versioning) and the semantic version. It's the preferred
+    /// method for version resolution when working with potentially prefixed versions.
+    ///
+    /// # Matching Rules
+    ///
+    /// - **Prefix matching**: Constraint and version must have the same prefix (both None, or same String)
+    /// - **Version matching**: After prefix check, applies standard semver matching rules
+    /// - **Prerelease handling**: Follows same rules as [`matches`](Self::matches)
+    ///
+    /// # Arguments
+    ///
+    /// * `version_info` - The version information to test, including prefix and semver
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if both the prefix matches AND the version satisfies the constraint.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm::version::VersionInfo;
+    /// use semver::Version;
+    ///
+    /// // Prefixed version matching
+    /// let constraint = VersionConstraint::parse("agents-^v1.0.0")?;
+    /// let version = VersionInfo {
+    ///     prefix: Some("agents".to_string()),
+    ///     version: Version::parse("1.2.0")?,
+    ///     tag: "agents-v1.2.0".to_string(),
+    ///     prerelease: false,
+    /// };
+    /// assert!(constraint.matches_version_info(&version));
+    ///
+    /// // Prefix mismatch
+    /// let wrong_prefix = VersionInfo {
+    ///     prefix: Some("snippets".to_string()),
+    ///     version: Version::parse("1.2.0")?,
+    ///     tag: "snippets-v1.2.0".to_string(),
+    ///     prerelease: false,
+    /// };
+    /// assert!(!constraint.matches_version_info(&wrong_prefix));
+    ///
+    /// // Unprefixed constraint only matches unprefixed versions
+    /// let no_prefix_constraint = VersionConstraint::parse("^1.0.0")?;
+    /// let no_prefix_version = VersionInfo {
+    ///     prefix: None,
+    ///     version: Version::parse("1.2.0")?,
+    ///     tag: "v1.2.0".to_string(),
+    ///     prerelease: false,
+    /// };
+    /// assert!(no_prefix_constraint.matches_version_info(&no_prefix_version));
+    /// assert!(!no_prefix_constraint.matches_version_info(&version)); // Has prefix
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn matches_version_info(&self, version_info: &crate::version::VersionInfo) -> bool {
+        // Check prefix first
+        let constraint_prefix = match self {
+            Self::Exact {
+                prefix,
+                ..
+            }
+            | Self::Requirement {
+                prefix,
+                ..
+            } => prefix.as_ref(),
+            _ => None,
+        };
+
+        // Prefix must match (both None or both Some with same value)
+        if constraint_prefix != version_info.prefix.as_ref() {
+            return false;
+        }
+
+        // Then check version using existing logic
+        self.matches(&version_info.version)
+    }
+
     /// Convert this constraint to a semantic version requirement if applicable.
     ///
     /// This method converts version-based constraints into [`VersionReq`] objects
@@ -402,7 +489,6 @@ impl VersionConstraint {
     ///
     /// - **Exact**: Converted to `=1.0.0` requirement
     /// - **Requirement**: Returns the inner `VersionReq` directly
-    /// - **Latest/LatestPrerelease**: Converted to `*` (any version) requirement
     /// - **`GitRef`**: Returns `None` (cannot be converted)
     ///
     /// # Examples
@@ -430,24 +516,19 @@ impl VersionConstraint {
     /// or for performing version calculations that require `VersionReq` objects.
     #[must_use]
     pub fn to_version_req(&self) -> Option<VersionReq> {
-        if matches!(
-            self,
-            Self::Exact(_) | Self::Requirement(_) | Self::Latest | Self::LatestPrerelease
-        ) {
-            match self {
-                Self::Exact(v) => {
-                    // Create an exact version requirement
-                    VersionReq::parse(&format!("={v}")).ok()
-                }
-                Self::Requirement(req) => Some(req.clone()),
-                Self::Latest | Self::LatestPrerelease => {
-                    // Match any version
-                    VersionReq::parse("*").ok()
-                }
-                _ => unreachable!(),
+        match self {
+            Self::Exact {
+                version,
+                ..
+            } => {
+                // Create an exact version requirement
+                VersionReq::parse(&format!("={version}")).ok()
             }
-        } else {
-            None
+            Self::Requirement {
+                req,
+                ..
+            } => Some(req.clone()),
+            Self::GitRef(_) => None, // Git refs cannot be converted to version requirements
         }
     }
 
@@ -459,8 +540,6 @@ impl VersionConstraint {
     ///
     /// # Prerelease Policy
     ///
-    /// - **Latest**: Excludes prereleases (stable versions only)
-    /// - **`LatestPrerelease`**: Explicitly allows prereleases
     /// - **`GitRef`**: Allows prereleases (Git refs may point to any commit)
     /// - **Exact/Requirement**: Excludes prereleases unless explicitly specified
     ///
@@ -474,14 +553,11 @@ impl VersionConstraint {
     /// ```rust,no_run
     /// use agpm::version::constraints::VersionConstraint;
     ///
-    /// let latest = VersionConstraint::parse("latest")?;
-    /// assert!(!latest.allows_prerelease()); // Stable only
-    ///
-    /// let latest_pre = VersionConstraint::parse("latest-prerelease")?;
-    /// assert!(latest_pre.allows_prerelease()); // Includes prereleases
-    ///
     /// let branch = VersionConstraint::parse("main")?;
     /// assert!(branch.allows_prerelease()); // Git refs may be any version
+    ///
+    /// let latest = VersionConstraint::parse("latest")?;
+    /// assert!(latest.allows_prerelease()); // Git ref - just a tag name
     ///
     /// let exact = VersionConstraint::parse("1.0.0")?;
     /// assert!(!exact.allows_prerelease()); // Exact stable version
@@ -494,17 +570,33 @@ impl VersionConstraint {
     /// the entire constraint set will consider prerelease versions as candidates.
     #[must_use]
     pub const fn allows_prerelease(&self) -> bool {
-        matches!(self, Self::LatestPrerelease | Self::GitRef(_))
+        matches!(self, Self::GitRef(_))
     }
 }
 
 impl fmt::Display for VersionConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Exact(v) => write!(f, "{v}"),
-            Self::Requirement(req) => write!(f, "{req}"),
-            Self::Latest => write!(f, "latest"),
-            Self::LatestPrerelease => write!(f, "latest-prerelease"),
+            Self::Exact {
+                prefix,
+                version,
+            } => {
+                if let Some(p) = prefix {
+                    write!(f, "{p}-{version}")
+                } else {
+                    write!(f, "{version}")
+                }
+            }
+            Self::Requirement {
+                prefix,
+                req,
+            } => {
+                if let Some(p) = prefix {
+                    write!(f, "{p}-{req}")
+                } else {
+                    write!(f, "{req}")
+                }
+            }
             Self::GitRef(ref_name) => write!(f, "{ref_name}"),
         }
     }
@@ -808,12 +900,12 @@ impl ConstraintSet {
     ///
     /// let mut stable_set = ConstraintSet::new();
     /// stable_set.add(VersionConstraint::parse("^1.0.0")?)?;
-    /// stable_set.add(VersionConstraint::parse("latest")?)?;
+    /// stable_set.add(VersionConstraint::parse("~1.2.0")?)?;
     /// assert!(!stable_set.allows_prerelease()); // All constraints exclude prereleases
     ///
     /// let mut prerelease_set = ConstraintSet::new();
     /// prerelease_set.add(VersionConstraint::parse("^1.0.0")?)?;
-    /// prerelease_set.add(VersionConstraint::parse("latest-prerelease")?)?;
+    /// prerelease_set.add(VersionConstraint::parse("main")?)?; // Git ref allows prereleases
     /// assert!(prerelease_set.allows_prerelease()); // One constraint allows prereleases
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -825,9 +917,7 @@ impl ConstraintSet {
     /// - If `true`: Prerelease versions are included in selection
     #[must_use]
     pub fn allows_prerelease(&self) -> bool {
-        self.constraints
-            .iter()
-            .any(VersionConstraint::allows_prerelease)
+        self.constraints.iter().any(VersionConstraint::allows_prerelease)
     }
 
     /// Check if a new constraint would conflict with existing constraints.
@@ -878,7 +968,21 @@ impl ConstraintSet {
         // Simple conflict detection - can be enhanced
         for existing in &self.constraints {
             match (existing, new_constraint) {
-                (VersionConstraint::Exact(v1), VersionConstraint::Exact(v2)) => {
+                (
+                    VersionConstraint::Exact {
+                        prefix: p1,
+                        version: v1,
+                    },
+                    VersionConstraint::Exact {
+                        prefix: p2,
+                        version: v2,
+                    },
+                ) => {
+                    // Different prefixes = different namespaces, no conflict
+                    if p1 != p2 {
+                        continue;
+                    }
+                    // Same prefix (or both None), conflict if different versions
                     if v1 != v2 {
                         return true;
                     }
@@ -887,6 +991,43 @@ impl ConstraintSet {
                     if r1 != r2 {
                         return true;
                     }
+                }
+                // For Requirement constraints, different prefixes = no conflict
+                (
+                    VersionConstraint::Exact {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Requirement {
+                        prefix: p2,
+                        ..
+                    },
+                )
+                | (
+                    VersionConstraint::Requirement {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Exact {
+                        prefix: p2,
+                        ..
+                    },
+                )
+                | (
+                    VersionConstraint::Requirement {
+                        prefix: p1,
+                        ..
+                    },
+                    VersionConstraint::Requirement {
+                        prefix: p2,
+                        ..
+                    },
+                ) => {
+                    // Different prefixes = different namespaces, no conflict
+                    if p1 != p2 {
+                        continue;
+                    }
+                    // Same prefix - could do more sophisticated conflict detection here
                 }
                 _ => {
                     // More sophisticated conflict detection could be added here
@@ -936,7 +1077,7 @@ impl ConstraintSet {
 /// // Add constraints for multiple dependencies
 /// resolver.add_constraint("dep1", "^1.0.0")?;
 /// resolver.add_constraint("dep2", "~2.1.0")?;
-/// resolver.add_constraint("dep3", "latest")?;
+/// resolver.add_constraint("dep3", "main")?;
 ///
 /// // Provide available versions for each dependency
 /// let mut available = HashMap::new();
@@ -1032,7 +1173,7 @@ impl ConstraintResolver {
     /// // Add constraints for different dependencies
     /// resolver.add_constraint("web-framework", "^2.0.0")?;
     /// resolver.add_constraint("database", "~1.5.0")?;
-    /// resolver.add_constraint("auth-lib", "latest")?;
+    /// resolver.add_constraint("auth-lib", "main")?;
     ///
     /// // Add multiple constraints for the same dependency
     /// resolver.add_constraint("api-client", ">=1.0.0")?;
@@ -1053,10 +1194,7 @@ impl ConstraintResolver {
     pub fn add_constraint(&mut self, dependency: &str, constraint: &str) -> Result<()> {
         let parsed = VersionConstraint::parse(constraint)?;
 
-        self.constraints
-            .entry(dependency.to_string())
-            .or_default()
-            .add(parsed)?;
+        self.constraints.entry(dependency.to_string()).or_default().add(parsed)?;
 
         Ok(())
     }
@@ -1156,18 +1294,14 @@ impl ConstraintResolver {
         let mut resolved = HashMap::new();
 
         for (dep, constraint_set) in &self.constraints {
-            let versions = available_versions
-                .get(dep)
-                .ok_or_else(|| AgpmError::Other {
-                    message: format!("No versions available for dependency: {dep}"),
-                })?;
+            let versions = available_versions.get(dep).ok_or_else(|| AgpmError::Other {
+                message: format!("No versions available for dependency: {dep}"),
+            })?;
 
             let best_match =
-                constraint_set
-                    .find_best_match(versions)
-                    .ok_or_else(|| AgpmError::Other {
-                        message: format!("No version satisfies constraints for dependency: {dep}"),
-                    })?;
+                constraint_set.find_best_match(versions).ok_or_else(|| AgpmError::Other {
+                    message: format!("No version satisfies constraints for dependency: {dep}"),
+                })?;
 
             resolved.insert(dep.clone(), best_match.clone());
         }
@@ -1184,29 +1318,28 @@ mod tests {
     fn test_version_constraint_parse() {
         // Exact version
         let constraint = VersionConstraint::parse("1.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Exact(_)));
+        assert!(matches!(constraint, VersionConstraint::Exact { .. }));
 
         // Version with v prefix
         let constraint = VersionConstraint::parse("v1.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Exact(_)));
+        assert!(matches!(constraint, VersionConstraint::Exact { .. }));
 
         // Caret requirement
         let constraint = VersionConstraint::parse("^1.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
         // Tilde requirement
         let constraint = VersionConstraint::parse("~1.2.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
         // Range requirement
         let constraint = VersionConstraint::parse(">=1.0.0, <2.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
-        // Latest
+        // Git refs (including "latest" - it's just a tag name)
         let constraint = VersionConstraint::parse("latest").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Latest));
+        assert!(matches!(constraint, VersionConstraint::GitRef(_)));
 
-        // Git ref
         let constraint = VersionConstraint::parse("main").unwrap();
         assert!(matches!(constraint, VersionConstraint::GitRef(_)));
     }
@@ -1218,7 +1351,10 @@ mod tests {
         let v200 = Version::parse("2.0.0").unwrap();
 
         // Exact match
-        let exact = VersionConstraint::Exact(v100.clone());
+        let exact = VersionConstraint::Exact {
+            prefix: None,
+            version: v100.clone(),
+        };
         assert!(exact.matches(&v100));
         assert!(!exact.matches(&v110));
 
@@ -1228,19 +1364,17 @@ mod tests {
         assert!(caret.matches(&v110));
         assert!(!caret.matches(&v200));
 
-        // Latest matches all stable versions
-        let latest = VersionConstraint::Latest;
-        assert!(latest.matches(&v100));
-        assert!(latest.matches(&v200));
+        // Git refs don't match semantic versions
+        let git_ref = VersionConstraint::GitRef("latest".to_string());
+        assert!(!git_ref.matches(&v100));
+        assert!(!git_ref.matches(&v200));
     }
 
     #[test]
     fn test_constraint_set() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse(">=1.0.0").unwrap())
-            .unwrap();
-        set.add(VersionConstraint::parse("<2.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse(">=1.0.0").unwrap()).unwrap();
+        set.add(VersionConstraint::parse("<2.0.0").unwrap()).unwrap();
 
         let v090 = Version::parse("0.9.0").unwrap();
         let v100 = Version::parse("1.0.0").unwrap();
@@ -1256,8 +1390,7 @@ mod tests {
     #[test]
     fn test_find_best_match() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
 
         let versions = vec![
             Version::parse("0.9.0").unwrap(),
@@ -1276,15 +1409,24 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // Add first exact version
-        set.add(VersionConstraint::Exact(Version::parse("1.0.0").unwrap()))
-            .unwrap();
+        set.add(VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        })
+        .unwrap();
 
         // Try to add conflicting exact version
-        let result = set.add(VersionConstraint::Exact(Version::parse("2.0.0").unwrap()));
+        let result = set.add(VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("2.0.0").unwrap(),
+        });
         assert!(result.is_err());
 
         // Adding the same version should be ok
-        let result = set.add(VersionConstraint::Exact(Version::parse("1.0.0").unwrap()));
+        let result = set.add(VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        });
         assert!(result.is_ok());
     }
 
@@ -1316,43 +1458,42 @@ mod tests {
         );
 
         let resolved = resolver.resolve(&available).unwrap();
-        assert_eq!(
-            resolved.get("dep1"),
-            Some(&Version::parse("1.5.0").unwrap())
-        );
-        assert_eq!(
-            resolved.get("dep2"),
-            Some(&Version::parse("2.1.5").unwrap())
-        );
+        assert_eq!(resolved.get("dep1"), Some(&Version::parse("1.5.0").unwrap()));
+        assert_eq!(resolved.get("dep2"), Some(&Version::parse("2.1.5").unwrap()));
     }
 
     #[test]
     fn test_allows_prerelease() {
-        assert!(!VersionConstraint::Latest.allows_prerelease());
-        assert!(VersionConstraint::LatestPrerelease.allows_prerelease());
         assert!(VersionConstraint::GitRef("main".to_string()).allows_prerelease());
-        assert!(!VersionConstraint::Exact(Version::parse("1.0.0").unwrap()).allows_prerelease());
+        assert!(VersionConstraint::GitRef("latest".to_string()).allows_prerelease()); // Git ref
+        assert!(
+            !VersionConstraint::Exact {
+                prefix: None,
+                version: Version::parse("1.0.0").unwrap()
+            }
+            .allows_prerelease()
+        );
     }
 
     #[test]
     fn test_version_constraint_parse_edge_cases() {
-        // Test latest-prerelease
+        // Test latest-prerelease (just a tag name)
         let constraint = VersionConstraint::parse("latest-prerelease").unwrap();
-        assert!(matches!(constraint, VersionConstraint::LatestPrerelease));
+        assert!(matches!(constraint, VersionConstraint::GitRef(_)));
 
-        // Test asterisk for latest
+        // Test asterisk wildcard
         let constraint = VersionConstraint::parse("*").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Latest));
+        assert!(matches!(constraint, VersionConstraint::GitRef(_)));
 
         // Test range operators
         let constraint = VersionConstraint::parse(">=1.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
         let constraint = VersionConstraint::parse("<2.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
         let constraint = VersionConstraint::parse("=1.0.0").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
 
         // Test git branch names
         let constraint = VersionConstraint::parse("feature/new-feature").unwrap();
@@ -1365,20 +1506,20 @@ mod tests {
 
     #[test]
     fn test_version_constraint_display() {
-        let exact = VersionConstraint::Exact(Version::parse("1.0.0").unwrap());
+        let exact = VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        };
         assert_eq!(format!("{exact}"), "1.0.0");
 
         let req = VersionConstraint::parse("^1.0.0").unwrap();
         assert_eq!(format!("{req}"), "^1.0.0");
 
-        let latest = VersionConstraint::Latest;
-        assert_eq!(format!("{latest}"), "latest");
-
-        let latest_pre = VersionConstraint::LatestPrerelease;
-        assert_eq!(format!("{latest_pre}"), "latest-prerelease");
-
         let git_ref = VersionConstraint::GitRef("main".to_string());
         assert_eq!(format!("{git_ref}"), "main");
+
+        let latest = VersionConstraint::GitRef("latest".to_string());
+        assert_eq!(format!("{latest}"), "latest");
     }
 
     #[test]
@@ -1388,16 +1529,22 @@ mod tests {
         assert!(!git_ref.matches_ref("develop"));
 
         // Other constraint types should return false for ref matching
-        let exact = VersionConstraint::Exact(Version::parse("1.0.0").unwrap());
+        let exact = VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        };
         assert!(!exact.matches_ref("v1.0.0"));
 
-        let latest = VersionConstraint::Latest;
-        assert!(!latest.matches_ref("latest"));
+        let latest = VersionConstraint::GitRef("latest".to_string());
+        assert!(latest.matches_ref("latest"));
     }
 
     #[test]
     fn test_version_constraint_to_version_req() {
-        let exact = VersionConstraint::Exact(Version::parse("1.0.0").unwrap());
+        let exact = VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        };
         let req = exact.to_version_req().unwrap();
         assert!(req.matches(&Version::parse("1.0.0").unwrap()));
 
@@ -1405,39 +1552,35 @@ mod tests {
         let req = caret.to_version_req().unwrap();
         assert!(req.matches(&Version::parse("1.0.0").unwrap()));
 
-        let latest = VersionConstraint::Latest;
-        let req = latest.to_version_req().unwrap();
-        assert!(req.matches(&Version::parse("1.0.0").unwrap()));
-
         let git_ref = VersionConstraint::GitRef("main".to_string());
         assert!(git_ref.to_version_req().is_none());
+
+        let latest = VersionConstraint::GitRef("latest".to_string());
+        assert!(latest.to_version_req().is_none()); // Git ref - cannot convert
     }
 
     #[test]
     fn test_constraint_set_with_prereleases() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::LatestPrerelease).unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         let v100_pre = Version::parse("1.0.0-alpha.1").unwrap();
         let v100 = Version::parse("1.0.0").unwrap();
 
         assert!(set.allows_prerelease());
 
+        // Git refs don't match semver versions
         let versions = vec![v100_pre.clone(), v100.clone()];
-        let best = set.find_best_match(&versions).unwrap();
-        assert_eq!(best, &v100); // Stable version should still be preferred when both match
+        let best = set.find_best_match(&versions);
+        assert!(best.is_none()); // Git refs don't match semver
     }
 
     #[test]
     fn test_constraint_set_no_matches() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse(">=2.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse(">=2.0.0").unwrap()).unwrap();
 
-        let versions = vec![
-            Version::parse("1.0.0").unwrap(),
-            Version::parse("1.5.0").unwrap(),
-        ];
+        let versions = vec![Version::parse("1.0.0").unwrap(), Version::parse("1.5.0").unwrap()];
 
         let best = set.find_best_match(&versions);
         assert!(best.is_none());
@@ -1474,8 +1617,7 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // Add first git ref
-        set.add(VersionConstraint::GitRef("main".to_string()))
-            .unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         // Try to add conflicting git ref
         let result = set.add(VersionConstraint::GitRef("develop".to_string()));
@@ -1487,28 +1629,26 @@ mod tests {
     }
 
     #[test]
-    fn test_latest_constraint_with_prereleases() {
-        let latest = VersionConstraint::Latest;
+    fn test_git_ref_constraint_with_versions() {
+        let git_ref = VersionConstraint::GitRef("latest".to_string());
 
         let v100_pre = Version::parse("1.0.0-alpha.1").unwrap();
         let v100 = Version::parse("1.0.0").unwrap();
 
-        // Latest should match stable versions
-        assert!(latest.matches(&v100));
-        // But not prereleases
-        assert!(!latest.matches(&v100_pre));
+        // Git refs don't match semantic versions
+        assert!(!git_ref.matches(&v100));
+        assert!(!git_ref.matches(&v100_pre));
     }
 
     #[test]
-    fn test_latest_prerelease_constraint() {
-        let latest_pre = VersionConstraint::LatestPrerelease;
+    fn test_git_ref_allows_prereleases() {
+        let git_ref = VersionConstraint::GitRef("latest".to_string());
 
-        let v100_pre = Version::parse("1.0.0-alpha.1").unwrap();
-        let v100 = Version::parse("1.0.0").unwrap();
+        // Git refs allow prereleases (they reference commits)
+        assert!(git_ref.allows_prerelease());
 
-        // LatestPrerelease should match any version
-        assert!(latest_pre.matches(&v100));
-        assert!(latest_pre.matches(&v100_pre));
+        let main_ref = VersionConstraint::GitRef("main".to_string());
+        assert!(main_ref.allows_prerelease());
     }
 
     #[test]
@@ -1516,15 +1656,17 @@ mod tests {
         let req = VersionConstraint::parse("^1.0.0").unwrap();
         assert!(!req.allows_prerelease());
 
-        let exact = VersionConstraint::Exact(Version::parse("1.0.0").unwrap());
+        let exact = VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        };
         assert!(!exact.allows_prerelease());
     }
 
     #[test]
     fn test_constraint_set_prerelease_filtering() {
         let mut set = ConstraintSet::new();
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
 
         let versions = vec![
             Version::parse("1.0.0-alpha.1").unwrap(),
@@ -1540,13 +1682,13 @@ mod tests {
     #[test]
     fn test_parse_with_whitespace() {
         let constraint = VersionConstraint::parse("  1.0.0  ").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Exact(_)));
+        assert!(matches!(constraint, VersionConstraint::Exact { .. }));
 
         let constraint = VersionConstraint::parse("  latest  ").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Latest));
+        assert!(matches!(constraint, VersionConstraint::GitRef(_))); // Just a git ref
 
         let constraint = VersionConstraint::parse("  ^1.0.0  ").unwrap();
-        assert!(matches!(constraint, VersionConstraint::Requirement(_)));
+        assert!(matches!(constraint, VersionConstraint::Requirement { .. }));
     }
 
     #[test]
@@ -1566,21 +1708,173 @@ mod tests {
         let mut set = ConstraintSet::new();
 
         // These shouldn't conflict as they are different types
-        set.add(VersionConstraint::parse("^1.0.0").unwrap())
-            .unwrap();
-        set.add(VersionConstraint::Latest).unwrap();
+        set.add(VersionConstraint::parse("^1.0.0").unwrap()).unwrap();
+        set.add(VersionConstraint::GitRef("main".to_string())).unwrap();
 
         // Should have 2 constraints
         assert_eq!(set.constraints.len(), 2);
     }
 
     #[test]
-    fn test_version_constraint_to_version_req_none() {
-        let latest_pre = VersionConstraint::LatestPrerelease;
-        let req = latest_pre.to_version_req().unwrap();
-        assert!(req.matches(&Version::parse("1.0.0").unwrap()));
-        // Latest should match all versions
-        assert!(req.matches(&Version::parse("0.1.0").unwrap()));
-        assert!(req.matches(&Version::parse("10.0.0").unwrap()));
+    fn test_git_ref_to_version_req() {
+        let git_ref = VersionConstraint::GitRef("latest".to_string());
+        // Git refs cannot be converted to version requirements
+        assert!(git_ref.to_version_req().is_none());
+
+        let main_ref = VersionConstraint::GitRef("main".to_string());
+        assert!(main_ref.to_version_req().is_none());
+    }
+
+    // ========== Prefix Support Tests ==========
+
+    #[test]
+    fn test_prefixed_constraint_parsing() {
+        // Prefixed exact version
+        let constraint = VersionConstraint::parse("agents-v1.0.0").unwrap();
+        match constraint {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
+                assert_eq!(prefix, Some("agents".to_string()));
+                assert_eq!(version, Version::parse("1.0.0").unwrap());
+            }
+            _ => panic!("Expected Exact constraint"),
+        }
+
+        // Prefixed requirement
+        let constraint = VersionConstraint::parse("agents-^v1.0.0").unwrap();
+        match constraint {
+            VersionConstraint::Requirement {
+                prefix,
+                req,
+            } => {
+                assert_eq!(prefix, Some("agents".to_string()));
+                assert!(req.matches(&Version::parse("1.5.0").unwrap()));
+                assert!(!req.matches(&Version::parse("2.0.0").unwrap()));
+            }
+            _ => panic!("Expected Requirement constraint"),
+        }
+
+        // Unprefixed constraint (backward compatible)
+        let constraint = VersionConstraint::parse("^1.0.0").unwrap();
+        match constraint {
+            VersionConstraint::Requirement {
+                prefix,
+                ..
+            } => {
+                assert_eq!(prefix, None);
+            }
+            _ => panic!("Expected Requirement constraint"),
+        }
+    }
+
+    #[test]
+    fn test_prefixed_constraint_display() {
+        let prefixed_exact = VersionConstraint::Exact {
+            prefix: Some("agents".to_string()),
+            version: Version::parse("1.0.0").unwrap(),
+        };
+        assert_eq!(prefixed_exact.to_string(), "agents-1.0.0");
+
+        let unprefixed_exact = VersionConstraint::Exact {
+            prefix: None,
+            version: Version::parse("1.0.0").unwrap(),
+        };
+        assert_eq!(unprefixed_exact.to_string(), "1.0.0");
+
+        let prefixed_req = VersionConstraint::parse("snippets-^v2.0.0").unwrap();
+        let display = prefixed_req.to_string();
+        assert!(display.starts_with("snippets-"));
+    }
+
+    #[test]
+    fn test_matches_version_info() {
+        use crate::version::VersionInfo;
+
+        // Prefixed constraint matching prefixed version
+        let constraint = VersionConstraint::parse("agents-^v1.0.0").unwrap();
+        let version_info = VersionInfo {
+            prefix: Some("agents".to_string()),
+            version: Version::parse("1.2.0").unwrap(),
+            tag: "agents-v1.2.0".to_string(),
+            prerelease: false,
+        };
+        assert!(constraint.matches_version_info(&version_info));
+
+        // Prefixed constraint NOT matching different prefix
+        let wrong_prefix = VersionInfo {
+            prefix: Some("snippets".to_string()),
+            version: Version::parse("1.2.0").unwrap(),
+            tag: "snippets-v1.2.0".to_string(),
+            prerelease: false,
+        };
+        assert!(!constraint.matches_version_info(&wrong_prefix));
+
+        // Unprefixed constraint matching unprefixed version
+        let unprefixed_constraint = VersionConstraint::parse("^1.0.0").unwrap();
+        let unprefixed_version = VersionInfo {
+            prefix: None,
+            version: Version::parse("1.5.0").unwrap(),
+            tag: "v1.5.0".to_string(),
+            prerelease: false,
+        };
+        assert!(unprefixed_constraint.matches_version_info(&unprefixed_version));
+
+        // Unprefixed constraint NOT matching prefixed version
+        assert!(!unprefixed_constraint.matches_version_info(&version_info));
+    }
+
+    #[test]
+    fn test_prefixed_constraint_conflicts() {
+        let mut set = ConstraintSet::new();
+
+        // Add prefixed constraint
+        set.add(VersionConstraint::parse("agents-^v1.0.0").unwrap()).unwrap();
+
+        // Different prefix should not conflict
+        let result = set.add(VersionConstraint::parse("snippets-^v1.0.0").unwrap());
+        assert!(result.is_ok());
+
+        // Same prefix but compatible constraints should not conflict
+        let result = set.add(VersionConstraint::parse("agents-~v1.2.0").unwrap());
+        assert!(result.is_ok());
+
+        // Different prefixes for Exact constraints
+        let mut exact_set = ConstraintSet::new();
+        exact_set.add(VersionConstraint::parse("agents-v1.0.0").unwrap()).unwrap();
+
+        // Different prefix, same version - should not conflict
+        let result = exact_set.add(VersionConstraint::parse("snippets-v1.0.0").unwrap());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_prefix_with_hyphens() {
+        // Multiple hyphens in prefix
+        let constraint = VersionConstraint::parse("my-cool-agent-v1.0.0").unwrap();
+        match constraint {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
+                assert_eq!(prefix, Some("my-cool-agent".to_string()));
+                assert_eq!(version, Version::parse("1.0.0").unwrap());
+            }
+            _ => panic!("Expected Exact constraint"),
+        }
+
+        // Prefix ending with 'v'
+        let constraint = VersionConstraint::parse("tool-v-v1.0.0").unwrap();
+        match constraint {
+            VersionConstraint::Exact {
+                prefix,
+                version,
+            } => {
+                assert_eq!(prefix, Some("tool-v".to_string()));
+                assert_eq!(version, Version::parse("1.0.0").unwrap());
+            }
+            _ => panic!("Expected Exact constraint"),
+        }
     }
 }

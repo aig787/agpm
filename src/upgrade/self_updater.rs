@@ -82,10 +82,7 @@ fn validate_and_sanitize_path(path: &Path, base_dir: &Path) -> Result<PathBuf> {
 
     // Get canonical base directory
     let canonical_base = base_dir.canonicalize().with_context(|| {
-        format!(
-            "Failed to canonicalize base directory: {}",
-            base_dir.display()
-        )
+        format!("Failed to canonicalize base directory: {}", base_dir.display())
     })?;
 
     // Create the full path and canonicalize it
@@ -296,14 +293,8 @@ impl Default for SelfUpdater {
         let repo_name = "agpm".to_string();
 
         // Validate even hardcoded values for extra safety
-        debug_assert!(
-            validate_repo_identifier(&repo_owner),
-            "Default repo_owner must be valid"
-        );
-        debug_assert!(
-            validate_repo_identifier(&repo_name),
-            "Default repo_name must be valid"
-        );
+        debug_assert!(validate_repo_identifier(&repo_owner), "Default repo_owner must be valid");
+        debug_assert!(validate_repo_identifier(&repo_name), "Default repo_name must be valid");
 
         Self {
             repo_owner,
@@ -497,10 +488,7 @@ impl SelfUpdater {
             self.repo_name
         );
 
-        format!(
-            "https://api.github.com/repos/{}/{}/{}",
-            self.repo_owner, self.repo_name, endpoint
-        )
+        format!("https://api.github.com/repos/{}/{}/{}", self.repo_owner, self.repo_name, endpoint)
     }
 
     /// Construct a validated GitHub releases download URL.
@@ -576,10 +564,7 @@ impl SelfUpdater {
     /// # }
     /// ```
     pub async fn check_for_update(&self) -> Result<Option<String>> {
-        debug!(
-            "Checking for updates from {}/{}",
-            self.repo_owner, self.repo_name
-        );
+        debug!("Checking for updates from {}/{}", self.repo_owner, self.repo_name);
 
         let url = self.build_github_api_url("releases/latest");
 
@@ -612,10 +597,7 @@ impl SelfUpdater {
         let latest = Version::parse(latest_version).context("Failed to parse latest version")?;
 
         if latest > current {
-            info!(
-                "Update available: {} -> {}",
-                self.current_version, latest_version
-            );
+            info!("Update available: {} -> {}", self.current_version, latest_version);
             Ok(Some(latest_version.to_string()))
         } else {
             debug!("Already on latest version");
@@ -782,11 +764,7 @@ impl SelfUpdater {
                 Ok(response) => {
                     if !response.status().is_success() {
                         if retries > 0 && response.status().is_server_error() {
-                            warn!(
-                                "Server error {}, retrying in {:?}...",
-                                response.status(),
-                                delay
-                            );
+                            warn!("Server error {}, retrying in {:?}...", response.status(), delay);
                             tokio::time::sleep(delay).await;
                             delay *= 2; // Exponential backoff
                             retries -= 1;
@@ -869,9 +847,8 @@ impl SelfUpdater {
         use sha2::{Digest, Sha256};
 
         // Download checksum file
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()?;
+        let client =
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build()?;
 
         let response = client
             .get(checksum_url)
@@ -884,10 +861,8 @@ impl SelfUpdater {
             bail!("Failed to download checksum: HTTP {}", response.status());
         }
 
-        let checksum_text = response
-            .text()
-            .await
-            .context("Failed to read checksum file content")?;
+        let checksum_text =
+            response.text().await.context("Failed to read checksum file content")?;
 
         // Parse checksum (format: "<hash>  <filename>" or just "<hash>")
         let expected_checksum = checksum_text
@@ -915,10 +890,7 @@ impl SelfUpdater {
             );
         }
 
-        info!(
-            "Checksum verified successfully (SHA256: {})",
-            &actual_checksum[..16]
-        );
+        info!("Checksum verified successfully (SHA256: {})", &actual_checksum[..16]);
         Ok(())
     }
 
@@ -994,20 +966,12 @@ impl SelfUpdater {
         // Handle tar.xz archives for Unix
         // Use system tar command as it's more reliable for xz
         let output = tokio::process::Command::new("tar")
-            .args([
-                "-xf",
-                &archive_path.to_string_lossy(),
-                "-C",
-                &temp_dir.to_string_lossy(),
-            ])
+            .args(["-xf", &archive_path.to_string_lossy(), "-C", &temp_dir.to_string_lossy()])
             .output()
             .await?;
 
         if !output.status.success() {
-            bail!(
-                "Failed to extract archive: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("Failed to extract archive: {}", String::from_utf8_lossy(&output.stderr));
         }
 
         // Look for the binary in extracted directory structure

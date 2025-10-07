@@ -54,10 +54,7 @@ async fn test_identical_exact_versions_no_conflict() {
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
     // Create test resource
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v1.0.0")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v1.0.0").await.unwrap();
     source_repo.commit_all("Initial commit").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
@@ -77,11 +74,7 @@ test-agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", version =
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
-    assert!(
-        output.success,
-        "Install should succeed. Stderr: {}",
-        output.stderr
-    );
+    assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
     assert!(
         !output.stderr.contains("Version conflicts detected"),
         "Should not contain conflict message. Stderr: {}",
@@ -99,18 +92,12 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
     // Create v1.0.0
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v1.0.0")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v1.0.0").await.unwrap();
     source_repo.commit_all("Initial commit").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
     // Create v2.0.0
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v2.0.0")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v2.0.0").await.unwrap();
     source_repo.commit_all("Version 2.0.0").unwrap();
     source_repo.tag_version("v2.0.0").unwrap();
 
@@ -119,10 +106,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
 
     // Create develop branch
     source_repo.git.create_branch("develop").unwrap();
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent - Development")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent - Development").await.unwrap();
     source_repo.commit_all("Development changes").unwrap();
     source_repo.git.checkout("main").unwrap();
 
@@ -169,10 +153,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() {
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
     // Create v1.0.0
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent v1.0.0")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent v1.0.0").await.unwrap();
     source_repo.commit_all("Initial commit").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
@@ -219,10 +200,7 @@ async fn test_different_branches_conflict_blocks_install() {
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
     // Create initial commit
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent - Main")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent - Main").await.unwrap();
     source_repo.commit_all("Initial commit").unwrap();
 
     // Ensure we're on 'main' branch (git's default branch name varies)
@@ -230,10 +208,7 @@ async fn test_different_branches_conflict_blocks_install() {
 
     // Create develop branch with different content
     source_repo.git.create_branch("develop").unwrap();
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent - Development")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent - Development").await.unwrap();
     source_repo.commit_all("Development changes").unwrap();
     source_repo.git.checkout("main").unwrap();
 
@@ -281,10 +256,7 @@ async fn test_same_branch_different_case_no_conflict() {
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
     // Create initial commit
-    source_repo
-        .add_resource("agents", "test-agent", "# Test Agent")
-        .await
-        .unwrap();
+    source_repo.add_resource("agents", "test-agent", "# Test Agent").await.unwrap();
     source_repo.commit_all("Initial commit").unwrap();
 
     // Ensure we're on 'main' branch (git's default branch name varies)
@@ -317,11 +289,7 @@ agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", branch = "Main
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
-    assert!(
-        output.success,
-        "Install should succeed. Stderr: {}",
-        output.stderr
-    );
+    assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
     assert!(
         !output.stderr.contains("Version conflicts detected"),
         "Should not contain conflict message. Stderr: {}",

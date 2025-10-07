@@ -1037,12 +1037,9 @@ impl SourceManager {
     /// # }
     /// ```
     pub async fn sync(&mut self, name: &str) -> Result<GitRepo> {
-        let source = self
-            .sources
-            .get(name)
-            .ok_or_else(|| AgpmError::SourceNotFound {
-                name: name.to_string(),
-            })?;
+        let source = self.sources.get(name).ok_or_else(|| AgpmError::SourceNotFound {
+            name: name.to_string(),
+        })?;
 
         if !source.enabled {
             return Err(AgpmError::ConfigError {
@@ -1226,10 +1223,7 @@ impl SourceManager {
         // Generate a cache directory based on the URL
         let (owner, repo_name) =
             parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
-        let cache_path = self
-            .cache_dir
-            .join("sources")
-            .join(format!("{owner}_{repo_name}"));
+        let cache_path = self.cache_dir.join("sources").join(format!("{owner}_{repo_name}"));
         ensure_dir(cache_path.parent().unwrap())?;
 
         // Check URL type
@@ -1375,10 +1369,8 @@ impl SourceManager {
         }
 
         // Create async tasks for each URL
-        let futures: Vec<_> = urls
-            .iter()
-            .map(|url| async move { self.sync_by_url(url).await })
-            .collect();
+        let futures: Vec<_> =
+            urls.iter().map(|url| async move { self.sync_by_url(url).await }).collect();
 
         // Execute all syncs in parallel and collect results
         let results = join_all(futures).await;
@@ -1422,12 +1414,9 @@ impl SourceManager {
     /// [`sync_all()`]: SourceManager::sync_all
     /// [`verify_all()`]: SourceManager::verify_all
     pub fn enable(&mut self, name: &str) -> Result<()> {
-        let source = self
-            .sources
-            .get_mut(name)
-            .ok_or_else(|| AgpmError::SourceNotFound {
-                name: name.to_string(),
-            })?;
+        let source = self.sources.get_mut(name).ok_or_else(|| AgpmError::SourceNotFound {
+            name: name.to_string(),
+        })?;
 
         source.enabled = true;
         Ok(())
@@ -1469,12 +1458,9 @@ impl SourceManager {
     /// [`sync_all()`]: SourceManager::sync_all
     /// [`verify_all()`]: SourceManager::verify_all
     pub fn disable(&mut self, name: &str) -> Result<()> {
-        let source = self
-            .sources
-            .get_mut(name)
-            .ok_or_else(|| AgpmError::SourceNotFound {
-                name: name.to_string(),
-            })?;
+        let source = self.sources.get_mut(name).ok_or_else(|| AgpmError::SourceNotFound {
+            name: name.to_string(),
+        })?;
 
         source.enabled = false;
         Ok(())
@@ -1516,13 +1502,11 @@ impl SourceManager {
     /// ```
     pub fn get_cached_path(&self, url: &str) -> Result<PathBuf> {
         // Try to find the source by URL
-        let source = self
-            .sources
-            .values()
-            .find(|s| s.url == url)
-            .ok_or_else(|| AgpmError::SourceNotFound {
+        let source = self.sources.values().find(|s| s.url == url).ok_or_else(|| {
+            AgpmError::SourceNotFound {
                 name: url.to_string(),
-            })?;
+            }
+        })?;
 
         Ok(source.cache_dir(&self.cache_dir))
     }
@@ -1563,12 +1547,9 @@ impl SourceManager {
     /// # }
     /// ```
     pub fn get_cached_path_by_name(&self, name: &str) -> Result<PathBuf> {
-        let source = self
-            .sources
-            .get(name)
-            .ok_or_else(|| AgpmError::SourceNotFound {
-                name: name.to_string(),
-            })?;
+        let source = self.sources.get(name).ok_or_else(|| AgpmError::SourceNotFound {
+            name: name.to_string(),
+        })?;
 
         Ok(source.cache_dir(&self.cache_dir))
     }
@@ -1684,11 +1665,9 @@ mod tests {
 
     #[test]
     fn test_source_creation() {
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/user/repo.git".to_string(),
-        )
-        .with_description("Test source".to_string());
+        let source =
+            Source::new("test".to_string(), "https://github.com/user/repo.git".to_string())
+                .with_description("Test source".to_string());
 
         assert_eq!(source.name, "test");
         assert_eq!(source.url, "https://github.com/user/repo.git");
@@ -1701,10 +1680,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/user/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/user/repo.git".to_string());
 
         manager.add(source.clone()).unwrap();
         assert!(manager.get("test").is_some());
@@ -1724,10 +1701,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/user/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/user/repo.git".to_string());
 
         manager.add(source).unwrap();
         assert!(manager.get("test").unwrap().enabled);
@@ -1744,15 +1719,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        manager
-            .add(Source::new("source1".to_string(), "url1".to_string()))
-            .unwrap();
-        manager
-            .add(Source::new("source2".to_string(), "url2".to_string()))
-            .unwrap();
-        manager
-            .add(Source::new("source3".to_string(), "url3".to_string()))
-            .unwrap();
+        manager.add(Source::new("source1".to_string(), "url1".to_string())).unwrap();
+        manager.add(Source::new("source2".to_string(), "url2".to_string())).unwrap();
+        manager.add(Source::new("source3".to_string(), "url3".to_string())).unwrap();
 
         assert_eq!(manager.list_enabled().len(), 3);
 
@@ -1765,10 +1734,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path();
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/user/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/user/repo.git".to_string());
 
         let cache_dir = source.cache_dir(base_dir);
         assert!(cache_dir.to_string_lossy().contains("sources"));
@@ -1815,12 +1782,8 @@ mod tests {
 
         assert_eq!(manager.list().len(), 0);
 
-        manager
-            .add(Source::new("source1".to_string(), "url1".to_string()))
-            .unwrap();
-        manager
-            .add(Source::new("source2".to_string(), "url2".to_string()))
-            .unwrap();
+        manager.add(Source::new("source1".to_string(), "url1".to_string())).unwrap();
+        manager.add(Source::new("source2".to_string(), "url2".to_string())).unwrap();
 
         assert_eq!(manager.list().len(), 2);
     }
@@ -1830,9 +1793,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        manager
-            .add(Source::new("test".to_string(), "url".to_string()))
-            .unwrap();
+        manager.add(Source::new("test".to_string(), "url".to_string())).unwrap();
 
         if let Some(source) = manager.get_mut("test") {
             source.description = Some("Updated description".to_string());
@@ -1861,10 +1822,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = SourceManager::new_with_cache(temp_dir.path().to_path_buf());
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/user/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/user/repo.git".to_string());
         manager.add(source).unwrap();
         manager.disable("test").unwrap();
 
@@ -1893,11 +1852,7 @@ mod tests {
 
         // Create a local git repo
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(&repo_dir)
@@ -1909,11 +1864,7 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["commit", "-m", "Initial commit"])
             .current_dir(&repo_dir)
@@ -1950,11 +1901,7 @@ mod tests {
 
         for repo_dir in &[&repo1_dir, &repo2_dir] {
             std::fs::create_dir(repo_dir).unwrap();
-            Command::new("git")
-                .args(["init"])
-                .current_dir(repo_dir)
-                .output()
-                .unwrap();
+            Command::new("git").args(["init"]).current_dir(repo_dir).output().unwrap();
             Command::new("git")
                 .args(["config", "user.email", "test@example.com"])
                 .current_dir(repo_dir)
@@ -1966,11 +1913,7 @@ mod tests {
                 .output()
                 .unwrap();
             std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-            Command::new("git")
-                .args(["add", "."])
-                .current_dir(repo_dir)
-                .output()
-                .unwrap();
+            Command::new("git").args(["add", "."]).current_dir(repo_dir).output().unwrap();
             Command::new("git")
                 .args(["commit", "-m", "Initial commit"])
                 .current_dir(repo_dir)
@@ -1981,17 +1924,11 @@ mod tests {
         let mut manager = SourceManager::new_with_cache(cache_dir.clone());
 
         manager
-            .add(Source::new(
-                "repo1".to_string(),
-                format!("file://{}", repo1_dir.display()),
-            ))
+            .add(Source::new("repo1".to_string(), format!("file://{}", repo1_dir.display())))
             .unwrap();
 
         manager
-            .add(Source::new(
-                "repo2".to_string(),
-                format!("file://{}", repo2_dir.display()),
-            ))
+            .add(Source::new("repo2".to_string(), format!("file://{}", repo2_dir.display())))
             .unwrap();
 
         // Sync all
@@ -2029,10 +1966,7 @@ mod tests {
         std::fs::create_dir(&non_git_dir).unwrap();
 
         let mut manager = SourceManager::new_with_cache(cache_dir);
-        let source = Source::new(
-            "test".to_string(),
-            non_git_dir.to_str().unwrap().to_string(),
-        );
+        let source = Source::new("test".to_string(), non_git_dir.to_str().unwrap().to_string());
         manager.add(source).unwrap();
 
         // Local paths are now treated as plain directories, so sync should succeed
@@ -2044,10 +1978,7 @@ mod tests {
         assert!(result.is_ok(), "Failed to sync: {result:?}");
         let repo = result.unwrap();
         // Should point to the canonicalized local directory
-        assert_eq!(
-            repo.path(),
-            crate::utils::safe_canonicalize(&non_git_dir).unwrap()
-        );
+        assert_eq!(repo.path(), crate::utils::safe_canonicalize(&non_git_dir).unwrap());
     }
 
     #[tokio::test]
@@ -2063,11 +1994,7 @@ mod tests {
 
         // Create a valid git repo
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(&repo_dir)
@@ -2079,11 +2006,7 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["commit", "-m", "Initial"])
             .current_dir(&repo_dir)
@@ -2136,11 +2059,7 @@ mod tests {
 
         // Create one valid repo
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(&repo_dir)
@@ -2152,11 +2071,7 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["commit", "-m", "Initial"])
             .current_dir(&repo_dir)
@@ -2165,10 +2080,7 @@ mod tests {
 
         let manager = SourceManager::new_with_cache(cache_dir);
 
-        let urls = vec![
-            format!("file://{}", repo_dir.display()),
-            "invalid-url".to_string(),
-        ];
+        let urls = vec![format!("file://{}", repo_dir.display()), "invalid-url".to_string()];
 
         // Should fail on invalid URL
         let result = manager.sync_multiple_by_url(&urls).await;
@@ -2214,10 +2126,8 @@ mod tests {
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
         // Add but disable a source
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
         manager.add(source).unwrap();
         manager.disable("test").unwrap();
 
@@ -2243,9 +2153,7 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let manager = SourceManager::new_with_cache(cache_dir);
 
-        let result = manager
-            .verify_source("https://invalid-host-9999.test/repo.git")
-            .await;
+        let result = manager.verify_source("https://invalid-host-9999.test/repo.git").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not accessible"));
     }
@@ -2256,10 +2164,8 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let mut manager = SourceManager::new_with_cache(cache_dir.clone());
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
         manager.add(source).unwrap();
 
         // Create cache directory
@@ -2279,10 +2185,8 @@ mod tests {
         let cache_dir = temp_dir.path().join("cache");
         let mut manager = SourceManager::new_with_cache(cache_dir);
 
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        let source =
+            Source::new("test".to_string(), "https://github.com/test/repo.git".to_string());
         manager.add(source).unwrap();
 
         let url = manager.get_source_url("test");
@@ -2294,11 +2198,9 @@ mod tests {
 
     #[test]
     fn test_source_with_description() {
-        let source = Source::new(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        )
-        .with_description("Test description".to_string());
+        let source =
+            Source::new("test".to_string(), "https://github.com/test/repo.git".to_string())
+                .with_description("Test description".to_string());
 
         assert_eq!(source.description, Some("Test description".to_string()));
     }
@@ -2316,11 +2218,7 @@ mod tests {
 
         // Create a git repo
         std::fs::create_dir(&repo_dir).unwrap();
-        Command::new("git")
-            .args(["init"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(&repo_dir)
@@ -2332,11 +2230,7 @@ mod tests {
             .output()
             .unwrap();
         std::fs::write(repo_dir.join("README.md"), "Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
+        Command::new("git").args(["add", "."]).current_dir(&repo_dir).output().unwrap();
         Command::new("git")
             .args(["commit", "-m", "Initial"])
             .current_dir(&repo_dir)
@@ -2392,10 +2286,7 @@ mod tests {
         let repo = result.unwrap();
         // The returned GitRepo should point to the canonicalized local directory
         // On macOS, /var is a symlink to /private/var, so we need to compare canonical paths
-        assert_eq!(
-            repo.path(),
-            crate::utils::safe_canonicalize(&local_dir).unwrap()
-        );
+        assert_eq!(repo.path(), crate::utils::safe_canonicalize(&local_dir).unwrap());
     }
 
     #[tokio::test]
@@ -2415,10 +2306,7 @@ mod tests {
         let result = manager.sync_by_url(&local_dir.to_string_lossy()).await;
         assert!(result.is_ok());
         let repo = result.unwrap();
-        assert_eq!(
-            repo.path(),
-            crate::utils::safe_canonicalize(&local_dir).unwrap()
-        );
+        assert_eq!(repo.path(), crate::utils::safe_canonicalize(&local_dir).unwrap());
 
         // Test relative path
         {
@@ -2458,12 +2346,7 @@ mod tests {
         let file_url = format!("file://{}", plain_dir.display());
         let result = manager.sync_by_url(&file_url).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not a git repository")
-        );
+        assert!(result.unwrap_err().to_string().contains("not a git repository"));
     }
 
     #[tokio::test]
@@ -2484,10 +2367,7 @@ mod tests {
             }
 
             let result = manager.sync_by_url(malicious_path).await;
-            assert!(
-                result.is_err(),
-                "Blacklisted path not detected for: {malicious_path}"
-            );
+            assert!(result.is_err(), "Blacklisted path not detected for: {malicious_path}");
             let err_msg = result.unwrap_err().to_string();
             assert!(
                 err_msg.contains("Security error") || err_msg.contains("not allowed"),
@@ -2500,10 +2380,7 @@ mod tests {
         std::fs::create_dir(&safe_dir).unwrap();
 
         let result = manager.sync_by_url(&safe_dir.to_string_lossy()).await;
-        assert!(
-            result.is_ok(),
-            "Safe path was incorrectly blocked: {result:?}"
-        );
+        assert!(result.is_ok(), "Safe path was incorrectly blocked: {result:?}");
     }
 
     #[cfg(unix)]
@@ -2556,10 +2433,7 @@ mod tests {
         let result = manager.sync_by_url(&safe_dir.to_string_lossy()).await;
 
         // Temp directories should work fine with blacklist approach
-        assert!(
-            result.is_ok(),
-            "Safe temp path was incorrectly blocked: {result:?}"
-        );
+        assert!(result.is_ok(), "Safe temp path was incorrectly blocked: {result:?}");
     }
 
     #[test]

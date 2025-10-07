@@ -56,10 +56,7 @@ impl CommandContext {
         let manifest_path = manifest_path.as_ref();
 
         if !manifest_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Manifest file {} not found",
-                manifest_path.display()
-            ));
+            return Err(anyhow::anyhow!("Manifest file {} not found", manifest_path.display()));
         }
 
         let project_dir = manifest_path
@@ -152,9 +149,7 @@ fn check_for_legacy_ccpm_files_from(start_dir: PathBuf) -> Option<String> {
                 files_str,
                 location,
                 "Run the migration command to upgrade:".yellow(),
-                format!("agpm migrate --path {}", dir.display())
-                    .cyan()
-                    .bold(),
+                format!("agpm migrate --path {}", dir.display()).cyan().bold(),
                 "Or run 'agpm init' to create a new AGPM project.".dimmed()
             ));
         }
@@ -210,12 +205,7 @@ test = "https://github.com/test/repo.git"
 
         let result = CommandContext::from_manifest_path(&manifest_path);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to parse manifest")
-        );
+        assert!(result.unwrap_err().to_string().contains("Failed to parse manifest"));
     }
 
     #[test]

@@ -98,14 +98,7 @@ pub trait ResourceTypeExt {
 
 impl ResourceTypeExt for ResourceType {
     fn all() -> Vec<ResourceType> {
-        vec![
-            Self::Agent,
-            Self::Snippet,
-            Self::Command,
-            Self::McpServer,
-            Self::Script,
-            Self::Hook,
-        ]
+        vec![Self::Agent, Self::Snippet, Self::Command, Self::McpServer, Self::Script, Self::Hook]
     }
 
     fn get_lockfile_entries<'a>(&self, lockfile: &'a LockFile) -> &'a [LockedResource] {
@@ -252,10 +245,8 @@ impl ResourceIterator {
         name: &str,
     ) -> Option<(ResourceType, &'a LockedResource)> {
         for resource_type in ResourceType::all() {
-            if let Some(entry) = resource_type
-                .get_lockfile_entries(lockfile)
-                .iter()
-                .find(|e| e.name == name)
+            if let Some(entry) =
+                resource_type.get_lockfile_entries(lockfile).iter().find(|e| e.name == name)
             {
                 return Some((*resource_type, entry));
             }
@@ -294,25 +285,17 @@ impl ResourceIterator {
 
     /// Count total resources in a lockfile
     pub fn count_total_resources(lockfile: &LockFile) -> usize {
-        ResourceType::all()
-            .iter()
-            .map(|rt| rt.get_lockfile_entries(lockfile).len())
-            .sum()
+        ResourceType::all().iter().map(|rt| rt.get_lockfile_entries(lockfile).len()).sum()
     }
 
     /// Count total dependencies defined in a manifest
     pub fn count_manifest_dependencies(manifest: &Manifest) -> usize {
-        ResourceType::all()
-            .iter()
-            .map(|rt| rt.get_manifest_entries(manifest).len())
-            .sum()
+        ResourceType::all().iter().map(|rt| rt.get_manifest_entries(manifest).len()).sum()
     }
 
     /// Check if a lockfile has any resources
     pub fn has_resources(lockfile: &LockFile) -> bool {
-        ResourceType::all()
-            .iter()
-            .any(|rt| !rt.get_lockfile_entries(lockfile).is_empty())
+        ResourceType::all().iter().any(|rt| !rt.get_lockfile_entries(lockfile).is_empty())
     }
 
     /// Get all resource names from a lockfile
@@ -388,10 +371,7 @@ impl ResourceIterator {
 
         Self::for_each_resource(lockfile, |rt, entry| {
             if let Some(ref source) = entry.source {
-                groups
-                    .entry(source.clone())
-                    .or_insert_with(Vec::new)
-                    .push((rt, entry.clone()));
+                groups.entry(source.clone()).or_insert_with(Vec::new).push((rt, entry.clone()));
             }
         });
 
@@ -926,10 +906,8 @@ mod tests {
         });
 
         assert_eq!(source1_resources.len(), 4); // agent1, command1, script1, mcp1
-        let source1_names: Vec<String> = source1_resources
-            .iter()
-            .map(|(_, r)| r.name.clone())
-            .collect();
+        let source1_names: Vec<String> =
+            source1_resources.iter().map(|(_, r)| r.name.clone()).collect();
         assert!(source1_names.contains(&"agent1".to_string()));
         assert!(source1_names.contains(&"command1".to_string()));
         assert!(source1_names.contains(&"script1".to_string()));
@@ -1042,14 +1020,8 @@ mod tests {
         let lockfile = create_test_lockfile();
 
         assert_eq!(ResourceType::Agent.get_lockfile_entries(&lockfile).len(), 1);
-        assert_eq!(
-            ResourceType::Snippet.get_lockfile_entries(&lockfile).len(),
-            1
-        );
-        assert_eq!(
-            ResourceType::Command.get_lockfile_entries(&lockfile).len(),
-            0
-        );
+        assert_eq!(ResourceType::Snippet.get_lockfile_entries(&lockfile).len(), 1);
+        assert_eq!(ResourceType::Command.get_lockfile_entries(&lockfile).len(), 0);
     }
 
     #[test]
@@ -1057,25 +1029,11 @@ mod tests {
         let lockfile = create_multi_resource_lockfile();
 
         assert_eq!(ResourceType::Agent.get_lockfile_entries(&lockfile).len(), 2);
-        assert_eq!(
-            ResourceType::Snippet.get_lockfile_entries(&lockfile).len(),
-            1
-        );
-        assert_eq!(
-            ResourceType::Command.get_lockfile_entries(&lockfile).len(),
-            1
-        );
-        assert_eq!(
-            ResourceType::Script.get_lockfile_entries(&lockfile).len(),
-            1
-        );
+        assert_eq!(ResourceType::Snippet.get_lockfile_entries(&lockfile).len(), 1);
+        assert_eq!(ResourceType::Command.get_lockfile_entries(&lockfile).len(), 1);
+        assert_eq!(ResourceType::Script.get_lockfile_entries(&lockfile).len(), 1);
         assert_eq!(ResourceType::Hook.get_lockfile_entries(&lockfile).len(), 1);
-        assert_eq!(
-            ResourceType::McpServer
-                .get_lockfile_entries(&lockfile)
-                .len(),
-            1
-        );
+        assert_eq!(ResourceType::McpServer.get_lockfile_entries(&lockfile).len(), 1);
     }
 
     #[test]
@@ -1083,29 +1041,11 @@ mod tests {
         let manifest = create_test_manifest();
         let targets = &manifest.target;
 
-        assert_eq!(
-            ResourceType::Agent.get_target_dir(targets),
-            ".claude/agents"
-        );
-        assert_eq!(
-            ResourceType::Snippet.get_target_dir(targets),
-            ".claude/agpm/snippets"
-        );
-        assert_eq!(
-            ResourceType::Command.get_target_dir(targets),
-            ".claude/commands"
-        );
-        assert_eq!(
-            ResourceType::Script.get_target_dir(targets),
-            ".claude/agpm/scripts"
-        );
-        assert_eq!(
-            ResourceType::Hook.get_target_dir(targets),
-            ".claude/agpm/hooks"
-        );
-        assert_eq!(
-            ResourceType::McpServer.get_target_dir(targets),
-            ".claude/agpm/mcp-servers"
-        );
+        assert_eq!(ResourceType::Agent.get_target_dir(targets), ".claude/agents");
+        assert_eq!(ResourceType::Snippet.get_target_dir(targets), ".claude/agpm/snippets");
+        assert_eq!(ResourceType::Command.get_target_dir(targets), ".claude/commands");
+        assert_eq!(ResourceType::Script.get_target_dir(targets), ".claude/agpm/scripts");
+        assert_eq!(ResourceType::Hook.get_target_dir(targets), ".claude/agpm/hooks");
+        assert_eq!(ResourceType::McpServer.get_target_dir(targets), ".claude/agpm/mcp-servers");
     }
 }

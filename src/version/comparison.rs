@@ -276,11 +276,7 @@ mod tests {
 
     #[test]
     fn test_has_newer_version() {
-        let versions = vec![
-            "v1.0.0".to_string(),
-            "v1.1.0".to_string(),
-            "v2.0.0".to_string(),
-        ];
+        let versions = vec!["v1.0.0".to_string(), "v1.1.0".to_string(), "v2.0.0".to_string()];
 
         assert!(VersionComparator::has_newer_version("1.0.0", &versions).unwrap());
         assert!(VersionComparator::has_newer_version("v1.0.0", &versions).unwrap());
@@ -325,14 +321,8 @@ mod tests {
 
     #[test]
     fn test_parse_version() {
-        assert_eq!(
-            VersionComparator::parse_version("1.0.0").unwrap(),
-            Version::new(1, 0, 0)
-        );
-        assert_eq!(
-            VersionComparator::parse_version("v1.0.0").unwrap(),
-            Version::new(1, 0, 0)
-        );
+        assert_eq!(VersionComparator::parse_version("1.0.0").unwrap(), Version::new(1, 0, 0));
+        assert_eq!(VersionComparator::parse_version("v1.0.0").unwrap(), Version::new(1, 0, 0));
         assert_eq!(
             VersionComparator::parse_version("version-1.0.0").unwrap(),
             Version::new(1, 0, 0)

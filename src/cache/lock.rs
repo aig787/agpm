@@ -241,9 +241,7 @@ pub async fn cleanup_stale_locks(cache_dir: &Path, ttl_seconds: u64) -> Result<u
     let now = SystemTime::now();
     let ttl_duration = Duration::from_secs(ttl_seconds);
 
-    let mut entries = fs::read_dir(&locks_dir)
-        .await
-        .context("Failed to read locks directory")?;
+    let mut entries = fs::read_dir(&locks_dir).await.context("Failed to read locks directory")?;
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
@@ -334,9 +332,7 @@ mod tests {
 
         // Task 1: Acquire lock and hold it
         let handle1 = tokio::spawn(async move {
-            let _lock = CacheLock::acquire(&cache_dir1, "exclusive_test")
-                .await
-                .unwrap();
+            let _lock = CacheLock::acquire(&cache_dir1, "exclusive_test").await.unwrap();
             barrier1.wait().await; // Signal that lock is acquired
             tokio::time::sleep(Duration::from_millis(100)).await; // Hold lock
             // Lock released on drop
@@ -348,9 +344,7 @@ mod tests {
         let handle2 = tokio::spawn(async move {
             barrier.wait().await; // Wait for first task to acquire lock
             let start = Instant::now();
-            let _lock = CacheLock::acquire(&cache_dir2, "exclusive_test")
-                .await
-                .unwrap();
+            let _lock = CacheLock::acquire(&cache_dir2, "exclusive_test").await.unwrap();
             let elapsed = start.elapsed();
 
             // Should have blocked for at least 50ms (less than 100ms due to timing)

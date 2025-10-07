@@ -600,11 +600,7 @@ pub struct Manifest {
     /// `.claude/agpm/mcp-servers/` and configured in `.mcp.json`.
     ///
     /// See [`ResourceDependency`] for specification format details.
-    #[serde(
-        default,
-        skip_serializing_if = "HashMap::is_empty",
-        rename = "mcp-servers"
-    )]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "mcp-servers")]
     pub mcp_servers: HashMap<String, ResourceDependency>,
 
     /// Script dependencies mapping names to their specifications.
@@ -1021,8 +1017,9 @@ pub struct DetailedDependency {
     /// # Supported Formats
     ///
     /// - `"v1.0.0"` - Exact semantic version tag
-    /// - `"1.0.0"` - Exact version (v prefix optional)  
-    /// - `"latest"` - Latest available version (determined by Git tags)
+    /// - `"1.0.0"` - Exact version (v prefix optional)
+    /// - `"^1.0.0"` - Semantic version constraint (highest compatible 1.x.x)
+    /// - `"latest"` - Git tag or branch named "latest" (not special - just a name)
     /// - `"main"` - Use main/master branch HEAD
     ///
     /// # Examples
@@ -1030,7 +1027,8 @@ pub struct DetailedDependency {
     /// ```toml
     /// [agents]
     /// stable = { source = "repo", path = "agent.md", version = "v1.0.0" }
-    /// latest = { source = "repo", path = "agent.md", version = "latest" }
+    /// flexible = { source = "repo", path = "agent.md", version = "^1.0.0" }
+    /// latest-tag = { source = "repo", path = "agent.md", version = "latest" }  # If repo has a "latest" tag
     /// main = { source = "repo", path = "agent.md", version = "main" }
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1536,9 +1534,9 @@ impl Manifest {
                                 "Version specified for plain directory dependency '{name}' with path '{path}'. \n\
                                 Plain directory dependencies do not support versions. \n\
                             Remove the 'version' field or use a git source instead."
-                        ),
-                    }
-                    .into());
+                            ),
+                        }
+                        .into());
                     }
                 }
             }
@@ -1552,7 +1550,9 @@ impl Manifest {
                 if let Some(existing_version) = seen_deps.get(name) {
                     if existing_version != version {
                         return Err(crate::core::AgpmError::ManifestValidationError {
-                            reason: format!("Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"),
+                            reason: format!(
+                                "Version conflict for dependency '{name}': found versions '{existing_version}' and '{version}'"
+                            ),
                         }
                         .into());
                     }
@@ -1577,9 +1577,7 @@ impl Manifest {
             && !expanded_url.starts_with("../")
             {
                 return Err(crate::core::AgpmError::ManifestValidationError {
-                    reason: format!(
-                        "Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"
-                    ),
+                    reason: format!("Source '{name}' has invalid URL: '{url}'. Must be HTTP(S), SSH (git@...), or file:// URL"),
                 }
                 .into());
             }
@@ -2307,20 +2305,17 @@ impl ResourceDependency {
     ///
     /// Supported version constraint formats include:
     /// - Semantic versions: `"v1.0.0"`, `"1.2.3"`
-    /// - Branch names: `"main"`, `"develop"`, `"feature/new"`
+    /// - Semantic version ranges: `"^1.0.0"`, `"~2.1.0"`
+    /// - Branch names: `"main"`, `"develop"`, `"latest"`, `"feature/new"`
     /// - Git tags: `"release-2023"`, `"stable"`
     /// - Commit SHAs: `"a1b2c3d4e5f6..."`
-    /// - Special values: `"latest"` (resolve to latest tag)
     #[must_use]
     pub fn get_version(&self) -> Option<&str> {
         match self {
             Self::Simple(_) => None,
             Self::Detailed(d) => {
                 // Precedence: rev > branch > version
-                d.rev
-                    .as_deref()
-                    .or(d.branch.as_deref())
-                    .or(d.version.as_deref())
+                d.rev.as_deref().or(d.branch.as_deref()).or(d.version.as_deref())
             }
         }
     }
@@ -2484,9 +2479,7 @@ fn expand_url(url: &str) -> Result<String> {
                 } else {
                     Ok(format!(
                         "file://{}",
-                        std::env::current_dir()?
-                            .join(expanded_path)
-                            .to_string_lossy()
+                        std::env::current_dir()?.join(expanded_path).to_string_lossy()
                     ))
                 }
             }
@@ -2765,10 +2758,8 @@ mod tests {
         assert!(manifest.validate().is_err());
 
         // Add the source - should now be valid
-        manifest.add_source(
-            "undefined".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        manifest
+            .add_source("undefined".to_string(), "https://github.com/test/repo.git".to_string());
         assert!(manifest.validate().is_ok());
     }
 
@@ -2822,18 +2813,9 @@ mod tests {
         let mut manifest = Manifest::new();
 
         // Valid URLs
-        manifest.add_source(
-            "http".to_string(),
-            "http://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_source(
-            "https".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        manifest.add_source(
-            "ssh".to_string(),
-            "git@github.com:test/repo.git".to_string(),
-        );
+        manifest.add_source("http".to_string(), "http://github.com/test/repo.git".to_string());
+        manifest.add_source("https".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.add_source("ssh".to_string(), "git@github.com:test/repo.git".to_string());
         assert!(manifest.validate().is_ok());
 
         // Invalid URL
@@ -3201,10 +3183,9 @@ mod tests {
     #[test]
     fn test_pattern_dependency_validation() {
         let mut manifest = Manifest::new();
-        manifest.sources.insert(
-            "repo".to_string(),
-            "https://github.com/example/repo.git".to_string(),
-        );
+        manifest
+            .sources
+            .insert("repo".to_string(), "https://github.com/example/repo.git".to_string());
 
         // Valid pattern dependency (uses glob characters in path)
         manifest.agents.insert(
@@ -3249,10 +3230,9 @@ mod tests {
     #[test]
     fn test_pattern_dependency_with_path_traversal() {
         let mut manifest = Manifest::new();
-        manifest.sources.insert(
-            "repo".to_string(),
-            "https://github.com/example/repo.git".to_string(),
-        );
+        manifest
+            .sources
+            .insert("repo".to_string(), "https://github.com/example/repo.git".to_string());
 
         // Pattern with path traversal (using path field now)
         manifest.agents.insert(

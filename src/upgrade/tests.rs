@@ -52,9 +52,7 @@ mod tests {
         assert!(manager.backup_exists());
 
         // Modify original file
-        tokio::fs::write(&test_file, b"modified content")
-            .await
-            .unwrap();
+        tokio::fs::write(&test_file, b"modified content").await.unwrap();
 
         // Test restore
         manager.restore_backup().await.unwrap();
@@ -86,10 +84,7 @@ mod tests {
         assert_eq!(info, "Current version: 1.0.0 (up to date)");
 
         let info = VersionChecker::format_version_info("1.0.0", Some("1.1.0"));
-        assert_eq!(
-            info,
-            "Current version: 1.0.0\nLatest version:  1.1.0 (update available)"
-        );
+        assert_eq!(info, "Current version: 1.0.0\nLatest version:  1.1.0 (update available)");
     }
 
     #[test]
@@ -224,12 +219,7 @@ mod tests {
         // Should fail when trying to backup non-existent file
         let result = manager.create_backup().await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Original file does not exist")
-        );
+        assert!(result.unwrap_err().to_string().contains("Original file does not exist"));
 
         // Should fail when trying to restore without backup
         let result = manager.restore_backup().await;
@@ -246,9 +236,7 @@ mod tests {
         let cache_path = temp_dir.path().join(".agpm").join(".version_cache");
 
         // Create cache directory
-        tokio::fs::create_dir_all(cache_path.parent().unwrap())
-            .await
-            .unwrap();
+        tokio::fs::create_dir_all(cache_path.parent().unwrap()).await.unwrap();
 
         // Create expired cache manually
         let old_cache = version_check::VersionCheckCache {

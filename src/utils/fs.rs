@@ -94,25 +94,17 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
     let safe_path = crate::utils::platform::windows_long_path(path);
 
     if !safe_path.exists() {
-        fs::create_dir_all(&safe_path)
-            .with_context(|| {
-                let platform_help = if crate::utils::platform::is_windows() {
-                    "On Windows: Check that the path length is < 260 chars or that long path support is enabled"
-                } else {
-                    "Check directory permissions and path validity"
-                };
+        fs::create_dir_all(&safe_path).with_context(|| {
+            let platform_help = if crate::utils::platform::is_windows() {
+                "On Windows: Check that the path length is < 260 chars or that long path support is enabled"
+            } else {
+                "Check directory permissions and path validity"
+            };
 
-                format!(
-                    "Failed to create directory: {}\\n\\n{}",
-                    path.display(),
-                    platform_help
-                )
-            })?;
+            format!("Failed to create directory: {}\\n\\n{}", path.display(), platform_help)
+        })?;
     } else if !safe_path.is_dir() {
-        return Err(anyhow::anyhow!(
-            "Path exists but is not a directory: {}",
-            path.display()
-        ));
+        return Err(anyhow::anyhow!("Path exists but is not a directory: {}", path.display()));
     }
     Ok(())
 }
@@ -219,18 +211,13 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
                 "Check file permissions and that directory exists"
             };
 
-            format!(
-                "Failed to create temp file: {}\\n\\n{}",
-                temp_path.display(),
-                platform_help
-            )
+            format!("Failed to create temp file: {}\\n\\n{}", temp_path.display(), platform_help)
         })?;
 
         file.write_all(content)
             .with_context(|| format!("Failed to write to temp file: {}", temp_path.display()))?;
 
-        file.sync_all()
-            .with_context(|| "Failed to sync file to disk")?;
+        file.sync_all().with_context(|| "Failed to sync file to disk")?;
     }
 
     // Atomic rename
@@ -301,11 +288,7 @@ pub fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
             copy_dir(&src_path, &dst_path)?;
         } else if file_type.is_file() {
             fs::copy(&src_path, &dst_path).with_context(|| {
-                format!(
-                    "Failed to copy file from {} to {}",
-                    src_path.display(),
-                    dst_path.display()
-                )
+                format!("Failed to copy file from {} to {}", src_path.display(), dst_path.display())
             })?;
         }
         // Skip symlinks and other file types
@@ -910,7 +893,9 @@ impl TempDir {
 
         ensure_dir(&path)?;
 
-        Ok(Self { path })
+        Ok(Self {
+            path,
+        })
     }
 
     /// Returns the path to the temporary directory.
@@ -1066,9 +1051,7 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
         tasks.push(task);
     }
 
-    let results = try_join_all(tasks)
-        .await
-        .context("Failed to join checksum calculation tasks")?;
+    let results = try_join_all(tasks).await.context("Failed to join checksum calculation tasks")?;
 
     let mut successes = Vec::new();
     let mut errors = Vec::new();
@@ -1081,10 +1064,8 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|error| format!("  {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|error| format!("  {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to calculate checksums for {} files:\n{}",
             error_msgs.len(),
@@ -1094,10 +1075,8 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
 
     // Sort results by original index to maintain order
     successes.sort_by_key(|(index, _, _)| *index);
-    let ordered_results: Vec<(PathBuf, String)> = successes
-        .into_iter()
-        .map(|(_, path, checksum)| (path, checksum))
-        .collect();
+    let ordered_results: Vec<(PathBuf, String)> =
+        successes.into_iter().map(|(_, path, checksum)| (path, checksum)).collect();
 
     Ok(ordered_results)
 }
@@ -1177,11 +1156,7 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
 
             // Copy file
             fs::copy(&src, &dst).with_context(|| {
-                format!(
-                    "Failed to copy file from {} to {}",
-                    src.display(),
-                    dst.display()
-                )
+                format!("Failed to copy file from {} to {}", src.display(), dst.display())
             })?;
 
             Ok::<_, anyhow::Error>((src, dst))
@@ -1189,9 +1164,7 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
         tasks.push(task);
     }
 
-    let results = try_join_all(tasks)
-        .await
-        .context("Failed to join file copy tasks")?;
+    let results = try_join_all(tasks).await.context("Failed to join file copy tasks")?;
 
     let mut errors = Vec::new();
 
@@ -1202,10 +1175,8 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|error| format!("  {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|error| format!("  {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to copy {} files:\n{}",
             error_msgs.len(),
@@ -1286,9 +1257,7 @@ pub async fn atomic_write_multiple(files: &[(PathBuf, Vec<u8>)]) -> Result<()> {
         tasks.push(task);
     }
 
-    let results = try_join_all(tasks)
-        .await
-        .context("Failed to join atomic write tasks")?;
+    let results = try_join_all(tasks).await.context("Failed to join atomic write tasks")?;
 
     let mut errors = Vec::new();
 
@@ -1299,10 +1268,8 @@ pub async fn atomic_write_multiple(files: &[(PathBuf, Vec<u8>)]) -> Result<()> {
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|error| format!("  {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|error| format!("  {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to write {} files:\n{}",
             error_msgs.len(),
@@ -1386,9 +1353,7 @@ pub async fn copy_dirs_parallel(sources_and_destinations: &[(PathBuf, PathBuf)])
         tasks.push(task);
     }
 
-    let results = try_join_all(tasks)
-        .await
-        .context("Failed to join directory copy tasks")?;
+    let results = try_join_all(tasks).await.context("Failed to join directory copy tasks")?;
 
     let mut errors = Vec::new();
 
@@ -1399,10 +1364,8 @@ pub async fn copy_dirs_parallel(sources_and_destinations: &[(PathBuf, PathBuf)])
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|error| format!("  {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|error| format!("  {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to copy {} directories:\n{}",
             error_msgs.len(),
@@ -1489,9 +1452,7 @@ pub async fn read_files_parallel(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Stri
         tasks.push(task);
     }
 
-    let results = try_join_all(tasks)
-        .await
-        .context("Failed to join file read tasks")?;
+    let results = try_join_all(tasks).await.context("Failed to join file read tasks")?;
 
     let mut successes = Vec::new();
     let mut errors = Vec::new();
@@ -1504,10 +1465,8 @@ pub async fn read_files_parallel(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Stri
     }
 
     if !errors.is_empty() {
-        let error_msgs: Vec<String> = errors
-            .into_iter()
-            .map(|error| format!("  {error}"))
-            .collect();
+        let error_msgs: Vec<String> =
+            errors.into_iter().map(|error| format!("  {error}")).collect();
         return Err(anyhow::anyhow!(
             "Failed to read {} files:\n{}",
             error_msgs.len(),
@@ -1517,10 +1476,8 @@ pub async fn read_files_parallel(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Stri
 
     // Sort results by original index to maintain order
     successes.sort_by_key(|(index, _, _)| *index);
-    let ordered_results: Vec<(PathBuf, String)> = successes
-        .into_iter()
-        .map(|(_, path, content)| (path, content))
-        .collect();
+    let ordered_results: Vec<(PathBuf, String)> =
+        successes.into_iter().map(|(_, path, content)| (path, content)).collect();
 
     Ok(ordered_results)
 }
@@ -1716,10 +1673,7 @@ where
 /// # Errors
 /// Returns an error if the temp file cannot be created
 pub fn create_temp_file(prefix: &str, content: &str) -> Result<tempfile::TempPath> {
-    let temp_file = tempfile::Builder::new()
-        .prefix(prefix)
-        .suffix(".tmp")
-        .tempfile()?;
+    let temp_file = tempfile::Builder::new().prefix(prefix).suffix(".tmp").tempfile()?;
 
     let path = temp_file.into_temp_path();
     write_text_file(&path, content)?;
@@ -1973,10 +1927,7 @@ mod tests {
         std::fs::write(project.join("agpm.toml"), "[sources]").unwrap();
 
         let root = find_project_root(&subdir).unwrap();
-        assert_eq!(
-            root.canonicalize().unwrap(),
-            project.canonicalize().unwrap()
-        );
+        assert_eq!(root.canonicalize().unwrap(), project.canonicalize().unwrap());
     }
 
     #[test]
@@ -2055,10 +2006,8 @@ mod tests {
         let file1 = temp.path().join("atomic1.txt");
         let file2 = temp.path().join("atomic2.txt");
 
-        let files = vec![
-            (file1.clone(), b"content1".to_vec()),
-            (file2.clone(), b"content2".to_vec()),
-        ];
+        let files =
+            vec![(file1.clone(), b"content1".to_vec()), (file2.clone(), b"content2".to_vec())];
 
         atomic_write_multiple(&files).await.unwrap();
 
@@ -2211,30 +2160,12 @@ mod tests {
     fn test_normalize_path_complex() {
         // Test various path normalization scenarios
         assert_eq!(normalize_path(Path::new("/")), PathBuf::from("/"));
-        assert_eq!(
-            normalize_path(Path::new("/foo/bar")),
-            PathBuf::from("/foo/bar")
-        );
-        assert_eq!(
-            normalize_path(Path::new("/foo/./bar")),
-            PathBuf::from("/foo/bar")
-        );
-        assert_eq!(
-            normalize_path(Path::new("/foo/../bar")),
-            PathBuf::from("/bar")
-        );
-        assert_eq!(
-            normalize_path(Path::new("/foo/bar/..")),
-            PathBuf::from("/foo")
-        );
-        assert_eq!(
-            normalize_path(Path::new("foo/./bar")),
-            PathBuf::from("foo/bar")
-        );
-        assert_eq!(
-            normalize_path(Path::new("./foo/bar")),
-            PathBuf::from("foo/bar")
-        );
+        assert_eq!(normalize_path(Path::new("/foo/bar")), PathBuf::from("/foo/bar"));
+        assert_eq!(normalize_path(Path::new("/foo/./bar")), PathBuf::from("/foo/bar"));
+        assert_eq!(normalize_path(Path::new("/foo/../bar")), PathBuf::from("/bar"));
+        assert_eq!(normalize_path(Path::new("/foo/bar/..")), PathBuf::from("/foo"));
+        assert_eq!(normalize_path(Path::new("foo/./bar")), PathBuf::from("foo/bar"));
+        assert_eq!(normalize_path(Path::new("./foo/bar")), PathBuf::from("foo/bar"));
     }
 
     #[test]
@@ -2417,10 +2348,7 @@ mod tests {
         let checksum = calculate_checksum(&empty).unwrap();
         assert_eq!(checksum.len(), 64);
         // SHA256 of empty string is well-known
-        assert_eq!(
-            checksum,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
+        assert_eq!(checksum, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
         // Non-existent file
         let nonexistent = temp.path().join("nonexistent.txt");
@@ -2474,10 +2402,8 @@ mod tests {
         std::fs::write(&invalid_base, "this is a file").unwrap();
         let invalid_path = invalid_base.join("impossible_file.txt");
 
-        let files = vec![
-            (valid_path.clone(), b"content".to_vec()),
-            (invalid_path, b"fail".to_vec()),
-        ];
+        let files =
+            vec![(valid_path.clone(), b"content".to_vec()), (invalid_path, b"fail".to_vec())];
 
         let result = atomic_write_multiple(&files).await;
         assert!(result.is_err());
@@ -2523,9 +2449,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(src.join("file.txt"))
-                .unwrap()
-                .permissions();
+            let mut perms = std::fs::metadata(src.join("file.txt")).unwrap().permissions();
             perms.set_mode(0o644);
             std::fs::set_permissions(src.join("file.txt"), perms).unwrap();
         }
@@ -2538,9 +2462,7 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::metadata(dst.join("file.txt"))
-                .unwrap()
-                .permissions();
+            let perms = std::fs::metadata(dst.join("file.txt")).unwrap().permissions();
             assert_eq!(perms.mode() & 0o777, 0o644);
         }
     }
@@ -2558,10 +2480,7 @@ mod tests {
 
         // Should find the closest agpm.toml
         let found = find_project_root(&deep).unwrap();
-        assert_eq!(
-            found.canonicalize().unwrap(),
-            subproject.canonicalize().unwrap()
-        );
+        assert_eq!(found.canonicalize().unwrap(), subproject.canonicalize().unwrap());
     }
 
     #[test]

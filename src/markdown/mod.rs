@@ -646,7 +646,11 @@ impl MarkdownDocument {
         if (input.starts_with("---\n") || input.starts_with("---\r\n"))
             && let Some(end_idx) = find_frontmatter_end(input)
         {
-            let skip_size = if input.starts_with("---\r\n") { 5 } else { 4 };
+            let skip_size = if input.starts_with("---\r\n") {
+                5
+            } else {
+                4
+            };
             let frontmatter = &input[skip_size..end_idx];
             let content = input[end_idx..].trim_start_matches("---").trim_start();
 
@@ -688,7 +692,11 @@ impl MarkdownDocument {
         if (input.starts_with("+++\n") || input.starts_with("+++\r\n"))
             && let Some(end_idx) = find_toml_frontmatter_end(input)
         {
-            let skip_size = if input.starts_with("+++\r\n") { 5 } else { 4 };
+            let skip_size = if input.starts_with("+++\r\n") {
+                5
+            } else {
+                4
+            };
             let frontmatter = &input[skip_size..end_idx];
             let content = input[end_idx..].trim_start_matches("+++").trim_start();
 
@@ -1059,7 +1067,11 @@ impl MarkdownDocument {
 fn find_frontmatter_end(input: &str) -> Option<usize> {
     // Handle both Unix (LF) and Windows (CRLF) line endings
     let has_crlf = input.contains("\r\n");
-    let initial_skip = if has_crlf { 5 } else { 4 }; // "---\r\n" or "---\n"
+    let initial_skip = if has_crlf {
+        5
+    } else {
+        4
+    }; // "---\r\n" or "---\n"
 
     let mut lines = input.lines();
     lines.next()?; // Skip first ---
@@ -1070,7 +1082,11 @@ fn find_frontmatter_end(input: &str) -> Option<usize> {
             return Some(pos);
         }
         // Account for actual line ending bytes (CRLF = 2, LF = 1)
-        let line_ending_size = if has_crlf { 2 } else { 1 };
+        let line_ending_size = if has_crlf {
+            2
+        } else {
+            1
+        };
         pos += line.len() + line_ending_size;
     }
 
@@ -1100,7 +1116,11 @@ fn find_frontmatter_end(input: &str) -> Option<usize> {
 fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
     // Handle both Unix (LF) and Windows (CRLF) line endings
     let has_crlf = input.contains("\r\n");
-    let initial_skip = if has_crlf { 5 } else { 4 }; // "+++\r\n" or "+++\n"
+    let initial_skip = if has_crlf {
+        5
+    } else {
+        4
+    }; // "+++\r\n" or "+++\n"
 
     let mut lines = input.lines();
     lines.next()?; // Skip first +++
@@ -1111,7 +1131,11 @@ fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
             return Some(pos);
         }
         // Account for actual line ending bytes (CRLF = 2, LF = 1)
-        let line_ending_size = if has_crlf { 2 } else { 1 };
+        let line_ending_size = if has_crlf {
+            2
+        } else {
+            1
+        };
         pos += line.len() + line_ending_size;
     }
 
@@ -1326,19 +1350,13 @@ This is the content."#;
             ..Default::default()
         };
         let doc = MarkdownDocument::with_metadata(metadata, "Content".to_string());
-        assert_eq!(
-            doc.get_description(),
-            Some("Metadata description".to_string())
-        );
+        assert_eq!(doc.get_description(), Some("Metadata description".to_string()));
 
         // From first paragraph
         let doc = MarkdownDocument::new(
             "# Title\n\nThis is the first paragraph.\n\nSecond paragraph.".to_string(),
         );
-        assert_eq!(
-            doc.get_description(),
-            Some("This is the first paragraph.".to_string())
-        );
+        assert_eq!(doc.get_description(), Some("This is the first paragraph.".to_string()));
     }
 
     #[test]
@@ -1387,10 +1405,8 @@ This is the content."#;
         let files = list_markdown_files(temp.path()).unwrap();
         assert_eq!(files.len(), 3);
 
-        let names: Vec<String> = files
-            .iter()
-            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
-            .collect();
+        let names: Vec<String> =
+            files.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect();
 
         assert!(names.contains(&"file1.md".to_string()));
         assert!(names.contains(&"file2.markdown".to_string()));
@@ -1442,10 +1458,7 @@ You are a meticulous code standards enforcement specialist"#;
                 assert!(doc.content.contains("name: haiku-syntax-tool"));
                 assert!(doc.content.contains("description: Use this agent"));
                 assert!(doc.content.contains("model: haiku"));
-                assert!(
-                    doc.content
-                        .contains("meticulous code standards enforcement specialist")
-                );
+                assert!(doc.content.contains("meticulous code standards enforcement specialist"));
             }
             Err(e) => {
                 panic!("Should not fail, but got error: {}", e);

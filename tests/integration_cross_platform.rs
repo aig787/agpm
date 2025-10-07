@@ -80,10 +80,7 @@ local-snippet = {{ path = "./snippets/local.md" }}
     let snippets_dir = project.project_path().join("snippets");
     fs::create_dir_all(&snippets_dir).await.unwrap();
     let local_snippet = MarkdownFixture::snippet("local");
-    local_snippet
-        .write_to(project.project_path())
-        .await
-        .unwrap();
+    local_snippet.write_to(project.project_path()).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -104,11 +101,7 @@ async fn test_long_paths_windows() {
     // Add mock source
     let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
-        .add_resource(
-            "agents",
-            &long_name,
-            &format!("# {}\n\nA test agent", long_name),
-        )
+        .add_resource("agents", &long_name, &format!("# {}\n\nA test agent", long_name))
         .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
@@ -179,11 +172,7 @@ MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v
     // Validation should fail with case conflict error on all platforms
     // to ensure manifests are portable
     let output = project
-        .run_agpm(&[
-            "--manifest-path",
-            manifest_path.to_str().unwrap(),
-            "validate",
-        ])
+        .run_agpm(&["--manifest-path", manifest_path.to_str().unwrap(), "validate"])
         .unwrap();
     assert!(!output.success);
     assert!(output.stderr.contains("Case conflict"));
@@ -342,10 +331,7 @@ remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1
     fs::set_permissions(&parent_dir, perms).await.unwrap();
 
     let output = project
-        .run_agpm_with_env(
-            &["install"],
-            &[("AGPM_CACHE_DIR", restricted_cache.to_str().unwrap())],
-        )
+        .run_agpm_with_env(&["install"], &[("AGPM_CACHE_DIR", restricted_cache.to_str().unwrap())])
         .unwrap();
     assert!(!output.success);
     assert!(
@@ -379,11 +365,7 @@ absolute-snippet = {{ path = "C:\\temp\\snippet.md" }}
 unc-snippet = {{ path = "\\\\server\\share\\snippet.md" }}
 relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
 "#,
-        project
-            .project_path()
-            .to_str()
-            .unwrap()
-            .replace("\\", "\\\\")
+        project.project_path().to_str().unwrap().replace("\\", "\\\\")
     );
 
     project.write_manifest(&manifest_content).await.unwrap();
@@ -391,19 +373,13 @@ relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
     // Create the relative snippet file
     let snippets_dir = project.project_path().join("snippets");
     fs::create_dir_all(&snippets_dir).await.unwrap();
-    fs::write(snippets_dir.join("relative.md"), "# Relative snippet")
-        .await
-        .unwrap();
+    fs::write(snippets_dir.join("relative.md"), "# Relative snippet").await.unwrap();
 
     let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(!output.success); // Absolute paths likely don't exist
     assert!(
-        output
-            .stderr
-            .contains("Local dependency 'absolute-snippet' not found at")
-            || output
-                .stderr
-                .contains("Local dependency 'unc-snippet' not found at"),
+        output.stderr.contains("Local dependency 'absolute-snippet' not found at")
+            || output.stderr.contains("Local dependency 'unc-snippet' not found at"),
         "Expected dependency not found error, got: {}",
         output.stderr
     );
@@ -423,11 +399,7 @@ async fn test_concurrent_operations() {
     // Create mock source repository
     let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
-        .add_resource(
-            "agents",
-            "concurrent-agent",
-            "# Concurrent Agent\n\nA test agent",
-        )
+        .add_resource("agents", "concurrent-agent", "# Concurrent Agent\n\nA test agent")
         .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
@@ -528,9 +500,7 @@ symlink-snippet = {{ path = "{}/snippet.md" }}
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create file in target directory
-    fs::write(target_dir.join("snippet.md"), "# Symlinked snippet")
-        .await
-        .unwrap();
+    fs::write(target_dir.join("snippet.md"), "# Symlinked snippet").await.unwrap();
 
     let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Should follow symlinks
@@ -553,11 +523,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     // Test that commands work regardless of shell (bash, zsh, cmd, PowerShell)
     let output = project.run_agpm(&["--help"]).unwrap();
     assert!(output.success);
-    assert!(
-        output
-            .stdout
-            .contains("AGPM is a Git-based package manager")
-    );
+    assert!(output.stdout.contains("AGPM is a Git-based package manager"));
 }
 
 /// Test platform-specific temporary directory handling
@@ -568,11 +534,7 @@ async fn test_temp_directory_platform() {
     // Create mock source repository
     let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
-        .add_resource(
-            "agents",
-            "temp-test-agent",
-            "# Temp Test Agent\n\nA test agent",
-        )
+        .add_resource("agents", "temp-test-agent", "# Temp Test Agent\n\nA test agent")
         .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();

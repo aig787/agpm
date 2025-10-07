@@ -19,46 +19,22 @@ async fn test_pattern_based_installation() -> Result<()> {
 
     // Create AI-related agents
     test_repo
-        .add_resource(
-            "agents/ai",
-            "assistant",
-            "# AI Assistant\n\nAI assistant agent",
-        )
+        .add_resource("agents/ai", "assistant", "# AI Assistant\n\nAI assistant agent")
         .await?;
+    test_repo.add_resource("agents/ai", "analyzer", "# AI Analyzer\n\nAI analyzer agent").await?;
     test_repo
-        .add_resource(
-            "agents/ai",
-            "analyzer",
-            "# AI Analyzer\n\nAI analyzer agent",
-        )
-        .await?;
-    test_repo
-        .add_resource(
-            "agents/ai",
-            "generator",
-            "# AI Generator\n\nAI generator agent",
-        )
+        .add_resource("agents/ai", "generator", "# AI Generator\n\nAI generator agent")
         .await?;
 
     // Create review-related agents
+    test_repo.add_resource("agents", "reviewer", "# Reviewer\n\nCode reviewer agent").await?;
     test_repo
-        .add_resource("agents", "reviewer", "# Reviewer\n\nCode reviewer agent")
-        .await?;
-    test_repo
-        .add_resource(
-            "agents",
-            "review-helper",
-            "# Review Helper\n\nReview helper agent",
-        )
+        .add_resource("agents", "review-helper", "# Review Helper\n\nReview helper agent")
         .await?;
 
     // Create other agents
-    test_repo
-        .add_resource("agents", "debugger", "# Debugger\n\nDebugger agent")
-        .await?;
-    test_repo
-        .add_resource("agents", "tester", "# Tester\n\nTester agent")
-        .await?;
+    test_repo.add_resource("agents", "debugger", "# Debugger\n\nDebugger agent").await?;
+    test_repo.add_resource("agents", "tester", "# Tester\n\nTester agent").await?;
 
     // Commit all files
     test_repo.commit_all("Add multiple agent files")?;
@@ -95,54 +71,24 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
     // Verify that all AI agents were installed
     // With relative path preservation, subdirectory structure is maintained
     let ai_agents_dir = project.project_path().join(".claude/agents");
-    assert!(
-        ai_agents_dir.join("ai/assistant.md").exists(),
-        "AI assistant not installed"
-    );
-    assert!(
-        ai_agents_dir.join("ai/analyzer.md").exists(),
-        "AI analyzer not installed"
-    );
-    assert!(
-        ai_agents_dir.join("ai/generator.md").exists(),
-        "AI generator not installed"
-    );
+    assert!(ai_agents_dir.join("ai/assistant.md").exists(), "AI assistant not installed");
+    assert!(ai_agents_dir.join("ai/analyzer.md").exists(), "AI analyzer not installed");
+    assert!(ai_agents_dir.join("ai/generator.md").exists(), "AI generator not installed");
 
     // Verify review agents were installed (no subdirectory)
-    assert!(
-        ai_agents_dir.join("reviewer.md").exists(),
-        "Reviewer not installed"
-    );
-    assert!(
-        ai_agents_dir.join("review-helper.md").exists(),
-        "Review helper not installed"
-    );
+    assert!(ai_agents_dir.join("reviewer.md").exists(), "Reviewer not installed");
+    assert!(ai_agents_dir.join("review-helper.md").exists(), "Review helper not installed");
 
     // Verify lockfile was created with all resources
     let lockfile_path = project.project_path().join("agpm.lock");
     assert!(lockfile_path.exists(), "Lockfile not created");
 
     let lockfile_content = fs::read_to_string(&lockfile_path).await?;
-    assert!(
-        lockfile_content.contains("assistant"),
-        "Assistant not in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("analyzer"),
-        "Analyzer not in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("generator"),
-        "Generator not in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("reviewer"),
-        "Reviewer not in lockfile"
-    );
-    assert!(
-        lockfile_content.contains("review-helper"),
-        "Review helper not in lockfile"
-    );
+    assert!(lockfile_content.contains("assistant"), "Assistant not in lockfile");
+    assert!(lockfile_content.contains("analyzer"), "Analyzer not in lockfile");
+    assert!(lockfile_content.contains("generator"), "Generator not in lockfile");
+    assert!(lockfile_content.contains("reviewer"), "Reviewer not in lockfile");
+    assert!(lockfile_content.contains("review-helper"), "Review helper not in lockfile");
 
     Ok(())
 }
@@ -156,15 +102,9 @@ async fn test_pattern_with_custom_target() -> Result<()> {
     let test_repo = project.create_source_repo("test-repo").await?;
 
     // Create snippet files
-    test_repo
-        .add_resource("snippets", "util1", "# Utility 1")
-        .await?;
-    test_repo
-        .add_resource("snippets", "util2", "# Utility 2")
-        .await?;
-    test_repo
-        .add_resource("snippets", "helper", "# Helper")
-        .await?;
+    test_repo.add_resource("snippets", "util1", "# Utility 1").await?;
+    test_repo.add_resource("snippets", "util2", "# Utility 2").await?;
+    test_repo.add_resource("snippets", "helper", "# Helper").await?;
 
     test_repo.commit_all("Add snippets")?;
     test_repo.tag_version("v1.0.0")?;
@@ -192,21 +132,10 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
 
     // Verify custom installation path
     // Custom target is relative to default snippets directory
-    let custom_dir = project
-        .project_path()
-        .join(".claude/agpm/snippets/tools/utilities");
-    assert!(
-        custom_dir.join("util1.md").exists(),
-        "util1 not installed to custom path"
-    );
-    assert!(
-        custom_dir.join("util2.md").exists(),
-        "util2 not installed to custom path"
-    );
-    assert!(
-        !custom_dir.join("helper.md").exists(),
-        "helper should not be installed"
-    );
+    let custom_dir = project.project_path().join(".claude/agpm/snippets/tools/utilities");
+    assert!(custom_dir.join("util1.md").exists(), "util1 not installed to custom path");
+    assert!(custom_dir.join("util2.md").exists(), "util2 not installed to custom path");
+    assert!(!custom_dir.join("helper.md").exists(), "helper should not be installed");
 
     Ok(())
 }
@@ -220,12 +149,8 @@ async fn test_pattern_with_versions() -> Result<()> {
     let test_repo = project.create_source_repo("test-repo").await?;
 
     // Create v1.0.0 agents
-    test_repo
-        .add_resource("agents", "agent1", "# Agent 1 v1.0.0")
-        .await?;
-    test_repo
-        .add_resource("agents", "agent2", "# Agent 2 v1.0.0")
-        .await?;
+    test_repo.add_resource("agents", "agent1", "# Agent 1 v1.0.0").await?;
+    test_repo.add_resource("agents", "agent2", "# Agent 2 v1.0.0").await?;
     test_repo.commit_all("Add agents v1.0.0")?;
     test_repo.tag_version("v1.0.0")?;
 
@@ -264,14 +189,8 @@ v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
 
     // Verify content is from v1.0.0
     let agent1_content = fs::read_to_string(&agent1_path).await?;
-    assert!(
-        agent1_content.contains("v1.0.0"),
-        "Agent 1 should be v1.0.0"
-    );
-    assert!(
-        !agent1_content.contains("Updated"),
-        "Agent 1 should not be updated version"
-    );
+    assert!(agent1_content.contains("v1.0.0"), "Agent 1 should be v1.0.0");
+    assert!(!agent1_content.contains("Updated"), "Agent 1 should not be updated version");
 
     Ok(())
 }
@@ -310,10 +229,7 @@ local-agents = {{ path = "{}/agents/local*.md" }}
     // This test documents the current behavior
     if output.success {
         let agents_installed = project.project_path().join(".claude/agents");
-        println!(
-            "Checking for installed local agents in: {:?}",
-            agents_installed
-        );
+        println!("Checking for installed local agents in: {:?}", agents_installed);
         // Verify if agents were installed
         assert!(
             agents_installed.join("local1.md").exists()
@@ -367,9 +283,7 @@ async fn test_pattern_performance() -> Result<()> {
     // Create 100 agent files
     for i in 0..100 {
         let content = format!("# Agent {}\n\nAgent {} description", i, i);
-        test_repo
-            .add_resource("agents", &format!("agent{:03}", i), &content)
-            .await?;
+        test_repo.add_resource("agents", &format!("agent{:03}", i), &content).await?;
     }
 
     test_repo.commit_all("Add 100 agents")?;
@@ -401,11 +315,7 @@ all-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }
     let duration = start.elapsed();
 
     // Should complete in reasonable time (< 30 seconds for 100 files)
-    assert!(
-        duration.as_secs() < 30,
-        "Installation took too long: {:?}",
-        duration
-    );
+    assert!(duration.as_secs() < 30, "Installation took too long: {:?}", duration);
 
     // Verify all files were installed
     let lockfile_content = fs::read_to_string(project.project_path().join("agpm.lock")).await?;

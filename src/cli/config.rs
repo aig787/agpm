@@ -365,17 +365,18 @@ impl ConfigCommand {
     /// - `config_path`: Optional custom path for the configuration file
     pub async fn execute(self, config_path: Option<PathBuf>) -> Result<()> {
         match self.command {
-            Some(ConfigSubcommands::Init { force }) => {
-                Self::init_with_config_path(force, config_path).await
-            }
+            Some(ConfigSubcommands::Init {
+                force,
+            }) => Self::init_with_config_path(force, config_path).await,
             Some(ConfigSubcommands::Show) | None => Self::show(config_path).await,
             Some(ConfigSubcommands::Edit) => Self::edit_with_path(config_path).await,
-            Some(ConfigSubcommands::AddSource { name, url }) => {
-                Self::add_source_with_path(name, url, config_path).await
-            }
-            Some(ConfigSubcommands::RemoveSource { name }) => {
-                Self::remove_source_with_path(name, config_path).await
-            }
+            Some(ConfigSubcommands::AddSource {
+                name,
+                url,
+            }) => Self::add_source_with_path(name, url, config_path).await,
+            Some(ConfigSubcommands::RemoveSource {
+                name,
+            }) => Self::remove_source_with_path(name, config_path).await,
             Some(ConfigSubcommands::ListSources) => Self::list_sources_with_path(config_path).await,
             Some(ConfigSubcommands::Path) => Self::show_path(config_path),
         }
@@ -387,10 +388,7 @@ impl ConfigCommand {
         });
 
         if config_path.exists() && !force {
-            println!(
-                "❌ Global config already exists at: {}",
-                config_path.display()
-            );
+            println!("❌ Global config already exists at: {}", config_path.display());
             println!("   Use --force to overwrite");
             return Ok(());
         }
@@ -424,10 +422,7 @@ impl ConfigCommand {
         };
 
         if config_path.exists() && !force {
-            println!(
-                "❌ Global config already exists at: {}",
-                config_path.display()
-            );
+            println!("❌ Global config already exists at: {}", config_path.display());
             println!("   Use --force to overwrite");
             return Ok(());
         }
@@ -482,9 +477,8 @@ impl ConfigCommand {
         }
 
         // Try to find an editor
-        let editor = std::env::var("EDITOR")
-            .or_else(|_| std::env::var("VISUAL"))
-            .unwrap_or_else(|_| {
+        let editor =
+            std::env::var("EDITOR").or_else(|_| std::env::var("VISUAL")).unwrap_or_else(|_| {
                 if cfg!(target_os = "windows") {
                     "notepad".to_string()
                 } else {
@@ -494,9 +488,7 @@ impl ConfigCommand {
 
         println!("Opening {} in {}...", config_path.display(), editor);
 
-        let status = std::process::Command::new(&editor)
-            .arg(&config_path)
-            .status()?;
+        let status = std::process::Command::new(&editor).arg(&config_path).status()?;
 
         if status.success() {
             println!("✅ Config edited successfully");
@@ -512,9 +504,8 @@ impl ConfigCommand {
         url: String,
         config_path: Option<PathBuf>,
     ) -> Result<()> {
-        let mut config = GlobalConfig::load_with_optional(config_path.clone())
-            .await
-            .unwrap_or_default();
+        let mut config =
+            GlobalConfig::load_with_optional(config_path.clone()).await.unwrap_or_default();
 
         if config.has_source(&name) {
             println!("⚠️  Source '{name}' already exists");
@@ -540,9 +531,8 @@ impl ConfigCommand {
     }
 
     async fn remove_source_with_path(name: String, config_path: Option<PathBuf>) -> Result<()> {
-        let mut config = GlobalConfig::load_with_optional(config_path.clone())
-            .await
-            .unwrap_or_default();
+        let mut config =
+            GlobalConfig::load_with_optional(config_path.clone()).await.unwrap_or_default();
 
         if config.remove_source(&name) {
             let save_path = config_path.unwrap_or_else(|| {
@@ -559,9 +549,7 @@ impl ConfigCommand {
     }
 
     async fn list_sources_with_path(config_path: Option<PathBuf>) -> Result<()> {
-        let config = GlobalConfig::load_with_optional(config_path)
-            .await
-            .unwrap_or_default();
+        let config = GlobalConfig::load_with_optional(config_path).await.unwrap_or_default();
 
         if config.sources.is_empty() {
             println!("No global sources configured.");
@@ -694,14 +682,8 @@ mod tests {
 
         // Create config directly without using commands
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        config.add_source(
-            "keep".to_string(),
-            "https://github.com/keep/repo.git".to_string(),
-        );
+        config.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
+        config.add_source("keep".to_string(), "https://github.com/keep/repo.git".to_string());
 
         // Remove the source
         assert!(config.remove_source("test"));
@@ -729,10 +711,7 @@ mod tests {
 
         // Add some sources
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "public".to_string(),
-            "https://github.com/org/public.git".to_string(),
-        );
+        config.add_source("public".to_string(), "https://github.com/org/public.git".to_string());
         config.add_source(
             "private".to_string(),
             "https://oauth2:token@github.com/org/private.git".to_string(),
@@ -762,10 +741,7 @@ mod tests {
         assert!(config.get_source("private").unwrap().contains("YOUR_TOKEN"));
 
         // Test adding a source
-        config.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        config.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         assert!(config.has_source("test"));
 
         // Test removing a source
@@ -815,7 +791,9 @@ mod tests {
     #[tokio::test]
     async fn test_config_execute_init() {
         let cmd = ConfigCommand {
-            command: Some(ConfigSubcommands::Init { force: false }),
+            command: Some(ConfigSubcommands::Init {
+                force: false,
+            }),
         };
 
         // This will try to init the global config
@@ -847,10 +825,8 @@ mod tests {
         let mut config = GlobalConfig::default();
 
         // Test adding a source
-        config.add_source(
-            "test-source".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        config
+            .add_source("test-source".to_string(), "https://github.com/test/repo.git".to_string());
 
         assert!(config.has_source("test-source"));
         assert_eq!(
@@ -897,10 +873,7 @@ mod tests {
 
         // Create config with multiple sources
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "source1".to_string(),
-            "https://github.com/org/repo1.git".to_string(),
-        );
+        config.add_source("source1".to_string(), "https://github.com/org/repo1.git".to_string());
         config.add_source(
             "source2".to_string(),
             "https://oauth2:token@github.com/org/repo2.git".to_string(),
@@ -977,10 +950,7 @@ mod tests {
 
         // Create a config with sources
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        config.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         config.save_to(&config_path).await.unwrap();
 
         // Load and verify the config has content
@@ -1021,10 +991,7 @@ mod tests {
         assert!(config.sources.is_empty());
 
         // Add first source
-        config.add_source(
-            "first".to_string(),
-            "https://github.com/org/repo.git".to_string(),
-        );
+        config.add_source("first".to_string(), "https://github.com/org/repo.git".to_string());
         assert!(config.has_source("first"));
         assert_eq!(config.sources.len(), 1);
 
@@ -1041,10 +1008,8 @@ mod tests {
 
         // Update existing source
         let original_url = config.get_source("first").unwrap().clone();
-        config.add_source(
-            "first".to_string(),
-            "https://github.com/org/updated-repo.git".to_string(),
-        );
+        config
+            .add_source("first".to_string(), "https://github.com/org/updated-repo.git".to_string());
 
         let updated_url = config.get_source("first").unwrap();
         assert_ne!(original_url, *updated_url);
@@ -1069,18 +1034,9 @@ mod tests {
 
         // Start with multiple sources
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "first".to_string(),
-            "https://github.com/org/repo1.git".to_string(),
-        );
-        config.add_source(
-            "second".to_string(),
-            "https://github.com/org/repo2.git".to_string(),
-        );
-        config.add_source(
-            "third".to_string(),
-            "https://github.com/org/repo3.git".to_string(),
-        );
+        config.add_source("first".to_string(), "https://github.com/org/repo1.git".to_string());
+        config.add_source("second".to_string(), "https://github.com/org/repo2.git".to_string());
+        config.add_source("third".to_string(), "https://github.com/org/repo3.git".to_string());
 
         assert_eq!(config.sources.len(), 3);
 
@@ -1126,10 +1082,8 @@ mod tests {
         let mut config = GlobalConfig::default();
 
         // Regular public URL (no masking needed)
-        config.add_source(
-            "public".to_string(),
-            "https://github.com/org/public-repo.git".to_string(),
-        );
+        config
+            .add_source("public".to_string(), "https://github.com/org/public-repo.git".to_string());
 
         // URL with OAuth token (should be masked)
         config.add_source(
@@ -1156,10 +1110,7 @@ mod tests {
 
         // Test the masking logic for each URL type
         let urls_to_test = vec![
-            (
-                "https://github.com/org/public-repo.git",
-                "https://github.com/org/public-repo.git",
-            ), // No change
+            ("https://github.com/org/public-repo.git", "https://github.com/org/public-repo.git"), // No change
             (
                 "https://oauth2:ghp_1234567890abcdef@github.com/org/private.git",
                 "https://***@github.com/org/private.git",
@@ -1295,10 +1246,8 @@ mod tests {
 
         // Test saving config with sources
         let mut config_with_sources = GlobalConfig::default();
-        config_with_sources.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        config_with_sources
+            .add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
 
         let result = config_with_sources.save_to(&config_path).await;
         assert!(result.is_ok());
@@ -1379,14 +1328,8 @@ mod tests {
         // Test various URL formats for token masking
         let test_cases = vec![
             ("https://oauth2:ghp_xxx@github.com/org/repo.git", true),
-            (
-                "https://gitlab-ci-token:abc123@gitlab.com/group/repo.git",
-                true,
-            ),
-            (
-                "https://username:password@bitbucket.org/team/repo.git",
-                true,
-            ),
+            ("https://gitlab-ci-token:abc123@gitlab.com/group/repo.git", true),
+            ("https://username:password@bitbucket.org/team/repo.git", true),
             ("ssh://git@github.com:org/repo.git", false), // SSH URLs don't have tokens
             ("https://github.com/org/repo.git", false),   // No auth
             ("git@github.com:org/repo.git", false),       // SSH format
@@ -1396,11 +1339,7 @@ mod tests {
 
         for (url, should_mask) in test_cases {
             if should_mask {
-                assert!(
-                    url.contains('@'),
-                    "URL should contain @ for masking: {}",
-                    url
-                );
+                assert!(url.contains('@'), "URL should contain @ for masking: {}", url);
             }
         }
     }
@@ -1452,10 +1391,7 @@ mod tests {
         let mut config = GlobalConfig::default();
 
         // Add a source
-        config.add_source(
-            "exists".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        config.add_source("exists".to_string(), "https://github.com/test/repo.git".to_string());
 
         // Remove existing should return true
         assert!(config.remove_source("exists"));
@@ -1494,10 +1430,8 @@ mod tests {
 
         // Test show with populated config
         let mut populated_config = GlobalConfig::default();
-        populated_config.add_source(
-            "test".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
+        populated_config
+            .add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
         assert!(!populated_config.sources.is_empty());
 
         // Populated config should serialize to valid TOML with sources
@@ -1538,14 +1472,8 @@ mod tests {
 
         // Create config with various sources
         let mut config = GlobalConfig::default();
-        config.add_source(
-            "github".to_string(),
-            "https://github.com/test/repo.git".to_string(),
-        );
-        config.add_source(
-            "gitlab".to_string(),
-            "https://gitlab.com/test/repo.git".to_string(),
-        );
+        config.add_source("github".to_string(), "https://github.com/test/repo.git".to_string());
+        config.add_source("gitlab".to_string(), "https://gitlab.com/test/repo.git".to_string());
         config.add_source(
             "private".to_string(),
             "https://oauth2:token@github.com/org/repo.git".to_string(),
@@ -1575,9 +1503,13 @@ mod tests {
         // This helps ensure CLI parsing works correctly
 
         // Init command with force flag
-        let init = ConfigSubcommands::Init { force: true };
+        let init = ConfigSubcommands::Init {
+            force: true,
+        };
         match init {
-            ConfigSubcommands::Init { force } => assert!(force),
+            ConfigSubcommands::Init {
+                force,
+            } => assert!(force),
             _ => panic!("Wrong variant"),
         }
 
@@ -1587,7 +1519,10 @@ mod tests {
             url: "https://github.com/test/repo.git".to_string(),
         };
         match add {
-            ConfigSubcommands::AddSource { name, url } => {
+            ConfigSubcommands::AddSource {
+                name,
+                url,
+            } => {
                 assert_eq!(name, "test");
                 assert!(url.contains("github"));
             }
@@ -1599,7 +1534,9 @@ mod tests {
             name: "test".to_string(),
         };
         match remove {
-            ConfigSubcommands::RemoveSource { name } => assert_eq!(name, "test"),
+            ConfigSubcommands::RemoveSource {
+                name,
+            } => assert_eq!(name, "test"),
             _ => panic!("Wrong variant"),
         }
     }

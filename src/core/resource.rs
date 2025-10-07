@@ -224,14 +224,7 @@ impl ResourceType {
     /// assert_eq!(ResourceType::all().len(), 6);
     /// ```
     pub const fn all() -> &'static [Self] {
-        &[
-            Self::Agent,
-            Self::Snippet,
-            Self::Command,
-            Self::McpServer,
-            Self::Script,
-            Self::Hook,
-        ]
+        &[Self::Agent, Self::Snippet, Self::Command, Self::McpServer, Self::Script, Self::Hook]
     }
 
     /// Get the plural form of the resource type.
@@ -719,22 +712,10 @@ mod tests {
     #[test]
     fn test_resource_type_default_directory() {
         assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
-        assert_eq!(
-            ResourceType::Snippet.default_directory(),
-            ".claude/agpm/snippets"
-        );
-        assert_eq!(
-            ResourceType::Command.default_directory(),
-            ".claude/commands"
-        );
-        assert_eq!(
-            ResourceType::McpServer.default_directory(),
-            ".claude/agpm/mcp-servers"
-        );
-        assert_eq!(
-            ResourceType::Script.default_directory(),
-            ".claude/agpm/scripts"
-        );
+        assert_eq!(ResourceType::Snippet.default_directory(), ".claude/agpm/snippets");
+        assert_eq!(ResourceType::Command.default_directory(), ".claude/commands");
+        assert_eq!(ResourceType::McpServer.default_directory(), ".claude/agpm/mcp-servers");
+        assert_eq!(ResourceType::Script.default_directory(), ".claude/agpm/scripts");
         assert_eq!(ResourceType::Hook.default_directory(), ".claude/agpm/hooks");
     }
 
@@ -752,46 +733,16 @@ mod tests {
     fn test_resource_type_from_str() {
         use std::str::FromStr;
 
-        assert_eq!(
-            ResourceType::from_str("agent").unwrap(),
-            ResourceType::Agent
-        );
-        assert_eq!(
-            ResourceType::from_str("snippet").unwrap(),
-            ResourceType::Snippet
-        );
-        assert_eq!(
-            ResourceType::from_str("AGENT").unwrap(),
-            ResourceType::Agent
-        );
-        assert_eq!(
-            ResourceType::from_str("Snippet").unwrap(),
-            ResourceType::Snippet
-        );
-        assert_eq!(
-            ResourceType::from_str("command").unwrap(),
-            ResourceType::Command
-        );
-        assert_eq!(
-            ResourceType::from_str("COMMAND").unwrap(),
-            ResourceType::Command
-        );
-        assert_eq!(
-            ResourceType::from_str("mcp-server").unwrap(),
-            ResourceType::McpServer
-        );
-        assert_eq!(
-            ResourceType::from_str("MCP").unwrap(),
-            ResourceType::McpServer
-        );
-        assert_eq!(
-            ResourceType::from_str("script").unwrap(),
-            ResourceType::Script
-        );
-        assert_eq!(
-            ResourceType::from_str("SCRIPT").unwrap(),
-            ResourceType::Script
-        );
+        assert_eq!(ResourceType::from_str("agent").unwrap(), ResourceType::Agent);
+        assert_eq!(ResourceType::from_str("snippet").unwrap(), ResourceType::Snippet);
+        assert_eq!(ResourceType::from_str("AGENT").unwrap(), ResourceType::Agent);
+        assert_eq!(ResourceType::from_str("Snippet").unwrap(), ResourceType::Snippet);
+        assert_eq!(ResourceType::from_str("command").unwrap(), ResourceType::Command);
+        assert_eq!(ResourceType::from_str("COMMAND").unwrap(), ResourceType::Command);
+        assert_eq!(ResourceType::from_str("mcp-server").unwrap(), ResourceType::McpServer);
+        assert_eq!(ResourceType::from_str("MCP").unwrap(), ResourceType::McpServer);
+        assert_eq!(ResourceType::from_str("script").unwrap(), ResourceType::Script);
+        assert_eq!(ResourceType::from_str("SCRIPT").unwrap(), ResourceType::Script);
         assert_eq!(ResourceType::from_str("hook").unwrap(), ResourceType::Hook);
         assert_eq!(ResourceType::from_str("HOOK").unwrap(), ResourceType::Hook);
 

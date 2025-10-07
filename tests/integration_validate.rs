@@ -13,14 +13,8 @@ async fn test_validate_valid_manifest() {
 
     // Create mock sources
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
@@ -34,9 +28,7 @@ async fn test_validate_valid_manifest() {
 
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     let manifest_content = format!(
         r#"
@@ -110,14 +102,8 @@ async fn test_validate_sources() {
 
     // Add mock source repositories
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
@@ -131,9 +117,7 @@ async fn test_validate_sources() {
 
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     let manifest_content = format!(
         r#"
@@ -192,14 +176,8 @@ async fn test_validate_dependencies() {
 
     // Add mock source repositories with the required files
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
@@ -213,9 +191,7 @@ async fn test_validate_dependencies() {
 
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     let manifest_content = format!(
         r#"
@@ -249,11 +225,7 @@ async fn test_validate_missing_dependencies() {
     // Add mock source repositories but without the required files
     let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo
-        .add_resource(
-            "agents",
-            "other-agent",
-            "# Other Agent\n\nA different agent",
-        )
+        .add_resource("agents", "other-agent", "# Other Agent\n\nA different agent")
         .await
         .unwrap();
     official_repo.commit_all("Initial commit").unwrap();
@@ -295,12 +267,9 @@ async fn test_validate_local_paths() {
     let project_parent = project.project_path().parent().unwrap();
     let local_agents_dir = project_parent.join("local-agents");
     fs::create_dir_all(&local_agents_dir).await.unwrap();
-    fs::write(
-        local_agents_dir.join("helper.md"),
-        "# Helper Agent\n\nThis is a test agent.",
-    )
-    .await
-    .unwrap();
+    fs::write(local_agents_dir.join("helper.md"), "# Helper Agent\n\nThis is a test agent.")
+        .await
+        .unwrap();
 
     // ./snippets/local-utils.md (relative to project directory)
     let snippets_dir = project.project_path().join("snippets");
@@ -342,14 +311,8 @@ async fn test_validate_lockfile_consistent() {
 
     // Create mock sources
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
@@ -363,9 +326,7 @@ async fn test_validate_lockfile_consistent() {
 
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     let manifest_content = format!(
         r#"
@@ -431,12 +392,7 @@ installed_at = "snippets/utils.md"
 "#
     );
 
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(output.success);
@@ -479,12 +435,7 @@ resolved_commit = "abc123456789abcdef123456789abcdef12345678"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = "agents/different.md"
 "#;
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        inconsistent_lockfile,
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), inconsistent_lockfile).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success);
@@ -508,12 +459,7 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
     project.write_manifest(manifest_content).await.unwrap();
 
     // Create corrupted lockfile
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        "corrupted content",
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), "corrupted content").await.unwrap();
 
     let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
     assert!(!output.success);
@@ -529,14 +475,8 @@ async fn test_validate_all() {
 
     // Add mock source repositories
     let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo
-        .add_resource("agents", "my-agent", "# My Agent\n\nA test agent")
-        .await
-        .unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils\n\nA test snippet")
-        .await
-        .unwrap();
+    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
+    official_repo.add_resource("snippets", "utils", "# Utils\n\nA test snippet").await.unwrap();
     official_repo.commit_all("Initial commit").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
 
@@ -550,9 +490,7 @@ async fn test_validate_all() {
 
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let community_url = community_repo
-        .bare_file_url(project.sources_path())
-        .unwrap();
+    let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
     let manifest_content = format!(
         r#"
@@ -618,16 +556,9 @@ installed_at = "snippets/utils.md"
 "#
     );
 
-    fs::write(
-        project.project_path().join("agpm.lock"),
-        lockfile_content.trim(),
-    )
-    .await
-    .unwrap();
+    fs::write(project.project_path().join("agpm.lock"), lockfile_content.trim()).await.unwrap();
 
-    let output = project
-        .run_agpm(&["validate", "--resolve", "--check-lock"])
-        .unwrap();
+    let output = project.run_agpm(&["validate", "--resolve", "--check-lock"]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
 }
@@ -700,11 +631,7 @@ async fn test_validate_specific_file() {
     let project = TestProject::new().await.unwrap();
 
     // Create a manifest that uses file:// URLs
-    let sources_path_str = project
-        .sources_path()
-        .display()
-        .to_string()
-        .replace('\\', "/");
+    let sources_path_str = project.sources_path().display().to_string().replace('\\', "/");
     let manifest_content = format!(
         r#"
 [sources]
@@ -721,13 +648,9 @@ utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     );
 
     let manifest_path = project.project_path().join("agpm.toml");
-    fs::write(&manifest_path, manifest_content.trim())
-        .await
-        .unwrap();
+    fs::write(&manifest_path, manifest_content.trim()).await.unwrap();
 
-    let output = project
-        .run_agpm(&["validate", manifest_path.to_str().unwrap()])
-        .unwrap();
+    let output = project.run_agpm(&["validate", manifest_path.to_str().unwrap()]).unwrap();
     assert!(output.success);
     assert!(output.stdout.contains("✓"));
     assert!(output.stdout.contains("Valid"));

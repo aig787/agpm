@@ -125,10 +125,7 @@ impl BackupManager {
         let mut backup_path = executable_path.clone();
         backup_path.set_file_name(format!(
             "{}.backup",
-            executable_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
+            executable_path.file_name().unwrap_or_default().to_string_lossy()
         ));
 
         Self {
@@ -186,9 +183,7 @@ impl BackupManager {
         // Remove old backup if it exists
         if self.backup_path.exists() {
             debug!("Removing old backup at {:?}", self.backup_path);
-            fs::remove_file(&self.backup_path)
-                .await
-                .context("Failed to remove old backup")?;
+            fs::remove_file(&self.backup_path).await.context("Failed to remove old backup")?;
         }
 
         // Copy current binary to backup location
@@ -290,11 +285,7 @@ impl BackupManager {
                     return Ok(());
                 }
                 Err(e) if attempts < MAX_ATTEMPTS - 1 => {
-                    warn!(
-                        "Restore attempt {} failed: {}. Retrying...",
-                        attempts + 1,
-                        e
-                    );
+                    warn!("Restore attempt {} failed: {}. Retrying...", attempts + 1, e);
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                     attempts += 1;
                 }
@@ -337,9 +328,8 @@ impl BackupManager {
         // Restore permissions on Unix
         #[cfg(unix)]
         {
-            let metadata = fs::metadata(&self.backup_path)
-                .await
-                .context("Failed to read backup metadata")?;
+            let metadata =
+                fs::metadata(&self.backup_path).await.context("Failed to read backup metadata")?;
             let permissions = metadata.permissions();
             fs::set_permissions(&self.original_path, permissions)
                 .await
@@ -389,9 +379,7 @@ impl BackupManager {
     pub async fn cleanup_backup(&self) -> Result<()> {
         if self.backup_path.exists() {
             debug!("Cleaning up backup at {:?}", self.backup_path);
-            fs::remove_file(&self.backup_path)
-                .await
-                .context("Failed to remove backup")?;
+            fs::remove_file(&self.backup_path).await.context("Failed to remove backup")?;
         }
         Ok(())
     }

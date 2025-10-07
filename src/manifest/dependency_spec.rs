@@ -67,9 +67,7 @@ impl DependencyMetadata {
 
     /// Get the total count of dependencies.
     pub fn dependency_count(&self) -> usize {
-        self.dependencies
-            .as_ref()
-            .map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
+        self.dependencies.as_ref().map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
     }
 
     /// Merge another metadata into this one.

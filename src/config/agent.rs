@@ -541,10 +541,7 @@ mod tests {
         assert_eq!(manifest.metadata.name, "test-agent");
         assert_eq!(manifest.metadata.author, "John Doe");
         assert_eq!(manifest.metadata.license, "MIT");
-        assert_eq!(
-            manifest.metadata.description,
-            "test-agent agent for Claude Code"
-        );
+        assert_eq!(manifest.metadata.description, "test-agent agent for Claude Code");
     }
 
     #[test]

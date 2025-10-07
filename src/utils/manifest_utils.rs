@@ -39,13 +39,13 @@ pub fn load_project_manifest(project_dir: &Path) -> Result<Manifest> {
     let manifest_path = project_dir.join("agpm.toml");
 
     if !manifest_path.exists() {
-        return Err(
-            anyhow!("No agpm.toml found in {}", project_dir.display()).context(ErrorContext {
+        return Err(anyhow!("No agpm.toml found in {}", project_dir.display()).context(
+            ErrorContext {
                 error: crate::core::AgpmError::ManifestNotFound,
                 suggestion: Some("Run 'agpm init' to create a new project".to_string()),
                 details: Some(format!("Expected manifest at: {}", manifest_path.display())),
-            }),
-        );
+            },
+        ));
     }
 
     Manifest::load(&manifest_path).with_context(|| ErrorContext {
@@ -79,24 +79,19 @@ pub fn load_and_validate_manifest(
     require_dependencies: bool,
 ) -> Result<Manifest> {
     if !manifest_path.exists() {
-        return Err(anyhow!(
-            "Manifest file not found: {}",
-            manifest_path.display()
-        ));
+        return Err(anyhow!("Manifest file not found: {}", manifest_path.display()));
     }
 
     let manifest = Manifest::load(manifest_path)?;
 
     if require_sources && manifest.sources.is_empty() {
-        return Err(
-            anyhow!("No sources defined in manifest").context(ErrorContext {
-                error: crate::core::AgpmError::ManifestValidationError {
-                    reason: "No sources defined in manifest".to_string(),
-                },
-                suggestion: Some("Add at least one source using 'agpm add source'".to_string()),
-                details: None,
-            }),
-        );
+        return Err(anyhow!("No sources defined in manifest").context(ErrorContext {
+            error: crate::core::AgpmError::ManifestValidationError {
+                reason: "No sources defined in manifest".to_string(),
+            },
+            suggestion: Some("Add at least one source using 'agpm add source'".to_string()),
+            details: None,
+        }));
     }
 
     if require_dependencies
@@ -105,15 +100,13 @@ pub fn load_and_validate_manifest(
             && manifest.commands.is_empty()
             && manifest.mcp_servers.is_empty())
     {
-        return Err(
-            anyhow!("No dependencies defined in manifest").context(ErrorContext {
-                error: crate::core::AgpmError::ManifestValidationError {
-                    reason: "No dependencies defined in manifest".to_string(),
-                },
-                suggestion: Some("Add dependencies using 'agpm add dep'".to_string()),
-                details: None,
-            }),
-        );
+        return Err(anyhow!("No dependencies defined in manifest").context(ErrorContext {
+            error: crate::core::AgpmError::ManifestValidationError {
+                reason: "No dependencies defined in manifest".to_string(),
+            },
+            suggestion: Some("Add dependencies using 'agpm add dep'".to_string()),
+            details: None,
+        }));
     }
 
     Ok(manifest)

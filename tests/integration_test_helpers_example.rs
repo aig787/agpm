@@ -27,9 +27,7 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
         .await?;
 
     // Create a local resource
-    project
-        .create_local_resource("agents/local-agent.md", "# Local Agent\n\nTest content")
-        .await?;
+    project.create_local_resource("agents/local-agent.md", "# Local Agent\n\nTest content").await?;
 
     // Verify the project structure was created correctly
     DirAssert::exists(project.project_path()).await;
@@ -42,11 +40,8 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
 
     // Verify local resource was created
     FileAssert::exists(project.project_path().join("agents/local-agent.md")).await;
-    FileAssert::contains(
-        project.project_path().join("agents/local-agent.md"),
-        "# Local Agent",
-    )
-    .await;
+    FileAssert::contains(project.project_path().join("agents/local-agent.md"), "# Local Agent")
+        .await;
 
     // Run a AGPM command (validate in this case)
     let output = project.run_agpm(&["validate"])?;
@@ -69,9 +64,7 @@ async fn test_using_test_source_repo_helper() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Add custom resource
-    source_repo
-        .add_resource("agents", "custom", "# Custom Agent\nSpecial content")
-        .await?;
+    source_repo.add_resource("agents", "custom", "# Custom Agent\nSpecial content").await?;
     source_repo.commit_all("Add custom agent")?;
     source_repo.tag_version("v1.1.0")?;
 

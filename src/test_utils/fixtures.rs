@@ -325,23 +325,11 @@ impl GitRepoFixture {
 
         // Configure git user (required for commits)
         std::process::Command::new("git")
-            .args([
-                "-C",
-                self.path.to_str().unwrap(),
-                "config",
-                "user.email",
-                "test@example.com",
-            ])
+            .args(["-C", self.path.to_str().unwrap(), "config", "user.email", "test@example.com"])
             .output()?;
 
         std::process::Command::new("git")
-            .args([
-                "-C",
-                self.path.to_str().unwrap(),
-                "config",
-                "user.name",
-                "Test User",
-            ])
+            .args(["-C", self.path.to_str().unwrap(), "config", "user.name", "Test User"])
             .output()?;
 
         // Add files
@@ -355,13 +343,7 @@ impl GitRepoFixture {
             .output()?;
 
         std::process::Command::new("git")
-            .args([
-                "-C",
-                self.path.to_str().unwrap(),
-                "commit",
-                "-m",
-                "Initial commit",
-            ])
+            .args(["-C", self.path.to_str().unwrap(), "commit", "-m", "Initial commit"])
             .output()?;
 
         // Create a v1.0.0 tag

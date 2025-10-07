@@ -477,10 +477,7 @@ async fn handle_rollback(current_exe: &std::path::Path) -> Result<()> {
         bail!("No backup found. Cannot rollback.");
     }
 
-    backup_manager
-        .restore_backup()
-        .await
-        .context("Failed to restore from backup")?;
+    backup_manager.restore_backup().await.context("Failed to restore from backup")?;
 
     println!("{}", "Successfully rolled back to previous version".green());
 
@@ -513,23 +510,15 @@ async fn check_for_updates(updater: &SelfUpdater, version_checker: &VersionCheck
         Ok(Some(latest_version)) => {
             println!(
                 "{}",
-                format!(
-                    "Update available: {} -> {}",
-                    updater.current_version(),
-                    latest_version
-                )
-                .green()
+                format!("Update available: {} -> {}", updater.current_version(), latest_version)
+                    .green()
             );
             println!("Run `agpm upgrade` to install the latest version");
         }
         Ok(None) => {
             println!(
                 "{}",
-                format!(
-                    "You are on the latest version ({})",
-                    updater.current_version()
-                )
-                .green()
+                format!("You are on the latest version ({})", updater.current_version()).green()
             );
         }
         Err(e) => {
@@ -553,10 +542,7 @@ async fn perform_upgrade(
     } else {
         println!("{}", "Creating backup...".cyan());
         let manager = BackupManager::new(current_exe.to_path_buf());
-        manager
-            .create_backup()
-            .await
-            .context("Failed to create backup")?;
+        manager.create_backup().await.context("Failed to create backup")?;
         Some(manager)
     };
 
@@ -591,25 +577,15 @@ async fn perform_upgrade(
         Ok(false) => {
             println!(
                 "{}",
-                format!(
-                    "Already on the latest version ({})",
-                    updater.current_version()
-                )
-                .green()
+                format!("Already on the latest version ({})", updater.current_version()).green()
             );
         }
         Err(e) => {
             // Attempt to restore from backup on failure
             if let Some(manager) = backup_manager {
-                println!(
-                    "{}",
-                    "Upgrade failed. Attempting to restore backup...".red()
-                );
+                println!("{}", "Upgrade failed. Attempting to restore backup...".red());
                 if let Err(restore_err) = manager.restore_backup().await {
-                    eprintln!(
-                        "{}",
-                        format!("Failed to restore backup: {restore_err}").red()
-                    );
+                    eprintln!("{}", format!("Failed to restore backup: {restore_err}").red());
                     eprintln!("Backup is located at: {}", manager.backup_path().display());
                 } else {
                     println!("{}", "Successfully restored from backup".green());
