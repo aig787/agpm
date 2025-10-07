@@ -318,10 +318,10 @@ impl TreeCommand {
         let name_str = node.name.cyan();
         let version_str =
             node.version.as_deref().map(|v| format!(" {}", v.blue())).unwrap_or_default();
-        let source_str = node.source.as_deref().map_or_else(
-            || " (local)".blue().to_string(),
-            |s| format!(" ({})", s.blue()),
-        );
+        let source_str = node
+            .source
+            .as_deref()
+            .map_or_else(|| " (local)".blue().to_string(), |s| format!(" ({})", s.blue()));
         let tool_str = format!(" [{}]", node.tool.bright_yellow());
         let dup_marker = if is_duplicate {
             " (*)".blue().to_string()
@@ -329,7 +329,9 @@ impl TreeCommand {
             String::new()
         };
 
-        println!("{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{dup_marker}");
+        println!(
+            "{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{dup_marker}"
+        );
 
         // If this is a duplicate and we're deduplicating, don't show children
         if is_duplicate {
@@ -451,7 +453,13 @@ impl TreeCommand {
 
         println!(
             "{}{}/{} {} ({}) [{}]{}",
-            indent_str, node.resource_type, node.name, version_str, source_str, node.tool, dup_marker
+            indent_str,
+            node.resource_type,
+            node.name,
+            version_str,
+            source_str,
+            node.tool,
+            dup_marker
         );
 
         if is_duplicate {
