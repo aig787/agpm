@@ -1470,7 +1470,7 @@ impl Manifest {
             )
         })?;
 
-        let manifest: Self = toml::from_str(&content)
+        let mut manifest: Self = toml::from_str(&content)
             .map_err(|e| crate::core::AgpmError::ManifestParseError {
                 file: path.display().to_string(),
                 reason: e.to_string(),
@@ -1487,9 +1487,44 @@ impl Manifest {
                 )
             })?;
 
+        // Apply resource-type-specific defaults for artifact_type
+        // Snippets default to "agpm" (shared infrastructure) instead of "claude-code"
+        manifest.apply_artifact_type_defaults();
+
         manifest.validate()?;
 
         Ok(manifest)
+    }
+
+    /// Apply resource-type-specific defaults for artifact_type.
+    ///
+    /// This method adjusts the artifact_type field based on the resource type to provide
+    /// more sensible defaults:
+    /// - **Snippets**: Default to "agpm" (shared infrastructure) instead of "claude-code"
+    /// - **All other resources**: Keep "claude-code" as the default
+    ///
+    /// This is called automatically after deserialization in `load()`.
+    ///
+    /// # Rationale
+    ///
+    /// Snippets are designed to be shared content across multiple tools (Claude Code,
+    /// OpenCode, etc.). The `.agpm/snippets/` location provides a shared infrastructure
+    /// that can be referenced by resources from different tools. Therefore, snippets
+    /// should default to the "agpm" artifact type.
+    ///
+    /// Users can still explicitly set `type = "claude-code"` for a snippet if they want
+    /// it installed to `.claude/agpm/snippets/` instead.
+    fn apply_artifact_type_defaults(&mut self) {
+        // Apply snippet-specific default: "agpm" instead of "claude-code"
+        for dependency in self.snippets.values_mut() {
+            if let ResourceDependency::Detailed(details) = dependency {
+                // Only change if it's still the serde default ("claude-code")
+                // This means: no explicit type was specified in the manifest
+                if details.artifact_type == "claude-code" {
+                    details.artifact_type = "agpm".to_string();
+                }
+            }
+        }
     }
 
     /// Save the manifest to a TOML file with pretty formatting.
@@ -1861,16 +1896,72 @@ impl Manifest {
                             .map(|s| s.to_string())
                             .collect();
 
-                        return Err(crate::core::AgpmError::ManifestValidationError {
-                            reason: format!(
-                                "Resource type '{}' is not supported by artifact type '{artifact_type}' for dependency '{name}'.\n\
-                                Supported resource types for '{artifact_type}': {}\n\
-                                Either change the artifact type or use a different resource type.",
-                                resource_type.to_plural(),
-                                supported_types.join(", ")
-                            ),
+                        // Build resource-type-specific suggestions
+                        let mut suggestions = Vec::new();
+
+                        match resource_type {
+                            crate::core::ResourceType::Snippet => {
+                                suggestions.push("Snippets work best with the 'agpm' artifact type (shared infrastructure)".to_string());
+                                suggestions.push(
+                                    "Add type='agpm' to this dependency to use shared snippets"
+                                        .to_string(),
+                                );
+                            }
+                            _ => {
+                                // Find which artifact types DO support this resource type
+                                let default_config = ArtifactsConfig::default();
+                                let artifacts_config =
+                                    self.artifacts.as_ref().unwrap_or(&default_config);
+                                let resource_plural = resource_type.to_plural();
+                                let supporting_types: Vec<String> = artifacts_config
+                                    .types
+                                    .iter()
+                                    .filter(|(_, config)| {
+                                        config.resources.contains_key(resource_plural)
+                                    })
+                                    .map(|(type_name, _)| format!("'{}'", type_name))
+                                    .collect();
+
+                                if !supporting_types.is_empty() {
+                                    suggestions.push(format!(
+                                        "This resource type is supported by artifact types: {}",
+                                        supporting_types.join(", ")
+                                    ));
+                                }
+                            }
                         }
-                        .into());
+
+                        let mut reason = format!(
+                            "Resource type '{}' is not supported by artifact type '{}' for dependency '{}'.\n\n",
+                            resource_type.to_plural(),
+                            artifact_type,
+                            name
+                        );
+
+                        reason.push_str(&format!(
+                            "Artifact type '{}' supports: {}\n\n",
+                            artifact_type,
+                            supported_types.join(", ")
+                        ));
+
+                        if !suggestions.is_empty() {
+                            reason.push_str("💡 Suggestions:\n");
+                            for suggestion in &suggestions {
+                                reason.push_str(&format!("  • {}\n", suggestion));
+                            }
+                            reason.push('\n');
+                        }
+
+                        reason.push_str(
+                            "You can fix this by:\n\
+                            1. Changing the 'type' field to a supported artifact type\n\
+                            2. Using a different resource type\n\
+                            3. Removing this dependency from your manifest",
+                        );
+
+                        return Err(
+                            crate::core::AgpmError::ManifestValidationError { reason }.into()
+                        );
                     }
                 }
             }

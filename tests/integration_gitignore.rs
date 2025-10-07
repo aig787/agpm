@@ -22,7 +22,7 @@ async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
+snippets = ".agpm/snippets"
 commands = ".claude/commands"
 gitignore = {}
 
@@ -49,7 +49,7 @@ async fn create_test_manifest_default(source_dir: &Path) -> String {
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
+snippets = ".agpm/snippets"
 commands = ".claude/commands"
 
 [agents.test-agent]
@@ -74,7 +74,8 @@ installed_at = ".claude/agents/test-agent.md"
 name = "test-snippet"
 path = "source/snippets/test.md"
 checksum = ""
-installed_at = ".claude/agpm/snippets/test-snippet.md"
+installed_at = ".agpm/snippets/test-snippet.md"
+artifact_type = "agpm"
 
 [[commands]]
 name = "test-command"
@@ -256,7 +257,7 @@ temp/
     // Check that AGPM section exists (entries will be based on what was actually installed)
     assert!(updated_content.contains("AGPM managed entries"));
     assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".claude/agpm/snippets/test-snippet.md"));
+    assert!(updated_content.contains(".agpm/snippets/test-snippet.md"));
 }
 
 #[tokio::test]
@@ -316,7 +317,7 @@ debug/
     // Check AGPM section is updated
     assert!(updated_content.contains("AGPM managed entries"));
     assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".claude/agpm/snippets/test-snippet.md"));
+    assert!(updated_content.contains(".agpm/snippets/test-snippet.md"));
 
     // Check content after AGPM section is preserved
     assert!(updated_content.contains("# Additional entries after AGPM section"));
@@ -621,8 +622,12 @@ async fn test_gitignore_actually_ignored_by_git() {
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
-    assert!(project_dir.join(".claude/commands/test-command.md").exists());
+    assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();
@@ -663,7 +668,7 @@ async fn test_gitignore_actually_ignored_by_git() {
         "Agent file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".claude/agpm/snippets/test-snippet.md").unwrap(),
+        git.check_ignore(".agpm/snippets/test-snippet.md").unwrap(),
         "Snippet file should be ignored by git check-ignore"
     );
     assert!(
@@ -692,8 +697,12 @@ async fn test_gitignore_disabled_files_not_ignored_by_git() {
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
     assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
-    assert!(project_dir.join(".claude/commands/test-command.md").exists());
+    assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
+    assert!(
+        project_dir
+            .join(".claude/commands/test-command.md")
+            .exists()
+    );
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();

@@ -368,14 +368,16 @@ opencode-agent = { source = "community", path = "agents/helper.md", type = "open
 
 ### Resource Type Support Matrix
 
-| Resource      | claude-code | opencode | agpm |
-|---------------|-------------|----------|------|
-| agents        | ✅ `.claude/agents/` | ✅ `.opencode/agent/` (singular) | ❌ |
-| commands      | ✅ `.claude/commands/` | ✅ `.opencode/command/` (singular) | ❌ |
-| scripts       | ✅ `.claude/scripts/` | ❌ | ❌ |
-| hooks         | ✅ `.claude/hooks/` | ❌ | ❌ |
-| mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ |
-| snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` |
+| Resource      | claude-code | opencode | agpm | Default Type |
+|---------------|-------------|----------|------|--------------|
+| agents        | ✅ `.claude/agents/` | ✅ `.opencode/agent/` (singular) | ❌ | `claude-code` |
+| commands      | ✅ `.claude/commands/` | ✅ `.opencode/command/` (singular) | ❌ | `claude-code` |
+| scripts       | ✅ `.claude/scripts/` | ❌ | ❌ | `claude-code` |
+| hooks         | ✅ `.claude/hooks/` | ❌ | ❌ | `claude-code` |
+| mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
+| snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
+
+**Note**: Snippets default to `agpm` artifact type (shared infrastructure). Use `type = "claude-code"` to override.
 
 ### MCP Handler System
 

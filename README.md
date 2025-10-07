@@ -2,17 +2,22 @@
 
 > ⚠️ **Beta Software**: This project is in active development and may contain breaking changes. Use with caution in
 > production environments.
+> 
+> 🚧 **OpenCode Support**: OpenCode integration is currently in **alpha**. While functional, it may have incomplete features or breaking changes. Claude Code support is stable and production-ready.
 
-A Git-based package manager for Claude Code and other agentic tools that enables reproducible installations using
-lockfile-based
-dependency management, similar to Cargo.
+A Git-based package manager for AI coding assistants (Claude Code, OpenCode, and more) that enables reproducible
+installations using lockfile-based dependency management, similar to Cargo. AGPM supports multiple tools through a
+pluggable artifact system, allowing you to manage resources for different AI assistants from a single manifest.
 
 ## Features
+
+> 🚧 **OpenCode Alpha**: Multi-tool support includes OpenCode in alpha. See [Multi-Tool Support](#multi-tool-support) for details.
 
 - 📦 **Lockfile-based dependency management** - Reproducible installations like Cargo with auto-update
 - 🌐 **Git-based distribution** - Install from any Git repository (GitHub, GitLab, Bitbucket)
 - 🚀 **No central registry** - Fully decentralized approach
 - 🔒 **Cargo-style lockfile handling** - Auto-updates by default, strict validation with `--frozen`
+- 🤖 **Multi-tool support** - Manage resources for Claude Code, OpenCode (🚧 alpha), and custom tools from one manifest
 - 🔧 **Six resource types** - Agents, Snippets, Commands, Scripts, Hooks, MCP Servers
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
@@ -252,6 +257,105 @@ dependencies = [
 ]
 ```
 
+## Multi-Tool Support
+
+> 🚧 **Important Notice**: OpenCode support is currently in **alpha**. While functional, it may have incomplete features or breaking changes in future releases. Claude Code support is stable and production-ready.
+
+AGPM supports multiple AI coding assistants through a pluggable artifact system. You can manage resources for different
+tools from a single manifest, enabling shared workflows and infrastructure.
+
+### Supported Artifact Types
+
+- **claude-code** - Claude Code resources (agents, commands, scripts, hooks, MCP servers) ✅ **Stable**
+  - Default for: agents, commands, scripts, hooks, mcp-servers
+- **opencode** - OpenCode resources for agents, commands, and MCP servers 🚧 **Alpha**
+  - **Note**: Alpha status - features may change. Use with caution in production.
+- **agpm** - Shared snippets and templates usable across tools ✅ **Stable**
+  - Default for: snippets
+- **custom** - Define your own artifact types via configuration
+
+### Resource Type Support Matrix
+
+| Resource    | Claude Code                  | OpenCode (Alpha)              | AGPM                 |
+|-------------|------------------------------|-------------------------------|----------------------|
+| Agents      | ✅ `.claude/agents/`          | 🚧 `.opencode/agent/`          | ❌                    |
+| Commands    | ✅ `.claude/commands/`        | 🚧 `.opencode/command/`        | ❌                    |
+| Scripts     | ✅ `.claude/agpm/scripts/`    | ❌                             | ❌                    |
+| Hooks       | ✅ `.claude/hooks/`           | ❌                             | ❌                    |
+| MCP Servers | ✅ `.mcp.json`                | 🚧 `opencode.json`             | ❌                    |
+| Snippets    | ✅ `.claude/agpm/snippets/`   | ❌                             | ✅ `.agpm/snippets/`  |
+
+### Multi-Tool Manifest Example
+
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# Claude Code agent (default - no type field needed)
+claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# OpenCode agent (explicit type field) - 🚧 Alpha feature
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+
+# Both tools can share the same source file - AGPM installs to the correct location based on type
+
+[snippets]
+# Shared snippets (usable by both tools via references)
+rust-patterns = { source = "community", path = "snippets/rust/*.md", version = "v1.0.0" }
+```
+
+### How It Works
+
+1. **Default Behavior**:
+   - **Snippets** default to `agpm` (shared infrastructure at `.agpm/snippets/`)
+   - **All other resources** default to `claude-code`
+2. **Explicit Routing**: Add `type = "opencode"` or `type = "claude-code"` to override defaults
+3. **Shared Content**: Snippets use `.agpm/snippets/` by default for cross-tool sharing
+4. **Tool-Specific MCP**: MCP servers automatically merge into the correct configuration file
+
+### Example: Mixed-Tool Project
+
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# Rust experts for both tools
+rust-expert-cc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
+
+[commands]
+# Deployment command for Claude Code
+deploy-cc = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
+# Same command for OpenCode
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v1.0.0", type = "opencode" }
+
+[mcp-servers]
+# MCP servers for both tools (automatically routed to correct config file)
+filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }  # 🚧 Alpha
+
+[snippets]
+# Snippets default to agpm (shared across all tools)
+shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0" }
+# No type field needed - installs to .agpm/snippets/ by default
+```
+
+**Installation Results:**
+- `rust-expert-cc` → `.claude/agents/rust-expert.md`
+- `rust-expert-oc` → `.opencode/agent/rust-expert.md` (note: singular "agent") 🚧 Alpha
+- `filesystem-cc` → Merged into `.mcp.json`
+- `filesystem-oc` → Merged into `opencode.json` 🚧 Alpha
+- `shared-patterns` → `.agpm/snippets/patterns/*.md` (shared infrastructure)
+
+### Benefits of Multi-Tool Support
+
+- **Unified Workflow**: Manage all AI assistant resources from one place
+- **Shared Infrastructure**: Reuse common snippets and patterns across tools
+- **Consistent Versioning**: Lock all tools to the same resource versions
+- **Easy Migration**: Switch between tools without recreating resource infrastructure
+
 ## Core Commands
 
 | Command         | Description                                                  |
@@ -273,14 +377,18 @@ Run `agpm --help` for full command reference.
 
 ## Resource Types
 
-AGPM manages six types of resources:
+AGPM manages six types of resources that can target different AI coding assistants:
 
-- **Agents** - AI assistant configurations (`.claude/agents/`)
-- **Snippets** - Reusable code templates (`.claude/agpm/snippets/`)
-- **Commands** - Claude Code slash commands (`.claude/commands/`)
+- **Agents** - AI assistant configurations (`.claude/agents/` or `.opencode/agent/` 🚧)
+- **Snippets** - Reusable code templates (`.claude/agpm/snippets/` or `.agpm/snippets/`)
+- **Commands** - Slash commands (`.claude/commands/` or `.opencode/command/` 🚧)
 - **Scripts** - Executable automation files (`.claude/agpm/scripts/`)
 - **Hooks** - Event-based automation (merged into `.claude/settings.local.json`)
-- **MCP Servers** - Model Context Protocol servers (merged into `.mcp.json`)
+- **MCP Servers** - Model Context Protocol servers (merged into `.mcp.json` or `opencode.json` 🚧)
+
+> 🚧 **Note**: Paths marked with 🚧 indicate OpenCode alpha support. See [Multi-Tool Support](#multi-tool-support) for details on stability status.
+
+Resources route to the appropriate directory based on the `type` field.
 
 ## Documentation
 

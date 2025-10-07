@@ -147,22 +147,22 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     // Check snippets (4 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet1.md"),
+        &project.project_path().join(".agpm/snippets/snippet1.md"),
         "Snippet 1 v1.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet2.md"),
+        &project.project_path().join(".agpm/snippets/snippet2.md"),
         "Snippet 2 v1.1.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet3.md"),
+        &project.project_path().join(".agpm/snippets/snippet3.md"),
         "Snippet 3 v3.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet4.md"),
+        &project.project_path().join(".agpm/snippets/snippet4.md"),
         "Snippet 4 v4.0.0",
     )
     .await?;
@@ -203,36 +203,48 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/scripts/deploy.py"),
+        &project
+            .project_path()
+            .join(".claude/agpm/scripts/deploy.py"),
         "Deploy Script v3.0.0",
     )
     .await?;
 
     // Check hooks (2 resources)
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/hooks/pre-commit.json"),
+        &project
+            .project_path()
+            .join(".claude/agpm/hooks/pre-commit.json"),
         "Pre-commit hook v2.1.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/hooks/post-commit.json"),
+        &project
+            .project_path()
+            .join(".claude/agpm/hooks/post-commit.json"),
         "Post-commit hook v3.1.0",
     )
     .await?;
 
     // Check MCP servers (3 resources)
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/filesystem.json"),
+        &project
+            .project_path()
+            .join(".claude/agpm/mcp-servers/filesystem.json"),
         "\"version\": \"v2.2.0\"",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/postgres.json"),
+        &project
+            .project_path()
+            .join(".claude/agpm/mcp-servers/postgres.json"),
         "\"version\": \"v3.0.0\"",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/redis.json"),
+        &project
+            .project_path()
+            .join(".claude/agpm/mcp-servers/redis.json"),
         "\"version\": \"v4.0.0\"",
     )
     .await?;
@@ -321,7 +333,10 @@ fn create_v1_resources(repo_dir: &Path) -> Result<()> {
         repo_dir.join("agents/alpha.md"),
         "# Agent Alpha v1.0.0\n\nInitial alpha agent",
     )?;
-    sync_fs::write(repo_dir.join("agents/beta.md"), "# Agent Beta v1.0.0\n\nInitial beta agent")?;
+    sync_fs::write(
+        repo_dir.join("agents/beta.md"),
+        "# Agent Beta v1.0.0\n\nInitial beta agent",
+    )?;
     sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v1.0.0\n\nInitial gamma agent",
@@ -356,9 +371,18 @@ fn create_v1_resources(repo_dir: &Path) -> Result<()> {
         repo_dir.join("commands/deploy.md"),
         "# Deploy Command v1.0.0\n\nInitial deploy",
     )?;
-    sync_fs::write(repo_dir.join("commands/build.md"), "# Build Command v1.0.0\n\nInitial build")?;
-    sync_fs::write(repo_dir.join("commands/test.md"), "# Test Command v1.0.0\n\nInitial test")?;
-    sync_fs::write(repo_dir.join("commands/lint.md"), "# Lint Command v1.0.0\n\nInitial lint")?;
+    sync_fs::write(
+        repo_dir.join("commands/build.md"),
+        "# Build Command v1.0.0\n\nInitial build",
+    )?;
+    sync_fs::write(
+        repo_dir.join("commands/test.md"),
+        "# Test Command v1.0.0\n\nInitial test",
+    )?;
+    sync_fs::write(
+        repo_dir.join("commands/lint.md"),
+        "# Lint Command v1.0.0\n\nInitial lint",
+    )?;
 
     Ok(())
 }
@@ -392,7 +416,10 @@ fn update_scripts_v1_2(repo_dir: &Path) -> Result<()> {
 
 fn update_agents_v2(repo_dir: &Path) -> Result<()> {
     // Update beta and gamma agents
-    sync_fs::write(repo_dir.join("agents/beta.md"), "# Agent Beta v2.0.0\n\nMajor update to beta")?;
+    sync_fs::write(
+        repo_dir.join("agents/beta.md"),
+        "# Agent Beta v2.0.0\n\nMajor update to beta",
+    )?;
     sync_fs::write(
         repo_dir.join("agents/gamma.md"),
         "# Agent Gamma v2.0.0\n\nMajor update to gamma",
@@ -406,7 +433,10 @@ fn update_command_v2_1(repo_dir: &Path) -> Result<()> {
         repo_dir.join("commands/deploy.md"),
         "# Deploy Command v2.1.0\n\nEnhanced deploy",
     )?;
-    sync_fs::write(repo_dir.join("agents/gamma.md"), "# Agent Gamma v2.1.0\n\nGamma v2.1.0")?;
+    sync_fs::write(
+        repo_dir.join("agents/gamma.md"),
+        "# Agent Gamma v2.1.0\n\nGamma v2.1.0",
+    )?;
 
     // Add hooks
     sync_fs::create_dir_all(repo_dir.join("hooks"))?;
@@ -480,7 +510,10 @@ fn update_commands_v3_2(repo_dir: &Path) -> Result<()> {
         repo_dir.join("commands/build.md"),
         "# Build Command v3.2.0\n\nBuild automation v3.2",
     )?;
-    sync_fs::write(repo_dir.join("commands/test.md"), "# Test Command v3.2.0\n\nTest runner v3.2")?;
+    sync_fs::write(
+        repo_dir.join("commands/test.md"),
+        "# Test Command v3.2.0\n\nTest runner v3.2",
+    )?;
     Ok(())
 }
 
@@ -490,7 +523,10 @@ fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
         repo_dir.join("snippets/snippet4.md"),
         "# Snippet 4 v4.0.0\n\nBreaking snippet four",
     )?;
-    sync_fs::write(repo_dir.join("commands/lint.md"), "# Lint Command v4.0.0\n\nLinter v4.0")?;
+    sync_fs::write(
+        repo_dir.join("commands/lint.md"),
+        "# Lint Command v4.0.0\n\nLinter v4.0",
+    )?;
     sync_fs::write(
         repo_dir.join("mcp-servers/redis.json"),
         r#"{"name": "redis", "version": "v4.0.0", "type": "cache", "breaking": true}"#,
@@ -564,7 +600,10 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
     fs::write(project.project_path().join("agpm.toml"), &manifest_content).await?;
 
     // Log the manifest content and working directory for debugging
-    debug!("Generated manifest content for version conflict test:\n{}", manifest_content);
+    debug!(
+        "Generated manifest content for version conflict test:\n{}",
+        manifest_content
+    );
     debug!("Running agpm from directory: {:?}", project.project_path());
 
     // Install should succeed but we can check for warnings in future versions
@@ -573,12 +612,22 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
 
     // Verify both are installed with their specified versions
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agpm/snippets/base.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".agpm/snippets/base.md")
+            .exists()
+    );
     let snippet_content =
-        fs::read_to_string(project.project_path().join(".claude/agpm/snippets/base.md")).await?;
+        fs::read_to_string(project.project_path().join(".agpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
-    assert!(project.project_path().join(".claude/agents/dependent.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/dependent.md")
+            .exists()
+    );
     let agent_content =
         fs::read_to_string(project.project_path().join(".claude/agents/dependent.md")).await?;
     assert!(agent_content.contains("Requires snippet-base v1.0.0"));

@@ -16,9 +16,15 @@ async fn test_instance_cache_reuse() -> Result<()> {
 
     // Create test source with multiple agents
     let source_repo = project.create_source_repo("official").await?;
-    source_repo.add_resource("agents", "agent-1", "# Agent 1\n\nTest agent 1").await?;
-    source_repo.add_resource("agents", "agent-2", "# Agent 2\n\nTest agent 2").await?;
-    source_repo.add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3").await?;
+    source_repo
+        .add_resource("agents", "agent-1", "# Agent 1\n\nTest agent 1")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-2", "# Agent 2\n\nTest agent 2")
+        .await?;
+    source_repo
+        .add_resource("agents", "agent-3", "# Agent 3\n\nTest agent 3")
+        .await?;
     source_repo.commit_all("Add test agents")?;
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
@@ -64,9 +70,24 @@ agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" 
 
     // Verify all files were installed correctly
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agents/agent-1.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-2.md").exists());
-    assert!(project.project_path().join(".claude/agents/agent-3.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent-1.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent-2.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/agent-3.md")
+            .exists()
+    );
 
     Ok(())
 }
@@ -79,13 +100,25 @@ async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
     // Create test source with multiple dependencies from same repo
     let source_repo = project.create_source_repo("official").await?;
     source_repo
-        .add_resource("agents", "fetch-agent-1", "# Fetch Agent 1\n\nTest fetch agent 1")
+        .add_resource(
+            "agents",
+            "fetch-agent-1",
+            "# Fetch Agent 1\n\nTest fetch agent 1",
+        )
         .await?;
     source_repo
-        .add_resource("agents", "fetch-agent-2", "# Fetch Agent 2\n\nTest fetch agent 2")
+        .add_resource(
+            "agents",
+            "fetch-agent-2",
+            "# Fetch Agent 2\n\nTest fetch agent 2",
+        )
         .await?;
     source_repo
-        .add_resource("snippets", "fetch-snippet-1", "# Fetch Snippet 1\n\nTest fetch snippet 1")
+        .add_resource(
+            "snippets",
+            "fetch-snippet-1",
+            "# Fetch Snippet 1\n\nTest fetch snippet 1",
+        )
         .await?;
     source_repo.commit_all("Add test resources")?;
     source_repo.tag_version("v1.0.0")?;
@@ -123,9 +156,27 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
 
     // Verify all resources installed
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agents/fetch-agent-1.md").exists());
-    assert!(project.project_path().join(".claude/agents/fetch-agent-2.md").exists());
-    assert!(project.project_path().join(".claude/agpm/snippets/fetch-snippet-1.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/fetch-agent-1.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/fetch-agent-2.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".agpm/snippets/fetch-snippet-1.md")
+            .exists()
+    );
+
+    // Explicitly drop source_repo to ensure Git file locks are released before TempDir cleanup
+    drop(source_repo);
 
     Ok(())
 }
@@ -181,8 +232,9 @@ official = "{}"
     // Verify all agents were installed
     // Files use basename from path, not dependency name
     for i in 0..20 {
-        let agent_path =
-            project.project_path().join(format!(".claude/agents/concurrent-agent-{:02}.md", i));
+        let agent_path = project
+            .project_path()
+            .join(format!(".claude/agents/concurrent-agent-{:02}.md", i));
         assert!(agent_path.exists(), "Agent {} should be installed", i);
     }
 
@@ -196,7 +248,11 @@ async fn test_cache_persistence() -> Result<()> {
 
     let source_repo = project.create_source_repo("official").await?;
     source_repo
-        .add_resource("agents", "persistent-agent", "# Persistent Agent\n\nTest persistent agent")
+        .add_resource(
+            "agents",
+            "persistent-agent",
+            "# Persistent Agent\n\nTest persistent agent",
+        )
         .await?;
     source_repo
         .add_resource(
@@ -239,8 +295,18 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
 
     // Verify final state
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agents/persistent-agent.md").exists());
-    assert!(project.project_path().join(".claude/agpm/snippets/persistent-snippet.md").exists());
+    assert!(
+        project
+            .project_path()
+            .join(".claude/agents/persistent-agent.md")
+            .exists()
+    );
+    assert!(
+        project
+            .project_path()
+            .join(".agpm/snippets/persistent-snippet.md")
+            .exists()
+    );
 
     Ok(())
 }

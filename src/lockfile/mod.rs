@@ -901,6 +901,11 @@ impl LockFile {
         }
         for resource in &mut lockfile.snippets {
             resource.resource_type = crate::core::ResourceType::Snippet;
+            // Apply snippet-specific default: "agpm" instead of "claude-code"
+            // This handles old lockfiles that don't have artifact_type set for snippets
+            if resource.artifact_type == "claude-code" {
+                resource.artifact_type = "agpm".to_string();
+            }
         }
         for resource in &mut lockfile.commands {
             resource.resource_type = crate::core::ResourceType::Command;

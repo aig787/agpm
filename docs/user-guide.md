@@ -7,7 +7,7 @@ This guide will help you get started with AGPM and cover common workflows.
 ### Prerequisites
 
 - Git 2.0 or later installed
-- Claude Code installed
+- Claude Code, OpenCode, or another supported AI coding assistant
 - (Optional) Rust toolchain for building from source
 
 ### Installation
@@ -103,6 +103,92 @@ Sources are Git repositories containing resources:
 - Can be public (GitHub, GitLab) or private
 - Can be local directories for development
 - Authentication handled via global config
+
+## Multi-Tool Support
+
+AGPM supports multiple AI coding assistants from a single manifest using the artifact type system.
+
+> ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
+> changes in future releases. Use with caution in production environments. Claude Code support is stable and production-ready.
+
+### Supported Tools
+
+- **Claude Code** (default) - Full support for agents, commands, scripts, hooks, MCP servers, and snippets ✅ **Stable**
+- **OpenCode** - Support for agents, commands, and MCP servers 🚧 **Alpha**
+- **AGPM** - Shared snippets that can be referenced by multiple tools ✅ **Stable**
+- **Custom** - Define your own artifact types via configuration
+
+### Using Multiple Tools
+
+By default, resources install for Claude Code. To target a different tool, add the `type` field:
+
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# Claude Code agent (default - no type field needed)
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+# → Installs to .claude/agents/rust-expert.md
+
+# OpenCode agent (explicit type)
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
+# → Installs to .opencode/agent/rust-expert.md
+
+[snippets]
+# Shared snippet (accessible to both tools)
+rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0", type = "agpm" }
+# → Installs to .agpm/snippets/rust-patterns.md
+```
+
+### Directory Differences
+
+**Important**: OpenCode uses singular directory names while Claude Code uses plural:
+
+| Resource | Claude Code | OpenCode (Alpha) |
+|----------|-------------|------------------|
+| Agents | `.claude/agents/` | 🚧 `.opencode/agent/` |
+| Commands | `.claude/commands/` | 🚧 `.opencode/command/` |
+| MCP Servers | `.mcp.json` | 🚧 `opencode.json` |
+
+AGPM handles this automatically based on the `type` field.
+
+### Multi-Tool Project Example
+
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# Install the same agent for both tools
+helper-cc = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }  # Alpha
+
+# Rust experts for both
+rust-expert-cc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }  # Alpha
+
+[commands]
+# Deployment commands for both tools
+deploy-cc = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", type = "opencode" }  # Alpha
+
+[mcp-servers]
+# MCP servers (automatically routed to correct config file)
+filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }  # Alpha
+
+[snippets]
+# Shared snippets usable by both tools
+shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0", type = "agpm" }
+```
+
+### Benefits
+
+- **Unified Management**: One manifest for all your AI assistant resources
+- **Consistent Versioning**: Keep all tools synchronized to the same resource versions
+- **Shared Infrastructure**: Reuse snippets and patterns across tools
+- **Easy Migration**: Switch between tools without recreating your resource setup
 
 ## Common Workflows
 
