@@ -43,6 +43,27 @@ pub struct MigrateCommand {
 }
 
 impl MigrateCommand {
+    /// Create a new migrate command with the given options.
+    ///
+    /// This is useful for programmatic invocation of the migrate command,
+    /// such as from interactive migration prompts.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Optional path to the directory containing legacy files
+    /// * `dry_run` - Whether to perform a dry run without actually renaming
+    ///
+    /// # Returns
+    ///
+    /// A new `MigrateCommand` instance ready for execution
+    #[must_use]
+    pub fn new(path: Option<PathBuf>, dry_run: bool) -> Self {
+        Self {
+            path,
+            dry_run,
+        }
+    }
+
     /// Execute the migrate command.
     ///
     /// # Returns

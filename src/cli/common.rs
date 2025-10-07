@@ -2,7 +2,9 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::manifest::{Manifest, find_manifest};
 
@@ -17,14 +19,17 @@ pub trait CommandExecutor: Sized {
             let manifest_path = if let Ok(path) = find_manifest() {
                 path
             } else {
-                // Check if legacy CCPM files exist
-                if let Some(migration_msg) = check_for_legacy_ccpm_files() {
-                    return Err(anyhow::anyhow!("{migration_msg}"));
+                // Check if legacy CCPM files exist and offer interactive migration
+                match handle_legacy_ccpm_migration().await {
+                    Ok(Some(path)) => path,
+                    Ok(None) => {
+                        return Err(anyhow::anyhow!(
+                            "No agpm.toml found in current directory or any parent directory. \
+                             Run 'agpm init' to create a new project."
+                        ));
+                    }
+                    Err(e) => return Err(e),
                 }
-                return Err(anyhow::anyhow!(
-                    "No agpm.toml found in current directory or any parent directory. \
-                     Run 'agpm init' to create a new project."
-                ));
             };
             self.execute_from_path(manifest_path).await
         }
@@ -99,6 +104,107 @@ impl CommandContext {
     }
 }
 
+/// Handle legacy CCPM files by offering interactive migration.
+///
+/// This function searches for ccpm.toml and ccpm.lock files in the current
+/// directory and parent directories. If found, it prompts the user to migrate
+/// and performs the migration if they accept.
+///
+/// # Behavior
+///
+/// - **Interactive mode**: Prompts user with Y/n confirmation (stdin is a TTY)
+/// - **Non-interactive mode**: Returns `Ok(None)` if stdin is not a TTY (e.g., CI/CD)
+/// - **Search scope**: Traverses from current directory to filesystem root
+///
+/// # Returns
+///
+/// - `Ok(Some(PathBuf))` with the path to agpm.toml if migration succeeded
+/// - `Ok(None)` if no legacy files were found OR user declined OR non-interactive mode
+/// - `Err` if migration failed
+///
+/// # Examples
+///
+/// ```no_run
+/// # use anyhow::Result;
+/// # async fn example() -> Result<()> {
+/// use agpm::cli::common::handle_legacy_ccpm_migration;
+///
+/// match handle_legacy_ccpm_migration().await? {
+///     Some(path) => println!("Migrated to: {}", path.display()),
+///     None => println!("No migration performed"),
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub async fn handle_legacy_ccpm_migration() -> Result<Option<PathBuf>> {
+    let current_dir = std::env::current_dir()?;
+    let legacy_dir = find_legacy_ccpm_directory(&current_dir);
+
+    let Some(dir) = legacy_dir else {
+        return Ok(None);
+    };
+
+    // Check if we're in an interactive terminal
+    if !std::io::stdin().is_terminal() {
+        // Non-interactive mode: Don't prompt, just inform and exit
+        eprintln!("{}", "Legacy CCPM files detected (non-interactive mode).".yellow());
+        eprintln!(
+            "Run {} to migrate manually.",
+            format!("agpm migrate --path {}", dir.display()).cyan()
+        );
+        return Ok(None);
+    }
+
+    // Found legacy files - prompt for migration
+    let ccpm_toml = dir.join("ccpm.toml");
+    let ccpm_lock = dir.join("ccpm.lock");
+
+    let mut files = Vec::new();
+    if ccpm_toml.exists() {
+        files.push("ccpm.toml");
+    }
+    if ccpm_lock.exists() {
+        files.push("ccpm.lock");
+    }
+
+    let files_str = files.join(" and ");
+
+    println!("{}", "Legacy CCPM files detected!".yellow().bold());
+    println!("{} {} found in {}", "→".cyan(), files_str, dir.display());
+    println!();
+
+    // Prompt user for migration
+    print!("{} ", "Would you like to migrate to AGPM now? [Y/n]:".green());
+    io::stdout().flush()?;
+
+    // Use async I/O for proper integration with Tokio runtime
+    let mut reader = BufReader::new(tokio::io::stdin());
+    let mut response = String::new();
+    reader.read_line(&mut response).await?;
+    let response = response.trim().to_lowercase();
+
+    if response.is_empty() || response == "y" || response == "yes" {
+        println!();
+        println!("{}", "🚀 Starting migration...".cyan());
+
+        // Perform the migration
+        let migrate_cmd = super::migrate::MigrateCommand::new(Some(dir.clone()), false);
+
+        migrate_cmd.execute().await?;
+
+        // Return the path to the newly created agpm.toml
+        Ok(Some(dir.join("agpm.toml")))
+    } else {
+        println!();
+        println!("{}", "Migration cancelled.".yellow());
+        println!(
+            "Run {} to migrate manually.",
+            format!("agpm migrate --path {}", dir.display()).cyan()
+        );
+        Ok(None)
+    }
+}
+
 /// Check for legacy CCPM files and return a migration message if found.
 ///
 /// This function searches for ccpm.toml and ccpm.lock files in the current
@@ -112,6 +218,30 @@ impl CommandContext {
 /// - `None` if no legacy files are detected
 pub fn check_for_legacy_ccpm_files() -> Option<String> {
     check_for_legacy_ccpm_files_from(std::env::current_dir().ok()?)
+}
+
+/// Find the directory containing legacy CCPM files.
+///
+/// Searches for ccpm.toml or ccpm.lock starting from the given directory
+/// and walking up the directory tree.
+///
+/// # Returns
+///
+/// - `Some(PathBuf)` with the directory containing legacy files
+/// - `None` if no legacy files are found
+fn find_legacy_ccpm_directory(start_dir: &Path) -> Option<PathBuf> {
+    let mut dir = start_dir;
+
+    loop {
+        let ccpm_toml = dir.join("ccpm.toml");
+        let ccpm_lock = dir.join("ccpm.lock");
+
+        if ccpm_toml.exists() || ccpm_lock.exists() {
+            return Some(dir.to_path_buf());
+        }
+
+        dir = dir.parent()?;
+    }
 }
 
 /// Check for legacy CCPM files starting from a specific directory.
@@ -321,4 +451,69 @@ fetched_at = "2024-01-01T00:00:00Z"
         let msg = result.unwrap();
         assert!(msg.contains("ccpm.toml and ccpm.lock"));
     }
+
+    #[test]
+    fn test_find_legacy_ccpm_directory_no_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let result = find_legacy_ccpm_directory(temp_dir.path());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_legacy_ccpm_directory_in_current_dir() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.toml"), "[sources]\n").unwrap();
+
+        let result = find_legacy_ccpm_directory(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), temp_dir.path());
+    }
+
+    #[test]
+    fn test_find_legacy_ccpm_directory_in_parent() {
+        let temp_dir = TempDir::new().unwrap();
+        let parent = temp_dir.path();
+        let child = parent.join("subdir");
+        std::fs::create_dir(&child).unwrap();
+
+        // Create legacy file in parent
+        std::fs::write(parent.join("ccpm.toml"), "[sources]\n").unwrap();
+
+        // Search from child directory
+        let result = find_legacy_ccpm_directory(&child);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), parent);
+    }
+
+    #[test]
+    fn test_find_legacy_ccpm_directory_finds_lock_file() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("ccpm.lock"), "# lock\n").unwrap();
+
+        let result = find_legacy_ccpm_directory(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), temp_dir.path());
+    }
+
+    #[tokio::test]
+    async fn test_handle_legacy_ccpm_migration_no_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+
+        // Change to temp directory with no legacy files
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let result = handle_legacy_ccpm_migration().await;
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    // Note: Testing interactive behavior (user input) requires mocking stdin,
+    // which is complex with tokio::io::stdin(). The non-interactive TTY check
+    // will be automatically triggered in CI environments, providing implicit
+    // integration testing.
 }
