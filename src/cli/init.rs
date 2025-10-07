@@ -174,17 +174,17 @@ impl InitCommand {
 # Add your Git repository sources here
 # Example: official = "https://github.com/aig787/agpm-community.git"
 
-# Artifact type configurations (multi-tool support)
-[artifacts.claude-code]
+# Tool type configurations (multi-tool support)
+[tools.claude-code]
 path = ".claude"
 resources = { agents = { path = "agents" }, snippets = { path = "agpm/snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "mcp-servers" } }
 
-[artifacts.opencode]
+[tools.opencode]
 path = ".opencode"
 resources = { agents = { path = "agent" }, commands = { path = "command" } }
 # Note: OpenCode MCP servers merge into opencode.json (no file installation)
 
-[artifacts.agpm]
+[tools.agpm]
 path = ".agpm"
 resources = { snippets = { path = "snippets" } }
 
