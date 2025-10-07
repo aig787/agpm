@@ -350,14 +350,25 @@ impl InstallCommand {
     /// ```
     pub async fn execute_with_manifest_path(self, manifest_path: Option<PathBuf>) -> Result<()> {
         // Find manifest file
-        let manifest_path = find_manifest_with_optional(manifest_path).with_context(|| {
-            "No agpm.toml found in current directory or any parent directory.\n\n\
-            To get started, create a agpm.toml file with your dependencies:\n\n\
-            [sources]\n\
-            official = \"https://github.com/example-org/agpm-official.git\"\n\n\
-            [agents]\n\
-            my-agent = { source = \"official\", path = \"agents/my-agent.md\", version = \"v1.0.0\" }"
-        })?;
+        let manifest_path = if let Ok(path) = find_manifest_with_optional(manifest_path) {
+            path
+        } else {
+            // Check if legacy CCPM files exist and offer interactive migration
+            match crate::cli::common::handle_legacy_ccpm_migration().await {
+                Ok(Some(path)) => path,
+                Ok(None) => {
+                    return Err(anyhow::anyhow!(
+                        "No agpm.toml found in current directory or any parent directory.\n\n\
+                        To get started, create a agpm.toml file with your dependencies:\n\n\
+                        [sources]\n\
+                        official = \"https://github.com/example-org/agpm-official.git\"\n\n\
+                        [agents]\n\
+                        my-agent = {{ source = \"official\", path = \"agents/my-agent.md\", version = \"v1.0.0\" }}"
+                    ));
+                }
+                Err(e) => return Err(e),
+            }
+        };
 
         self.execute_from_path(Some(&manifest_path)).await
     }

@@ -2667,10 +2667,6 @@ pub fn find_manifest_from(mut current: PathBuf) -> Result<PathBuf> {
         }
 
         if !current.pop() {
-            // Check for legacy CCPM files before returning error
-            if let Some(migration_msg) = crate::cli::common::check_for_legacy_ccpm_files() {
-                return Err(anyhow::anyhow!("{migration_msg}"));
-            }
             return Err(crate::core::AgpmError::ManifestNotFound.into());
         }
     }
