@@ -1,22 +1,22 @@
 # Resources Guide
 
 AGPM manages six types of resources for AI coding assistants (Claude Code, OpenCode, and more), divided into two categories
-based on how they're integrated. Resources can target different tools through the artifact type system, enabling you to
+based on how they're integrated. Resources can target different tools through the tool configuration system, enabling you to
 manage resources for multiple AI assistants from a single manifest.
 
-## Artifact Type System
+## Tool Configuration System
 
 AGPM routes resources to different tools based on the `type` field:
 
 - **claude-code** (default) - Claude Code resources with full feature support ✅ **Stable**
 - **opencode** - OpenCode resources for agents, commands, and MCP servers 🚧 **Alpha**
 - **agpm** - Shared snippets usable across tools ✅ **Stable**
-- **custom** - Define your own artifact types
+- **custom** - Define your own custom tools
 
 > ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
 > changes in future releases. Claude Code support is stable and production-ready.
 
-**Default Behavior**: Resources without an explicit `type` field default to `claude-code`.
+**Default Behavior**: Resources without an explicit `type` field default to `claude-code`, except for `snippets` which default to `agpm` (shared infrastructure).
 
 **Example**:
 ```toml
@@ -53,7 +53,7 @@ These resources are installed to `.claude/agpm/` and then their configurations a
 AI assistant configurations with prompts and behavioral definitions.
 
 **Default Locations**:
-- **Claude Code**: `.claude/agents/` (plural) ✅ **Stable**
+- **Claude Code**: `.claude/agents/` ✅ **Stable**
 - **OpenCode**: `.opencode/agent/` (singular) 🚧 **Alpha**
 
 **Path Preservation**: AGPM preserves the source directory structure during installation.
@@ -87,18 +87,18 @@ local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/ai
 
 Reusable code templates and documentation fragments.
 
-**Default Location**: `.agpm/snippets/` ✅ **Stable** (AGPM artifact type)
+**Default Location**: `.agpm/snippets/` ✅ **Stable** (AGPM tool)
 
 **Alternative Location**: `.claude/agpm/snippets/` (explicitly set `type = "claude-code"`)
 
-**Default Behavior**: Snippets automatically default to the `agpm` artifact type, meaning they install to `.agpm/snippets/`
+**Default Behavior**: Snippets automatically default to the `agpm` tool, meaning they install to `.agpm/snippets/`
 by default. This is because snippets are designed as shared content that can be referenced by resources from multiple
 tools (Claude Code, OpenCode, etc.).
 
 **Example**:
 ```toml
 [snippets]
-# Default: installs to .agpm/snippets/ (agpm artifact type is the default)
+# Default: installs to .agpm/snippets/ (agpm tool is the default)
 react-component = { source = "community", path = "snippets/react-component.md", version = "v1.2.0" }
 
 # Same as above - snippets are shared by default
@@ -115,7 +115,7 @@ utils = { source = "local-deps", path = "snippets/utils.md" }
 Slash commands that extend AI assistant functionality.
 
 **Default Locations**:
-- **Claude Code**: `.claude/commands/` (plural) ✅ **Stable**
+- **Claude Code**: `.claude/commands/` ✅ **Stable**
 - **OpenCode**: `.opencode/command/` (singular) 🚧 **Alpha**
 
 **Example**:
@@ -134,7 +134,7 @@ lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 
 Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently.
 
-**Default Location**: `.claude/agpm/scripts/`
+**Default Location**: `.claude/scripts/`
 
 **Example**:
 ```toml

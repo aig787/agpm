@@ -6,10 +6,9 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 
 ```toml
 [sources]                 # Named Git or local repositories
-[target]                  # Optional install-location overrides
-[artifacts.claude-code]   # Optional: Configure Claude Code artifact type
-[artifacts.opencode]      # Optional: Configure OpenCode artifact type
-[artifacts.agpm]          # Optional: Configure AGPM artifact type
+[tools.claude-code]       # Optional: Configure Claude Code tool
+[tools.opencode]          # Optional: Configure OpenCode tool
+[tools.agpm]              # Optional: Configure AGPM tool
 [agents]                  # Resource sections share the same dependency schema
 [snippets]
 [commands]
@@ -34,7 +33,7 @@ Each resource table maps a dependency name (key) to either a simple string path 
 | `source` | Only for Git resources | agents/snippets/commands/scripts/hooks/mcp-servers | Name from `[sources]`; omit for local filesystem paths. | Parsed from the `source:` prefix (e.g., `community:...`). |
 | `path` | Yes | All | File path inside the repo (Git) or filesystem path/glob (local). Patterns are detected by `*`, `?`, or `[]`. | Parsed from the middle portion of the spec. |
 | `version` | Default `"main"` for Git | Git resources | Tag, semantic range, `latest`, or branch alias. Used when no explicit `branch`/`rev` are provided. | Parsed from `@value` when using `agpm add dep`. Defaults to `main` if omitted. |
-| `type` | Default varies by resource | All | Artifact type: `claude-code`, `opencode`, `agpm`, or custom. **Defaults**: snippets → `agpm`, all others → `claude-code`. Routes resources to tool-specific directories. | Manual edit. |
+| `type` | Default varies by resource | All | Target tool: `claude-code`, `opencode`, `agpm`, or custom. **Defaults**: snippets → `agpm`, all others → `claude-code`. Routes resources to tool-specific directories. | Manual edit. |
 | `branch` | No | Git resources | Track a branch tip. Overrides `version` when present. Requires manual manifest edit today. | Add manually: `{ branch = "develop" }`. |
 | `rev` | No | Git resources | Exact commit SHA (short or full). Highest precedence when set. | Add manually; not provided by current CLI shorthand. |
 | `command` | MCP servers | MCP | Launch command (e.g., `npx`, `uvx`). | Use inline table or edit manifest. |
@@ -68,24 +67,23 @@ pinned  = { source = "community", path = "agents/dev.md", rev = "abc123def" }
 - AGPM expands the pattern during install and records every concrete match in `agpm.lock` under the resolved dependency, using `resource_type/name@resolved_version` entries.
 - Conflicts are detected after expansion—if two patterns resolve to the same install location, the install fails with a duplicate-path error (see the conflicts section for remediation guidance).
 
-## Targets and Naming Overrides
+## Naming Overrides
 
 | Setting | Section | Purpose | Example |
 | --- | --- | --- | --- |
-| `[target]` table | Manifest root | Move entire resource types | `commands = "tools/commands"` |
 | `target` field | Dependency table | Move a single resource | `tool = { ..., target = "custom/tools" }` |
 | `filename` field | Dependency table | Override installed filename | `tool = { ..., filename = "dev-tool.md" }` |
 
-## Artifact Type Configuration
+## Tool Configuration
 
-AGPM supports multiple AI coding assistants through configurable artifact types. Each type defines where resources are installed.
+AGPM supports multiple AI coding assistants through configurable tools. Each tool defines where resources are installed.
 
 > ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
 > changes in future releases. Claude Code support is stable and production-ready.
 
-### Default Artifact Types
+### Default Tools
 
-| Type | Base Directory | Supported Resources | Status |
+| Tool | Base Directory | Supported Resources | Status |
 | --- | --- | --- | --- |
 | `claude-code` (default) | `.claude` | agents, commands, scripts, hooks, mcp-servers, snippets | ✅ Stable |
 | `opencode` | `.opencode` | agents, commands, mcp-servers | 🚧 Alpha |
@@ -111,20 +109,20 @@ shared = { source = "community", path = "snippets/rust-patterns.md", version = "
 claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", type = "claude-code" }
 ```
 
-### Custom Artifact Configuration
+### Custom Tool Configuration
 
-Override default directories or define custom artifact types:
+Override default directories or define custom tools:
 
 ```toml
-[artifacts.claude-code]
+[tools.claude-code]
 path = ".claude"
 resources = { agents = { path = "agents" }, commands = { path = "commands" } }
 
-[artifacts.opencode]
+[tools.opencode]
 path = ".opencode"
 resources = { agents = { path = "agent" }, commands = { path = "command" } }
 
-[artifacts.custom-tool]
+[tools.custom-tool]
 path = ".mytool"
 resources = { agents = { path = "agents" }, commands = { path = "cmds" } }
 ```

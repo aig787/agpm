@@ -7,7 +7,7 @@
 
 A Git-based package manager for AI coding assistants (Claude Code, OpenCode, and more) that enables reproducible
 installations using lockfile-based dependency management, similar to Cargo. AGPM supports multiple tools through a
-pluggable artifact system, allowing you to manage resources for different AI assistants from a single manifest.
+pluggable system, allowing you to manage resources for different AI assistants from a single manifest.
 
 ## Features
 
@@ -261,10 +261,10 @@ dependencies = [
 
 > 🚧 **Important Notice**: OpenCode support is currently in **alpha**. While functional, it may have incomplete features or breaking changes in future releases. Claude Code support is stable and production-ready.
 
-AGPM supports multiple AI coding assistants through a pluggable artifact system. You can manage resources for different
+AGPM supports multiple AI coding assistants through a pluggable tool system. You can manage resources for different
 tools from a single manifest, enabling shared workflows and infrastructure.
 
-### Supported Artifact Types
+### Supported Tools
 
 - **claude-code** - Claude Code resources (agents, commands, scripts, hooks, MCP servers) ✅ **Stable**
   - Default for: agents, commands, scripts, hooks, mcp-servers
@@ -272,7 +272,7 @@ tools from a single manifest, enabling shared workflows and infrastructure.
   - **Note**: Alpha status - features may change. Use with caution in production.
 - **agpm** - Shared snippets and templates usable across tools ✅ **Stable**
   - Default for: snippets
-- **custom** - Define your own artifact types via configuration
+- **custom** - Define your own tools via configuration
 
 ### Resource Type Support Matrix
 
@@ -280,10 +280,10 @@ tools from a single manifest, enabling shared workflows and infrastructure.
 |-------------|------------------------------|-------------------------------|----------------------|
 | Agents      | ✅ `.claude/agents/`          | 🚧 `.opencode/agent/`          | ❌                    |
 | Commands    | ✅ `.claude/commands/`        | 🚧 `.opencode/command/`        | ❌                    |
-| Scripts     | ✅ `.claude/agpm/scripts/`    | ❌                             | ❌                    |
+| Scripts     | ✅ `.claude/scripts/`         | ❌                             | ❌                    |
 | Hooks       | ✅ `.claude/hooks/`           | ❌                             | ❌                    |
 | MCP Servers | ✅ `.mcp.json`                | 🚧 `opencode.json`             | ❌                    |
-| Snippets    | ✅ `.claude/agpm/snippets/`   | ❌                             | ✅ `.agpm/snippets/`  |
+| Snippets    | ✅ `.claude/agpm/snippets/`   | ❌                             | ✅ `.agpm/snippets/` (default) |
 
 ### Multi-Tool Manifest Example
 
@@ -424,10 +424,10 @@ code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", ver
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
 
 [snippets]
-# Single file - installed at .claude/agpm/snippets/react-hooks.md
+# Single file - installed at .agpm/snippets/react-hooks.md (snippets default to agpm tool)
 react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "~1.2.0" }
 
-# Nested pattern - snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
+# Nested pattern - snippets/python/utils.md → .agpm/snippets/python/utils.md
 python-tools = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [scripts]

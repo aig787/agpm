@@ -106,7 +106,7 @@ Sources are Git repositories containing resources:
 
 ## Multi-Tool Support
 
-AGPM supports multiple AI coding assistants from a single manifest using the artifact type system.
+AGPM supports multiple AI coding assistants from a single manifest using the tool configuration system.
 
 > ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
 > changes in future releases. Use with caution in production environments. Claude Code support is stable and production-ready.
@@ -116,7 +116,7 @@ AGPM supports multiple AI coding assistants from a single manifest using the art
 - **Claude Code** (default) - Full support for agents, commands, scripts, hooks, MCP servers, and snippets ✅ **Stable**
 - **OpenCode** - Support for agents, commands, and MCP servers 🚧 **Alpha**
 - **AGPM** - Shared snippets that can be referenced by multiple tools ✅ **Stable**
-- **Custom** - Define your own artifact types via configuration
+- **Custom** - Define your own custom tools via configuration
 
 ### Using Multiple Tools
 
@@ -538,11 +538,11 @@ After making changes, re-run `agpm install` to refresh `agpm.lock`. Use `RUST_LO
 Resources are installed to these default locations, with source directory structure preserved:
 
 - Agents: `.claude/agents/` (e.g., `agents/ai/helper.md` → `.claude/agents/ai/helper.md`)
-- Snippets: `.claude/agpm/snippets/` (e.g., `snippets/react/hooks.md` → `.claude/agpm/snippets/react/hooks.md`)
+- Snippets: `.agpm/snippets/` (default to agpm tool; e.g., `snippets/react/hooks.md` → `.agpm/snippets/react/hooks.md`)
 - Commands: `.claude/commands/` (e.g., `commands/build/deploy.md` → `.claude/commands/build/deploy.md`)
-- Scripts: `.claude/agpm/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/agpm/scripts/ci/test.sh`)
-- Hooks: `.claude/agpm/hooks/`
-- MCP Servers: `.claude/agpm/mcp-servers/`
+- Scripts: `.claude/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`)
+- Hooks: `.claude/hooks/`
+- MCP Servers: `.claude/agpm/mcp-servers/` (merged into `.mcp.json`)
 
 **Path Preservation**: The relative directory structure from the source repository is maintained during installation. This means:
 - `agents/example.md` → `.claude/agents/example.md`

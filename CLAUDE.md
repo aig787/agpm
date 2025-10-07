@@ -169,8 +169,8 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
 - **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
 - **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
-- **Multi-artifact-type support** (v0.4.0+): Pluggable artifact types (claude-code, opencode, agpm, custom)
-- **Artifact-aware path resolution**: Resources install to artifact-specific directories
+- **Multi-tool support** (v0.4.0+): Pluggable tools (claude-code, opencode, agpm, custom)
+- **Tool-aware path resolution**: Resources install to tool-specific directories
 - **Pluggable MCP handlers**: Tool-specific MCP server configuration (ClaudeCode, OpenCode)
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
@@ -335,25 +335,25 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Version constraint resolution**: Supports semver constraints like "^1.0", "~2.1"
 - **Automatic deduplication**: Multiple refs to same commit automatically share resources
 
-## Multi-Artifact-Type Support
+## Multi-Tool Support
 
-AGPM supports multiple AI coding tools via configurable artifact types:
+AGPM supports multiple AI coding tools via configurable tools:
 
-### Supported Artifact Types
+### Supported Tools
 
 - **claude-code** (default): Claude Code resources (agents, commands, scripts, hooks, MCP servers)
 - **opencode**: OpenCode resources (agents, commands, MCP servers)
 - **agpm**: AGPM-specific resources (snippets for reusable templates)
-- **custom**: User-defined artifact types via configuration
+- **custom**: User-defined tools via configuration
 
-### Artifact Configuration
+### Tool Configuration
 
-Each artifact type defines:
+Each tool defines:
 - **Base directory**: Where resources are installed (e.g., `.claude`, `.opencode`)
 - **Resource paths**: Subdirectories for each resource type
 - **MCP handling**: Tool-specific MCP server configuration strategy
 
-### Dependency Type Field
+### Dependency Tool Field
 
 Dependencies can specify their target tool:
 
@@ -377,7 +377,7 @@ opencode-agent = { source = "community", path = "agents/helper.md", type = "open
 | mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
 | snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
 
-**Note**: Snippets default to `agpm` artifact type (shared infrastructure). Use `type = "claude-code"` to override.
+**Note**: Snippets default to `agpm` tool (shared infrastructure). Use `type = "claude-code"` to override.
 
 ### MCP Handler System
 
@@ -405,16 +405,16 @@ Pluggable handlers for tool-specific MCP configuration:
 community = "https://github.com/aig787/agpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
-# Artifact type configurations (optional - uses defaults if omitted)
-[artifacts.claude-code]
+# Tool type configurations (optional - uses defaults if omitted)
+[tools.claude-code]
 path = ".claude"
 resources = { agents = { path = "agents" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "agpm/mcp-servers" }, snippets = { path = "agpm/snippets" } }
 
-[artifacts.opencode]
+[tools.opencode]
 path = ".opencode"
 resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = { path = "agpm/mcp-servers" } }
 
-[artifacts.agpm]
+[tools.agpm]
 path = ".agpm"
 resources = { snippets = { path = "snippets" } }
 
@@ -470,7 +470,7 @@ version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
 installed_at = ".claude/agents/example.md"  # Uses basename from path (v0.3.18+)
-artifact_type = "claude-code"  # Defaults to claude-code, omitted if default
+tool = "claude-code"  # Defaults to claude-code, omitted if default
 
 [[agents]]
 name = "opencode-helper"
@@ -480,7 +480,7 @@ version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
 installed_at = ".opencode/agent/helper.md"  # OpenCode uses singular "agent"
-artifact_type = "opencode"
+tool = "opencode"
 
 [[agents]]
 name = "ai-helper"

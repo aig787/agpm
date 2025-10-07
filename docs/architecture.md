@@ -71,24 +71,24 @@ agpm/
 - ResolvedVersion tracking with both SHA and resolved reference information
 - Single fetch per repository per command execution
 
-## Multi-Artifact Type System
+## Multi-Tool System
 
-AGPM v0.4.0 introduces a pluggable artifact system enabling support for multiple AI coding assistants from a single manifest.
+AGPM v0.4.0 introduces a pluggable tool system enabling support for multiple AI coding assistants from a single manifest.
 
 > ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While the architecture is stable, OpenCode-specific features
 > may have incomplete functionality or breaking changes in future releases. Claude Code support is production-ready.
 
 ### Architecture Overview
 
-The multi-artifact system consists of three key components:
+The multi-tool system consists of three key components:
 
-1. **Artifact Type Configuration** - Defines tool-specific directory structures and capabilities
+1. **Tool Configuration** - Defines tool-specific directory structures and capabilities
 2. **Resource Routing** - Routes dependencies to the correct tool based on `type` field
 3. **MCP Handler System** - Pluggable handlers for tool-specific MCP configuration
 
-### Artifact Type Configuration
+### Tool Configuration
 
-Each artifact type defines:
+Each tool defines:
 
 ```rust
 pub struct ArtifactConfig {
@@ -101,15 +101,15 @@ pub struct ResourceConfig {
 }
 ```
 
-**Default Artifact Types**:
+**Default Tool Types**:
 
 | Type | Base | Agents | Commands | Scripts | Hooks | MCP | Snippets | Status |
 |------|------|--------|----------|---------|-------|-----|----------|--------|
-| `claude-code` | `.claude` | `agents/` | `commands/` | `agpm/scripts/` | `hooks/` | `agpm/mcp-servers/` | `agpm/snippets/` | ✅ Stable |
+| `claude-code` | `.claude` | `agents/` | `commands/` | `scripts/` | `hooks/` | `agpm/mcp-servers/` | `agpm/snippets/` | ✅ Stable |
 | `opencode` | `.opencode` | `agent/` | `command/` | ❌ | ❌ | `agpm/mcp-servers/` | ❌ | 🚧 Alpha |
 | `agpm` | `.agpm` | ❌ | ❌ | ❌ | ❌ | ❌ | `snippets/` | ✅ Stable |
 
-**Note**: OpenCode uses singular directory names (`agent`, `command`) vs Claude Code's plural (`agents`, `commands`).
+**Note**: OpenCode uses singular directory names (`agent/`, `command/`) while Claude Code uses plural (`agents/`, `commands/`).
 
 ### Resource Routing
 
@@ -126,16 +126,16 @@ helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0
 
 **Resolution Flow**:
 1. Parse dependency with optional `type` field (defaults to `claude-code`)
-2. Look up artifact configuration for that type
-3. Determine target directory based on artifact config + resource type
+2. Look up tool configuration for that type
+3. Determine target directory based on tool config + resource type
 4. Install resource to computed path
 
-### Manifest Structure for Artifact Types
+### Manifest Structure for Tools
 
-Custom artifact types can be defined in the manifest:
+Custom tools can be defined in the manifest:
 
 ```toml
-[artifacts.custom-tool]
+[tools.custom-tool]
 path = ".mytool"
 resources = { agents = { path = "agents" }, commands = { path = "cmds" } }
 
@@ -148,7 +148,7 @@ custom-agent = { source = "community", path = "agents/helper.md", type = "custom
 
 - **Extensibility**: New tools can be added without core changes
 - **Isolation**: Each tool has its own directory structure
-- **Flexibility**: Custom artifact types for proprietary tools
+- **Flexibility**: Custom tools for proprietary assistants
 - **Consistency**: Same dependency format across all tools
 
 ## MCP Handler System
@@ -221,7 +221,7 @@ Manages OpenCode MCP servers:
 
 ### Handler Selection
 
-Handlers are selected based on the dependency's artifact type:
+Handlers are selected based on the dependency's tool type:
 
 ```toml
 [mcp-servers]
@@ -262,8 +262,8 @@ This enables:
 To support a new tool:
 
 1. Implement `McpHandler` trait
-2. Register handler with artifact type
-3. Define artifact configuration in manifest
+2. Register handler with tool type
+3. Define tool configuration in manifest
 
 Example custom handler:
 
@@ -892,7 +892,6 @@ Key dependencies and their purposes in AGPM's architecture:
 ### Testing Infrastructure
 - **assert_cmd** - CLI testing framework
 - **predicates** - Assertion helpers for test validation
-- **serial_test** - Sequential test execution for resource-sensitive tests
 - **tempfile** - Temporary directory management in tests
 
 See Cargo.toml for complete dependency list with exact versions.

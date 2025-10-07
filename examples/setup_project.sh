@@ -13,7 +13,6 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║          AGPM Example Project Setup Script                         ║${NC}"
-echo -e "${BLUE}║        Demonstrating Transitive Dependency Resolution              ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
