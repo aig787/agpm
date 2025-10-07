@@ -452,7 +452,7 @@ fn parse_dependency_spec(
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
         ))
     } else if is_local_path {

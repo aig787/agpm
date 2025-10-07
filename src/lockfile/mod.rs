@@ -744,28 +744,24 @@ pub struct LockedResource {
     #[serde(skip)]
     pub resource_type: crate::core::ResourceType,
 
-    /// Artifact type for multi-tool support (claude-code, opencode, agpm, custom).
+    /// Tool type for multi-tool support (claude-code, opencode, agpm, custom).
     ///
-    /// Specifies which tool/artifact type this resource is for. This determines
+    /// Specifies which target AI coding assistant tool this resource is for. This determines
     /// where the resource is installed and how it's configured.
     ///
     /// **Defaults to "claude-code"** for backward compatibility with existing lockfiles.
     ///
     /// Omitted from TOML serialization when the value is "claude-code" (default).
-    #[serde(
-        default = "default_artifact_type_lockfile",
-        skip_serializing_if = "is_default_artifact_type_lockfile",
-        rename = "artifact_type"
-    )]
-    pub artifact_type: String,
+    #[serde(default = "default_tool", skip_serializing_if = "is_default_tool", rename = "tool")]
+    pub tool: String,
 }
 
-fn default_artifact_type_lockfile() -> String {
+fn default_tool() -> String {
     "claude-code".to_string()
 }
 
-fn is_default_artifact_type_lockfile(artifact_type: &str) -> bool {
-    artifact_type == "claude-code"
+fn is_default_tool(tool: &str) -> bool {
+    tool == "claude-code"
 }
 
 impl LockFile {
@@ -902,9 +898,9 @@ impl LockFile {
         for resource in &mut lockfile.snippets {
             resource.resource_type = crate::core::ResourceType::Snippet;
             // Apply snippet-specific default: "agpm" instead of "claude-code"
-            // This handles old lockfiles that don't have artifact_type set for snippets
-            if resource.artifact_type == "claude-code" {
-                resource.artifact_type = "agpm".to_string();
+            // This handles old lockfiles that don't have tool set for snippets
+            if resource.tool == "claude-code" {
+                resource.tool = "agpm".to_string();
             }
         }
         for resource in &mut lockfile.commands {
@@ -1027,44 +1023,43 @@ impl LockFile {
         }
 
         // Helper to write resource arrays
-        let write_resources = |content: &mut String,
-                               resources: &[LockedResource],
-                               section: &str| {
-            for resource in resources {
-                content.push_str(&format!("[[{section}]]\n"));
-                content.push_str(&format!("name = {:?}\n", resource.name));
-                if let Some(source) = &resource.source {
-                    content.push_str(&format!("source = {source:?}\n"));
-                }
-                if let Some(url) = &resource.url {
-                    content.push_str(&format!("url = {url:?}\n"));
-                }
-                content.push_str(&format!("path = {:?}\n", resource.path));
-                if let Some(version) = &resource.version {
-                    content.push_str(&format!("version = {version:?}\n"));
-                }
-                if let Some(commit) = &resource.resolved_commit {
-                    content.push_str(&format!("resolved_commit = {commit:?}\n"));
-                }
-                content.push_str(&format!("checksum = {:?}\n", resource.checksum));
-                content.push_str(&format!("installed_at = {:?}\n", resource.installed_at));
-                // Only include artifact_type if it's not the default
-                if !is_default_artifact_type_lockfile(&resource.artifact_type) {
-                    content.push_str(&format!("artifact_type = {:?}\n", resource.artifact_type));
-                }
-                // Always include dependencies field, even if empty (matches Cargo.lock format)
-                content.push_str("dependencies = [");
-                if resource.dependencies.is_empty() {
-                    content.push_str("]\n\n");
-                } else {
-                    content.push('\n');
-                    for dep in &resource.dependencies {
-                        content.push_str(&format!("    {dep:?},\n"));
+        let write_resources =
+            |content: &mut String, resources: &[LockedResource], section: &str| {
+                for resource in resources {
+                    content.push_str(&format!("[[{section}]]\n"));
+                    content.push_str(&format!("name = {:?}\n", resource.name));
+                    if let Some(source) = &resource.source {
+                        content.push_str(&format!("source = {source:?}\n"));
                     }
-                    content.push_str("]\n\n");
+                    if let Some(url) = &resource.url {
+                        content.push_str(&format!("url = {url:?}\n"));
+                    }
+                    content.push_str(&format!("path = {:?}\n", resource.path));
+                    if let Some(version) = &resource.version {
+                        content.push_str(&format!("version = {version:?}\n"));
+                    }
+                    if let Some(commit) = &resource.resolved_commit {
+                        content.push_str(&format!("resolved_commit = {commit:?}\n"));
+                    }
+                    content.push_str(&format!("checksum = {:?}\n", resource.checksum));
+                    content.push_str(&format!("installed_at = {:?}\n", resource.installed_at));
+                    // Only include tool if it's not the default
+                    if !is_default_tool(&resource.tool) {
+                        content.push_str(&format!("tool = {:?}\n", resource.tool));
+                    }
+                    // Always include dependencies field, even if empty (matches Cargo.lock format)
+                    content.push_str("dependencies = [");
+                    if resource.dependencies.is_empty() {
+                        content.push_str("]\n\n");
+                    } else {
+                        content.push('\n');
+                        for dep in &resource.dependencies {
+                            content.push_str(&format!("    {dep:?},\n"));
+                        }
+                        content.push_str("]\n\n");
+                    }
                 }
-            }
-        };
+            };
 
         write_resources(&mut content, &self.agents, "agents");
         write_resources(&mut content, &self.snippets, "snippets");
@@ -1178,7 +1173,7 @@ impl LockFile {
     ///     installed_at: "agents/example-agent.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Agent,
-    ///     artifact_type: "claude-code".to_string(),
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1202,7 +1197,7 @@ impl LockFile {
     ///     installed_at: "snippets/util-snippet.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Snippet,
-    ///     artifact_type: "claude-code".to_string(),
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1249,7 +1244,7 @@ impl LockFile {
     ///     installed_at: ".claude/commands/build-command.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Command,
-    ///     artifact_type: "claude-code".to_string(),
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -1947,7 +1942,7 @@ impl LockFile {
     /// #     installed_at: "agents/my-agent.md".to_string(),
     /// #     dependencies: vec![],
     /// #     resource_type: ResourceType::Agent,
-    /// #     artifact_type: "claude-code".to_string(),
+    /// #     tool: "claude-code".to_string(),
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2129,7 +2124,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2228,7 +2223,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             true, // is_agent
         );
@@ -2247,7 +2242,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Snippet,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             false, // is_agent
         );
@@ -2266,7 +2261,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             true, // is_agent
         );
@@ -2319,7 +2314,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2351,7 +2346,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2370,7 +2365,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Snippet,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             false,
         );
@@ -2389,7 +2384,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2426,7 +2421,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2464,7 +2459,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2483,7 +2478,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );

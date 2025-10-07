@@ -45,9 +45,9 @@ opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = 
     let content = fs::read_to_string(&agent_path).await?;
     assert!(content.contains("OpenCode helper agent"));
 
-    // Verify lockfile contains opencode artifact type
+    // Verify lockfile contains opencode tool type
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"artifact_type = "opencode""#));
+    assert!(lockfile_content.contains(r#"tool = "opencode""#));
     assert!(lockfile_content.contains(r#"installed_at = ".opencode/agent/helper.md""#));
 
     Ok(())
@@ -216,9 +216,9 @@ opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", versi
     assert!(project.project_path().join(".opencode/agent/opencode-agent.md").exists());
     assert!(project.project_path().join(".opencode/command/opencode-cmd.md").exists());
 
-    // Verify lockfile has both artifact types
+    // Verify lockfile has both tool types
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"artifact_type = "opencode""#));
+    assert!(lockfile_content.contains(r#"tool = "opencode""#));
     // claude-code is the default and gets omitted in lockfile for brevity
 
     Ok(())
@@ -488,7 +488,7 @@ config-template = {{ source = "test_repo", path = "snippets/config-template.md",
 
     // Verify lockfile
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"artifact_type = "agpm""#));
+    assert!(lockfile_content.contains(r#"tool = "agpm""#));
 
     Ok(())
 }

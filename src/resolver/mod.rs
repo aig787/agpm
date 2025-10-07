@@ -1345,7 +1345,7 @@ impl DependencyResolver {
                     target: None,
                     filename: None,
                     dependencies: None, // Will be filled when fetched
-                    artifact_type: parent_detail.artifact_type.clone(),
+                    tool: parent_detail.tool.clone(),
                 })))
             }
         }
@@ -1735,7 +1735,7 @@ impl DependencyResolver {
 
             // Determine artifact type
             let artifact_type = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => &d.artifact_type,
+                crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
                 _ => "claude-code",
             };
 
@@ -1803,8 +1803,8 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, None),
                 resource_type,
-                artifact_type: match dep {
-                    crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                tool: match dep {
+                    crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
                     _ => "claude-code".to_string(),
                 },
             })
@@ -1884,7 +1884,7 @@ impl DependencyResolver {
 
             // Determine artifact type
             let artifact_type = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => &d.artifact_type,
+                crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
                 _ => "claude-code",
             };
 
@@ -1945,7 +1945,7 @@ impl DependencyResolver {
 
             // Extract artifact_type from dependency
             let artifact_type = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
                 _ => "claude-code".to_string(),
             };
 
@@ -1960,7 +1960,7 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, Some(source_name)),
                 resource_type,
-                artifact_type,
+                tool: artifact_type,
             })
         }
     }
@@ -2115,8 +2115,8 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, None),
                     resource_type,
-                    artifact_type: match dep {
-                        crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                    tool: match dep {
+                        crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
                         _ => "claude-code".to_string(),
                     },
                 });
@@ -2220,8 +2220,8 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, Some(source_name)),
                     resource_type,
-                    artifact_type: match dep {
-                        crate::manifest::ResourceDependency::Detailed(d) => d.artifact_type.clone(),
+                    tool: match dep {
+                        crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
                         _ => "claude-code".to_string(),
                     },
                 });
@@ -3330,7 +3330,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3348,7 +3348,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3427,7 +3427,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3506,7 +3506,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3608,7 +3608,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3656,7 +3656,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3735,7 +3735,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3814,7 +3814,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3831,7 +3831,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3889,7 +3889,7 @@ mod tests {
                 target: Some("integrations/custom".to_string()),
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3928,7 +3928,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -3966,7 +3966,7 @@ mod tests {
                 target: None,
                 filename: Some("ai-assistant.txt".to_string()),
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4004,7 +4004,7 @@ mod tests {
                 target: Some("tools/ai".to_string()),
                 filename: Some("assistant.markdown".to_string()),
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4043,7 +4043,7 @@ mod tests {
                 target: None,
                 filename: Some("analyze.py".to_string()),
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             false, // script (not agent)
         );
@@ -4175,7 +4175,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true, // agents
         );
@@ -4221,7 +4221,7 @@ mod tests {
                 target: Some("custom/agents".to_string()),
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4330,7 +4330,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4347,7 +4347,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4377,7 +4377,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4394,7 +4394,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4695,7 +4695,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4757,7 +4757,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4848,7 +4848,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4931,7 +4931,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4969,7 +4969,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -4987,7 +4987,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             })),
             true,
         );
@@ -5061,7 +5061,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let new_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5075,7 +5075,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result = resolver.resolve_version_conflict("test-agent", &existing, &new_dep, "app1");
@@ -5099,7 +5099,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result2 =
@@ -5118,7 +5118,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result3 =
@@ -5145,7 +5145,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5159,7 +5159,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result =
@@ -5203,7 +5203,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5217,7 +5217,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result = resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1");
@@ -5256,7 +5256,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5270,7 +5270,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result =
@@ -5305,7 +5305,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            artifact_type: "claude-code".to_string(),
+            tool: "claude-code".to_string(),
         }));
 
         let result =

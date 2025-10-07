@@ -194,7 +194,7 @@ use std::fs;
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
-///     artifact_type: "claude-code".to_string(),
+///     tool: "claude-code".to_string(),
 /// };
 ///
 /// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
@@ -394,7 +394,7 @@ pub async fn install_resource(
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
-///     artifact_type: "claude-code".to_string(),
+///     tool: "claude-code".to_string(),
 /// };
 ///
 /// let (installed, checksum) = install_resource_with_progress(
@@ -1296,7 +1296,7 @@ pub async fn install_resources(
                 {
                     // Try artifact config first, fall back to legacy target config
                     let target_dir = if let Some(artifact_path) =
-                        manifest.get_artifact_resource_path(&entry.artifact_type, resource_type)
+                        manifest.get_artifact_resource_path(&entry.tool, resource_type)
                     {
                         artifact_path.display().to_string()
                     } else {
@@ -1817,7 +1817,7 @@ pub async fn install_updated_resources(
         {
             // Try artifact config first, fall back to legacy target config
             let target_dir = if let Some(artifact_path) =
-                manifest.get_artifact_resource_path(&entry.artifact_type, resource_type)
+                manifest.get_artifact_resource_path(&entry.tool, resource_type)
             {
                 artifact_path.display().to_string()
             } else {
@@ -2557,7 +2557,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             }
         } else {
             LockedResource {
@@ -2572,7 +2572,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                artifact_type: "claude-code".to_string(),
+                tool: "claude-code".to_string(),
             }
         }
     }

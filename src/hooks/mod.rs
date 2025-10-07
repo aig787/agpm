@@ -370,7 +370,7 @@ pub async fn install_hooks(
                         installed_at: installed_path,
                         dependencies: Vec::new(),
                         resource_type: crate::core::ResourceType::Hook,
-                        artifact_type: detailed.artifact_type.clone(),
+                        tool: detailed.tool.clone(),
                     }
                 }
                 crate::manifest::ResourceDependency::Simple(path) => {
@@ -385,7 +385,7 @@ pub async fn install_hooks(
                         installed_at: installed_path,
                         dependencies: Vec::new(),
                         resource_type: crate::core::ResourceType::Hook,
-                        artifact_type: "claude-code".to_string(),
+                        tool: "claude-code".to_string(),
                     }
                 }
             }
@@ -840,7 +840,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
-                    artifact_type: "claude-code".to_string(),
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -922,7 +922,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
-                    artifact_type: "claude-code".to_string(),
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -958,7 +958,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
-                    artifact_type: "claude-code".to_string(),
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
