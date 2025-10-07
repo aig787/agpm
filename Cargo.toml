@@ -15,7 +15,6 @@ default = []
 test-utils = []
 
 [dependencies]
-is-terminal = "0.4"
 clap = { version = "4.5", features = ["derive", "cargo", "env"] }
 tokio = { version = "1.40", features = ["full"] }
 toml = "0.9.5"
@@ -42,10 +41,9 @@ regex = "1.11"
 futures = "0.3"
 fs4 = "0.13"
 glob = "0.3"
-once_cell = "1.21.3"
 dashmap = "6.1"
 reqwest = { version = "0.12", features = ["json"] }
-zip = "2.2"
+zip = "5.1.1"
 petgraph = "0.8.2"
 pubgrub = { version = "0.3.0", default-features = false }
 

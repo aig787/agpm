@@ -170,7 +170,7 @@ async fn test_install_without_manifest() {
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("Manifest file agpm.toml not found"),
+        output.stderr.contains("No agpm.toml found"),
         "Expected manifest not found error, got: {}",
         output.stderr
     );
