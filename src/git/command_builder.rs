@@ -92,12 +92,16 @@ pub struct GitCommand {
 
     /// Optional context string for enhanced error messages
     context: Option<String>,
+
+    /// For clone commands, store the URL for better error messages
+    clone_url: Option<String>,
 }
 
 impl Default for GitCommand {
     fn default() -> Self {
         Self {
             args: Vec::new(),
+            clone_url: None,
             current_dir: None,
             capture_output: true,
             env_vars: Vec::new(),
@@ -475,7 +479,8 @@ impl GitCommand {
             let effective_args = &full_args[args_start..];
 
             let error = if effective_args.first().is_some_and(|arg| arg == "clone") {
-                let url = effective_args.get(2).cloned().unwrap_or_default();
+                // Use the URL we stored when building the command, not by parsing args
+                let url = self.clone_url.unwrap_or_else(|| "unknown".to_string());
                 AgpmError::GitCloneFailed {
                     url,
                     reason: stderr.to_string(),
@@ -597,6 +602,7 @@ impl GitCommand {
         cmd.args.push("--recurse-submodules".to_string());
         cmd.args.push(url.to_string());
         cmd.args.push(target.as_ref().display().to_string());
+        cmd.clone_url = Some(url.to_string());
         cmd
     }
 
@@ -776,6 +782,7 @@ impl GitCommand {
         ]);
 
         cmd.args.extend(args);
+        cmd.clone_url = Some(url.to_string());
         cmd
     }
 
