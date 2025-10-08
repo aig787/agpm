@@ -486,6 +486,9 @@ impl DependencyResolver {
         let mut path_map: HashMap<(String, Option<String>), Vec<String>> = HashMap::new();
 
         // Collect all resources from lockfile
+        // Note: Hooks and MCP servers are excluded because they're configuration-only
+        // resources that are designed to share config files (.claude/settings.local.json
+        // for hooks, .mcp.json for MCP servers), not individual files that would conflict.
         let all_resources: Vec<(&str, &LockedResource)> = lockfile
             .agents
             .iter()
@@ -493,8 +496,7 @@ impl DependencyResolver {
             .chain(lockfile.snippets.iter().map(|r| (r.name.as_str(), r)))
             .chain(lockfile.commands.iter().map(|r| (r.name.as_str(), r)))
             .chain(lockfile.scripts.iter().map(|r| (r.name.as_str(), r)))
-            .chain(lockfile.hooks.iter().map(|r| (r.name.as_str(), r)))
-            .chain(lockfile.mcp_servers.iter().map(|r| (r.name.as_str(), r)))
+            // Hooks and MCP servers intentionally omitted - they share config files
             .collect();
 
         // Build the path map with commit information
@@ -1792,6 +1794,23 @@ impl DependencyResolver {
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
 
+            // Hooks and MCP servers are configured in config files, not installed as artifact files
+            let installed_at = match resource_type {
+                crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
+                crate::core::ResourceType::McpServer => {
+                    // Determine config file based on tool type
+                    match dep {
+                        crate::manifest::ResourceDependency::Detailed(d)
+                            if d.tool == "opencode" =>
+                        {
+                            ".opencode/opencode.json".to_string()
+                        }
+                        _ => ".mcp.json".to_string(), // Default to claude-code
+                    }
+                }
+                _ => installed_at,
+            };
+
             Ok(LockedResource {
                 name: unique_name,
                 source: None,
@@ -1949,6 +1968,23 @@ impl DependencyResolver {
                 _ => "claude-code".to_string(),
             };
 
+            // Hooks and MCP servers are configured in config files, not installed as artifact files
+            let installed_at = match resource_type {
+                crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
+                crate::core::ResourceType::McpServer => {
+                    // Determine config file based on tool type
+                    match dep {
+                        crate::manifest::ResourceDependency::Detailed(d)
+                            if d.tool == "opencode" =>
+                        {
+                            ".opencode/opencode.json".to_string()
+                        }
+                        _ => ".mcp.json".to_string(), // Default to claude-code
+                    }
+                }
+                _ => installed_at,
+            };
+
             Ok(LockedResource {
                 name: unique_name,
                 source: Some(source_name.to_string()),
@@ -2104,6 +2140,23 @@ impl DependencyResolver {
                 // Determine resource type (pattern dependencies inherit from parent name)
                 let resource_type = self.get_resource_type(name);
 
+                // Hooks and MCP servers are configured in config files, not installed as artifact files
+                let installed_at = match resource_type {
+                    crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
+                    crate::core::ResourceType::McpServer => {
+                        // Determine config file based on tool type
+                        match dep {
+                            crate::manifest::ResourceDependency::Detailed(d)
+                                if d.tool == "opencode" =>
+                            {
+                                ".opencode/opencode.json".to_string()
+                            }
+                            _ => ".mcp.json".to_string(), // Default to claude-code
+                        }
+                    }
+                    _ => installed_at,
+                };
+
                 resources.push(LockedResource {
                     name: resource_name.clone(),
                     source: None,
@@ -2208,6 +2261,23 @@ impl DependencyResolver {
 
                 // Determine resource type (pattern dependencies inherit from parent name)
                 let resource_type = self.get_resource_type(name);
+
+                // Hooks and MCP servers are configured in config files, not installed as artifact files
+                let installed_at = match resource_type {
+                    crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
+                    crate::core::ResourceType::McpServer => {
+                        // Determine config file based on tool type
+                        match dep {
+                            crate::manifest::ResourceDependency::Detailed(d)
+                                if d.tool == "opencode" =>
+                            {
+                                ".opencode/opencode.json".to_string()
+                            }
+                            _ => ".mcp.json".to_string(), // Default to claude-code
+                        }
+                    }
+                    _ => installed_at,
+                };
 
                 resources.push(LockedResource {
                     name: resource_name.clone(),
@@ -4478,12 +4548,12 @@ mod tests {
         let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.hooks.len(), 2);
 
-        // Check that hooks are installed to the correct location
+        // Check that hooks point to the config file where they're configured
         for hook in &lockfile.hooks {
-            // Normalize path separators for cross-platform testing
-            let normalized_path = hook.installed_at.replace('\\', "/");
-            assert!(normalized_path.contains(".claude/agpm/hooks/"));
-            assert!(hook.installed_at.ends_with(".json"));
+            assert_eq!(
+                hook.installed_at, ".claude/settings.local.json",
+                "Hooks should reference the config file where they're configured"
+            );
         }
     }
 
@@ -4537,12 +4607,12 @@ mod tests {
         let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.mcp_servers.len(), 2);
 
-        // Check that MCP servers are tracked correctly
+        // Check that MCP servers point to the config file where they're configured
         for server in &lockfile.mcp_servers {
-            // Normalize path separators for cross-platform testing
-            let normalized_path = server.installed_at.replace('\\', "/");
-            assert!(normalized_path.contains(".claude/agpm/mcp-servers/"));
-            assert!(server.installed_at.ends_with(".json"));
+            assert_eq!(
+                server.installed_at, ".mcp.json",
+                "MCP servers should reference the config file where they're configured"
+            );
         }
     }
 
