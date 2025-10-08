@@ -187,8 +187,8 @@ pub async fn handle_legacy_ccpm_migration() -> Result<Option<PathBuf>> {
         println!();
         println!("{}", "🚀 Starting migration...".cyan());
 
-        // Perform the migration
-        let migrate_cmd = super::migrate::MigrateCommand::new(Some(dir.clone()), false);
+        // Perform the migration with automatic installation
+        let migrate_cmd = super::migrate::MigrateCommand::new(Some(dir.clone()), false, false);
 
         migrate_cmd.execute().await?;
 
