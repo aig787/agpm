@@ -280,32 +280,76 @@ fn event_to_string(event: &HookEvent) -> String {
     }
 }
 
-/// Install hooks from manifest to .claude/settings.local.json
+/// Configure hooks from source files into .claude/settings.local.json
 ///
 /// This function:
-/// 1. Loads hook JSON files from .claude/agpm/hooks/
+/// 1. Reads hook JSON files directly from source locations (no file copying)
 /// 2. Converts them to Claude Code format
 /// 3. Updates .claude/settings.local.json with proper event-based structure
 /// 4. Can be called from both `add` and `install` commands
 pub async fn install_hooks(
-    manifest: &crate::manifest::Manifest,
+    lockfile: &crate::lockfile::LockFile,
     project_root: &Path,
-) -> Result<Vec<crate::lockfile::LockedResource>> {
-    if manifest.hooks.is_empty() {
-        return Ok(Vec::new());
+    cache: &crate::cache::Cache,
+) -> Result<()> {
+    if lockfile.hooks.is_empty() {
+        return Ok(());
     }
 
     let claude_dir = project_root.join(".claude");
-    #[allow(deprecated)]
-    let hooks_dir = project_root.join(&manifest.target.hooks);
     let settings_path = claude_dir.join("settings.local.json");
 
-    // Ensure directories exist
-    crate::utils::fs::ensure_dir(&hooks_dir)?;
+    // Ensure directory exists
     crate::utils::fs::ensure_dir(&claude_dir)?;
 
-    // Load hook configurations from JSON files
-    let hook_configs = load_hook_configs(&hooks_dir)?;
+    // Load hook configurations directly from source files
+    let mut hook_configs = HashMap::new();
+
+    for entry in &lockfile.hooks {
+        // Get the source file path
+        let source_path = if let Some(source_name) = &entry.source {
+            let url = entry
+                .url
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Hook {} has no URL", entry.name))?;
+
+            // Check if this is a local directory source
+            let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+            if is_local_source {
+                // Local directory source - use URL as path directly
+                std::path::PathBuf::from(url).join(&entry.path)
+            } else {
+                // Git-based source - get worktree
+                let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Hook {} missing resolved commit SHA", entry.name)
+                })?;
+
+                let worktree = cache
+                    .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
+                    .await?;
+                worktree.join(&entry.path)
+            }
+        } else {
+            // Local file - resolve relative to project root
+            let candidate = Path::new(&entry.path);
+            if candidate.is_absolute() {
+                candidate.to_path_buf()
+            } else {
+                project_root.join(candidate)
+            }
+        };
+
+        // Read and parse the hook configuration
+        let content = tokio::fs::read_to_string(&source_path)
+            .await
+            .with_context(|| format!("Failed to read hook file: {}", source_path.display()))?;
+
+        let config: HookConfig = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse hook config: {}", source_path.display()))?;
+
+        hook_configs.insert(entry.name.clone(), config);
+    }
 
     // Load existing settings
     let mut settings = crate::mcp::ClaudeSettings::load_or_default(&settings_path)?;
@@ -346,53 +390,7 @@ pub async fn install_hooks(
         }
     }
 
-    // Build locked entries for the lockfile
-    #[allow(deprecated)]
-    let locked_hooks: Vec<crate::lockfile::LockedResource> = manifest
-        .hooks
-        .iter()
-        .map(|(name, dep)| {
-            let installed_path = manifest.target.hooks.clone() + "/" + name + ".json";
-            match dep {
-                crate::manifest::ResourceDependency::Detailed(detailed) => {
-                    crate::lockfile::LockedResource {
-                        name: name.clone(),
-                        source: detailed.source.clone(),
-                        url: None,
-                        path: detailed.path.clone(),
-                        version: detailed
-                            .version
-                            .clone()
-                            .or(detailed.branch.clone())
-                            .or(detailed.rev.clone()),
-                        resolved_commit: None,
-                        checksum: String::new(),
-                        installed_at: installed_path,
-                        dependencies: Vec::new(),
-                        resource_type: crate::core::ResourceType::Hook,
-                        tool: detailed.tool.clone(),
-                    }
-                }
-                crate::manifest::ResourceDependency::Simple(path) => {
-                    crate::lockfile::LockedResource {
-                        name: name.clone(),
-                        source: None,
-                        url: None,
-                        path: path.clone(),
-                        version: None,
-                        resolved_commit: None,
-                        checksum: String::new(),
-                        installed_at: installed_path,
-                        dependencies: Vec::new(),
-                        resource_type: crate::core::ResourceType::Hook,
-                        tool: "claude-code".to_string(),
-                    }
-                }
-            }
-        })
-        .collect();
-
-    Ok(locked_hooks)
+    Ok(())
 }
 
 /// Validate a hook configuration for correctness and safety.
@@ -795,182 +793,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn test_install_hooks_empty_manifest() {
-        let temp = tempdir().unwrap();
-        let manifest = crate::manifest::Manifest::default();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 0);
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_install_hooks_with_hooks() {
-        let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/agpm/hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-
-        // Create a hook JSON file
-        let hook_config = HookConfig {
-            events: vec![HookEvent::PreToolUse],
-            matcher: Some("Bash".to_string()),
-            hook_type: "command".to_string(),
-            command: "test.sh".to_string(),
-            timeout: Some(5000),
-            description: Some("Test hook".to_string()),
-        };
-
-        fs::write(hooks_dir.join("test-hook.json"), serde_json::to_string(&hook_config).unwrap())
-            .unwrap();
-
-        // Create a manifest with hooks
-        let mut manifest = crate::manifest::Manifest::default();
-        manifest.hooks.insert(
-            "test-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(Box::new(
-                crate::manifest::DetailedDependency {
-                    source: Some("community".to_string()),
-                    path: "hooks/test-hook.json".to_string(),
-                    version: Some("v1.0.0".to_string()),
-                    branch: None,
-                    rev: None,
-                    command: None,
-                    args: None,
-                    target: None,
-                    filename: None,
-                    dependencies: None,
-                    tool: "claude-code".to_string(),
-                },
-            )),
-        );
-        manifest.target.hooks = ".claude/agpm/hooks".to_string();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 1);
-
-        // Check that settings.local.json was created
-        let settings_path = temp.path().join(".claude/settings.local.json");
-        assert!(settings_path.exists());
-
-        // Verify the locked resource
-        let locked = &result[0];
-        assert_eq!(locked.name, "test-hook");
-        assert_eq!(locked.source, Some("community".to_string()));
-        assert_eq!(locked.version, Some("v1.0.0".to_string()));
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_install_hooks_simple_dependency() {
-        let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/agpm/hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-
-        // Create a hook JSON file
-        let hook_config = HookConfig {
-            events: vec![HookEvent::UserPromptSubmit],
-            matcher: Some(".*".to_string()),
-            hook_type: "command".to_string(),
-            command: "echo 'prompt submitted'".to_string(),
-            timeout: None,
-            description: None,
-        };
-
-        fs::write(hooks_dir.join("simple-hook.json"), serde_json::to_string(&hook_config).unwrap())
-            .unwrap();
-
-        // Create a manifest with a simple dependency
-        let mut manifest = crate::manifest::Manifest::default();
-        manifest.hooks.insert(
-            "simple-hook".to_string(),
-            crate::manifest::ResourceDependency::Simple("/path/to/hook.json".to_string()),
-        );
-        manifest.target.hooks = ".claude/agpm/hooks".to_string();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 1);
-
-        // Verify the locked resource for simple dependency
-        let locked = &result[0];
-        assert_eq!(locked.name, "simple-hook");
-        assert_eq!(locked.source, None);
-        assert_eq!(locked.path, "/path/to/hook.json");
-        assert_eq!(locked.version, None);
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_install_hooks_with_branch() {
-        let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/agpm/hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-
-        // Create a manifest with a branch-based dependency
-        let mut manifest = crate::manifest::Manifest::default();
-        manifest.hooks.insert(
-            "branch-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(Box::new(
-                crate::manifest::DetailedDependency {
-                    source: Some("upstream".to_string()),
-                    path: "hooks/branch.json".to_string(),
-                    version: None,
-                    branch: Some("main".to_string()),
-                    rev: None,
-                    command: None,
-                    args: None,
-                    target: None,
-                    filename: None,
-                    dependencies: None,
-                    tool: "claude-code".to_string(),
-                },
-            )),
-        );
-        manifest.target.hooks = ".claude/agpm/hooks".to_string();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 1);
-
-        let locked = &result[0];
-        assert_eq!(locked.version, Some("main".to_string()));
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_install_hooks_with_rev() {
-        let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/agpm/hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-
-        // Create a manifest with a rev-based dependency
-        let mut manifest = crate::manifest::Manifest::default();
-        manifest.hooks.insert(
-            "rev-hook".to_string(),
-            crate::manifest::ResourceDependency::Detailed(Box::new(
-                crate::manifest::DetailedDependency {
-                    source: Some("upstream".to_string()),
-                    path: "hooks/rev.json".to_string(),
-                    version: None,
-                    branch: None,
-                    rev: Some("abc123".to_string()),
-                    command: None,
-                    args: None,
-                    target: None,
-                    filename: None,
-                    dependencies: None,
-                    tool: "claude-code".to_string(),
-                },
-            )),
-        );
-        manifest.target.hooks = ".claude/agpm/hooks".to_string();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 1);
-
-        let locked = &result[0];
-        assert_eq!(locked.version, Some("abc123".to_string()));
-    }
-
     #[test]
     fn test_convert_to_claude_format_session_start() {
         // Test SessionStart hook without matcher
@@ -1257,79 +1079,6 @@ mod tests {
             assert_eq!(event_name, "CustomEvent");
         } else {
             panic!("Expected Other variant");
-        }
-    }
-
-    #[tokio::test]
-    #[allow(deprecated)]
-    async fn test_hook_format_sessionstart_debug() {
-        let temp = tempdir().unwrap();
-        let hooks_dir = temp.path().join(".claude/agpm/hooks");
-        fs::create_dir_all(&hooks_dir).unwrap();
-
-        // Create a hook JSON file that mimics the problematic "agpm-update" hook
-        let hook_config = HookConfig {
-            events: vec![HookEvent::SessionStart],
-            matcher: Some(".*".to_string()),
-            hook_type: "command".to_string(),
-            command: "agpm update".to_string(),
-            timeout: None,
-            description: Some("Update AGPM packages".to_string()),
-        };
-
-        fs::write(
-            hooks_dir.join("agpm-update.json"),
-            serde_json::to_string_pretty(&hook_config).unwrap(),
-        )
-        .unwrap();
-
-        // Create a manifest with this hook
-        let mut manifest = crate::manifest::Manifest::default();
-        manifest.hooks.insert(
-            "agpm-update".to_string(),
-            crate::manifest::ResourceDependency::Simple(
-                ".claude/agpm/hooks/agpm-update.json".to_string(),
-            ),
-        );
-        manifest.target.hooks = ".claude/agpm/hooks".to_string();
-
-        let result = install_hooks(&manifest, temp.path()).await.unwrap();
-        assert_eq!(result.len(), 1);
-
-        // Check that the settings.local.json was created with the correct format
-        let settings_path = temp.path().join(".claude/settings.local.json");
-        assert!(settings_path.exists());
-
-        let settings: crate::mcp::ClaudeSettings =
-            crate::utils::read_json_file(&settings_path).unwrap();
-
-        // Print the hooks structure for debugging
-        println!("Generated hooks: {:#?}", settings.hooks);
-
-        // The hooks should be in the correct Claude Code format
-        if let Some(hooks_value) = settings.hooks {
-            let hooks_obj = hooks_value.as_object().unwrap();
-
-            // Should have SessionStart event
-            assert!(hooks_obj.contains_key("SessionStart"));
-
-            let session_start = hooks_obj.get("SessionStart").unwrap().as_array().unwrap();
-            assert_eq!(session_start.len(), 1);
-
-            let matcher_group = session_start[0].as_object().unwrap();
-            assert_eq!(matcher_group.get("matcher").unwrap().as_str().unwrap(), ".*");
-
-            let hooks_array = matcher_group.get("hooks").unwrap().as_array().unwrap();
-            assert_eq!(hooks_array.len(), 1);
-
-            let hook = hooks_array[0].as_object().unwrap();
-            assert_eq!(hook.get("type").unwrap().as_str().unwrap(), "command");
-            assert_eq!(hook.get("command").unwrap().as_str().unwrap(), "agpm update");
-
-            // Should NOT have the problematic format where hook name is a top-level key
-            assert!(!hooks_obj.contains_key("agpm-update"));
-        } else {
-            panic!("No hooks were generated");
         }
     }
 }

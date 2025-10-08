@@ -307,11 +307,7 @@ postgres = {{ source = "test_repo", path = "mcp-servers/postgres.json", version 
     project.write_manifest(&manifest_content).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify MCP server files installed to .claude/agpm/mcp-servers/
-    let mcp_server_file = project.project_path().join(".claude/agpm/mcp-servers/postgres.json");
-    assert!(mcp_server_file.exists(), "MCP server should be installed");
-
-    // Verify merged into .mcp.json
+    // Verify MCP server configured in .mcp.json (not copied as artifact file)
     let mcp_config_path = project.project_path().join(".mcp.json");
     assert!(mcp_config_path.exists(), ".mcp.json should be created");
 

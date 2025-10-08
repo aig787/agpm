@@ -12,56 +12,33 @@ use std::pin::Pin;
 ///
 /// Each tool (claude-code, opencode, etc.) may have different ways
 /// of managing MCP servers. This trait provides a common interface for:
-/// - Installing MCP server configurations
-/// - Determining where to install files (if applicable)
+/// - Reading MCP server configurations directly from source
 /// - Merging configurations into tool-specific formats
 pub trait McpHandler: Send + Sync {
     /// Get the name of this MCP handler (e.g., "claude-code", "opencode").
     fn name(&self) -> &str;
 
-    /// Determine whether this handler copies MCP config files to disk.
+    /// Configure MCP servers by reading directly from source and merging into config file.
     ///
-    /// Returns `true` if the handler needs MCP config files copied to a directory
-    /// (e.g., Claude Code copies to `.claude/agpm/mcp-servers/`).
-    ///
-    /// Returns `false` if the handler merges directly without file copies
-    /// (e.g., OpenCode merges directly into `opencode.json`).
-    fn requires_file_installation(&self) -> bool;
-
-    /// Get the directory path where MCP config files should be copied.
-    ///
-    /// Only called if `requires_file_installation()` returns `true`.
-    ///
-    /// # Arguments
-    ///
-    /// * `project_root` - The project root directory
-    /// * `artifact_base` - The base directory for this tool (e.g., `.claude`, `.opencode`)
-    ///
-    /// # Returns
-    ///
-    /// The directory path where MCP server JSON files should be copied.
-    fn get_installation_dir(&self, project_root: &Path, artifact_base: &Path)
-    -> std::path::PathBuf;
-
-    /// Install or update MCP servers into the tool's configuration.
-    ///
-    /// This method is called after MCP config files have been copied (if applicable).
-    /// It should merge the MCP configurations into the tool's config file.
+    /// This method reads MCP server configurations directly from source locations
+    /// (Git worktrees or local paths) and merges them into the tool's config file.
     ///
     /// # Arguments
     ///
     /// * `project_root` - The project root directory
     /// * `artifact_base` - The base directory for this tool
-    /// * `mcp_servers_dir` - Directory containing MCP server JSON files (if applicable)
+    /// * `lockfile_entries` - Locked MCP server resources with source information
+    /// * `cache` - Cache for accessing Git worktrees
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, or an error if the installation failed.
+    /// `Ok(())` on success, or an error if the configuration failed.
     fn configure_mcp_servers(
         &self,
         project_root: &Path,
         artifact_base: &Path,
-        mcp_servers_dir: Option<&Path>,
+        lockfile_entries: &[crate::lockfile::LockedResource],
+        cache: &crate::cache::Cache,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
 
     /// Clean/remove all managed MCP servers for this handler.
@@ -79,9 +56,8 @@ pub trait McpHandler: Send + Sync {
 
 /// MCP handler for Claude Code.
 ///
-/// Claude Code stores MCP server configurations in two places:
-/// 1. Raw config files in `.claude/agpm/mcp-servers/`
-/// 2. Merged configurations in `.mcp.json` at project root
+/// Claude Code configures MCP servers directly in `.mcp.json` at project root
+/// by reading from source locations (no intermediate file copying).
 pub struct ClaudeCodeMcpHandler;
 
 impl McpHandler for ClaudeCodeMcpHandler {
@@ -89,34 +65,90 @@ impl McpHandler for ClaudeCodeMcpHandler {
         "claude-code"
     }
 
-    fn requires_file_installation(&self) -> bool {
-        true
-    }
-
-    fn get_installation_dir(
-        &self,
-        _project_root: &Path,
-        artifact_base: &Path,
-    ) -> std::path::PathBuf {
-        artifact_base.join("agpm").join("mcp-servers")
-    }
-
     fn configure_mcp_servers(
         &self,
         project_root: &Path,
         _artifact_base: &Path,
-        mcp_servers_dir: Option<&Path>,
+        lockfile_entries: &[crate::lockfile::LockedResource],
+        cache: &crate::cache::Cache,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         let project_root = project_root.to_path_buf();
-        let mcp_servers_dir = mcp_servers_dir.map(|p| p.to_path_buf());
+        let entries = lockfile_entries.to_vec();
+        let cache = cache.clone();
 
         Box::pin(async move {
-            if let Some(dir) = mcp_servers_dir {
-                // Use existing configure_mcp_servers function
-                super::configure_mcp_servers(&project_root, &dir).await
-            } else {
-                Ok(())
+            if entries.is_empty() {
+                return Ok(());
             }
+
+            // Read MCP server configurations directly from source files
+            let mut mcp_servers: std::collections::HashMap<String, super::McpServerConfig> =
+                std::collections::HashMap::new();
+
+            for entry in &entries {
+                // Get the source file path
+                let source_path = if let Some(source_name) = &entry.source {
+                    let url = entry
+                        .url
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("MCP server {} has no URL", entry.name))?;
+
+                    // Check if this is a local directory source
+                    let is_local_source =
+                        entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+                    if is_local_source {
+                        // Local directory source - use URL as path directly
+                        std::path::PathBuf::from(url).join(&entry.path)
+                    } else {
+                        // Git-based source - get worktree
+                        let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                            anyhow::anyhow!("MCP server {} missing resolved commit SHA", entry.name)
+                        })?;
+
+                        let worktree = cache
+                            .get_or_create_worktree_for_sha(
+                                source_name,
+                                url,
+                                sha,
+                                Some(&entry.name),
+                            )
+                            .await?;
+                        worktree.join(&entry.path)
+                    }
+                } else {
+                    // Local file - resolve relative to project root
+                    let candidate = Path::new(&entry.path);
+                    if candidate.is_absolute() {
+                        candidate.to_path_buf()
+                    } else {
+                        project_root.join(candidate)
+                    }
+                };
+
+                // Read and parse the MCP server configuration
+                let mut config: super::McpServerConfig = crate::utils::read_json_file(&source_path)
+                    .with_context(|| {
+                        format!("Failed to read MCP server file: {}", source_path.display())
+                    })?;
+
+                // Add AGPM metadata
+                config.agpm_metadata = Some(super::AgpmMetadata {
+                    managed: true,
+                    source: entry.source.clone(),
+                    version: entry.version.clone(),
+                    installed_at: chrono::Utc::now().to_rfc3339(),
+                    dependency_name: Some(entry.name.clone()),
+                });
+
+                mcp_servers.insert(entry.name.clone(), config);
+            }
+
+            // Configure MCP servers by merging into .mcp.json
+            let mcp_config_path = project_root.join(".mcp.json");
+            super::merge_mcp_servers(&mcp_config_path, mcp_servers).await?;
+
+            Ok(())
         })
     }
 
@@ -128,8 +160,8 @@ impl McpHandler for ClaudeCodeMcpHandler {
 
 /// MCP handler for OpenCode.
 ///
-/// OpenCode merges MCP server configurations directly into `.opencode/opencode.json`
-/// without copying config files to a separate directory.
+/// OpenCode configures MCP servers directly in `.opencode/opencode.json`
+/// by reading from source locations (no intermediate file copying).
 pub struct OpenCodeMcpHandler;
 
 impl McpHandler for OpenCodeMcpHandler {
@@ -137,76 +169,88 @@ impl McpHandler for OpenCodeMcpHandler {
         "opencode"
     }
 
-    fn requires_file_installation(&self) -> bool {
-        true // OpenCode needs files in staging directory for merging
-    }
-
-    fn get_installation_dir(
-        &self,
-        _project_root: &Path,
-        artifact_base: &Path,
-    ) -> std::path::PathBuf {
-        artifact_base.join("agpm").join("mcp-servers")
-    }
-
     fn configure_mcp_servers(
         &self,
-        _project_root: &Path,
+        project_root: &Path,
         artifact_base: &Path,
-        mcp_servers_dir: Option<&Path>,
+        lockfile_entries: &[crate::lockfile::LockedResource],
+        cache: &crate::cache::Cache,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
-        let opencode_config_path = artifact_base.join("opencode.json");
-        let mcp_servers_dir = mcp_servers_dir.map(|p| p.to_path_buf());
+        let project_root = project_root.to_path_buf();
+        let artifact_base = artifact_base.to_path_buf();
+        let entries = lockfile_entries.to_vec();
+        let cache = cache.clone();
 
         Box::pin(async move {
-            // If no MCP servers directory, nothing to merge
-            let Some(servers_dir) = mcp_servers_dir else {
-                return Ok(());
-            };
-
-            if !servers_dir.exists() {
+            if entries.is_empty() {
                 return Ok(());
             }
 
-            // Read all MCP server JSON files
+            // Read MCP server configurations directly from source files
             let mut mcp_servers: std::collections::HashMap<String, super::McpServerConfig> =
                 std::collections::HashMap::new();
-            let mut entries = tokio::fs::read_dir(&servers_dir).await.with_context(|| {
-                format!("Failed to read MCP servers directory: {}", servers_dir.display())
-            })?;
 
-            while let Some(entry) = entries.next_entry().await? {
-                let path = entry.path();
+            for entry in &entries {
+                // Get the source file path
+                let source_path = if let Some(source_name) = &entry.source {
+                    let url = entry
+                        .url
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("MCP server {} has no URL", entry.name))?;
 
-                if path.extension().is_some_and(|ext| ext == "json")
-                    && let Some(name) = path.file_stem().and_then(|s| s.to_str())
-                {
-                    // Read and parse the MCP server configuration
-                    let mut config: super::McpServerConfig = crate::utils::read_json_file(&path)
-                        .with_context(|| {
-                            format!("Failed to parse MCP server file: {}", path.display())
+                    // Check if this is a local directory source
+                    let is_local_source =
+                        entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+                    if is_local_source {
+                        // Local directory source - use URL as path directly
+                        std::path::PathBuf::from(url).join(&entry.path)
+                    } else {
+                        // Git-based source - get worktree
+                        let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                            anyhow::anyhow!("MCP server {} missing resolved commit SHA", entry.name)
                         })?;
 
-                    // Add AGPM metadata if not present (to track managed servers)
-                    if config.agpm_metadata.is_none() {
-                        config.agpm_metadata = Some(super::AgpmMetadata {
-                            managed: true,
-                            source: Some("agpm".to_string()),
-                            version: None,
-                            installed_at: chrono::Utc::now().to_rfc3339(),
-                            dependency_name: Some(name.to_string()),
-                        });
+                        let worktree = cache
+                            .get_or_create_worktree_for_sha(
+                                source_name,
+                                url,
+                                sha,
+                                Some(&entry.name),
+                            )
+                            .await?;
+                        worktree.join(&entry.path)
                     }
+                } else {
+                    // Local file - resolve relative to project root
+                    let candidate = Path::new(&entry.path);
+                    if candidate.is_absolute() {
+                        candidate.to_path_buf()
+                    } else {
+                        project_root.join(candidate)
+                    }
+                };
 
-                    mcp_servers.insert(name.to_string(), config);
-                }
-            }
+                // Read and parse the MCP server configuration
+                let mut config: super::McpServerConfig = crate::utils::read_json_file(&source_path)
+                    .with_context(|| {
+                        format!("Failed to read MCP server file: {}", source_path.display())
+                    })?;
 
-            if mcp_servers.is_empty() {
-                return Ok(());
+                // Add AGPM metadata
+                config.agpm_metadata = Some(super::AgpmMetadata {
+                    managed: true,
+                    source: entry.source.clone(),
+                    version: entry.version.clone(),
+                    installed_at: chrono::Utc::now().to_rfc3339(),
+                    dependency_name: Some(entry.name.clone()),
+                });
+
+                mcp_servers.insert(entry.name.clone(), config);
             }
 
             // Load or create opencode.json
+            let opencode_config_path = artifact_base.join("opencode.json");
             let mut opencode_config: serde_json::Value = if opencode_config_path.exists() {
                 crate::utils::read_json_file(&opencode_config_path).with_context(|| {
                     format!("Failed to read OpenCode config: {}", opencode_config_path.display())
@@ -223,7 +267,7 @@ impl McpHandler for OpenCodeMcpHandler {
             // Get or create "mcp" section
             let config_obj = opencode_config
                 .as_object_mut()
-                .expect("opencode_config must be an object after is_object() check on line 225");
+                .expect("opencode_config must be an object after is_object() check");
             let mcp_section = config_obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
 
             // Merge MCP servers into the mcp section
@@ -326,36 +370,19 @@ impl McpHandler for ConcreteMcpHandler {
         }
     }
 
-    fn requires_file_installation(&self) -> bool {
-        match self {
-            Self::ClaudeCode(h) => h.requires_file_installation(),
-            Self::OpenCode(h) => h.requires_file_installation(),
-        }
-    }
-
-    fn get_installation_dir(
-        &self,
-        project_root: &Path,
-        artifact_base: &Path,
-    ) -> std::path::PathBuf {
-        match self {
-            Self::ClaudeCode(h) => h.get_installation_dir(project_root, artifact_base),
-            Self::OpenCode(h) => h.get_installation_dir(project_root, artifact_base),
-        }
-    }
-
     fn configure_mcp_servers(
         &self,
         project_root: &Path,
         artifact_base: &Path,
-        mcp_servers_dir: Option<&Path>,
+        lockfile_entries: &[crate::lockfile::LockedResource],
+        cache: &crate::cache::Cache,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
         match self {
             Self::ClaudeCode(h) => {
-                h.configure_mcp_servers(project_root, artifact_base, mcp_servers_dir)
+                h.configure_mcp_servers(project_root, artifact_base, lockfile_entries, cache)
             }
             Self::OpenCode(h) => {
-                h.configure_mcp_servers(project_root, artifact_base, mcp_servers_dir)
+                h.configure_mcp_servers(project_root, artifact_base, lockfile_entries, cache)
             }
         }
     }
@@ -395,7 +422,6 @@ mod tests {
         assert!(handler.is_some());
         let handler = handler.unwrap();
         assert_eq!(handler.name(), "claude-code");
-        assert!(handler.requires_file_installation());
     }
 
     #[test]
@@ -404,7 +430,6 @@ mod tests {
         assert!(handler.is_some());
         let handler = handler.unwrap();
         assert_eq!(handler.name(), "opencode");
-        assert!(handler.requires_file_installation());
     }
 
     #[test]
@@ -418,15 +443,5 @@ mod tests {
         // AGPM doesn't support MCP servers
         let handler = get_mcp_handler("agpm");
         assert!(handler.is_none());
-    }
-
-    #[test]
-    fn test_claude_code_handler_installation_dir() {
-        let handler = ClaudeCodeMcpHandler;
-        let project_root = Path::new("/project");
-        let artifact_base = Path::new("/project/.claude");
-
-        let dir = handler.get_installation_dir(project_root, artifact_base);
-        assert_eq!(dir, Path::new("/project/.claude/agpm/mcp-servers"));
     }
 }

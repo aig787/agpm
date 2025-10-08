@@ -208,34 +208,26 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     )
     .await?;
 
-    // Check hooks (2 resources)
-    verify_file_contains(
-        &project.project_path().join(".claude/agpm/hooks/pre-commit.json"),
-        "Pre-commit hook v2.1.0",
-    )
-    .await?;
-    verify_file_contains(
-        &project.project_path().join(".claude/agpm/hooks/post-commit.json"),
-        "Post-commit hook v3.1.0",
-    )
-    .await?;
+    // Check hooks (2 resources) - configured in settings.local.json, not as artifact files
+    let settings_path = project.project_path().join(".claude/settings.local.json");
+    assert!(settings_path.exists(), "settings.local.json should be created for hooks");
+    let settings_content = fs::read_to_string(&settings_path).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings_content)?;
+    assert!(settings.get("hooks").is_some(), "Settings should have hooks section");
+    // Verify hooks were configured (actual structure verified by integration_hooks tests)
+    let hooks_obj = settings["hooks"].as_object().unwrap();
+    assert!(!hooks_obj.is_empty(), "Hooks should be configured");
 
-    // Check MCP servers (3 resources)
-    verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/filesystem.json"),
-        "\"version\": \"v2.2.0\"",
-    )
-    .await?;
-    verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/postgres.json"),
-        "\"version\": \"v3.0.0\"",
-    )
-    .await?;
-    verify_file_contains(
-        &project.project_path().join(".claude/agpm/mcp-servers/redis.json"),
-        "\"version\": \"v4.0.0\"",
-    )
-    .await?;
+    // Check MCP servers (3 resources) - configured in .mcp.json, not as artifact files
+    let mcp_config_path = project.project_path().join(".mcp.json");
+    assert!(mcp_config_path.exists(), ".mcp.json should be created for MCP servers");
+    let mcp_config_content = fs::read_to_string(&mcp_config_path).await?;
+    let mcp_config: serde_json::Value = serde_json::from_str(&mcp_config_content)?;
+    assert!(mcp_config.get("mcpServers").is_some(), "Config should have mcpServers section");
+    let servers = mcp_config["mcpServers"].as_object().unwrap();
+    assert!(servers.contains_key("filesystem"), "Should have filesystem server");
+    assert!(servers.contains_key("postgres"), "Should have postgres server");
+    assert!(servers.contains_key("redis"), "Should have redis server");
 
     // Verify lockfile was created
     assert!(project.project_path().join("agpm.lock").exists());

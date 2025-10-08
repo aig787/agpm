@@ -550,7 +550,7 @@ impl InstallCommand {
                 &lockfile,
                 &manifest,
                 actual_project_dir,
-                cache,
+                cache.clone(),
                 self.no_cache,
                 Some(max_concurrency),
                 Some(multi_phase.clone()),
@@ -581,8 +581,9 @@ impl InstallCommand {
         if installation_error.is_none() {
             // Handle hooks if present
             if !lockfile.hooks.is_empty() {
-                // Actually install and configure hooks
-                crate::hooks::install_hooks(&manifest, actual_project_dir).await?;
+                // Configure hooks directly from source files (no copying)
+                // Reuse the existing cache instance
+                crate::hooks::install_hooks(&lockfile, actual_project_dir, &cache).await?;
                 hook_count = lockfile.hooks.len();
             }
 
@@ -615,19 +616,17 @@ impl InstallCommand {
                             })
                         };
 
-                        // Get installation directory if handler requires file installation
-                        let mcp_servers_dir = if handler.requires_file_installation() {
-                            Some(handler.get_installation_dir(actual_project_dir, &artifact_base))
-                        } else {
-                            None
-                        };
+                        // Configure MCP servers by reading directly from source (no file copying)
+                        // Convert Vec<&LockedResource> to Vec<LockedResource> for the handler
+                        let server_entries: Vec<_> = servers.iter().map(|s| (*s).clone()).collect();
 
-                        // Configure MCP servers using the handler
+                        // Reuse the existing cache instance
                         handler
                             .configure_mcp_servers(
                                 actual_project_dir,
                                 &artifact_base,
-                                mcp_servers_dir.as_deref(),
+                                &server_entries,
+                                &cache,
                             )
                             .await
                             .with_context(|| {

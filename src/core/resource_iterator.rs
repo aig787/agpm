@@ -222,6 +222,12 @@ impl ResourceIterator {
         let mut all_entries = Vec::new();
 
         for resource_type in ResourceType::all() {
+            // Skip hooks and MCP servers - they are configured directly from source
+            // without file copying
+            if matches!(resource_type, ResourceType::Hook | ResourceType::McpServer) {
+                continue;
+            }
+
             let entries = resource_type.get_lockfile_entries(lockfile);
 
             for entry in entries {
@@ -654,10 +660,11 @@ mod tests {
 
         let entries = ResourceIterator::collect_all_entries(&lockfile, &manifest);
 
-        // Should have 7 resources total (2 agents, 1 command, 1 script, 1 hook, 1 mcp_server, 1 snippet)
-        assert_eq!(entries.len(), 7);
+        // Should have 5 resources total (2 agents, 1 command, 1 script, 1 snippet)
+        // Hooks and MCP servers are excluded (configured only, not installed as files)
+        assert_eq!(entries.len(), 5);
 
-        // Check that we have entries from all resource types
+        // Check that we have entries from installable resource types (not hooks/MCP)
         let mut found_types = std::collections::HashSet::new();
         for (resource, _) in &entries {
             match resource.name.as_str() {
@@ -673,17 +680,15 @@ mod tests {
                 "script1" => {
                     found_types.insert("script");
                 }
-                "hook1" => {
-                    found_types.insert("hook");
-                }
-                "mcp1" => {
-                    found_types.insert("mcp");
+                // Hooks and MCP servers should not appear (configured only)
+                "hook1" | "mcp1" => {
+                    panic!("Hooks and MCP servers should not be in collected entries");
                 }
                 _ => {}
             }
         }
 
-        assert_eq!(found_types.len(), 6);
+        assert_eq!(found_types.len(), 4);
     }
 
     #[test]

@@ -865,12 +865,16 @@ existing-mcp = "../local/mcp-servers/existing.json"
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(manifest.mcp_servers.contains_key("test-mcp"));
 
-        // Check that the file was installed
-        let installed_path = temp_dir.path().join(".claude/agpm/mcp-servers/test-mcp.json");
-        assert!(installed_path.exists(), "MCP server config should be installed");
+        // Check that MCP server was configured in .mcp.json (not installed as file)
+        let mcp_config_path = temp_dir.path().join(".mcp.json");
+        assert!(mcp_config_path.exists(), "MCP config file should be created");
 
-        // Note: The install command writes to .mcp.json, not .claude/settings.local.json
-        // This is the correct behavior as per the MCP module documentation
+        // Verify the MCP server is in the config
+        let mcp_config: serde_json::Value = crate::utils::read_json_file(&mcp_config_path).unwrap();
+        assert!(
+            mcp_config.get("mcpServers").and_then(|s| s.get("test-mcp")).is_some(),
+            "MCP server should be configured in .mcp.json"
+        );
     }
 
     #[tokio::test]
@@ -1029,9 +1033,16 @@ test-mcp = "{}"
         // MCP servers should install successfully via full install command
         assert!(result.is_ok(), "MCP server installation should succeed: {result:?}");
 
-        // Check that the MCP server config was created
-        let mcp_config_path = temp_dir.path().join(".claude/agpm/mcp-servers/test-mcp.json");
-        assert!(mcp_config_path.exists(), "MCP server config file should be created");
+        // Check that MCP server was configured in .mcp.json (not installed as file)
+        let mcp_config_path = temp_dir.path().join(".mcp.json");
+        assert!(mcp_config_path.exists(), "MCP config file should be created");
+
+        // Verify the MCP server is in the config
+        let mcp_config: serde_json::Value = crate::utils::read_json_file(&mcp_config_path).unwrap();
+        assert!(
+            mcp_config.get("mcpServers").and_then(|s| s.get("test-mcp")).is_some(),
+            "MCP server should be configured in .mcp.json"
+        );
     }
 
     #[tokio::test]
@@ -1292,11 +1303,15 @@ existing-agent = "{}"
         let manifest = Manifest::load(&manifest_path).unwrap();
         assert!(manifest.mcp_servers.contains_key("file-mcp"));
 
-        // Check that the file was installed
-        let installed_path = temp_dir.path().join(".claude/agpm/mcp-servers/file-mcp.json");
-        assert!(installed_path.exists(), "MCP server config should be installed");
+        // Check that MCP server was configured in .mcp.json (not installed as file)
+        let mcp_config_path = temp_dir.path().join(".mcp.json");
+        assert!(mcp_config_path.exists(), "MCP config file should be created");
 
-        // Note: The install command writes to .mcp.json, not .claude/settings.local.json
-        // This is the correct behavior as per the MCP module documentation
+        // Verify the MCP server is in the config
+        let mcp_config: serde_json::Value = crate::utils::read_json_file(&mcp_config_path).unwrap();
+        assert!(
+            mcp_config.get("mcpServers").and_then(|s| s.get("file-mcp")).is_some(),
+            "MCP server should be configured in .mcp.json"
+        );
     }
 }

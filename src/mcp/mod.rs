@@ -339,12 +339,40 @@ impl McpConfig {
     }
 }
 
-/// Configure MCP servers from installed JSON files into `.mcp.json`.
+/// Merge MCP server configurations into the config file.
 ///
-/// This function:
-/// 1. Reads MCP server configurations from `.claude/agpm/mcp-servers/` JSON files
-/// 2. Updates `.mcp.json` in project root with MCP configurations
-/// 3. Preserves user-managed servers
+/// This is a helper function used by MCP handlers to merge server configurations
+/// that have already been read from source files.
+pub async fn merge_mcp_servers(
+    mcp_config_path: &Path,
+    agpm_servers: HashMap<String, McpServerConfig>,
+) -> Result<()> {
+    if agpm_servers.is_empty() {
+        return Ok(());
+    }
+
+    // Load existing MCP configuration
+    let mut mcp_config = McpConfig::load_or_default(mcp_config_path)?;
+
+    // Check for conflicts with user-managed servers
+    let conflicts = mcp_config.check_conflicts(&agpm_servers);
+    if !conflicts.is_empty() {
+        return Err(anyhow::anyhow!(
+            "The following MCP servers already exist and are not managed by AGPM: {}\n\
+             Please rename your servers or remove the existing ones from .mcp.json",
+            conflicts.join(", ")
+        ));
+    }
+
+    // Update MCP configuration with AGPM-managed servers
+    mcp_config.update_managed_servers(agpm_servers)?;
+
+    // Save the updated MCP configuration
+    mcp_config.save(mcp_config_path)?;
+
+    Ok(())
+}
+
 pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) -> Result<()> {
     if !mcp_servers_dir.exists() {
         return Ok(());
@@ -381,30 +409,8 @@ pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) 
         }
     }
 
-    if agpm_servers.is_empty() {
-        return Ok(());
-    }
-
-    // Load existing MCP configuration
-    let mut mcp_config = McpConfig::load_or_default(&mcp_config_path)?;
-
-    // Check for conflicts with user-managed servers
-    let conflicts = mcp_config.check_conflicts(&agpm_servers);
-    if !conflicts.is_empty() {
-        return Err(anyhow::anyhow!(
-            "The following MCP servers already exist and are not managed by AGPM: {}\n\
-             Please rename your servers or remove the existing ones from .mcp.json",
-            conflicts.join(", ")
-        ));
-    }
-
-    // Update MCP configuration with AGPM-managed servers
-    mcp_config.update_managed_servers(agpm_servers)?;
-
-    // Save the updated MCP configuration
-    mcp_config.save(&mcp_config_path)?;
-
-    Ok(())
+    // Use the helper function to merge servers
+    merge_mcp_servers(&mcp_config_path, agpm_servers).await
 }
 
 /// Remove all AGPM-managed MCP servers from the configuration.
