@@ -28,7 +28,7 @@ local = "{}"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
+snippets = ".agpm/snippets"
 commands = ".claude/commands"
 mcp-servers = ".claude/agpm/mcp-servers"
 scripts = ".claude/agpm/scripts"

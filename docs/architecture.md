@@ -71,6 +71,354 @@ agpm/
 - ResolvedVersion tracking with both SHA and resolved reference information
 - Single fetch per repository per command execution
 
+## Multi-Tool System
+
+AGPM v0.4.0 introduces a pluggable tool system enabling support for multiple AI coding assistants from a single manifest.
+
+> ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While the architecture is stable, OpenCode-specific features
+> may have incomplete functionality or breaking changes in future releases. Claude Code support is production-ready.
+
+### Architecture Overview
+
+The multi-tool system consists of three key components:
+
+1. **Tool Configuration** - Defines tool-specific directory structures and capabilities
+2. **Resource Routing** - Routes dependencies to the correct tool based on `type` field
+3. **MCP Handler System** - Pluggable handlers for tool-specific MCP configuration
+
+### Tool Configuration
+
+Each tool defines:
+
+```rust
+pub struct ArtifactConfig {
+    pub path: PathBuf,                    // Base directory (e.g., .claude, .opencode)
+    pub resources: HashMap<String, ResourceConfig>,  // Resource type paths
+}
+
+pub struct ResourceConfig {
+    pub path: PathBuf,                    // Subdirectory for this resource type
+}
+```
+
+**Default Tool Types**:
+
+| Type | Base | Agents | Commands | Scripts | Hooks | MCP | Snippets | Status |
+|------|------|--------|----------|---------|-------|-----|----------|--------|
+| `claude-code` | `.claude` | `agents/` | `commands/` | `scripts/` | `hooks/` | `agpm/mcp-servers/` | `agpm/snippets/` | ✅ Stable |
+| `opencode` | `.opencode` | `agent/` | `command/` | ❌ | ❌ | `agpm/mcp-servers/` | ❌ | 🚧 Alpha |
+| `agpm` | `.agpm` | ❌ | ❌ | ❌ | ❌ | ❌ | `snippets/` | ✅ Stable |
+
+**Note**: OpenCode uses singular directory names (`agent/`, `command/`) while Claude Code uses plural (`agents/`, `commands/`).
+
+### Resource Routing
+
+The dependency resolution system routes resources based on the `type` field:
+
+```toml
+[agents]
+# Default: routes to .claude/agents/
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# Explicit: routes to .opencode/agent/ - Alpha
+helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+```
+
+**Resolution Flow**:
+1. Parse dependency with optional `type` field (defaults to `claude-code`)
+2. Look up tool configuration for that type
+3. Determine target directory based on tool config + resource type
+4. Install resource to computed path
+
+### Manifest Structure for Tools
+
+Custom tools can be defined in the manifest:
+
+```toml
+[tools.custom-tool]
+path = ".mytool"
+resources = { agents = { path = "agents" }, commands = { path = "cmds" } }
+
+[agents]
+custom-agent = { source = "community", path = "agents/helper.md", type = "custom-tool" }
+# → Installs to .mytool/agents/helper.md
+```
+
+### Benefits
+
+- **Extensibility**: New tools can be added without core changes
+- **Isolation**: Each tool has its own directory structure
+- **Flexibility**: Custom tools for proprietary assistants
+- **Consistency**: Same dependency format across all tools
+
+## MCP Handler System
+
+MCP (Model Context Protocol) servers require tool-specific configuration file formats and merging strategies. AGPM uses a
+pluggable handler system to support different tools.
+
+### Handler Architecture
+
+Each MCP handler implements the `McpHandler` trait:
+
+```rust
+pub trait McpHandler: Send + Sync {
+    fn config_file_path(&self, project_root: &Path) -> PathBuf;
+    fn storage_dir(&self, artifact_base: &Path) -> PathBuf;
+    fn merge_config(&self, ...) -> Result<()>;
+}
+```
+
+**Key Methods**:
+- `config_file_path()` - Returns path to tool's MCP configuration file
+- `storage_dir()` - Returns directory for MCP server JSON files
+- `merge_config()` - Merges MCP server configurations into tool's config file
+
+### Built-In Handlers
+
+#### ClaudeCodeMcpHandler
+
+Manages Claude Code MCP servers:
+- **Config File**: `.mcp.json`
+- **Storage Dir**: `.claude/agpm/mcp-servers/`
+- **Format**: Standard MCP JSON with `mcpServers` object
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "_agpm": {
+        "managed": true,
+        "config_file": ".claude/agpm/mcp-servers/filesystem.json"
+      }
+    }
+  }
+}
+```
+
+#### OpenCodeMcpHandler
+
+Manages OpenCode MCP servers:
+- **Config File**: `opencode.json`
+- **Storage Dir**: `.opencode/agpm/mcp-servers/`
+- **Format**: OpenCode-specific JSON structure
+
+```json
+{
+  "mcp": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "_agpm": {
+        "managed": true,
+        "config_file": ".opencode/agpm/mcp-servers/filesystem.json"
+      }
+    }
+  }
+}
+```
+
+### Handler Selection
+
+Handlers are selected based on the dependency's tool type:
+
+```toml
+[mcp-servers]
+# Uses ClaudeCodeMcpHandler → merges into .mcp.json
+filesystem = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
+
+# Uses OpenCodeMcpHandler → merges into opencode.json - Alpha
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }
+```
+
+### Configuration Merging Strategy
+
+1. **Read Existing Config** - Load current configuration file or create empty structure
+2. **Read Source File** - Parse MCP server JSON from `.agpm/mcp-servers/`
+3. **Add Metadata** - Inject `_agpm` tracking metadata
+4. **Merge** - Add/update entry in configuration
+5. **Write Atomically** - Write merged config using temp file + rename
+
+### Tracking Metadata
+
+AGPM adds `_agpm` metadata to distinguish managed servers from user-configured servers:
+
+```json
+"_agpm": {
+  "managed": true,
+  "config_file": ".claude/agpm/mcp-servers/filesystem.json",
+  "installed_at": "2024-01-15T10:30:00Z"
+}
+```
+
+This enables:
+- **Safe Updates** - Only modify AGPM-managed entries
+- **Clean Removal** - Remove tracked servers without affecting user config
+- **Conflict Detection** - Warn if user modifies managed entries
+
+### Adding New Handlers
+
+To support a new tool:
+
+1. Implement `McpHandler` trait
+2. Register handler with tool type
+3. Define tool configuration in manifest
+
+Example custom handler:
+
+```rust
+pub struct CustomToolMcpHandler;
+
+impl McpHandler for CustomToolMcpHandler {
+    fn config_file_path(&self, project_root: &Path) -> PathBuf {
+        project_root.join("custom-tool.json")
+    }
+
+    fn storage_dir(&self, artifact_base: &Path) -> PathBuf {
+        artifact_base.join("agpm/mcp-servers")
+    }
+
+    fn merge_config(&self, ...) -> Result<()> {
+        // Custom merge logic
+    }
+}
+```
+
+## Shared Snippet Infrastructure
+
+The `.agpm/snippets/` directory provides a shared content infrastructure for resources across multiple tools. This enables
+DRY (Don't Repeat Yourself) principles for multi-tool projects.
+
+### Architecture Pattern
+
+Instead of duplicating content across tool-specific resources, shared snippets act as a single source of truth:
+
+```
+.agpm/snippets/                      # Shared content
+├── agents/
+│   ├── rust-core-principles.md
+│   ├── rust-cargo-commands.md
+│   └── rust-architecture.md
+└── prompts/
+    ├── fix-failing-tests.md
+    └── refactor-duplicated-code.md
+
+.claude/agents/
+├── rust-expert-standard.md          # References .agpm/snippets/agents/rust-*.md
+└── rust-test-standard.md            # References .agpm/snippets/prompts/fix-*.md
+
+.opencode/agent/
+├── rust-expert-standard.md          # References same .agpm/snippets/agents/rust-*.md
+└── rust-test-standard.md            # References same .agpm/snippets/prompts/fix-*.md
+```
+
+### Reference Mechanism
+
+Agent files reference shared snippets in their frontmatter or content:
+
+**Claude Code Format**:
+```markdown
+---
+name: rust-expert-standard
+description: Standard Rust expert agent
+---
+
+**IMPORTANT**: Read and follow the guidelines in these shared snippets:
+- `.agpm/snippets/agents/rust-core-principles.md`
+- `.agpm/snippets/agents/rust-cargo-commands.md`
+- `.agpm/snippets/agents/rust-architecture.md`
+
+[Agent-specific content here...]
+```
+
+**OpenCode Format**:
+```markdown
+---
+description: Standard Rust expert agent
+mode: subagent
+---
+
+**IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:
+- `.agpm/snippets/agents/rust-expert-standard.md`
+
+**Additional tool-specific context**:
+- For OpenCode specific features, refer to OpenCode documentation
+```
+
+### Benefits
+
+1. **Reduce Duplication**: Common guidelines maintained in one place
+2. **Consistency**: All tools use identical core content
+3. **Easy Updates**: Change once, affects all tools
+4. **Clear Separation**: Tool-specific overrides vs shared base content
+5. **Maintainability**: Easier to audit and update common patterns
+
+### Implementation in AGPM Project
+
+The AGPM project itself uses this pattern extensively:
+
+**Shared Agent Base Prompts** (`.agpm/snippets/agents/`):
+- `rust-expert-standard.md` - Core Rust development guidelines (334 lines)
+- `rust-test-standard.md` - Testing best practices (267 lines)
+- `rust-linting-standard.md` - Linting and formatting (68 lines)
+- `rust-doc-standard.md` - Documentation standards (334 lines)
+- `rust-troubleshooter-standard.md` - Debugging approaches (359 lines)
+
+**Tool-Specific Wrappers**:
+- `.claude/agents/rust-expert-standard.md` - 120 lines (full agent with frontmatter)
+- `.opencode/agent/rust-expert-standard.md` - 22 lines (minimal wrapper with OpenCode frontmatter)
+
+**Space Savings**: Instead of ~2000 lines duplicated across two tools, we have ~1360 lines shared + ~142 lines
+tool-specific = **~46% reduction** in total content.
+
+### Manifest Configuration
+
+Shared snippets use `type = "agpm"`:
+
+```toml
+[snippets]
+# Shared base prompts for all tools
+rust-patterns = { source = "community", path = "snippets/agents/rust-*.md", version = "v1.0.0", type = "agpm" }
+
+# Tool-specific wrappers
+claude-agents = { source = "community", path = "agents/*.md", version = "v1.0.0" }
+opencode-agents = { source = "community", path = "agents/*.md", version = "v1.0.0", type = "opencode" }
+```
+
+### Design Considerations
+
+**When to Use Shared Snippets**:
+- Core guidelines that apply across all tools
+- Common patterns and best practices
+- Reusable templates and boilerplate
+- Documentation that shouldn't diverge between tools
+
+**When to Keep Tool-Specific**:
+- Tool-specific frontmatter and metadata
+- Tool-specific features or APIs
+- UI/UX differences between tools
+- Permission models or security policies
+
+### Real-World Example
+
+The AGPM project's Rust agents demonstrate this pattern:
+
+```
+Before (v0.3.x - duplicated content):
+.claude/agents/rust-expert-standard.md    (450 lines)
+.opencode/agent/rust-expert-standard.md   (450 lines)
+Total: 900 lines
+
+After (v0.4.0 - shared snippets):
+.agpm/snippets/agents/rust-expert-standard.md   (334 lines)
+.claude/agents/rust-expert-standard.md          (120 lines wrapper)
+.opencode/agent/rust-expert-standard.md         (22 lines wrapper)
+Total: 476 lines (47% reduction)
+
+Maintenance effort: 1 file to update instead of 2
+```
+
 ## Design Decisions
 
 ### Copy-Based Installation
@@ -544,7 +892,6 @@ Key dependencies and their purposes in AGPM's architecture:
 ### Testing Infrastructure
 - **assert_cmd** - CLI testing framework
 - **predicates** - Assertion helpers for test validation
-- **serial_test** - Sequential test execution for resource-sensitive tests
 - **tempfile** - Temporary directory management in tests
 
 See Cargo.toml for complete dependency list with exact versions.

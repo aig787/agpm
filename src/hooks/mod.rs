@@ -296,6 +296,7 @@ pub async fn install_hooks(
     }
 
     let claude_dir = project_root.join(".claude");
+    #[allow(deprecated)]
     let hooks_dir = project_root.join(&manifest.target.hooks);
     let settings_path = claude_dir.join("settings.local.json");
 
@@ -346,6 +347,7 @@ pub async fn install_hooks(
     }
 
     // Build locked entries for the lockfile
+    #[allow(deprecated)]
     let locked_hooks: Vec<crate::lockfile::LockedResource> = manifest
         .hooks
         .iter()
@@ -368,6 +370,7 @@ pub async fn install_hooks(
                         installed_at: installed_path,
                         dependencies: Vec::new(),
                         resource_type: crate::core::ResourceType::Hook,
+                        tool: detailed.tool.clone(),
                     }
                 }
                 crate::manifest::ResourceDependency::Simple(path) => {
@@ -382,6 +385,7 @@ pub async fn install_hooks(
                         installed_at: installed_path,
                         dependencies: Vec::new(),
                         resource_type: crate::core::ResourceType::Hook,
+                        tool: "claude-code".to_string(),
                     }
                 }
             }
@@ -801,6 +805,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_install_hooks_with_hooks() {
         let temp = tempdir().unwrap();
         let hooks_dir = temp.path().join(".claude/agpm/hooks");
@@ -835,6 +840,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -855,6 +861,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_install_hooks_simple_dependency() {
         let temp = tempdir().unwrap();
         let hooks_dir = temp.path().join(".claude/agpm/hooks");
@@ -893,6 +900,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_install_hooks_with_branch() {
         let temp = tempdir().unwrap();
         let hooks_dir = temp.path().join(".claude/agpm/hooks");
@@ -914,6 +922,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -927,6 +936,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_install_hooks_with_rev() {
         let temp = tempdir().unwrap();
         let hooks_dir = temp.path().join(".claude/agpm/hooks");
@@ -948,6 +958,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -1250,6 +1261,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(deprecated)]
     async fn test_hook_format_sessionstart_debug() {
         let temp = tempdir().unwrap();
         let hooks_dir = temp.path().join(".claude/agpm/hooks");

@@ -174,13 +174,28 @@ impl InitCommand {
 # Add your Git repository sources here
 # Example: official = "https://github.com/aig787/agpm-community.git"
 
+# Tool type configurations (multi-tool support)
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" }, snippets = { path = "agpm/snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "mcp-servers" } }
+
+[tools.opencode]
+path = ".opencode"
+resources = { agents = { path = "agent" }, commands = { path = "command" } }
+# Note: OpenCode MCP servers merge into opencode.json (no file installation)
+
+[tools.agpm]
+path = ".agpm"
+resources = { snippets = { path = "snippets" } }
+
 [agents]
 # Add your agent dependencies here
 # Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
+# For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", type = "opencode" }
 
 [snippets]
-# Add your snippet dependencies here
-# Example: utils = { source = "official", path = "snippets/utils.md" }
+# Add your snippet dependencies here (AGPM-specific resources)
+# Example: utils = { source = "official", path = "snippets/utils.md", type = "agpm" }
 
 [commands]
 # Add your command dependencies here

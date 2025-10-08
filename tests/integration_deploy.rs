@@ -124,28 +124,39 @@ fetched_at = "2024-01-01T00:00:00Z"
 [[agents]]
 name = "my-agent"
 source = "official"
+url = "{}"
 path = "agents/my-agent.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 installed_at = ".claude/agents/my-agent.md"
+artifact_type = "claude-code"
 
 [[agents]]
 name = "helper"
 source = "community"
+url = "{}"
 path = "agents/helper.md"
 version = "v1.0.0"
 resolved_commit = "{}"
 checksum = "sha256:38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da"
 installed_at = ".claude/agents/helper.md"
+artifact_type = "claude-code"
 "#,
-        official_url, official_sha, community_url, community_sha, official_sha, community_sha
+        official_url,
+        official_sha,
+        community_url,
+        community_sha,
+        official_url,
+        official_sha, // my-agent url and commit
+        community_url,
+        community_sha // helper url and commit
     );
 
     fs::write(project.project_path().join("agpm.lock"), lockfile_content).await.unwrap();
 
-    // Run install command
-    let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
+    // Run install command (with --frozen to use existing lockfile without updating)
+    let output = project.run_agpm(&["install", "--frozen"]).unwrap();
     output.assert_success();
     assert!(
         output.stdout.contains("Installing")
@@ -335,7 +346,8 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
     assert!(agents_dir.join("my-agent.md").exists());
     assert!(agents_dir.join("local-agent.md").exists());
 
-    let snippets_dir = project.project_path().join(".claude").join("agpm").join("snippets");
+    // Snippets now default to .agpm/snippets (agpm artifact type)
+    let snippets_dir = project.project_path().join(".agpm").join("snippets");
     assert!(snippets_dir.join("local-utils.md").exists());
 }
 

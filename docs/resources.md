@@ -1,6 +1,32 @@
 # Resources Guide
 
-AGPM manages six types of resources for Claude Code, divided into two categories based on how they're integrated.
+AGPM manages six types of resources for AI coding assistants (Claude Code, OpenCode, and more), divided into two categories
+based on how they're integrated. Resources can target different tools through the tool configuration system, enabling you to
+manage resources for multiple AI assistants from a single manifest.
+
+## Tool Configuration System
+
+AGPM routes resources to different tools based on the `type` field:
+
+- **claude-code** (default) - Claude Code resources with full feature support ✅ **Stable**
+- **opencode** - OpenCode resources for agents, commands, and MCP servers 🚧 **Alpha**
+- **agpm** - Shared snippets usable across tools ✅ **Stable**
+- **custom** - Define your own custom tools
+
+> ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
+> changes in future releases. Claude Code support is stable and production-ready.
+
+**Default Behavior**: Resources without an explicit `type` field default to `claude-code`, except for `snippets` which default to `agpm` (shared infrastructure).
+
+**Example**:
+```toml
+[agents]
+# Installs to .claude/agents/helper.md
+claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# Installs to .opencode/agent/helper.md
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+```
 
 ## Resource Categories
 
@@ -26,18 +52,26 @@ These resources are installed to `.claude/agpm/` and then their configurations a
 
 AI assistant configurations with prompts and behavioral definitions.
 
-**Default Location**: `.claude/agents/`
+**Default Locations**:
+- **Claude Code**: `.claude/agents/` ✅ **Stable**
+- **OpenCode**: `.opencode/agent/` (singular) 🚧 **Alpha**
 
 **Path Preservation**: AGPM preserves the source directory structure during installation.
 
 **Examples**:
 ```toml
 [agents]
-# Simple path - installed as .claude/agents/rust-expert.md
+# Claude Code - installed as .claude/agents/rust-expert.md
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+
+# OpenCode - installed as .opencode/agent/rust-expert.md (note: singular "agent")
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
 
 # Nested path - installed as .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
+
+# OpenCode nested - installed as .opencode/agent/ai/code-reviewer.md
+code-reviewer-oc = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", type = "opencode" }
 
 # Deeply nested - installed as .claude/agents/specialized/rust/expert.md
 rust-specialist = { source = "community", path = "agents/specialized/rust/expert.md", version = "v1.0.0" }
@@ -46,29 +80,53 @@ rust-specialist = { source = "community", path = "agents/specialized/rust/expert
 local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/ai/helper.md
 ```
 
+**Directory Naming Note**: OpenCode uses singular directory names (`agent`, `command`) while Claude Code uses plural
+(`agents`, `commands`). AGPM handles this automatically based on the `type` field.
+
 ### Snippets
 
 Reusable code templates and documentation fragments.
 
-**Default Location**: `.claude/agpm/snippets/`
+**Default Location**: `.agpm/snippets/` ✅ **Stable** (AGPM tool)
+
+**Alternative Location**: `.claude/agpm/snippets/` (explicitly set `type = "claude-code"`)
+
+**Default Behavior**: Snippets automatically default to the `agpm` tool, meaning they install to `.agpm/snippets/`
+by default. This is because snippets are designed as shared content that can be referenced by resources from multiple
+tools (Claude Code, OpenCode, etc.).
 
 **Example**:
 ```toml
 [snippets]
+# Default: installs to .agpm/snippets/ (agpm tool is the default)
 react-component = { source = "community", path = "snippets/react-component.md", version = "v1.2.0" }
+
+# Same as above - snippets are shared by default
+rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
+
+# Claude Code specific: explicitly override to install to .claude/agpm/snippets/
+claude-only = { source = "community", path = "snippets/claude.md", version = "v1.0.0", type = "claude-code" }
+
 utils = { source = "local-deps", path = "snippets/utils.md" }
 ```
 
 ### Commands
 
-Claude Code slash commands that extend functionality.
+Slash commands that extend AI assistant functionality.
 
-**Default Location**: `.claude/commands/`
+**Default Locations**:
+- **Claude Code**: `.claude/commands/` ✅ **Stable**
+- **OpenCode**: `.opencode/command/` (singular) 🚧 **Alpha**
 
 **Example**:
 ```toml
 [commands]
+# Claude Code command
 deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
+
+# OpenCode command
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", type = "opencode" }
+
 lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 ```
 
@@ -76,7 +134,7 @@ lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 
 Executable files (.sh, .js, .py, etc.) that can be run by hooks or independently.
 
-**Default Location**: `.claude/agpm/scripts/`
+**Default Location**: `.claude/scripts/`
 
 **Example**:
 ```toml
@@ -126,10 +184,15 @@ file-guard = { source = "security-tools", path = "hooks/file-guard.json", versio
 
 ### MCP Servers
 
-Model Context Protocol servers that extend Claude Code's capabilities with external tools and APIs.
+Model Context Protocol servers that extend AI assistant capabilities with external tools and APIs.
 
-**Default Location**: `.claude/agpm/mcp-servers/`
-**Configuration**: Automatically merged into `.mcp.json`
+**Default Locations**: `.claude/agpm/mcp-servers/` or `.opencode/agpm/mcp-servers/`
+
+**Configuration Files**:
+- **Claude Code**: Automatically merged into `.mcp.json` ✅ **Stable**
+- **OpenCode**: Automatically merged into `opencode.json` 🚧 **Alpha**
+
+AGPM uses pluggable MCP handlers to route configuration to the correct file based on the `type` field.
 
 #### MCP Server Structure
 
@@ -152,8 +215,13 @@ Model Context Protocol servers that extend Claude Code's capabilities with exter
 
 ```toml
 [mcp-servers]
+# Claude Code - merges into .mcp.json
 filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
 github = { source = "community", path = "mcp-servers/github.json", version = "v1.2.0" }
+
+# OpenCode - merges into opencode.json
+filesystem-oc = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0", type = "opencode" }
+
 postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 ```
 

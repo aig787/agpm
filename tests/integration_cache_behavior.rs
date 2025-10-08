@@ -125,7 +125,10 @@ snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version
     // Files use basename from path, not dependency name
     assert!(project.project_path().join(".claude/agents/fetch-agent-1.md").exists());
     assert!(project.project_path().join(".claude/agents/fetch-agent-2.md").exists());
-    assert!(project.project_path().join(".claude/agpm/snippets/fetch-snippet-1.md").exists());
+    assert!(project.project_path().join(".agpm/snippets/fetch-snippet-1.md").exists());
+
+    // Explicitly drop source_repo to ensure Git file locks are released before TempDir cleanup
+    drop(source_repo);
 
     Ok(())
 }
@@ -240,7 +243,7 @@ snippet = {{ source = "official", path = "snippets/persistent-snippet.md", versi
     // Verify final state
     // Files use basename from path, not dependency name
     assert!(project.project_path().join(".claude/agents/persistent-agent.md").exists());
-    assert!(project.project_path().join(".claude/agpm/snippets/persistent-snippet.md").exists());
+    assert!(project.project_path().join(".agpm/snippets/persistent-snippet.md").exists());
 
     Ok(())
 }

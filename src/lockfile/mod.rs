@@ -743,6 +743,25 @@ pub struct LockedResource {
     /// It is never serialized to the lockfile - the section header provides this information.
     #[serde(skip)]
     pub resource_type: crate::core::ResourceType,
+
+    /// Tool type for multi-tool support (claude-code, opencode, agpm, custom).
+    ///
+    /// Specifies which target AI coding assistant tool this resource is for. This determines
+    /// where the resource is installed and how it's configured.
+    ///
+    /// **Defaults to "claude-code"** for backward compatibility with existing lockfiles.
+    ///
+    /// Omitted from TOML serialization when the value is "claude-code" (default).
+    #[serde(default = "default_tool", skip_serializing_if = "is_default_tool", rename = "tool")]
+    pub tool: String,
+}
+
+fn default_tool() -> String {
+    "claude-code".to_string()
+}
+
+fn is_default_tool(tool: &str) -> bool {
+    tool == "claude-code"
 }
 
 impl LockFile {
@@ -878,6 +897,11 @@ impl LockFile {
         }
         for resource in &mut lockfile.snippets {
             resource.resource_type = crate::core::ResourceType::Snippet;
+            // Apply snippet-specific default: "agpm" instead of "claude-code"
+            // This handles old lockfiles that don't have tool set for snippets
+            if resource.tool == "claude-code" {
+                resource.tool = "agpm".to_string();
+            }
         }
         for resource in &mut lockfile.commands {
             resource.resource_type = crate::core::ResourceType::Command;
@@ -1019,6 +1043,10 @@ impl LockFile {
                     }
                     content.push_str(&format!("checksum = {:?}\n", resource.checksum));
                     content.push_str(&format!("installed_at = {:?}\n", resource.installed_at));
+                    // Only include tool if it's not the default
+                    if !is_default_tool(&resource.tool) {
+                        content.push_str(&format!("tool = {:?}\n", resource.tool));
+                    }
                     // Always include dependencies field, even if empty (matches Cargo.lock format)
                     content.push_str("dependencies = [");
                     if resource.dependencies.is_empty() {
@@ -1145,6 +1173,7 @@ impl LockFile {
     ///     installed_at: "agents/example-agent.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Agent,
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1168,6 +1197,7 @@ impl LockFile {
     ///     installed_at: "snippets/util-snippet.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Snippet,
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1214,6 +1244,7 @@ impl LockFile {
     ///     installed_at: ".claude/commands/build-command.md".to_string(),
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Command,
+    ///     tool: "claude-code".to_string(),
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -1911,6 +1942,7 @@ impl LockFile {
     /// #     installed_at: "agents/my-agent.md".to_string(),
     /// #     dependencies: vec![],
     /// #     resource_type: ResourceType::Agent,
+    /// #     tool: "claude-code".to_string(),
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2091,6 +2123,8 @@ mod tests {
                 installed_at: "agents/test-agent.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2188,6 +2222,8 @@ mod tests {
                 installed_at: "agents/agent1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             },
             true, // is_agent
         );
@@ -2205,6 +2241,8 @@ mod tests {
                 installed_at: "snippets/snippet1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Snippet,
+
+                tool: "claude-code".to_string(),
             },
             false, // is_agent
         );
@@ -2222,6 +2260,8 @@ mod tests {
                 installed_at: "agents/dev-agent1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             },
             true, // is_agent
         );
@@ -2273,6 +2313,8 @@ mod tests {
                 installed_at: ".claude/commands/build.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
+
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2303,6 +2345,8 @@ mod tests {
                 installed_at: "agents/agent1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2320,6 +2364,8 @@ mod tests {
                 installed_at: "snippets/snippet1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Snippet,
+
+                tool: "claude-code".to_string(),
             },
             false,
         );
@@ -2337,6 +2383,8 @@ mod tests {
                 installed_at: ".claude/commands/command1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
+
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2372,6 +2420,8 @@ mod tests {
                 installed_at: ".claude/commands/deploy.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
+
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2408,6 +2458,8 @@ mod tests {
                 installed_at: "agents/helper.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             },
             true,
         );
@@ -2425,6 +2477,8 @@ mod tests {
                 installed_at: ".claude/commands/helper.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Command,
+
+                tool: "claude-code".to_string(),
             },
             crate::core::ResourceType::Command,
         );

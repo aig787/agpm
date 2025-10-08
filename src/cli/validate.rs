@@ -935,6 +935,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1005,6 +1006,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1081,6 +1083,8 @@ mod tests {
             installed_at: "agents/extra-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1178,6 +1182,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1250,6 +1255,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1368,6 +1374,8 @@ mod tests {
                 installed_at: "agents/test.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1511,6 +1519,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1593,6 +1602,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1799,6 +1809,7 @@ mod tests {
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1882,6 +1893,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1927,6 +1939,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1973,6 +1986,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             true,
@@ -1991,6 +2005,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
             false,
@@ -2109,6 +2124,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -2128,6 +2144,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -2178,6 +2195,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     target: None,
                     filename: None,
                     dependencies: None,
+                    tool: "claude-code".to_string(),
                 },
             )),
         );
@@ -2320,6 +2338,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             installed_at: "agents/extra-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2799,6 +2819,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             installed_at: "agents/lockfile-agent.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2867,6 +2889,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 target: None,
                 filename: None,
                 dependencies: None,
+                tool: "claude-code".to_string(),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2985,6 +3008,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             installed_at: "agents/agent1.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
+
+            tool: "claude-code".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

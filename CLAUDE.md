@@ -4,9 +4,9 @@
 
 ## Overview
 
-AGPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
-scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (agpm.toml + agpm.lock) like Cargo for
-reproducible installations from Git repositories.
+AGPM (Claude Code Package Manager) is a Git-based package manager for AI coding assistant resources (agents, snippets, commands,
+scripts, hooks, MCP servers), written in Rust. It supports multiple tools (Claude Code, OpenCode, custom types) via a pluggable
+artifact system. Uses a lockfile model (agpm.toml + agpm.lock) like Cargo for reproducible installations from Git repositories.
 
 ## Architecture
 
@@ -34,6 +34,7 @@ src/
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
+│   └── handlers.rs  # Pluggable MCP handlers (ClaudeCode, OpenCode)
 ├── metadata/    # Metadata extraction from resource files
 │   └── extractor.rs  # YAML frontmatter and JSON field extraction
 ├── models/      # Data models
@@ -138,6 +139,7 @@ Dev: assert_cmd, predicates
   Test both modes.
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
+- **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
 
 ## Build & CI
 
@@ -167,6 +169,9 @@ GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 - **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
 - **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
 - **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
+- **Multi-tool support** (v0.4.0+): Pluggable tools (claude-code, opencode, agpm, custom)
+- **Tool-aware path resolution**: Resources install to tool-specific directories
+- **Pluggable MCP handlers**: Tool-specific MCP server configuration (ClaudeCode, OpenCode)
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
 - **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
@@ -267,10 +272,39 @@ code-helper = { source = "community", path = "agents/code/helper.md", version = 
 standard = { source = "community", path = "agents/standard.md", version = "^v1.0.0" }
 ```
 
-## Windows Path Gotchas
+## Cross-Platform Path Handling
+
+**CRITICAL**: AGPM must work identically on Windows, macOS, and Linux.
+
+### Path Separator Rules
+
+1. **Forward slashes ONLY** in these contexts:
+   - Lockfile `installed_at` fields (cross-platform consistency)
+   - `.gitignore` entries (Git requirement)
+   - TOML manifest files (platform-independent)
+   - Any serialized/stored path representation
+
+2. **Use `Path::display()` carefully**:
+   - `Path::display()` produces platform-specific separators (backslashes on Windows)
+   - Always normalize with `.replace('\\', "/")` when storing paths
+   - Example: `format!("{}/{}", artifact_path.display(), filename).replace('\\', "/")`
+
+3. **Runtime path operations**:
+   - Use `Path`/`PathBuf` for filesystem operations (automatic platform handling)
+   - Only convert to strings when storing/serializing
+   - Use `join()` instead of string concatenation
+
+### Testing Path Handling
+
+- **Integration tests must pass on Windows**: CI runs all tests on Windows, macOS, Linux
+- **Don't hardcode path separators in test assertions**: Use forward slashes in expected values
+- **TestProject helper handles paths correctly**: Always use `TestProject::new()` in tests
+- **Don't manually create lockfiles in tests**: Let `agpm install` generate them naturally
+
+### Windows-Specific Gotchas
 
 - Absolute paths: `C:\path` or `\\server\share`
-- file:// URLs use forward slashes
+- file:// URLs use forward slashes (even on Windows)
 - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
 - Test on real Windows (not WSL)
 
@@ -301,6 +335,58 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Version constraint resolution**: Supports semver constraints like "^1.0", "~2.1"
 - **Automatic deduplication**: Multiple refs to same commit automatically share resources
 
+## Multi-Tool Support
+
+AGPM supports multiple AI coding tools via configurable tools:
+
+### Supported Tools
+
+- **claude-code** (default): Claude Code resources (agents, commands, scripts, hooks, MCP servers)
+- **opencode**: OpenCode resources (agents, commands, MCP servers)
+- **agpm**: AGPM-specific resources (snippets for reusable templates)
+- **custom**: User-defined tools via configuration
+
+### Tool Configuration
+
+Each tool defines:
+- **Base directory**: Where resources are installed (e.g., `.claude`, `.opencode`)
+- **Resource paths**: Subdirectories for each resource type
+- **MCP handling**: Tool-specific MCP server configuration strategy
+
+### Dependency Tool Field
+
+Dependencies can specify their target tool:
+
+```toml
+[agents]
+# Defaults to claude-code
+example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+
+# Explicit type for OpenCode
+opencode-agent = { source = "community", path = "agents/helper.md", type = "opencode" }
+```
+
+### Resource Type Support Matrix
+
+| Resource      | claude-code | opencode | agpm | Default Type |
+|---------------|-------------|----------|------|--------------|
+| agents        | ✅ `.claude/agents/` | ✅ `.opencode/agent/` (singular) | ❌ | `claude-code` |
+| commands      | ✅ `.claude/commands/` | ✅ `.opencode/command/` (singular) | ❌ | `claude-code` |
+| scripts       | ✅ `.claude/scripts/` | ❌ | ❌ | `claude-code` |
+| hooks         | ✅ `.claude/hooks/` | ❌ | ❌ | `claude-code` |
+| mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
+| snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
+
+**Note**: Snippets default to `agpm` tool (shared infrastructure). Use `type = "claude-code"` to override.
+
+### MCP Handler System
+
+Pluggable handlers for tool-specific MCP configuration:
+
+- **ClaudeCodeMcpHandler**: Copies to `.claude/agpm/mcp-servers/`, merges into `.mcp.json`
+- **OpenCodeMcpHandler**: Copies to `.opencode/agpm/mcp-servers/`, merges into `opencode.json`
+- **Tracking**: Uses `_agpm` metadata to distinguish managed vs user servers
+
 ## Key Requirements
 
 - **Use Task tool** for complex operations
@@ -319,6 +405,19 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 community = "https://github.com/aig787/agpm-community.git"
 local = "../my-local-resources"  # Local directory support
 
+# Tool type configurations (optional - uses defaults if omitted)
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "agpm/mcp-servers" }, snippets = { path = "agpm/snippets" } }
+
+[tools.opencode]
+path = ".opencode"
+resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = { path = "agpm/mcp-servers" } }
+
+[tools.agpm]
+path = ".agpm"
+resources = { snippets = { path = "snippets" } }
+
 [agents]
 # Single file dependency - installs as .claude/agents/example.md (basename from path)
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
@@ -334,6 +433,9 @@ review-tools = { source = "community", path = "agents/**/review*.md", version = 
 
 # Custom target (v0.3.18+ BREAKING: relative to .claude/agents/, not project root)
 special = { source = "community", path = "agents/special.md", target = "custom/special.md" }
+
+# OpenCode agent (installs to .opencode/agent/)
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
 
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
@@ -368,6 +470,17 @@ version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
 installed_at = ".claude/agents/example.md"  # Uses basename from path (v0.3.18+)
+tool = "claude-code"  # Defaults to claude-code, omitted if default
+
+[[agents]]
+name = "opencode-helper"
+source = "community"
+path = "agents/helper.md"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".opencode/agent/helper.md"  # OpenCode uses singular "agent"
+tool = "opencode"
 
 [[agents]]
 name = "ai-helper"

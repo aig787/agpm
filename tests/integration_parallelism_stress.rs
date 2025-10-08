@@ -133,7 +133,7 @@ snippet = {{ source = "official", path = "snippets/rapid-snippet.md", version = 
     // Files use basename from path, not dependency name
     assert!(project.project_path().join(".claude/agents/rapid-agent-1.md").exists());
     assert!(project.project_path().join(".claude/agents/rapid-agent-2.md").exists());
-    assert!(project.project_path().join(".claude/agpm/snippets/rapid-snippet.md").exists());
+    assert!(project.project_path().join(".agpm/snippets/rapid-snippet.md").exists());
 
     Ok(())
 }

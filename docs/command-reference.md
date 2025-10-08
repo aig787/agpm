@@ -678,9 +678,9 @@ AGPM manages six types of resources with optimized parallel installation:
 ### Direct Installation Resources
 
 - **Agents**: AI assistant configurations (installed to `.claude/agents/`)
-- **Snippets**: Reusable code templates (installed to `.claude/agpm/snippets/`)
+- **Snippets**: Reusable code templates (installed to `.agpm/snippets/` by default)
 - **Commands**: Claude Code slash commands (installed to `.claude/commands/`)
-- **Scripts**: Executable automation files (installed to `.claude/agpm/scripts/`)
+- **Scripts**: Executable automation files (installed to `.claude/scripts/`)
 
 ### Configuration-Merged Resources
 

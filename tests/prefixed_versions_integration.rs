@@ -81,14 +81,10 @@ test-snippet = {{ source = "prefixed", path = "snippets/test-snippet.md", versio
     // Verify files were installed
     assert!(project.project_path().join(".claude/agents/test-agent.md").exists());
 
-    // Note: There's a separate bug where snippets may install to .claude/agpm/snippets/
-    // This is unrelated to prefixed versions - check both possible locations
-    let snippet_path1 = project.project_path().join(".claude/snippets/test-snippet.md");
-    let snippet_path2 = project.project_path().join(".claude/agpm/snippets/test-snippet.md");
-
+    // Snippets default to agpm artifact type and install to .agpm/snippets/
     assert!(
-        snippet_path1.exists() || snippet_path2.exists(),
-        "Snippet file should be installed (either in .claude/snippets/ or .claude/agpm/snippets/)"
+        project.project_path().join(".agpm/snippets/test-snippet.md").exists(),
+        "Snippet file should be installed in .agpm/snippets/"
     );
 }
 
@@ -340,10 +336,11 @@ test-command = {{ source = "multi", path = "commands/test-command.md", version =
         "Agent file should be installed"
     );
 
-    // Snippet may install to either location due to existing bug (unrelated to prefixes)
-    let snippet_path1 = project.project_path().join(".claude/snippets/test-snippet.md");
-    let snippet_path2 = project.project_path().join(".claude/agpm/snippets/test-snippet.md");
-    assert!(snippet_path1.exists() || snippet_path2.exists(), "Snippet file should be installed");
+    // Snippets default to agpm artifact type and install to .agpm/snippets/
+    assert!(
+        project.project_path().join(".agpm/snippets/test-snippet.md").exists(),
+        "Snippet file should be installed in .agpm/snippets/"
+    );
 
     assert!(
         project.project_path().join(".claude/commands/test-command.md").exists(),

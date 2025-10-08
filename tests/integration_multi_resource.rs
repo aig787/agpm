@@ -147,22 +147,22 @@ redis = {{ source = "test_repo", path = "mcp-servers/redis.json", version = "v4.
     // Check snippets (4 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet1.md"),
+        &project.project_path().join(".agpm/snippets/snippet1.md"),
         "Snippet 1 v1.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet2.md"),
+        &project.project_path().join(".agpm/snippets/snippet2.md"),
         "Snippet 2 v1.1.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet3.md"),
+        &project.project_path().join(".agpm/snippets/snippet3.md"),
         "Snippet 3 v3.0.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/snippets/snippet4.md"),
+        &project.project_path().join(".agpm/snippets/snippet4.md"),
         "Snippet 4 v4.0.0",
     )
     .await?;
@@ -573,9 +573,9 @@ agent-dependent = {{ source = "conflict_repo", path = "agents/dependent.md", ver
 
     // Verify both are installed with their specified versions
     // Files use basename from path, not dependency name
-    assert!(project.project_path().join(".claude/agpm/snippets/base.md").exists());
+    assert!(project.project_path().join(".agpm/snippets/base.md").exists());
     let snippet_content =
-        fs::read_to_string(project.project_path().join(".claude/agpm/snippets/base.md")).await?;
+        fs::read_to_string(project.project_path().join(".agpm/snippets/base.md")).await?;
     assert!(snippet_content.contains("v2.0.0"));
 
     assert!(project.project_path().join(".claude/agents/dependent.md").exists());

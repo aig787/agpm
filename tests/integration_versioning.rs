@@ -651,9 +651,9 @@ version-two = {{ source = "versioned", path = "snippets/utils.md", version = "v1
 
     // Verify both files are installed with custom targets
     // Custom target "v1" becomes ".claude/agents/v1/example.md"
-    // Custom target "v2" becomes ".claude/snippets/v2/utils.md"
+    // Custom target "v2" becomes ".agpm/snippets/v2/utils.md" (snippets default to agpm artifact type)
     let v1_path = project.project_path().join(".claude/agents/v1/example.md");
-    let v2_path = project.project_path().join(".claude/agpm/snippets/v2/utils.md");
+    let v2_path = project.project_path().join(".agpm/snippets/v2/utils.md");
 
     let v1 = fs::read_to_string(&v1_path)
         .await

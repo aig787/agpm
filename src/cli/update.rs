@@ -495,6 +495,7 @@ impl UpdateCommand {
                     // Lockfile saved successfully (no progress needed for this quick operation)
 
                     // Update .gitignore if enabled
+                    #[allow(deprecated)]
                     let gitignore_enabled = manifest.target.gitignore;
                     if gitignore_enabled {
                         update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
@@ -565,6 +566,7 @@ mod tests {
     }
 
     // Helper function to create a test manifest with dependencies
+    #[allow(deprecated)]
     fn create_test_manifest() -> Manifest {
         let mut sources = HashMap::new();
         sources.insert("test-source".to_string(), "file:///tmp/test-repo".to_string());
@@ -583,12 +585,14 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
+                tool: "claude-code".to_string(),
             })),
         );
 
         Manifest {
             sources,
             target: TargetConfig::default(),
+            tools: None,
             agents,
             snippets: HashMap::new(),
             commands: HashMap::new(),
@@ -619,6 +623,8 @@ mod tests {
                 installed_at: "agents/test-agent.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
+
+                tool: "claude-code".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

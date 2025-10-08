@@ -44,10 +44,10 @@
 //! ### Table Format (Default)
 //!
 //! ```text
-//! Package                        Current      Latest       Available
-//! ──────────────────────────────────────────────────────────────────
-//! my-agent                       v1.0.0       v1.2.0       v2.0.0
-//! helper-agent                   v2.1.0       v2.1.0       v3.0.0
+//! Package                        Current      Latest       Available    Tool
+//! ─────────────────────────────────────────────────────────────────────────────
+//! my-agent                       v1.0.0       v1.2.0       v2.0.0       claude-code
+//! helper-agent                   v2.1.0       v2.1.0       v3.0.0       claude-code
 //!
 //! Summary:
 //!   Total dependencies: 5
@@ -65,6 +65,7 @@
 //!       "name": "my-agent",
 //!       "type": "agent",
 //!       "source": "official",
+//!       "tool": "claude-code",
 //!       "current": "v1.0.0",
 //!       "latest": "v1.2.0",
 //!       "latest_available": "v2.0.0",
@@ -278,6 +279,7 @@ pub struct OutdatedCommand {
 /// * `name` - The dependency name as specified in the manifest
 /// * `resource_type` - Type of resource: "agent", "snippet", "command", "script", "hook", or "mcp-server"
 /// * `source` - Source repository name from the manifest's `[sources]` section
+/// * `tool` - The target tool: "claude-code", "opencode", "agpm", or custom
 /// * `current` - Currently installed version from the lockfile
 /// * `latest` - Latest version that satisfies the manifest's version constraint
 /// * `latest_available` - Absolute latest version available in the repository
@@ -294,6 +296,7 @@ pub struct OutdatedCommand {
 ///   "name": "string",
 ///   "type": "agent|snippet|command|script|hook|mcp-server",
 ///   "source": "string",
+///   "tool": "claude-code|opencode|agpm|custom",
 ///   "current": "string (semver)",
 ///   "latest": "string (semver)",
 ///   "latest_available": "string (semver)",
@@ -312,6 +315,7 @@ pub struct OutdatedCommand {
 ///   "name": "code-reviewer",
 ///   "type": "agent",
 ///   "source": "official",
+///   "tool": "claude-code",
 ///   "current": "v1.0.0",
 ///   "latest": "v1.2.0",
 ///   "latest_available": "v1.2.0",
@@ -328,6 +332,7 @@ pub struct OutdatedCommand {
 ///   "name": "helper-agent",
 ///   "type": "agent",
 ///   "source": "community",
+///   "tool": "claude-code",
 ///   "current": "v1.5.0",
 ///   "latest": "v1.5.0",
 ///   "latest_available": "v2.1.0",
@@ -344,6 +349,7 @@ pub struct OutdatedCommand {
 ///   "name": "build-script",
 ///   "type": "script",
 ///   "source": "tools",
+///   "tool": "claude-code",
 ///   "current": "v2.1.0",
 ///   "latest": "v2.1.0",
 ///   "latest_available": "v2.1.0",
@@ -358,6 +364,7 @@ pub struct OutdatedInfo {
     #[serde(rename = "type")]
     pub resource_type: String,
     pub source: String,
+    pub tool: String,
     pub current: String,
     pub latest: String,           // Latest within constraint
     pub latest_available: String, // Absolute latest
@@ -445,6 +452,7 @@ pub struct OutdatedSummary {
 ///       "name": "string",
 ///       "type": "string",
 ///       "source": "string",
+///       "tool": "string",
 ///       "current": "string",
 ///       "latest": "string",
 ///       "latest_available": "string",
@@ -911,6 +919,7 @@ impl OutdatedCommand {
             name: name.to_string(),
             resource_type: resource_type.to_string(),
             source: source_name.to_string(),
+            tool: locked.tool.clone(),
             current: locked.version.clone().unwrap_or_else(|| "unknown".to_string()),
             latest: format_version(&latest_compatible),
             latest_available: format_version(&latest_available),
@@ -1064,6 +1073,7 @@ impl OutdatedCommand {
     ///       "name": "my-agent",
     ///       "type": "agent",
     ///       "source": "official",
+    ///       "tool": "claude-code",
     ///       "current": "v1.0.0",
     ///       "latest": "v1.2.0",
     ///       "latest_available": "v2.0.0",
@@ -1139,10 +1149,10 @@ impl OutdatedCommand {
     /// ## With Updates Available
     ///
     /// ```text
-    /// Package                        Current      Latest       Available
-    /// ──────────────────────────────────────────────────────────────────
-    /// my-agent                       v1.0.0       v1.2.0       v2.0.0
-    /// helper-script                  v2.1.0       v2.1.0       v3.0.0
+    /// Package                        Current      Latest       Available    Tool
+    /// ─────────────────────────────────────────────────────────────────────────────
+    /// my-agent                       v1.0.0       v1.2.0       v2.0.0       claude-code
+    /// helper-script                  v2.1.0       v2.1.0       v3.0.0       claude-code
     ///
     /// Summary:
     ///   Total dependencies: 5
@@ -1185,13 +1195,14 @@ impl OutdatedCommand {
 
         // Print header
         println!(
-            "\n{:<30} {:<12} {:<12} {:<12}",
+            "\n{:<30} {:<12} {:<12} {:<12} {:<15}",
             "Package".bold(),
             "Current".bold(),
             "Latest".bold(),
-            "Available".bold()
+            "Available".bold(),
+            "Tool".bold()
         );
-        println!("{}", "─".repeat(70));
+        println!("{}", "─".repeat(85));
 
         // Print each dependency
         for dep in outdated {
@@ -1213,7 +1224,14 @@ impl OutdatedCommand {
                 dep.latest_available.normal()
             };
 
-            println!("{:<30} {:<12} {:<12} {:<12}", name, dep.current, latest, available);
+            println!(
+                "{:<30} {:<12} {:<12} {:<12} {:<15}",
+                name,
+                dep.current,
+                latest,
+                available,
+                dep.tool.bright_black()
+            );
         }
 
         // Print summary
