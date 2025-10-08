@@ -1953,12 +1953,11 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     };
 
     // Collect paths from all resource types
+    // Skip hooks and MCP servers - they are configured only, not installed as files
     add_resource_paths(&lockfile.agents);
     add_resource_paths(&lockfile.snippets);
     add_resource_paths(&lockfile.commands);
     add_resource_paths(&lockfile.scripts);
-    add_resource_paths(&lockfile.hooks);
-    add_resource_paths(&lockfile.mcp_servers);
 
     // Read existing gitignore if it exists
     let mut before_agpm_section = Vec::new();
@@ -1972,10 +1971,15 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
         let mut past_agpm_section = false;
 
         for line in content.lines() {
-            if line == "# AGPM managed entries - do not edit below this line" {
+            // Support both AGPM and legacy CCPM markers for migration compatibility
+            if line == "# AGPM managed entries - do not edit below this line"
+                || line == "# CCPM managed entries - do not edit below this line"
+            {
                 in_agpm_section = true;
                 continue;
-            } else if line == "# End of AGPM managed entries" {
+            } else if line == "# End of AGPM managed entries"
+                || line == "# End of CCPM managed entries"
+            {
                 in_agpm_section = false;
                 past_agpm_section = true;
                 continue;
@@ -1985,7 +1989,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
                 // Preserve everything before AGPM section exactly as-is
                 before_agpm_section.push(line.to_string());
             } else if in_agpm_section {
-                // Skip existing AGPM entries (they'll be replaced)
+                // Skip existing AGPM/CCPM entries (they'll be replaced)
                 continue;
             } else {
                 // Preserve everything after AGPM section exactly as-is
@@ -3043,6 +3047,66 @@ mod tests {
 
         // Internal path should be as-is
         assert!(content.contains(".claude/agents/test.md"));
+    }
+
+    #[tokio::test]
+    async fn test_update_gitignore_migrates_ccpm_entries() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+
+        // Create .claude directory
+        tokio::fs::create_dir_all(project_dir.join(".claude/agents")).await.unwrap();
+
+        // Create a gitignore with legacy CCPM markers
+        let gitignore_path = project_dir.join(".gitignore");
+        let legacy_content = r#"# User's custom entries
+*.backup
+temp/
+
+# CCPM managed entries - do not edit below this line
+.claude/agents/old-ccpm-agent.md
+.claude/commands/old-ccpm-command.md
+# End of CCPM managed entries
+
+# More user entries
+local-config.json
+"#;
+        tokio::fs::write(&gitignore_path, legacy_content).await.unwrap();
+
+        // Create a new lockfile with AGPM entries
+        let mut lockfile = LockFile::new();
+        let mut agent = create_test_locked_resource("new-agent", true);
+        agent.installed_at = ".claude/agents/new-agent.md".to_string();
+        lockfile.agents.push(agent);
+
+        // Update gitignore
+        let result = update_gitignore(&lockfile, project_dir, true);
+        assert!(result.is_ok());
+
+        // Read updated content
+        let updated_content = tokio::fs::read_to_string(&gitignore_path).await.unwrap();
+
+        // User entries before CCPM section should be preserved
+        assert!(updated_content.contains("*.backup"));
+        assert!(updated_content.contains("temp/"));
+
+        // User entries after CCPM section should be preserved
+        assert!(updated_content.contains("local-config.json"));
+
+        // Should have AGPM markers now (not CCPM)
+        assert!(updated_content.contains("# AGPM managed entries - do not edit below this line"));
+        assert!(updated_content.contains("# End of AGPM managed entries"));
+
+        // Old CCPM markers should be removed
+        assert!(!updated_content.contains("# CCPM managed entries"));
+        assert!(!updated_content.contains("# End of CCPM managed entries"));
+
+        // Old CCPM entries should be removed
+        assert!(!updated_content.contains("old-ccpm-agent.md"));
+        assert!(!updated_content.contains("old-ccpm-command.md"));
+
+        // New AGPM entries should be added
+        assert!(updated_content.contains(".claude/agents/new-agent.md"));
     }
 
     #[tokio::test]
