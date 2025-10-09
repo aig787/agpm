@@ -82,7 +82,7 @@ post-announce-jobs = ["./update-release-notes", "./publish-crates"]
 # cargo-binstall metadata for binary installation
 [package.metadata.binstall]
 pkg-url = "https://github.com/aig787/agpm/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
-bin-dir = "{ bin }{ binary-ext }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
 
 [profile.release]
 lto = true
