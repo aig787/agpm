@@ -24,6 +24,19 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  msrv:
+    name: MSRV Check (1.85.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify MSRV
+        run: cargo build --verbose
+
   clippy:
     name: Clippy Check
     runs-on: ubuntu-latest

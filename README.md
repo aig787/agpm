@@ -24,6 +24,11 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
 
+## Requirements
+
+- **Rust 1.85.0+** (MSRV for edition 2024)
+- Git 2.0+ (for repository operations)
+
 ## Quick Start
 
 ### Install AGPM
