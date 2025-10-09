@@ -29,10 +29,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "agpm"
+name = "agpm-cli"
 version = "0.4.1"
 dependencies = [
- "agpm",
+ "agpm-cli",
  "anyhow",
  "assert_cmd",
  "chrono",

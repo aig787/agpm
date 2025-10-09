@@ -1,5 +1,5 @@
 [package]
-name = "agpm"
+name = "agpm-cli"
 version = "0.4.1"
 edition = "2024"
 authors = ["Aaron Griffin <aig787@icloud.com>"]
@@ -9,6 +9,11 @@ repository = "https://github.com/aig787/agpm"
 readme = "README.md"
 keywords = ["claude", "ai", "package-manager", "agent", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+
+# Keep binary name as "agpm" for user convenience
+[[bin]]
+name = "agpm"
+path = "src/main.rs"
 
 [features]
 default = []
@@ -51,7 +56,7 @@ pubgrub = { version = "0.3.0", default-features = false }
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.10"
-agpm = { path = ".", features = ["test-utils"] }
+agpm-cli = { path = ".", features = ["test-utils"] }
 
 # Config for 'dist'
 [workspace.metadata.dist]
