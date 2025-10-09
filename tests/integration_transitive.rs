@@ -11,7 +11,7 @@ use common::TestProject;
 /// Test basic transitive dependency resolution with real Git repos
 #[tokio::test]
 async fn test_transitive_resolution_basic() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -105,7 +105,7 @@ main-app = {{ source = "community", path = "agents/main-app.md", version = "v1.0
 #[tokio::test]
 #[ignore = "Cross-source transitive dependencies with same names not yet supported"]
 async fn test_transitive_cross_source_same_names() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -196,7 +196,7 @@ tool = {{ source = "source2", path = "agents/tool.md", version = "v1.0.0" }}
 /// Test that circular transitive dependencies are detected and rejected
 #[tokio::test]
 async fn test_transitive_cycle_detection() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -286,7 +286,7 @@ agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0
 /// Test diamond dependencies (same resource via multiple paths)
 #[tokio::test]
 async fn test_transitive_diamond_dependencies() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 

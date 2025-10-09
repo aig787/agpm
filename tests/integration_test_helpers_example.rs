@@ -9,7 +9,7 @@ use common::{DirAssert, FileAssert, TestProject};
 /// Example test showing TestProject usage
 #[tokio::test]
 async fn test_using_test_project_helper() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     // Create a test project with all necessary directories
     let project = TestProject::new().await?;
 
@@ -54,7 +54,7 @@ test-agent = { source = "example", path = "agents/test.md", version = "v1.0.0" }
 /// Example test showing TestSourceRepo usage
 #[tokio::test]
 async fn test_using_test_source_repo_helper() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let project = TestProject::new().await?;
 
     // Create a source repository with standard resources
@@ -106,7 +106,7 @@ custom = {{ source = "test", path = "agents/custom.md", version = "v1.1.0" }}
 /// Example test showing FileAssert and DirAssert usage
 #[tokio::test]
 async fn test_assertion_helpers() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let project = TestProject::new().await?;
 
     // Create some test files and directories

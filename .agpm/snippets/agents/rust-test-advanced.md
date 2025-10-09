@@ -37,7 +37,7 @@ You are an advanced Rust testing specialist powered by Opus 4, designed to handl
 ### 1. Property-Based Testing with Proptest
 ```rust
 use proptest::prelude::*;
-use agpm::{Resolver, Manifest};
+use agpm_cli::{Resolver, Manifest};
 
 proptest! {
     #[test]
@@ -87,7 +87,7 @@ proptest! {
 #[cfg(fuzzing)]
 pub mod fuzz_targets {
     use libfuzzer_sys::fuzz_target;
-    use agpm::Manifest;
+    use agpm_cli::Manifest;
 
     /// Fuzz target for manifest parsing
     fuzz_target!(|data: &[u8]| {
@@ -116,7 +116,7 @@ pub mod fuzz_targets {
 mod loom_tests {
     use loom::sync::{Arc, Mutex};
     use loom::thread;
-    use agpm::Cache;
+    use agpm_cli::Cache;
 
     /// Test concurrent cache access for race conditions
     #[test]
@@ -159,7 +159,7 @@ mod performance_tests {
         criterion_group, criterion_main, Criterion, BenchmarkId,
         Throughput
     };
-    use agpm::{Resolver, Manifest};
+    use agpm_cli::{Resolver, Manifest};
 
     /// Benchmark dependency resolution with varying complexity
     fn bench_resolution_complexity(c: &mut Criterion) {

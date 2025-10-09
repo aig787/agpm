@@ -10,7 +10,7 @@ use common::TestProject;
 /// Test installing dependencies using glob patterns.
 #[tokio::test]
 async fn test_pattern_based_installation() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -96,7 +96,7 @@ all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0
 /// Test pattern dependencies with custom target directories.
 #[tokio::test]
 async fn test_pattern_with_custom_target() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
@@ -143,7 +143,7 @@ utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0
 /// Test pattern dependencies with version constraints.
 #[tokio::test]
 async fn test_pattern_with_versions() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;
@@ -198,7 +198,7 @@ v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
 /// Test local filesystem patterns.
 #[tokio::test]
 async fn test_local_pattern_dependencies() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -248,7 +248,7 @@ local-agents = {{ path = "{}/agents/local*.md" }}
 /// Test error handling for invalid patterns.
 #[tokio::test]
 async fn test_invalid_pattern_error() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -275,7 +275,7 @@ unsafe = { source = "test-repo", path = "../../../etc/*.conf", version = "latest
 /// Test pattern matching performance with many files.
 #[tokio::test]
 async fn test_pattern_performance() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let test_repo = project.create_source_repo("test-repo").await?;

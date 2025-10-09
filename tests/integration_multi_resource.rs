@@ -11,7 +11,7 @@ use common::TestProject;
 #[tokio::test]
 async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Initialize test logging
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -497,7 +497,7 @@ fn update_breaking_v4(repo_dir: &Path) -> Result<()> {
 #[tokio::test]
 async fn test_install_with_version_conflicts() -> Result<()> {
     // Initialize test logging
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 

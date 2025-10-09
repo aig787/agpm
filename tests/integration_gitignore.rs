@@ -103,7 +103,7 @@ async fn create_test_source_files(source_dir: &Path) -> Result<()> {
 
 #[tokio::test]
 async fn test_gitignore_enabled_by_default() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -139,7 +139,7 @@ async fn test_gitignore_enabled_by_default() {
 
 #[tokio::test]
 async fn test_gitignore_explicitly_enabled() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -176,7 +176,7 @@ async fn test_gitignore_explicitly_enabled() {
 
 #[tokio::test]
 async fn test_gitignore_disabled() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -207,7 +207,7 @@ async fn test_gitignore_disabled() {
 
 #[tokio::test]
 async fn test_gitignore_preserves_user_entries() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -262,7 +262,7 @@ temp/
 
 #[tokio::test]
 async fn test_gitignore_preserves_content_after_agpm_section() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -331,7 +331,7 @@ debug/
 
 #[tokio::test]
 async fn test_gitignore_update_command() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -365,7 +365,7 @@ async fn test_gitignore_update_command() {
 
 #[tokio::test]
 async fn test_gitignore_handles_external_paths() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
 
@@ -449,7 +449,7 @@ installed_at = ".claude/agents/internal.md"
 
 #[tokio::test]
 async fn test_gitignore_empty_lockfile() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -484,7 +484,7 @@ async fn test_gitignore_empty_lockfile() {
 
 #[tokio::test]
 async fn test_gitignore_idempotent() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -537,7 +537,7 @@ async fn test_gitignore_idempotent() {
 
 #[tokio::test]
 async fn test_gitignore_switch_enabled_disabled() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");
@@ -604,7 +604,7 @@ async fn test_gitignore_switch_enabled_disabled() {
 
 #[tokio::test]
 async fn test_gitignore_actually_ignored_by_git() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await.unwrap();
     let project_dir = project.project_path().to_path_buf();
@@ -672,7 +672,7 @@ async fn test_gitignore_actually_ignored_by_git() {
 
 #[tokio::test]
 async fn test_gitignore_disabled_files_not_ignored_by_git() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await.unwrap();
     let project_dir = project.project_path().to_path_buf();
@@ -723,7 +723,7 @@ Git status:
 
 #[tokio::test]
 async fn test_gitignore_malformed_existing() {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
     let temp = TempDir::new().unwrap();
     let project_dir = temp.path();
     let source_dir = temp.path().join("source");

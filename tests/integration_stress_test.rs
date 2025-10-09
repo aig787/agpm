@@ -1,12 +1,12 @@
 //! Stress tests for parallel installation with git worktrees
 
-use agpm::cache::Cache;
-use agpm::git::command_builder::GitCommand;
-use agpm::installer::{ResourceFilter, install_resources};
-use agpm::lockfile::{LockFile, LockedResource};
-use agpm::manifest::Manifest;
-use agpm::test_utils::init_test_logging;
-use agpm::utils::progress::MultiPhaseProgress;
+use agpm_cli::cache::Cache;
+use agpm_cli::git::command_builder::GitCommand;
+use agpm_cli::installer::{ResourceFilter, install_resources};
+use agpm_cli::lockfile::{LockFile, LockedResource};
+use agpm_cli::manifest::Manifest;
+use agpm_cli::test_utils::init_test_logging;
+use agpm_cli::utils::progress::MultiPhaseProgress;
 use anyhow::Result;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -59,7 +59,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                 checksum: format!("sha256:r{}a{}", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
-                resource_type: agpm::core::ResourceType::Agent,
+                resource_type: agpm_cli::core::ResourceType::Agent,
                 tool: "claude-code".to_string(),
             });
             total_agents += 1;
@@ -285,7 +285,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 checksum: format!("sha256:r{}a{}v1", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
-                resource_type: agpm::core::ResourceType::Agent,
+                resource_type: agpm_cli::core::ResourceType::Agent,
                 tool: "claude-code".to_string(),
             });
             total_agents += 1;
@@ -332,7 +332,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                 checksum: format!("sha256:r{}a{}v2", repo_idx, i),
                 installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
-                resource_type: agpm::core::ResourceType::Agent,
+                resource_type: agpm_cli::core::ResourceType::Agent,
                 tool: "claude-code".to_string(),
             });
         }
@@ -436,7 +436,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 checksum: format!("sha256:lr{}a{}", repo_idx, i),
                 installed_at: format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i),
                 dependencies: vec![],
-                resource_type: agpm::core::ResourceType::Agent,
+                resource_type: agpm_cli::core::ResourceType::Agent,
                 tool: "claude-code".to_string(),
             });
             total_resources += 1;
@@ -468,7 +468,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
             checksum: format!("sha256:community_{}", idx),
             installed_at: format!(".claude/agents/community_agent_{}.md", idx),
             dependencies: vec![],
-            resource_type: agpm::core::ResourceType::Agent,
+            resource_type: agpm_cli::core::ResourceType::Agent,
             tool: "claude-code".to_string(),
         });
         total_resources += 1;
@@ -611,7 +611,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
             checksum: format!("sha256:community_{}", name),
             installed_at: format!(".claude/agents/{}.md", name),
             dependencies: vec![],
-            resource_type: agpm::core::ResourceType::Agent,
+            resource_type: agpm_cli::core::ResourceType::Agent,
             tool: "claude-code".to_string(),
         });
     }
@@ -770,7 +770,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
             checksum: "sha256:placeholder".to_string(), // Will be computed during installation
             installed_at: format!(".claude/agents/{}", unique_filename),
             dependencies: vec![],
-            resource_type: agpm::core::ResourceType::Agent,
+            resource_type: agpm_cli::core::ResourceType::Agent,
             tool: "claude-code".to_string(),
         };
 

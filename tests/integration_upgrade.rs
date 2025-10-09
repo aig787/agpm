@@ -1,4 +1,4 @@
-use agpm::upgrade::{
+use agpm_cli::upgrade::{
     SelfUpdater, VersionChecker, backup::BackupManager, verification::ChecksumVerifier,
 };
 use anyhow::Result;
@@ -161,7 +161,7 @@ async fn test_version_checker_caching() -> Result<()> {
     }
 
     // Test save and load cache
-    let cache = agpm::upgrade::version_check::VersionCheckCache {
+    let cache = agpm_cli::upgrade::version_check::VersionCheckCache {
         latest_version: "0.5.0".to_string(),
         current_version: env!("CARGO_PKG_VERSION").to_string(),
         checked_at: chrono::Utc::now(),
@@ -178,7 +178,7 @@ async fn test_version_checker_caching() -> Result<()> {
 
     // Verify cache content by reading the file
     let cache_content = tokio::fs::read_to_string(&cache_path).await?;
-    let loaded: agpm::upgrade::version_check::VersionCheckCache =
+    let loaded: agpm_cli::upgrade::version_check::VersionCheckCache =
         serde_json::from_str(&cache_content)?;
     assert_eq!(loaded.latest_version, "0.5.0");
 
@@ -340,7 +340,7 @@ async fn test_version_cache_expiry() -> Result<()> {
 
     // Read cache and verify it's old
     let cache_content = tokio::fs::read_to_string(&cache_path).await?;
-    let loaded: agpm::upgrade::version_check::VersionCheckCache =
+    let loaded: agpm_cli::upgrade::version_check::VersionCheckCache =
         serde_json::from_str(&cache_content)?;
 
     // Verify the cache has old timestamp

@@ -186,7 +186,7 @@ Doc tests have unique issues that differ from regular tests:
 #### Missing Imports in Doc Examples
 ```rust
 /// ```
-/// # use agpm::utils::progress::MultiPhaseProgress;  // Add hidden import
+/// # use agpm_cli::utils::progress::MultiPhaseProgress;  // Add hidden import
 /// let progress = MultiPhaseProgress::new(true);
 /// ```
 ```
@@ -207,7 +207,7 @@ Doc tests have unique issues that differ from regular tests:
 #### Incomplete Examples
 ```rust
 /// ```
-/// # use agpm::manifest::Manifest;
+/// # use agpm_cli::manifest::Manifest;
 /// # let manifest = Manifest::default();  // Add setup code
 /// let deps = manifest.all_dependencies();
 /// # assert!(deps.is_empty());  // Add assertion if needed

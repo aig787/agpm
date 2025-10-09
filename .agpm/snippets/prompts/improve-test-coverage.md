@@ -197,7 +197,7 @@ mod tests {
 Location: `tests/` directory
 
 ```rust
-use agpm::cli;
+use agpm_cli::cli;
 use tempfile::TempDir;
 
 #[test]

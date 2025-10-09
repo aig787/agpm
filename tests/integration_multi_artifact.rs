@@ -8,7 +8,7 @@ use common::TestProject;
 
 #[tokio::test]
 async fn test_opencode_agent_installation() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -55,7 +55,7 @@ opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = 
 
 #[tokio::test]
 async fn test_opencode_command_installation() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -97,7 +97,7 @@ deploy = {{ source = "test_repo", path = "commands/deploy.md", version = "v1.0.0
 
 #[tokio::test]
 async fn test_opencode_mcp_server_merge() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -158,7 +158,7 @@ filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", vers
 
 #[tokio::test]
 async fn test_mixed_artifact_types() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -226,7 +226,7 @@ opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", versi
 
 #[tokio::test]
 async fn test_artifact_type_validation() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -271,7 +271,7 @@ example = {{ source = "test_repo", path = "snippets/example.md", version = "v1.0
 
 #[tokio::test]
 async fn test_claude_code_mcp_handler() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -334,7 +334,7 @@ postgres = {{ source = "test_repo", path = "mcp-servers/postgres.json", version 
 
 #[tokio::test]
 async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
 
@@ -398,7 +398,7 @@ agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", ve
 
 #[tokio::test]
 async fn test_nested_paths_preserve_structure() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;
@@ -445,7 +445,7 @@ opencode-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.
 
 #[tokio::test]
 async fn test_agpm_artifact_type() -> Result<()> {
-    agpm::test_utils::init_test_logging(None);
+    agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
     let source_repo = project.create_source_repo("test_repo").await?;

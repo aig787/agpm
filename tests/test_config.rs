@@ -15,7 +15,7 @@ static INIT: Once = Once::new();
 pub fn init_test_env() {
     INIT.call_once(|| {
         // Use the shared logging initialization
-        agpm::test_utils::init_test_logging(None);
+        agpm_cli::test_utils::init_test_logging(None);
 
         // Set test-specific environment variables
         unsafe {
