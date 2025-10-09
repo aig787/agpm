@@ -33,7 +33,13 @@ pluggable system, allowing you to manage resources for different AI assistants f
 
 ### Install AGPM
 
-**Using installer script (Recommended):**
+**Via Homebrew (macOS and Linux):**
+
+```bash
+brew install aig787/agpm/agpm
+```
+
+**Using installer script:**
 
 ```bash
 # Unix/Linux/macOS

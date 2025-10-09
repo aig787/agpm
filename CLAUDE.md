@@ -150,6 +150,8 @@ cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --do
 
 GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
 
+**cargo-dist**: Uses `dist` command (NOT `cargo dist`). The binary is named `dist` in `~/.cargo/bin/`.
+
 ## Key Design Decisions
 
 - **Copy files** instead of symlinks (better compatibility)

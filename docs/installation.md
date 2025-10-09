@@ -13,9 +13,26 @@ This guide covers all installation methods for AGPM across different platforms.
 
 ## Quick Install
 
+### Via Homebrew (macOS and Linux)
+
+Homebrew provides automatic platform detection and easy updates:
+
+```bash
+# Install (automatically detects Apple Silicon/Intel/Linux ARM/x86_64)
+brew install aig787/agpm/agpm
+
+# Update to latest version
+brew upgrade agpm
+
+# Uninstall
+brew uninstall agpm
+```
+
+**Requirements**: Homebrew 2.0+ (macOS or Linux)
+
 ### Via Cargo (All Platforms)
 
-If you have Rust installed, this is the easiest method:
+If you have Rust installed, this is a convenient method:
 
 ```bash
 # Install latest stable version from crates.io
@@ -28,9 +45,9 @@ cargo install --git https://github.com/aig787/agpm.git
 cargo install agpm-cli --version 0.3.0
 ```
 
-### Installer Scripts (Recommended)
+### Installer Scripts
 
-The easiest way to install AGPM is using the automated installer scripts:
+Automated installer scripts for systems without Homebrew or Cargo:
 
 **Unix/Linux/macOS:**
 ```bash
