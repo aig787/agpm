@@ -36,7 +36,7 @@ AGPM is published to crates.io with automated releases. You can install via:
 **All Platforms (via Cargo):**
 ```bash
 # Requires Rust toolchain
-cargo install agpm  # Published to crates.io
+cargo install agpm-cli  # Published to crates.io
 # Or from GitHub for latest development
 cargo install --git https://github.com/aig787/agpm.git
 ```

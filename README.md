@@ -41,8 +41,8 @@ irm https://github.com/aig787/agpm/releases/latest/download/agpm-installer.ps1 |
 **Using Cargo:**
 
 ```bash
-cargo install agpm                                    # From crates.io
-cargo binstall agpm                                   # Pre-built binaries (faster)
+cargo install agpm-cli                                # From crates.io
+cargo binstall agpm-cli                               # Pre-built binaries (faster)
 cargo install --git https://github.com/aig787/agpm.git  # Latest development
 ```
 

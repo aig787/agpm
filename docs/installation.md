@@ -19,13 +19,13 @@ If you have Rust installed, this is the easiest method:
 
 ```bash
 # Install latest stable version from crates.io
-cargo install agpm
+cargo install agpm-cli
 
 # Install latest development version from GitHub
 cargo install --git https://github.com/aig787/agpm.git
 
 # Install specific version
-cargo install agpm --version 0.3.0
+cargo install agpm-cli --version 0.3.0
 ```
 
 ### Installer Scripts (Recommended)
@@ -235,7 +235,7 @@ agpm install --help | grep max-parallel
 ### Via Cargo
 ```bash
 # Update to latest stable version
-cargo install agpm --force
+cargo install agpm-cli --force
 
 # Update to latest development version
 cargo install --git https://github.com/aig787/agpm.git --force
@@ -248,7 +248,7 @@ Download the latest release and replace the existing binary.
 
 ### Via Cargo
 ```bash
-cargo uninstall agpm
+cargo uninstall agpm-cli
 ```
 
 ### Manual Uninstall

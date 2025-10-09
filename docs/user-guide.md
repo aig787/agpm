@@ -16,7 +16,7 @@ The quickest way to install AGPM:
 
 ```bash
 # If you have Rust installed
-cargo install agpm
+cargo install agpm-cli
 
 # For latest development version
 cargo install --git https://github.com/aig787/agpm.git
