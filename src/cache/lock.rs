@@ -7,12 +7,11 @@
 use anyhow::{Context, Result};
 use fs4::fs_std::FileExt;
 use std::fs::{File, OpenOptions};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// A file lock for cache operations
 pub struct CacheLock {
     _file: File,
-    path: PathBuf,
 }
 
 impl CacheLock {
@@ -183,19 +182,7 @@ impl CacheLock {
 
         Ok(Self {
             _file: file,
-            path: lock_path,
         })
-    }
-}
-
-impl Drop for CacheLock {
-    fn drop(&mut self) {
-        // Lock is automatically released when file is closed (on Drop)
-        // But we can explicitly unlock for clarity
-        #[allow(unstable_name_collisions)]
-        if let Err(e) = self._file.unlock() {
-            eprintln!("Warning: Failed to unlock {}: {}", self.path.display(), e);
-        }
     }
 }
 
