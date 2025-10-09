@@ -81,7 +81,7 @@ use std::path::PathBuf;
 /// individual resource results need to be collected and processed:
 ///
 /// ```rust,ignore
-/// use agpm::installer::InstallResult;
+/// use agpm_cli::installer::InstallResult;
 /// use futures::stream::{self, StreamExt};
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -175,10 +175,10 @@ use std::fs;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::installer::install_resource;
-/// use agpm::lockfile::LockedResource;
-/// use agpm::cache::Cache;
-/// use agpm::core::ResourceType;
+/// use agpm_cli::installer::install_resource;
+/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::core::ResourceType;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -373,11 +373,11 @@ pub async fn install_resource(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::installer::install_resource_with_progress;
-/// use agpm::lockfile::LockedResource;
-/// use agpm::cache::Cache;
-/// use agpm::core::ResourceType;
-/// use agpm::utils::progress::ProgressBar;
+/// use agpm_cli::installer::install_resource_with_progress;
+/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::core::ResourceType;
+/// use agpm_cli::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -477,11 +477,11 @@ pub async fn install_resource_with_progress(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::installer::install_resources_parallel;
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
-/// use agpm::utils::progress::ProgressBar;
+/// use agpm_cli::installer::install_resources_parallel;
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -685,9 +685,9 @@ pub async fn install_resources_parallel(
 ///
 /// ```rust,ignore
 /// use futures::stream::{self, StreamExt};
-/// use agpm::installer::install_resource_for_parallel;
-/// # use agpm::lockfile::LockedResource;
-/// # use agpm::cache::Cache;
+/// use agpm_cli::installer::install_resource_for_parallel;
+/// # use agpm_cli::lockfile::LockedResource;
+/// # use agpm_cli::cache::Cache;
 /// # use std::path::Path;
 ///
 /// # async fn example(entries: Vec<LockedResource>, cache: Cache) -> anyhow::Result<()> {
@@ -747,7 +747,7 @@ async fn install_resource_for_parallel(
 /// progress updates to user interface components:
 ///
 /// ```rust,no_run
-/// use agpm::installer::InstallProgress;
+/// use agpm_cli::installer::InstallProgress;
 /// use tokio::sync::mpsc;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -840,10 +840,10 @@ pub struct InstallProgress {
 /// # Channel-Based Architecture
 ///
 /// ```rust,ignore
-/// use agpm::installer::{install_resources_parallel_with_progress, InstallProgress};
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
+/// use agpm_cli::installer::{install_resources_parallel_with_progress, InstallProgress};
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
 /// use tokio::sync::mpsc;
 /// use std::path::Path;
 ///
@@ -1092,7 +1092,7 @@ pub async fn install_resources_parallel_with_progress(
 ///
 /// Install all resources:
 /// ```rust,no_run
-/// use agpm::installer::ResourceFilter;
+/// use agpm_cli::installer::ResourceFilter;
 ///
 /// let filter = ResourceFilter::All;
 /// // This will install every resource in the lockfile
@@ -1100,7 +1100,7 @@ pub async fn install_resources_parallel_with_progress(
 ///
 /// Install only updated resources:
 /// ```rust,no_run
-/// use agpm::installer::ResourceFilter;
+/// use agpm_cli::installer::ResourceFilter;
 ///
 /// let updates = vec![
 ///     ("agent1".to_string(), None, "v1.0.0".to_string(), "v1.1.0".to_string()),
@@ -1202,11 +1202,11 @@ pub enum ResourceFilter {
 ///
 /// Install all resources with progress tracking:
 /// ```rust,no_run
-/// use agpm::installer::{install_resources, ResourceFilter};
-/// use agpm::utils::progress::MultiPhaseProgress;
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
+/// use agpm_cli::installer::{install_resources, ResourceFilter};
+/// use agpm_cli::utils::progress::MultiPhaseProgress;
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
 /// use std::sync::Arc;
 /// use std::path::Path;
 ///
@@ -1235,10 +1235,10 @@ pub enum ResourceFilter {
 ///
 /// Install resources quietly (for automation):
 /// ```rust,no_run
-/// use agpm::installer::{install_resources, ResourceFilter};
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
+/// use agpm_cli::installer::{install_resources, ResourceFilter};
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1492,11 +1492,11 @@ pub async fn install_resources(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::installer::install_resources_with_dynamic_progress;
-/// use agpm::utils::progress::ProgressBar;
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
+/// use agpm_cli::installer::install_resources_with_dynamic_progress;
+/// use agpm_cli::utils::progress::ProgressBar;
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
 /// use std::sync::Arc;
 /// use std::path::Path;
 ///
@@ -1724,11 +1724,11 @@ pub async fn install_resources_with_dynamic_progress(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::installer::install_updated_resources;
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
-/// use agpm::cache::Cache;
-/// use agpm::utils::progress::ProgressBar;
+/// use agpm_cli::installer::install_updated_resources;
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
+/// use agpm_cli::cache::Cache;
+/// use agpm_cli::utils::progress::ProgressBar;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -2128,8 +2128,8 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// ## Basic Cleanup After Update
 ///
 /// ```no_run
-/// use agpm::installer::cleanup_removed_artifacts;
-/// use agpm::lockfile::LockFile;
+/// use agpm_cli::installer::cleanup_removed_artifacts;
+/// use agpm_cli::lockfile::LockFile;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -2165,8 +2165,8 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// ## Cleanup After Dependency Removal
 ///
 /// ```no_run
-/// # use agpm::installer::cleanup_removed_artifacts;
-/// # use agpm::lockfile::{LockFile, LockedResource};
+/// # use agpm_cli::installer::cleanup_removed_artifacts;
+/// # use agpm_cli::lockfile::{LockFile, LockedResource};
 /// # use std::path::Path;
 /// # async fn removal_example() -> anyhow::Result<()> {
 /// // Old lockfile had 3 agents
@@ -2357,7 +2357,7 @@ pub async fn cleanup_removed_artifacts(
 /// ## Basic Directory Cleanup
 ///
 /// ```ignore
-/// # use agpm::installer::cleanup_empty_dirs;
+/// # use agpm_cli::installer::cleanup_empty_dirs;
 /// # use std::path::Path;
 /// # use std::fs;
 /// # async fn example() -> anyhow::Result<()> {

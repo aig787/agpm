@@ -82,7 +82,7 @@
 //! ## Basic Usage
 //!
 //! ```rust,no_run
-//! use agpm::config::GlobalConfig;
+//! use agpm_cli::config::GlobalConfig;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Load existing configuration or create default
@@ -103,7 +103,7 @@
 //! ## Using Configuration Manager
 //!
 //! ```rust,no_run
-//! use agpm::config::GlobalConfigManager;
+//! use agpm_cli::config::GlobalConfigManager;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let mut manager = GlobalConfigManager::new()?;
@@ -153,7 +153,7 @@ use tokio::fs;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::config::GlobalConfig;
+/// use agpm_cli::config::GlobalConfig;
 /// use std::collections::HashMap;
 ///
 /// // Create new configuration
@@ -220,7 +220,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let config = GlobalConfig::load().await?;
@@ -286,7 +286,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -324,7 +324,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut config = GlobalConfig::load().await?;
@@ -361,7 +361,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -426,7 +426,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let path = GlobalConfig::default_path()?;
@@ -478,7 +478,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     /// use std::collections::HashMap;
     ///
     /// let mut global = GlobalConfig::default();
@@ -531,7 +531,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     ///
@@ -573,7 +573,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// config.add_source("test".to_string(), "https://example.com/repo.git".to_string());
@@ -599,7 +599,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// assert!(!config.has_source("test"));
@@ -628,7 +628,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// let mut config = GlobalConfig::default();
     /// config.add_source(
@@ -663,7 +663,7 @@ impl GlobalConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfig;
+    /// use agpm_cli::config::GlobalConfig;
     ///
     /// let config = GlobalConfig::init_example();
     /// assert!(config.has_source("private"));
@@ -711,7 +711,7 @@ impl GlobalConfig {
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use agpm::config::GlobalConfigManager;
+/// use agpm_cli::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let mut manager = GlobalConfigManager::new()?;
@@ -729,7 +729,7 @@ impl GlobalConfig {
 /// ## Modifying Configuration
 ///
 /// ```rust,no_run
-/// use agpm::config::GlobalConfigManager;
+/// use agpm_cli::config::GlobalConfigManager;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let mut manager = GlobalConfigManager::new()?;
@@ -760,7 +760,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = GlobalConfigManager::new()?;
@@ -790,7 +790,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     /// use std::path::PathBuf;
     ///
     /// let manager = GlobalConfigManager::with_path(PathBuf::from("/tmp/test.toml"));
@@ -815,7 +815,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -854,7 +854,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -893,7 +893,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;
@@ -929,7 +929,7 @@ impl GlobalConfigManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::GlobalConfigManager;
+    /// use agpm_cli::config::GlobalConfigManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = GlobalConfigManager::new()?;

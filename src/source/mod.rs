@@ -142,8 +142,8 @@
 //!
 //! ## Basic Source Management
 //! ```rust,no_run
-//! use agpm::source::{Source, SourceManager};
-//! use agpm::manifest::Manifest;
+//! use agpm_cli::source::{Source, SourceManager};
+//! use agpm_cli::manifest::Manifest;
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -165,7 +165,7 @@
 //!
 //! ## Progress Monitoring
 //! ```rust,no_run
-//! use agpm::source::SourceManager;
+//! use agpm_cli::source::SourceManager;
 //! use indicatif::ProgressBar;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
@@ -182,7 +182,7 @@
 //!
 //! ## Direct URL Operations
 //! ```rust,no_run
-//! use agpm::source::SourceManager;
+//! use agpm_cli::source::SourceManager;
 //!
 //! # async fn example(manager: &mut SourceManager) -> anyhow::Result<()> {
 //! // Sync a repository by URL (for direct dependencies)
@@ -245,7 +245,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::source::Source;
+/// use agpm_cli::source::Source;
 ///
 /// // Public repository
 /// let source = Source::new(
@@ -290,7 +290,7 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::Source;
+    /// use agpm_cli::source::Source;
     ///
     /// let source = Source::new(
     ///     "official".to_string(),
@@ -325,7 +325,7 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::Source;
+    /// use agpm_cli::source::Source;
     ///
     /// let source = Source::new(
     ///     "community".to_string(),
@@ -362,7 +362,7 @@ impl Source {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::Source;
+    /// use agpm_cli::source::Source;
     /// use std::path::Path;
     ///
     /// let source = Source::new(
@@ -423,7 +423,7 @@ impl Source {
 ///
 /// ## Basic Usage
 /// ```rust,no_run
-/// use agpm::source::{Source, SourceManager};
+/// use agpm_cli::source::{Source, SourceManager};
 /// use anyhow::Result;
 ///
 /// # async fn example() -> Result<()> {
@@ -446,8 +446,8 @@ impl Source {
 ///
 /// ## Loading from Manifest
 /// ```rust,no_run
-/// use agpm::source::SourceManager;
-/// use agpm::manifest::Manifest;
+/// use agpm_cli::source::SourceManager;
+/// use agpm_cli::manifest::Manifest;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -510,7 +510,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
+    /// use agpm_cli::source::SourceManager;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -538,7 +538,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
+    /// use agpm_cli::source::SourceManager;
     /// use std::path::PathBuf;
     ///
     /// let custom_cache = PathBuf::from("/custom/cache/location");
@@ -571,8 +571,8 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::source::SourceManager;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -626,8 +626,8 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::source::SourceManager;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -671,8 +671,8 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::source::SourceManager;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::{Path, PathBuf};
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -711,7 +711,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -757,7 +757,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -802,7 +802,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -832,7 +832,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -858,7 +858,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -885,7 +885,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let manager = SourceManager::new()?;
@@ -914,7 +914,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -997,7 +997,7 @@ impl SourceManager {
     ///
     /// ## Basic Synchronization
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1016,7 +1016,7 @@ impl SourceManager {
     ///
     /// ## Synchronization with Progress
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     /// use indicatif::ProgressBar;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1188,7 +1188,7 @@ impl SourceManager {
     ///
     /// ## Direct Repository Access
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
+    /// use agpm_cli::source::SourceManager;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1205,7 +1205,7 @@ impl SourceManager {
     ///
     /// ## Local Repository Access
     /// ```rust,no_run
-    /// use agpm::source::SourceManager;
+    /// use agpm_cli::source::SourceManager;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1349,7 +1349,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::source::SourceManager;
+    /// # use agpm_cli::source::SourceManager;
     /// # use tempfile::TempDir;
     /// # async fn example() -> anyhow::Result<()> {
     /// # let temp = TempDir::new()?;
@@ -1395,7 +1395,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1439,7 +1439,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1487,7 +1487,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1531,7 +1531,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;
@@ -1589,7 +1589,7 @@ impl SourceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::source::{Source, SourceManager};
+    /// use agpm_cli::source::{Source, SourceManager};
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let mut manager = SourceManager::new()?;

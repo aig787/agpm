@@ -35,7 +35,7 @@
 //! ## Basic Error Handling
 //!
 //! ```rust,no_run
-//! use agpm::core::{AgpmError, ErrorContext, user_friendly_error};
+//! use agpm_cli::core::{AgpmError, ErrorContext, user_friendly_error};
 //!
 //! fn handle_git_operation() -> Result<(), AgpmError> {
 //!     // Simulate a git operation failure
@@ -54,7 +54,7 @@
 //! ## Creating Error Context Manually
 //!
 //! ```rust,no_run
-//! use agpm::core::{AgpmError, ErrorContext};
+//! use agpm_cli::core::{AgpmError, ErrorContext};
 //!
 //! let error = AgpmError::ManifestNotFound;
 //! let context = ErrorContext::new(error)
@@ -71,7 +71,7 @@
 //! ## Error Recovery Patterns
 //!
 //! ```rust,no_run
-//! use agpm::core::{AgpmError, user_friendly_error};
+//! use agpm_cli::core::{AgpmError, user_friendly_error};
 //! use anyhow::Context;
 //!
 //! fn install_dependency(name: &str) -> anyhow::Result<()> {
@@ -164,7 +164,7 @@ use thiserror::Error;
 /// ## Pattern Matching on Errors
 ///
 /// ```rust,no_run
-/// use agpm::core::AgpmError;
+/// use agpm_cli::core::AgpmError;
 ///
 /// fn handle_error(error: AgpmError) {
 ///     match error {
@@ -188,7 +188,7 @@ use thiserror::Error;
 /// ## Creating Specific Errors
 ///
 /// ```rust,no_run
-/// use agpm::core::AgpmError;
+/// use agpm_cli::core::AgpmError;
 ///
 /// // Create a git command error with context
 /// let error = AgpmError::GitCommandError {
@@ -802,7 +802,7 @@ impl Clone for AgpmError {
 /// ## Creating Error Context
 ///
 /// ```rust,no_run
-/// use agpm::core::{AgpmError, ErrorContext};
+/// use agpm_cli::core::{AgpmError, ErrorContext};
 ///
 /// let error = AgpmError::GitNotFound;
 /// let context = ErrorContext::new(error)
@@ -819,7 +819,7 @@ impl Clone for AgpmError {
 /// ## Builder Pattern Usage
 ///
 /// ```rust,no_run
-/// use agpm::core::{AgpmError, ErrorContext};
+/// use agpm_cli::core::{AgpmError, ErrorContext};
 ///
 /// let context = ErrorContext::new(AgpmError::ManifestNotFound)
 ///     .with_suggestion("Create a agpm.toml file in your project directory")
@@ -831,7 +831,7 @@ impl Clone for AgpmError {
 /// ## Quick Suggestion Creation
 ///
 /// ```rust,no_run
-/// use agpm::core::ErrorContext;
+/// use agpm_cli::core::ErrorContext;
 ///
 /// // Create context with just a suggestion (useful for generic errors)
 /// let context = ErrorContext::suggestion("Try running the command with --verbose");
@@ -856,7 +856,7 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::{AgpmError, ErrorContext};
+    /// use agpm_cli::core::{AgpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(AgpmError::GitNotFound);
     /// ```
@@ -880,7 +880,7 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::{AgpmError, ErrorContext};
+    /// use agpm_cli::core::{AgpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(AgpmError::GitNotFound)
     ///     .with_suggestion("Install git using 'brew install git' or visit https://git-scm.com/");
@@ -899,7 +899,7 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::{AgpmError, ErrorContext};
+    /// use agpm_cli::core::{AgpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(AgpmError::ManifestNotFound)
     ///     .with_details("AGPM looks for agpm.toml in current directory and parent directories");
@@ -922,7 +922,7 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::{AgpmError, ErrorContext};
+    /// use agpm_cli::core::{AgpmError, ErrorContext};
     ///
     /// let context = ErrorContext::new(AgpmError::GitNotFound)
     ///     .with_suggestion("Install git from https://git-scm.com/")
@@ -969,7 +969,7 @@ impl std::error::Error for ErrorContext {}
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::core::{AgpmError, ErrorContext, IntoAnyhowWithContext};
+/// use agpm_cli::core::{AgpmError, ErrorContext, IntoAnyhowWithContext};
 ///
 /// let error = AgpmError::GitNotFound;
 /// let context = ErrorContext::new(AgpmError::Other { message: "dummy".to_string() })
@@ -1001,7 +1001,7 @@ impl ErrorContext {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::ErrorContext;
+    /// use agpm_cli::core::ErrorContext;
     ///
     /// let context = ErrorContext::suggestion("Try running with --verbose for more information");
     /// context.display();
@@ -1036,7 +1036,7 @@ impl ErrorContext {
 /// ## Converting AGPM Errors
 ///
 /// ```rust,no_run
-/// use agpm::core::{AgpmError, user_friendly_error};
+/// use agpm_cli::core::{AgpmError, user_friendly_error};
 ///
 /// let error = AgpmError::GitNotFound;
 /// let anyhow_error = anyhow::Error::from(error);
@@ -1048,7 +1048,7 @@ impl ErrorContext {
 /// ## Converting IO Errors
 ///
 /// ```rust,no_run
-/// use agpm::core::user_friendly_error;
+/// use agpm_cli::core::user_friendly_error;
 /// use std::io::{Error, ErrorKind};
 ///
 /// let io_error = Error::new(ErrorKind::PermissionDenied, "access denied");
@@ -1061,7 +1061,7 @@ impl ErrorContext {
 /// ## Converting Generic Errors
 ///
 /// ```rust,no_run
-/// use agpm::core::user_friendly_error;
+/// use agpm_cli::core::user_friendly_error;
 ///
 /// let error = anyhow::anyhow!("Something went wrong");
 /// let context = user_friendly_error(error);

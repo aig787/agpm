@@ -21,7 +21,7 @@
 //! ## Multi-Phase Progress
 //!
 //! ```rust,no_run
-//! use agpm::utils::progress::{MultiPhaseProgress, InstallationPhase};
+//! use agpm_cli::utils::progress::{MultiPhaseProgress, InstallationPhase};
 //!
 //! let progress = MultiPhaseProgress::new(true);
 //!

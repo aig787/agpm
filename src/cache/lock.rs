@@ -92,7 +92,7 @@ impl CacheLock {
     /// Simple lock acquisition:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::lock::CacheLock;
+    /// use agpm_cli::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -113,7 +113,7 @@ impl CacheLock {
     /// Error handling for lock acquisition:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::lock::CacheLock;
+    /// use agpm_cli::cache::lock::CacheLock;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -217,7 +217,7 @@ impl Drop for CacheLock {
 /// # Example
 ///
 /// ```rust,no_run
-/// use agpm::cache::lock::cleanup_stale_locks;
+/// use agpm_cli::cache::lock::cleanup_stale_locks;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {

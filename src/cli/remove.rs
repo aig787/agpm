@@ -213,7 +213,7 @@ impl RemoveCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::cli::remove::{RemoveCommand, RemoveSubcommand};
+    /// use agpm_cli::cli::remove::{RemoveCommand, RemoveSubcommand};
     /// use std::path::PathBuf;
     ///
     /// let cmd = RemoveCommand {

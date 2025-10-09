@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use agpm::utils::fs::{ensure_dir, safe_write, calculate_checksum};
+//! use agpm_cli::utils::fs::{ensure_dir, safe_write, calculate_checksum};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -74,7 +74,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::ensure_dir;
+/// use agpm_cli::utils::fs::ensure_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -128,7 +128,7 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::safe_write;
+/// use agpm_cli::utils::fs::safe_write;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -168,7 +168,7 @@ pub fn safe_write(path: &Path, content: &str) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::atomic_write;
+/// use agpm_cli::utils::fs::atomic_write;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -246,7 +246,7 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::copy_dir;
+/// use agpm_cli::utils::fs::copy_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -315,7 +315,7 @@ pub fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::remove_dir_all;
+/// use agpm_cli::utils::fs::remove_dir_all;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -365,7 +365,7 @@ pub fn remove_dir_all(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::normalize_path;
+/// use agpm_cli::utils::fs::normalize_path;
 /// use std::path::{Path, PathBuf};
 ///
 /// let path = Path::new("/foo/./bar/../baz");
@@ -424,7 +424,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::is_safe_path;
+/// use agpm_cli::utils::fs::is_safe_path;
 /// use std::path::Path;
 ///
 /// let base = Path::new("/home/user/project");
@@ -481,7 +481,7 @@ pub fn is_safe_path(base: &Path, path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::find_files;
+/// use agpm_cli::utils::fs::find_files;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -553,7 +553,7 @@ fn find_files_recursive(dir: &Path, pattern: &str, files: &mut Vec<PathBuf>) -> 
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::dir_size;
+/// use agpm_cli::utils::fs::dir_size;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -615,7 +615,7 @@ pub fn dir_size(path: &Path) -> Result<u64> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::get_directory_size;
+/// use agpm_cli::utils::fs::get_directory_size;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -663,7 +663,7 @@ pub async fn get_directory_size(path: &Path) -> Result<u64> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::ensure_parent_dir;
+/// use agpm_cli::utils::fs::ensure_parent_dir;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -718,7 +718,7 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::find_project_root;
+/// use agpm_cli::utils::fs::find_project_root;
 /// use std::env;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -778,7 +778,7 @@ pub fn find_project_root(start: &Path) -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::get_global_config_path;
+/// use agpm_cli::utils::fs::get_global_config_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let config_path = get_global_config_path()?;
@@ -823,7 +823,7 @@ pub fn get_global_config_path() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::TempDir;
+/// use agpm_cli::utils::fs::TempDir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// {
@@ -878,7 +878,7 @@ impl TempDir {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::utils::fs::TempDir;
+    /// use agpm_cli::utils::fs::TempDir;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let temp = TempDir::new("cache")?;
@@ -935,7 +935,7 @@ impl Drop for TempDir {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::calculate_checksum;
+/// use agpm_cli::utils::fs::calculate_checksum;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -999,7 +999,7 @@ pub fn calculate_checksum(path: &Path) -> Result<String> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::calculate_checksums_parallel;
+/// use agpm_cli::utils::fs::calculate_checksums_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1099,7 +1099,7 @@ pub async fn calculate_checksums_parallel(paths: &[PathBuf]) -> Result<Vec<(Path
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::copy_files_parallel;
+/// use agpm_cli::utils::fs::copy_files_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1206,7 +1206,7 @@ pub async fn copy_files_parallel(sources_and_destinations: &[(PathBuf, PathBuf)]
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::atomic_write_multiple;
+/// use agpm_cli::utils::fs::atomic_write_multiple;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1298,7 +1298,7 @@ pub async fn atomic_write_multiple(files: &[(PathBuf, Vec<u8>)]) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::copy_dirs_parallel;
+/// use agpm_cli::utils::fs::copy_dirs_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -1395,7 +1395,7 @@ pub async fn copy_dirs_parallel(sources_and_destinations: &[(PathBuf, PathBuf)])
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::fs::read_files_parallel;
+/// use agpm_cli::utils::fs::read_files_parallel;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {

@@ -31,7 +31,7 @@ impl ChecksumVerifier {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::verification::ChecksumVerifier;
+    /// use agpm_cli::upgrade::verification::ChecksumVerifier;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -69,7 +69,7 @@ impl ChecksumVerifier {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::verification::ChecksumVerifier;
+    /// use agpm_cli::upgrade::verification::ChecksumVerifier;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {

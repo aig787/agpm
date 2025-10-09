@@ -263,7 +263,7 @@ impl UpdateCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::update::UpdateCommand;
+    /// use agpm_cli::cli::update::UpdateCommand;
     ///
     /// # tokio_test::block_on(async {
     /// // Update all dependencies with backup

@@ -14,8 +14,8 @@
 //! - `add` - Add sources or dependencies to manifest
 //! - `remove` - Remove sources or dependencies from manifest
 
-use agpm::cli;
-use agpm::core::error::user_friendly_error;
+use agpm_cli::cli;
+use agpm_cli::core::error::user_friendly_error;
 use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;

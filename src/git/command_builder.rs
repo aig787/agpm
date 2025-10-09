@@ -31,7 +31,7 @@ use crate::utils::platform::get_git_command;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::git::command_builder::GitCommand;
+/// use agpm_cli::git::command_builder::GitCommand;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -125,7 +125,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// let cmd = GitCommand::new()
     ///     .args(["status", "--short"])
@@ -148,7 +148,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     /// use std::path::Path;
     ///
     /// let cmd = GitCommand::new()
@@ -179,7 +179,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// let cmd = GitCommand::new()
     ///     .arg("clone")
@@ -210,7 +210,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// // Using array literals
     /// let cmd = GitCommand::new()
@@ -248,7 +248,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// // Set Git configuration for this command only
     /// let cmd = GitCommand::new()
@@ -289,7 +289,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// // Interactive merge that may require user input
     /// # async fn example() -> anyhow::Result<()> {
@@ -337,7 +337,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let output = GitCommand::fetch()
@@ -723,7 +723,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// GitCommand::clone_bare(
@@ -742,7 +742,7 @@ impl GitCommand {
     /// with [`worktree_add`](#method.worktree_add) for parallel operations:
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn worktree_example() -> anyhow::Result<()> {
     /// // Clone bare repository
@@ -811,7 +811,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Create worktree with specific version
@@ -875,7 +875,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Remove a worktree
@@ -933,7 +933,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let output = GitCommand::worktree_list()
@@ -976,7 +976,7 @@ impl GitCommand {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::command_builder::GitCommand;
+    /// use agpm_cli::git::command_builder::GitCommand;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Clean up stale worktree references

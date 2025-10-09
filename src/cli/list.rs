@@ -130,7 +130,7 @@ struct ListItem {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::list::ListCommand;
+/// use agpm_cli::cli::list::ListCommand;
 ///
 /// // List all resources in default table format
 /// let cmd = ListCommand {
@@ -295,7 +295,7 @@ impl ListCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::list::ListCommand;
+    /// use agpm_cli::cli::list::ListCommand;
     ///
     /// # tokio_test::block_on(async {
     /// let cmd = ListCommand {

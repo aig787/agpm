@@ -22,7 +22,7 @@ use tracing::{debug, info, warn};
 /// ```rust,no_run
 /// // This function is used internally by SelfUpdater::with_repo()
 /// // for repository identifier validation
-/// use agpm::upgrade::SelfUpdater;
+/// use agpm_cli::upgrade::SelfUpdater;
 ///
 /// // Valid repository identifiers
 /// let updater = SelfUpdater::with_repo("aig787", "agpm");
@@ -197,7 +197,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Check for Updates
 /// ```rust,no_run
-/// use agpm::upgrade::SelfUpdater;
+/// use agpm_cli::upgrade::SelfUpdater;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new();
@@ -214,7 +214,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Update to Latest Version
 /// ```rust,no_run
-/// use agpm::upgrade::SelfUpdater;
+/// use agpm_cli::upgrade::SelfUpdater;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new();
@@ -229,7 +229,7 @@ impl Default for ChecksumPolicy {
 ///
 /// ## Force Update with Required Checksums
 /// ```rust,no_run
-/// use agpm::upgrade::{SelfUpdater, ChecksumPolicy};
+/// use agpm_cli::upgrade::{SelfUpdater, ChecksumPolicy};
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let updater = SelfUpdater::new()
@@ -282,7 +282,7 @@ impl Default for SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::default();
     /// println!("Current version: {}", updater.current_version());
@@ -315,7 +315,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::new();
     /// assert_eq!(updater.current_version(), env!("CARGO_PKG_VERSION"));
@@ -342,7 +342,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// // Valid repository identifiers
@@ -391,7 +391,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// // Normal update (respects versions)
     /// let updater = SelfUpdater::new();
@@ -422,7 +422,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::{SelfUpdater, ChecksumPolicy};
+    /// use agpm_cli::upgrade::{SelfUpdater, ChecksumPolicy};
     ///
     /// // Require checksum verification (most secure)
     /// let secure_updater = SelfUpdater::new()
@@ -449,7 +449,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// let updater = SelfUpdater::new();
     /// println!("Current AGPM version: {}", updater.current_version());
@@ -545,7 +545,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -646,7 +646,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -1083,7 +1083,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();
@@ -1130,7 +1130,7 @@ impl SelfUpdater {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::SelfUpdater;
+    /// use agpm_cli::upgrade::SelfUpdater;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let updater = SelfUpdater::new();

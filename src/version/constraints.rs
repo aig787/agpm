@@ -25,7 +25,7 @@
 //! ## Basic Constraint Parsing
 //!
 //! ```rust,no_run
-//! use agpm::version::constraints::VersionConstraint;
+//! use agpm_cli::version::constraints::VersionConstraint;
 //!
 //! // Parse different constraint types
 //! let exact = VersionConstraint::parse("1.0.0")?;
@@ -38,7 +38,7 @@
 //! ## Constraint Set Management
 //!
 //! ```rust,no_run
-//! use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+//! use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
 //! use semver::Version;
 //!
 //! let mut set = ConstraintSet::new();
@@ -59,7 +59,7 @@
 //! ## Dependency Resolution
 //!
 //! ```rust,no_run
-//! use agpm::version::constraints::ConstraintResolver;
+//! use agpm_cli::version::constraints::ConstraintResolver;
 //! use semver::Version;
 //! use std::collections::HashMap;
 //!
@@ -137,7 +137,7 @@ use crate::core::AgpmError;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::VersionConstraint;
+/// use agpm_cli::version::constraints::VersionConstraint;
 /// use semver::Version;
 ///
 /// // Parse various constraint formats
@@ -217,7 +217,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::constraints::VersionConstraint;
     ///
     /// // Exact version matching
     /// let exact = VersionConstraint::parse("1.0.0")?;
@@ -319,7 +319,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
     /// let constraint = VersionConstraint::parse("^1.0.0")?;
@@ -367,7 +367,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::constraints::VersionConstraint;
     ///
     /// let branch_constraint = VersionConstraint::parse("main")?;
     /// assert!(branch_constraint.matches_ref("main"));
@@ -414,8 +414,8 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
-    /// use agpm::version::VersionInfo;
+    /// use agpm_cli::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::VersionInfo;
     /// use semver::Version;
     ///
     /// // Prefixed version matching
@@ -494,7 +494,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::constraints::VersionConstraint;
     /// use semver::Version;
     ///
     /// let exact = VersionConstraint::parse("1.0.0")?;
@@ -551,7 +551,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::VersionConstraint;
+    /// use agpm_cli::version::constraints::VersionConstraint;
     ///
     /// let branch = VersionConstraint::parse("main")?;
     /// assert!(branch.allows_prerelease()); // Git refs may be any version
@@ -633,7 +633,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -651,7 +651,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Best Match Selection
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -672,7 +672,7 @@ impl fmt::Display for VersionConstraint {
 /// ## Conflict Detection
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+/// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
 /// use semver::Version;
 ///
 /// let mut set = ConstraintSet::new();
@@ -734,7 +734,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
     ///
@@ -779,7 +779,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -828,7 +828,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -850,7 +850,7 @@ impl ConstraintSet {
     /// ## Prerelease Handling
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     /// use semver::Version;
     ///
     /// let mut set = ConstraintSet::new();
@@ -896,7 +896,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut stable_set = ConstraintSet::new();
     /// stable_set.add(VersionConstraint::parse("^1.0.0")?)?;
@@ -950,7 +950,7 @@ impl ConstraintSet {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use agpm::version::constraints::{ConstraintSet, VersionConstraint};
+    /// use agpm_cli::version::constraints::{ConstraintSet, VersionConstraint};
     ///
     /// let mut set = ConstraintSet::new();
     /// set.add(VersionConstraint::parse("1.0.0")?)?;
@@ -1068,7 +1068,7 @@ impl ConstraintSet {
 /// ## Basic Multi-Dependency Resolution
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::ConstraintResolver;
+/// use agpm_cli::version::constraints::ConstraintResolver;
 /// use semver::Version;
 /// use std::collections::HashMap;
 ///
@@ -1094,7 +1094,7 @@ impl ConstraintSet {
 /// ## Incremental Constraint Addition
 ///
 /// ```rust,no_run
-/// use agpm::version::constraints::ConstraintResolver;
+/// use agpm_cli::version::constraints::ConstraintResolver;
 ///
 /// let mut resolver = ConstraintResolver::new();
 ///
@@ -1166,7 +1166,7 @@ impl ConstraintResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::ConstraintResolver;
+    /// use agpm_cli::version::constraints::ConstraintResolver;
     ///
     /// let mut resolver = ConstraintResolver::new();
     ///
@@ -1231,7 +1231,7 @@ impl ConstraintResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::ConstraintResolver;
+    /// use agpm_cli::version::constraints::ConstraintResolver;
     /// use semver::Version;
     /// use std::collections::HashMap;
     ///
@@ -1269,7 +1269,7 @@ impl ConstraintResolver {
     /// ## Error Handling
     ///
     /// ```rust,no_run
-    /// use agpm::version::constraints::ConstraintResolver;
+    /// use agpm_cli::version::constraints::ConstraintResolver;
     /// use std::collections::HashMap;
     ///
     /// let mut resolver = ConstraintResolver::new();

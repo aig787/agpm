@@ -18,7 +18,7 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use agpm::utils::platform::{get_home_dir, resolve_path, is_windows};
+//! use agpm_cli::utils::platform::{get_home_dir, resolve_path, is_windows};
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! // Get platform-appropriate home directory
@@ -74,7 +74,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::is_windows;
+/// use agpm_cli::utils::platform::is_windows;
 ///
 /// if is_windows() {
 ///     println!("Windows-specific code path");
@@ -107,7 +107,7 @@ pub const fn is_windows() -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::get_home_dir;
+/// use agpm_cli::utils::platform::get_home_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let home = get_home_dir()?;
@@ -160,7 +160,7 @@ pub fn get_home_dir() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::get_git_command;
+/// use agpm_cli::utils::platform::get_git_command;
 /// use std::process::Command;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -216,7 +216,7 @@ pub const fn get_git_command() -> &'static str {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::resolve_path;
+/// use agpm_cli::utils::platform::resolve_path;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Tilde expansion
@@ -349,7 +349,7 @@ pub fn resolve_path(path: &str) -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::normalize_path_separator;
+/// use agpm_cli::utils::platform::normalize_path_separator;
 /// use std::path::Path;
 ///
 /// let mixed_path = Path::new("src/utils\\platform.rs");
@@ -405,7 +405,7 @@ pub fn normalize_path_separator(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::path_to_string;
+/// use agpm_cli::utils::platform::path_to_string;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/home/user/file.txt");
@@ -457,7 +457,7 @@ pub fn path_to_string(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::path_to_os_str;
+/// use agpm_cli::utils::platform::path_to_os_str;
 /// use std::path::Path;
 /// use std::process::Command;
 ///
@@ -514,7 +514,7 @@ pub fn path_to_os_str(path: &Path) -> &std::ffi::OsStr {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::paths_equal;
+/// use agpm_cli::utils::platform::paths_equal;
 /// use std::path::Path;
 ///
 /// let path1 = Path::new("Config.toml");
@@ -588,7 +588,7 @@ pub fn paths_equal(path1: &Path, path2: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::safe_canonicalize;
+/// use agpm_cli::utils::platform::safe_canonicalize;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -675,7 +675,7 @@ pub fn safe_canonicalize(path: &Path) -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::command_exists;
+/// use agpm_cli::utils::platform::command_exists;
 ///
 /// // Check if Git is available
 /// if command_exists("git") {
@@ -731,7 +731,7 @@ pub fn command_exists(cmd: &str) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::get_cache_dir;
+/// use agpm_cli::utils::platform::get_cache_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache_dir = get_cache_dir()?;
@@ -796,7 +796,7 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::get_data_dir;
+/// use agpm_cli::utils::platform::get_data_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let data_dir = get_data_dir()?;
@@ -872,7 +872,7 @@ pub fn get_data_dir() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::windows_long_path;
+/// use agpm_cli::utils::platform::windows_long_path;
 /// use std::path::Path;
 ///
 /// let long_path = Path::new("C:\\very\\long\\path\\that\\exceeds\\windows\\limit");
@@ -985,7 +985,7 @@ pub fn windows_long_path(path: &Path) -> PathBuf {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::get_shell_command;
+/// use agpm_cli::utils::platform::get_shell_command;
 /// use std::process::Command;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -1055,7 +1055,7 @@ pub const fn get_shell_command() -> (&'static str, &'static str) {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::validate_path_chars;
+/// use agpm_cli::utils::platform::validate_path_chars;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Valid paths
@@ -1172,7 +1172,7 @@ pub fn validate_path_chars(path: &str) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::utils::platform::safe_join;
+/// use agpm_cli::utils::platform::safe_join;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {

@@ -127,7 +127,7 @@ impl CommandContext {
 /// ```no_run
 /// # use anyhow::Result;
 /// # async fn example() -> Result<()> {
-/// use agpm::cli::common::handle_legacy_ccpm_migration;
+/// use agpm_cli::cli::common::handle_legacy_ccpm_migration;
 ///
 /// match handle_legacy_ccpm_migration().await? {
 ///     Some(path) => println!("Migrated to: {}", path.display()),

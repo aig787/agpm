@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ## Using Default Configuration
 /// ```rust,no_run
-/// use agpm::upgrade::config::UpgradeConfig;
+/// use agpm_cli::upgrade::config::UpgradeConfig;
 ///
 /// let config = UpgradeConfig::default();
 /// assert_eq!(config.check_on_startup, false);
@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// ## Custom Configuration
 /// ```rust,no_run
-/// use agpm::upgrade::config::UpgradeConfig;
+/// use agpm_cli::upgrade::config::UpgradeConfig;
 ///
 /// let config = UpgradeConfig {
 ///     check_on_startup: true,
@@ -192,7 +192,7 @@ impl Default for UpgradeConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::config::UpgradeConfig;
+    /// use agpm_cli::upgrade::config::UpgradeConfig;
     ///
     /// let config = UpgradeConfig::default();
     /// assert_eq!(config.check_on_startup, false);
@@ -251,7 +251,7 @@ impl UpgradeConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::config::UpgradeConfig;
+    /// use agpm_cli::upgrade::config::UpgradeConfig;
     ///
     /// // These are equivalent
     /// let config1 = UpgradeConfig::new();

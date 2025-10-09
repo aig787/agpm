@@ -42,7 +42,7 @@ use tracing::{debug, info, warn};
 ///
 /// ## Basic Backup and Restore
 /// ```rust,no_run
-/// use agpm::upgrade::backup::BackupManager;
+/// use agpm_cli::upgrade::backup::BackupManager;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -67,7 +67,7 @@ use tracing::{debug, info, warn};
 ///
 /// ## Check for Existing Backup
 /// ```rust,no_run
-/// use agpm::upgrade::backup::BackupManager;
+/// use agpm_cli::upgrade::backup::BackupManager;
 /// use std::path::PathBuf;
 ///
 /// let backup_manager = BackupManager::new(PathBuf::from("agpm"));
@@ -110,7 +110,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// // Unix-style path
@@ -162,7 +162,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -250,7 +250,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -359,7 +359,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -397,7 +397,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// let manager = BackupManager::new(PathBuf::from("./agpm"));
@@ -430,7 +430,7 @@ impl BackupManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::upgrade::backup::BackupManager;
+    /// use agpm_cli::upgrade::backup::BackupManager;
     /// use std::path::PathBuf;
     ///
     /// let manager = BackupManager::new(PathBuf::from("/usr/local/bin/agpm"));

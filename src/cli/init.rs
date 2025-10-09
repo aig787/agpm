@@ -66,7 +66,7 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::init::InitCommand;
+/// use agpm_cli::cli::init::InitCommand;
 /// use std::path::PathBuf;
 ///
 /// // Initialize in current directory
@@ -134,7 +134,7 @@ impl InitCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::init::InitCommand;
+    /// use agpm_cli::cli::init::InitCommand;
     /// use std::path::PathBuf;
     ///
     /// # tokio_test::block_on(async {

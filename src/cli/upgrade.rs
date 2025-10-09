@@ -406,7 +406,7 @@ pub struct UpgradeArgs {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::cli::upgrade::{UpgradeArgs, execute};
+/// use agpm_cli::cli::upgrade::{UpgradeArgs, execute};
 /// use clap::Parser;
 ///
 /// # async fn example() -> anyhow::Result<()> {

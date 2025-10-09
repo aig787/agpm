@@ -310,8 +310,8 @@ use crate::utils::fs::atomic_write;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::lockfile::StalenessReason;
-/// use agpm::core::ResourceType;
+/// use agpm_cli::lockfile::StalenessReason;
+/// use agpm_cli::core::ResourceType;
 ///
 /// let reason = StalenessReason::MissingDependency {
 ///     name: "my-agent".to_string(),
@@ -457,7 +457,7 @@ impl std::error::Error for StalenessReason {}
 /// Creating a new lockfile:
 ///
 /// ```rust,no_run
-/// use agpm::lockfile::LockFile;
+/// use agpm_cli::lockfile::LockFile;
 ///
 /// let lockfile = LockFile::new();
 /// assert_eq!(lockfile.version, 1);
@@ -468,7 +468,7 @@ impl std::error::Error for StalenessReason {}
 ///
 /// ```rust,no_run
 /// # use std::path::Path;
-/// # use agpm::lockfile::LockFile;
+/// # use agpm_cli::lockfile::LockFile;
 /// # fn example() -> anyhow::Result<()> {
 /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
 /// println!("Loaded {} sources, {} agents",
@@ -780,7 +780,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// let lockfile = LockFile::new();
     /// assert_eq!(lockfile.version, 1);
@@ -830,7 +830,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// // Load existing lockfile
@@ -976,7 +976,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut lockfile = LockFile::new();
@@ -1104,7 +1104,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// let mut lockfile = LockFile::new();
     /// lockfile.add_source(
@@ -1158,8 +1158,8 @@ impl LockFile {
     /// Adding an agent:
     ///
     /// ```rust,no_run
-    /// use agpm::lockfile::{LockFile, LockedResource};
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// use agpm_cli::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
     /// let resource = LockedResource {
@@ -1183,8 +1183,8 @@ impl LockFile {
     /// Adding a snippet:
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::{LockFile, LockedResource};
-    /// # use agpm::core::ResourceType;
+    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// # use agpm_cli::core::ResourceType;
     /// # let mut lockfile = LockFile::new();
     /// let snippet = LockedResource {
     ///     name: "util-snippet".to_string(),
@@ -1229,8 +1229,8 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::lockfile::{LockFile, LockedResource};
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// use agpm_cli::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
     /// let command = LockedResource {
@@ -1296,7 +1296,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// // Simple lookup when resource names are unique
     /// if let Some(resource) = lockfile.get_resource("example-agent") {
@@ -1346,7 +1346,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// // When multiple resources have the same name from different sources
     /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("community")) {
@@ -1405,7 +1405,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if let Some(source) = lockfile.get_source("community") {
     ///     println!("Source URL: {}", source.url);
@@ -1434,7 +1434,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// if lockfile.has_resource("example-agent") {
     ///     println!("Agent is already locked");
@@ -1462,7 +1462,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
     /// println!("Total locked resources: {}", all_resources.len());
@@ -1529,7 +1529,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// # let lockfile = LockFile::new();
     /// let all_resources = lockfile.all_resources();
     /// println!("Total locked resources: {}", all_resources.len());
@@ -1558,7 +1558,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::LockFile;
+    /// # use agpm_cli::lockfile::LockFile;
     /// let mut lockfile = LockFile::new();
     /// // ... add sources and resources ...
     ///
@@ -1609,7 +1609,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let checksum = LockFile::compute_checksum(Path::new("example.md"))?;
@@ -1678,7 +1678,7 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
-    /// use agpm::lockfile::LockFile;
+    /// use agpm_cli::lockfile::LockFile;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let expected = "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3";
@@ -1737,8 +1737,8 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// # use std::path::Path;
-    /// # use agpm::lockfile::LockFile;
-    /// # use agpm::manifest::Manifest;
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use agpm_cli::manifest::Manifest;
     /// # fn example() -> anyhow::Result<()> {
     /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
     /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
@@ -1867,8 +1867,8 @@ impl LockFile {
     ///
     /// ```rust,no_run
     /// # use std::path::Path;
-    /// # use agpm::lockfile::LockFile;
-    /// # use agpm::manifest::Manifest;
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use agpm_cli::manifest::Manifest;
     /// # fn example() -> anyhow::Result<()> {
     /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
     /// let manifest = Manifest::load(Path::new("agpm.toml"))?;
@@ -1927,8 +1927,8 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::lockfile::{LockFile, LockedResource};
-    /// # use agpm::core::ResourceType;
+    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// # use agpm_cli::core::ResourceType;
     /// # let mut lockfile = LockFile::default();
     /// # // First add a resource to update
     /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource {
@@ -2031,7 +2031,7 @@ impl Default for LockFile {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::lockfile::find_lockfile;
+/// use agpm_cli::lockfile::find_lockfile;
 ///
 /// if let Some(lockfile_path) = find_lockfile() {
 ///     println!("Found lockfile: {}", lockfile_path.display());

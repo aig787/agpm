@@ -29,7 +29,7 @@ use std::path::Path;
 /// # use anyhow::Result;
 /// # fn example() -> Result<()> {
 /// use std::path::Path;
-/// use agpm::utils::manifest_utils::load_project_manifest;
+/// use agpm_cli::utils::manifest_utils::load_project_manifest;
 ///
 /// let manifest = load_project_manifest(Path::new("."))?;
 /// # Ok(())

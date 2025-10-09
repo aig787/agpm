@@ -48,8 +48,8 @@ pub struct VersionEntry {
 /// # Example
 ///
 /// ```no_run
-/// # use agpm::resolver::version_resolver::{VersionResolver, VersionEntry};
-/// # use agpm::cache::Cache;
+/// # use agpm_cli::resolver::version_resolver::{VersionResolver, VersionEntry};
+/// # use agpm_cli::cache::Cache;
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
 /// let mut resolver = VersionResolver::new(cache);
@@ -166,8 +166,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```ignore
-    /// # use agpm::resolver::version_resolver::VersionResolver;
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::resolver::version_resolver::VersionResolver;
+    /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     /// let mut resolver = VersionResolver::new(cache);
@@ -401,8 +401,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```ignore
-    /// use agpm::resolver::version_resolver::VersionResolver;
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::resolver::version_resolver::VersionResolver;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -513,8 +513,8 @@ impl VersionResolver {
     /// # Example
     ///
     /// ```
-    /// # use agpm::resolver::version_resolver::VersionResolver;
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::resolver::version_resolver::VersionResolver;
+    /// # use agpm_cli::cache::Cache;
     /// # let cache = Cache::new().unwrap();
     /// let mut resolver = VersionResolver::new(cache);
     /// assert!(!resolver.has_entries()); // Initially empty

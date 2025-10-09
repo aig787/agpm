@@ -133,7 +133,7 @@
 //! ## Loading Global Configuration
 //!
 //! ```rust,no_run
-//! use agpm::config::{GlobalConfig, GlobalConfigManager};
+//! use agpm_cli::config::{GlobalConfig, GlobalConfigManager};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Simple load
@@ -158,7 +158,7 @@
 //! ## Parsing Resource Metadata
 //!
 //! ```rust,no_run
-//! use agpm::config::{parse_config, AgentManifest};
+//! use agpm_cli::config::{parse_config, AgentManifest};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -179,7 +179,7 @@
 //! ## Source Resolution with Authentication
 //!
 //! ```rust,no_run
-//! use agpm::config::GlobalConfig;
+//! use agpm_cli::config::GlobalConfig;
 //! use std::collections::HashMap;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -243,7 +243,7 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::config::get_cache_dir;
+/// use agpm_cli::config::get_cache_dir;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache = get_cache_dir()?;

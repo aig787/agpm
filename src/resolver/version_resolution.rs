@@ -26,7 +26,7 @@ use crate::version::constraints::{ConstraintSet, VersionConstraint};
 /// # Examples
 ///
 /// ```
-/// use agpm::resolver::version_resolution::is_version_constraint;
+/// use agpm_cli::resolver::version_resolution::is_version_constraint;
 /// assert!(is_version_constraint("^1.0.0"));
 /// assert!(is_version_constraint("~1.2.0"));
 /// assert!(is_version_constraint(">=1.0.0"));
@@ -82,7 +82,7 @@ pub fn is_version_constraint(version: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use agpm::resolver::version_resolution::parse_tags_to_versions;
+/// use agpm_cli::resolver::version_resolution::parse_tags_to_versions;
 /// let tags = vec![
 ///     "v1.0.0".to_string(),
 ///     "agents-v2.0.0".to_string(),
@@ -137,7 +137,7 @@ pub fn parse_tags_to_versions(tags: Vec<String>) -> Vec<(String, Version)> {
 /// ```no_run
 /// # use anyhow::Result;
 /// # fn example() -> Result<()> {
-/// use agpm::resolver::version_resolution::find_best_matching_tag;
+/// use agpm_cli::resolver::version_resolution::find_best_matching_tag;
 ///
 /// // Unprefixed constraint
 /// let tags = vec!["v1.0.0".to_string(), "v1.2.0".to_string(), "v1.5.0".to_string(), "v2.0.0".to_string()];

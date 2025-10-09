@@ -119,7 +119,7 @@ use crate::resolver::DependencyResolver;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::install::InstallCommand;
+/// use agpm_cli::cli::install::InstallCommand;
 ///
 /// // Standard installation
 /// let cmd = InstallCommand {
@@ -241,7 +241,7 @@ impl InstallCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::install::InstallCommand;
+    /// use agpm_cli::cli::install::InstallCommand;
     ///
     /// let cmd = InstallCommand::new();
     /// // cmd can now be executed with execute_from_path()
@@ -269,7 +269,7 @@ impl InstallCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::install::InstallCommand;
+    /// use agpm_cli::cli::install::InstallCommand;
     ///
     /// let cmd = InstallCommand::new_quiet();
     /// // cmd will execute without progress bars or status messages
@@ -311,7 +311,7 @@ impl InstallCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::install::InstallCommand;
+    /// use agpm_cli::cli::install::InstallCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {

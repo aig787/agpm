@@ -109,7 +109,7 @@
 //! ## Basic Cache Operations
 //!
 //! ```rust,no_run
-//! use agpm::cache::Cache;
+//! use agpm_cli::cache::Cache;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -136,7 +136,7 @@
 //! ## Cache Maintenance
 //!
 //! ```rust,no_run
-//! use agpm::cache::Cache;
+//! use agpm_cli::cache::Cache;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
@@ -160,7 +160,7 @@
 //! ## Custom Cache Location
 //!
 //! ```rust,no_run
-//! use agpm::cache::Cache;
+//! use agpm_cli::cache::Cache;
 //! use std::path::PathBuf;
 //!
 //! # fn custom_location() -> anyhow::Result<()> {
@@ -366,7 +366,7 @@ pub use lock::CacheLock;
 /// Create a cache with default platform-specific location:
 ///
 /// ```rust,no_run
-/// use agpm::cache::Cache;
+/// use agpm_cli::cache::Cache;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
@@ -378,7 +378,7 @@ pub use lock::CacheLock;
 /// Create a cache with custom location (useful for testing):
 ///
 /// ```rust,no_run
-/// use agpm::cache::Cache;
+/// use agpm_cli::cache::Cache;
 /// use std::path::PathBuf;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -512,7 +512,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -553,7 +553,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -603,7 +603,7 @@ impl Cache {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -633,7 +633,7 @@ impl Cache {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -707,7 +707,7 @@ impl Cache {
     /// Clone a public repository with specific version:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -726,7 +726,7 @@ impl Cache {
     /// Use latest version from default branch:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -743,7 +743,7 @@ impl Cache {
     /// Work with development branch:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -852,7 +852,7 @@ impl Cache {
     /// # Example
     ///
     /// ```no_run
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
     ///
@@ -1291,7 +1291,7 @@ impl Cache {
     /// Copy a single resource file:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1317,7 +1317,7 @@ impl Cache {
     /// Copy nested resource:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1389,7 +1389,7 @@ impl Cache {
     /// Silent installation (for batch operations):
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1409,7 +1409,7 @@ impl Cache {
     /// Interactive installation (with progress):
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1518,7 +1518,7 @@ impl Cache {
     /// Clean cache based on current manifest sources:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1539,7 +1539,7 @@ impl Cache {
     /// Clean all cached repositories:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1615,7 +1615,7 @@ impl Cache {
     /// Check current cache size:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1631,7 +1631,7 @@ impl Cache {
     /// Display human-readable sizes:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1679,7 +1679,7 @@ impl Cache {
     /// Display cache location:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1691,7 +1691,7 @@ impl Cache {
     /// Check if cache exists:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1760,7 +1760,7 @@ impl Cache {
     /// Clear cache for fresh start:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1782,7 +1782,7 @@ impl Cache {
     /// Clear cache with error handling:
     ///
     /// ```rust,no_run
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;

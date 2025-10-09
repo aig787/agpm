@@ -123,7 +123,7 @@
 //! ## Basic Reading and Writing
 //!
 //! ```rust,no_run
-//! use agpm::markdown::MarkdownDocument;
+//! use agpm_cli::markdown::MarkdownDocument;
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -151,7 +151,7 @@
 //! ## Creating Documents Programmatically
 //!
 //! ```rust,no_run
-//! use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+//! use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! // Create metadata
@@ -173,7 +173,7 @@
 //! ## Batch File Processing
 //!
 //! ```rust,no_run
-//! use agpm::markdown::{list_markdown_files, MarkdownDocument};
+//! use agpm_cli::markdown::{list_markdown_files, MarkdownDocument};
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -219,7 +219,7 @@ use crate::manifest::DependencySpec;
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::{MarkdownFile, MarkdownDocument};
+/// # use agpm_cli::markdown::{MarkdownFile, MarkdownDocument};
 /// // These are equivalent
 /// let doc1 = MarkdownDocument::new("content".to_string());
 /// let doc2 = MarkdownFile::new("content".to_string());
@@ -259,7 +259,7 @@ pub type MarkdownFile = MarkdownDocument;
 /// # Example
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::MarkdownMetadata;
+/// # use agpm_cli::markdown::MarkdownMetadata;
 /// # use std::collections::HashMap;
 /// let mut metadata = MarkdownMetadata::default();
 /// metadata.title = Some("Python Linter".to_string());
@@ -390,7 +390,7 @@ pub struct MarkdownMetadata {
 /// ## Reading from File
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::MarkdownDocument;
+/// # use agpm_cli::markdown::MarkdownDocument;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
 /// let doc = MarkdownDocument::read(Path::new("agent.md"))?;
@@ -407,7 +407,7 @@ pub struct MarkdownMetadata {
 /// ## Creating Programmatically
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+/// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
 /// let metadata = MarkdownMetadata {
 ///     title: Some("Test Agent".to_string()),
 ///     version: Some("1.0.0".to_string()),
@@ -425,7 +425,7 @@ pub struct MarkdownMetadata {
 /// ## Modifying Content
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::MarkdownDocument;
+/// # use agpm_cli::markdown::MarkdownDocument;
 /// let mut doc = MarkdownDocument::new("# Original".to_string());
 ///
 /// // Update content - raw is automatically regenerated
@@ -476,7 +476,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::MarkdownDocument;
+    /// # use agpm_cli::markdown::MarkdownDocument;
     /// let doc = MarkdownDocument::new("# Hello\n\nWorld!".to_string());
     ///
     /// assert!(doc.metadata.is_none());
@@ -506,7 +506,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Example".to_string()),
     ///     version: Some("1.0.0".to_string()),
@@ -557,7 +557,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::MarkdownDocument;
+    /// # use agpm_cli::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
     /// let doc = MarkdownDocument::read(Path::new("resources/agent.md"))?;
@@ -604,7 +604,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::MarkdownDocument;
+    /// # use agpm_cli::markdown::MarkdownDocument;
     /// # use std::path::Path;
     /// # fn example() -> anyhow::Result<()> {
     /// let doc = MarkdownDocument::new("# Test\n\nContent".to_string());
@@ -786,7 +786,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::MarkdownDocument;
+    /// # use agpm_cli::markdown::MarkdownDocument;
     /// // Parse document with YAML frontmatter
     /// let input = "---\ntitle: Test\n---\n# Content";
     /// let doc = MarkdownDocument::parse(input).unwrap();
@@ -826,7 +826,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
     /// let mut doc = MarkdownDocument::new("# Test\n\nContent".to_string());
     /// assert!(doc.metadata.is_none());
     ///
@@ -868,7 +868,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // Document with metadata
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Test".to_string()),
@@ -917,7 +917,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
     ///     title: Some("Metadata Title".to_string()),
@@ -980,7 +980,7 @@ impl MarkdownDocument {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::markdown::{MarkdownDocument, MarkdownMetadata};
+    /// # use agpm_cli::markdown::{MarkdownDocument, MarkdownMetadata};
     /// // From metadata
     /// let metadata = MarkdownMetadata {
     ///     description: Some("Metadata description".to_string()),
@@ -1166,7 +1166,7 @@ fn find_toml_frontmatter_end(input: &str) -> Option<usize> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::is_markdown_file;
+/// # use agpm_cli::markdown::is_markdown_file;
 /// # use std::path::Path;
 /// assert!(is_markdown_file(Path::new("agent.md")));
 /// assert!(is_markdown_file(Path::new("README.MD")));
@@ -1214,7 +1214,7 @@ pub fn is_markdown_file(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// # use agpm::markdown::list_markdown_files;
+/// # use agpm_cli::markdown::list_markdown_files;
 /// # use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
 /// let files = list_markdown_files(Path::new("resources/"))?;

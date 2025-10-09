@@ -90,7 +90,7 @@
 //! ## Content-Based Detection
 //! Hash-based redundancy detection for identical files:
 //! ```rust,no_run
-//! # use agpm::resolver::redundancy::ResourceUsage;
+//! # use agpm_cli::resolver::redundancy::ResourceUsage;
 //! pub struct ContentRedundancy {
 //!     content_hash: String,
 //!     identical_resources: Vec<ResourceUsage>,
@@ -100,7 +100,7 @@
 //! ## Semantic Analysis
 //! ML-based detection of functionally similar resources:
 //! ```rust,no_run
-//! # use agpm::resolver::redundancy::ResourceUsage;
+//! # use agpm_cli::resolver::redundancy::ResourceUsage;
 //! pub struct SemanticRedundancy {
 //!     similarity_score: f64,
 //!     similar_resources: Vec<ResourceUsage>,
@@ -134,7 +134,7 @@ use std::fmt;
 ///
 /// The corresponding `ResourceUsage` would be:
 /// ```rust,no_run
-/// # use agpm::resolver::redundancy::ResourceUsage;
+/// # use agpm_cli::resolver::redundancy::ResourceUsage;
 /// ResourceUsage {
 ///     resource_name: "my-helper".to_string(),
 ///     source_file: "community:agents/helper.md".to_string(),
@@ -265,7 +265,7 @@ impl RedundancyDetector {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use agpm::resolver::redundancy::RedundancyDetector;
+    /// use agpm_cli::resolver::redundancy::RedundancyDetector;
     ///
     /// let mut detector = RedundancyDetector::new();
     /// // Add usages or analyze manifest...
@@ -311,8 +311,8 @@ impl RedundancyDetector {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use agpm::resolver::redundancy::RedundancyDetector;
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::resolver::redundancy::RedundancyDetector;
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// let mut detector = RedundancyDetector::new();
     ///
@@ -374,8 +374,8 @@ impl RedundancyDetector {
     ///
     /// This method is typically used in the main resolution workflow:
     /// ```rust,no_run
-    /// use agpm::resolver::redundancy::RedundancyDetector;
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::resolver::redundancy::RedundancyDetector;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -522,7 +522,7 @@ impl RedundancyDetector {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use agpm::resolver::redundancy::{RedundancyDetector, Redundancy, ResourceUsage};
+    /// use agpm_cli::resolver::redundancy::{RedundancyDetector, Redundancy, ResourceUsage};
     ///
     /// let detector = RedundancyDetector::new();
     ///

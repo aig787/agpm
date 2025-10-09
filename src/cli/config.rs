@@ -123,7 +123,7 @@ use crate::config::GlobalConfig;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::config::{ConfigCommand, ConfigSubcommands};
+/// use agpm_cli::cli::config::{ConfigCommand, ConfigSubcommands};
 ///
 /// // Show current configuration (default)
 /// let cmd = ConfigCommand { command: None };
@@ -340,7 +340,7 @@ impl ConfigCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::config::{ConfigCommand, ConfigSubcommands};
+    /// use agpm_cli::cli::config::{ConfigCommand, ConfigSubcommands};
     ///
     /// # tokio_test::block_on(async {
     /// // Show current configuration

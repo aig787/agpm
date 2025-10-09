@@ -126,9 +126,9 @@
 //!
 //! ## Two-Phase Resolution Pattern
 //! ```rust,no_run
-//! use agpm::resolver::DependencyResolver;
-//! use agpm::manifest::Manifest;
-//! use agpm::cache::Cache;
+//! use agpm_cli::resolver::DependencyResolver;
+//! use agpm_cli::manifest::Manifest;
+//! use agpm_cli::cache::Cache;
 //! use std::path::Path;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -137,7 +137,7 @@
 //! let mut resolver = DependencyResolver::new_with_global(manifest.clone(), cache).await?;
 //!
 //! // Get all dependencies from manifest
-//! let deps: Vec<(String, agpm::manifest::ResourceDependency)> = manifest
+//! let deps: Vec<(String, agpm_cli::manifest::ResourceDependency)> = manifest
 //!     .all_dependencies()
 //!     .into_iter()
 //!     .map(|(name, dep)| (name.to_string(), dep.clone()))
@@ -157,10 +157,10 @@
 //!
 //! ## Update Pattern
 //! ```rust,no_run
-//! # use agpm::resolver::DependencyResolver;
-//! # use agpm::manifest::Manifest;
-//! # use agpm::cache::Cache;
-//! # use agpm::lockfile::LockFile;
+//! # use agpm_cli::resolver::DependencyResolver;
+//! # use agpm_cli::manifest::Manifest;
+//! # use agpm_cli::cache::Cache;
+//! # use agpm_cli::lockfile::LockFile;
 //! # use std::path::Path;
 //! # async fn update_example() -> anyhow::Result<()> {
 //! let manifest = Manifest::load(Path::new("agpm.toml"))?;
@@ -169,7 +169,7 @@
 //! let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
 //!
 //! // Get dependencies to update
-//! let deps: Vec<(String, agpm::manifest::ResourceDependency)> = manifest
+//! let deps: Vec<(String, agpm_cli::manifest::ResourceDependency)> = manifest
 //!     .all_dependencies()
 //!     .into_iter()
 //!     .map(|(name, dep)| (name.to_string(), dep.clone()))
@@ -188,14 +188,14 @@
 //!
 //! ## Incremental Updates
 //! ```rust,no_run
-//! use agpm::resolver::DependencyResolver;
-//! use agpm::lockfile::LockFile;
-//! use agpm::cache::Cache;
+//! use agpm_cli::resolver::DependencyResolver;
+//! use agpm_cli::lockfile::LockFile;
+//! use agpm_cli::cache::Cache;
 //! use std::path::Path;
 //!
 //! # async fn update_example() -> anyhow::Result<()> {
 //! let existing = LockFile::load("agpm.lock".as_ref())?;
-//! let manifest = agpm::manifest::Manifest::load("agpm.toml".as_ref())?;
+//! let manifest = agpm_cli::manifest::Manifest::load("agpm.toml".as_ref())?;
 //! let cache = Cache::new()?;
 //! let mut resolver = DependencyResolver::new(manifest, cache)?;
 //!
@@ -391,9 +391,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```ignore
-    /// # use agpm::lockfile::{LockFile, LockedResource};
-    /// # use agpm::core::ResourceType;
-    /// # use agpm::resolver::DependencyResolver;
+    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// # use agpm_cli::core::ResourceType;
+    /// # use agpm_cli::resolver::DependencyResolver;
     /// # let resolver = DependencyResolver::new();
     /// let mut lockfile = LockFile::new();
     /// let entry = LockedResource {
@@ -581,9 +581,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```no_run
-    /// # use agpm::resolver::DependencyResolver;
-    /// # use agpm::manifest::{Manifest, ResourceDependency};
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::resolver::DependencyResolver;
+    /// # use agpm_cli::manifest::{Manifest, ResourceDependency};
+    /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let manifest = Manifest::new();
     /// let cache = Cache::new()?;
@@ -666,8 +666,8 @@ impl DependencyResolver {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use agpm::resolver::DependencyResolver;
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::resolver::DependencyResolver;
+    /// use agpm_cli::cache::Cache;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let cache = Cache::new()?;
@@ -1396,9 +1396,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use agpm::resolver::DependencyResolver;
-    /// # use agpm::manifest::Manifest;
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::resolver::DependencyResolver;
+    /// # use agpm_cli::manifest::Manifest;
+    /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let manifest = Manifest::load("agpm.toml".as_ref())?;
     /// let cache = Cache::new()?;
@@ -1471,9 +1471,9 @@ impl DependencyResolver {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use agpm::resolver::DependencyResolver;
-    /// # use agpm::manifest::Manifest;
-    /// # use agpm::cache::Cache;
+    /// # use agpm_cli::resolver::DependencyResolver;
+    /// # use agpm_cli::manifest::Manifest;
+    /// # use agpm_cli::cache::Cache;
     /// # async fn example() -> anyhow::Result<()> {
     /// let manifest = Manifest::load("agpm.toml".as_ref())?;
     /// let cache = Cache::new()?;
@@ -3175,8 +3175,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// use std::path::{Path, PathBuf};
-/// # use agpm::resolver::extract_relative_path;
-/// # use agpm::core::ResourceType;
+/// # use agpm_cli::resolver::extract_relative_path;
+/// # use agpm_cli::core::ResourceType;
 ///
 /// // Resource type prefix is removed
 /// let path = Path::new("snippets/directives/thing.md");
@@ -3198,8 +3198,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
-/// # use agpm::resolver::extract_relative_path;
-/// # use agpm::core::ResourceType;
+/// # use agpm_cli::resolver::extract_relative_path;
+/// # use agpm_cli::core::ResourceType;
 ///
 /// // Multi-level nested directories are fully preserved
 /// let path = Path::new("agents/languages/rust/expert.md");
@@ -3215,8 +3215,8 @@ impl DependencyResolver {
 ///
 /// ```no_run
 /// # use std::path::{Path, PathBuf};
-/// # use agpm::resolver::extract_relative_path;
-/// # use agpm::core::ResourceType;
+/// # use agpm_cli::resolver::extract_relative_path;
+/// # use agpm_cli::core::ResourceType;
 ///
 /// // Example: glob pattern "agents/**/*.md" matches these paths
 /// let matched_paths = vec![

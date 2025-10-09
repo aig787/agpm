@@ -87,7 +87,7 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::cache::{CacheCommand, CacheSubcommands};
+/// use agpm_cli::cli::cache::{CacheCommand, CacheSubcommands};
 ///
 /// // Show cache info (default behavior)
 /// let cmd = CacheCommand { command: None };
@@ -186,7 +186,7 @@ impl CacheCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::cache::CacheCommand;
+    /// use agpm_cli::cli::cache::CacheCommand;
     ///
     /// # tokio_test::block_on(async {
     /// let cmd = CacheCommand { command: None };
@@ -242,8 +242,8 @@ impl CacheCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::cache::{CacheCommand, CacheSubcommands};
-    /// use agpm::cache::Cache;
+    /// use agpm_cli::cli::cache::{CacheCommand, CacheSubcommands};
+    /// use agpm_cli::cache::Cache;
     /// use tempfile::TempDir;
     ///
     /// # tokio_test::block_on(async {
@@ -519,7 +519,7 @@ impl CacheCommand {
 /// # Examples
 ///
 /// ```rust,ignore
-/// # use agpm::cli::cache::format_size;
+/// # use agpm_cli::cli::cache::format_size;
 /// assert_eq!(format_size(0), "0 B");
 /// assert_eq!(format_size(512), "512 B");
 /// assert_eq!(format_size(1024), "1.00 KB");

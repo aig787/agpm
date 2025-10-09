@@ -20,7 +20,7 @@ use std::path::Path;
 /// ```no_run
 /// # use anyhow::{Context, Result};
 /// # fn example() -> Result<()> {
-/// use agpm::core::error_builders::file_error_context;
+/// use agpm_cli::core::error_builders::file_error_context;
 /// use std::fs;
 /// use std::path::Path;
 ///
@@ -63,7 +63,7 @@ pub fn file_error_context(operation: &str, path: &Path) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::git_error_context;
+/// use agpm_cli::core::error_builders::git_error_context;
 ///
 /// let context = git_error_context("clone", Some("https://github.com/user/repo.git"));
 /// ```
@@ -100,7 +100,7 @@ pub fn git_error_context(command: &str, repo: Option<&str>) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::manifest_error_context;
+/// use agpm_cli::core::error_builders::manifest_error_context;
 ///
 /// let context = manifest_error_context("parse", Some("Invalid TOML syntax at line 5"));
 /// ```
@@ -145,7 +145,7 @@ pub fn manifest_error_context(operation: &str, details: Option<&str>) -> ErrorCo
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::dependency_error_context;
+/// use agpm_cli::core::error_builders::dependency_error_context;
 ///
 /// let context = dependency_error_context("my-agent", "Version conflict with existing dependency");
 /// ```
@@ -172,7 +172,7 @@ pub fn dependency_error_context(dependency: &str, reason: &str) -> ErrorContext 
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::network_error_context;
+/// use agpm_cli::core::error_builders::network_error_context;
 ///
 /// let context = network_error_context("fetch", Some("https://api.example.com"));
 /// ```
@@ -199,7 +199,7 @@ pub fn network_error_context(operation: &str, url: Option<&str>) -> ErrorContext
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::config_error_context;
+/// use agpm_cli::core::error_builders::config_error_context;
 ///
 /// let context = config_error_context("global", "Missing authentication token");
 /// ```
@@ -230,7 +230,7 @@ pub fn config_error_context(config_type: &str, issue: &str) -> ErrorContext {
 /// # Example
 ///
 /// ```no_run
-/// use agpm::core::error_builders::permission_error_context;
+/// use agpm_cli::core::error_builders::permission_error_context;
 ///
 /// let context = permission_error_context("/usr/local/bin", "write");
 /// ```
@@ -299,7 +299,7 @@ where
 /// # Example
 ///
 /// ```
-/// use agpm::{error_context, core::AgpmError};
+/// use agpm_cli::{error_context, core::AgpmError};
 ///
 /// let context = error_context! {
 ///     error: AgpmError::Other { message: "Operation failed".to_string() },

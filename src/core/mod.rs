@@ -63,7 +63,7 @@
 //! ## Error Handling Pattern
 //!
 //! ```rust,no_run
-//! use agpm::core::{AgpmError, ErrorContext, user_friendly_error};
+//! use agpm_cli::core::{AgpmError, ErrorContext, user_friendly_error};
 //! use anyhow::Result;
 //!
 //! fn example_operation() -> Result<String> {
@@ -86,7 +86,7 @@
 //! ## Resource Type Detection
 //!
 //! ```rust,no_run
-//! use agpm::core::{ResourceType, detect_resource_type};
+//! use agpm_cli::core::{ResourceType, detect_resource_type};
 //! use std::path::Path;
 //! use tempfile::tempdir;
 //!
@@ -136,7 +136,7 @@
 //! ## Resource Trait Usage
 //!
 //! ```rust,no_run
-//! use agpm::core::{Resource, ResourceType};
+//! use agpm_cli::core::{Resource, ResourceType};
 //! use anyhow::Result;
 //! use std::path::Path;
 //!
@@ -169,7 +169,7 @@
 //! ## Error Context Creation
 //!
 //! ```rust,no_run
-//! use agpm::core::{AgpmError, ErrorContext};
+//! use agpm_cli::core::{AgpmError, ErrorContext};
 //!
 //! fn create_helpful_error() -> ErrorContext {
 //!     ErrorContext::new(AgpmError::GitNotFound)
@@ -239,7 +239,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::core::{ResourceType, detect_resource_type};
+/// use agpm_cli::core::{ResourceType, detect_resource_type};
 /// use tempfile::tempdir;
 /// use std::fs;
 ///

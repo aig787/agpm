@@ -443,8 +443,8 @@
 //! ### With [`crate::resolver`]
 //!
 //! ```rust,ignore
-//! use agpm::manifest::Manifest;
-//! use agpm::resolver::DependencyResolver;
+//! use agpm_cli::manifest::Manifest;
+//! use agpm_cli::resolver::DependencyResolver;
 //!
 //! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let resolver = DependencyResolver::new(&manifest);
@@ -454,8 +454,8 @@
 //! ### With [`crate::lockfile`]
 //!
 //! ```rust,ignore  
-//! use agpm::manifest::Manifest;
-//! use agpm::lockfile::LockFile;
+//! use agpm_cli::manifest::Manifest;
+//! use agpm_cli::lockfile::LockFile;
 //!
 //! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let lockfile = LockFile::generate_from_manifest(&manifest).await?;
@@ -465,8 +465,8 @@
 //! ### With [`crate::git`] for Source Management
 //!
 //! ```rust,ignore
-//! use agpm::manifest::Manifest;
-//! use agpm::git::GitManager;
+//! use agpm_cli::manifest::Manifest;
+//! use agpm_cli::git::GitManager;
 //!
 //! let manifest = Manifest::load(&project_path.join("agpm.toml"))?;
 //! let git = GitManager::new(&cache_dir);
@@ -514,7 +514,7 @@ pub use dependency_spec::{DependencyMetadata, DependencySpec};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::manifest::{Manifest, ResourceDependency};
+/// use agpm_cli::manifest::{Manifest, ResourceDependency};
 ///
 /// // Create a new empty manifest
 /// let mut manifest = Manifest::new();
@@ -1384,7 +1384,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
     /// assert!(manifest.sources.is_empty());
@@ -1439,7 +1439,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// // Load a manifest file
@@ -1556,7 +1556,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::manifest::Manifest;
     /// use std::path::Path;
     ///
     /// let mut manifest = Manifest::new();
@@ -1647,7 +1647,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -1982,7 +1982,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::manifest::Manifest;
     ///
     /// let manifest = Manifest::new();
     /// // ... add some dependencies
@@ -2109,7 +2109,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm::manifest::Manifest;
+    /// # use agpm_cli::manifest::Manifest;
     /// # let manifest = Manifest::new();
     /// for (name, dep) in manifest.all_dependencies() {
     ///     println!("Dependency: {} -> {}", name, dep.get_path());
@@ -2164,7 +2164,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -2196,7 +2196,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -2234,7 +2234,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     /// manifest.add_dependency(
@@ -2274,7 +2274,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::Manifest;
+    /// use agpm_cli::manifest::Manifest;
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2330,7 +2330,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency, DetailedDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2383,8 +2383,8 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{Manifest, ResourceDependency};
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
+    /// use agpm_cli::core::ResourceType;
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2433,7 +2433,7 @@ impl Manifest {
     /// # Examples
     ///
     /// ```rust,no_run,ignore
-    /// use agpm::manifest::{Manifest, ResourceDependency};
+    /// use agpm_cli::manifest::{Manifest, ResourceDependency};
     ///
     /// let mut manifest = Manifest::new();
     ///
@@ -2458,7 +2458,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no source
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2504,7 +2504,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom target
     /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2542,7 +2542,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Dependency with custom filename
     /// let custom = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2583,7 +2583,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - filesystem path
     /// let local = ResourceDependency::Simple("../shared/helper.md".to_string());
@@ -2644,7 +2644,7 @@ impl ResourceDependency {
     /// the `git` field takes precedence:
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
     ///     source: Some("repo".to_string()),
@@ -2666,7 +2666,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency - no version
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2735,7 +2735,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Local dependency
     /// let local = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2797,7 +2797,7 @@ impl ResourceDependency {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::manifest::{ResourceDependency, DetailedDependency};
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
     ///
     /// // Simple dependency - defaults to "claude-code"
     /// let simple = ResourceDependency::Simple("../local/file.md".to_string());
@@ -2859,7 +2859,7 @@ impl Default for Manifest {
 /// # Examples
 ///
 /// ```rust,no_run,ignore
-/// # use agpm::manifest::expand_url;
+/// # use agpm_cli::manifest::expand_url;
 /// # fn example() -> anyhow::Result<()> {
 /// // Standard URLs remain unchanged
 /// assert_eq!(expand_url("https://github.com/user/repo.git")?,
@@ -2962,7 +2962,7 @@ fn expand_url(url: &str) -> Result<String> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::manifest::find_manifest;
+/// use agpm_cli::manifest::find_manifest;
 ///
 /// // Find manifest from current directory
 /// match find_manifest() {
@@ -3025,7 +3025,7 @@ pub fn find_manifest() -> Result<PathBuf> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::manifest::find_manifest_with_optional;
+/// use agpm_cli::manifest::find_manifest_with_optional;
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -3073,7 +3073,7 @@ pub fn find_manifest_with_optional(explicit_path: Option<PathBuf>) -> Result<Pat
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::manifest::find_manifest_from;
+/// use agpm_cli::manifest::find_manifest_from;
 /// use std::path::PathBuf;
 ///
 /// // Search from a specific directory

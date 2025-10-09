@@ -51,8 +51,8 @@
 //! ## Basic Git Tag Resolution
 //!
 //! ```rust,no_run
-//! use agpm::version::{VersionResolver, VersionInfo};
-//! use agpm::git::GitRepo;
+//! use agpm_cli::version::{VersionResolver, VersionInfo};
+//! use agpm_cli::git::GitRepo;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -70,7 +70,7 @@
 //! ## Advanced Constraint Resolution
 //!
 //! ```rust,no_run
-//! use agpm::version::constraints::{ConstraintResolver, VersionConstraint};
+//! use agpm_cli::version::constraints::{ConstraintResolver, VersionConstraint};
 //! use semver::Version;
 //! use std::collections::HashMap;
 //!
@@ -98,7 +98,7 @@
 //! ## Version Comparison and Analysis
 //!
 //! ```rust,no_run
-//! use agpm::version::comparison::VersionComparator;
+//! use agpm_cli::version::comparison::VersionComparator;
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! let available_versions = vec![
@@ -173,7 +173,7 @@ use std::sync::Arc;
 /// # Examples
 ///
 /// ```
-/// use agpm::version::parse_version_req;
+/// use agpm_cli::version::parse_version_req;
 ///
 /// // All of these parse successfully:
 /// assert!(parse_version_req("1.0.0").is_ok());
@@ -226,7 +226,7 @@ pub fn parse_version_req(requirement: &str) -> Result<VersionReq, semver::Error>
 /// # Examples
 ///
 /// ```
-/// use agpm::version::split_prefix_and_version;
+/// use agpm_cli::version::split_prefix_and_version;
 ///
 /// // Prefixed versions
 /// assert_eq!(
@@ -318,7 +318,7 @@ fn split_at_index(s: &str, i: usize) -> (Option<String>, &str) {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::version::VersionInfo;
+/// use agpm_cli::version::VersionInfo;
 /// use semver::Version;
 ///
 /// // Standard version without prefix
@@ -385,8 +385,8 @@ pub struct VersionInfo {
 /// ## Creating from Git Repository
 ///
 /// ```rust,no_run
-/// use agpm::version::VersionResolver;
-/// use agpm::git::GitRepo;
+/// use agpm_cli::version::VersionResolver;
+/// use agpm_cli::git::GitRepo;
 /// use std::path::PathBuf;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -401,8 +401,8 @@ pub struct VersionInfo {
 /// ## Version Resolution
 ///
 /// ```rust,no_run
-/// # use agpm::version::VersionResolver;
-/// # use agpm::git::GitRepo;
+/// # use agpm_cli::version::VersionResolver;
+/// # use agpm_cli::git::GitRepo;
 /// # use std::path::PathBuf;
 /// #
 /// # async fn example() -> anyhow::Result<()> {
@@ -435,7 +435,7 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
+    /// use agpm_cli::version::VersionResolver;
     ///
     /// let resolver = VersionResolver::new();
     /// assert_eq!(resolver.list_all().len(), 0);
@@ -476,8 +476,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -548,7 +548,7 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
+    /// use agpm_cli::version::VersionResolver;
     /// use semver::Version;
     ///
     /// // These would all parse successfully (if the method were public)
@@ -604,8 +604,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -692,8 +692,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -742,8 +742,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -764,8 +764,8 @@ impl VersionResolver {
     /// # Comparison with `get_latest()`
     ///
     /// ```rust,no_run
-    /// # use agpm::version::VersionResolver;
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::version::VersionResolver;
+    /// # use agpm_cli::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -822,8 +822,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -844,8 +844,8 @@ impl VersionResolver {
     /// ## Filtering and Analysis
     ///
     /// ```rust,no_run
-    /// # use agpm::version::VersionResolver;
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::version::VersionResolver;
+    /// # use agpm_cli::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -902,8 +902,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -924,8 +924,8 @@ impl VersionResolver {
     /// ## Comparison with All Versions
     ///
     /// ```rust,no_run
-    /// # use agpm::version::VersionResolver;
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::version::VersionResolver;
+    /// # use agpm_cli::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -983,8 +983,8 @@ impl VersionResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionResolver;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::version::VersionResolver;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1013,8 +1013,8 @@ impl VersionResolver {
     /// ## Validation Before Resolution
     ///
     /// ```rust,no_run
-    /// # use agpm::version::VersionResolver;
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::version::VersionResolver;
+    /// # use agpm_cli::git::GitRepo;
     /// # use std::path::PathBuf;
     /// #
     /// # async fn example() -> anyhow::Result<()> {
@@ -1087,7 +1087,7 @@ impl Default for VersionResolver {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::version::matches_requirement;
+/// use agpm_cli::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Exact version matching
@@ -1117,7 +1117,7 @@ impl Default for VersionResolver {
 /// ## Complex Range Matching
 ///
 /// ```rust,no_run
-/// use agpm::version::matches_requirement;
+/// use agpm_cli::version::matches_requirement;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Multiple constraints
@@ -1204,7 +1204,7 @@ pub fn matches_requirement(version: &str, requirement: &str) -> Result<bool> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::version::{parse_version_constraint, VersionConstraint};
+/// use agpm_cli::version::{parse_version_constraint, VersionConstraint};
 ///
 /// // Semantic versions are classified as tags
 /// let constraint = parse_version_constraint("1.0.0");
@@ -1334,7 +1334,7 @@ pub mod constraints;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::version::VersionConstraint;
+/// use agpm_cli::version::VersionConstraint;
 ///
 /// // Create different constraint types
 /// let version = VersionConstraint::Tag("1.0.0".to_string());
@@ -1370,7 +1370,7 @@ impl VersionConstraint {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::VersionConstraint;
+    /// use agpm_cli::version::VersionConstraint;
     ///
     /// let tag = VersionConstraint::Tag("^1.0.0".to_string());
     /// assert_eq!(tag.as_str(), "^1.0.0");

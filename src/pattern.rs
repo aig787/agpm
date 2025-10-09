@@ -70,7 +70,7 @@ use walkdir::WalkDir;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::pattern::PatternMatcher;
+/// use agpm_cli::pattern::PatternMatcher;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -115,7 +115,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternMatcher;
+    /// use agpm_cli::pattern::PatternMatcher;
     ///
     /// // Simple wildcard
     /// let matcher = PatternMatcher::new("*.md")?;
@@ -170,7 +170,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternMatcher;
+    /// use agpm_cli::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -232,7 +232,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternMatcher;
+    /// use agpm_cli::pattern::PatternMatcher;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -261,7 +261,7 @@ impl PatternMatcher {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternMatcher;
+    /// use agpm_cli::pattern::PatternMatcher;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let pattern_str = "**/*.md";
@@ -292,7 +292,7 @@ impl PatternMatcher {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::pattern::PatternResolver;
+/// use agpm_cli::pattern::PatternResolver;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -322,7 +322,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternResolver;
+    /// use agpm_cli::pattern::PatternResolver;
     ///
     /// let resolver = PatternResolver::new();
     /// // PatternResolver starts with no exclusions
@@ -353,7 +353,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternResolver;
+    /// use agpm_cli::pattern::PatternResolver;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let mut resolver = PatternResolver::new();
@@ -411,7 +411,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternResolver;
+    /// use agpm_cli::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -466,7 +466,7 @@ impl PatternResolver {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::pattern::PatternResolver;
+    /// use agpm_cli::pattern::PatternResolver;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -520,7 +520,7 @@ impl Default for PatternResolver {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::pattern::extract_resource_name;
+/// use agpm_cli::pattern::extract_resource_name;
 /// use std::path::Path;
 ///
 /// assert_eq!(extract_resource_name(Path::new("agents/helper.md")), "helper");
@@ -563,7 +563,7 @@ pub fn extract_resource_name(path: &Path) -> String {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::pattern::validate_pattern_safety;
+/// use agpm_cli::pattern::validate_pattern_safety;
 ///
 /// // Safe patterns
 /// assert!(validate_pattern_safety("*.md").is_ok());

@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use agpm::version::comparison::VersionComparator;
+//! use agpm_cli::version::comparison::VersionComparator;
 //!
 //! # fn example() -> anyhow::Result<()> {
 //! let versions = vec![
@@ -74,7 +74,7 @@ impl VersionComparator {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::comparison::VersionComparator;
+    /// use agpm_cli::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let versions = vec!["v1.0.0".to_string(), "v1.1.0".to_string(), "v2.0.0".to_string()];
@@ -126,7 +126,7 @@ impl VersionComparator {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::comparison::VersionComparator;
+    /// use agpm_cli::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let versions = vec![
@@ -192,7 +192,7 @@ impl VersionComparator {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::version::comparison::VersionComparator;
+    /// use agpm_cli::version::comparison::VersionComparator;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let versions = vec![

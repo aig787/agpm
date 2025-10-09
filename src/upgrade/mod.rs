@@ -104,7 +104,7 @@
 //! All functions return `Result<T, E>` for proper error propagation:
 //!
 //! ```rust,no_run
-//! use agpm::upgrade::SelfUpdater;
+//! use agpm_cli::upgrade::SelfUpdater;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! let updater = SelfUpdater::new();

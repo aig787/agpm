@@ -154,7 +154,7 @@
 //! ## Loading Agent Configuration
 //!
 //! ```rust,no_run
-//! use agpm::config::AgentManifest;
+//! use agpm_cli::config::AgentManifest;
 //! use std::path::Path;
 //!
 //! # fn example() -> anyhow::Result<()> {
@@ -174,7 +174,7 @@
 //! ## Creating Default Configuration
 //!
 //! ```rust,ignore
-//! use agpm::config::create_agent_manifest;
+//! use agpm_cli::config::create_agent_manifest;
 //!
 //! let manifest = create_agent_manifest(
 //!     "my-agent".to_string(),
@@ -207,7 +207,7 @@ use std::path::Path;
 /// ## Minimal Agent
 ///
 /// ```rust,no_run
-/// use agpm::config::{AgentManifest, AgentMetadata};
+/// use agpm_cli::config::{AgentManifest, AgentMetadata};
 /// use std::collections::HashMap;
 ///
 /// let manifest = AgentManifest {
@@ -229,7 +229,7 @@ use std::path::Path;
 /// ## Loading from File
 ///
 /// ```rust,no_run
-/// use agpm::config::AgentManifest;
+/// use agpm_cli::config::AgentManifest;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -286,7 +286,7 @@ impl AgentManifest {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::config::AgentManifest;
+    /// use agpm_cli::config::AgentManifest;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {

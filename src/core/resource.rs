@@ -29,7 +29,7 @@
 //! ## Working with Resource Types
 //!
 //! ```rust,no_run
-//! use agpm::core::ResourceType;
+//! use agpm_cli::core::ResourceType;
 //! use std::path::Path;
 //!
 //! // Convert strings to resource types
@@ -48,7 +48,7 @@
 //! ## Serialization Support
 //!
 //! ```rust,no_run
-//! use agpm::core::ResourceType;
+//! use agpm_cli::core::ResourceType;
 //!
 //! // ResourceType implements Serialize/Deserialize
 //! let agent = ResourceType::Agent;
@@ -102,7 +102,7 @@ use std::path::Path;
 /// ## Basic Usage
 ///
 /// ```rust,no_run
-/// use agpm::core::ResourceType;
+/// use agpm_cli::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// let snippet = ResourceType::Snippet;
@@ -114,7 +114,7 @@ use std::path::Path;
 /// ## String Parsing
 ///
 /// ```rust,no_run
-/// use agpm::core::ResourceType;
+/// use agpm_cli::core::ResourceType;
 /// use std::str::FromStr;
 ///
 /// let agent: ResourceType = "agent".parse().unwrap();
@@ -130,7 +130,7 @@ use std::path::Path;
 /// ## Directory Names
 ///
 /// ```rust,no_run
-/// use agpm::core::ResourceType;
+/// use agpm_cli::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// assert_eq!(agent.default_directory(), ".claude/agents");
@@ -145,7 +145,7 @@ use std::path::Path;
 /// ## JSON Serialization
 ///
 /// ```rust,no_run
-/// use agpm::core::ResourceType;
+/// use agpm_cli::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
 /// let json = serde_json::to_string(&agent).unwrap();
@@ -213,7 +213,7 @@ impl ResourceType {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::core::ResourceType;
     ///
     /// // Iterate over all resource types
     /// for resource_type in ResourceType::all() {
@@ -234,7 +234,7 @@ impl ResourceType {
     /// # Examples
     ///
     /// ```
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::core::ResourceType;
     ///
     /// assert_eq!(ResourceType::Agent.to_plural(), "agents");
     /// assert_eq!(ResourceType::McpServer.to_plural(), "mcp-servers");
@@ -267,7 +267,7 @@ impl ResourceType {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::ResourceType;
+    /// use agpm_cli::core::ResourceType;
     ///
     /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
     /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/agpm/snippets");
@@ -359,7 +359,7 @@ impl std::str::FromStr for ResourceType {
 /// ## Basic Resource Usage Pattern
 ///
 /// ```rust,no_run
-/// use agpm::core::{Resource, ResourceType};
+/// use agpm_cli::core::{Resource, ResourceType};
 /// use anyhow::Result;
 /// use std::path::Path;
 ///
@@ -387,7 +387,7 @@ impl std::str::FromStr for ResourceType {
 /// ## Metadata Extraction
 ///
 /// ```rust,no_run
-/// use agpm::core::Resource;
+/// use agpm_cli::core::Resource;
 /// use anyhow::Result;
 ///
 /// fn extract_metadata(resource: &dyn Resource) -> Result<()> {
@@ -411,7 +411,7 @@ impl std::str::FromStr for ResourceType {
 /// The trait is object-safe and can be used as a trait object:
 ///
 /// ```rust,no_run
-/// use agpm::core::Resource;
+/// use agpm_cli::core::Resource;
 /// use std::any::Any;
 ///
 /// fn handle_resource(resource: Box<dyn Resource>) {
@@ -435,7 +435,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     ///
     /// fn print_resource_info(resource: &dyn Resource) {
     ///     println!("Resource name: {}", resource.name());
@@ -455,7 +455,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::{Resource, ResourceType};
+    /// use agpm_cli::core::{Resource, ResourceType};
     ///
     /// fn categorize_resource(resource: &dyn Resource) {
     ///     match resource.resource_type() {
@@ -484,7 +484,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     ///
     /// fn show_resource_details(resource: &dyn Resource) {
     ///     println!("Name: {}", resource.name());
@@ -511,7 +511,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     ///
     /// fn check_dependencies(resource: &dyn Resource) {
     ///     if let Some(deps) = resource.dependencies() {
@@ -542,7 +542,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     /// use anyhow::Result;
     ///
     /// fn validate_before_install(resource: &dyn Resource) -> Result<()> {
@@ -574,7 +574,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     /// use std::path::Path;
     /// use anyhow::Result;
     ///
@@ -609,7 +609,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     /// use std::path::Path;
     ///
     /// fn check_install_location(resource: &dyn Resource) {
@@ -648,7 +648,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     /// use anyhow::Result;
     ///
     /// fn show_resource_metadata(resource: &dyn Resource) -> Result<()> {
@@ -683,7 +683,7 @@ pub trait Resource {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::core::Resource;
+    /// use agpm_cli::core::Resource;
     /// use std::any::Any;
     ///
     /// // Hypothetical concrete resource type

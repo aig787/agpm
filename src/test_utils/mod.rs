@@ -61,11 +61,11 @@ static INIT_LOGGING: Once = Once::new();
 ///
 /// fn my_test() {
 ///     // Use environment variable
-///     agpm::test_utils::init_test_logging(None);
-///     
+///     agpm_cli::test_utils::init_test_logging(None);
+///
 ///     // Or set level programmatically
-///     agpm::test_utils::init_test_logging(Some(Level::DEBUG));
-///     
+///     agpm_cli::test_utils::init_test_logging(Some(Level::DEBUG));
+///
 ///     // Your test code here - logging will work
 /// }
 /// ```

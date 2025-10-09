@@ -128,7 +128,7 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use agpm::cli::outdated::OutdatedCommand;
+//! use agpm_cli::cli::outdated::OutdatedCommand;
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -183,7 +183,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## Check All Dependencies
 ///
 /// ```rust,ignore
-/// use agpm::cli::outdated::OutdatedCommand;
+/// use agpm_cli::cli::outdated::OutdatedCommand;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cmd = OutdatedCommand {
@@ -203,7 +203,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## Check Specific Dependencies with JSON Output
 ///
 /// ```rust,ignore
-/// use agpm::cli::outdated::OutdatedCommand;
+/// use agpm_cli::cli::outdated::OutdatedCommand;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cmd = OutdatedCommand {
@@ -223,7 +223,7 @@ use crate::version::constraints::VersionConstraint;
 /// ## CI/CD Integration Example
 ///
 /// ```rust,ignore
-/// use agpm::cli::outdated::OutdatedCommand;
+/// use agpm_cli::cli::outdated::OutdatedCommand;
 ///
 /// # async fn ci_check() -> anyhow::Result<()> {
 /// // This will exit with code 1 if any updates are available
@@ -478,7 +478,7 @@ pub struct OutdatedSummary {
 /// scripts to programmatically analyze dependency update status.
 ///
 /// ```rust,ignore
-/// use agpm::cli::outdated::{OutdatedResult, OutdatedInfo, OutdatedSummary};
+/// use agpm_cli::cli::outdated::{OutdatedResult, OutdatedInfo, OutdatedSummary};
 /// use serde_json;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -547,7 +547,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::outdated::OutdatedCommand;
+    /// use agpm_cli::cli::outdated::OutdatedCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -610,7 +610,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::outdated::OutdatedCommand;
+    /// use agpm_cli::cli::outdated::OutdatedCommand;
     /// use std::path::PathBuf;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -760,11 +760,11 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use agpm::cli::outdated::OutdatedCommand;
-    /// # use agpm::lockfile::LockedResource;
-    /// # use agpm::manifest::Manifest;
-    /// # use agpm::cache::Cache;
-    /// # use agpm::resolver::DependencyResolver;
+    /// # use agpm_cli::cli::outdated::OutdatedCommand;
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// # use agpm_cli::manifest::Manifest;
+    /// # use agpm_cli::cache::Cache;
+    /// # use agpm_cli::resolver::DependencyResolver;
     /// # async fn example(
     /// #     cmd: &OutdatedCommand,
     /// #     locked: &LockedResource,
@@ -962,7 +962,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo};
+    /// # use agpm_cli::cli::outdated::{OutdatedCommand, OutdatedInfo};
     /// # fn example() {
     /// let cmd = OutdatedCommand::default();
     /// let outdated_deps = vec![
@@ -1013,7 +1013,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm_cli::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand {
     ///     format: "json".to_string(),
@@ -1095,7 +1095,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm_cli::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand::default();
     /// let outdated = vec![];
@@ -1170,7 +1170,7 @@ impl OutdatedCommand {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// # use agpm::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
+    /// # use agpm_cli::cli::outdated::{OutdatedCommand, OutdatedInfo, OutdatedSummary};
     /// # fn example() -> anyhow::Result<()> {
     /// let cmd = OutdatedCommand::default();
     /// let outdated = vec![];

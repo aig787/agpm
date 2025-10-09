@@ -84,7 +84,7 @@ impl AddCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::cli::add::{AddCommand, AddSubcommand};
+    /// use agpm_cli::cli::add::{AddCommand, AddSubcommand};
     /// use std::path::PathBuf;
     ///
     /// let cmd = AddCommand {

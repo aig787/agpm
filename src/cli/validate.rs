@@ -111,7 +111,7 @@ use crate::resolver::DependencyResolver;
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::validate::{ValidateCommand, OutputFormat};
+/// use agpm_cli::cli::validate::{ValidateCommand, OutputFormat};
 ///
 /// // Basic validation
 /// let cmd = ValidateCommand {
@@ -223,7 +223,7 @@ pub struct ValidateCommand {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use agpm::cli::validate::OutputFormat;
+/// use agpm_cli::cli::validate::OutputFormat;
 ///
 /// // For human consumption
 /// let format = OutputFormat::Text;
@@ -289,7 +289,7 @@ impl ValidateCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::cli::validate::{ValidateCommand, OutputFormat};
+    /// use agpm_cli::cli::validate::{ValidateCommand, OutputFormat};
     ///
     /// let cmd = ValidateCommand {
     ///     file: None,
@@ -328,7 +328,7 @@ impl ValidateCommand {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::cli::validate::ValidateCommand;
+    /// use agpm_cli::cli::validate::ValidateCommand;
     /// use std::path::PathBuf;
     ///
     /// let cmd = ValidateCommand {

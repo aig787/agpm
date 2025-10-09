@@ -134,7 +134,7 @@ pub struct MatcherGroup {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::hooks::load_hook_configs;
+/// use agpm_cli::hooks::load_hook_configs;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -421,7 +421,7 @@ pub async fn install_hooks(
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::hooks::{validate_hook_config, HookConfig, HookEvent};
+/// use agpm_cli::hooks::{validate_hook_config, HookConfig, HookEvent};
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {

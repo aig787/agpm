@@ -99,7 +99,7 @@
 //!
 //! ## Basic Repository Operations
 //! ```rust,no_run
-//! use agpm::git::GitRepo;
+//! use agpm_cli::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn example() -> anyhow::Result<()> {
@@ -128,7 +128,7 @@
 //!
 //! ## Authentication with URLs
 //! ```rust,no_run
-//! use agpm::git::GitRepo;
+//! use agpm_cli::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn auth_example() -> anyhow::Result<()> {
@@ -151,7 +151,7 @@
 //!
 //! ## Repository Validation
 //! ```rust,no_run
-//! use agpm::git::{GitRepo, ensure_git_available, is_valid_git_repo};
+//! use agpm_cli::git::{GitRepo, ensure_git_available, is_valid_git_repo};
 //! use std::env;
 //!
 //! # async fn validation_example() -> anyhow::Result<()> {
@@ -175,7 +175,7 @@
 //!
 //! ## Worktree-based Parallel Operations
 //! ```rust,no_run
-//! use agpm::git::GitRepo;
+//! use agpm_cli::git::GitRepo;
 //! use std::env;
 //!
 //! # async fn worktree_example() -> anyhow::Result<()> {
@@ -274,7 +274,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::GitRepo;
+/// use agpm_cli::git::GitRepo;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
@@ -318,7 +318,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::Path;
     ///
     /// // Create repository handle
@@ -369,7 +369,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -451,7 +451,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -535,7 +535,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -648,7 +648,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -675,7 +675,7 @@ impl GitRepo {
     /// ```rust,no_run
     /// # use anyhow::Result;
     /// use semver::Version;
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn version_example() -> Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -755,7 +755,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -777,7 +777,7 @@ impl GitRepo {
     /// For processing the URL further, consider using [`parse_git_url`]:
     ///
     /// ```rust,no_run
-    /// use agpm::git::{GitRepo, parse_git_url};
+    /// use agpm_cli::git::{GitRepo, parse_git_url};
     ///
     /// # async fn parse_example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -819,7 +819,7 @@ impl GitRepo {
     /// This method is intentionally synchronous and lightweight for efficiency.\n    /// It performs at most two filesystem checks without spawning async tasks or\n    /// executing Git commands.\n    ///
     /// # Examples\n    ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// // Regular repository
     /// let repo = GitRepo::new("/path/to/regular/repo");
@@ -859,7 +859,7 @@ impl GitRepo {
     /// For error-based validation with detailed context, use [`ensure_valid_git_repo`]:
     ///
     /// ```rust,no_run
-    /// use agpm::git::ensure_valid_git_repo;
+    /// use agpm_cli::git::ensure_valid_git_repo;
     /// use std::path::Path;
     ///
     /// # fn example() -> anyhow::Result<()> {
@@ -888,7 +888,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     /// use std::path::Path;
     ///
     /// let repo = GitRepo::new("/home/user/my-project");
@@ -909,7 +909,7 @@ impl GitRepo {
     /// The returned path can be used for various filesystem operations:
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # fn example() -> std::io::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
@@ -968,7 +968,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// // Verify public repository
@@ -1097,7 +1097,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```ignore
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     /// use std::env;
     ///
     /// # async fn example() -> anyhow::Result<()> {
@@ -1177,7 +1177,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1480,7 +1480,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1512,7 +1512,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1561,7 +1561,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let bare_repo = GitRepo::new("/path/to/bare.git");
@@ -1587,7 +1587,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm::git::GitRepo;
+    /// use agpm_cli::git::GitRepo;
     ///
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo.git");
@@ -1626,7 +1626,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```no_run
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::git::GitRepo;
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
     /// let commit = repo.get_current_commit().await?;
@@ -1671,7 +1671,7 @@ impl GitRepo {
     /// # Examples
     ///
     /// ```no_run
-    /// # use agpm::git::GitRepo;
+    /// # use agpm_cli::git::GitRepo;
     /// # async fn example() -> anyhow::Result<()> {
     /// let repo = GitRepo::new("/path/to/repo");
     ///
@@ -1821,7 +1821,7 @@ impl GitRepo {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::is_git_installed;
+/// use agpm_cli::git::is_git_installed;
 ///
 /// if is_git_installed() {
 ///     println!("Git is available - proceeding with repository operations");
@@ -1843,7 +1843,7 @@ impl GitRepo {
 /// For error-based validation with detailed context, use [`ensure_git_available()`]:
 ///
 /// ```rust,no_run
-/// use agpm::git::ensure_git_available;
+/// use agpm_cli::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// ensure_git_available()?; // Throws AgpmError::GitNotFound if not available
@@ -1884,7 +1884,7 @@ pub fn is_git_installed() -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::ensure_git_available;
+/// use agpm_cli::git::ensure_git_available;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Validate Git before starting operations
@@ -1899,8 +1899,8 @@ pub fn is_git_installed() -> bool {
 /// # Error Handling
 ///
 /// ```rust,no_run
-/// use agpm::git::ensure_git_available;
-/// use agpm::core::AgpmError;
+/// use agpm_cli::git::ensure_git_available;
+/// use agpm_cli::core::AgpmError;
 ///
 /// match ensure_git_available() {
 ///     Ok(_) => println!("Git is ready"),
@@ -1918,7 +1918,7 @@ pub fn is_git_installed() -> bool {
 /// Typically called at the start of Git-dependent operations:
 ///
 /// ```rust,no_run
-/// use agpm::git::{ensure_git_available, GitRepo};
+/// use agpm_cli::git::{ensure_git_available, GitRepo};
 /// use std::env;
 ///
 /// # async fn git_operation() -> anyhow::Result<()> {
@@ -1963,7 +1963,7 @@ pub fn ensure_git_available() -> Result<()> {
 ///
 /// ```rust,no_run
 /// use std::path::Path;
-/// use agpm::git::is_git_repository;
+/// use agpm_cli::git::is_git_repository;
 ///
 /// // Check a regular repository
 /// let repo_path = Path::new("/path/to/repo");
@@ -2006,7 +2006,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::is_valid_git_repo;
+/// use agpm_cli::git::is_valid_git_repo;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/home/user/my-project");
@@ -2028,7 +2028,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 /// # Batch Processing Example
 ///
 /// ```rust,no_run
-/// use agpm::git::is_valid_git_repo;
+/// use agpm_cli::git::is_valid_git_repo;
 /// use std::fs;
 /// use std::path::Path;
 ///
@@ -2090,7 +2090,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::ensure_valid_git_repo;
+/// use agpm_cli::git::ensure_valid_git_repo;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
@@ -2108,8 +2108,8 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// # Error Handling Pattern
 ///
 /// ```rust,no_run
-/// use agpm::git::ensure_valid_git_repo;
-/// use agpm::core::AgpmError;
+/// use agpm_cli::git::ensure_valid_git_repo;
+/// use agpm_cli::core::AgpmError;
 /// use std::path::Path;
 ///
 /// let path = Path::new("/some/directory");
@@ -2130,7 +2130,7 @@ pub fn is_valid_git_repo(path: &Path) -> bool {
 /// This function provides validation before creating `GitRepo` instances:
 ///
 /// ```rust,no_run
-/// use agpm::git::{ensure_valid_git_repo, GitRepo};
+/// use agpm_cli::git::{ensure_valid_git_repo, GitRepo};
 /// use std::path::Path;
 ///
 /// # async fn validated_repo_operations() -> anyhow::Result<()> {
@@ -2201,7 +2201,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::parse_git_url;
+/// use agpm_cli::git::parse_git_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Parse GitHub URL
@@ -2232,7 +2232,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// # Cache Integration Example
 ///
 /// ```rust,no_run
-/// use agpm::git::parse_git_url;
+/// use agpm_cli::git::parse_git_url;
 /// use std::path::PathBuf;
 ///
 /// # fn cache_example() -> anyhow::Result<()> {
@@ -2256,7 +2256,7 @@ pub fn ensure_valid_git_repo(path: &Path) -> Result<()> {
 /// the repository components:
 ///
 /// ```rust,no_run
-/// use agpm::git::parse_git_url;
+/// use agpm_cli::git::parse_git_url;
 ///
 /// # fn auth_example() -> anyhow::Result<()> {
 /// // Authentication is ignored in parsing
@@ -2368,7 +2368,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::git::strip_auth_from_url;
+/// use agpm_cli::git::strip_auth_from_url;
 ///
 /// # fn example() -> anyhow::Result<()> {
 /// // Strip token from HTTPS URL
@@ -2389,7 +2389,7 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Safe Logging Pattern
 ///
 /// ```rust,no_run
-/// use agpm::git::strip_auth_from_url;
+/// use agpm_cli::git::strip_auth_from_url;
 /// use anyhow::Result;
 ///
 /// fn log_repository_operation(url: &str, operation: &str) -> Result<()> {
@@ -2404,8 +2404,8 @@ pub fn parse_git_url(url: &str) -> Result<(String, String)> {
 /// # Error Context Integration
 ///
 /// ```rust,no_run
-/// use agpm::git::strip_auth_from_url;
-/// use agpm::core::AgpmError;
+/// use agpm_cli::git::strip_auth_from_url;
+/// use agpm_cli::core::AgpmError;
 ///
 /// # async fn operation_example(url: &str) -> anyhow::Result<()> {
 /// match some_git_operation(url).await {

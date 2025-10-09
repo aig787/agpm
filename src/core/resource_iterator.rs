@@ -169,9 +169,9 @@ impl ResourceTypeExt for ResourceType {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use agpm::core::resource_iterator::ResourceIterator;
-/// use agpm::lockfile::LockFile;
-/// use agpm::manifest::Manifest;
+/// use agpm_cli::core::resource_iterator::ResourceIterator;
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::manifest::Manifest;
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {

@@ -217,7 +217,7 @@ impl CliConfig {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::CliConfig;
+    /// use agpm_cli::cli::CliConfig;
     ///
     /// let config = CliConfig::new();
     /// assert_eq!(config.log_level, None);
@@ -605,7 +605,7 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::Cli;
+    /// use agpm_cli::cli::Cli;
     /// use clap::Parser;
     ///
     /// # tokio_test::block_on(async {
@@ -644,7 +644,7 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::Cli;
+    /// use agpm_cli::cli::Cli;
     /// use clap::Parser;
     ///
     /// let cli = Cli::parse_from(&["agpm", "--verbose", "install"]);
@@ -700,7 +700,7 @@ impl Cli {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use agpm::cli::{Cli, CliConfig};
+    /// use agpm_cli::cli::{Cli, CliConfig};
     /// use clap::Parser;
     ///
     /// # tokio_test::block_on(async {
