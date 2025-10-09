@@ -127,17 +127,17 @@ By default, resources install for Claude Code. To target a different tool, add t
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Claude Code agent (default - no type field needed)
+# Claude Code agent (default - no tool field needed)
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 # → Installs to .claude/agents/rust-expert.md
 
 # OpenCode agent (explicit type)
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 # → Installs to .opencode/agent/rust-expert.md
 
 [snippets]
 # Shared snippet (accessible to both tools)
-rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0", type = "agpm" }
+rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0", tool = "agpm" }
 # → Installs to .agpm/snippets/rust-patterns.md
 ```
 
@@ -162,25 +162,25 @@ community = "https://github.com/aig787/agpm-community.git"
 [agents]
 # Install the same agent for both tools
 helper-cc = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }  # Alpha
+helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }  # Alpha
 
 # Rust experts for both
 rust-expert-cc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }  # Alpha
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }  # Alpha
 
 [commands]
 # Deployment commands for both tools
 deploy-cc = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", type = "opencode" }  # Alpha
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", tool = "opencode" }  # Alpha
 
 [mcp-servers]
 # MCP servers (automatically routed to correct config file)
 filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
-filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }  # Alpha
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }  # Alpha
 
 [snippets]
 # Shared snippets usable by both tools
-shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0", type = "agpm" }
+shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0", tool = "agpm" }
 ```
 
 ### Benefits

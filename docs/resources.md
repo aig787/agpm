@@ -25,7 +25,7 @@ AGPM routes resources to different tools based on the `type` field:
 claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
 # Installs to .opencode/agent/helper.md
-opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 ```
 
 ## Resource Categories
@@ -65,13 +65,13 @@ AI assistant configurations with prompts and behavioral definitions.
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 
 # OpenCode - installed as .opencode/agent/rust-expert.md (note: singular "agent")
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 
 # Nested path - installed as .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
 
 # OpenCode nested - installed as .opencode/agent/ai/code-reviewer.md
-code-reviewer-oc = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", type = "opencode" }
+code-reviewer-oc = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", tool = "opencode" }
 
 # Deeply nested - installed as .claude/agents/specialized/rust/expert.md
 rust-specialist = { source = "community", path = "agents/specialized/rust/expert.md", version = "v1.0.0" }
@@ -89,7 +89,7 @@ Reusable code templates and documentation fragments.
 
 **Default Location**: `.agpm/snippets/` ✅ **Stable** (AGPM tool)
 
-**Alternative Location**: `.claude/agpm/snippets/` (explicitly set `type = "claude-code"`)
+**Alternative Location**: `.claude/agpm/snippets/` (explicitly set `tool = "claude-code"`)
 
 **Default Behavior**: Snippets automatically default to the `agpm` tool, meaning they install to `.agpm/snippets/`
 by default. This is because snippets are designed as shared content that can be referenced by resources from multiple
@@ -105,7 +105,7 @@ react-component = { source = "community", path = "snippets/react-component.md", 
 rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
 
 # Claude Code specific: explicitly override to install to .claude/agpm/snippets/
-claude-only = { source = "community", path = "snippets/claude.md", version = "v1.0.0", type = "claude-code" }
+claude-only = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
 
 utils = { source = "local-deps", path = "snippets/utils.md" }
 ```
@@ -125,7 +125,7 @@ Slash commands that extend AI assistant functionality.
 deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
 
 # OpenCode command
-deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", type = "opencode" }
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", tool = "opencode" }
 
 lint = { source = "tools", path = "commands/lint.md", branch = "main" }
 ```
@@ -220,7 +220,7 @@ filesystem = { source = "community", path = "mcp-servers/filesystem.json", versi
 github = { source = "community", path = "mcp-servers/github.json", version = "v1.2.0" }
 
 # OpenCode - merges into opencode.json
-filesystem-oc = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0", type = "opencode" }
+filesystem-oc = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0", tool = "opencode" }
 
 postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 ```

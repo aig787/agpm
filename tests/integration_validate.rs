@@ -760,7 +760,7 @@ community = "https://github.com/test/repo.git"
 
 [snippets]
 # OpenCode doesn't support snippets - should show helpful error
-utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0", type = "opencode" }
+utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0", tool = "opencode" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 
@@ -772,9 +772,9 @@ utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0", 
     assert!(output.stdout.contains("Tool 'opencode' supports:"));
     assert!(output.stdout.contains("💡 Suggestions:"));
     assert!(output.stdout.contains("Snippets work best with the 'agpm' tool"));
-    assert!(output.stdout.contains("Add type='agpm' to this dependency to use shared snippets"));
+    assert!(output.stdout.contains("Add tool='agpm' to this dependency to use shared snippets"));
     assert!(output.stdout.contains("You can fix this by:"));
-    assert!(output.stdout.contains("1. Changing the 'type' field to a supported tool"));
+    assert!(output.stdout.contains("Changing the 'tool' field to a supported tool"));
 }
 
 /// Test validating manifest with unsupported resource type shows alternative tools
@@ -789,7 +789,7 @@ community = "https://github.com/test/repo.git"
 
 [agents]
 # AGPM doesn't support agents - should show which types DO support agents
-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "agpm" }
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "agpm" }
 "#;
     project.write_manifest(manifest_content).await.unwrap();
 

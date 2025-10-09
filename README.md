@@ -62,14 +62,17 @@ agpm init
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Single file - installed at .claude/agents/example.md
+# Claude Code (default) - installed at .claude/agents/example.md
 example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 
-# Nested path - installed at .claude/agents/ai/assistant.md (preserves structure)
+# OpenCode (alpha) - installed at .opencode/agent/example.md
+example-agent-oc = { source = "community", path = "agents/example.md", version = "v1.0.0", tool = "opencode" }
+
+# Nested path (claude-code) - installed at .claude/agents/ai/assistant.md (preserves structure)
 ai-assistant = { source = "community", path = "agents/ai/assistant.md", version = "v1.0.0" }
 
 [snippets]
-# Pattern - each file preserves its source directory structure
+# AGPM shared (default) - installed at .agpm/snippets/react/*.md (each file preserves its source directory structure)
 react-utils = { source = "community", path = "snippets/react/*.md", version = "^1.0.0" }
 ```
 
@@ -292,13 +295,13 @@ tools from a single manifest, enabling shared workflows and infrastructure.
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Claude Code agent (default - no type field needed)
+# Claude Code agent (default - no tool field needed)
 claude-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
-# OpenCode agent (explicit type field) - 🚧 Alpha feature
-opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+# OpenCode agent (explicit tool field) - 🚧 Alpha feature
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 
-# Both tools can share the same source file - AGPM installs to the correct location based on type
+# Both tools can share the same source file - AGPM installs to the correct location based on tool
 
 [snippets]
 # Shared snippets (usable by both tools via references)
@@ -310,7 +313,7 @@ rust-patterns = { source = "community", path = "snippets/rust/*.md", version = "
 1. **Default Behavior**:
    - **Snippets** default to `agpm` (shared infrastructure at `.agpm/snippets/`)
    - **All other resources** default to `claude-code`
-2. **Explicit Routing**: Add `type = "opencode"` or `type = "claude-code"` to override defaults
+2. **Explicit Routing**: Add `tool = "opencode"` or `tool = "claude-code"` to override defaults
 3. **Shared Content**: Snippets use `.agpm/snippets/` by default for cross-tool sharing
 4. **Tool-Specific MCP**: MCP servers automatically merge into the correct configuration file
 
@@ -323,23 +326,23 @@ community = "https://github.com/aig787/agpm-community.git"
 [agents]
 # Rust experts for both tools
 rust-expert-cc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", type = "opencode" }
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 
 [commands]
 # Deployment command for Claude Code
 deploy-cc = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
 # Same command for OpenCode
-deploy-oc = { source = "community", path = "commands/deploy.md", version = "v1.0.0", type = "opencode" }
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v1.0.0", tool = "opencode" }
 
 [mcp-servers]
 # MCP servers for both tools (automatically routed to correct config file)
 filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
-filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }  # 🚧 Alpha
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }  # 🚧 Alpha
 
 [snippets]
 # Snippets default to agpm (shared across all tools)
 shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0" }
-# No type field needed - installs to .agpm/snippets/ by default
+# No tool field needed - installs to .agpm/snippets/ by default
 ```
 
 **Installation Results:**
@@ -412,31 +415,37 @@ community = "https://github.com/aig787/agpm-community.git"
 local = "./local-resources"
 
 [agents]
-# Single file - installed at .claude/agents/rust-expert.md
+# Claude Code (default) - installed at .claude/agents/rust-expert.md
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 
-# Nested path - installed at .claude/agents/ai/code-reviewer.md (preserves structure)
+# OpenCode (alpha) - installed at .opencode/agent/rust-expert.md
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
+
+# Nested path (claude-code) - installed at .claude/agents/ai/code-reviewer.md (preserves structure)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
 
-# Pattern matching - each file preserves its source directory structure
+# Pattern matching (claude-code) - each file preserves its source directory structure
 # agents/ai/assistant.md → .claude/agents/ai/assistant.md
 # agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
 
 [snippets]
-# Single file - installed at .agpm/snippets/react-hooks.md (snippets default to agpm tool)
+# AGPM shared (default) - installed at .agpm/snippets/react-hooks.md
 react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "~1.2.0" }
 
-# Nested pattern - snippets/python/utils.md → .agpm/snippets/python/utils.md
+# Nested pattern (agpm) - snippets/python/utils.md → .agpm/snippets/python/utils.md
 python-tools = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [scripts]
+# Claude Code (default) - installed at .claude/agpm/scripts/build.sh
 build = { source = "local", path = "scripts/build.sh" }
 
 [hooks]
+# Claude Code (default) - merged into .claude/settings.local.json
 pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
 
 [mcp-servers]
+# Claude Code (default) - merged into .mcp.json
 filesystem = { source = "community", path = "mcp/filesystem.json", version = "latest" }
 ```
 

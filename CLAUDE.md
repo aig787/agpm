@@ -363,7 +363,7 @@ Dependencies can specify their target tool:
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 
 # Explicit type for OpenCode
-opencode-agent = { source = "community", path = "agents/helper.md", type = "opencode" }
+opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
 ```
 
 ### Resource Type Support Matrix
@@ -377,7 +377,7 @@ opencode-agent = { source = "community", path = "agents/helper.md", type = "open
 | mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
 | snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
 
-**Note**: Snippets default to `agpm` tool (shared infrastructure). Use `type = "claude-code"` to override.
+**Note**: Snippets default to `agpm` tool (shared infrastructure). Use `tool = "claude-code"` to override.
 
 ### MCP Handler System
 
@@ -435,7 +435,7 @@ review-tools = { source = "community", path = "agents/**/review*.md", version = 
 special = { source = "community", path = "agents/special.md", target = "custom/special.md" }
 
 # OpenCode agent (installs to .opencode/agent/)
-opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 
 [snippets]
 example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }

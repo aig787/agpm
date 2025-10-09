@@ -1358,7 +1358,7 @@ pub struct DetailedDependency {
     /// **Defaults to "claude-code"** for backward compatibility with existing manifests.
     ///
     /// Omitted from TOML serialization when the value is "claude-code" (default).
-    #[serde(default = "default_tool", skip_serializing_if = "is_default_tool", rename = "type")]
+    #[serde(default = "default_tool", skip_serializing_if = "is_default_tool")]
     pub tool: String,
 }
 
@@ -1510,7 +1510,7 @@ impl Manifest {
     /// that can be referenced by resources from different tools. Therefore, snippets
     /// should default to the "agpm" tool type.
     ///
-    /// Users can still explicitly set `type = "claude-code"` for a snippet if they want
+    /// Users can still explicitly set `tool = "claude-code"` for a snippet if they want
     /// it installed to `.claude/agpm/snippets/` instead.
     fn apply_tool_defaults(&mut self) {
         // Apply snippet-specific default: "agpm" instead of "claude-code"
@@ -1900,7 +1900,7 @@ impl Manifest {
                             crate::core::ResourceType::Snippet => {
                                 suggestions.push("Snippets work best with the 'agpm' tool (shared infrastructure)".to_string());
                                 suggestions.push(
-                                    "Add type='agpm' to this dependency to use shared snippets"
+                                    "Add tool='agpm' to this dependency to use shared snippets"
                                         .to_string(),
                                 );
                             }
@@ -1950,7 +1950,7 @@ impl Manifest {
 
                         reason.push_str(
                             "You can fix this by:\n\
-                            1. Changing the 'type' field to a supported tool\n\
+                            1. Changing the 'tool' field to a supported tool\n\
                             2. Using a different resource type\n\
                             3. Removing this dependency from your manifest",
                         );
@@ -3745,7 +3745,7 @@ mod tool_tests {
     fn test_detailed_dependency_tool_parsing() {
         let toml_str = r#"
 [agents]
-opencode-helper = { source = "test_repo", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+opencode-helper = { source = "test_repo", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 "#;
 
         let manifest: Manifest = toml::from_str(toml_str).unwrap();
@@ -3849,7 +3849,7 @@ path = ".custom"
 path = "agents"
 
 [agents]
-test = { source = "test", path = "agents/test.md", version = "v1.0.0", type = "my-custom-type" }
+test = { source = "test", path = "agents/test.md", version = "v1.0.0", tool = "my-custom-type" }
 "#;
 
         let manifest: Result<Manifest, _> = toml::from_str(toml_valid);

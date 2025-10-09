@@ -121,7 +121,7 @@ The dependency resolution system routes resources based on the `type` field:
 helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
 # Explicit: routes to .opencode/agent/ - Alpha
-helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 ```
 
 **Resolution Flow**:
@@ -229,7 +229,7 @@ Handlers are selected based on the dependency's tool type:
 filesystem = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
 
 # Uses OpenCodeMcpHandler → merges into opencode.json - Alpha
-filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }
 ```
 
 ### Configuration Merging Strategy
@@ -374,16 +374,16 @@ tool-specific = **~46% reduction** in total content.
 
 ### Manifest Configuration
 
-Shared snippets use `type = "agpm"`:
+Shared snippets use `tool = "agpm"`:
 
 ```toml
 [snippets]
 # Shared base prompts for all tools
-rust-patterns = { source = "community", path = "snippets/agents/rust-*.md", version = "v1.0.0", type = "agpm" }
+rust-patterns = { source = "community", path = "snippets/agents/rust-*.md", version = "v1.0.0", tool = "agpm" }
 
 # Tool-specific wrappers
 claude-agents = { source = "community", path = "agents/*.md", version = "v1.0.0" }
-opencode-agents = { source = "community", path = "agents/*.md", version = "v1.0.0", type = "opencode" }
+opencode-agents = { source = "community", path = "agents/*.md", version = "v1.0.0", tool = "opencode" }
 ```
 
 ### Design Considerations

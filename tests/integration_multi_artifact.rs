@@ -30,7 +30,7 @@ async fn test_opencode_agent_installation() -> Result<()> {
 test_repo = "{}"
 
 [agents]
-opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }}
+opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -77,7 +77,7 @@ async fn test_opencode_command_installation() -> Result<()> {
 test_repo = "{}"
 
 [commands]
-deploy = {{ source = "test_repo", path = "commands/deploy.md", version = "v1.0.0", type = "opencode" }}
+deploy = {{ source = "test_repo", path = "commands/deploy.md", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -123,7 +123,7 @@ async fn test_opencode_mcp_server_merge() -> Result<()> {
 test_repo = "{}"
 
 [mcp-servers]
-filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", version = "v1.0.0", type = "opencode" }}
+filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -196,11 +196,11 @@ test_repo = "{}"
 
 [agents]
 claude-agent = {{ source = "test_repo", path = "agents/claude-agent.md", version = "v1.0.0" }}
-opencode-agent = {{ source = "test_repo", path = "agents/opencode-agent.md", version = "v1.0.0", type = "opencode" }}
+opencode-agent = {{ source = "test_repo", path = "agents/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
 
 [commands]
 claude-cmd = {{ source = "test_repo", path = "commands/claude-cmd.md", version = "v1.0.0" }}
-opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", version = "v1.0.0", type = "opencode" }}
+opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -248,7 +248,7 @@ async fn test_artifact_type_validation() -> Result<()> {
 test_repo = "{}"
 
 [snippets]
-example = {{ source = "test_repo", path = "snippets/example.md", version = "v1.0.0", type = "opencode" }}
+example = {{ source = "test_repo", path = "snippets/example.md", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -368,7 +368,7 @@ async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
 test_repo = "{}"
 
 [mcp-servers]
-agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", version = "v1.0.0", type = "opencode" }}
+agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -420,7 +420,7 @@ test_repo = "{}"
 
 [agents]
 claude-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.0.0" }}
-opencode-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.0.0", type = "opencode" }}
+opencode-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.0.0", tool = "opencode" }}
 "#,
         repo_url
     );
@@ -467,7 +467,7 @@ async fn test_agpm_artifact_type() -> Result<()> {
 test_repo = "{}"
 
 [snippets]
-config-template = {{ source = "test_repo", path = "snippets/config-template.md", version = "v1.0.0", type = "agpm" }}
+config-template = {{ source = "test_repo", path = "snippets/config-template.md", version = "v1.0.0", tool = "agpm" }}
 "#,
         repo_url
     );

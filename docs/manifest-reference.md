@@ -33,7 +33,7 @@ Each resource table maps a dependency name (key) to either a simple string path 
 | `source` | Only for Git resources | agents/snippets/commands/scripts/hooks/mcp-servers | Name from `[sources]`; omit for local filesystem paths. | Parsed from the `source:` prefix (e.g., `community:...`). |
 | `path` | Yes | All | File path inside the repo (Git) or filesystem path/glob (local). Patterns are detected by `*`, `?`, or `[]`. | Parsed from the middle portion of the spec. |
 | `version` | Default `"main"` for Git | Git resources | Tag, semantic range, `latest`, or branch alias. Used when no explicit `branch`/`rev` are provided. | Parsed from `@value` when using `agpm add dep`. Defaults to `main` if omitted. |
-| `type` | Default varies by resource | All | Target tool: `claude-code`, `opencode`, `agpm`, or custom. **Defaults**: snippets → `agpm`, all others → `claude-code`. Routes resources to tool-specific directories. | Manual edit. |
+| `tool` | Default varies by resource | All | Target tool: `claude-code`, `opencode`, `agpm`, or custom. **Defaults**: snippets → `agpm`, all others → `claude-code`. Routes resources to tool-specific directories. | Manual edit. |
 | `branch` | No | Git resources | Track a branch tip. Overrides `version` when present. Requires manual manifest edit today. | Add manually: `{ branch = "develop" }`. |
 | `rev` | No | Git resources | Exact commit SHA (short or full). Highest precedence when set. | Add manually; not provided by current CLI shorthand. |
 | `command` | MCP servers | MCP | Launch command (e.g., `npx`, `uvx`). | Use inline table or edit manifest. |
@@ -89,9 +89,9 @@ AGPM supports multiple AI coding assistants through configurable tools. Each too
 | `opencode` | `.opencode` | agents, commands, mcp-servers | 🚧 Alpha |
 | `agpm` | `.agpm` | snippets | ✅ Stable |
 
-### Using the Type Field
+### Using the Tool Field
 
-Add `type` to any dependency to route it to a specific tool:
+Add `tool` to any dependency to route it to a specific tool:
 
 ```toml
 [agents]
@@ -99,14 +99,14 @@ Add `type` to any dependency to route it to a specific tool:
 claude-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
 
 # OpenCode: installs to .opencode/agent/helper.md (note: singular "agent") - Alpha
-opencode-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0", type = "opencode" }
+opencode-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
 
 [snippets]
 # Default: snippets install to .agpm/snippets/ (snippets default to agpm, not claude-code)
 shared = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
 
-# Claude Code specific: explicitly set type to install to .claude/agpm/snippets/
-claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", type = "claude-code" }
+# Claude Code specific: explicitly set tool to install to .claude/agpm/snippets/
+claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
 ```
 
 ### Custom Tool Configuration
@@ -137,11 +137,11 @@ MCP servers automatically route to the correct configuration file based on type:
 claude-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
 
 # Merges into opencode.json - Alpha
-opencode-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", type = "opencode" }
+opencode-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }
 ```
 
 ## Recommended Workflow
 
 1. Use `agpm add dep` for initial entries—this ensures naming and defaults are correct.
-2. Edit the generated inline table when you need advanced selectors (`branch`, `rev`, `type`), custom install paths, or MCP launch commands.
+2. Edit the generated inline table when you need advanced selectors (`branch`, `rev`, `tool`), custom install paths, or MCP launch commands.
 3. Re-run `agpm install` (or `agpm validate --resolve`) after manual edits to confirm the manifest parses and resolves correctly.
