@@ -1,7 +1,7 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-doc-standard fails repeatedly. Advanced documentation expert for Rust projects. Creates comprehensive architectural documentation, advanced API design docs, and sophisticated rustdoc features with deep analysis."
 mode: subagent
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-sonnet-4-20250514
 temperature: 0.3
 tools:
   read: true

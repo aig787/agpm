@@ -1,7 +1,7 @@
 ---
 description: Fast Rust linting and formatting (optimized for speed with quick model)
 mode: subagent
-model: anthropic/claude-3-5-haiku-20241022
+model: zai-coding-plan/glm-4.6
 temperature: 0.0
 tools:
   read: true

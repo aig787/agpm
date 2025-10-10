@@ -11,6 +11,21 @@ Review code changes and ensure all related documentation is accurate and up-to-d
 **IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
 - `.agpm/snippets/commands/update-docstrings.md`
 
+## Argument Parsing
+
+Parse the arguments from the command invocation:
+- Arguments received: $ARGUMENTS
+- Parse for flags: `--check-only`, `--auto-update`, `--focus=<module>`
+- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/update-docstrings.md`
+
+## Execution
+
+Based on the parsed arguments:
+- `--check-only`: Report documentation issues without making changes
+- `--auto-update`: Update documentation to match code changes (default)
+- `--focus=<module>`: Focus on specific module (e.g., cli, resolver, source)
+- Use Task tool to delegate to specialized documentation agents
+
 ## Tool-Specific Notes
 
 - This command is designed for OpenCode

@@ -11,6 +11,20 @@ Fact-check all documentation files against the current codebase implementation.
 **IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
 - `.agpm/snippets/commands/fact-check-docs.md`
 
+## Argument Parsing
+
+Parse the arguments from the command invocation:
+- Arguments received: $ARGUMENTS
+- Parse for flags: `--report-only`, `--fix`
+- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/fact-check-docs.md`
+
+## Execution
+
+Based on the parsed arguments:
+- `--report-only`: Report inaccuracies without making changes (default)
+- `--fix`: Fix any inaccuracies found in documentation
+- Systematically verify all documentation files against current implementation
+
 ## Tool-Specific Notes
 
 - This command is designed for OpenCode

@@ -1,7 +1,7 @@
 ---
 description: Advanced linting and code quality fixes. Handles complex clippy warnings and refactoring suggestions. Delegates architectural changes to rust-expert-advanced.
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: zai/glm-4.6
 temperature: 0.2
 tools:
   read: true

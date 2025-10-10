@@ -1,7 +1,7 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-expert-standard fails repeatedly. Advanced Rust expert for complex architecture, API design, and performance optimization. Handles the most challenging Rust development tasks."
 mode: subagent
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-sonnet-4-20250514
 temperature: 0.3
 tools:
   read: true

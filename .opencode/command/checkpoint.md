@@ -11,6 +11,21 @@ Create or restore Git-based checkpoints for safe AI-assisted editing.
 **IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
 - `.agpm/snippets/commands/checkpoint.md`
 
+## Argument Parsing
+
+Parse the arguments from the command invocation:
+- Arguments received: $ARGUMENTS
+- Parse for subcommands: `create`, `list`, `restore`, and their respective arguments
+- Parse for flags: `--message`, `--force`, etc.
+- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/checkpoint.md`
+
+## Execution
+
+Based on the parsed arguments, execute the appropriate checkpoint operation:
+- `create`: Create a new checkpoint with optional message
+- `list`: List available checkpoints
+- `restore [checkpoint]`: Restore a specific checkpoint or latest
+
 ## Tool-Specific Notes
 
 - This command is designed for OpenCode

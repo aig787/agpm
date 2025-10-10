@@ -11,6 +11,21 @@ Review changes and update CLAUDE.md and AGENTS.md to reflect current architectur
 **IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
 - `.agpm/snippets/commands/update-claude.md`
 
+## Argument Parsing
+
+Parse the arguments from the command invocation:
+- Arguments received: $ARGUMENTS
+- Parse for flags: `--check-only`, `--auto-update`
+- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/update-claude.md`
+
+## Execution
+
+Based on the parsed arguments:
+- `--check-only`: Report what needs updating without making changes
+- `--auto-update`: Make necessary updates to CLAUDE.md and AGENTS.md (default)
+- Ensure both files remain under 20,000 characters total
+- Use Task tool for complex architectural documentation updates
+
 ## Tool-Specific Notes
 
 - This command is designed for OpenCode

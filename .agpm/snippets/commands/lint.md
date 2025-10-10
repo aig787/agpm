@@ -72,9 +72,9 @@ Run code quality checks for the AGPM project using specialized Rust agents with 
      - Add module-level documentation where missing
      - Run `cargo doc --all-features --no-deps` to verify documentation
 
-   **For standard checks without --fix:**
-   - Use `rust-linting-standard` for quick analysis
-   - No escalation needed - just report findings
+    **For standard checks without --fix:**
+    - Use `rust-linting-standard` for quick analysis
+    - No escalation needed - just report findings
 
 4. Agent delegation strategy:
    - `rust-linting-standard` (Haiku) → Fast, mechanical fixes → **Escalates if issues remain**

@@ -11,6 +11,22 @@ Automatically create a GitHub pull request with a well-formatted title and descr
 **IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
 - `.agpm/snippets/commands/gh-pr-create.md`
 
+## Argument Parsing
+
+Parse the arguments from the command invocation:
+- Arguments received: $ARGUMENTS
+- Parse for flags: `--base <branch>`, `--draft`
+- Parse for optional PR title (after flags)
+- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/gh-pr-create.md`
+
+## Execution
+
+Based on the parsed arguments:
+- Verify prerequisites (uncommitted changes, remote branch, gh CLI)
+- Determine base branch (from `--base` flag or auto-detection)
+- Create draft or regular PR based on `--draft` flag
+- Use provided title or generate one automatically
+
 ## Tool-Specific Notes
 
 - This command is designed for OpenCode

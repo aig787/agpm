@@ -1,7 +1,7 @@
 ---
 description: Standard Rust troubleshooting expert. Handles common debugging, build issues, dependency problems. Delegates complex issues to rust-troubleshooter-advanced.
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: zai-coding-plan/glm-4.6
 temperature: 0.2
 tools:
   read: true

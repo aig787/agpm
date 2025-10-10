@@ -86,12 +86,27 @@ If `--multi` flag is present:
 
 If no `--multi` flag, proceed with standard single commit process:
 
-2. Parse the arguments provided:
-    - Check for attribution flags: `--co-authored`, `--contributed`, or `--no-attribution`
-    - Check for `--include-untracked` flag to include untracked files (default: exclude untracked)
-    - If paths are specified (e.g., "tests/", ".github/"), only stage and commit changes in those paths
-    - If a commit message is provided, use it (otherwise generate one)
-    - Arguments: $ARGUMENTS
+2. Parse the arguments provided using this convention:
+   ```
+   /commit [flags] [paths...] [-- commit message]
+   ```
+   
+   **Parsing Logic**:
+   - Parse all `--` flags first (e.g., `--multi`, `--dry-run`, `--no-attribution`, `--include-untracked`)
+   - Treat remaining arguments as paths until you hit `--` or run out of arguments
+   - Everything after `--` is the commit message
+   - If no `--` separator and no explicit paths, the last argument may be a commit message
+   
+   **Examples**:
+   ```
+   /commit .opencode                    # path only
+   /commit --multi src/ tests/          # flags + paths
+   /commit src/ -- feat: update cli     # paths + message
+   /commit --no-attribution             # flags only
+   /commit feat: quick fix              # message only
+   ```
+   
+   **Arguments received**: $ARGUMENTS
 
 3. Analyze the relevant changes and determine the commit type:
     - `feat`: New feature or functionality
@@ -132,11 +147,13 @@ If no `--multi` flag, proceed with standard single commit process:
 - `/commit --contributed tests/` - commits tests directory with explicit contribution note
 - `/commit --no-attribution` - commits tracked changes with no attribution
 - `/commit --include-untracked --co-authored` - commits all files including untracked with co-author
-- `/commit --co-authored fix: resolve test failures` - commits with specified message and co-author
-- `/commit --no-attribution fix: manual bugfix` - commits with specified message and no attribution
+- `/commit --co-authored -- fix: resolve test failures` - commits with specified message and co-author
+- `/commit --no-attribution -- fix: manual bugfix` - commits with specified message and no attribution
 - `/commit tests/` - commits specific directory with automatic attribution detection
 - `/commit --include-untracked tests/` - commits specific directory including untracked files
-- `/commit fix: update dependencies` - commits with specified message and automatic attribution
+- `/commit -- fix: update dependencies` - commits with specified message and automatic attribution
+- `/commit .opencode` - commits only changes in .opencode directory
+- `/commit src/ tests/ -- feat: update cli and add tests` - commits specific paths with custom message
 
 ### Multi-Commit Examples
 
@@ -146,6 +163,7 @@ If no `--multi` flag, proceed with standard single commit process:
 - `/commit --multi=2 --no-attribution` - creates 2 commits without attribution
 - `/commit --multi --include-untracked` - creates multiple commits including untracked files
 - `/commit --multi=4 --co-authored` - creates 4 commits with co-author attribution
+- `/commit --multi src/ tests/` - creates multiple commits for specific directories only
 
 ### Multi-Commit Workflow Example
 
@@ -188,4 +206,20 @@ Creating commit 3/3: refactor(resolver): centralize version resolution...
 ✓ Commit 3 created
 
 All 3 commits created successfully!
+```
+
+### Path-Specific Examples
+
+```
+User: /commit .opencode
+
+Claude: Staging changes in .opencode directory...
+[Stages only .opencode/** files]
+✓ Committed: docs: update opencode agents and commands
+
+User: /commit src/ tests/ -- feat: improve cli error handling
+
+Claude: Staging changes in src/ and tests/ directories...
+[Stages src/** and tests/** files]
+✓ Committed: feat: improve cli error handling
 ```
