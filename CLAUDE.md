@@ -108,10 +108,8 @@ src/
 
 ## Development
 
-- Use `Result<T, E>` for errors
-- Test on Windows, macOS, Linux
-- `cargo fmt && cargo clippy && cargo nextest run && cargo test --doc`
-- Handle paths cross-platform
+- **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
+- **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile

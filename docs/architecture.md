@@ -296,20 +296,20 @@ Instead of duplicating content across tool-specific resources, shared snippets a
 
 ```
 .agpm/snippets/                      # Shared content
+├── rust-best-practices.md           # Core principles, mandatory checks, clippy config, cross-platform
+├── rust-cargo-commands.md           # Useful cargo commands reference
 ├── agents/
-│   ├── rust-core-principles.md
-│   ├── rust-cargo-commands.md
 │   └── rust-architecture.md
 └── prompts/
     ├── fix-failing-tests.md
     └── refactor-duplicated-code.md
 
 .claude/agents/
-├── rust-expert-standard.md          # References .agpm/snippets/agents/rust-*.md
+├── rust-expert-standard.md          # References .agpm/snippets/rust-*.md
 └── rust-test-standard.md            # References .agpm/snippets/prompts/fix-*.md
 
 .opencode/agent/
-├── rust-expert-standard.md          # References same .agpm/snippets/agents/rust-*.md
+├── rust-expert-standard.md          # References same .agpm/snippets/rust-*.md
 └── rust-test-standard.md            # References same .agpm/snippets/prompts/fix-*.md
 ```
 
@@ -323,11 +323,6 @@ Agent files reference shared snippets in their frontmatter or content:
 name: rust-expert-standard
 description: Standard Rust expert agent
 ---
-
-**IMPORTANT**: Read and follow the guidelines in these shared snippets:
-- `.agpm/snippets/agents/rust-core-principles.md`
-- `.agpm/snippets/agents/rust-cargo-commands.md`
-- `.agpm/snippets/agents/rust-architecture.md`
 
 [Agent-specific content here...]
 ```

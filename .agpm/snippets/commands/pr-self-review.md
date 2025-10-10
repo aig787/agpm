@@ -2,6 +2,13 @@
 
 Perform a comprehensive pull request **review** for the AGPM project based on the arguments provided.
 
+**IMPORTANT**: Review against the comprehensive coding standards in `.agpm/snippets/rust-best-practices.md` which covers:
+- Code style, formatting, and import guidelines
+- Naming conventions and module organization
+- Error handling, ownership, and type safety patterns
+- Testing, documentation, and dependency management
+- Performance, async/concurrency, and unsafe code guidelines
+
 **IMPORTANT**: This command reviews changes and generates a report - it does NOT create or submit a pull request. It's designed to help you evaluate your changes before you decide to create a PR.
 
 **IMPORTANT**: Batch related operations thoughtfully; schedule tool calls in Claude Code only in parallel when the workflow benefits from it.
@@ -52,7 +59,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - First, run quick checks (cargo fmt -- --check, clippy, nextest run)
    - Then use the Task tool to delegate to specialized agents IN PARALLEL:
      * Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
-     * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and best practices
+     * Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and adherence to `.agpm/snippets/rust-best-practices.md`
      * Use Task with subagent_type="rust-test-standard" to analyze test coverage, quality, and isolation (TestProject usage)
      * Use Task with subagent_type="rust-doc-standard" to review documentation completeness
      * Only escalate to advanced agents (rust-expert-advanced, rust-troubleshooter-advanced) if initial review finds complex issues
@@ -61,8 +68,8 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      * This prevents race conditions in parallel CI test execution
    - Example Task invocation:
      ```
-     Task(description="Review code quality", 
-          prompt="Review the changed files for Rust best practices, error handling, and architecture...", 
+     Task(description="Review code quality",
+          prompt="Review the changed files against .agpm/snippets/rust-best-practices.md covering imports, naming, error handling, ownership, and architecture...",
           subagent_type="rust-expert-standard")
      ```
    - Run full test suite and doc build IN PARALLEL:
@@ -74,8 +81,8 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
     **Security Review (--security)**:
     - Use Task with subagent_type="rust-expert-standard" with security-focused prompt:
       ```
-      Task(description="Security review", 
-           prompt="Review for security issues: credentials in code, input validation, path traversal, unsafe operations, Windows path handling...", 
+      Task(description="Security review",
+           prompt="Review for security issues per .agpm/snippets/rust-best-practices.md: credentials in code, input validation, path traversal, unsafe operations, Windows path handling...",
            subagent_type="rust-expert-standard")
       ```
     - Additionally run targeted Grep searches IN PARALLEL:
@@ -91,7 +98,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
     - Use Task with subagent_type="rust-expert-standard" with performance-focused prompt:
       ```
       Task(description="Performance review",
-           prompt="Review for performance issues: blocking operations in async code, unnecessary allocations, algorithmic complexity, lock contention, resource cleanup...",
+           prompt="Review for performance issues per .agpm/snippets/rust-best-practices.md: blocking operations in async code, unnecessary allocations, algorithmic complexity, lock contention, resource cleanup...",
            subagent_type="rust-expert-standard")
       ```
     - Additionally check for specific anti-patterns:
@@ -105,9 +112,8 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 4. Manual review based on these key areas:
 
    **Code Quality**:
-   - Rust best practices (Result usage, ownership, borrowing)
+   - Adherence to `.agpm/snippets/rust-best-practices.md` (imports, naming, error handling, ownership)
    - DRY principles and code clarity
-   - Comprehensive error handling
    - Cross-platform compatibility
    - Unnecessary renames (e.g., `thing()` → `get_thing()` without justification)
 
