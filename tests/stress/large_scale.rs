@@ -3,8 +3,8 @@
 use agpm_cli::cache::Cache;
 use agpm_cli::git::command_builder::GitCommand;
 use agpm_cli::installer::{ResourceFilter, install_resources};
-use agpm_cli::lockfile::{LockFile, LockedResource};
-use agpm_cli::manifest::Manifest;
+use agpm_cli::manifest::{DetailedDependency, Manifest, ResourceDependency};
+use agpm_cli::resolver::DependencyResolver;
 use agpm_cli::test_utils::init_test_logging;
 use agpm_cli::utils::progress::MultiPhaseProgress;
 use anyhow::Result;
@@ -35,37 +35,48 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     // Create cache
     let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
-    // Create lockfile with 500 agents total (100 from each repo)
-    let mut lockfile = LockFile::new();
-    let mut total_agents = 0;
+    // Build manifest with all sources and agents
+    let mut manifest = Manifest::new();
 
+    // Add all sources
     for (repo_idx, repo_url) in repo_urls.iter().enumerate() {
+        manifest.sources.insert(format!("repo_{}", repo_idx), repo_url.clone());
+    }
+
+    // Add all agents
+    let mut total_agents = 0;
+    for (repo_idx, _) in repo_urls.iter().enumerate() {
         for i in 0..100 {
-            lockfile.agents.push(LockedResource {
-                name: format!("repo{}_agent_{:03}", repo_idx, i),
-                source: Some(format!("repo_{}", repo_idx)),
-                url: Some(repo_url.clone()),
-                path: format!("agents/agent_{:03}.md", i),
-                version: Some(
-                    if i % 3 == 0 {
-                        "v1.0.0"
-                    } else {
-                        "v2.0.0"
-                    }
-                    .to_string(),
-                ),
-                resolved_commit: None,
-                checksum: format!("sha256:r{}a{}", repo_idx, i),
-                installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
-                dependencies: vec![],
-                resource_type: agpm_cli::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
-            });
+            manifest.agents.insert(
+                format!("repo{}_agent_{:03}", repo_idx, i),
+                ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: Some(format!("repo_{}", repo_idx)),
+                    path: format!("agents/agent_{:03}.md", i),
+                    version: Some(
+                        if i % 3 == 0 {
+                            "v1.0.0"
+                        } else {
+                            "v2.0.0"
+                        }
+                        .to_string(),
+                    ),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
+                    dependencies: None,
+                    tool: "claude-code".to_string(),
+                })),
+            );
             total_agents += 1;
         }
     }
 
-    let manifest = Manifest::new();
+    // Resolve to lockfile
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("🚀 Starting heavy stress test with {} agents", total_agents);
@@ -267,30 +278,41 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // Create cache
     let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
 
-    // First install: Create lockfile with 500 agents at v1.0.0
-    let mut lockfile_v1 = LockFile::new();
-    let mut total_agents = 0;
+    // Build manifest v1.0.0
+    let mut manifest_v1 = Manifest::new();
 
+    // Add all sources
     for (repo_idx, repo_url) in repo_urls.iter().enumerate() {
+        manifest_v1.sources.insert(format!("repo_{}", repo_idx), repo_url.clone());
+    }
+
+    // Add all agents at v1.0.0
+    let mut total_agents = 0;
+    for (repo_idx, _) in repo_urls.iter().enumerate() {
         for i in 0..100 {
-            lockfile_v1.agents.push(LockedResource {
-                name: format!("repo{}_agent_{:03}", repo_idx, i),
-                source: Some(format!("repo_{}", repo_idx)),
-                url: Some(repo_url.clone()),
-                path: format!("agents/agent_{:03}.md", i),
-                version: Some("v1.0.0".to_string()),
-                resolved_commit: None,
-                checksum: format!("sha256:r{}a{}v1", repo_idx, i),
-                installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
-                dependencies: vec![],
-                resource_type: agpm_cli::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
-            });
+            manifest_v1.agents.insert(
+                format!("repo{}_agent_{:03}", repo_idx, i),
+                ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: Some(format!("repo_{}", repo_idx)),
+                    path: format!("agents/agent_{:03}.md", i),
+                    version: Some("v1.0.0".to_string()),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
+                    dependencies: None,
+                    tool: "claude-code".to_string(),
+                })),
+            );
             total_agents += 1;
         }
     }
 
-    let manifest = Manifest::new();
+    // Resolve to lockfile
+    let mut resolver_v1 = DependencyResolver::with_cache(manifest_v1.clone(), cache.clone());
+    let lockfile_v1 = resolver_v1.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("📦 Installing initial version (v1.0.0) of {} agents", total_agents);
@@ -299,7 +321,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     let (count, _) = install_resources(
         ResourceFilter::All,
         &lockfile_v1,
-        &manifest,
+        &manifest_v1,
         &project_dir,
         cache.clone(),
         false,
@@ -315,26 +337,39 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // Don't clean up worktrees between installs - they're reusable
     // cache.cleanup_all_worktrees().await?;
 
-    // Now update: Create lockfile with all 500 agents at v2.0.0
-    let mut lockfile_v2 = LockFile::new();
+    // Build manifest v2.0.0
+    let mut manifest_v2 = Manifest::new();
 
+    // Add all sources
     for (repo_idx, repo_url) in repo_urls.iter().enumerate() {
+        manifest_v2.sources.insert(format!("repo_{}", repo_idx), repo_url.clone());
+    }
+
+    // Add all agents at v2.0.0
+    for (repo_idx, _) in repo_urls.iter().enumerate() {
         for i in 0..100 {
-            lockfile_v2.agents.push(LockedResource {
-                name: format!("repo{}_agent_{:03}", repo_idx, i),
-                source: Some(format!("repo_{}", repo_idx)),
-                url: Some(repo_url.clone()),
-                path: format!("agents/agent_{:03}.md", i),
-                version: Some("v2.0.0".to_string()),
-                resolved_commit: None,
-                checksum: format!("sha256:r{}a{}v2", repo_idx, i),
-                installed_at: format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i),
-                dependencies: vec![],
-                resource_type: agpm_cli::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
-            });
+            manifest_v2.agents.insert(
+                format!("repo{}_agent_{:03}", repo_idx, i),
+                ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: Some(format!("repo_{}", repo_idx)),
+                    path: format!("agents/agent_{:03}.md", i),
+                    version: Some("v2.0.0".to_string()),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
+                    dependencies: None,
+                    tool: "claude-code".to_string(),
+                })),
+            );
         }
     }
+
+    // Resolve to lockfile
+    let mut resolver_v2 = DependencyResolver::with_cache(manifest_v2.clone(), cache.clone());
+    let lockfile_v2 = resolver_v2.resolve().await?;
 
     let progress2 = Arc::new(MultiPhaseProgress::new(false));
 
@@ -344,7 +379,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     let (update_count, _) = install_resources(
         ResourceFilter::All,
         &lockfile_v2,
-        &manifest,
+        &manifest_v2,
         &project_dir,
         cache.clone(),
         false,
@@ -354,11 +389,13 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     .await?;
 
     let update_duration = start_update.elapsed();
-    assert_eq!(update_count, total_agents);
+    // Only agents 0-4 from each repo have different content in v2.0.0 (see setup_large_test_repository)
+    // So only 5 agents * 5 repos = 25 agents actually get updated
+    assert_eq!(update_count, 25, "Should update only the 25 agents with actual content changes");
 
-    println!("✅ Successfully updated {} agents in {:?}", total_agents, update_duration);
-    println!("   Average: {:?} per agent", update_duration / total_agents as u32);
-    println!("   Rate: {:.1} agents/second", total_agents as f64 / update_duration.as_secs_f64());
+    println!("✅ Successfully updated {} agents (25 with content changes) in {:?}", total_agents, update_duration);
+    println!("   Average: {:?} per agent", update_duration / update_count as u32);
+    println!("   Rate: {:.1} agents/second", update_count as f64 / update_duration.as_secs_f64());
 
     // Verify files are updated (check a sample)
     for repo_idx in 0..5 {
@@ -417,25 +454,45 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     repo_urls.push("https://github.com/aig787/agpm-community.git".to_string());
 
     let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-    let mut lockfile = LockFile::new();
+
+    // Build manifest
+    let mut manifest = Manifest::new();
+
+    // Add local sources
+    for repo_idx in 0..2 {
+        manifest.sources.insert(
+            format!("local_repo_{}", repo_idx),
+            repo_urls[repo_idx].clone(),
+        );
+    }
+
+    // Add community source
+    manifest.sources.insert(
+        "community".to_string(),
+        "https://github.com/aig787/agpm-community.git".to_string(),
+    );
+
     let mut total_resources = 0;
 
-    // Add 50 agents from each local repo (100 total from local)
-    for (repo_idx, repo_url) in repo_urls.iter().take(2).enumerate() {
+    // Add 50 agents from each local repo
+    for repo_idx in 0..2 {
         for i in 0..50 {
-            lockfile.agents.push(LockedResource {
-                name: format!("local_repo{}_agent_{:03}", repo_idx, i),
-                source: Some(format!("local_repo_{}", repo_idx)),
-                url: Some(repo_url.clone()),
-                path: format!("agents/agent_{:03}.md", i),
-                version: Some("v1.0.0".to_string()),
-                resolved_commit: None,
-                checksum: format!("sha256:lr{}a{}", repo_idx, i),
-                installed_at: format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i),
-                dependencies: vec![],
-                resource_type: agpm_cli::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
-            });
+            manifest.agents.insert(
+                format!("local_repo{}_agent_{:03}", repo_idx, i),
+                ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: Some(format!("local_repo_{}", repo_idx)),
+                    path: format!("agents/agent_{:03}.md", i),
+                    version: Some("v1.0.0".to_string()),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: Some(format!("local_repo{}_agent_{:03}.md", repo_idx, i)),
+                    dependencies: None,
+                    tool: "claude-code".to_string(),
+                })),
+            );
             total_resources += 1;
         }
     }
@@ -455,23 +512,28 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     ];
 
     for (idx, agent_path) in community_agents.iter().enumerate() {
-        lockfile.agents.push(LockedResource {
-            name: format!("community_agent_{}", idx),
-            source: Some("community".to_string()),
-            url: Some("https://github.com/aig787/agpm-community.git".to_string()),
-            path: agent_path.to_string(),
-            version: None, // Use main branch
-            resolved_commit: None,
-            checksum: format!("sha256:community_{}", idx),
-            installed_at: format!(".claude/agents/community_agent_{}.md", idx),
-            dependencies: vec![],
-            resource_type: agpm_cli::core::ResourceType::Agent,
-            tool: "claude-code".to_string(),
-        });
+        manifest.agents.insert(
+            format!("community_agent_{}", idx),
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: agent_path.to_string(),
+                version: Some("main".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some(format!("community_agent_{}.md", idx)),
+                dependencies: None,
+                tool: "claude-code".to_string(),
+            })),
+        );
         total_resources += 1;
     }
 
-    let manifest = Manifest::new();
+    // Resolve to lockfile
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!(
@@ -530,7 +592,13 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     fs::create_dir_all(&project_dir).await?;
 
     let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-    let mut lockfile = LockFile::new();
+
+    // Build manifest
+    let mut manifest = Manifest::new();
+    manifest.sources.insert(
+        "community".to_string(),
+        "https://github.com/aig787/agpm-community.git".to_string(),
+    );
 
     // All available agents from the setup_project.sh script
     let community_agents = [
@@ -597,23 +665,29 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     ];
 
     for (name, path) in community_agents.iter() {
-        lockfile.agents.push(LockedResource {
-            name: name.to_string(),
-            source: Some("community".to_string()),
-            url: Some("https://github.com/aig787/agpm-community.git".to_string()),
-            path: path.to_string(),
-            version: None, // Use main branch
-            resolved_commit: None,
-            checksum: format!("sha256:community_{}", name),
-            installed_at: format!(".claude/agents/{}.md", name),
-            dependencies: vec![],
-            resource_type: agpm_cli::core::ResourceType::Agent,
-            tool: "claude-code".to_string(),
-        });
+        manifest.agents.insert(
+            name.to_string(),
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: path.to_string(),
+                version: Some("main".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some(format!("{}.md", name)),
+                dependencies: None,
+                tool: "claude-code".to_string(),
+            })),
+        );
     }
 
     let total_agents = community_agents.len();
-    let manifest = Manifest::new();
+
+    // Resolve to lockfile
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     println!("📦 Testing parallel checkout from agpm-community repository");
@@ -678,7 +752,13 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     tokio::fs::create_dir_all(&project_dir).await?;
 
     let cache = Cache::with_dir(temp_dir.path().join("cache"))?;
-    let mut lockfile = LockFile::new();
+
+    // Build manifest
+    let mut manifest = Manifest::new();
+    manifest.sources.insert(
+        "community".to_string(),
+        "https://github.com/aig787/agpm-community.git".to_string(),
+    );
 
     // The 15 agents available in agpm-community
     let community_agents = [
@@ -752,29 +832,33 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         // Create unique name for each instance to handle collisions
         let unique_agent_name = format!("{}-{:03}", agent_name_base, i);
 
-        // Create unique installed_at path with suffix
+        // Create unique installed_at path with suffix using target
         let unique_filename = format!("{}-{:03}.md", agent_name_base, i);
 
-        let resource = LockedResource {
-            name: unique_agent_name.clone(),
-            source: Some("community".to_string()),
-            url: Some("https://github.com/aig787/agpm-community.git".to_string()),
-            path: agent_path.to_string(),
-            version: Some("main".to_string()),
-            resolved_commit: Some("main".to_string()), // Will be resolved during installation
-            checksum: "sha256:placeholder".to_string(), // Will be computed during installation
-            installed_at: format!(".claude/agents/{}", unique_filename),
-            dependencies: vec![],
-            resource_type: agpm_cli::core::ResourceType::Agent,
-            tool: "claude-code".to_string(),
-        };
-
-        lockfile.agents.push(resource);
+        manifest.agents.insert(
+            unique_agent_name.clone(),
+            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: Some("community".to_string()),
+                path: agent_path.to_string(),
+                version: Some("main".to_string()),
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: None,
+                filename: Some(unique_filename),
+                dependencies: None,
+                tool: "claude-code".to_string(),
+            })),
+        );
     }
+
+    // Resolve to lockfile
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let lockfile = resolver.resolve().await?;
 
     // Install all dependencies in parallel
     let start = std::time::Instant::now();
-    let manifest = Manifest::new();
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
     let (_, _) = install_resources(
