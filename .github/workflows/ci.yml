@@ -92,6 +92,22 @@ jobs:
       - name: Run doctests
         run: cargo test --doc --verbose
 
+  stress:
+    name: Stress Tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, windows-11-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run stress tests
+        run: cargo test --test stress --verbose
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
