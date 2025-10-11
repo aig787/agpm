@@ -15,7 +15,6 @@
 //!
 //! # Modules
 //!
-//! - `agent` - Agent and snippet manifest structures for resource metadata
 //! - `global` - Global configuration management with authentication token support
 //! - `parser` - Generic TOML parsing utilities with error context
 //!
@@ -155,27 +154,6 @@
 //! # }
 //! ```
 //!
-//! ## Parsing Resource Metadata
-//!
-//! ```rust,no_run
-//! use agpm_cli::config::{parse_config, AgentManifest};
-//! use std::path::Path;
-//!
-//! # fn example() -> anyhow::Result<()> {
-//! // Parse agent manifest from TOML file
-//! let agent: AgentManifest = parse_config(Path::new("agent.toml"))?;
-//!
-//! println!("Agent: {} by {}",
-//!          agent.metadata.name,
-//!          agent.metadata.author);
-//!
-//! if let Some(requirements) = &agent.requirements {
-//!     println!("Requires AGPM: {:?}", requirements.agpm_version);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
 //! ## Source Resolution with Authentication
 //!
 //! ```rust,no_run
@@ -204,22 +182,11 @@
 //! # }
 //! ```
 
-mod agent;
 mod global;
 mod parser;
 
-pub use agent::{
-    AgentManifest, AgentMetadata, Dependency, Requirements, SnippetContent, SnippetManifest,
-    SnippetMetadata,
-};
 pub use global::{GlobalConfig, GlobalConfigManager};
 pub use parser::parse_config;
-
-// Type aliases for cleaner code
-/// Type alias for agent configuration using the `AgentManifest` structure
-pub type AgentConfig = AgentManifest;
-/// Type alias for snippet configuration using the `SnippetManifest` structure  
-pub type SnippetConfig = SnippetManifest;
 
 use anyhow::Result;
 use std::path::PathBuf;

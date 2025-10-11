@@ -1,10 +1,8 @@
 use predicates::prelude::*;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::ManifestFixture;
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::ManifestFixture;
 
 /// Test listing installed resources from lockfile
 #[tokio::test]
@@ -768,10 +766,10 @@ async fn test_list_empty_project() {
     let project = TestProject::new().await.unwrap();
 
     // Create minimal manifest with no dependencies
-    let minimal_manifest = r#"[sources]
-official = "https://github.com/example-org/agpm-official.git"
-"#;
-    project.write_manifest(minimal_manifest).await.unwrap();
+    let minimal_manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .build();
+    project.write_manifest(&minimal_manifest).await.unwrap();
 
     // Create empty lockfile
     let empty_lockfile = r#"# Auto-generated lockfile - DO NOT EDIT

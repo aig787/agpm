@@ -5,8 +5,7 @@
 
 use anyhow::Result;
 
-mod common;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Test basic transitive dependency resolution with real Git repos
 #[tokio::test]
@@ -54,17 +53,12 @@ This agent depends on the helper agent.
 
     // Create manifest that only references the main agent (not the helper)
     let source_url = community_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"
-[sources]
-community = "{source_url}"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("main-app", "community", "agents/main-app.md")
+        .build();
 
-[agents]
-main-app = {{ source = "community", path = "agents/main-app.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install
     project.run_agpm(&["install"])?;
@@ -160,19 +154,13 @@ Uses utils from same source
     // Create manifest referencing both top-level resources
     let source1_url = source1_repo.bare_file_url(project.sources_path())?;
     let source2_url = source2_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"
-[sources]
-source1 = "{source1_url}"
-source2 = "{source2_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("source1", &source1_url), ("source2", &source2_url)])
+        .add_standard_agent("app", "source1", "agents/app.md")
+        .add_standard_agent("tool", "source2", "agents/tool.md")
+        .build();
 
-[agents]
-app = {{ source = "source1", path = "agents/app.md", version = "v1.0.0" }}
-tool = {{ source = "source2", path = "agents/tool.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install - currently this fails with a path conflict error
     // because both "utils" transitive deps resolve to .claude/agents/utils.md
@@ -259,17 +247,12 @@ Depends on Agent A (creates cycle)
 
     // Create manifest that references agent-a
     let source_url = repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"
-[sources]
-community = "{source_url}"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("agent-a", "community", "agents/agent-a.md")
+        .build();
 
-[agents]
-agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install - should fail with cycle detection
     let output = project.run_agpm(&["install"])?;
@@ -368,17 +351,12 @@ Depends on both Agent B and Agent C
 
     // Create manifest that references agent-a
     let source_url = repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"
-[sources]
-community = "{source_url}"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_standard_agent("agent-a", "community", "agents/agent-a.md")
+        .build();
 
-[agents]
-agent-a = {{ source = "community", path = "agents/agent-a.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install - should succeed
     let output = project.run_agpm(&["install"])?;

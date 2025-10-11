@@ -2,8 +2,7 @@ use anyhow::Result;
 use serde_json::Value;
 use tokio::fs;
 
-mod common;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 #[tokio::test]
 async fn test_hooks_install_and_format() -> Result<()> {
@@ -42,17 +41,11 @@ async fn test_hooks_install_and_format() -> Result<()> {
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with both hooks
-    let manifest_content = format!(
-        r#"
-[sources]
-hooks = "{}"
-
-[hooks]
-session-hook = {{ source = "hooks", path = "hooks/session-start.json" }}
-tool-hook = {{ source = "hooks", path = "hooks/pre-tool-use.json" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("hooks", &source_url)
+        .add_hook("session-hook", |d| d.source("hooks").path("hooks/session-start.json"))
+        .add_hook("tool-hook", |d| d.source("hooks").path("hooks/pre-tool-use.json"))
+        .build();
     project.write_manifest(&manifest_content).await?;
 
     // Run install
@@ -122,17 +115,11 @@ async fn test_hooks_deduplication() -> Result<()> {
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with both identical hooks
-    let manifest_content = format!(
-        r#"
-[sources]
-hooks = "{}"
-
-[hooks]
-first-hook = {{ source = "hooks", path = "hooks/hook1.json" }}
-second-hook = {{ source = "hooks", path = "hooks/hook2.json" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("hooks", &source_url)
+        .add_hook("first-hook", |d| d.source("hooks").path("hooks/hook1.json"))
+        .add_hook("second-hook", |d| d.source("hooks").path("hooks/hook2.json"))
+        .build();
     project.write_manifest(&manifest_content).await?;
 
     // Run install
@@ -184,16 +171,10 @@ async fn test_hooks_unknown_event_type() -> Result<()> {
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with unknown event hook
-    let manifest_content = format!(
-        r#"
-[sources]
-hooks = "{}"
-
-[hooks]
-future-hook = {{ source = "hooks", path = "hooks/future-hook.json" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("hooks", &source_url)
+        .add_hook("future-hook", |d| d.source("hooks").path("hooks/future-hook.json"))
+        .build();
     project.write_manifest(&manifest_content).await?;
 
     // Run install
@@ -286,16 +267,10 @@ async fn test_hooks_no_change_no_message() -> Result<()> {
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest
-    let manifest_content = format!(
-        r#"
-[sources]
-hooks = "{}"
-
-[hooks]
-session-hook = {{ source = "hooks", path = "hooks/session-start.json" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("hooks", &source_url)
+        .add_hook("session-hook", |d| d.source("hooks").path("hooks/session-start.json"))
+        .build();
     project.write_manifest(&manifest_content).await?;
 
     // First install - should configure hooks and show message

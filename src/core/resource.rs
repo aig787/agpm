@@ -497,35 +497,6 @@ pub trait Resource {
     /// ```
     fn description(&self) -> Option<&str>;
 
-    /// Get the list of dependencies required by this resource
-    ///
-    /// Returns dependencies that must be installed before this resource
-    /// can function properly. Dependencies are resolved automatically
-    /// during installation.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(dependencies)` if the resource has dependencies
-    /// - `None` if the resource has no dependencies
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::core::Resource;
-    ///
-    /// fn check_dependencies(resource: &dyn Resource) {
-    ///     if let Some(deps) = resource.dependencies() {
-    ///         println!("{} has {} dependencies", resource.name(), deps.len());
-    ///         for dep in deps {
-    ///             // Process dependency...
-    ///         }
-    ///     } else {
-    ///         println!("{} has no dependencies", resource.name());
-    ///     }
-    /// }
-    /// ```
-    fn dependencies(&self) -> Option<&[crate::config::Dependency]>;
-
     /// Validate the resource structure and content
     ///
     /// Performs comprehensive validation of the resource including:

@@ -1,4 +1,4 @@
-.PHONY: build release test clean fmt check coverage install help
+.PHONY: build release test test-stress test-stress-verbose test-all clean fmt check coverage install help
 
 # Default target
 all: build
@@ -11,18 +11,40 @@ build:
 release:
 	cargo build --release
 
-# Run all tests (nextest + doc tests)
+# Run integration tests (fast, runs in CI)
 test:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
 	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
-	cargo nextest run
+	cargo nextest run --test integration
+	cargo test --doc
+
+# Run stress tests (slow, manual execution only)
+test-stress:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	@echo "Running stress tests (this may take several minutes)..."
+	cargo nextest run --test stress
+
+# Run stress tests with verbose output
+test-stress-verbose:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	@echo "Running stress tests with verbose output..."
+	RUST_LOG=debug cargo test --test stress -- --nocapture
+
+# Run all tests (integration + stress + doc tests)
+test-all:
+	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
+	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
+	cargo nextest run --test integration
+	cargo nextest run --test stress
 	cargo test --doc
 
 # Run tests with verbose output
 test-verbose:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
 	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
-	RUST_LOG=debug cargo nextest run --nocapture
+	RUST_LOG=debug cargo nextest run --test integration --nocapture
 	RUST_LOG=debug cargo test --doc -- --nocapture
 
 # Clean build artifacts
@@ -193,23 +215,39 @@ dist-build:
 # Display help
 help:
 	@echo "AGPM Makefile Commands:"
+	@echo ""
+	@echo "Build:"
 	@echo "  make build         - Build in debug mode"
 	@echo "  make release       - Build in release mode"
-	@echo "  make test          - Run all tests"
 	@echo "  make clean         - Clean build artifacts"
+	@echo ""
+	@echo "Testing:"
+	@echo "  make test          - Run integration tests (fast, CI default)"
+	@echo "  make test-stress   - Run stress tests (slow, manual only)"
+	@echo "  make test-all      - Run all tests (integration + stress + doc)"
+	@echo "  make test-verbose  - Run integration tests with verbose output"
+	@echo "  make test-stress-verbose - Run stress tests with verbose output"
+	@echo "  make coverage      - Run tests with coverage report"
+	@echo ""
+	@echo "Code Quality:"
 	@echo "  make fmt           - Format code"
 	@echo "  make lint          - Run clippy linter"
-	@echo "  make check         - Run fmt-check, lint, and tests"
-	@echo "  make coverage      - Run tests with coverage report"
+	@echo "  make check         - Run fmt-check, lint, and integration tests"
+	@echo ""
+	@echo "Development:"
 	@echo "  make install       - Install binary locally"
 	@echo "  make run           - Run the binary"
 	@echo "  make watch         - Watch and rebuild on changes"
+	@echo ""
+	@echo "Cross-compilation:"
 	@echo "  make cross-all     - Cross-compile for the other two platforms"
-	@echo "  make test-cross-all - Run tests for all cross-compilation targets"
 	@echo "  make cross-windows - Cross-compile for Windows"
 	@echo "  make cross-linux   - Cross-compile for Linux"
 	@echo "  make cross-macos   - Cross-compile for macOS"
+	@echo ""
+	@echo "Distribution:"
 	@echo "  make dist-setup    - Install cargo-dist tool"
 	@echo "  make dist-plan     - Test cargo-dist configuration"
 	@echo "  make dist-build    - Generate cargo-dist artifacts locally"
+	@echo ""
 	@echo "  make help          - Show this help message"

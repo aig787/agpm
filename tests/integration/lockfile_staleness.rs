@@ -1,9 +1,6 @@
 use anyhow::Result;
 
-mod common;
-use common::TestProject;
-
-mod fixtures;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Test that install auto-updates lockfile when dependency is missing (Cargo-style behavior)
 #[tokio::test]
@@ -18,16 +15,11 @@ async fn test_install_auto_updates_missing_dependency() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with two agents
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "v1.0.0" }}
-agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_standard_agent("agent-one", "test-source", "agents/agent-one.md")
+        .add_standard_agent("agent-two", "test-source", "agents/agent-two.md")
+        .build();
     project.write_manifest(&manifest).await?;
 
     // Install first to create lockfile
@@ -84,15 +76,10 @@ async fn test_install_frozen_detects_version_mismatch() -> Result<()> {
     source_repo.tag_version("v2.0.0")?;
 
     // Create manifest with v1.0.0
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
+        .build();
     project.write_manifest(&manifest).await?;
 
     // Install v1.0.0
@@ -140,16 +127,11 @@ async fn test_install_detects_removed_dependency() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest with two agents
-    let manifest_two_agents = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "v1.0.0" }}
-agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest_two_agents = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_standard_agent("agent-one", "test-source", "agents/agent-one.md")
+        .add_standard_agent("agent-two", "test-source", "agents/agent-two.md")
+        .build();
     project.write_manifest(&manifest_two_agents).await?;
 
     // Install both agents
@@ -157,15 +139,10 @@ agent-two = {{ source = "test-source", path = "agents/agent-two.md", version = "
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Remove agent-two from manifest (simulating it becoming only a transitive dependency)
-    let manifest_one_agent = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-agent-one = {{ source = "test-source", path = "agents/agent-one.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest_one_agent = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_standard_agent("agent-one", "test-source", "agents/agent-one.md")
+        .build();
     project.write_manifest(&manifest_one_agent).await?;
 
     // Try to install with lockfile containing extra entry in CI mode
@@ -194,15 +171,14 @@ async fn test_install_detects_path_change() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     // Create manifest pointing to old path
-    let manifest_old = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/old-path.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest_old = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_agent("test-agent", |d| {
+            d.source("test-source")
+                .path("agents/old-path.md")
+                .version("v1.0.0")
+        })
+        .build();
     project.write_manifest(&manifest_old).await?;
 
     // Install with old path
@@ -249,15 +225,10 @@ async fn test_install_detects_source_url_change() -> Result<()> {
     new_repo.tag_version("v1.0.0")?;
 
     // Create manifest pointing to old repo
-    let manifest_old = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        old_repo.file_url()
-    );
+    let manifest_old = ManifestBuilder::new()
+        .add_source("test-source", &old_repo.file_url())
+        .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
+        .build();
     project.write_manifest(&manifest_old).await?;
 
     // Install from old repo
@@ -265,15 +236,10 @@ test-agent = {{ source = "test-source", path = "agents/test-agent.md", version =
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Update manifest to point to new repo
-    let manifest_new = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        new_repo.file_url()
-    );
+    let manifest_new = ManifestBuilder::new()
+        .add_source("test-source", &new_repo.file_url())
+        .add_standard_agent("test-agent", "test-source", "agents/test-agent.md")
+        .build();
     project.write_manifest(&manifest_new).await?;
 
     // --frozen mode should fail on source URL change (security concern)
@@ -303,15 +269,14 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
     source_repo.git.ensure_branch("main")?;
 
     // Create manifest
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "main" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_agent("test-agent", |d| {
+            d.source("test-source")
+                .path("agents/test-agent.md")
+                .version("main")
+        })
+        .build();
     project.write_manifest(&manifest).await?;
 
     // First do a normal install to create a valid lockfile
@@ -368,15 +333,14 @@ async fn test_install_allows_branch_references() -> Result<()> {
     let bare_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest using 'main' branch
-    let manifest = format!(
-        r#"[sources]
-test-source = "{}"
-
-[agents]
-test-agent = {{ source = "test-source", path = "agents/test-agent.md", version = "main" }}
-"#,
-        bare_url
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-source", &bare_url)
+        .add_agent("test-agent", |d| {
+            d.source("test-source")
+                .path("agents/test-agent.md")
+                .version("main")
+        })
+        .build();
     project.write_manifest(&manifest).await?;
 
     // Install to create lockfile

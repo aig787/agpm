@@ -41,22 +41,6 @@
 //! # }
 //! ```
 //!
-//! ## With Complex Types
-//!
-//! ```rust,no_run
-//! use agpm_cli::config::{parse_config, AgentManifest, SnippetManifest};
-//! use std::path::Path;
-//!
-//! # fn example() -> anyhow::Result<()> {
-//! // Parse agent configuration
-//! let agent: AgentManifest = parse_config(Path::new("agent.toml"))?;
-//!
-//! // Parse snippet configuration  
-//! let snippet: SnippetManifest = parse_config(Path::new("snippet.toml"))?;
-//! # Ok(())
-//! # }
-//! ```
-//!
 //! # Error Handling
 //!
 //! The parser provides detailed error messages that include:
@@ -76,13 +60,8 @@
 //!
 //! This parser is used throughout AGPM for:
 //!
-//! - Agent manifest loading ([`AgentManifest::load`])
-//! - Snippet manifest loading ([`SnippetManifest::load`])
 //! - Generic configuration file parsing
 //! - Test fixtures and development tools
-//!
-//! [`AgentManifest::load`]: crate::config::AgentManifest::load
-//! [`SnippetManifest::load`]: crate::config::SnippetManifest::load
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -123,19 +102,6 @@ use std::path::Path;
 /// # fn example() -> anyhow::Result<()> {
 /// let config: Config = parse_config(Path::new("server.toml"))?;
 /// println!("Starting {} on port {}", config.name, config.port);
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## With AGPM Types
-///
-/// ```rust,no_run
-/// use agpm_cli::config::{parse_config, AgentManifest};
-/// use std::path::Path;
-///
-/// # fn example() -> anyhow::Result<()> {
-/// let manifest: AgentManifest = parse_config(Path::new("my-agent.toml"))?;
-/// println!("Loaded agent: {}", manifest.metadata.name);
 /// # Ok(())
 /// # }
 /// ```

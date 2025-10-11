@@ -6,8 +6,8 @@ use std::time::Duration;
 use tokio::fs;
 use tokio::time::Instant;
 
-mod common;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
+
 
 /// Test instance-level cache reuse across multiple operations
 #[tokio::test]
@@ -23,18 +23,12 @@ async fn test_instance_cache_reuse() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-agent1 = {{ source = "official", path = "agents/agent-1.md", version = "v1.0.0" }}
-agent2 = {{ source = "official", path = "agents/agent-2.md", version = "v1.0.0" }}
-agent3 = {{ source = "official", path = "agents/agent-3.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent1", "official", "agents/agent-1.md")
+        .add_standard_agent("agent2", "official", "agents/agent-2.md")
+        .add_standard_agent("agent3", "official", "agents/agent-3.md")
+        .build();
 
     project.write_manifest(&manifest_content).await?;
 
@@ -91,20 +85,12 @@ async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-agent1 = {{ source = "official", path = "agents/fetch-agent-1.md", version = "v1.0.0" }}
-agent2 = {{ source = "official", path = "agents/fetch-agent-2.md", version = "v1.0.0" }}
-
-[snippets]
-snippet1 = {{ source = "official", path = "snippets/fetch-snippet-1.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent1", "official", "agents/fetch-agent-1.md")
+        .add_standard_agent("agent2", "official", "agents/fetch-agent-2.md")
+        .add_standard_snippet("snippet1", "official", "snippets/fetch-snippet-1.md")
+        .build();
 
     project.write_manifest(&manifest_content).await?;
 
@@ -153,24 +139,16 @@ async fn test_cache_high_concurrency() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
-    let mut manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
+    // Build manifest with 20 agent dependencies
+    let mut builder = ManifestBuilder::new().add_source("official", &source_url);
 
-[agents]
-"#,
-        source_url
-    );
-
-    // Add 20 agent dependencies
     for i in 0..20 {
-        manifest_content.push_str(&format!(
-            "agent{:02} = {{ source = \"official\", path = \"agents/concurrent-agent-{:02}.md\", version = \"v1.0.0\" }}\n",
-            i, i
-        ));
+        let name = format!("agent{:02}", i);
+        let path = format!("agents/concurrent-agent-{:02}.md", i);
+        builder = builder.add_standard_agent(&name, "official", &path);
     }
 
+    let manifest_content = builder.build();
     project.write_manifest(&manifest_content).await?;
 
     // Install with maximum parallelism
@@ -212,19 +190,11 @@ async fn test_cache_persistence() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
     let source_url = source_repo.bare_file_url(project.sources_path())?;
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-agent = {{ source = "official", path = "agents/persistent-agent.md", version = "v1.0.0" }}
-
-[snippets]
-snippet = {{ source = "official", path = "snippets/persistent-snippet.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent", "official", "agents/persistent-agent.md")
+        .add_standard_snippet("snippet", "official", "snippets/persistent-snippet.md")
+        .build();
 
     project.write_manifest(&manifest_content).await?;
 

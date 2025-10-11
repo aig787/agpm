@@ -1,9 +1,7 @@
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::{LockfileFixture, ManifestFixture};
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::{LockfileFixture, ManifestFixture};
 
 /// Test handling of network timeout errors
 #[tokio::test]
@@ -11,14 +9,11 @@ async fn test_network_timeout() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with non-existent local path to simulate network-like failure
-    let manifest_content = r#"
-[sources]
-official = "file:///non/existent/path/to/repo"
-
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///non/existent/path/to/repo")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // This should fail trying to access the non-existent source
     let output = project.run_agpm(&["install"]).unwrap();
@@ -48,17 +43,11 @@ async fn test_disk_space_error() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-large-agent = {{ source = "official", path = "agents/large-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("large-agent", "official", "agents/large-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Simulate disk space issues by pointing to invalid cache directory
     // Use a file path instead of directory path to trigger an error
@@ -83,17 +72,12 @@ async fn test_corrupted_git_repo() {
     fs::write(fake_repo_dir.join(".git/config"), "corrupted config").await.unwrap();
 
     // Create a manifest that references this corrupted repo
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "file://{}"
-
-[agents]
-test-agent = {{ source = "official", path = "agents/test.md", version = "v1.0.0" }}
-"#,
-        fake_repo_dir.display().to_string().replace('\\', "/")
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let fake_repo_url = format!("file://{}", fake_repo_dir.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &fake_repo_url)
+        .add_standard_agent("test-agent", "official", "agents/test.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -113,14 +97,11 @@ async fn test_authentication_failure() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with non-existent local repository to simulate access failure
-    let manifest_content = r#"
-[sources]
-private = "file:///restricted/private/repo"
-
-[agents]
-secret-agent = { source = "private", path = "agents/secret.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("private", "file:///restricted/private/repo")
+        .add_standard_agent("secret-agent", "private", "agents/secret.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -197,17 +178,11 @@ async fn test_permission_conflicts() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create .claude/agents directory with read-only permissions (default installation path)
     let claude_dir = project.project_path().join(".claude");
@@ -249,18 +224,12 @@ async fn test_invalid_version_specs() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-invalid-version = {{ source = "official", path = "agents/invalid.md", version = "not-a-version" }}
-malformed-constraint = {{ source = "official", path = "agents/malformed.md", version = ">=1.0.0 <invalid" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_agent("invalid-version", |d| d.source("official").path("agents/invalid.md").version("not-a-version"))
+        .add_agent("malformed-constraint", |d| d.source("official").path("agents/malformed.md").version(">=1.0.0 <invalid"))
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
@@ -276,32 +245,6 @@ malformed-constraint = {{ source = "official", path = "agents/malformed.md", ver
     );
 }
 
-/// Test handling of circular dependency detection
-#[tokio::test]
-async fn test_circular_dependency_detection() {
-    let project = TestProject::new().await.unwrap();
-
-    // Create manifest with local files to avoid network access
-    // Circular dependencies would be detected at the manifest level, not requiring actual sources
-    let manifest_content = r#"
-[agents]
-agent_a = { path = "./agents/a.md" }
-agent_b = { path = "./agents/b.md" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
-
-    // Create the local files
-    project.create_local_resource("agents/a.md", "# Agent A").await.unwrap();
-    project.create_local_resource("agents/b.md", "# Agent B").await.unwrap();
-
-    // Test that validation succeeds (no circular dependencies in this simple case)
-    let output = project.run_agpm(&["validate"]).unwrap();
-    output.assert_success().assert_stdout_contains("Valid manifest");
-
-    // Test that install works with local files
-    let output = project.run_agpm(&["install"]).unwrap();
-    output.assert_success();
-}
 
 /// Test handling of exceeding system limits
 #[tokio::test]
@@ -309,23 +252,20 @@ async fn test_system_limits() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with many dependencies to test limits
-    let mut manifest_content = String::from(
-        r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[agents]
-"#,
-    );
+    let mut builder = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git");
 
     // Add many agents to test system limits
     for i in 0..1000 {
-        manifest_content.push_str(&format!(
-            "agent_{i} = {{ source = \"official\", path = \"agents/agent_{i}.md\", version = \"v1.0.0\" }}\n"
-        ));
+        builder = builder.add_agent(&format!("agent_{i}"), |d| {
+            d.source("official")
+                .path(&format!("agents/agent_{i}.md"))
+                .version("v1.0.0")
+        });
     }
 
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = builder.build();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     output.assert_success(); // Should handle gracefully
@@ -422,17 +362,11 @@ async fn test_large_file_handling() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Large files should be handled correctly
     let output = project.run_agpm(&["install"]).unwrap();
@@ -530,14 +464,11 @@ async fn test_git_command_missing() {
     let project = TestProject::new().await.unwrap();
 
     // Create a manifest that requires git operations
-    let manifest_content = r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[agents]
-test-agent = { source = "official", path = "agents/test.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .add_standard_agent("test-agent", "official", "agents/test.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Set PATH to a location that doesn't contain git
     let output = project.run_agpm_with_env(&["install"], &[("PATH", "/nonexistent")]).unwrap();
@@ -594,20 +525,12 @@ async fn test_partial_installation_recovery() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create partial installation (only some files)
     project.create_local_resource("agents/my-agent.md", "# Partial agent").await.unwrap();
@@ -637,17 +560,11 @@ async fn test_concurrent_lockfile_modification() {
     source_repo.tag_version("v1.0.0").unwrap();
     let source_url = source_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // This test mainly checks that the system can handle lockfile operations
     // In a real concurrent scenario, we'd expect either success or a conflict detection

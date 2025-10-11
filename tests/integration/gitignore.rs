@@ -9,54 +9,37 @@ use std::path::Path;
 use tempfile::TempDir;
 use tokio::fs;
 
-mod common;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Helper to create a test manifest with gitignore configuration
 async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
     let source_path = source_dir.display().to_string().replace('\\', "/");
-    format!(
-        r#"
-[sources]
-
-[target]
-agents = ".claude/agents"
-snippets = ".agpm/snippets"
-commands = ".claude/commands"
-gitignore = {}
-
-[agents.test-agent]
-path = "{}/agents/test.md"
-
-[snippets.test-snippet]
-path = "{}/snippets/test.md"
-
-[commands.test-command]
-path = "{}/commands/test.md"
-"#,
-        gitignore, source_path, source_path, source_path
-    )
+    ManifestBuilder::new()
+        .with_target_config(|t| {
+            t.agents(".claude/agents")
+                .snippets(".agpm/snippets")
+                .commands(".claude/commands")
+                .gitignore(gitignore)
+        })
+        .add_local_agent("test-agent", &format!("{}/agents/test.md", source_path))
+        .add_local_snippet("test-snippet", &format!("{}/snippets/test.md", source_path))
+        .add_local_command("test-command", &format!("{}/commands/test.md", source_path))
+        .build()
 }
 
 /// Helper to create a test manifest without explicit gitignore setting
 async fn create_test_manifest_default(source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
     let source_path = source_dir.display().to_string().replace('\\', "/");
-    format!(
-        r#"
-[sources]
-
-[target]
-agents = ".claude/agents"
-snippets = ".agpm/snippets"
-commands = ".claude/commands"
-
-[agents.test-agent]
-path = "{}/agents/test.md"
-"#,
-        source_path
-    )
+    ManifestBuilder::new()
+        .with_target_config(|t| {
+            t.agents(".claude/agents")
+                .snippets(".agpm/snippets")
+                .commands(".claude/commands")
+        })
+        .add_local_agent("test-agent", &format!("{}/agents/test.md", source_path))
+        .build()
 }
 
 /// Helper to create a test lockfile with installed resources
@@ -371,18 +354,20 @@ async fn test_gitignore_handles_external_paths() {
 
     // Create manifest
     let manifest_path = project_dir.join("agpm.toml");
-    let manifest_content = r#"
-[sources]
-test-source = "https://github.com/test/repo.git"
-
-[target]
-gitignore = true
-
-[scripts.external-script]
-source = "test-source"
-path = "scripts/test.sh"
-version = "v1.0.0"
-"#;
+    let manifest_content = ManifestBuilder::new()
+        .add_source("test-source", "https://github.com/test/repo.git")
+        .with_gitignore(true)
+        .add_script("external-script", |d| {
+            d.source("test-source")
+                .path("scripts/test.sh")
+                .version("v1.0.0")
+        })
+        .add_agent("internal-agent", |d| {
+            d.source("test-source")
+                .path("agents/test.md")
+                .version("v1.0.0")
+        })
+        .build();
     fs::write(&manifest_path, manifest_content).await.unwrap();
 
     // Create lockfile with resource installed outside .claude

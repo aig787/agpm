@@ -5,20 +5,17 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 use tokio::fs;
 
+use crate::common::ManifestBuilder;
+
 async fn create_test_manifest(dir: &std::path::Path) {
-    let manifest_content = r#"
-[sources]
-community = "https://github.com/example/community.git"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", "https://github.com/example/community.git")
+        .add_standard_agent("code-reviewer", "community", "agents/reviewer.md")
+        .add_local_agent("local-agent", "../local/agent.md")
+        .add_standard_snippet("utils", "community", "snippets/utils.md")
+        .build();
 
-[agents]
-code-reviewer = { source = "community", path = "agents/reviewer.md", version = "v1.0.0" }
-local-agent = { path = "../local/agent.md" }
-
-[snippets]
-utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0" }
-"#;
-
-    fs::write(dir.join("agpm.toml"), manifest_content).await.unwrap();
+    fs::write(dir.join("agpm.toml"), manifest).await.unwrap();
 }
 
 async fn create_test_lockfile(dir: &std::path::Path) {

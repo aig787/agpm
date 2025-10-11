@@ -5,9 +5,11 @@ use anyhow::Result;
 use std::time::Duration;
 use tokio::time::Instant;
 
+#[path = "../common/mod.rs"]
 mod common;
+#[path = "../fixtures/mod.rs"]
 mod fixtures;
-use common::TestProject;
+use crate::common::TestProject;
 
 /// Test system stability with very high --max-parallel values
 #[tokio::test]

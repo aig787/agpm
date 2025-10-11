@@ -2,6 +2,106 @@
 //!
 //! This module consolidates frequently used test patterns to reduce duplication
 //! and improve test maintainability.
+//!
+//! # Quick Start Guide
+//!
+//! ## Creating Test Projects
+//!
+//! ```rust
+//! let project = TestProject::new().await?;
+//! ```
+//!
+//! ## Creating Repositories
+//!
+//! ### Simple v1.0.0 Repository (Most Common)
+//! ```rust
+//! // Old way (6 lines):
+//! let repo = project.create_source_repo("official").await?;
+//! repo.create_standard_resources().await?;
+//! repo.commit_all("Initial commit")?;
+//! repo.tag_version("v1.0.0")?;
+//! let url = repo.bare_file_url(project.sources_path())?;
+//!
+//! // New way (1 line):
+//! let (repo, url) = project.create_standard_v1_repo("official").await?;
+//! ```
+//!
+//! ## Creating Manifests
+//!
+//! ### With ManifestBuilder (Recommended)
+//! ```rust
+//! // Old way (10+ lines of format! strings):
+//! let manifest = format!(r#"
+//! [sources]
+//! official = "{}"
+//! community = "{}"
+//!
+//! [agents]
+//! my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
+//! helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
+//! "#, official_url, community_url);
+//!
+//! // New way (5 lines, type-safe):
+//! let manifest = ManifestBuilder::new()
+//!     .add_sources(&[("official", &official_url), ("community", &community_url)])
+//!     .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+//!     .add_standard_agent("helper", "community", "agents/helper.md")
+//!     .build();
+//! ```
+//!
+//! ### Multi-Version Repository
+//! ```rust
+//! let (repo, url) = project.create_multi_version_repo(
+//!     "community",
+//!     &["v1.0.0", "v2.0.0", "v3.0.0"]
+//! ).await?;
+//! ```
+//!
+//! ### Sequential Resources (Stress Tests)
+//! ```rust
+//! // Old way (loop):
+//! for i in 0..10 {
+//!     repo.add_resource("agents", &format!("agent-{:02}", i), ...).await?;
+//! }
+//!
+//! // New way (1 line):
+//! repo.add_sequential_resources("agents", "agent", 10).await?;
+//! ```
+//!
+//! ## Helper Method Summary
+//!
+//! ### TestProject
+//! - `new()` - Create test project with temp directories
+//! - `create_source_repo(name)` - Create empty source repository
+//! - `create_standard_v1_repo(name)` - **NEW**: Create repo with v1.0.0 tag
+//! - `create_multi_version_repo(name, versions)` - **NEW**: Create repo with multiple versions
+//! - `write_manifest(content)` - Write agpm.toml
+//! - `run_agpm(args)` - Run AGPM CLI command
+//!
+//! ### ManifestBuilder
+//! - `new()` - Create new builder
+//! - `add_source(name, url)` - Add source repository
+//! - `add_standard_agent(name, source, path)` - Add agent with v1.0.0
+//! - `add_agent(name, config)` - Add agent with full config
+//! - `add_local_agent(name, path)` - Add local agent (no source/version)
+//! - See `manifest_builder` module for full API
+//!
+//! ### TestSourceRepo
+//! - `add_resource(type, name, content)` - Add single resource file
+//! - `add_sequential_resources(type, prefix, count)` - **NEW**: Add N sequential resources
+//! - `create_standard_resources()` - Add agent, snippet, command
+//! - `create_version(version)` - **NEW**: Create resources + commit + tag
+//! - `create_version_series(versions)` - **NEW**: Create multiple versions
+//! - `commit_all(message)` - Commit all changes
+//! - `tag_version(version)` - Create version tag
+//! - `bare_file_url(sources_path)` - Get file:// URL for testing
+//!
+//! ### Assertions
+//! - `FileAssert::exists(path)` - Assert file exists
+//! - `FileAssert::contains(path, text)` - Assert file contains text
+//! - `DirAssert::exists(path)` - Assert directory exists
+//! - `CommandOutput::assert_success()` - Assert command succeeded
+//! - `CommandOutput::assert_stdout_contains(text)` - Assert stdout contains text
 
 // Allow dead code because these utilities are used across different test files
 // and not all utilities are used in every test file
@@ -12,6 +112,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 use tokio::fs;
+
+// Manifest builder for type-safe test manifest creation
+mod manifest_builder;
+pub use manifest_builder::ManifestBuilder;
 
 /// Git command builder for tests
 pub struct TestGit {
@@ -273,6 +377,65 @@ impl TestProject {
         })
     }
 
+    /// Create a standard test repository with v1.0.0 tag
+    ///
+    /// This is a convenience method that creates a complete test repository
+    /// with standard resources (agent, snippet, command) already tagged at v1.0.0.
+    /// Returns both the repository and its bare file:// URL.
+    ///
+    /// This eliminates the most common test setup pattern (used 72+ times).
+    ///
+    /// # Arguments
+    /// * `name` - The repository name
+    ///
+    /// # Returns
+    /// A tuple of (TestSourceRepo, String) where the String is the bare file:// URL
+    ///
+    /// # Example
+    /// ```rust
+    /// let (repo, url) = project.create_standard_v1_repo("official").await?;
+    /// // Repository is ready with v1.0.0 tag containing standard resources
+    /// ```
+    pub async fn create_standard_v1_repo(&self, name: &str) -> Result<(TestSourceRepo, String)> {
+        let repo = self.create_source_repo(name).await?;
+        repo.create_standard_resources().await?;
+        repo.commit_all("Initial v1.0.0")?;
+        repo.tag_version("v1.0.0")?;
+        let url = repo.bare_file_url(self.sources_path())?;
+        Ok((repo, url))
+    }
+
+    /// Create a multi-version test repository
+    ///
+    /// Creates a repository with a series of versions, each containing standard
+    /// resources. Useful for testing upgrades, version constraints, and multi-version
+    /// scenarios.
+    ///
+    /// # Arguments
+    /// * `name` - The repository name
+    /// * `versions` - Slice of version strings (e.g., &["v1.0.0", "v2.0.0"])
+    ///
+    /// # Returns
+    /// A tuple of (TestSourceRepo, String) where the String is the bare file:// URL
+    ///
+    /// # Example
+    /// ```rust
+    /// let (repo, url) = project.create_multi_version_repo(
+    ///     "community",
+    ///     &["v1.0.0", "v2.0.0", "v3.0.0"]
+    /// ).await?;
+    /// ```
+    pub async fn create_multi_version_repo(
+        &self,
+        name: &str,
+        versions: &[&str],
+    ) -> Result<(TestSourceRepo, String)> {
+        let repo = self.create_source_repo(name).await?;
+        repo.create_version_series(versions).await?;
+        let url = repo.bare_file_url(self.sources_path())?;
+        Ok((repo, url))
+    }
+
     /// Run a AGPM command in the project directory
     pub fn run_agpm(&self, args: &[&str]) -> Result<CommandOutput> {
         self.run_agpm_with_env(args, &[])
@@ -331,6 +494,86 @@ impl TestSourceRepo {
         self.add_resource("agents", "test-agent", "# Test Agent\n\nA test agent").await?;
         self.add_resource("snippets", "test-snippet", "# Test Snippet\n\nA test snippet").await?;
         self.add_resource("commands", "test-command", "# Test Command\n\nA test command").await?;
+        Ok(())
+    }
+
+    /// Add multiple sequential resources with auto-generated content
+    ///
+    /// Creates resources named `{prefix}-{i:02}` (e.g., "agent-00", "agent-01")
+    /// with generic test content. Useful for stress tests and parallelism tests.
+    ///
+    /// # Arguments
+    /// * `resource_type` - The resource directory (e.g., "agents", "snippets")
+    /// * `prefix` - Name prefix for resources (e.g., "agent", "snippet")
+    /// * `count` - Number of resources to create
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.add_sequential_resources("agents", "test-agent", 10).await?;
+    /// // Creates: agents/test-agent-00.md through agents/test-agent-09.md
+    /// ```
+    pub async fn add_sequential_resources(
+        &self,
+        resource_type: &str,
+        prefix: &str,
+        count: usize,
+    ) -> Result<()> {
+        for i in 0..count {
+            let name = format!("{}-{:02}", prefix, i);
+            let title = prefix
+                .split('-')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            let content = format!("# {} {:02}\n\nTest {} {}", title, i, resource_type, i);
+            self.add_resource(resource_type, &name, &content).await?;
+        }
+        Ok(())
+    }
+
+    /// Create a fully tagged version with standard resources
+    ///
+    /// This is a convenience method that:
+    /// 1. Creates standard resources (agent, snippet, command)
+    /// 2. Commits all changes
+    /// 3. Tags the commit with the given version
+    ///
+    /// # Arguments
+    /// * `version` - The version tag (e.g., "v1.0.0")
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_version("v1.0.0").await?;
+    /// ```
+    pub async fn create_version(&self, version: &str) -> Result<()> {
+        self.create_standard_resources().await?;
+        self.commit_all(&format!("Release {}", version))?;
+        self.tag_version(version)?;
+        Ok(())
+    }
+
+    /// Create a multi-version repository evolution
+    ///
+    /// Creates standard resources and tags for each version in the series.
+    /// Each version gets its own commit with standard test resources.
+    ///
+    /// # Arguments
+    /// * `versions` - Slice of version strings to create
+    ///
+    /// # Example
+    /// ```rust
+    /// repo.create_version_series(&["v1.0.0", "v2.0.0", "v3.0.0"]).await?;
+    /// ```
+    pub async fn create_version_series(&self, versions: &[&str]) -> Result<()> {
+        for version in versions {
+            self.create_version(version).await?;
+        }
         Ok(())
     }
 

@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::fs;
 
+use crate::common::ManifestBuilder;
+
 /// Helper to create a test project with manifest and resource files
 async fn setup_test_project() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
@@ -22,21 +24,19 @@ async fn setup_test_project() -> Result<TempDir> {
     fs::create_dir_all(resources_dir.join("snippets")).await?;
 
     // Create manifest with local source
-    let manifest_content = format!(
-        r#"[sources]
-local = "{}"
-
-[target]
-agents = ".claude/agents"
-snippets = ".agpm/snippets"
-commands = ".claude/commands"
-mcp-servers = ".claude/agpm/mcp-servers"
-scripts = ".claude/agpm/scripts"
-hooks = ".claude/agpm/hooks"
-gitignore = true
-"#,
-        resources_dir.display().to_string().replace('\\', "/")
-    );
+    let resources_url = resources_dir.display().to_string().replace('\\', "/");
+    let manifest_content = ManifestBuilder::new()
+        .add_source("local", &resources_url)
+        .with_target_config(|t| {
+            t.agents(".claude/agents")
+                .snippets(".agpm/snippets")
+                .commands(".claude/commands")
+                .mcp_servers(".claude/agpm/mcp-servers")
+                .scripts(".claude/agpm/scripts")
+                .hooks(".claude/agpm/hooks")
+                .gitignore(true)
+        })
+        .build();
     fs::write(project_dir.join("agpm.toml"), manifest_content).await?;
 
     // Create command file with transitive dependencies in local source

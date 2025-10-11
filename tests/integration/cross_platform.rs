@@ -1,10 +1,9 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::MarkdownFixture;
+
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::MarkdownFixture;
 
 /// Extension trait for MarkdownFixture to write to disk
 trait MarkdownFixtureExt {
@@ -45,33 +44,35 @@ async fn test_path_separators() {
 
     // Create manifest with mixed path separators
     let manifest_content = if cfg!(windows) {
-        format!(
-            r#"
-[sources]
-official = "{source_path_str}"
-
-[agents]
-windows-agent = {{ source = "official", path = "agents\\windows-agent.md", version = "v1.0.0" }}
-unix-agent = {{ source = "official", path = "agents/unix-agent.md", version = "v1.0.0" }}
-
-[snippets]
-local-snippet = {{ path = ".\\snippets\\local.md" }}
-"#
-        )
+        ManifestBuilder::new()
+            .add_source("official", &source_path_str)
+            .add_agent("windows-agent", |d| {
+                d.source("official")
+                    .path("agents\\windows-agent.md")
+                    .version("v1.0.0")
+            })
+            .add_agent("unix-agent", |d| {
+                d.source("official")
+                    .path("agents/unix-agent.md")
+                    .version("v1.0.0")
+            })
+            .add_local_snippet("local-snippet", ".\\snippets\\local.md")
+            .build()
     } else {
-        format!(
-            r#"
-[sources]
-official = "{source_path_str}"
-
-[agents]
-unix-agent = {{ source = "official", path = "agents/unix-agent.md", version = "v1.0.0" }}
-windows-agent = {{ source = "official", path = "agents\\windows-agent.md", version = "v1.0.0" }}
-
-[snippets]
-local-snippet = {{ path = "./snippets/local.md" }}
-"#
-        )
+        ManifestBuilder::new()
+            .add_source("official", &source_path_str)
+            .add_agent("unix-agent", |d| {
+                d.source("official")
+                    .path("agents/unix-agent.md")
+                    .version("v1.0.0")
+            })
+            .add_agent("windows-agent", |d| {
+                d.source("official")
+                    .path("agents\\windows-agent.md")
+                    .version("v1.0.0")
+            })
+            .add_local_snippet("local-snippet", "./snippets/local.md")
+            .build()
     };
 
     project.write_manifest(&manifest_content).await.unwrap();
@@ -109,16 +110,10 @@ async fn test_long_paths_windows() {
 
     // Use file:// URL with forward slashes for Windows compatibility
     let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-{} = {{ source = "official", path = "agents/{}.md", version = "v1.0.0" }}
-"#,
-        source_path_str, long_name, long_name
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_path_str)
+        .add_standard_agent(&long_name, "official", &format!("agents/{}.md", long_name))
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -153,16 +148,11 @@ async fn test_case_conflict_detection() {
 
     // Test TOML key case sensitivity (which is case-sensitive on all platforms)
     // The keys differ in case but map to different files
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{source_path_str}"
-
-[agents]
-myagent = {{ source = "official", path = "agents/myagent-lower.md", version = "v1.0.0" }}
-MyAgent = {{ source = "official", path = "agents/MyAgent-upper.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_path_str)
+        .add_standard_agent("myagent", "official", "agents/myagent-lower.md")
+        .add_standard_agent("MyAgent", "official", "agents/MyAgent-upper.md")
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -187,30 +177,20 @@ async fn test_home_directory_expansion() {
 
     // Create manifest with home directory reference
     let manifest_content = if cfg!(windows) {
-        r#"
-[sources]
-local = "~/agpm-sources/local.git"
-
-[agents]
-home-agent = { source = "local", path = "agents/home-agent.md", version = "v1.0.0" }
-
-[snippets]
-home-snippet = { path = "~\\Documents\\snippets\\home.md" }
-"#
+        ManifestBuilder::new()
+            .add_source("local", "~/agpm-sources/local.git")
+            .add_standard_agent("home-agent", "local", "agents/home-agent.md")
+            .add_local_snippet("home-snippet", "~\\Documents\\snippets\\home.md")
+            .build()
     } else {
-        r#"
-[sources]
-local = "~/agpm-sources/local.git"
-
-[agents]
-home-agent = { source = "local", path = "agents/home-agent.md", version = "v1.0.0" }
-
-[snippets]
-home-snippet = { path = "~/Documents/snippets/home.md" }
-"#
+        ManifestBuilder::new()
+            .add_source("local", "~/agpm-sources/local.git")
+            .add_standard_agent("home-agent", "local", "agents/home-agent.md")
+            .add_local_snippet("home-snippet", "~/Documents/snippets/home.md")
+            .build()
     };
 
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success); // Home directory expansion should work and validation should pass
@@ -252,15 +232,10 @@ async fn test_git_command_platform() {
 
     // Use file:// URL with forward slashes for Windows compatibility
     let source_path_str = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{source_path_str}"
-
-[agents]
-test-agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_path_str)
+        .add_standard_agent("test-agent", "official", "agents/test-agent.md")
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -307,15 +282,10 @@ async fn test_unix_permissions() {
     test_repo.tag_version("v1.0.0").unwrap();
     let source_url = test_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-test = "{source_url}"
-
-[snippets]
-remote-snippet = {{ source = "test", path = "snippets/example.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("test", &source_url)
+        .add_standard_snippet("remote-snippet", "test", "snippets/example.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create a parent directory with restricted permissions
@@ -355,18 +325,16 @@ async fn test_windows_drive_letters() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with absolute Windows paths
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[snippets]
-absolute-snippet = {{ path = "C:\\temp\\snippet.md" }}
-unc-snippet = {{ path = "\\\\server\\share\\snippet.md" }}
-relative-snippet = {{ path = "{}\\snippets\\relative.md" }}
-"#,
+    let relative_path = format!(
+        "{}\\snippets\\relative.md",
         project.project_path().to_str().unwrap().replace("\\", "\\\\")
     );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .add_local_snippet("absolute-snippet", "C:\\temp\\snippet.md")
+        .add_local_snippet("unc-snippet", "\\\\server\\share\\snippet.md")
+        .add_local_snippet("relative-snippet", &relative_path)
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -406,15 +374,10 @@ async fn test_concurrent_operations() {
     official_repo.tag_version("v1.0.0").unwrap();
     let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{source_url}"
-
-[agents]
-concurrent-agent = {{ source = "official", path = "agents/concurrent-agent.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("concurrent-agent", "official", "agents/concurrent-agent.md")
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -489,13 +452,10 @@ async fn test_symlink_handling() {
     std::os::unix::fs::symlink(&target_dir, &link_dir).unwrap();
 
     // Create manifest pointing to symlinked directory
-    let manifest_content = format!(
-        r#"
-[snippets]
-symlink-snippet = {{ path = "{}/snippet.md" }}
-"#,
-        link_dir.to_str().unwrap()
-    );
+    let snippet_path = format!("{}/snippet.md", link_dir.to_str().unwrap());
+    let manifest_content = ManifestBuilder::new()
+        .add_local_snippet("symlink-snippet", &snippet_path)
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 
@@ -511,14 +471,11 @@ symlink-snippet = {{ path = "{}/snippet.md" }}
 #[tokio::test]
 async fn test_shell_compatibility() {
     let project = TestProject::new().await.unwrap();
-    let manifest_content = r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Test that commands work regardless of shell (bash, zsh, cmd, PowerShell)
     let output = project.run_agpm(&["--help"]).unwrap();
@@ -541,15 +498,10 @@ async fn test_temp_directory_platform() {
     official_repo.tag_version("v1.0.0").unwrap();
     let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{source_url}"
-
-[agents]
-temp-test-agent = {{ source = "official", path = "agents/temp-test-agent.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("temp-test-agent", "official", "agents/temp-test-agent.md")
+        .build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 

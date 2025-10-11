@@ -8,6 +8,8 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 use tokio::fs;
 
+use crate::common::ManifestBuilder;
+
 /// Test that update command uses proper phases when updating dependencies
 #[tokio::test]
 async fn test_update_progress_phases() {
@@ -15,14 +17,11 @@ async fn test_update_progress_phases() {
     let project_dir = temp.path();
 
     // Create a manifest with local dependencies
-    let manifest_content = r#"
-[sources]
-test_source = "../test_resources"
-
-[agents]
-test_agent = { path = "../test_resources/agent.md" }
-"#;
-    fs::write(project_dir.join("agpm.toml"), manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("test_source", "../test_resources")
+        .add_local_agent("test_agent", "../test_resources/agent.md")
+        .build();
+    fs::write(project_dir.join("agpm.toml"), manifest).await.unwrap();
 
     // Create the test resource directory and file
     let resource_dir = project_dir.parent().unwrap().join("test_resources");
@@ -61,7 +60,8 @@ async fn test_update_empty_manifest() {
     let project_dir = temp.path();
 
     // Create empty manifest
-    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n").await.unwrap();
+    let manifest = ManifestBuilder::new().build();
+    fs::write(project_dir.join("agpm.toml"), manifest).await.unwrap();
 
     // Run install first
     let mut cmd = Command::cargo_bin("agpm").unwrap();
@@ -83,7 +83,8 @@ async fn test_update_no_lockfile_fresh_install() {
     let project_dir = temp.path();
 
     // Create manifest without running install
-    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n").await.unwrap();
+    let manifest = ManifestBuilder::new().build();
+    fs::write(project_dir.join("agpm.toml"), manifest).await.unwrap();
 
     // Ensure no lockfile exists
     assert!(!project_dir.join("agpm.lock").exists());
@@ -113,7 +114,8 @@ async fn test_update_dry_run_no_modifications() {
     let project_dir = temp.path();
 
     // Create manifest and lockfile
-    fs::write(project_dir.join("agpm.toml"), "[sources]\n[agents]\n").await.unwrap();
+    let manifest = ManifestBuilder::new().build();
+    fs::write(project_dir.join("agpm.toml"), manifest).await.unwrap();
 
     fs::write(project_dir.join("agpm.lock"), "version = 1\nsources = []\nagents = []\n")
         .await

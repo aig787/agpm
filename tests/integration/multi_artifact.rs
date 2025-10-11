@@ -2,9 +2,7 @@ use anyhow::Result;
 use std::fs as sync_fs;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 #[tokio::test]
 async fn test_opencode_agent_installation() -> Result<()> {
@@ -25,17 +23,17 @@ async fn test_opencode_agent_installation() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_agent("opencode-helper", |d| {
+            d.source("test_repo")
+                .path("agents/helper.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[agents]
-opencode-helper = {{ source = "test_repo", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify agent installed to .opencode/agent/ (singular)
@@ -72,17 +70,17 @@ async fn test_opencode_command_installation() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_command("deploy", |d| {
+            d.source("test_repo")
+                .path("commands/deploy.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[commands]
-deploy = {{ source = "test_repo", path = "commands/deploy.md", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify command installed to .opencode/command/ (singular)
@@ -118,17 +116,17 @@ async fn test_opencode_mcp_server_merge() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_mcp_server("filesystem", |d| {
+            d.source("test_repo")
+                .path("mcp-servers/filesystem.json")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[mcp-servers]
-filesystem = {{ source = "test_repo", path = "mcp-servers/filesystem.json", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify MCP server merged into opencode.json
@@ -190,22 +188,29 @@ async fn test_mixed_artifact_types() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        // Claude Code agents
+        .add_standard_agent("claude-agent", "test_repo", "agents/claude-agent.md")
+        // OpenCode agents
+        .add_agent("opencode-agent", |d| {
+            d.source("test_repo")
+                .path("agents/opencode-agent.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        // Claude Code commands
+        .add_standard_command("claude-cmd", "test_repo", "commands/claude-cmd.md")
+        // OpenCode commands
+        .add_command("opencode-cmd", |d| {
+            d.source("test_repo")
+                .path("commands/opencode-cmd.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[agents]
-claude-agent = {{ source = "test_repo", path = "agents/claude-agent.md", version = "v1.0.0" }}
-opencode-agent = {{ source = "test_repo", path = "agents/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
-
-[commands]
-claude-cmd = {{ source = "test_repo", path = "commands/claude-cmd.md", version = "v1.0.0" }}
-opencode-cmd = {{ source = "test_repo", path = "commands/opencode-cmd.md", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify Claude Code resources
@@ -243,17 +248,17 @@ async fn test_artifact_type_validation() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_snippet("example", |d| {
+            d.source("test_repo")
+                .path("snippets/example.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[snippets]
-example = {{ source = "test_repo", path = "snippets/example.md", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // This should fail validation because OpenCode doesn't support snippets
     let output = project.run_agpm(&["install"])?;
@@ -294,17 +299,16 @@ async fn test_claude_code_mcp_handler() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_mcp_server("postgres", |d| {
+            d.source("test_repo")
+                .path("mcp-servers/postgres.json")
+                .version("v1.0.0")
+        })
+        .build();
 
-[mcp-servers]
-postgres = {{ source = "test_repo", path = "mcp-servers/postgres.json", version = "v1.0.0" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify MCP server configured in .mcp.json (not copied as artifact file)
@@ -363,17 +367,17 @@ async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_mcp_server("agpm-server", |d| {
+            d.source("test_repo")
+                .path("mcp-servers/agpm-server.json")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[mcp-servers]
-agpm-server = {{ source = "test_repo", path = "mcp-servers/agpm-server.json", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify both servers exist
@@ -414,18 +418,20 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
 
     // Test for both Claude Code and OpenCode
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        // Claude Code agent (preserves nested structure)
+        .add_standard_agent("claude-ai", "test_repo", "agents/ai/gpt.md")
+        // OpenCode agent (preserves nested structure)
+        .add_agent("opencode-ai", |d| {
+            d.source("test_repo")
+                .path("agents/ai/gpt.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[agents]
-claude-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.0.0" }}
-opencode-ai = {{ source = "test_repo", path = "agents/ai/gpt.md", version = "v1.0.0", tool = "opencode" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify Claude Code preserves nested structure
@@ -462,17 +468,17 @@ async fn test_agpm_artifact_type() -> Result<()> {
     source_repo.tag_version("v1.0.0")?;
 
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
-    let manifest_content = format!(
-        r#"[sources]
-test_repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test_repo", &repo_url)
+        .add_snippet("config-template", |d| {
+            d.source("test_repo")
+                .path("snippets/config-template.md")
+                .version("v1.0.0")
+                .tool("agpm")
+        })
+        .build();
 
-[snippets]
-config-template = {{ source = "test_repo", path = "snippets/config-template.md", version = "v1.0.0", tool = "agpm" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
     // Verify snippet installed to .agpm/snippets/

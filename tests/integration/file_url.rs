@@ -2,9 +2,7 @@ use anyhow::Result;
 use std::path::Path;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Convert a path to a file:// URL string, properly handling Windows paths
 async fn path_to_file_url(path: &Path) -> String {
@@ -34,16 +32,14 @@ async fn test_file_url_source_repo_not_modified() -> Result<()> {
     let source_head_before = git.get_commit_hash()?;
 
     let file_url = path_to_file_url(git.repo_path()).await;
-    let manifest = format!(
-        r#"
-[sources]
-local = "{}"
-
-[agents]
-test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
-"#,
-        file_url
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("local", &file_url)
+        .add_agent("test-agent", |d| {
+            d.source("local")
+                .path("agents/test.md")
+                .version("v2.0.0")
+        })
+        .build();
     project.write_manifest(&manifest).await?;
 
     project.run_agpm(&["install"])?.assert_success();
@@ -84,16 +80,10 @@ async fn test_file_url_updates_work() -> Result<()> {
     git.tag("v1.0.0")?;
 
     let file_url = path_to_file_url(git.repo_path()).await;
-    let manifest_v1 = format!(
-        r#"
-[sources]
-local = "{}"
-
-[agents]
-test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
-"#,
-        file_url
-    );
+    let manifest_v1 = ManifestBuilder::new()
+        .add_source("local", &file_url)
+        .add_standard_agent("test-agent", "local", "agents/test.md")
+        .build();
     project.write_manifest(&manifest_v1).await?;
 
     project.run_agpm(&["install"])?.assert_success();
@@ -110,16 +100,14 @@ test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
     git.commit("Update to v2")?;
     git.tag("v2.0.0")?;
 
-    let manifest_v2 = format!(
-        r#"
-[sources]
-local = "{}"
-
-[agents]
-test-agent = {{ source = "local", path = "agents/test.md", version = "v2.0.0" }}
-"#,
-        file_url
-    );
+    let manifest_v2 = ManifestBuilder::new()
+        .add_source("local", &file_url)
+        .add_agent("test-agent", |d| {
+            d.source("local")
+                .path("agents/test.md")
+                .version("v2.0.0")
+        })
+        .build();
     project.write_manifest(&manifest_v2).await?;
 
     project.run_agpm(&["install"])?.assert_success();
@@ -153,16 +141,10 @@ async fn test_file_url_with_uncommitted_changes() -> Result<()> {
     assert!(!status_before.trim().is_empty(), "Source repo should have uncommitted changes");
 
     let file_url = path_to_file_url(git.repo_path()).await;
-    let manifest = format!(
-        r#"
-[sources]
-local = "{}"
-
-[agents]
-test-agent = {{ source = "local", path = "agents/test.md", version = "v1.0.0" }}
-"#,
-        file_url
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("local", &file_url)
+        .add_standard_agent("test-agent", "local", "agents/test.md")
+        .build();
     project.write_manifest(&manifest).await?;
 
     project.run_agpm(&["install"])?.assert_success();

@@ -2,16 +2,13 @@
 //!
 //! Tests end-to-end workflows with monorepo-style prefixed tags.
 
-mod common;
-mod test_config;
-
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 use tokio::fs;
 
 /// Test installing a dependency with a prefixed version constraint
 #[tokio::test]
 async fn test_install_with_prefixed_constraint() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("prefixed").await.unwrap();
 
@@ -44,18 +41,20 @@ async fn test_install_with_prefixed_constraint() {
     source_repo.git.tag("snippets-v2.0.0").unwrap();
 
     // Create manifest with prefixed version constraints
-    let manifest = format!(
-        r#"[sources]
-prefixed = "file://{}"
-
-[agents]
-test-agent = {{ source = "prefixed", path = "agents/test-agent.md", version = "agents-^v1.0.0" }}
-
-[snippets]
-test-snippet = {{ source = "prefixed", path = "snippets/test-snippet.md", version = "snippets-^v2.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("prefixed", &source_url)
+        .add_agent("test-agent", |d| {
+            d.source("prefixed")
+                .path("agents/test-agent.md")
+                .version("agents-^v1.0.0")
+        })
+        .add_snippet("test-snippet", |d| {
+            d.source("prefixed")
+                .path("snippets/test-snippet.md")
+                .version("snippets-^v2.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 
@@ -91,7 +90,7 @@ test-snippet = {{ source = "prefixed", path = "snippets/test-snippet.md", versio
 /// Test that prefixes provide isolation (different prefixes don't interfere)
 #[tokio::test]
 async fn test_prefix_isolation() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("prefixed").await.unwrap();
 
@@ -107,15 +106,15 @@ async fn test_prefix_isolation() {
     source_repo.git.tag("v1.0.0").unwrap(); // unprefixed
 
     // Create manifest requesting agents prefix ^v1.0.0
-    let manifest = format!(
-        r#"[sources]
-prefixed = "file://{}"
-
-[agents]
-agent = {{ source = "prefixed", path = "agents/agent.md", version = "agents-^v1.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("prefixed", &source_url)
+        .add_agent("agent", |d| {
+            d.source("prefixed")
+                .path("agents/agent.md")
+                .version("agents-^v1.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 
@@ -134,7 +133,7 @@ agent = {{ source = "prefixed", path = "agents/agent.md", version = "agents-^v1.
 /// Test outdated command with prefixed versions
 #[tokio::test]
 async fn test_outdated_with_prefixed_versions() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("prefixed").await.unwrap();
 
@@ -146,15 +145,15 @@ async fn test_outdated_with_prefixed_versions() {
     source_repo.git.tag("agents-v1.0.0").unwrap();
 
     // Create manifest locked to agents-v1.0.0
-    let manifest = format!(
-        r#"[sources]
-prefixed = "file://{}"
-
-[agents]
-agent = {{ source = "prefixed", path = "agents/agent.md", version = "agents-^v1.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("prefixed", &source_url)
+        .add_agent("agent", |d| {
+            d.source("prefixed")
+                .path("agents/agent.md")
+                .version("agents-^v1.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 
@@ -191,7 +190,7 @@ agent = {{ source = "prefixed", path = "agents/agent.md", version = "agents-^v1.
 /// Test that unprefixed constraints don't match prefixed tags
 #[tokio::test]
 async fn test_unprefixed_constraint_doesnt_match_prefixed_tags() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("prefixed").await.unwrap();
 
@@ -205,15 +204,15 @@ async fn test_unprefixed_constraint_doesnt_match_prefixed_tags() {
     source_repo.git.tag("agents-v1.0.0").unwrap();
 
     // Create manifest with unprefixed constraint
-    let manifest = format!(
-        r#"[sources]
-prefixed = "file://{}"
-
-[agents]
-agent = {{ source = "prefixed", path = "agents/agent.md", version = "^v1.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("prefixed", &source_url)
+        .add_agent("agent", |d| {
+            d.source("prefixed")
+                .path("agents/agent.md")
+                .version("^v1.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 
@@ -237,7 +236,7 @@ agent = {{ source = "prefixed", path = "agents/agent.md", version = "^v1.0.0" }}
 /// Test multi-prefix manifest with agents, snippets, and unprefixed versions coexisting
 #[tokio::test]
 async fn test_multi_prefix_manifest() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("multi").await.unwrap();
 
@@ -277,21 +276,25 @@ async fn test_multi_prefix_manifest() {
     source_repo.git.tag("v1.5.0").unwrap(); // Unprefixed
 
     // Create manifest with all three: agents prefix, snippets prefix, and unprefixed
-    let manifest = format!(
-        r#"[sources]
-multi = "file://{}"
-
-[agents]
-test-agent = {{ source = "multi", path = "agents/test-agent.md", version = "agents-^v1.0.0" }}
-
-[snippets]
-test-snippet = {{ source = "multi", path = "snippets/test-snippet.md", version = "snippets-^v1.0.0" }}
-
-[commands]
-test-command = {{ source = "multi", path = "commands/test-command.md", version = "^v1.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("multi", &source_url)
+        .add_agent("test-agent", |d| {
+            d.source("multi")
+                .path("agents/test-agent.md")
+                .version("agents-^v1.0.0")
+        })
+        .add_snippet("test-snippet", |d| {
+            d.source("multi")
+                .path("snippets/test-snippet.md")
+                .version("snippets-^v1.0.0")
+        })
+        .add_command("test-command", |d| {
+            d.source("multi")
+                .path("commands/test-command.md")
+                .version("^v1.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 
@@ -351,7 +354,7 @@ test-command = {{ source = "multi", path = "commands/test-command.md", version =
 /// Test update command with prefixed versions
 #[tokio::test]
 async fn test_update_command_with_prefixed_versions() {
-    test_config::init_test_env();
+    crate::test_config::init_test_env();
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("updatetest").await.unwrap();
 
@@ -367,15 +370,15 @@ async fn test_update_command_with_prefixed_versions() {
     source_repo.git.tag("agents-v1.2.0").unwrap();
 
     // Create manifest with prefixed constraint
-    let manifest = format!(
-        r#"[sources]
-updatetest = "file://{}"
-
-[agents]
-agent = {{ source = "updatetest", path = "agents/agent.md", version = "agents-^v1.0.0" }}
-"#,
-        source_repo.path.display().to_string().replace('\\', "/")
-    );
+    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let manifest = ManifestBuilder::new()
+        .add_source("updatetest", &source_url)
+        .add_agent("agent", |d| {
+            d.source("updatetest")
+                .path("agents/agent.md")
+                .version("agents-^v1.0.0")
+        })
+        .build();
 
     project.write_manifest(&manifest).await.unwrap();
 

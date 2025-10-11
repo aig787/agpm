@@ -6,9 +6,7 @@ use predicates::prelude::*;
 use std::process::Command;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Test --max-parallel flag with various values
 #[tokio::test]
@@ -33,20 +31,14 @@ async fn test_max_parallel_flag_values() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent1", "official", "agents/test-agent-1.md")
+        .add_standard_agent("agent2", "official", "agents/test-agent-2.md")
+        .add_standard_agent("agent3", "official", "agents/test-agent-3.md")
+        .build();
 
-[agents]
-agent1 = {{ source = "official", path = "agents/test-agent-1.md", version = "v1.0.0" }}
-agent2 = {{ source = "official", path = "agents/test-agent-2.md", version = "v1.0.0" }}
-agent3 = {{ source = "official", path = "agents/test-agent-3.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Test different --max-parallel values
     for max_parallel in [1, 2, 4, 8] {
@@ -101,18 +93,12 @@ async fn test_default_parallelism() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent", "official", "agents/test-agent.md")
+        .build();
 
-[agents]
-agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Install without --max-parallel flag (should use default)
     let output = project.run_agpm(&["install"]).unwrap();
@@ -137,18 +123,12 @@ async fn test_max_parallel_install_only() {
     official_repo.tag_version("v1.0.0").unwrap();
 
     let source_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &source_url)
+        .add_standard_agent("agent", "official", "agents/test-agent.md")
+        .build();
 
-[agents]
-agent = {{ source = "official", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_url
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Install with --max-parallel should work
     let output = project.run_agpm(&["install", "--max-parallel", "2"]).unwrap();

@@ -15,7 +15,6 @@ use tracing::debug;
 
 /// HEAVY STRESS TEST: Install 500 dependencies in parallel from multiple repos
 #[tokio::test]
-#[ignore = "Performance test - run manually"]
 async fn test_heavy_stress_500_dependencies() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_heavy_stress_500_dependencies");
@@ -248,7 +247,6 @@ async fn setup_large_test_repository(path: &std::path::PathBuf, num_files: usize
 
 /// HEAVY STRESS TEST: Update 500 existing dependencies to new versions
 #[tokio::test]
-#[ignore = "Performance test - run manually"]
 async fn test_heavy_stress_500_updates() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_heavy_stress_500_updates");
@@ -398,7 +396,6 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
 
 /// MIXED REPOS TEST: Install dependencies from both file:// and https:// repositories
 #[tokio::test]
-#[ignore = "Performance test - run manually"]
 async fn test_mixed_repos_file_and_https() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_mixed_repos_file_and_https");
@@ -524,7 +521,6 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
 
 /// COMMUNITY REPO TEST: Parallel checkout performance from real agpm-community repository
 #[tokio::test]
-#[ignore = "Performance test - run manually"]
 async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_community_repo_parallel_checkout_performance");
@@ -673,7 +669,6 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
 /// COMMUNITY REPO 500 DEPENDENCIES TEST: Install 500 dependencies from community repo with filename collision handling
 #[tokio::test]
-#[ignore = "Performance test - run manually"]
 async fn test_community_repo_500_dependencies() -> Result<()> {
     init_test_logging(None);
     debug!("Starting test_community_repo_500_dependencies");

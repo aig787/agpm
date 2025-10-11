@@ -17,6 +17,16 @@ categories = ["command-line-utilities", "development-tools"]
 name = "agpm"
 path = "src/main.rs"
 
+# Integration test suite (fast, runs in CI)
+[[test]]
+name = "integration"
+path = "tests/integration/mod.rs"
+
+# Stress test suite (slow, manual execution only)
+[[test]]
+name = "stress"
+path = "tests/stress/mod.rs"
+
 [features]
 default = []
 test-utils = []

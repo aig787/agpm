@@ -1,10 +1,8 @@
 use predicates::prelude::*;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::ManifestFixture;
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::ManifestFixture;
 
 /// Test validating a valid manifest
 #[tokio::test]
@@ -30,22 +28,14 @@ async fn test_validate_valid_manifest() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -119,22 +109,14 @@ async fn test_validate_sources() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--sources"]).unwrap();
     assert!(output.success);
@@ -148,20 +130,17 @@ async fn test_validate_inaccessible_sources() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with file:// URLs pointing to non-existent sources
-    let manifest_content = r#"
-[sources]
-official = "file:///non/existent/path"
-community = "file:///another/non/existent/path"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", "file:///non/existent/path"),
+            ("community", "file:///another/non/existent/path"),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-
-[snippets]
-utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
-"#;
-
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--sources"]).unwrap();
     assert!(!output.success);
@@ -193,22 +172,14 @@ async fn test_validate_dependencies() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success);
@@ -234,20 +205,13 @@ async fn test_validate_missing_dependencies() {
     // Create manifest with file:// URLs
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &official_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
     assert!(output.success); // Current implementation validates source accessibility, not file existence
@@ -328,22 +292,14 @@ async fn test_validate_lockfile_consistent() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create a matching lockfile
     let lockfile_content = format!(
@@ -406,14 +362,12 @@ async fn test_validate_lockfile_inconsistent() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest
-    let manifest_content = r#"
-[sources]
-official = "file:///fake/url"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///fake/url")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create lockfile that doesn't match manifest
     let inconsistent_lockfile = r#"
@@ -449,14 +403,12 @@ async fn test_validate_corrupted_lockfile() {
     let project = TestProject::new().await.unwrap();
 
     // Create a basic manifest
-    let manifest_content = r#"
-[sources]
-official = "file:///fake/url"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///fake/url")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create corrupted lockfile
     fs::write(project.project_path().join("agpm.lock"), "corrupted content").await.unwrap();
@@ -492,22 +444,14 @@ async fn test_validate_all() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
-
-    project.write_manifest(&manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create a matching lockfile
     let lockfile_content = format!(
@@ -568,14 +512,12 @@ installed_at = "snippets/utils.md"
 async fn test_validate_verbose() {
     let project = TestProject::new().await.unwrap();
 
-    let manifest_content = r#"
-[sources]
-official = "file:///fake/url"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///fake/url")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--verbose"]).unwrap();
     assert!(output.success);
@@ -588,14 +530,12 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 async fn test_validate_quiet() {
     let project = TestProject::new().await.unwrap();
 
-    let manifest_content = r#"
-[sources]
-official = "file:///fake/url"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///fake/url")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--quiet"]).unwrap();
     assert!(output.success);
@@ -608,14 +548,12 @@ my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0
 async fn test_validate_json_output() {
     let project = TestProject::new().await.unwrap();
 
-    let manifest_content = r#"
-[sources]
-official = "file:///fake/url"
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "file:///fake/url")
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
 
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--format", "json"]).unwrap();
     assert!(output.success);
@@ -632,23 +570,18 @@ async fn test_validate_specific_file() {
 
     // Create a manifest that uses file:// URLs
     let sources_path_str = project.sources_path().display().to_string().replace('\\', "/");
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "file://{sources_path_str}/official"
-community = "file://{sources_path_str}/community"
+    let official_url = format!("file://{}/official", sources_path_str);
+    let community_url = format!("file://{}/community", sources_path_str);
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
 
     let manifest_path = project.project_path().join("agpm.toml");
-    fs::write(&manifest_path, manifest_content.trim()).await.unwrap();
+    fs::write(&manifest_path, manifest.trim()).await.unwrap();
 
     let output = project.run_agpm(&["validate", manifest_path.to_str().unwrap()]).unwrap();
     assert!(output.success);
@@ -662,11 +595,11 @@ async fn test_validate_with_warnings() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with no dependencies (triggers "no dependencies" warning)
-    let manifest_content = r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .build();
+
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(output.success);
@@ -682,11 +615,11 @@ async fn test_validate_strict_mode() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with no dependencies (triggers "no dependencies" warning)
-    let manifest_content = r#"
-[sources]
-official = "https://github.com/example-org/agpm-official.git"
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .build();
+
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--strict"]).unwrap();
     assert!(!output.success);
@@ -732,16 +665,16 @@ async fn test_validate_circular_dependencies() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest that could lead to circular dependencies
-    let manifest_content = r#"
-[sources]
-source1 = "https://github.com/test/repo1.git"
-source2 = "https://github.com/test/repo2.git"
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[
+            ("source1", "https://github.com/test/repo1.git"),
+            ("source2", "https://github.com/test/repo2.git"),
+        ])
+        .add_standard_agent("agent-a", "source1", "agents/a.md")
+        .add_standard_agent("agent-b", "source2", "agents/b.md")
+        .build();
 
-[agents]
-agent-a = { source = "source1", path = "agents/a.md", version = "v1.0.0" }
-agent-b = { source = "source2", path = "agents/b.md", version = "v1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate", "--dependencies"]).unwrap();
     assert!(output.success); // Should handle gracefully
@@ -754,15 +687,17 @@ async fn test_validate_unsupported_resource_type() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with snippets using opencode tool (not supported)
-    let manifest_content = r#"
-[sources]
-community = "https://github.com/test/repo.git"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", "https://github.com/test/repo.git")
+        .add_snippet("utils", |d| {
+            d.source("community")
+                .path("snippets/utils.md")
+                .version("v1.0.0")
+                .tool("opencode")
+        })
+        .build();
 
-[snippets]
-# OpenCode doesn't support snippets - should show helpful error
-utils = { source = "community", path = "snippets/utils.md", version = "v1.0.0", tool = "opencode" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success);
@@ -783,15 +718,17 @@ async fn test_validate_unsupported_shows_alternatives() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with agents using agpm artifact type (not supported)
-    let manifest_content = r#"
-[sources]
-community = "https://github.com/test/repo.git"
+    let manifest = ManifestBuilder::new()
+        .add_source("community", "https://github.com/test/repo.git")
+        .add_agent("helper", |d| {
+            d.source("community")
+                .path("agents/helper.md")
+                .version("v1.0.0")
+                .tool("agpm")
+        })
+        .build();
 
-[agents]
-# AGPM doesn't support agents - should show which types DO support agents
-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "agpm" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["validate"]).unwrap();
     assert!(!output.success);

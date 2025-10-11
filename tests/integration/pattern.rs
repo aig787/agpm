@@ -3,9 +3,7 @@
 use anyhow::Result;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 
 /// Test installing dependencies using glob patterns.
 #[tokio::test]
@@ -44,25 +42,14 @@ async fn test_pattern_based_installation() -> Result<()> {
     let repo_url = test_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with pattern dependencies
-    let manifest_content = format!(
-        r#"
-[sources]
-test-repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent_pattern("ai-agents", "test-repo", "agents/ai/*.md", "v1.0.0")
+        .add_agent_pattern("review-agents", "test-repo", "agents/review*.md", "v1.0.0")
+        .add_agent_pattern("all-agents", "test-repo", "agents/**/*.md", "v1.0.0")
+        .build();
 
-[agents]
-# Install all AI agents
-ai-agents = {{ source = "test-repo", path = "agents/ai/*.md", version = "v1.0.0" }}
-
-# Install all review-related agents  
-review-agents = {{ source = "test-repo", path = "agents/review*.md", version = "v1.0.0" }}
-
-# Install all agents recursively
-all-agents = {{ source = "test-repo", path = "agents/**/*.md", version = "v1.0.0" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install command
     let output = project.run_agpm(&["install"])?;
@@ -113,18 +100,17 @@ async fn test_pattern_with_custom_target() -> Result<()> {
     let repo_url = test_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with custom target
-    let manifest_content = format!(
-        r#"
-[sources]
-test-repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_snippet("utilities", |d| {
+            d.source("test-repo")
+                .path("snippets/util*.md")
+                .version("v1.0.0")
+                .target("tools/utilities")
+        })
+        .build();
 
-[snippets]
-utilities = {{ source = "test-repo", path = "snippets/util*.md", version = "v1.0.0", target = "tools/utilities" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install
     let output = project.run_agpm(&["install"])?;
@@ -161,18 +147,12 @@ async fn test_pattern_with_versions() -> Result<()> {
     let repo_url = test_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest with v1.0.0 pattern dependency
-    let manifest_content = format!(
-        r#"
-[sources]
-test-repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent_pattern("v1-agents", "test-repo", "agents/*.md", "v1.0.0")
+        .build();
 
-[agents]
-v1-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install
     let output = project.run_agpm(&["install"])?;
@@ -212,15 +192,14 @@ async fn test_local_pattern_dependencies() -> Result<()> {
     fs::write(agents_dir.join("local3.md"), "# Local Agent 3").await?;
 
     // Create manifest with local pattern dependency
-    let manifest_content = format!(
-        r#"
-[agents]
-local-agents = {{ path = "{}/agents/local*.md" }}
-"#,
-        resources_dir.display()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_local_agent(
+            "local-agents",
+            &format!("{}/agents/local*.md", resources_dir.display()),
+        )
+        .build();
 
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Run install
     let output = project.run_agpm(&["install"])?;
@@ -252,7 +231,7 @@ async fn test_invalid_pattern_error() -> Result<()> {
 
     let project = TestProject::new().await?;
 
-    // Create manifest with path traversal pattern
+    // Create manifest with path traversal pattern - intentionally invalid, keep as-is
     let manifest_content = r#"
 [sources]
 test-repo = "https://github.com/example/repo.git"
@@ -293,18 +272,12 @@ async fn test_pattern_performance() -> Result<()> {
     let repo_url = test_repo.bare_file_url(project.sources_path())?;
 
     // Create manifest
-    let manifest_content = format!(
-        r#"
-[sources]
-test-repo = "{}"
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent_pattern("all-agents", "test-repo", "agents/*.md", "v1.0.0")
+        .build();
 
-[agents]
-all-agents = {{ source = "test-repo", path = "agents/*.md", version = "v1.0.0" }}
-"#,
-        repo_url
-    );
-
-    project.write_manifest(&manifest_content).await?;
+    project.write_manifest(&manifest).await?;
 
     // Measure installation time
     let start = std::time::Instant::now();

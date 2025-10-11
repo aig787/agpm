@@ -1,46 +1,30 @@
 use predicates::prelude::*;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::{DirAssert, FileAssert, TestProject};
-use fixtures::ManifestFixture;
+use crate::common::{DirAssert, FileAssert, ManifestBuilder, TestProject};
+use crate::fixtures::ManifestFixture;
 
 /// Test installing from a manifest when no lockfile exists
 #[tokio::test]
 async fn test_install_creates_lockfile() {
     let project = TestProject::new().await.unwrap();
 
-    // Create mock source repositories
-    let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo.commit_all("Add my agent").unwrap();
-    official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
-
+    // Create mock source repositories - can reuse standard repo with different dependency names
+    let (_official_repo, official_url) = project.create_standard_v1_repo("official").await.unwrap();
     let community_repo = project.create_source_repo("community").await.unwrap();
-    community_repo
-        .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
-        .await
-        .unwrap();
-    community_repo.commit_all("Add helper agent").unwrap();
+    // Create a different agent to avoid path conflicts
+    community_repo.add_resource("agents", "helper", "# Helper Agent\n\nA helper agent").await.unwrap();
+    community_repo.commit_all("Add helper").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Create manifest with file:// URLs (no git server needed)
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-community = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-"#,
-        official_url, community_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest using ManifestBuilder
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/test-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Run install command
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
@@ -64,6 +48,11 @@ helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" 
     assert!(lockfile_content.contains("[[agents]]"));
     assert!(lockfile_content.contains("my-agent"));
     assert!(lockfile_content.contains("helper"));
+
+    // Verify agents were installed
+    let agents_dir = project.project_path().join(".claude/agents");
+    assert!(agents_dir.join("test-agent.md").exists());
+    assert!(agents_dir.join("helper.md").exists());
 }
 
 /// Test installing when lockfile already exists
@@ -89,20 +78,13 @@ async fn test_install_with_existing_lockfile() {
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
     let community_sha = community_repo.git.get_commit_hash().unwrap();
 
-    // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-community = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-"#,
-        official_url, community_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest using ManifestBuilder
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create a matching lockfile with the actual commit SHAs
     let lockfile_content = format!(
@@ -224,14 +206,10 @@ async fn test_install_missing_manifest_fields() {
 async fn test_install_parallel_flag() {
     let project = TestProject::new().await.unwrap();
 
-    // Create mock source repositories with multiple files
+    // Create source repository
     let official_repo = project.create_source_repo("official").await.unwrap();
     official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo
-        .add_resource("snippets", "utils", "# Utils Snippet\n\nA test snippet")
-        .await
-        .unwrap();
-    official_repo.commit_all("Add resources").unwrap();
+    official_repo.commit_all("Add agent").unwrap();
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
@@ -244,20 +222,13 @@ async fn test_install_parallel_flag() {
     community_repo.tag_version("v1.0.0").unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Create manifest with file:// URLs (no git server needed)
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-community = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-"#,
-        official_url, community_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest using ManifestBuilder
+    let manifest = ManifestBuilder::new()
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Run install command
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
@@ -299,29 +270,17 @@ async fn test_install_local_dependencies() {
         .await
         .unwrap();
 
-    // Add official source for the remote dependency
-    let official_repo = project.create_source_repo("official").await.unwrap();
-    official_repo.add_resource("agents", "my-agent", "# My Agent\n\nA test agent").await.unwrap();
-    official_repo.commit_all("Add my agent").unwrap();
-    official_repo.tag_version("v1.0.0").unwrap();
-    let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
+    // Add official source for the remote dependency using new helper
+    let (_official_repo, official_url) = project.create_standard_v1_repo("official").await.unwrap();
 
-    // Create manifest with local dependencies and file:// URL for remote
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-local-agent = {{ path = "../local-agents/helper.md" }}
-
-[snippets]
-local-utils = {{ path = "./snippets/local-utils.md" }}
-"#,
-        official_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest with ManifestBuilder showing local + remote dependencies
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &official_url)
+        .add_standard_agent("my-agent", "official", "agents/test-agent.md")
+        .add_local_agent("local-agent", "../local-agents/helper.md")
+        .add_local_snippet("local-utils", "./snippets/local-utils.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Run install command
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
@@ -343,7 +302,7 @@ local-utils = {{ path = "./snippets/local-utils.md" }}
 
     // Verify all dependencies were installed
     let agents_dir = project.project_path().join(".claude").join("agents");
-    assert!(agents_dir.join("my-agent.md").exists());
+    assert!(agents_dir.join("test-agent.md").exists()); // From create_standard_v1_repo
     assert!(agents_dir.join("local-agent.md").exists());
 
     // Snippets now default to .agpm/snippets (agpm artifact type)
@@ -366,18 +325,12 @@ async fn test_install_verbose() {
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Create manifest with file:// URLs (no git server needed)
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        official_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest using ManifestBuilder
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &official_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Run install command with verbose flag
     let output = project.run_agpm(&["install", "--no-cache", "--verbose"]).unwrap();
@@ -403,18 +356,12 @@ async fn test_install_quiet() {
     official_repo.tag_version("v1.0.0").unwrap();
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Create manifest with file:// URLs (no git server needed)
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#,
-        official_url
-    );
-    project.write_manifest(&manifest_content).await.unwrap();
+    // Create manifest using ManifestBuilder
+    let manifest = ManifestBuilder::new()
+        .add_source("official", &official_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Run install command with quiet flag
     let output = project.run_agpm(&["install", "--no-cache", "--quiet"]).unwrap();

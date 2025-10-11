@@ -1,10 +1,8 @@
 use predicates::prelude::*;
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::ManifestFixture;
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::ManifestFixture;
 
 /// Helper to add mock sources for tests
 async fn add_standard_mock_sources(project: &TestProject) -> anyhow::Result<(String, String)> {
@@ -35,20 +33,15 @@ async fn test_update_all_dependencies() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
@@ -123,20 +116,15 @@ async fn test_update_specific_dependency() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
@@ -214,20 +202,15 @@ async fn test_update_without_lockfile() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();
@@ -252,15 +235,10 @@ async fn test_update_check_mode() {
     let official_url = official_repo.bare_file_url(project.sources_path()).unwrap();
 
     // Create manifest with file URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_source("official", &official_url)
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create outdated lockfile with file URLs
@@ -306,20 +284,15 @@ async fn test_update_with_version_constraints() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create matching lockfile
@@ -388,20 +361,15 @@ async fn test_update_with_backup() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["update", "--backup"]).unwrap();
@@ -418,20 +386,15 @@ async fn test_update_verbose() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["update", "--verbose"]).unwrap();
@@ -450,20 +413,15 @@ async fn test_update_quiet() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["update", "--quiet"]).unwrap();
@@ -478,20 +436,15 @@ async fn test_update_dry_run() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     // Create initial lockfile
@@ -569,22 +522,19 @@ async fn test_update_network_failure() {
     // Create manifest with non-existent file:// URLs to simulate network failure
     // Note: file:// URLs must use forward slashes even on Windows
     let sources_path = project.sources_path().display().to_string().replace('\\', "/");
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "file://{}/nonexistent.git"
-community = "file://{}/also-nonexistent.git"
+    let official_url = format!("file://{}/nonexistent.git", sources_path);
+    let community_url = format!("file://{}/also-nonexistent.git", sources_path);
 
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#,
-        sources_path, sources_path
-    );
-    project.write_manifest(manifest_content.trim()).await.unwrap();
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
+    project.write_manifest(&manifest_content).await.unwrap();
 
     // Create lockfile with non-existent URLs and matching resources
     let lockfile_content = format!(
@@ -696,20 +646,15 @@ async fn test_update_no_updates_available() {
     let (official_url, community_url) = add_standard_mock_sources(&project).await.unwrap();
 
     // Create manifest with file:// URLs
-    let manifest_content = format!(
-        r#"
-[sources]
-official = "{official_url}"
-community = "{community_url}"
-
-[agents]
-my-agent = {{ source = "official", path = "agents/my-agent.md", version = "v1.0.0" }}
-helper = {{ source = "community", path = "agents/helper.md", version = "v1.0.0" }}
-
-[snippets]
-utils = {{ source = "official", path = "snippets/utils.md", version = "v1.0.0" }}
-"#
-    );
+    let manifest_content = ManifestBuilder::new()
+        .add_sources(&[
+            ("official", &official_url),
+            ("community", &community_url),
+        ])
+        .add_standard_agent("my-agent", "official", "agents/my-agent.md")
+        .add_standard_agent("helper", "community", "agents/helper.md")
+        .add_standard_snippet("utils", "official", "snippets/utils.md")
+        .build();
     project.write_manifest(&manifest_content).await.unwrap();
 
     let output = project.run_agpm(&["update"]).unwrap();

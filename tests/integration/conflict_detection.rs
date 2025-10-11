@@ -8,8 +8,8 @@ use predicates::prelude::*;
 use tempfile::TempDir;
 use tokio::fs;
 
-mod common;
-use common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
+
 
 /// Test that conflicting exact versions are detected and installation fails.
 #[tokio::test]
@@ -59,18 +59,11 @@ async fn test_identical_exact_versions_no_conflict() {
     source_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with two resources pointing to same source:path and IDENTICAL version
-    let manifest = format!(
-        r#"
-[sources]
-test-repo = "{}"
-
-[agents]
-# Same path, same exact version - should NOT conflict
-test-agent-1 = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
-test-agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &source_repo.file_url())
+        .add_standard_agent("test-agent-1", "test-repo", "agents/test-agent.md")
+        .add_standard_agent("test-agent-2", "test-repo", "agents/test-agent.md")
+        .build();
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
@@ -111,18 +104,13 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
     source_repo.git.checkout("main").unwrap();
 
     // Create manifest with same resource using semver version and git branch
-    let manifest = format!(
-        r#"
-[sources]
-test-repo = "{}"
-
-[agents]
-# Same path, one uses semver version, other uses git branch - should conflict
-agent-stable = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
-agent-dev = {{ source = "test-repo", path = "agents/test-agent.md", branch = "main" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &source_repo.file_url())
+        .add_standard_agent("agent-stable", "test-repo", "agents/test-agent.md")
+        .add_agent("agent-dev", |d| {
+            d.source("test-repo").path("agents/test-agent.md").branch("main")
+        })
+        .build();
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
@@ -158,18 +146,11 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() {
     source_repo.tag_version("v1.0.0").unwrap();
 
     // Create manifest with same resource, one unspecified (HEAD), one pinned
-    let manifest = format!(
-        r#"
-[sources]
-test-repo = "{}"
-
-[agents]
-# Same path, one unspecified (HEAD), one with specific version - should conflict
-agent-head = {{ source = "test-repo", path = "agents/test-agent.md" }}
-agent-pinned = {{ source = "test-repo", path = "agents/test-agent.md", version = "v1.0.0" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &source_repo.file_url())
+        .add_agent("agent-head", |d| d.source("test-repo").path("agents/test-agent.md"))
+        .add_standard_agent("agent-pinned", "test-repo", "agents/test-agent.md")
+        .build();
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
@@ -213,18 +194,15 @@ async fn test_different_branches_conflict_blocks_install() {
     source_repo.git.checkout("main").unwrap();
 
     // Create manifest with same resource using different branches
-    let manifest = format!(
-        r#"
-[sources]
-test-repo = "{}"
-
-[agents]
-# Same path, different branches - should conflict
-agent-main = {{ source = "test-repo", path = "agents/test-agent.md", branch = "main" }}
-agent-dev = {{ source = "test-repo", path = "agents/test-agent.md", branch = "develop" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &source_repo.file_url())
+        .add_agent("agent-main", |d| {
+            d.source("test-repo").path("agents/test-agent.md").branch("main")
+        })
+        .add_agent("agent-dev", |d| {
+            d.source("test-repo").path("agents/test-agent.md").branch("develop")
+        })
+        .build();
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();
@@ -274,18 +252,15 @@ async fn test_same_branch_different_case_no_conflict() {
     // If create_branch failed, we're on case-insensitive (macOS/Windows) and "Main" == "main"
 
     // Create manifest with same resource using different case for branch name
-    let manifest = format!(
-        r#"
-[sources]
-test-repo = "{}"
-
-[agents]
-# Same path, same branch but different case - should NOT conflict
-agent-1 = {{ source = "test-repo", path = "agents/test-agent.md", branch = "main" }}
-agent-2 = {{ source = "test-repo", path = "agents/test-agent.md", branch = "Main" }}
-"#,
-        source_repo.file_url()
-    );
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &source_repo.file_url())
+        .add_agent("agent-1", |d| {
+            d.source("test-repo").path("agents/test-agent.md").branch("main")
+        })
+        .add_agent("agent-2", |d| {
+            d.source("test-repo").path("agents/test-agent.md").branch("Main")
+        })
+        .build();
     project.write_manifest(&manifest).await.unwrap();
 
     let output = project.run_agpm(&["install"]).unwrap();

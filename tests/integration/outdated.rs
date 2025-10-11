@@ -1,9 +1,7 @@
 use tokio::fs;
 
-mod common;
-mod fixtures;
-use common::TestProject;
-use fixtures::ManifestFixture;
+use crate::common::{ManifestBuilder, TestProject};
+use crate::fixtures::ManifestFixture;
 
 /// Test outdated command with up-to-date dependencies
 #[tokio::test]
@@ -47,13 +45,15 @@ async fn test_outdated_with_updates_available() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with version constraints
-    let manifest_content = r#"[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .add_agent("my-agent", |d| {
+            d.source("official")
+                .path("agents/my-agent.md")
+                .version("^1.0.0")
+        })
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create mock lockfile with older version
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
@@ -204,14 +204,20 @@ async fn test_outdated_specific_dependencies() {
     let project = TestProject::new().await.unwrap();
 
     // Create manifest with multiple dependencies
-    let manifest_content = r#"[sources]
-official = "https://github.com/example-org/agpm-official.git"
-
-[agents]
-my-agent = { source = "official", path = "agents/my-agent.md", version = "^1.0.0" }
-helper = { source = "official", path = "agents/helper.md", version = "^1.0.0" }
-"#;
-    project.write_manifest(manifest_content).await.unwrap();
+    let manifest = ManifestBuilder::new()
+        .add_source("official", "https://github.com/example-org/agpm-official.git")
+        .add_agent("my-agent", |d| {
+            d.source("official")
+                .path("agents/my-agent.md")
+                .version("^1.0.0")
+        })
+        .add_agent("helper", |d| {
+            d.source("official")
+                .path("agents/helper.md")
+                .version("^1.0.0")
+        })
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
 
     // Create mock lockfile
     let lockfile_content = r#"# Auto-generated lockfile - DO NOT EDIT
