@@ -25,7 +25,7 @@ path = "tests/integration/mod.rs"
 # Stress test suite (slow, manual execution only)
 [[test]]
 name = "stress"
-path = "tests/stress/mod.rs"
+path = "tests/stress/main.rs"
 
 [features]
 default = []
