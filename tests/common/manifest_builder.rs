@@ -461,33 +461,6 @@ impl ManifestBuilder {
             toml.push('\n');
         }
 
-        // Target section
-        if let Some(target) = &self.target_config {
-            toml.push_str("[target]\n");
-            if let Some(agents) = &target.agents {
-                toml.push_str(&format!("agents = \"{}\"\n", escape_toml_string(agents)));
-            }
-            if let Some(snippets) = &target.snippets {
-                toml.push_str(&format!("snippets = \"{}\"\n", escape_toml_string(snippets)));
-            }
-            if let Some(commands) = &target.commands {
-                toml.push_str(&format!("commands = \"{}\"\n", escape_toml_string(commands)));
-            }
-            if let Some(scripts) = &target.scripts {
-                toml.push_str(&format!("scripts = \"{}\"\n", escape_toml_string(scripts)));
-            }
-            if let Some(hooks) = &target.hooks {
-                toml.push_str(&format!("hooks = \"{}\"\n", escape_toml_string(hooks)));
-            }
-            if let Some(mcp_servers) = &target.mcp_servers {
-                toml.push_str(&format!("mcp-servers = \"{}\"\n", escape_toml_string(mcp_servers)));
-            }
-            if let Some(gitignore) = target.gitignore {
-                toml.push_str(&format!("gitignore = {}\n", gitignore));
-            }
-            toml.push('\n');
-        }
-
         // Helper to format dependency sections
         fn format_dependencies(toml: &mut String, section: &str, deps: &[DependencyEntry]) {
             if !deps.is_empty() {

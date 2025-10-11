@@ -117,8 +117,8 @@ async fn test_pattern_with_custom_target() -> Result<()> {
     assert!(output.success);
 
     // Verify custom installation path
-    // Custom target is relative to default snippets directory
-    let custom_dir = project.project_path().join(".claude/agpm/snippets/tools/utilities");
+    // Custom target is relative to default snippets directory (.agpm/snippets/ for agpm tool)
+    let custom_dir = project.project_path().join(".agpm/snippets/tools/utilities");
     assert!(custom_dir.join("util1.md").exists(), "util1 not installed to custom path");
     assert!(custom_dir.join("util2.md").exists(), "util2 not installed to custom path");
     assert!(!custom_dir.join("helper.md").exists(), "helper should not be installed");

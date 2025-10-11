@@ -231,16 +231,11 @@ impl ResourceIterator {
             let entries = resource_type.get_lockfile_entries(lockfile);
 
             for entry in entries {
-                // Try artifact config first, fall back to legacy target config
-                let target_dir = if let Some(artifact_path) =
-                    manifest.get_artifact_resource_path(&entry.tool, *resource_type)
-                {
-                    std::borrow::Cow::Owned(artifact_path.display().to_string())
-                } else {
-                    // Fall back to legacy target config with deprecation
-                    #[allow(deprecated)]
-                    std::borrow::Cow::Borrowed(resource_type.get_target_dir(&manifest.target))
-                };
+                // Get artifact configuration path
+                let artifact_path = manifest
+                    .get_artifact_resource_path(&entry.tool, *resource_type)
+                    .expect("Resource type should be supported by configured tools");
+                let target_dir = std::borrow::Cow::Owned(artifact_path.display().to_string());
 
                 all_entries.push((entry, target_dir));
             }
@@ -399,7 +394,7 @@ impl ResourceIterator {
 mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource};
-    use crate::manifest::{Manifest, TargetConfig};
+    use crate::manifest::Manifest;
 
     fn create_test_lockfile() -> LockFile {
         let mut lockfile = LockFile::new();
@@ -437,12 +432,8 @@ mod tests {
         lockfile
     }
 
-    #[allow(deprecated)]
     fn create_test_manifest() -> Manifest {
-        Manifest {
-            target: TargetConfig::default(),
-            ..Default::default()
-        }
+        Manifest::default()
     }
 
     fn create_multi_resource_lockfile() -> LockFile {
@@ -1074,19 +1065,5 @@ mod tests {
         assert_eq!(ResourceType::Script.get_lockfile_entries(&lockfile).len(), 1);
         assert_eq!(ResourceType::Hook.get_lockfile_entries(&lockfile).len(), 1);
         assert_eq!(ResourceType::McpServer.get_lockfile_entries(&lockfile).len(), 1);
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_resource_type_get_target_dir() {
-        let manifest = create_test_manifest();
-        let targets = &manifest.target;
-
-        assert_eq!(ResourceType::Agent.get_target_dir(targets), ".claude/agents");
-        assert_eq!(ResourceType::Snippet.get_target_dir(targets), ".claude/agpm/snippets");
-        assert_eq!(ResourceType::Command.get_target_dir(targets), ".claude/commands");
-        assert_eq!(ResourceType::Script.get_target_dir(targets), ".claude/agpm/scripts");
-        assert_eq!(ResourceType::Hook.get_target_dir(targets), ".claude/agpm/hooks");
-        assert_eq!(ResourceType::McpServer.get_target_dir(targets), ".claude/agpm/mcp-servers");
     }
 }

@@ -482,12 +482,9 @@ fn parse_dependency_spec(
 async fn install_single_dependency(
     name: &str,
     resource_type: &str,
-    manifest: &Manifest,
+    _manifest: &Manifest,
     manifest_path: &Path,
 ) -> Result<()> {
-    let project_root =
-        manifest_path.parent().ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
-
     // Use the install command's logic for a single dependency
     // This ensures proper transitive dependency resolution
     println!("Installing dependency...");
@@ -502,38 +499,7 @@ async fn install_single_dependency(
     // 3. Update the lockfile with proper dependency tracking
     install_cmd.execute_with_manifest_path(Some(manifest_path.to_path_buf())).await?;
 
-    #[allow(deprecated)]
-    {
-        println!(
-            "{}",
-            format!(
-                "✓ Installed {} '{}' to {}",
-                resource_type,
-                name,
-                project_root
-                    .join(match resource_type {
-                        "agent" => &manifest.target.agents,
-                        "snippet" => &manifest.target.snippets,
-                        "command" => &manifest.target.commands,
-                        "script" => &manifest.target.scripts,
-                        "hook" => &manifest.target.hooks,
-                        "mcp-server" => &manifest.target.mcp_servers,
-                        _ => ".claude",
-                    })
-                    .join(format!(
-                        "{}.{}",
-                        name,
-                        match resource_type {
-                            "hook" | "mcp-server" => "json",
-                            "script" => "sh", // This is approximate, actual extension preserved during install
-                            _ => "md",
-                        }
-                    ))
-                    .display()
-            )
-            .green()
-        );
-    }
+    println!("{}", format!("✓ Installed {} '{}' successfully", resource_type, name).green());
 
     Ok(())
 }
@@ -547,11 +513,6 @@ mod tests {
     // Helper function to create a test manifest with basic structure
     fn create_test_manifest(manifest_path: &Path) {
         let manifest_content = r#"[sources]
-
-[target]
-agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
-commands = ".claude/commands"
 
 [agents]
 
@@ -572,11 +533,6 @@ commands = ".claude/commands"
     fn create_test_manifest_with_content(manifest_path: &Path) {
         let manifest_content = r#"[sources]
 existing = "https://github.com/existing/repo.git"
-
-[target]
-agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
-commands = ".claude/commands"
 
 [agents]
 existing-agent = "../local/agent.md"
@@ -1003,11 +959,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         // Create manifest with MCP server dependency
         let manifest_content = format!(
             r#"[sources]
-
-[target]
-agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
-commands = ".claude/commands"
 mcp-servers = ".claude/agpm/mcp-servers"
 
 [agents]
@@ -1058,11 +1009,6 @@ test-mcp = "{}"
         let manifest_content = format!(
             r#"[sources]
 
-[target]
-agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
-commands = ".claude/commands"
-
 [agents]
 test = "{}"
 
@@ -1097,11 +1043,6 @@ test = "{}"
 
         // Create manifest with a dependency that references a non-existent source
         let manifest_content = r#"[sources]
-
-[target]
-agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
-commands = ".claude/commands"
 
 [agents]
 test-agent = { source = "nonexistent-source", path = "agents/test.md", version = "v1.0.0" }

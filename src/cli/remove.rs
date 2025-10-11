@@ -144,7 +144,7 @@ fn get_installed_path_from_lockfile(
     name: &str,
     resource_type: ResourceType,
     project_root: &std::path::Path,
-    manifest: &Manifest,
+    _manifest: &Manifest,
 ) -> Option<std::path::PathBuf> {
     match resource_type {
         ResourceType::Agent => lockfile
@@ -162,13 +162,11 @@ fn get_installed_path_from_lockfile(
             .iter()
             .find(|c| c.name == name)
             .map(|c| project_root.join(&c.installed_at)),
-        ResourceType::McpServer => {
-            // MCP servers have config files in the directory specified by manifest.target.mcp_servers
-            #[allow(deprecated)]
-            {
-                Some(project_root.join(&manifest.target.mcp_servers).join(format!("{name}.json")))
-            }
-        }
+        ResourceType::McpServer => lockfile
+            .mcp_servers
+            .iter()
+            .find(|m| m.name == name)
+            .map(|m| project_root.join(&m.installed_at)),
         ResourceType::Script => lockfile
             .scripts
             .iter()

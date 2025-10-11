@@ -494,12 +494,9 @@ impl UpdateCommand {
                 Ok(()) => {
                     // Lockfile saved successfully (no progress needed for this quick operation)
 
-                    // Update .gitignore if enabled
-                    #[allow(deprecated)]
-                    let gitignore_enabled = manifest.target.gitignore;
-                    if gitignore_enabled {
-                        update_gitignore(&new_lockfile, project_dir, gitignore_enabled)?;
-                    }
+                    // Update .gitignore
+                    // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
+                    update_gitignore(&new_lockfile, project_dir, true)?;
 
                     // Complete finalizing phase
                     if !self.quiet && !self.no_progress && install_count > 0 {
@@ -546,7 +543,7 @@ impl UpdateCommand {
 mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource, LockedSource};
-    use crate::manifest::{DetailedDependency, Manifest, ResourceDependency, TargetConfig};
+    use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
@@ -591,7 +588,6 @@ mod tests {
 
         Manifest {
             sources,
-            target: TargetConfig::default(),
             tools: None,
             agents,
             snippets: HashMap::new(),

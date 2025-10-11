@@ -553,16 +553,6 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub sources: HashMap<String, String>,
 
-    /// Installation target directory configuration.
-    ///
-    /// Specifies where different resource types should be installed relative
-    /// to the project root. Uses sensible defaults if not specified.
-    ///
-    /// See [`TargetConfig`] for details on default values and customization.
-    #[deprecated(since = "0.4.0", note = "Use tools configuration instead")]
-    #[serde(default)]
-    pub target: TargetConfig,
-
     /// Tool type configurations for multi-tool support.
     ///
     /// Maps tool type names (claude-code, opencode, agpm, custom) to their
@@ -1392,14 +1382,12 @@ impl Manifest {
     /// assert!(manifest.snippets.is_empty());
     /// assert!(manifest.commands.is_empty());
     /// assert!(manifest.mcp_servers.is_empty());
-    /// assert_eq!(manifest.target.agents, ".claude/agents");
     /// ```
     #[must_use]
     #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             sources: HashMap::new(),
-            target: TargetConfig::default(),
             tools: None,
             agents: HashMap::new(),
             snippets: HashMap::new(),
@@ -2016,20 +2004,6 @@ impl Manifest {
             ResourceType::Script => Some(&self.scripts),
             ResourceType::Hook => Some(&self.hooks),
             ResourceType::McpServer => Some(&self.mcp_servers),
-        }
-    }
-
-    /// Get the target directory for a specific resource type
-    #[allow(deprecated)]
-    pub fn get_target_dir(&self, resource_type: crate::core::ResourceType) -> &str {
-        use crate::core::ResourceType;
-        match resource_type {
-            ResourceType::Agent => &self.target.agents,
-            ResourceType::Snippet => &self.target.snippets,
-            ResourceType::Command => &self.target.commands,
-            ResourceType::Script => &self.target.scripts,
-            ResourceType::Hook => &self.target.hooks,
-            ResourceType::McpServer => &self.target.mcp_servers,
         }
     }
 
@@ -3363,18 +3337,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_target_config_commands_dir() {
-        let config = TargetConfig::default();
-        assert_eq!(config.commands, ".claude/commands");
-
-        // Test custom config
-        let mut manifest = Manifest::new();
-        manifest.target.commands = "custom/commands".to_string();
-        assert_eq!(manifest.target.commands, "custom/commands");
-    }
-
-    #[test]
     fn test_mcp_servers() {
         let mut manifest = Manifest::new();
 
@@ -3426,18 +3388,6 @@ mod tests {
 
         let server = &loaded.mcp_servers["postgres"];
         assert_eq!(server.get_path(), "../local/mcp-servers/postgres.json");
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_target_config_mcp_servers_dir() {
-        let config = TargetConfig::default();
-        assert_eq!(config.mcp_servers, ".claude/agpm/mcp-servers");
-
-        // Test custom config
-        let mut manifest = Manifest::new();
-        manifest.target.mcp_servers = "custom/mcp".to_string();
-        assert_eq!(manifest.target.mcp_servers, "custom/mcp");
     }
 
     #[test]

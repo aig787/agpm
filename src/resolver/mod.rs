@@ -1747,51 +1747,27 @@ impl DependencyResolver {
 
             // Determine the target directory using artifact configuration
             // Normalize to forward slashes for cross-platform consistency in lockfile
+            let artifact_path = self
+                .manifest
+                .get_artifact_resource_path(artifact_type, resource_type)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Resource type '{}' is not supported by tool '{}'",
+                        resource_type,
+                        artifact_type
+                    )
+                })?;
+
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
-                if let Some(artifact_path) =
-                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
-                {
-                    let base_target = artifact_path.display().to_string();
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                        + "/"
-                        + &filename
-                } else {
-                    // Fallback to legacy target config
-                    #[allow(deprecated)]
-                    let base_target = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                        + "/"
-                        + &filename
-                }
+                let base_target = artifact_path.display().to_string();
+                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    .replace("//", "/")
+                    + "/"
+                    + &filename
             } else {
                 // Use artifact configuration for default path
-                if let Some(artifact_path) =
-                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
-                {
-                    format!("{}/{}", artifact_path.display(), filename)
-                } else {
-                    // Fallback to legacy target config
-                    #[allow(deprecated)]
-                    let target_dir = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{target_dir}/{filename}")
-                }
+                format!("{}/{}", artifact_path.display(), filename)
             }
             .replace('\\', "/");
 
@@ -1913,51 +1889,27 @@ impl DependencyResolver {
 
             // Determine the target directory using artifact configuration
             // Normalize to forward slashes for cross-platform consistency in lockfile
+            let artifact_path = self
+                .manifest
+                .get_artifact_resource_path(artifact_type, resource_type)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Resource type '{}' is not supported by tool '{}'",
+                        resource_type,
+                        artifact_type
+                    )
+                })?;
+
             let installed_at = if let Some(custom_target) = dep.get_target() {
                 // Custom target is relative to the artifact's resource directory
-                if let Some(artifact_path) =
-                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
-                {
-                    let base_target = artifact_path.display().to_string();
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                        + "/"
-                        + &filename
-                } else {
-                    // Fallback to legacy target config
-                    #[allow(deprecated)]
-                    let base_target = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                        + "/"
-                        + &filename
-                }
+                let base_target = artifact_path.display().to_string();
+                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    .replace("//", "/")
+                    + "/"
+                    + &filename
             } else {
                 // Use artifact configuration for default path
-                if let Some(artifact_path) =
-                    self.manifest.get_artifact_resource_path(artifact_type, resource_type)
-                {
-                    format!("{}/{}", artifact_path.display(), filename)
-                } else {
-                    // Fallback to legacy target config
-                    #[allow(deprecated)]
-                    let target_dir = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{target_dir}/{filename}")
-                }
+                format!("{}/{}", artifact_path.display(), filename)
             }
             .replace('\\', "/");
 
@@ -2095,31 +2047,31 @@ impl DependencyResolver {
                 // Extract relative path to preserve directory structure
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
+                // Determine artifact type
+                let artifact_type = match dep {
+                    crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
+                    _ => "claude-code",
+                };
+
+                // Get artifact path
+                let artifact_path = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Resource type '{}' is not supported by tool '{}'",
+                            resource_type,
+                            artifact_type
+                        )
+                    })?;
+
                 // Determine the target directory
-                #[allow(deprecated)]
                 let target_dir = if let Some(custom_target) = dep.get_target() {
-                    // Custom target is relative to the default resource directory
-                    let base_target = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    // Custom target is relative to the artifact's resource directory
+                    format!("{}/{}", artifact_path.display(), custom_target.trim_start_matches('/'))
                         .replace("//", "/")
                 } else {
-                    match resource_type {
-                        crate::core::ResourceType::Agent => self.manifest.target.agents.clone(),
-                        crate::core::ResourceType::Snippet => self.manifest.target.snippets.clone(),
-                        crate::core::ResourceType::Command => self.manifest.target.commands.clone(),
-                        crate::core::ResourceType::Script => self.manifest.target.scripts.clone(),
-                        crate::core::ResourceType::Hook => self.manifest.target.hooks.clone(),
-                        crate::core::ResourceType::McpServer => {
-                            self.manifest.target.mcp_servers.clone()
-                        }
-                    }
+                    artifact_path.display().to_string()
                 };
 
                 // Use relative path if it exists, otherwise use resource name
@@ -2224,31 +2176,31 @@ impl DependencyResolver {
                 // Extract relative path to preserve directory structure
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
+                // Determine artifact type
+                let artifact_type = match dep {
+                    crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
+                    _ => "claude-code",
+                };
+
+                // Get artifact path
+                let artifact_path = self
+                    .manifest
+                    .get_artifact_resource_path(artifact_type, resource_type)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Resource type '{}' is not supported by tool '{}'",
+                            resource_type,
+                            artifact_type
+                        )
+                    })?;
+
                 // Determine the target directory
-                #[allow(deprecated)]
                 let target_dir = if let Some(custom_target) = dep.get_target() {
-                    // Custom target is relative to the default resource directory
-                    let base_target = match resource_type {
-                        crate::core::ResourceType::Agent => &self.manifest.target.agents,
-                        crate::core::ResourceType::Snippet => &self.manifest.target.snippets,
-                        crate::core::ResourceType::Command => &self.manifest.target.commands,
-                        crate::core::ResourceType::Script => &self.manifest.target.scripts,
-                        crate::core::ResourceType::Hook => &self.manifest.target.hooks,
-                        crate::core::ResourceType::McpServer => &self.manifest.target.mcp_servers,
-                    };
-                    format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                    // Custom target is relative to the artifact's resource directory
+                    format!("{}/{}", artifact_path.display(), custom_target.trim_start_matches('/'))
                         .replace("//", "/")
                 } else {
-                    match resource_type {
-                        crate::core::ResourceType::Agent => self.manifest.target.agents.clone(),
-                        crate::core::ResourceType::Snippet => self.manifest.target.snippets.clone(),
-                        crate::core::ResourceType::Command => self.manifest.target.commands.clone(),
-                        crate::core::ResourceType::Script => self.manifest.target.scripts.clone(),
-                        crate::core::ResourceType::Hook => self.manifest.target.hooks.clone(),
-                        crate::core::ResourceType::McpServer => {
-                            self.manifest.target.mcp_servers.clone()
-                        }
-                    }
+                    artifact_path.display().to_string()
                 };
 
                 // Use relative path if it exists, otherwise use resource name
@@ -2359,9 +2311,9 @@ impl DependencyResolver {
     ///
     /// # Installation Paths
     ///
-    /// Resource types determine installation directories:
-    /// - Agents install to `{manifest.target.agents}/{name}.md`
-    /// - Snippets install to `{manifest.target.snippets}/{name}.md`
+    /// Resource types determine installation directories based on tool configuration:
+    /// - Agents typically install to `.claude/agents/{name}.md` (claude-code tool)
+    /// - Snippets typically install to `.agpm/snippets/{name}.md` (agpm tool)
     ///
     /// # Parameters
     ///

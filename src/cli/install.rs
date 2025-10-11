@@ -678,10 +678,8 @@ impl InstallCommand {
             }
 
             // Update .gitignore only if installation succeeded
-            #[allow(deprecated)]
-            if manifest.target.gitignore {
-                update_gitignore(&lockfile, actual_project_dir, true)?;
-            }
+            // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
+            update_gitignore(&lockfile, actual_project_dir, true)?;
 
             // Complete finalizing phase
             if !self.quiet

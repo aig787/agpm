@@ -127,7 +127,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::cache::Cache;
-use crate::core::{ResourceIterator, ResourceTypeExt};
+use crate::core::ResourceIterator;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::Manifest;
 use crate::markdown::MarkdownFile;
@@ -1294,16 +1294,11 @@ pub async fn install_resources(
                         source.as_deref(),
                     )
                 {
-                    // Try artifact config first, fall back to legacy target config
-                    let target_dir = if let Some(artifact_path) =
-                        manifest.get_artifact_resource_path(&entry.tool, resource_type)
-                    {
-                        artifact_path.display().to_string()
-                    } else {
-                        // Fall back to legacy target config
-                        #[allow(deprecated)]
-                        resource_type.get_target_dir(&manifest.target).to_string()
-                    };
+                    // Get artifact configuration path
+                    let artifact_path = manifest
+                        .get_artifact_resource_path(&entry.tool, resource_type)
+                        .expect("Resource type should be supported by configured tools");
+                    let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
                 }
             }
@@ -1815,16 +1810,11 @@ pub async fn install_updated_resources(
         if let Some((resource_type, entry)) =
             ResourceIterator::find_resource_by_name_and_source(lockfile, name, source.as_deref())
         {
-            // Try artifact config first, fall back to legacy target config
-            let target_dir = if let Some(artifact_path) =
-                manifest.get_artifact_resource_path(&entry.tool, resource_type)
-            {
-                artifact_path.display().to_string()
-            } else {
-                // Fall back to legacy target config
-                #[allow(deprecated)]
-                resource_type.get_target_dir(&manifest.target).to_string()
-            };
+            // Get artifact configuration path
+            let artifact_path = manifest
+                .get_artifact_resource_path(&entry.tool, resource_type)
+                .expect("Resource type should be supported by configured tools");
+            let target_dir = artifact_path.display().to_string();
             entries_to_install.push((entry.clone(), target_dir));
         }
     }

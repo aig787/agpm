@@ -155,36 +155,7 @@ async fn test_gitignore_explicitly_enabled() {
     assert!(content.contains("# End of AGPM managed entries"));
 }
 
-#[tokio::test]
-async fn test_gitignore_disabled() {
-    agpm_cli::test_utils::init_test_logging(None);
-    let temp = TempDir::new().unwrap();
-    let project_dir = temp.path();
-    let source_dir = temp.path().join("source");
-
-    // Create source files
-    create_test_source_files(&source_dir).await.unwrap();
-
-    // Create manifest with gitignore = false
-    let manifest_path = project_dir.join("agpm.toml");
-    fs::write(&manifest_path, create_test_manifest(false, &source_dir).await).await.unwrap();
-
-    // Create lockfile
-    let lockfile_path = project_dir.join("agpm.lock");
-    fs::write(&lockfile_path, create_test_lockfile().await).await.unwrap();
-
-    // Run install command
-    Command::cargo_bin("agpm")
-        .unwrap()
-        .arg("install")
-        .arg("--quiet")
-        .current_dir(project_dir)
-        .assert();
-
-    // Check that .gitignore was NOT created
-    let gitignore_path = project_dir.join(".gitignore");
-    assert!(!gitignore_path.exists(), "Gitignore should not be created when disabled");
-}
+// Test removed: gitignore is now always enabled (no longer configurable via manifest.target.gitignore)
 
 #[tokio::test]
 async fn test_gitignore_preserves_user_entries() {
@@ -649,56 +620,7 @@ async fn test_gitignore_actually_ignored_by_git() {
     );
 }
 
-#[tokio::test]
-async fn test_gitignore_disabled_files_not_ignored_by_git() {
-    agpm_cli::test_utils::init_test_logging(None);
-
-    let project = TestProject::new().await.unwrap();
-    let project_dir = project.project_path().to_path_buf();
-    let source_dir = project.sources_path().join("source");
-
-    create_test_source_files(&source_dir).await.unwrap();
-
-    let git = project.init_git_repo().unwrap();
-
-    project.write_manifest(&create_test_manifest(false, &source_dir).await).await.unwrap();
-
-    project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
-
-    assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
-    assert!(project_dir.join(".claude/commands/test-command.md").exists());
-
-    git.add_all().unwrap();
-    let status = git.status_porcelain().unwrap();
-
-    assert!(
-        status.contains("agents/test-agent.md"),
-        "Agent file should NOT be ignored when gitignore is disabled
-Git status:
-{}",
-        status
-    );
-    assert!(
-        status.contains("snippets/test-snippet.md"),
-        "Snippet file should NOT be ignored when gitignore is disabled
-Git status:
-{}",
-        status
-    );
-    assert!(
-        status.contains("commands/test-command.md"),
-        "Command file should NOT be ignored when gitignore is disabled
-Git status:
-{}",
-        status
-    );
-
-    assert!(
-        !project_dir.join(".gitignore").exists(),
-        "Gitignore file should not exist when disabled"
-    );
-}
+// Test removed: gitignore is now always enabled (no longer configurable via manifest.target.gitignore)
 
 #[tokio::test]
 async fn test_gitignore_malformed_existing() {
