@@ -467,8 +467,8 @@ impl Cache {
     ///
     /// Returns an error if the worktree is not accessible after all retries.
     async fn verify_worktree_accessible(worktree_path: &Path) -> Result<()> {
-        use tokio_retry::strategy::{jitter, ExponentialBackoff};
         use tokio_retry::Retry;
+        use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
         let retry_strategy = ExponentialBackoff::from_millis(10)
             .max_delay(std::time::Duration::from_millis(500))
