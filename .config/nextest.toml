@@ -1,0 +1,11 @@
+[profile.default]
+# Run only integration tests by default (stress tests are slow)
+default-filter = "not binary(stress)"
+
+[profile.all]
+# Profile for running everything including stress tests
+default-filter = "all()"
+
+[profile.ci]
+# CI runs integration tests only
+default-filter = "not binary(stress)"
