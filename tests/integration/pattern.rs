@@ -193,10 +193,7 @@ async fn test_local_pattern_dependencies() -> Result<()> {
 
     // Create manifest with local pattern dependency
     let manifest = ManifestBuilder::new()
-        .add_local_agent(
-            "local-agents",
-            &format!("{}/agents/local*.md", resources_dir.display()),
-        )
+        .add_local_agent("local-agents", &format!("{}/agents/local*.md", resources_dir.display()))
         .build();
 
     project.write_manifest(&manifest).await?;

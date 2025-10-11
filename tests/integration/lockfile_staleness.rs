@@ -174,9 +174,7 @@ async fn test_install_detects_path_change() -> Result<()> {
     let manifest_old = ManifestBuilder::new()
         .add_source("test-source", &source_repo.file_url())
         .add_agent("test-agent", |d| {
-            d.source("test-source")
-                .path("agents/old-path.md")
-                .version("v1.0.0")
+            d.source("test-source").path("agents/old-path.md").version("v1.0.0")
         })
         .build();
     project.write_manifest(&manifest_old).await?;
@@ -272,9 +270,7 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &source_repo.file_url())
         .add_agent("test-agent", |d| {
-            d.source("test-source")
-                .path("agents/test-agent.md")
-                .version("main")
+            d.source("test-source").path("agents/test-agent.md").version("main")
         })
         .build();
     project.write_manifest(&manifest).await?;
@@ -336,9 +332,7 @@ async fn test_install_allows_branch_references() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test-source", &bare_url)
         .add_agent("test-agent", |d| {
-            d.source("test-source")
-                .path("agents/test-agent.md")
-                .version("main")
+            d.source("test-source").path("agents/test-agent.md").version("main")
         })
         .build();
     project.write_manifest(&manifest).await?;

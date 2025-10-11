@@ -34,11 +34,7 @@ async fn test_file_url_source_repo_not_modified() -> Result<()> {
     let file_url = path_to_file_url(git.repo_path()).await;
     let manifest = ManifestBuilder::new()
         .add_source("local", &file_url)
-        .add_agent("test-agent", |d| {
-            d.source("local")
-                .path("agents/test.md")
-                .version("v2.0.0")
-        })
+        .add_agent("test-agent", |d| d.source("local").path("agents/test.md").version("v2.0.0"))
         .build();
     project.write_manifest(&manifest).await?;
 
@@ -102,11 +98,7 @@ async fn test_file_url_updates_work() -> Result<()> {
 
     let manifest_v2 = ManifestBuilder::new()
         .add_source("local", &file_url)
-        .add_agent("test-agent", |d| {
-            d.source("local")
-                .path("agents/test.md")
-                .version("v2.0.0")
-        })
+        .add_agent("test-agent", |d| d.source("local").path("agents/test.md").version("v2.0.0"))
         .build();
     project.write_manifest(&manifest_v2).await?;
 

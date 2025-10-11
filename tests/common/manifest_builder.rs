@@ -644,9 +644,7 @@ mod tests {
         let manifest = ManifestBuilder::new()
             .add_source("official", "file:///repo.git")
             .add_agent("my-agent", |d| {
-                d.source("official")
-                    .path("agents/my-agent.md")
-                    .version("v1.0.0")
+                d.source("official").path("agents/my-agent.md").version("v1.0.0")
             })
             .build();
 
@@ -681,10 +679,7 @@ mod tests {
     fn test_agent_with_tool() {
         let manifest = ManifestBuilder::new()
             .add_agent("opencode-agent", |d| {
-                d.source("official")
-                    .path("agents/helper.md")
-                    .version("v1.0.0")
-                    .tool("opencode")
+                d.source("official").path("agents/helper.md").version("v1.0.0").tool("opencode")
             })
             .build();
 
@@ -741,17 +736,12 @@ mod tests {
             ])
             .add_standard_agent("agent1", "official", "agents/agent1.md")
             .add_agent("agent2", |d| {
-                d.source("community")
-                    .path("agents/agent2.md")
-                    .version("v2.0.0")
-                    .tool("opencode")
+                d.source("community").path("agents/agent2.md").version("v2.0.0").tool("opencode")
             })
             .add_local_agent("local-agent", "../local/agents/local.md")
             .add_standard_snippet("snippet1", "official", "snippets/snippet1.md")
             .add_mcp_server("fs", |d| {
-                d.source("official")
-                    .path("mcp-servers/filesystem.json")
-                    .version("v1.0.0")
+                d.source("official").path("mcp-servers/filesystem.json").version("v1.0.0")
             })
             .build();
 

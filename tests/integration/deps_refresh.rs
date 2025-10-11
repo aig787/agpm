@@ -34,10 +34,7 @@ async fn test_update_all_dependencies() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -117,10 +114,7 @@ async fn test_update_specific_dependency() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -203,10 +197,7 @@ async fn test_update_without_lockfile() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -285,10 +276,7 @@ async fn test_update_with_version_constraints() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -362,10 +350,7 @@ async fn test_update_with_backup() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -387,10 +372,7 @@ async fn test_update_verbose() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -414,10 +396,7 @@ async fn test_update_quiet() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -437,10 +416,7 @@ async fn test_update_dry_run() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -526,10 +502,7 @@ async fn test_update_network_failure() {
     let community_url = format!("file://{}/also-nonexistent.git", sources_path);
 
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")
@@ -647,10 +620,7 @@ async fn test_update_no_updates_available() {
 
     // Create manifest with file:// URLs
     let manifest_content = ManifestBuilder::new()
-        .add_sources(&[
-            ("official", &official_url),
-            ("community", &community_url),
-        ])
+        .add_sources(&[("official", &official_url), ("community", &community_url)])
         .add_standard_agent("my-agent", "official", "agents/my-agent.md")
         .add_standard_agent("helper", "community", "agents/helper.md")
         .add_standard_snippet("utils", "official", "snippets/utils.md")

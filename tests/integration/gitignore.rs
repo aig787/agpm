@@ -34,9 +34,7 @@ async fn create_test_manifest_default(source_dir: &Path) -> String {
     let source_path = source_dir.display().to_string().replace('\\', "/");
     ManifestBuilder::new()
         .with_target_config(|t| {
-            t.agents(".claude/agents")
-                .snippets(".agpm/snippets")
-                .commands(".claude/commands")
+            t.agents(".claude/agents").snippets(".agpm/snippets").commands(".claude/commands")
         })
         .add_local_agent("test-agent", &format!("{}/agents/test.md", source_path))
         .build()
@@ -358,14 +356,10 @@ async fn test_gitignore_handles_external_paths() {
         .add_source("test-source", "https://github.com/test/repo.git")
         .with_gitignore(true)
         .add_script("external-script", |d| {
-            d.source("test-source")
-                .path("scripts/test.sh")
-                .version("v1.0.0")
+            d.source("test-source").path("scripts/test.sh").version("v1.0.0")
         })
         .add_agent("internal-agent", |d| {
-            d.source("test-source")
-                .path("agents/test.md")
-                .version("v1.0.0")
+            d.source("test-source").path("agents/test.md").version("v1.0.0")
         })
         .build();
     fs::write(&manifest_path, manifest_content).await.unwrap();

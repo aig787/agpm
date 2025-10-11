@@ -26,10 +26,7 @@ async fn test_opencode_agent_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_agent("opencode-helper", |d| {
-            d.source("test_repo")
-                .path("agents/helper.md")
-                .version("v1.0.0")
-                .tool("opencode")
+            d.source("test_repo").path("agents/helper.md").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -73,10 +70,7 @@ async fn test_opencode_command_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_command("deploy", |d| {
-            d.source("test_repo")
-                .path("commands/deploy.md")
-                .version("v1.0.0")
-                .tool("opencode")
+            d.source("test_repo").path("commands/deploy.md").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -251,10 +245,7 @@ async fn test_artifact_type_validation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_snippet("example", |d| {
-            d.source("test_repo")
-                .path("snippets/example.md")
-                .version("v1.0.0")
-                .tool("opencode")
+            d.source("test_repo").path("snippets/example.md").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -302,9 +293,7 @@ async fn test_claude_code_mcp_handler() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_mcp_server("postgres", |d| {
-            d.source("test_repo")
-                .path("mcp-servers/postgres.json")
-                .version("v1.0.0")
+            d.source("test_repo").path("mcp-servers/postgres.json").version("v1.0.0")
         })
         .build();
 
@@ -424,10 +413,7 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
         .add_standard_agent("claude-ai", "test_repo", "agents/ai/gpt.md")
         // OpenCode agent (preserves nested structure)
         .add_agent("opencode-ai", |d| {
-            d.source("test_repo")
-                .path("agents/ai/gpt.md")
-                .version("v1.0.0")
-                .tool("opencode")
+            d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -471,10 +457,7 @@ async fn test_agpm_artifact_type() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_snippet("config-template", |d| {
-            d.source("test_repo")
-                .path("snippets/config-template.md")
-                .version("v1.0.0")
-                .tool("agpm")
+            d.source("test_repo").path("snippets/config-template.md").version("v1.0.0").tool("agpm")
         })
         .build();
 

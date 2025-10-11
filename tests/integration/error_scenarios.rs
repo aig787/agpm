@@ -72,7 +72,8 @@ async fn test_corrupted_git_repo() {
     fs::write(fake_repo_dir.join(".git/config"), "corrupted config").await.unwrap();
 
     // Create a manifest that references this corrupted repo
-    let fake_repo_url = format!("file://{}", fake_repo_dir.display().to_string().replace('\\', "/"));
+    let fake_repo_url =
+        format!("file://{}", fake_repo_dir.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("official", &fake_repo_url)
         .add_standard_agent("test-agent", "official", "agents/test.md")
@@ -226,8 +227,12 @@ async fn test_invalid_version_specs() {
 
     let manifest = ManifestBuilder::new()
         .add_source("official", &source_url)
-        .add_agent("invalid-version", |d| d.source("official").path("agents/invalid.md").version("not-a-version"))
-        .add_agent("malformed-constraint", |d| d.source("official").path("agents/malformed.md").version(">=1.0.0 <invalid"))
+        .add_agent("invalid-version", |d| {
+            d.source("official").path("agents/invalid.md").version("not-a-version")
+        })
+        .add_agent("malformed-constraint", |d| {
+            d.source("official").path("agents/malformed.md").version(">=1.0.0 <invalid")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -245,7 +250,6 @@ async fn test_invalid_version_specs() {
     );
 }
 
-
 /// Test handling of exceeding system limits
 #[tokio::test]
 async fn test_system_limits() {
@@ -258,9 +262,7 @@ async fn test_system_limits() {
     // Add many agents to test system limits
     for i in 0..1000 {
         builder = builder.add_agent(&format!("agent_{i}"), |d| {
-            d.source("official")
-                .path(&format!("agents/agent_{i}.md"))
-                .version("v1.0.0")
+            d.source("official").path(&format!("agents/agent_{i}.md")).version("v1.0.0")
         });
     }
 

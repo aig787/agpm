@@ -90,7 +90,10 @@ async fn test_install_with_exact_version_tag() {
 
     // Create manifest with exact version
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -117,7 +120,10 @@ async fn test_install_with_caret_version_range() {
 
     // Create manifest with caret range (^1.0.0 should match 1.2.0 but not 2.0.0)
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("^1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -142,7 +148,10 @@ async fn test_install_with_tilde_version_range() {
 
     // Create manifest with tilde range (~1.1.0 should match 1.1.x but not 1.2.0)
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("~1.1.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -167,9 +176,16 @@ async fn test_install_with_branch_reference() {
 
     // Create manifest with branch reference
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("dev-example", |d| d.source("versioned").path("agents/example.md").branch("develop"))
-        .add_agent("experimental", |d| d.source("versioned").path("agents/experimental.md").branch("develop"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("dev-example", |d| {
+            d.source("versioned").path("agents/example.md").branch("develop")
+        })
+        .add_agent("experimental", |d| {
+            d.source("versioned").path("agents/experimental.md").branch("develop")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -197,8 +213,13 @@ async fn test_install_with_feature_branch() {
 
     // Create manifest with feature branch
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("feature", |d| d.source("versioned").path("agents/feature.md").branch("feature/new-agent"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("feature", |d| {
+            d.source("versioned").path("agents/feature.md").branch("feature/new-agent")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -223,7 +244,10 @@ async fn test_install_with_commit_hash() {
 
     // Create manifest with exact commit hash (rev)
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("pinned", |d| d.source("versioned").path("agents/example.md").rev(&v1_commit))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -249,7 +273,10 @@ async fn test_install_with_wildcard_version() {
 
     // Create manifest with wildcard "*"
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("any", |d| d.source("versioned").path("agents/example.md").version("*"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -274,9 +301,14 @@ async fn test_install_with_mixed_versioning_methods() {
 
     // Create manifest with mixed versioning methods
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("stable", |d| d.source("versioned").path("agents/example.md").version("v1.1.0"))
-        .add_agent("compatible", |d| d.source("versioned").path("agents/example.md").version("^1.0.0"))
+        .add_agent("compatible", |d| {
+            d.source("versioned").path("agents/example.md").version("^1.0.0")
+        })
         .add_agent("develop", |d| d.source("versioned").path("agents/example.md").branch("develop"))
         .add_agent("pinned", |d| d.source("versioned").path("agents/example.md").rev(&v1_commit))
         .build();
@@ -305,8 +337,13 @@ async fn test_version_constraint_with_greater_than() {
 
     // Test >=1.1.0 constraint
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("example", |d| d.source("versioned").path("agents/example.md").version(">=1.1.0"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("example", |d| {
+            d.source("versioned").path("agents/example.md").version(">=1.1.0")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -329,8 +366,13 @@ async fn test_version_constraint_with_range() {
 
     // Test complex range: >=1.1.0, <2.0.0
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("example", |d| d.source("versioned").path("agents/example.md").version(">=1.1.0, <2.0.0"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("example", |d| {
+            d.source("versioned").path("agents/example.md").version(">=1.1.0, <2.0.0")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -354,7 +396,10 @@ async fn test_update_branch_reference() {
 
     // Create manifest with branch reference
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("dev", |d| d.source("versioned").path("agents/example.md").branch("develop"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -409,10 +454,17 @@ async fn test_lockfile_records_correct_version_info() {
 
     // Create manifest with different version types
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("tagged", |d| d.source("versioned").path("agents/example.md").version("v1.1.0"))
-        .add_agent("branched", |d| d.source("versioned").path("agents/experimental.md").branch("develop"))
-        .add_agent("committed", |d| d.source("versioned").path("agents/feature.md").rev(&feature_commit))
+        .add_agent("branched", |d| {
+            d.source("versioned").path("agents/experimental.md").branch("develop")
+        })
+        .add_agent("committed", |d| {
+            d.source("versioned").path("agents/feature.md").rev(&feature_commit)
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -437,8 +489,13 @@ async fn test_error_on_invalid_version_constraint() {
 
     // Create manifest with unsatisfiable version
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("v99.0.0"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("example", |d| {
+            d.source("versioned").path("agents/example.md").version("v99.0.0")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -463,8 +520,13 @@ async fn test_error_on_nonexistent_branch() {
 
     // Create manifest with non-existent branch
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
-        .add_agent("example", |d| d.source("versioned").path("agents/example.md").branch("nonexistent"))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
+        .add_agent("example", |d| {
+            d.source("versioned").path("agents/example.md").branch("nonexistent")
+        })
         .build();
     project.write_manifest(&manifest).await.unwrap();
 
@@ -482,7 +544,10 @@ async fn test_frozen_install_uses_lockfile_versions() {
 
     // Create manifest with version range
     let manifest = ManifestBuilder::new()
-        .add_source("versioned", &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")))
+        .add_source(
+            "versioned",
+            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+        )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("^1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -518,8 +583,12 @@ async fn test_path_collision_detection() -> Result<()> {
     // Test 1: Two dependencies pointing to same path should fail
     let manifest = ManifestBuilder::new()
         .add_source("versioned", &source_repo.file_url())
-        .add_agent("version-one", |d| d.source("versioned").path("agents/example.md").version("v1.0.0"))
-        .add_agent("version-two", |d| d.source("versioned").path("agents/example.md").version("v2.0.0"))
+        .add_agent("version-one", |d| {
+            d.source("versioned").path("agents/example.md").version("v1.0.0")
+        })
+        .add_agent("version-two", |d| {
+            d.source("versioned").path("agents/example.md").version("v2.0.0")
+        })
         .build();
     project.write_manifest(&manifest).await?;
 
@@ -547,8 +616,12 @@ async fn test_path_collision_detection() -> Result<()> {
 
     let manifest = ManifestBuilder::new()
         .add_source("versioned", &source_repo.file_url())
-        .add_agent("version-one", |d| d.source("versioned").path("agents/example.md").version("v1.0.0").target("v1"))
-        .add_snippet("version-two", |d| d.source("versioned").path("snippets/utils.md").version("v1.0.0").target("v2"))
+        .add_agent("version-one", |d| {
+            d.source("versioned").path("agents/example.md").version("v1.0.0").target("v1")
+        })
+        .add_snippet("version-two", |d| {
+            d.source("versioned").path("snippets/utils.md").version("v1.0.0").target("v2")
+        })
         .build();
     project.write_manifest(&manifest).await?;
 
@@ -583,8 +656,12 @@ async fn test_path_collision_detection() -> Result<()> {
 
     let manifest = ManifestBuilder::new()
         .add_source("versioned", &source_repo.file_url())
-        .add_agent("agent-one", |d| d.source("versioned").path("agents/example.md").version("v1.0.0"))
-        .add_snippet("snippet-one", |d| d.source("versioned").path("snippets/utils.md").version("v1.0.0"))
+        .add_agent("agent-one", |d| {
+            d.source("versioned").path("agents/example.md").version("v1.0.0")
+        })
+        .add_snippet("snippet-one", |d| {
+            d.source("versioned").path("snippets/utils.md").version("v1.0.0")
+        })
         .build();
     project.write_manifest(&manifest).await?;
 

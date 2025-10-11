@@ -690,10 +690,7 @@ async fn test_validate_unsupported_resource_type() {
     let manifest = ManifestBuilder::new()
         .add_source("community", "https://github.com/test/repo.git")
         .add_snippet("utils", |d| {
-            d.source("community")
-                .path("snippets/utils.md")
-                .version("v1.0.0")
-                .tool("opencode")
+            d.source("community").path("snippets/utils.md").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -721,10 +718,7 @@ async fn test_validate_unsupported_shows_alternatives() {
     let manifest = ManifestBuilder::new()
         .add_source("community", "https://github.com/test/repo.git")
         .add_agent("helper", |d| {
-            d.source("community")
-                .path("agents/helper.md")
-                .version("v1.0.0")
-                .tool("agpm")
+            d.source("community").path("agents/helper.md").version("v1.0.0").tool("agpm")
         })
         .build();
 

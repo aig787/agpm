@@ -8,7 +8,6 @@ use tokio::time::Instant;
 
 use crate::common::{ManifestBuilder, TestProject};
 
-
 /// Test instance-level cache reuse across multiple operations
 #[tokio::test]
 async fn test_instance_cache_reuse() -> Result<()> {

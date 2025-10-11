@@ -10,7 +10,6 @@ use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
 
-
 /// Test that conflicting exact versions are detected and installation fails.
 #[tokio::test]
 async fn test_exact_version_conflict_blocks_install() {
@@ -254,12 +253,8 @@ async fn test_same_branch_different_case_no_conflict() {
     // Create manifest with same resource using different case for branch name
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &source_repo.file_url())
-        .add_agent("agent-1", |d| {
-            d.source("test-repo").path("agents/test-agent.md").branch("main")
-        })
-        .add_agent("agent-2", |d| {
-            d.source("test-repo").path("agents/test-agent.md").branch("Main")
-        })
+        .add_agent("agent-1", |d| d.source("test-repo").path("agents/test-agent.md").branch("main"))
+        .add_agent("agent-2", |d| d.source("test-repo").path("agents/test-agent.md").branch("Main"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
 

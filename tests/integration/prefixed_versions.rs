@@ -41,18 +41,15 @@ async fn test_install_with_prefixed_constraint() {
     source_repo.git.tag("snippets-v2.0.0").unwrap();
 
     // Create manifest with prefixed version constraints
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("prefixed", &source_url)
         .add_agent("test-agent", |d| {
-            d.source("prefixed")
-                .path("agents/test-agent.md")
-                .version("agents-^v1.0.0")
+            d.source("prefixed").path("agents/test-agent.md").version("agents-^v1.0.0")
         })
         .add_snippet("test-snippet", |d| {
-            d.source("prefixed")
-                .path("snippets/test-snippet.md")
-                .version("snippets-^v2.0.0")
+            d.source("prefixed").path("snippets/test-snippet.md").version("snippets-^v2.0.0")
         })
         .build();
 
@@ -106,13 +103,12 @@ async fn test_prefix_isolation() {
     source_repo.git.tag("v1.0.0").unwrap(); // unprefixed
 
     // Create manifest requesting agents prefix ^v1.0.0
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("prefixed", &source_url)
         .add_agent("agent", |d| {
-            d.source("prefixed")
-                .path("agents/agent.md")
-                .version("agents-^v1.0.0")
+            d.source("prefixed").path("agents/agent.md").version("agents-^v1.0.0")
         })
         .build();
 
@@ -145,13 +141,12 @@ async fn test_outdated_with_prefixed_versions() {
     source_repo.git.tag("agents-v1.0.0").unwrap();
 
     // Create manifest locked to agents-v1.0.0
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("prefixed", &source_url)
         .add_agent("agent", |d| {
-            d.source("prefixed")
-                .path("agents/agent.md")
-                .version("agents-^v1.0.0")
+            d.source("prefixed").path("agents/agent.md").version("agents-^v1.0.0")
         })
         .build();
 
@@ -204,14 +199,11 @@ async fn test_unprefixed_constraint_doesnt_match_prefixed_tags() {
     source_repo.git.tag("agents-v1.0.0").unwrap();
 
     // Create manifest with unprefixed constraint
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("prefixed", &source_url)
-        .add_agent("agent", |d| {
-            d.source("prefixed")
-                .path("agents/agent.md")
-                .version("^v1.0.0")
-        })
+        .add_agent("agent", |d| d.source("prefixed").path("agents/agent.md").version("^v1.0.0"))
         .build();
 
     project.write_manifest(&manifest).await.unwrap();
@@ -276,23 +268,18 @@ async fn test_multi_prefix_manifest() {
     source_repo.git.tag("v1.5.0").unwrap(); // Unprefixed
 
     // Create manifest with all three: agents prefix, snippets prefix, and unprefixed
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("multi", &source_url)
         .add_agent("test-agent", |d| {
-            d.source("multi")
-                .path("agents/test-agent.md")
-                .version("agents-^v1.0.0")
+            d.source("multi").path("agents/test-agent.md").version("agents-^v1.0.0")
         })
         .add_snippet("test-snippet", |d| {
-            d.source("multi")
-                .path("snippets/test-snippet.md")
-                .version("snippets-^v1.0.0")
+            d.source("multi").path("snippets/test-snippet.md").version("snippets-^v1.0.0")
         })
         .add_command("test-command", |d| {
-            d.source("multi")
-                .path("commands/test-command.md")
-                .version("^v1.0.0")
+            d.source("multi").path("commands/test-command.md").version("^v1.0.0")
         })
         .build();
 
@@ -370,13 +357,12 @@ async fn test_update_command_with_prefixed_versions() {
     source_repo.git.tag("agents-v1.2.0").unwrap();
 
     // Create manifest with prefixed constraint
-    let source_url = format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
+    let source_url =
+        format!("file://{}", source_repo.path.display().to_string().replace('\\', "/"));
     let manifest = ManifestBuilder::new()
         .add_source("updatetest", &source_url)
         .add_agent("agent", |d| {
-            d.source("updatetest")
-                .path("agents/agent.md")
-                .version("agents-^v1.0.0")
+            d.source("updatetest").path("agents/agent.md").version("agents-^v1.0.0")
         })
         .build();
 

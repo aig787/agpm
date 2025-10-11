@@ -393,7 +393,10 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // So only 5 agents * 5 repos = 25 agents actually get updated
     assert_eq!(update_count, 25, "Should update only the 25 agents with actual content changes");
 
-    println!("✅ Successfully updated {} agents (25 with content changes) in {:?}", total_agents, update_duration);
+    println!(
+        "✅ Successfully updated {} agents (25 with content changes) in {:?}",
+        total_agents, update_duration
+    );
     println!("   Average: {:?} per agent", update_duration / update_count as u32);
     println!("   Rate: {:.1} agents/second", update_count as f64 / update_duration.as_secs_f64());
 
@@ -460,10 +463,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
 
     // Add local sources
     for repo_idx in 0..2 {
-        manifest.sources.insert(
-            format!("local_repo_{}", repo_idx),
-            repo_urls[repo_idx].clone(),
-        );
+        manifest.sources.insert(format!("local_repo_{}", repo_idx), repo_urls[repo_idx].clone());
     }
 
     // Add community source

@@ -73,31 +73,69 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         // Agents
-        .add_agent("agent-alpha", |d| d.source("test_repo").path("agents/alpha.md").version("v1.0.0"))
+        .add_agent("agent-alpha", |d| {
+            d.source("test_repo").path("agents/alpha.md").version("v1.0.0")
+        })
         .add_agent("agent-beta", |d| d.source("test_repo").path("agents/beta.md").version("v2.0.0"))
-        .add_agent("agent-gamma", |d| d.source("test_repo").path("agents/gamma.md").version("v4.0.0"))
-        .add_agent("agent-delta", |d| d.source("test_repo").path("agents/delta.md").version("v3.1.0"))
+        .add_agent("agent-gamma", |d| {
+            d.source("test_repo").path("agents/gamma.md").version("v4.0.0")
+        })
+        .add_agent("agent-delta", |d| {
+            d.source("test_repo").path("agents/delta.md").version("v3.1.0")
+        })
         // Snippets
-        .add_snippet("snippet-one", |d| d.source("test_repo").path("snippets/snippet1.md").version("v1.0.0"))
-        .add_snippet("snippet-two", |d| d.source("test_repo").path("snippets/snippet2.md").version("v1.1.0"))
-        .add_snippet("snippet-three", |d| d.source("test_repo").path("snippets/snippet3.md").version("v3.0.0"))
-        .add_snippet("snippet-four", |d| d.source("test_repo").path("snippets/snippet4.md").version("v4.0.0"))
+        .add_snippet("snippet-one", |d| {
+            d.source("test_repo").path("snippets/snippet1.md").version("v1.0.0")
+        })
+        .add_snippet("snippet-two", |d| {
+            d.source("test_repo").path("snippets/snippet2.md").version("v1.1.0")
+        })
+        .add_snippet("snippet-three", |d| {
+            d.source("test_repo").path("snippets/snippet3.md").version("v3.0.0")
+        })
+        .add_snippet("snippet-four", |d| {
+            d.source("test_repo").path("snippets/snippet4.md").version("v4.0.0")
+        })
         // Commands
-        .add_command("deploy-cmd", |d| d.source("test_repo").path("commands/deploy.md").version("v2.1.0"))
-        .add_command("build-cmd", |d| d.source("test_repo").path("commands/build.md").version("v3.2.0"))
-        .add_command("test-cmd", |d| d.source("test_repo").path("commands/test.md").version("v3.2.0"))
-        .add_command("lint-cmd", |d| d.source("test_repo").path("commands/lint.md").version("v4.0.0"))
+        .add_command("deploy-cmd", |d| {
+            d.source("test_repo").path("commands/deploy.md").version("v2.1.0")
+        })
+        .add_command("build-cmd", |d| {
+            d.source("test_repo").path("commands/build.md").version("v3.2.0")
+        })
+        .add_command("test-cmd", |d| {
+            d.source("test_repo").path("commands/test.md").version("v3.2.0")
+        })
+        .add_command("lint-cmd", |d| {
+            d.source("test_repo").path("commands/lint.md").version("v4.0.0")
+        })
         // Scripts
-        .add_script("build-script", |d| d.source("test_repo").path("scripts/build.sh").version("v1.2.0"))
-        .add_script("test-script", |d| d.source("test_repo").path("scripts/test.js").version("v2.2.0"))
-        .add_script("deploy-script", |d| d.source("test_repo").path("scripts/deploy.py").version("v3.0.0"))
+        .add_script("build-script", |d| {
+            d.source("test_repo").path("scripts/build.sh").version("v1.2.0")
+        })
+        .add_script("test-script", |d| {
+            d.source("test_repo").path("scripts/test.js").version("v2.2.0")
+        })
+        .add_script("deploy-script", |d| {
+            d.source("test_repo").path("scripts/deploy.py").version("v3.0.0")
+        })
         // Hooks
-        .add_hook("pre-commit", |d| d.source("test_repo").path("hooks/pre-commit.json").version("v2.1.0"))
-        .add_hook("post-commit", |d| d.source("test_repo").path("hooks/post-commit.json").version("v3.1.0"))
+        .add_hook("pre-commit", |d| {
+            d.source("test_repo").path("hooks/pre-commit.json").version("v2.1.0")
+        })
+        .add_hook("post-commit", |d| {
+            d.source("test_repo").path("hooks/post-commit.json").version("v3.1.0")
+        })
         // MCP Servers
-        .add_mcp_server("filesystem", |d| d.source("test_repo").path("mcp-servers/filesystem.json").version("v2.2.0"))
-        .add_mcp_server("postgres", |d| d.source("test_repo").path("mcp-servers/postgres.json").version("v3.0.0"))
-        .add_mcp_server("redis", |d| d.source("test_repo").path("mcp-servers/redis.json").version("v4.0.0"))
+        .add_mcp_server("filesystem", |d| {
+            d.source("test_repo").path("mcp-servers/filesystem.json").version("v2.2.0")
+        })
+        .add_mcp_server("postgres", |d| {
+            d.source("test_repo").path("mcp-servers/postgres.json").version("v3.0.0")
+        })
+        .add_mcp_server("redis", |d| {
+            d.source("test_repo").path("mcp-servers/redis.json").version("v4.0.0")
+        })
         .build();
 
     let manifest_content = manifest;
@@ -537,9 +575,13 @@ Requires snippet-base v1.0.0"#,
     let manifest_content = ManifestBuilder::new()
         .add_source("conflict_repo", &repo_url)
         // Snippet at v2.0.0
-        .add_snippet("snippet-base", |d| d.source("conflict_repo").path("snippets/base.md").version("v2.0.0"))
+        .add_snippet("snippet-base", |d| {
+            d.source("conflict_repo").path("snippets/base.md").version("v2.0.0")
+        })
         // Agent depends on v1.0.0 (creates version conflict)
-        .add_agent("agent-dependent", |d| d.source("conflict_repo").path("agents/dependent.md").version("v1.0.0"))
+        .add_agent("agent-dependent", |d| {
+            d.source("conflict_repo").path("agents/dependent.md").version("v1.0.0")
+        })
         .build();
 
     project.write_manifest(&manifest_content).await?;

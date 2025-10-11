@@ -48,9 +48,7 @@ async fn test_outdated_with_updates_available() {
     let manifest = ManifestBuilder::new()
         .add_source("official", "https://github.com/example-org/agpm-official.git")
         .add_agent("my-agent", |d| {
-            d.source("official")
-                .path("agents/my-agent.md")
-                .version("^1.0.0")
+            d.source("official").path("agents/my-agent.md").version("^1.0.0")
         })
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -207,15 +205,9 @@ async fn test_outdated_specific_dependencies() {
     let manifest = ManifestBuilder::new()
         .add_source("official", "https://github.com/example-org/agpm-official.git")
         .add_agent("my-agent", |d| {
-            d.source("official")
-                .path("agents/my-agent.md")
-                .version("^1.0.0")
+            d.source("official").path("agents/my-agent.md").version("^1.0.0")
         })
-        .add_agent("helper", |d| {
-            d.source("official")
-                .path("agents/helper.md")
-                .version("^1.0.0")
-        })
+        .add_agent("helper", |d| d.source("official").path("agents/helper.md").version("^1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
 

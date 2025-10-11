@@ -47,14 +47,10 @@ async fn test_path_separators() {
         ManifestBuilder::new()
             .add_source("official", &source_path_str)
             .add_agent("windows-agent", |d| {
-                d.source("official")
-                    .path("agents\\windows-agent.md")
-                    .version("v1.0.0")
+                d.source("official").path("agents\\windows-agent.md").version("v1.0.0")
             })
             .add_agent("unix-agent", |d| {
-                d.source("official")
-                    .path("agents/unix-agent.md")
-                    .version("v1.0.0")
+                d.source("official").path("agents/unix-agent.md").version("v1.0.0")
             })
             .add_local_snippet("local-snippet", ".\\snippets\\local.md")
             .build()
@@ -62,14 +58,10 @@ async fn test_path_separators() {
         ManifestBuilder::new()
             .add_source("official", &source_path_str)
             .add_agent("unix-agent", |d| {
-                d.source("official")
-                    .path("agents/unix-agent.md")
-                    .version("v1.0.0")
+                d.source("official").path("agents/unix-agent.md").version("v1.0.0")
             })
             .add_agent("windows-agent", |d| {
-                d.source("official")
-                    .path("agents\\windows-agent.md")
-                    .version("v1.0.0")
+                d.source("official").path("agents\\windows-agent.md").version("v1.0.0")
             })
             .add_local_snippet("local-snippet", "./snippets/local.md")
             .build()
@@ -453,9 +445,8 @@ async fn test_symlink_handling() {
 
     // Create manifest pointing to symlinked directory
     let snippet_path = format!("{}/snippet.md", link_dir.to_str().unwrap());
-    let manifest_content = ManifestBuilder::new()
-        .add_local_snippet("symlink-snippet", &snippet_path)
-        .build();
+    let manifest_content =
+        ManifestBuilder::new().add_local_snippet("symlink-snippet", &snippet_path).build();
 
     project.write_manifest(&manifest_content).await.unwrap();
 

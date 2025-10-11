@@ -13,7 +13,10 @@ async fn test_install_creates_lockfile() {
     let (_official_repo, official_url) = project.create_standard_v1_repo("official").await.unwrap();
     let community_repo = project.create_source_repo("community").await.unwrap();
     // Create a different agent to avoid path conflicts
-    community_repo.add_resource("agents", "helper", "# Helper Agent\n\nA helper agent").await.unwrap();
+    community_repo
+        .add_resource("agents", "helper", "# Helper Agent\n\nA helper agent")
+        .await
+        .unwrap();
     community_repo.commit_all("Add helper").unwrap();
     community_repo.tag_version("v1.0.0").unwrap();
     let community_url = community_repo.bare_file_url(project.sources_path()).unwrap();
