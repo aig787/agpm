@@ -17,7 +17,6 @@ use crate::models::{
     AgentDependency, CommandDependency, DependencyType, HookDependency, McpServerDependency,
     ScriptDependency, SnippetDependency, SourceSpec,
 };
-use crate::utils::fs::atomic_write;
 
 /// Command to add sources and dependencies to a AGPM project.
 #[derive(Args)]
@@ -151,7 +150,7 @@ async fn add_source_with_manifest_path(
     manifest.sources.insert(source.name.clone(), source.url.clone());
 
     // Save the manifest
-    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
+    manifest.save(&manifest_path)?;
 
     println!("{}", format!("Added source '{}' → {}", source.name, source.url).green());
 
@@ -172,7 +171,47 @@ async fn add_dependency_with_manifest_path(
     // Parse dependency with manifest context for enhanced version handling.
     // The manifest context enables proper detection of local vs Git sources
     // and improves version constraint validation for known sources.
-    let (name, dependency) = parse_dependency_spec(&common.spec, &common.name, Some(&manifest))?;
+    let (name, mut dependency) =
+        parse_dependency_spec(&common.spec, &common.name, Some(&manifest))?;
+
+    // Apply additional fields from CLI arguments to the dependency
+    // If we have advanced options (tool, target, filename) and a Simple dependency,
+    // convert it to Detailed so we can apply these options
+    let needs_detailed =
+        common.tool.is_some() || common.target.is_some() || common.filename.is_some();
+
+    if needs_detailed {
+        if let ResourceDependency::Simple(path) = &dependency {
+            // Convert Simple to Detailed to support advanced options
+            let tool = common.tool.clone().unwrap_or_else(|| "claude-code".to_string());
+            dependency = ResourceDependency::Detailed(Box::new(DetailedDependency {
+                source: None,
+                path: path.clone(),
+                version: None,
+                branch: None,
+                rev: None,
+                command: None,
+                args: None,
+                target: common.target.clone(),
+                filename: common.filename.clone(),
+                dependencies: None,
+                tool,
+            }));
+        }
+    }
+
+    // Apply fields to Detailed dependencies
+    if let ResourceDependency::Detailed(detailed) = &mut dependency {
+        if let Some(tool) = &common.tool {
+            detailed.tool = tool.clone();
+        }
+        if let Some(target) = &common.target {
+            detailed.target = Some(target.clone());
+        }
+        if let Some(filename) = &common.filename {
+            detailed.filename = Some(filename.clone());
+        }
+    }
 
     // Determine the resource type
     let resource_type = dep_type.resource_type();
@@ -211,13 +250,17 @@ async fn add_dependency_with_manifest_path(
     }
 
     // Save the manifest
-    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
+    manifest.save(&manifest_path)?;
 
     println!("{}", format!("Added {resource_type} '{name}'").green());
 
-    // Auto-install the dependency
-    println!("{}", "Installing dependency...".cyan());
-    install_single_dependency(&name, resource_type, &manifest, &manifest_path).await?;
+    // Auto-install the dependency unless --no-install is specified
+    if !common.no_install {
+        println!("{}", "Installing dependency...".cyan());
+        install_single_dependency(&name, resource_type, &manifest, &manifest_path).await?;
+    } else {
+        println!("{}", "Skipped installation (use 'agpm install' to install later)".yellow());
+    }
 
     Ok(())
 }
@@ -708,7 +751,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
                 common: DependencySpec {
                     spec: agent_file.to_string_lossy().to_string(),
                     name: Some("my-test-agent".to_string()),
+                    tool: None,
+                    target: None,
+                    filename: None,
                     force: false,
+                    no_install: false,
                 },
             })),
         };
@@ -741,7 +788,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
                 common: DependencySpec {
                     spec: snippet_file.to_string_lossy().to_string(),
                     name: Some("my-snippet".to_string()),
+                    tool: None,
+                    target: None,
+                    filename: None,
                     force: false,
+                    no_install: false,
                 },
             })),
         };
@@ -773,7 +824,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
                 common: DependencySpec {
                     spec: command_file.to_string_lossy().to_string(),
                     name: Some("my-command".to_string()),
+                    tool: None,
+                    target: None,
+                    filename: None,
                     force: false,
+                    no_install: false,
                 },
             })),
         };
@@ -808,7 +863,11 @@ existing-mcp = "../local/mcp-servers/existing.json"
                 common: DependencySpec {
                     spec: mcp_file_path.to_string_lossy().to_string(),
                     name: Some("test-mcp".to_string()),
+                    tool: None,
+                    target: None,
+                    filename: None,
                     force: false,
+                    no_install: false,
                 },
             })),
         };
@@ -959,7 +1018,6 @@ existing-mcp = "../local/mcp-servers/existing.json"
         // Create manifest with MCP server dependency
         let manifest_content = format!(
             r#"[sources]
-mcp-servers = ".claude/agpm/mcp-servers"
 
 [agents]
 
@@ -1079,7 +1137,7 @@ existing = "https://github.com/existing/repo.git"
 
 [target]
 agents = ".claude/agents"
-snippets = ".claude/agpm/snippets"
+snippets = ".agpm/snippets"
 commands = ".claude/commands"
 
 [agents]
@@ -1101,7 +1159,11 @@ existing-agent = "{}"
             common: DependencySpec {
                 spec: agent_file.to_string_lossy().to_string(),
                 name: Some("existing-agent".to_string()), // Same name as existing
-                force: true,                              // Force overwrite
+                tool: None,
+                target: None,
+                filename: None,
+                force: true, // Force overwrite
+                no_install: false,
             },
         });
 
@@ -1135,7 +1197,11 @@ existing-agent = "{}"
             common: DependencySpec {
                 spec: "different-command different args".to_string(),
                 name: Some("existing-mcp".to_string()), // Same name as existing
-                force: false,                           // Don't force overwrite
+                tool: None,
+                target: None,
+                filename: None,
+                force: false, // Don't force overwrite
+                no_install: false,
             },
         });
 
@@ -1166,7 +1232,11 @@ existing-agent = "{}"
             common: DependencySpec {
                 spec: snippet_file.to_string_lossy().to_string(),
                 name: Some("existing-snippet".to_string()), // Same name as existing
-                force: false,                               // Don't force overwrite
+                tool: None,
+                target: None,
+                filename: None,
+                force: false, // Don't force overwrite
+                no_install: false,
             },
         });
 
@@ -1197,7 +1267,11 @@ existing-agent = "{}"
             common: DependencySpec {
                 spec: command_file.to_string_lossy().to_string(),
                 name: Some("existing-command".to_string()), // Same name as existing
-                force: false,                               // Don't force overwrite
+                tool: None,
+                target: None,
+                filename: None,
+                force: false, // Don't force overwrite
+                no_install: false,
             },
         });
 
@@ -1233,7 +1307,11 @@ existing-agent = "{}"
             common: DependencySpec {
                 spec: mcp_file_path.to_string_lossy().to_string(),
                 name: Some("file-mcp".to_string()),
+                tool: None,
+                target: None,
+                filename: None,
                 force: false,
+                no_install: false,
             },
         });
 

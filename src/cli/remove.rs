@@ -38,7 +38,6 @@ use colored::Colorize;
 use crate::core::ResourceType;
 use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
-use crate::utils::fs::atomic_write;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -295,7 +294,7 @@ async fn remove_source_with_manifest_path(
     manifest.sources.remove(name);
 
     // Save the manifest
-    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
+    manifest.save(&manifest_path)?;
 
     // Update lockfile to remove entries from this source
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
@@ -395,7 +394,7 @@ async fn remove_dependency_with_manifest_path(
     }
 
     // Save the manifest
-    atomic_write(&manifest_path, toml::to_string_pretty(&manifest)?.as_bytes())?;
+    manifest.save(&manifest_path)?;
 
     let dep_type_display = dep_type.replace('-', " ");
     println!("{}", format!("Removed {dep_type_display} '{name}'").green());
@@ -1090,7 +1089,7 @@ test-hook = "../test/hook.json"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
+            installed_at: ".claude/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 
@@ -1104,7 +1103,7 @@ test-hook = "../test/hook.json"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/agpm/hooks/test-hook.json".to_string(),
+            installed_at: ".claude/hooks/test-hook.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
 
@@ -1343,7 +1342,7 @@ test-hook = "../hooks/test-hook.json"
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         let lockfile_path = temp.path().join("agpm.lock");
-        let script_dir = temp.path().join(".claude/agpm/scripts");
+        let script_dir = temp.path().join(".claude/scripts");
         let script_file = script_dir.join("test-script.sh");
 
         // Create manifest with script
@@ -1369,7 +1368,7 @@ test-script = "../test/script.sh"
             version: None,
             resolved_commit: None,
             checksum: "sha256:test".to_string(),
-            installed_at: ".claude/agpm/scripts/test-script.sh".to_string(),
+            installed_at: ".claude/scripts/test-script.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 

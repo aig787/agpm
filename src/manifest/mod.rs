@@ -681,7 +681,7 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Snippet.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agpm/snippets".to_string()),
+                path: Some("snippets".to_string()),
             },
         );
         claude_resources.insert(
@@ -693,19 +693,19 @@ impl Default for ToolsConfig {
         claude_resources.insert(
             ResourceType::Script.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agpm/scripts".to_string()),
+                path: Some("scripts".to_string()),
             },
         );
         claude_resources.insert(
             ResourceType::Hook.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agpm/hooks".to_string()),
+                path: None, // Hooks are merged into .claude/settings.local.json, not staged to disk
             },
         );
         claude_resources.insert(
             ResourceType::McpServer.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agpm/mcp-servers".to_string()),
+                path: None, // MCP servers are merged into .mcp.json, not staged to disk
             },
         );
 
@@ -734,7 +734,7 @@ impl Default for ToolsConfig {
         opencode_resources.insert(
             ResourceType::McpServer.to_plural().to_string(),
             ResourceConfig {
-                path: Some("agpm/mcp-servers".to_string()), // Temporary staging area for merge
+                path: None, // MCP servers are merged into opencode.json, not staged to disk
             },
         );
 
@@ -1580,8 +1580,21 @@ impl Manifest {
     /// utils = { source = "official", path = "snippets/utils.md", version = "v1.0.0" }
     /// ```
     pub fn save(&self, path: &Path) -> Result<()> {
-        let content = toml::to_string_pretty(self)
+        // Serialize to a document first so we can control formatting
+        let mut doc = toml_edit::ser::to_document(self)
             .with_context(|| "Failed to serialize manifest data to TOML format")?;
+
+        // Convert top-level inline tables to regular tables (section headers)
+        // This keeps [sources], [agents], etc. as sections but nested values stay inline
+        for (_key, value) in doc.iter_mut() {
+            if let Some(inline_table) = value.as_inline_table() {
+                // Convert inline table to regular table
+                let table = inline_table.clone().into_table();
+                *value = toml_edit::Item::Table(table);
+            }
+        }
+
+        let content = doc.to_string();
 
         std::fs::write(path, content).with_context(|| {
             format!(
