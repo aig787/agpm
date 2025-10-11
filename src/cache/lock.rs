@@ -297,11 +297,14 @@ mod tests {
         assert!(!locks_dir.exists());
 
         // Acquire lock - should create directory
-        let _lock = CacheLock::acquire(cache_dir, "test").await.unwrap();
+        let lock = CacheLock::acquire(cache_dir, "test").await.unwrap();
 
         // Verify locks directory was created
         assert!(locks_dir.exists());
         assert!(locks_dir.is_dir());
+
+        // Explicitly drop the lock to release the file handle before TempDir cleanup
+        drop(lock);
     }
 
     #[tokio::test]
