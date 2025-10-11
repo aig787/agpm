@@ -128,8 +128,13 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Generate coverage
-        run: cargo llvm-cov --ignore-filename-regex "test_utils" --verbose --html
+        run: cargo llvm-cov nextest --ignore-filename-regex "test_utils" --verbose --html
 
   build:
     name: Build Check
