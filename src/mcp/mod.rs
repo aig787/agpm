@@ -1,7 +1,7 @@
 //! MCP (Model Context Protocol) server configuration management for AGPM.
 //!
 //! This module handles the integration of MCP servers with AGPM, including:
-//! - Storing raw MCP server configurations in `.claude/agpm/mcp-servers/`
+//! - Directly merging MCP server configurations into `.mcp.json` (no staging directory)
 //! - Writing MCP server configurations to `.mcp.json` for Claude Code
 //! - Managing AGPM-controlled MCP server configurations
 //! - Preserving user-managed server configurations
@@ -162,7 +162,7 @@ impl ClaudeSettings {
 
     /// Update MCP servers from stored configurations.
     ///
-    /// This method loads all MCP server configurations from `.claude/agpm/mcp-servers/`
+    /// This method loads all MCP server configurations from the specified directory
     /// and merges them into the settings, preserving user-managed servers.
     pub fn update_mcp_servers(&mut self, mcp_servers_dir: &Path) -> Result<()> {
         if !mcp_servers_dir.exists() {

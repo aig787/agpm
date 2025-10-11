@@ -1745,32 +1745,6 @@ impl DependencyResolver {
                 _ => "claude-code",
             };
 
-            // Determine the target directory using artifact configuration
-            // Normalize to forward slashes for cross-platform consistency in lockfile
-            let artifact_path = self
-                .manifest
-                .get_artifact_resource_path(artifact_type, resource_type)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Resource type '{}' is not supported by tool '{}'",
-                        resource_type,
-                        artifact_type
-                    )
-                })?;
-
-            let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Custom target is relative to the artifact's resource directory
-                let base_target = artifact_path.display().to_string();
-                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                    .replace("//", "/")
-                    + "/"
-                    + &filename
-            } else {
-                // Use artifact configuration for default path
-                format!("{}/{}", artifact_path.display(), filename)
-            }
-            .replace('\\', "/");
-
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
 
@@ -1788,7 +1762,32 @@ impl DependencyResolver {
                         _ => ".mcp.json".to_string(), // Default to claude-code
                     }
                 }
-                _ => installed_at,
+                _ => {
+                    // For regular resources, get the artifact path
+                    let artifact_path = self
+                        .manifest
+                        .get_artifact_resource_path(artifact_type, resource_type)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Resource type '{}' is not supported by tool '{}'",
+                                resource_type,
+                                artifact_type
+                            )
+                        })?;
+
+                    if let Some(custom_target) = dep.get_target() {
+                        // Custom target is relative to the artifact's resource directory
+                        let base_target = artifact_path.display().to_string();
+                        format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                            .replace("//", "/")
+                            + "/"
+                            + &filename
+                    } else {
+                        // Use artifact configuration for default path
+                        format!("{}/{}", artifact_path.display(), filename)
+                    }
+                    .replace('\\', "/")
+                }
             };
 
             Ok(LockedResource {
@@ -1887,39 +1886,13 @@ impl DependencyResolver {
                 _ => "claude-code",
             };
 
-            // Determine the target directory using artifact configuration
-            // Normalize to forward slashes for cross-platform consistency in lockfile
-            let artifact_path = self
-                .manifest
-                .get_artifact_resource_path(artifact_type, resource_type)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Resource type '{}' is not supported by tool '{}'",
-                        resource_type,
-                        artifact_type
-                    )
-                })?;
-
-            let installed_at = if let Some(custom_target) = dep.get_target() {
-                // Custom target is relative to the artifact's resource directory
-                let base_target = artifact_path.display().to_string();
-                format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                    .replace("//", "/")
-                    + "/"
-                    + &filename
-            } else {
-                // Use artifact configuration for default path
-                format!("{}/{}", artifact_path.display(), filename)
-            }
-            .replace('\\', "/");
-
             // Use simple name from manifest - lockfile entries are identified by (name, source)
             // Multiple entries with the same name but different sources can coexist
             // Version updates replace the existing entry for the same (name, source) pair
             let unique_name = name.to_string();
 
             // Extract artifact_type from dependency
-            let artifact_type = match dep {
+            let artifact_type_string = match dep {
                 crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
                 _ => "claude-code".to_string(),
             };
@@ -1938,7 +1911,32 @@ impl DependencyResolver {
                         _ => ".mcp.json".to_string(), // Default to claude-code
                     }
                 }
-                _ => installed_at,
+                _ => {
+                    // For regular resources, get the artifact path
+                    let artifact_path = self
+                        .manifest
+                        .get_artifact_resource_path(artifact_type, resource_type)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Resource type '{}' is not supported by tool '{}'",
+                                resource_type,
+                                artifact_type
+                            )
+                        })?;
+
+                    if let Some(custom_target) = dep.get_target() {
+                        // Custom target is relative to the artifact's resource directory
+                        let base_target = artifact_path.display().to_string();
+                        format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
+                            .replace("//", "/")
+                            + "/"
+                            + &filename
+                    } else {
+                        // Use artifact configuration for default path
+                        format!("{}/{}", artifact_path.display(), filename)
+                    }
+                    .replace('\\', "/")
+                }
             };
 
             Ok(LockedResource {
@@ -1952,7 +1950,7 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, Some(source_name)),
                 resource_type,
-                tool: artifact_type,
+                tool: artifact_type_string,
             })
         }
     }
@@ -2053,39 +2051,6 @@ impl DependencyResolver {
                     _ => "claude-code",
                 };
 
-                // Get artifact path
-                let artifact_path = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Resource type '{}' is not supported by tool '{}'",
-                            resource_type,
-                            artifact_type
-                        )
-                    })?;
-
-                // Determine the target directory
-                let target_dir = if let Some(custom_target) = dep.get_target() {
-                    // Custom target is relative to the artifact's resource directory
-                    format!("{}/{}", artifact_path.display(), custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                } else {
-                    artifact_path.display().to_string()
-                };
-
-                // Use relative path if it exists, otherwise use resource name
-                let filename =
-                    if relative_path.as_os_str().is_empty() || relative_path == matched_path {
-                        let extension =
-                            matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
-                        format!("{resource_name}.{extension}")
-                    } else {
-                        relative_path.to_string_lossy().to_string()
-                    };
-
-                let installed_at = format!("{target_dir}/{filename}");
-
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
                     matched_path.to_string_lossy().to_string()
@@ -2110,7 +2075,45 @@ impl DependencyResolver {
                             _ => ".mcp.json".to_string(), // Default to claude-code
                         }
                     }
-                    _ => installed_at,
+                    _ => {
+                        // For regular resources, get the artifact path
+                        let artifact_path = self
+                            .manifest
+                            .get_artifact_resource_path(artifact_type, resource_type)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Resource type '{}' is not supported by tool '{}'",
+                                    resource_type,
+                                    artifact_type
+                                )
+                            })?;
+
+                        // Determine the target directory
+                        let target_dir = if let Some(custom_target) = dep.get_target() {
+                            // Custom target is relative to the artifact's resource directory
+                            format!(
+                                "{}/{}",
+                                artifact_path.display(),
+                                custom_target.trim_start_matches('/')
+                            )
+                            .replace("//", "/")
+                        } else {
+                            artifact_path.display().to_string()
+                        };
+
+                        // Use relative path if it exists, otherwise use resource name
+                        let filename = if relative_path.as_os_str().is_empty()
+                            || relative_path == matched_path
+                        {
+                            let extension =
+                                matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
+                            format!("{resource_name}.{extension}")
+                        } else {
+                            relative_path.to_string_lossy().to_string()
+                        };
+
+                        format!("{target_dir}/{filename}")
+                    }
                 };
 
                 resources.push(LockedResource {
@@ -2182,39 +2185,6 @@ impl DependencyResolver {
                     _ => "claude-code",
                 };
 
-                // Get artifact path
-                let artifact_path = self
-                    .manifest
-                    .get_artifact_resource_path(artifact_type, resource_type)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Resource type '{}' is not supported by tool '{}'",
-                            resource_type,
-                            artifact_type
-                        )
-                    })?;
-
-                // Determine the target directory
-                let target_dir = if let Some(custom_target) = dep.get_target() {
-                    // Custom target is relative to the artifact's resource directory
-                    format!("{}/{}", artifact_path.display(), custom_target.trim_start_matches('/'))
-                        .replace("//", "/")
-                } else {
-                    artifact_path.display().to_string()
-                };
-
-                // Use relative path if it exists, otherwise use resource name
-                let filename =
-                    if relative_path.as_os_str().is_empty() || relative_path == matched_path {
-                        let extension =
-                            matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
-                        format!("{resource_name}.{extension}")
-                    } else {
-                        relative_path.to_string_lossy().to_string()
-                    };
-
-                let installed_at = format!("{target_dir}/{filename}");
-
                 // Determine resource type (pattern dependencies inherit from parent name)
                 let resource_type = self.get_resource_type(name);
 
@@ -2232,7 +2202,45 @@ impl DependencyResolver {
                             _ => ".mcp.json".to_string(), // Default to claude-code
                         }
                     }
-                    _ => installed_at,
+                    _ => {
+                        // For regular resources, get the artifact path
+                        let artifact_path = self
+                            .manifest
+                            .get_artifact_resource_path(artifact_type, resource_type)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Resource type '{}' is not supported by tool '{}'",
+                                    resource_type,
+                                    artifact_type
+                                )
+                            })?;
+
+                        // Determine the target directory
+                        let target_dir = if let Some(custom_target) = dep.get_target() {
+                            // Custom target is relative to the artifact's resource directory
+                            format!(
+                                "{}/{}",
+                                artifact_path.display(),
+                                custom_target.trim_start_matches('/')
+                            )
+                            .replace("//", "/")
+                        } else {
+                            artifact_path.display().to_string()
+                        };
+
+                        // Use relative path if it exists, otherwise use resource name
+                        let filename = if relative_path.as_os_str().is_empty()
+                            || relative_path == matched_path
+                        {
+                            let extension =
+                                matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
+                            format!("{resource_name}.{extension}")
+                        } else {
+                            relative_path.to_string_lossy().to_string()
+                        };
+
+                        format!("{target_dir}/{filename}")
+                    }
                 };
 
                 resources.push(LockedResource {
@@ -3987,8 +3995,9 @@ mod tests {
         assert_eq!(script.name, "analyzer");
         // Verify custom filename is used (with custom extension)
         // Normalize path separators for cross-platform testing
+        // Uses claude-code tool, so snippets go to .claude/snippets/
         let normalized_path = script.installed_at.replace('\\', "/");
-        assert_eq!(normalized_path, ".claude/agpm/snippets/analyze.py");
+        assert_eq!(normalized_path, ".claude/snippets/analyze.py");
     }
 
     // ============ NEW TESTS FOR UNCOVERED AREAS ============

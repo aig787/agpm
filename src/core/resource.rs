@@ -39,10 +39,10 @@
 //! let hook_type: ResourceType = "hook".parse().unwrap();
 //!
 //! // Get default directory names
-//! assert_eq!(agent_type.default_directory(), ".claude/agents");
-//! assert_eq!(snippet_type.default_directory(), ".claude/agpm/snippets");
-//! assert_eq!(script_type.default_directory(), ".claude/agpm/scripts");
-//! assert_eq!(hook_type.default_directory(), ".claude/agpm/hooks");
+//! assert_eq!(agent_type.default_directory(), Some(".claude/agents"));
+//! assert_eq!(snippet_type.default_directory(), Some(".claude/snippets"));
+//! assert_eq!(script_type.default_directory(), Some(".claude/scripts"));
+//! assert_eq!(hook_type.default_directory(), None); // Hooks merged into config, not staged
 //! ```
 //!
 //! ## Serialization Support
@@ -82,19 +82,19 @@ use std::path::Path;
 /// - **Default Directory**: `.claude/agents`
 /// - **Common Use Cases**: Claude Code agents, custom AI assistants, specialized prompts
 ///
-/// ## Snippet  
+/// ## Snippet
 /// - **Purpose**: Reusable code templates, examples, and documentation fragments
-/// - **Default Directory**: `.claude/agpm/snippets`
+/// - **Default Directory**: `.claude/snippets`
 /// - **Common Use Cases**: Code templates, configuration examples, documentation
 ///
 /// ## Script
 /// - **Purpose**: Executable files that can be run by hooks or independently
-/// - **Default Directory**: `.claude/agpm/scripts`
+/// - **Default Directory**: `.claude/scripts`
 /// - **Common Use Cases**: Validation scripts, automation tools, hook executables
 ///
 /// ## Hook
 /// - **Purpose**: Event-based automation configurations for Claude Code
-/// - **Default Directory**: `.claude/agpm/hooks`
+/// - **Staging**: Merged into `.claude/settings.local.json`, not staged to disk
 /// - **Common Use Cases**: Pre/Post tool use validation, custom event handlers
 ///
 /// # Examples
@@ -133,13 +133,13 @@ use std::path::Path;
 /// use agpm_cli::core::ResourceType;
 ///
 /// let agent = ResourceType::Agent;
-/// assert_eq!(agent.default_directory(), ".claude/agents");
+/// assert_eq!(agent.default_directory(), Some(".claude/agents"));
 ///
-/// let snippet = ResourceType::Snippet;  
-/// assert_eq!(snippet.default_directory(), ".claude/agpm/snippets");
+/// let snippet = ResourceType::Snippet;
+/// assert_eq!(snippet.default_directory(), Some(".claude/snippets"));
 ///
 /// let script = ResourceType::Script;
-/// assert_eq!(script.default_directory(), ".claude/agpm/scripts");
+/// assert_eq!(script.default_directory(), Some(".claude/scripts"));
 /// ```
 ///
 /// ## JSON Serialization
@@ -189,7 +189,7 @@ pub enum ResourceType {
     /// Executable script files
     ///
     /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
-    /// by hooks or run independently. They are installed to .claude/agpm/scripts/
+    /// by hooks or run independently. They are installed to .claude/scripts/
     Script,
 
     /// Hook configuration files
@@ -257,24 +257,25 @@ impl ResourceType {
     ///
     /// # Returns
     ///
-    /// - [`Agent`] → `".claude/agents"`
-    /// - [`Snippet`] → `".claude/agpm/snippets"`
-    /// - [`Command`] → `.claude/commands`
-    /// - [`McpServer`] → `.claude/agpm/mcp-servers`
-    /// - [`Script`] → `.claude/agpm/scripts`
-    /// - [`Hook`] → `.claude/agpm/hooks`
+    /// - [`Agent`] → `Some(".claude/agents")`
+    /// - [`Snippet`] → `Some(".claude/snippets")`
+    /// - [`Command`] → `Some(".claude/commands")`
+    /// - [`McpServer`] → `None` (merged into `.mcp.json`, not staged to disk)
+    /// - [`Script`] → `Some(".claude/scripts")`
+    /// - [`Hook`] → `None` (merged into `.claude/settings.local.json`, not staged to disk)
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// use agpm_cli::core::ResourceType;
     ///
-    /// assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
-    /// assert_eq!(ResourceType::Snippet.default_directory(), ".claude/agpm/snippets");
-    /// assert_eq!(ResourceType::Command.default_directory(), ".claude/commands");
-    /// assert_eq!(ResourceType::McpServer.default_directory(), ".claude/agpm/mcp-servers");
-    /// assert_eq!(ResourceType::Script.default_directory(), ".claude/agpm/scripts");
-    /// assert_eq!(ResourceType::Hook.default_directory(), ".claude/agpm/hooks");
+    /// assert_eq!(ResourceType::Agent.default_directory(), Some(".claude/agents"));
+    /// assert_eq!(ResourceType::Snippet.default_directory(), Some(".claude/snippets"));
+    /// assert_eq!(ResourceType::Command.default_directory(), Some(".claude/commands"));
+    /// assert_eq!(ResourceType::Script.default_directory(), Some(".claude/scripts"));
+    /// // Hook and McpServer return None as they don't stage to disk
+    /// assert_eq!(ResourceType::Hook.default_directory(), None);
+    /// assert_eq!(ResourceType::McpServer.default_directory(), None);
     /// ```
     ///
     /// # Note
@@ -289,14 +290,14 @@ impl ResourceType {
     /// [`Script`]: ResourceType::Script
     /// [`Hook`]: ResourceType::Hook
     #[must_use]
-    pub const fn default_directory(&self) -> &str {
+    pub const fn default_directory(&self) -> Option<&str> {
         match self {
-            Self::Agent => ".claude/agents",
-            Self::Snippet => ".claude/agpm/snippets",
-            Self::Command => ".claude/commands",
-            Self::McpServer => ".claude/agpm/mcp-servers",
-            Self::Script => ".claude/agpm/scripts",
-            Self::Hook => ".claude/agpm/hooks",
+            Self::Agent => Some(".claude/agents"),
+            Self::Snippet => Some(".claude/snippets"),
+            Self::Command => Some(".claude/commands"),
+            Self::McpServer => None, // Merged into .mcp.json, not staged to disk
+            Self::Script => Some(".claude/scripts"),
+            Self::Hook => None, // Merged into .claude/settings.local.json, not staged to disk
         }
     }
 }
@@ -682,12 +683,12 @@ mod tests {
 
     #[test]
     fn test_resource_type_default_directory() {
-        assert_eq!(ResourceType::Agent.default_directory(), ".claude/agents");
-        assert_eq!(ResourceType::Snippet.default_directory(), ".claude/agpm/snippets");
-        assert_eq!(ResourceType::Command.default_directory(), ".claude/commands");
-        assert_eq!(ResourceType::McpServer.default_directory(), ".claude/agpm/mcp-servers");
-        assert_eq!(ResourceType::Script.default_directory(), ".claude/agpm/scripts");
-        assert_eq!(ResourceType::Hook.default_directory(), ".claude/agpm/hooks");
+        assert_eq!(ResourceType::Agent.default_directory(), Some(".claude/agents"));
+        assert_eq!(ResourceType::Snippet.default_directory(), Some(".claude/snippets"));
+        assert_eq!(ResourceType::Command.default_directory(), Some(".claude/commands"));
+        assert_eq!(ResourceType::McpServer.default_directory(), None);
+        assert_eq!(ResourceType::Script.default_directory(), Some(".claude/scripts"));
+        assert_eq!(ResourceType::Hook.default_directory(), None);
     }
 
     #[test]

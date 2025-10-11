@@ -495,7 +495,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("jkl012".to_string()),
             checksum: "sha256:jkl4".to_string(),
-            installed_at: ".claude/agpm/scripts/script1.sh".to_string(),
+            installed_at: ".claude/scripts/script1.sh".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 
@@ -511,7 +511,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("mno345".to_string()),
             checksum: "sha256:mno5".to_string(),
-            installed_at: ".claude/agpm/hooks/hook1.json".to_string(),
+            installed_at: ".claude/hooks/hook1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
 
@@ -527,7 +527,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("pqr678".to_string()),
             checksum: "sha256:pqr6".to_string(),
-            installed_at: ".claude/agpm/mcp-servers/mcp1.json".to_string(),
+            installed_at: ".mcp-servers/mcp1.json".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
 
@@ -543,7 +543,7 @@ mod tests {
             version: None,
             resolved_commit: None,
             checksum: "sha256:local".to_string(),
-            installed_at: ".claude/agpm/snippets/local-snippet.md".to_string(),
+            installed_at: ".agpm/snippets/local-snippet.md".to_string(),
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
@@ -632,7 +632,8 @@ mod tests {
 
         assert_eq!(entries[1].0.name, "test-snippet");
         // Normalize path separators for cross-platform testing
-        assert_eq!(entries[1].1.replace('\\', "/"), ".claude/agpm/snippets");
+        // Snippet uses claude-code tool, so it installs to .claude/snippets
+        assert_eq!(entries[1].1.replace('\\', "/"), ".claude/snippets");
     }
 
     #[test]

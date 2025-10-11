@@ -318,7 +318,7 @@ mod tests {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash|Write".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/agpm/scripts/security.sh".to_string(),
+                command: ".claude/scripts/security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -385,7 +385,7 @@ mod tests {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/agpm/scripts/security.sh".to_string(),
+                command: ".claude/scripts/security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -435,7 +435,7 @@ mod tests {
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/agpm/scripts/old-security.sh",
+                    "command": ".claude/scripts/old-security.sh",
                     "timeout": 5000,
                     "_agpm": {
                         "managed": true,
@@ -455,7 +455,7 @@ mod tests {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/agpm/scripts/new-security.sh".to_string(),
+                command: ".claude/scripts/new-security.sh".to_string(),
                 timeout: Some(3000),
                 description: None,
             },
@@ -487,7 +487,7 @@ mod tests {
         let hook = &hooks_array[0];
         assert_eq!(
             hook.get("command").unwrap().as_str().unwrap(),
-            ".claude/agpm/scripts/new-security.sh"
+            ".claude/scripts/new-security.sh"
         );
         assert_eq!(hook.get("timeout").unwrap().as_u64().unwrap(), 3000);
 
@@ -506,7 +506,7 @@ mod tests {
                 "matcher": "Bash",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/agpm/scripts/keep.sh",
+                    "command": ".claude/scripts/keep.sh",
                     "_agpm": {
                         "managed": true,
                         "dependency_name": "keep-hook",
@@ -519,7 +519,7 @@ mod tests {
                 "matcher": "Write",
                 "hooks": [{
                     "type": "command",
-                    "command": ".claude/agpm/scripts/remove.sh",
+                    "command": ".claude/scripts/remove.sh",
                     "_agpm": {
                         "managed": true,
                         "dependency_name": "remove-hook",
@@ -539,7 +539,7 @@ mod tests {
                 events: vec![HookEvent::PreToolUse],
                 matcher: "Bash".to_string(),
                 hook_type: "command".to_string(),
-                command: ".claude/agpm/scripts/keep.sh".to_string(),
+                command: ".claude/scripts/keep.sh".to_string(),
                 timeout: None,
                 description: None,
             },

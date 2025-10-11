@@ -102,27 +102,27 @@
 //!         match resource_type {
 //!             ResourceType::Agent => {
 //!                 println!("Found agent resource");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!             ResourceType::Snippet => {
 //!                 println!("Found snippet resource");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!             ResourceType::Command => {
 //!                 println!("Found command resource");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!             ResourceType::McpServer => {
 //!                 println!("Found MCP server configuration");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!             ResourceType::Script => {
 //!                 println!("Found script resource");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!             ResourceType::Hook => {
 //!                 println!("Found hook configuration");
-//!                 println!("Install dir: {}", resource_type.default_directory());
+//!                 println!("Install dir: {}", resource_type.default_directory().unwrap_or("none"));
 //!             }
 //!         }
 //!     } else {

@@ -2745,14 +2745,20 @@ mod tests {
         let mut lockfile = LockFile::new();
         let mut agent = create_test_locked_resource("test-agent", true);
         agent.path = file1.to_string_lossy().to_string();
+        agent.installed_at = ".claude/agents/test-agent.md".to_string();
         lockfile.agents.push(agent);
 
         let mut snippet = create_test_locked_resource("test-snippet", true);
         snippet.path = file2.to_string_lossy().to_string();
+        snippet.resource_type = crate::core::ResourceType::Snippet;
+        snippet.tool = "agpm".to_string(); // Snippets use agpm tool
+        snippet.installed_at = ".agpm/snippets/test-snippet.md".to_string();
         lockfile.snippets.push(snippet);
 
         let mut command = create_test_locked_resource("test-command", true);
         command.path = file3.to_string_lossy().to_string();
+        command.resource_type = crate::core::ResourceType::Command;
+        command.installed_at = ".claude/commands/test-command.md".to_string();
         lockfile.commands.push(command);
 
         let manifest = Manifest::new();
@@ -2774,7 +2780,7 @@ mod tests {
 
         // Verify all files were installed (using default directories)
         assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-        assert!(project_dir.join(".claude/agpm/snippets/test-snippet.md").exists());
+        assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
         assert!(project_dir.join(".claude/commands/test-command.md").exists());
     }
 
@@ -2933,7 +2939,7 @@ mod tests {
 
         // Add snippet with installed path
         let mut snippet = create_test_locked_resource("test-snippet", true);
-        snippet.installed_at = ".claude/agpm/snippets/test-snippet.md".to_string();
+        snippet.installed_at = ".agpm/snippets/test-snippet.md".to_string();
         lockfile.snippets.push(snippet);
 
         // Call update_gitignore
@@ -2948,7 +2954,7 @@ mod tests {
         let content = std::fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains("AGPM managed entries"));
         assert!(content.contains(".claude/agents/test-agent.md"));
-        assert!(content.contains(".claude/agpm/snippets/test-snippet.md"));
+        assert!(content.contains(".agpm/snippets/test-snippet.md"));
     }
 
     #[tokio::test]

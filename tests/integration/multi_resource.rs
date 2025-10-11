@@ -223,17 +223,17 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     // Check scripts (3 resources)
     // Files use basename from path, not dependency name
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/scripts/build.sh"),
+        &project.project_path().join(".claude/scripts/build.sh"),
         "Build Script v1.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/scripts/test.js"),
+        &project.project_path().join(".claude/scripts/test.js"),
         "Test Script v2.2.0",
     )
     .await?;
     verify_file_contains(
-        &project.project_path().join(".claude/agpm/scripts/deploy.py"),
+        &project.project_path().join(".claude/scripts/deploy.py"),
         "Deploy Script v3.0.0",
     )
     .await?;

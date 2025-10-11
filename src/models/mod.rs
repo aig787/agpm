@@ -12,29 +12,47 @@ use serde::{Deserialize, Serialize};
 pub struct DependencySpec {
     /// Dependency specification string
     ///
-    /// Format: `source:path[@version]` for Git sources or `path` for local files
+    /// Format: source:path[@version] for Git sources or path for local files
     ///
-    /// Git dependency formats:
-    /// • `source:path@version` - Git source with specific version
-    /// • `source:path` - Git source (defaults to "main")
-    ///
-    /// Local dependency formats:
-    /// • `/absolute/path/file.md` - Absolute path
-    /// • `./relative/path/file.md` - Relative path
-    /// • `file:///path/to/file.md` - File URL
-    /// • `C:\Windows\path\file.md` - Windows path
-    ///
-    /// Pattern formats (using glob patterns):
-    /// • `source:agents/*.md@v1.0` - All .md files in agents/
-    /// • `source:agents/**/review*.md` - All review files recursively
-    /// • `./local/**/*.json` - All JSON files recursively
+    /// GIT DEPENDENCIES (from a repository source defined in [sources]):
+    ///   source:path@version       - Specific version (tag/branch/commit)
+    ///   source:path               - Defaults to "main" branch
     ///
     /// Examples:
-    /// • `official:agents/reviewer.md@v1.0.0`
-    /// • `community:snippets/utils.md`
-    /// • `./agents/local-agent.md`
-    /// • `../shared/resources/hook.json`
-    #[arg(value_name = "SPEC")]
+    ///   official:agents/code-reviewer.md@v1.0.0    - Specific version tag
+    ///   community:snippets/python-utils.md@main    - Branch name
+    ///   myrepo:commands/deploy.md@abc123f          - Commit SHA
+    ///   community:hooks/pre-commit.json            - Defaults to "main"
+    ///
+    /// LOCAL FILE DEPENDENCIES:
+    ///   ./path/file.md            - Relative to current directory
+    ///   ../path/file.md           - Parent directory
+    ///   /absolute/path/file.md    - Absolute path (Unix/macOS)
+    ///   C:\path\file.md           - Absolute path (Windows)
+    ///
+    /// Examples:
+    ///   ./agents/my-agent.md                       - Project agent
+    ///   ../shared-resources/common-snippet.md      - Shared resource
+    ///   /usr/local/share/agpm/hooks/lint.json      - System-wide hook
+    ///
+    /// PATTERN DEPENDENCIES (glob patterns for multiple files):
+    ///   source:dir/*.md@version   - All .md files in directory
+    ///   source:dir/**/*.md        - All .md files recursively
+    ///
+    /// Examples:
+    ///   community:agents/ai/*.md@v2.0.0            - All AI agents
+    ///   official:agents/**/review*.md@v1.5.0       - All review agents (recursive)
+    ///   ./local-agents/*.md                        - All local agents
+    ///
+    /// Notes:
+    /// - Version is optional for Git sources (defaults to "main")
+    /// - Version is not applicable for local file paths
+    /// - Use --name to specify a custom dependency name
+    /// - Patterns require --name to provide a meaningful dependency name
+    #[arg(
+        value_name = "SPEC",
+        help = "Dependency spec: 'source:path@version' for Git (e.g., community:agents/helper.md@v1.0.0) or './path' for local files. Use --help for more examples"
+    )]
     pub spec: String,
 
     /// Custom name for the dependency
@@ -44,12 +62,60 @@ pub struct DependencySpec {
     #[arg(long)]
     pub name: Option<String>,
 
+    /// Target tool for the dependency
+    ///
+    /// Specifies which AI coding tool this resource is for.
+    /// Supported values: claude-code, opencode, agpm
+    ///
+    /// Examples:
+    ///   --tool claude-code  - Install to .claude/ (default for agents, commands, scripts, hooks)
+    ///   --tool opencode     - Install to .opencode/
+    ///   --tool agpm         - Install to .agpm/ (default for snippets)
+    #[arg(long)]
+    pub tool: Option<String>,
+
+    /// Custom installation target path (relative to resource directory)
+    ///
+    /// Override the default installation path. The path is relative to the
+    /// resource type's default directory (e.g., .claude/agents/).
+    ///
+    /// IMPORTANT: Since v0.3.18+, custom targets are relative to the resource
+    /// directory, not the project root.
+    ///
+    /// Examples:
+    ///   --target custom/special.md       - Install to .claude/agents/custom/special.md
+    ///   --target experimental/test.md    - Install to .claude/commands/experimental/test.md
+    #[arg(long)]
+    pub target: Option<String>,
+
+    /// Custom filename for the installed resource
+    ///
+    /// Override the default filename derived from the source path.
+    /// Use this to rename resources during installation.
+    ///
+    /// Examples:
+    ///   --filename my-reviewer.md    - Install as my-reviewer.md instead of original name
+    ///   --filename helper.json       - Rename JSON file during installation
+    #[arg(long)]
+    pub filename: Option<String>,
+
     /// Force overwrite if dependency exists
     ///
     /// By default, adding a duplicate dependency will fail.
     /// Use this flag to replace existing dependencies.
     #[arg(long, short = 'f')]
     pub force: bool,
+
+    /// Skip automatic installation after adding dependency
+    ///
+    /// By default, the dependency is automatically installed after being added
+    /// to the manifest. Use this flag to only update the manifest without
+    /// installing the dependency files.
+    ///
+    /// Examples:
+    ///   --no-install    - Add to manifest only, skip installation
+    #[arg(long)]
+    pub no_install: bool,
 }
 
 /// Arguments for adding an agent dependency
@@ -181,7 +247,11 @@ mod tests {
             common: DependencySpec {
                 spec: "test:agent.md".to_string(),
                 name: None,
+                tool: None,
+                target: None,
+                filename: None,
                 force: false,
+                no_install: false,
             },
         });
 
@@ -195,7 +265,11 @@ mod tests {
             common: DependencySpec {
                 spec: "test:mcp.toml".to_string(),
                 name: Some("test-server".to_string()),
+                tool: None,
+                target: None,
+                filename: None,
                 force: true,
+                no_install: false,
             },
         });
 

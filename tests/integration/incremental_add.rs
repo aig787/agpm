@@ -31,9 +31,9 @@ async fn setup_test_project() -> Result<TempDir> {
             t.agents(".claude/agents")
                 .snippets(".agpm/snippets")
                 .commands(".claude/commands")
-                .mcp_servers(".claude/agpm/mcp-servers")
-                .scripts(".claude/agpm/scripts")
-                .hooks(".claude/agpm/hooks")
+                .mcp_servers(".mcp-servers")
+                .scripts(".claude/scripts")
+                .hooks(".hooks")
                 .gitignore(true)
         })
         .build();

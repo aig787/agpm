@@ -1,8 +1,8 @@
 //! Hook configuration management for AGPM
 //!
 //! This module handles Claude Code hook configurations, including:
-//! - Installing hook JSON files to `.claude/agpm/hooks/`
-//! - Converting them to Claude Code format in `settings.local.json`
+//! - Directly merging hook JSON into `settings.local.json` (no staging directory)
+//! - Converting them to Claude Code format
 //! - Managing hook lifecycle and dependencies
 
 use anyhow::{Context, Result};
@@ -138,7 +138,7 @@ pub struct MatcherGroup {
 /// use std::path::Path;
 ///
 /// # fn example() -> anyhow::Result<()> {
-/// let hooks_dir = Path::new(".claude/agpm/hooks");
+/// let hooks_dir = Path::new(".claude/hooks");
 /// let configs = load_hook_configs(hooks_dir)?;
 ///
 /// for (name, config) in configs {
@@ -434,7 +434,7 @@ pub async fn install_hooks(
 ///     description: None,
 /// };
 ///
-/// let hook_file = Path::new(".claude/agpm/hooks/test.json");
+/// let hook_file = Path::new(".claude/hooks/test.json");
 /// validate_hook_config(&config, hook_file)?;
 /// println!("Hook configuration is valid!");
 /// # Ok(())
@@ -458,14 +458,12 @@ pub fn validate_hook_config(config: &HookConfig, script_path: &Path) -> Result<(
     }
 
     // Validate that the referenced script exists
-    let script_full_path = if config.command.starts_with(".claude/agpm/scripts/") {
-        // If script_path is the hook file (e.g., .claude/agpm/hooks/test.json),
-        // we need to go up to the project root:
-        // test.json -> hooks/ -> agpm/ -> .claude/ -> project_root
+    let script_full_path = if config.command.starts_with(".claude/scripts/") {
+        // Hooks are now merged into .claude/settings.local.json
+        // We need to find the project root from the script_path
+        // From .claude/settings.local.json: settings.local.json -> .claude/ -> project_root
         script_path
-            .parent() // hooks/
-            .and_then(|p| p.parent()) // agpm/
-            .and_then(|p| p.parent()) // .claude/
+            .parent() // .claude/
             .and_then(|p| p.parent()) // project root
             .map(|p| p.join(&config.command))
     } else {
@@ -517,7 +515,7 @@ mod tests {
             events: vec![HookEvent::PreToolUse, HookEvent::PostToolUse],
             matcher: Some("Bash|Write".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/agpm/scripts/security-check.sh".to_string(),
+            command: ".claude/scripts/security-check.sh".to_string(),
             timeout: Some(5000),
             description: Some("Security validation".to_string()),
         };
@@ -727,11 +725,10 @@ mod tests {
         let temp = tempdir().unwrap();
 
         // Create the expected directory structure with script
-        let claude_dir = temp.path().join(".claude").join("agpm");
+        // Scripts are now in .claude/scripts/ not .claude/agpm/scripts/
+        let claude_dir = temp.path().join(".claude");
         let scripts_dir = claude_dir.join("scripts");
-        let hooks_dir = claude_dir.join("hooks");
         fs::create_dir_all(&scripts_dir).unwrap();
-        fs::create_dir_all(&hooks_dir).unwrap();
 
         let script_path = scripts_dir.join("test.sh");
         fs::write(&script_path, "#!/bin/bash\necho test").unwrap();
@@ -740,15 +737,16 @@ mod tests {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/agpm/scripts/test.sh".to_string(),
+            command: ".claude/scripts/test.sh".to_string(),
             timeout: None,
             description: None,
         };
 
-        // The hook file would be at .claude/agpm/hooks/test.json
-        // validate_hook_config goes up 3 levels from the hook path to find the project root
-        let hook_json_path = hooks_dir.join("test.json");
-        let result = validate_hook_config(&config, &hook_json_path);
+        // Hooks are merged into settings.local.json, but for validation purposes
+        // we need a reference path. Use the project root.
+        let settings_path = temp.path().join(".claude").join("settings.local.json");
+        fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        let result = validate_hook_config(&config, &settings_path);
 
         // Since the script exists at the expected location, this should succeed
         assert!(result.is_ok(), "Expected validation to succeed, but got: {:?}", result);
@@ -762,7 +760,7 @@ mod tests {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
             hook_type: "command".to_string(),
-            command: ".claude/agpm/scripts/nonexistent.sh".to_string(),
+            command: ".claude/scripts/nonexistent.sh".to_string(),
             timeout: None,
             description: None,
         };
@@ -778,7 +776,7 @@ mod tests {
     fn test_validate_hook_config_non_claude_path() {
         let temp = tempdir().unwrap();
 
-        // Test with a command that doesn't start with .claude/agpm/scripts/
+        // Test with a command that doesn't start with .claude/scripts/
         let config = HookConfig {
             events: vec![HookEvent::PreToolUse],
             matcher: Some(".*".to_string()),
