@@ -105,8 +105,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Run stress tests
-        run: cargo test --test stress --verbose
+        run: cargo nextest run --profile all --test stress --verbose
 
   coverage:
     name: Code Coverage
