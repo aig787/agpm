@@ -70,67 +70,62 @@ echo ""
 echo -e "${YELLOW}→ Adding commands (which have transitive dependencies)${NC}"
 echo "  - git-auto-commit depends on: rust-haiku agent, commit-message snippet"
 echo "  - format-json depends on: javascript-haiku agent, data-validation snippet"
-agpm add dep command local-deps:commands/git-auto-commit.md --name git-auto-commit
-agpm add dep command local-deps:commands/format-json.md --name format-json
+agpm add dep command --no-install local-deps:commands/git-auto-commit.md --name git-auto-commit
+agpm add dep command --no-install local-deps:commands/format-json.md --name format-json
 
 echo ""
 echo -e "${YELLOW}→ Adding agents (which also have dependencies)${NC}"
 echo "  - rust-haiku depends on: error-analysis, unit-test-creation snippets"
 echo "  - javascript-haiku depends on: test-automation, data-validation snippets"
-agpm add dep agent local-deps:agents/rust-haiku.md --name rust-haiku
-agpm add dep agent local-deps:agents/javascript-haiku.md --name javascript-haiku
+agpm add dep agent --no-install local-deps:agents/rust-haiku.md --name rust-haiku
+agpm add dep agent --no-install local-deps:agents/javascript-haiku.md --name javascript-haiku
 
 echo ""
 echo -e "${YELLOW}→ Adding base snippets (dependencies of other resources)${NC}"
-agpm add dep snippet local-deps:snippets/error-analysis.md --name error-analysis
-agpm add dep snippet local-deps:snippets/unit-test-creation.md --name unit-tests
-agpm add dep snippet local-deps:snippets/commit-message.md --name commit-message
-agpm add dep snippet local-deps:snippets/data-validation.md --name data-validation
-agpm add dep snippet local-deps:snippets/test-automation.md --name test-automation
+agpm add dep snippet --no-install local-deps:snippets/error-analysis.md --name error-analysis
+agpm add dep snippet --no-install local-deps:snippets/unit-test-creation.md --name unit-tests
+agpm add dep snippet --no-install local-deps:snippets/commit-message.md --name commit-message
+agpm add dep snippet --no-install local-deps:snippets/data-validation.md --name data-validation
+agpm add dep snippet --no-install local-deps:snippets/test-automation.md --name test-automation
 
 echo ""
 echo "→ Adding 2 scripts via command"
-agpm add dep script local-deps:scripts/build.sh --name build
-agpm add dep script local-deps:scripts/test.js --name test
+agpm add dep script --no-install local-deps:scripts/build.sh --name build
+agpm add dep script --no-install local-deps:scripts/test.js --name test
 
 echo ""
 echo "→ Adding 2 hooks via command"
-agpm add dep hook local-deps:hooks/pre-tool-use.json --name pre-tool-use
-agpm add dep hook local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
+agpm add dep hook --no-install local-deps:hooks/pre-tool-use.json --name pre-tool-use
+agpm add dep hook --no-install local-deps:hooks/user-prompt-submit.json --name user-prompt-submit
 
 echo ""
 echo "→ Adding 2 MCP servers via command"
-agpm add dep mcp-server local-deps:mcp-servers/filesystem.json --name filesystem
-agpm add dep mcp-server local-deps:mcp-servers/fetch.json --name fetch
+agpm add dep mcp-server --no-install local-deps:mcp-servers/filesystem.json --name filesystem
+agpm add dep mcp-server --no-install local-deps:mcp-servers/fetch.json --name fetch
 
 echo ""
-echo "→ Adding remaining resources directly to agpm.toml"
-cat >> agpm.toml << 'EOF'
+echo "→ Adding additional agents from agpm-community (without installing)"
+agpm add dep agent --no-install --name api-designer "community:agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md@v0.0.1"
+agpm add dep agent --no-install --name backend-developer "community:agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md@^v0.0.1"
+agpm add dep agent --no-install --name frontend-developer "community:agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md@=v0.0.1"
+agpm add dep agent --no-install --name python-pro "community:agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md@v0.0.1"
+agpm add dep agent --no-install --name rust-engineer "community:agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md@v0.0.1"
+agpm add dep agent --no-install --name javascript-pro "community:agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md@v0.0.1"
+agpm add dep agent --no-install --name database-administrator "community:agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md@v0.0.1"
+agpm add dep agent --no-install --name code-reviewer "community:agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md@v0.0.1"
+agpm add dep agent --no-install --name test-automator "community:agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md@v0.0.1"
+agpm add dep agent --no-install --name security-auditor "community:agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md@v0.0.1"
+agpm add dep agent --no-install --name devops-engineer "community:agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md@v0.0.1"
+agpm add dep agent --no-install --name cloud-architect "community:agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md@v0.0.1"
+agpm add dep agent --no-install --name documentation-engineer "community:agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md@v0.0.1"
+agpm add dep agent --no-install --name ml-engineer "community:agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md@v0.0.1"
+agpm add dep agent --no-install --name multi-agent-coordinator "community:agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md@v0.0.1"
 
-[agents]
-# Additional agents from agpm-community
-api-designer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
-backend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/backend-developer.md", version = "^v0.0.1" }
-frontend-developer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/frontend-developer.md", version = "=v0.0.1" }
-python-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/python-pro.md", version = "v0.0.1" }
-rust-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/rust-engineer.md", version = "v0.0.1" }
-javascript-pro = { source = "community", path = "agents/awesome-claude-code-subagents/categories/02-language-specialists/javascript-pro.md", version = "v0.0.1" }
-database-administrator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/database-administrator.md", version = "v0.0.1" }
-code-reviewer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/code-reviewer.md", version = "v0.0.1" }
-test-automator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/test-automator.md", version = "v0.0.1" }
-security-auditor = { source = "community", path = "agents/awesome-claude-code-subagents/categories/04-quality-security/security-auditor.md", version = "v0.0.1" }
-devops-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/devops-engineer.md", version = "v0.0.1" }
-cloud-architect = { source = "community", path = "agents/awesome-claude-code-subagents/categories/03-infrastructure/cloud-architect.md", version = "v0.0.1" }
-documentation-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/06-developer-experience/documentation-engineer.md", version = "v0.0.1" }
-ml-engineer = { source = "community", path = "agents/awesome-claude-code-subagents/categories/05-data-ai/ml-engineer.md", version = "v0.0.1" }
-multi-agent-coordinator = { source = "community", path = "agents/awesome-claude-code-subagents/categories/09-meta-orchestration/multi-agent-coordinator.md", version = "v0.0.1" }
-
-[snippets]
-# Additional snippets (using local source)
-security-review = { source = "local-deps", path = "snippets/security-review.md" }
-rest-api = { source = "local-deps", path = "snippets/rest-api-endpoint.md" }
-test-coverage = { source = "local-deps", path = "snippets/test-coverage.md" }
-EOF
+echo ""
+echo "→ Adding additional snippets (without installing)"
+agpm add dep snippet --no-install --name security-review "local-deps:snippets/security-review.md"
+agpm add dep snippet --no-install --name rest-api "local-deps:snippets/rest-api-endpoint.md"
+agpm add dep snippet --no-install --name test-coverage "local-deps:snippets/test-coverage.md"
 
 
 # Show the generated manifest
@@ -145,9 +140,7 @@ agpm validate
 
 # Install dependencies
 echo ""
-echo "→ Installing dependencies with AGPM"
-# Remove lockfile since we appended to the manifest
-rm -f agpm.lock
+echo "→ Installing all dependencies with AGPM"
 agpm install
 
 # List installed resources
@@ -157,7 +150,7 @@ agpm list
 
 # Update dependencies
 echo ""
-echo "→ Updating dependathies with AGPM"
+echo "→ Updating dependencies with AGPM"
 agpm update
 
 
