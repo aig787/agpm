@@ -146,7 +146,7 @@ cargo build --release  # Optimized with LTO
 cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --doc
 ```
 
-GitHub Actions: Cross-platform tests, semantic-release, crates.io publish
+GitHub Actions: Cross-platform tests, crates.io publish
 
 **cargo-dist**: Uses `dist` command (NOT `cargo dist`). The binary is named `dist` in `~/.cargo/bin/`.
 

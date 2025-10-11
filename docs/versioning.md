@@ -313,17 +313,16 @@ local-branch-agent = { source = "local-repo", path = "agents/dev.md", branch = "
 
 ## Automated Releases
 
-AGPM itself uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning. Every push to `main` triggers:
+AGPM uses GitHub Actions for automated versioning based on [Conventional Commits](https://www.conventionalcommits.org/):
 
-1. **Commit analysis** to determine version bump based on [Conventional Commits](https://www.conventionalcommits.org/):
+1. **Commit analysis** to determine version bump:
    - `fix:` → Patch release (0.0.X)
-   - `feat:` → Minor release (0.X.0) 
+   - `feat:` → Minor release (0.X.0)
    - Breaking changes → Major release (X.0.0)
    - All other types (`docs:`, `style:`, `refactor:`, `test:`, `build:`, `ci:`, `chore:`) → Patch release
 
 2. **Automatic release** with:
    - Version updates in `Cargo.toml` and `Cargo.lock`
-   - Changelog generation from conventional commits
    - GitHub release with cross-platform binaries (Linux x86_64/ARM64, macOS x86_64/ARM64, Windows x86_64)
    - Publishing to crates.io
    - Pre-release support on `alpha` and `beta` branches

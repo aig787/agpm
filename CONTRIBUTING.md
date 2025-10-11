@@ -441,7 +441,7 @@ We value all contributions! Contributors are recognized through:
 
 ## Release Process
 
-AGPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and release management based on conventional commits.
+AGPM uses GitHub Actions for automated versioning and release management based on conventional commits.
 
 ### Creating a Release
 
@@ -459,7 +459,7 @@ AGPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated
 
 ### What Happens During Release
 
-The workflow uses semantic-release to:
+The workflow:
 
 1. **Analyze Commits**: Determines version bump from commit messages since last release:
    - `fix:`, `perf:`, `docs:`, `chore:`, etc. → Patch release (0.0.X)

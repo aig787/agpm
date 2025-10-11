@@ -517,12 +517,11 @@ AGPM is actively developed with comprehensive test coverage and automated releas
 
 ### Automated Releases
 
-AGPM uses [semantic-release](https://semantic-release.gitbook.io/) for automated versioning and publishing:
+AGPM uses GitHub Actions for automated versioning and publishing:
 
 - **Conventional Commits**: Version bumps based on commit messages (`feat:` → minor, `fix:` → patch)
 - **Cross-Platform Binaries**: Automatic builds for Linux, macOS, and Windows
 - **Automated Publishing**: Releases to both GitHub and crates.io
-- **Changelog Generation**: Automatic changelog from commit history
 
 ## License
 
