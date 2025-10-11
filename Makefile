@@ -23,7 +23,7 @@ test-stress:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
 	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
 	@echo "Running stress tests (this may take several minutes)..."
-	cargo nextest run --test stress
+	cargo nextest run --profile all --test stress
 
 # Run stress tests with verbose output
 test-stress-verbose:
@@ -37,7 +37,7 @@ test-all:
 	@command -v cargo-binstall >/dev/null 2>&1 || { echo "Installing cargo-binstall..."; cargo install cargo-binstall; }
 	@command -v cargo-nextest >/dev/null 2>&1 || { echo "Installing cargo-nextest..."; cargo binstall cargo-nextest --secure; }
 	cargo nextest run --test integration
-	cargo nextest run --test stress
+	cargo nextest run --profile all --test stress
 	cargo test --doc
 
 # Run tests with verbose output
