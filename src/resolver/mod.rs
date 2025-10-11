@@ -2,7 +2,7 @@
 //!
 //! This module implements the core dependency resolution algorithm that transforms
 //! manifest dependencies into locked versions. It handles version constraint solving,
-//! conflict detection, redundancy analysis, transitive dependency resolution,
+//! conflict detection, transitive dependency resolution,
 //! parallel source synchronization, and relative path preservation during installation.
 //!
 //! # Architecture Overview
@@ -210,7 +210,6 @@
 //! ```
 
 pub mod dependency_graph;
-pub mod redundancy;
 pub mod version_resolution;
 pub mod version_resolver;
 
@@ -533,11 +532,11 @@ impl DependencyResolver {
             // Build a detailed error message
             let mut error_msg = String::from(
                 "Target path conflicts detected:\n\n\
-                 Multiple dependencies resolve to the same installation path.\n\
+                 Multiple dependencies resolve to the same installation path with different content.\n\
                  This would cause files to overwrite each other.\n\n",
             );
 
-            for (path, names) in conflicts {
+            for (path, names) in &conflicts {
                 error_msg.push_str(&format!(
                     "  Path: {}\n  Conflicts: {}\n\n",
                     path,
@@ -546,10 +545,15 @@ impl DependencyResolver {
             }
 
             error_msg.push_str(
-                "To resolve:\n\
-                 1. Use different dependency names for different versions\n\
-                 2. Use custom 'target' field to specify different installation paths\n\
-                 3. Ensure pattern dependencies don't overlap with single-file dependencies",
+                "To resolve this conflict:\n\
+                 1. Use custom 'target' field to specify different installation paths:\n\
+                    Example: target = \"custom/subdir/file.md\"\n\n\
+                 2. Use custom 'filename' field to specify different filenames:\n\
+                    Example: filename = \"utils-v2.md\"\n\n\
+                 3. For transitive dependencies, add them as direct dependencies with custom target/filename\n\n\
+                 4. Ensure pattern dependencies don't overlap with single-file dependencies\n\n\
+                 Note: This often occurs when different dependencies have transitive dependencies\n\
+                 with the same name but from different sources.",
             );
 
             return Err(anyhow::anyhow!(error_msg));
@@ -3087,12 +3091,7 @@ impl DependencyResolver {
     /// since network issues or missing versions can still cause failures.
     /// Use this method for fast validation before expensive resolution operations.
     pub fn verify(&mut self) -> Result<()> {
-        // Redundancy checking removed - conflicts are now automatically resolved
-        // if let Some(warning) = self.check_redundancies() {
-        //     eprintln!("{warning}");
-        // }
-
-        // Then try to resolve all dependencies (clone to avoid borrow checker issues)
+        // Try to resolve all dependencies (clone to avoid borrow checker issues)
         let deps: Vec<(String, ResourceDependency)> = self
             .manifest
             .all_dependencies()
@@ -3377,55 +3376,6 @@ mod tests {
         assert_eq!(entry.path, "../agents/local.md");
         assert!(entry.source.is_none());
         assert!(entry.url.is_none());
-    }
-
-    // Redundancy tests removed - using automatic conflict resolution
-    #[test]
-    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
-    fn test_check_redundancies() {
-        let mut manifest = Manifest::new();
-        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
-
-        // Add two dependencies with different versions of the same resource
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/test.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-
-        manifest.add_dependency(
-            "agent2".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/test.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[tokio::test]
@@ -3864,51 +3814,6 @@ mod tests {
         let lockfile = resolver.resolve().await.unwrap();
         assert_eq!(lockfile.agents.len(), 2);
         assert_eq!(lockfile.snippets.len(), 1);
-    }
-
-    #[test]
-    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
-    fn test_check_redundancies_no_redundancy() {
-        let mut manifest = Manifest::new();
-        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/test1.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-        manifest.add_dependency(
-            "agent2".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/test2.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[test]
@@ -5017,54 +4922,6 @@ mod tests {
         assert!(agent.resolved_commit.is_some());
         // The resolved commit should start with our short hash
         assert!(agent.resolved_commit.as_ref().unwrap().starts_with(&commit_hash[..7]));
-    }
-
-    #[test]
-    #[ignore = "Redundancy checking removed - using automatic conflict resolution"]
-    fn test_check_redundancies_with_details() {
-        let mut manifest = Manifest::new();
-        manifest.add_source("official".to_string(), "https://github.com/test/repo.git".to_string());
-
-        // Add redundant dependencies
-        manifest.add_dependency(
-            "helper-v1".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/helper.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-
-        manifest.add_dependency(
-            "helper-v2".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("official".to_string()),
-                path: "agents/helper.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: "claude-code".to_string(),
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let _resolver = DependencyResolver::with_cache(manifest, cache);
     }
 
     #[tokio::test]
