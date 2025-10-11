@@ -4,7 +4,7 @@ version = "0.4.4"
 edition = "2024"
 rust-version = "1.85.0"
 authors = ["Aaron Griffin <aig787@icloud.com>"]
-description = "AGent Package Manager - A Git-based package manager for Claude agents"
+description = "AGent Package Manager - A Git-based package manager for coding agents"
 license = "MIT"
 repository = "https://github.com/aig787/agpm"
 homepage = "https://github.com/aig787/agpm"
@@ -35,6 +35,7 @@ test-utils = []
 clap = { version = "4.5", features = ["derive", "cargo", "env"] }
 tokio = { version = "1.40", features = ["full"] }
 toml = "0.9.5"
+toml_edit = { version = "0.22", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
