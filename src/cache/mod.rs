@@ -444,6 +444,69 @@ impl Cache {
         Self::registry_path_for(&self.cache_dir)
     }
 
+    /// Verify that a worktree directory is fully accessible.
+    ///
+    /// This function ensures that a newly created worktree is fully accessible
+    /// before it's marked as ready. This prevents race conditions in parallel
+    /// operations where `git worktree add` returns but the filesystem hasn't
+    /// finished writing all files yet.
+    ///
+    /// # Implementation
+    ///
+    /// Uses tokio-retry with exponential backoff to handle filesystem sync delays.
+    /// Checks:
+    /// - Directory exists and is accessible
+    /// - Directory can be read
+    /// - .git file exists (worktree marker)
+    ///
+    /// # Parameters
+    ///
+    /// * `worktree_path` - Path to the worktree directory to verify
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the worktree is not accessible after all retries.
+    async fn verify_worktree_accessible(worktree_path: &Path) -> Result<()> {
+        use tokio_retry::strategy::{jitter, ExponentialBackoff};
+        use tokio_retry::Retry;
+
+        let retry_strategy = ExponentialBackoff::from_millis(10)
+            .max_delay(std::time::Duration::from_millis(500))
+            .take(5)
+            .map(jitter);
+
+        let worktree_path = worktree_path.to_path_buf();
+
+        Retry::spawn(retry_strategy, || async {
+            // Check if directory exists and is readable
+            let mut entries = tokio::fs::read_dir(&worktree_path)
+                .await
+                .map_err(|e| format!("Cannot read worktree directory: {}", e))?;
+
+            // Verify we can actually read directory entries
+            entries
+                .next_entry()
+                .await
+                .map_err(|e| format!("Cannot read directory entries: {}", e))?;
+
+            // Verify the .git file exists (worktree marker)
+            let git_file = worktree_path.join(".git");
+            tokio::fs::metadata(&git_file)
+                .await
+                .map_err(|_| ".git file not found in worktree".to_string())?;
+
+            Ok::<(), String>(())
+        })
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Worktree not fully initialized after retries: {} - {}",
+                worktree_path.display(),
+                e
+            )
+        })
+    }
+
     async fn record_worktree_usage(
         &self,
         registry_key: &str,
@@ -1046,6 +1109,11 @@ impl Cache {
         // Keep lock held until cache is updated to ensure git state is fully settled
         match worktree_result {
             Ok(_) => {
+                // Verify worktree is fully accessible before marking as Ready
+                // This prevents race conditions where git worktree add returns
+                // but filesystem hasn't finished writing all files yet
+                Self::verify_worktree_accessible(&worktree_path).await?;
+
                 let mut cache_write = self.worktree_cache.write().await;
                 cache_write.insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));
                 self.record_worktree_usage(&cache_key, name, sha_short, &worktree_path).await?;
