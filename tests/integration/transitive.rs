@@ -87,17 +87,14 @@ This agent depends on the helper agent.
 
 /// Test transitive dependencies with same-named resources from different sources
 ///
-/// NOTE: This test is currently skipped because cross-source transitive dependencies
-/// with the same name create path conflicts. The system correctly detects that
-/// "utils" from source1 and "utils" from source2 would both install to the same path
-/// but have different content (different commits).
+/// Test that cross-source transitive dependencies with the same name are properly
+/// detected as conflicts. When two dependencies from different sources both have
+/// transitive dependencies with the same name (e.g., "utils"), they would install
+/// to the same path but with different content, which is a conflict.
 ///
-/// TODO: Implement proper handling for cross-source transitive dependencies:
-/// - Option 1: Qualify transitive dependency names by source (e.g., "source1__utils")
-/// - Option 2: Use custom install paths for transitive deps from different sources
-/// - Option 3: Detect and merge identical transitive deps, error on conflicts
+/// The system should detect this and provide a helpful error message suggesting
+/// the user specify custom 'target' or 'filename' fields to resolve the conflict.
 #[tokio::test]
-#[ignore = "Cross-source transitive dependencies with same names not yet supported"]
 async fn test_transitive_cross_source_same_names() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 

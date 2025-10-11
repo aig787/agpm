@@ -462,8 +462,8 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     let mut manifest = Manifest::new();
 
     // Add local sources
-    for repo_idx in 0..2 {
-        manifest.sources.insert(format!("local_repo_{}", repo_idx), repo_urls[repo_idx].clone());
+    for (repo_idx, repo_url) in repo_urls.iter().enumerate().take(2) {
+        manifest.sources.insert(format!("local_repo_{}", repo_idx), repo_url.clone());
     }
 
     // Add community source
