@@ -210,6 +210,46 @@ use std::path::Path;
 
 use crate::manifest::DependencySpec;
 
+/// Emits a warning when frontmatter parsing fails.
+///
+/// This helper function provides consistent, helpful error messages when
+/// YAML or TOML frontmatter cannot be parsed. It explains the consequences
+/// and provides guidance on fixing common issues.
+///
+/// # Arguments
+///
+/// * `format_type` - The frontmatter format ("YAML" or "TOML")
+/// * `context` - Optional context string (e.g., file path) for the warning
+/// * `error` - The parsing error to display
+fn emit_frontmatter_parse_warning(
+    format_type: &str,
+    context: Option<&str>,
+    error: &impl std::fmt::Display,
+) {
+    let location = context.map(|c| format!(" in '{c}'")).unwrap_or_default();
+
+    let field_term = match format_type {
+        "YAML" => "objects",
+        "TOML" => "tables",
+        _ => "structures",
+    };
+
+    eprintln!("⚠️  Warning: Unable to parse {format_type} frontmatter{location}.");
+    eprintln!();
+    eprintln!("The document will be processed without metadata, and any declared dependencies");
+    eprintln!("will NOT be resolved or installed.");
+    eprintln!();
+    eprintln!("Parse error: {error}");
+    eprintln!();
+    eprintln!("If you're declaring dependencies, ensure they use the correct structured format.");
+    eprintln!(
+        "Dependencies must be {field_term} with 'path' and optional 'version' fields, not plain strings."
+    );
+    eprintln!();
+    eprintln!("For the correct dependency format, see:");
+    eprintln!("https://github.com/aig787/agpm#transitive-dependencies");
+}
+
 /// Type alias for [`MarkdownDocument`] for backward compatibility.
 ///
 /// This alias exists to provide a consistent naming convention and maintain
@@ -665,18 +705,8 @@ impl MarkdownDocument {
                     });
                 }
                 Err(err) => {
-                    // Parsing failed - emit warning and treat entire document as content
-                    if let Some(ctx) = context {
-                        eprintln!(
-                            "⚠️  Warning: Unable to parse YAML frontmatter in '{ctx}'. \
-                            The document will be processed without metadata. Error: {err}"
-                        );
-                    } else {
-                        eprintln!(
-                            "⚠️  Warning: Unable to parse YAML frontmatter. \
-                            The document will be processed without metadata. Error: {err}"
-                        );
-                    }
+                    // Parsing failed - emit helpful warning and treat entire document as content
+                    emit_frontmatter_parse_warning("YAML", context, &err);
 
                     // Treat the entire document as content (including the invalid frontmatter)
                     return Ok(Self {
@@ -710,18 +740,8 @@ impl MarkdownDocument {
                     });
                 }
                 Err(err) => {
-                    // TOML parsing failed - emit warning and treat entire document as content
-                    if let Some(ctx) = context {
-                        eprintln!(
-                            "⚠️  Warning: Unable to parse TOML frontmatter in '{ctx}'. \
-                            The document will be processed without metadata. Error: {err}"
-                        );
-                    } else {
-                        eprintln!(
-                            "⚠️  Warning: Unable to parse TOML frontmatter. \
-                            The document will be processed without metadata. Error: {err}"
-                        );
-                    }
+                    // TOML parsing failed - emit helpful warning and treat entire document as content
+                    emit_frontmatter_parse_warning("TOML", context, &err);
 
                     // Treat the entire document as content (including the invalid frontmatter)
                     return Ok(Self {
