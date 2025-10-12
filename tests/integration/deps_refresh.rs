@@ -1,3 +1,4 @@
+use agpm_cli::utils::normalize_path_for_storage;
 use predicates::prelude::*;
 use tokio::fs;
 
@@ -497,7 +498,7 @@ async fn test_update_network_failure() {
 
     // Create manifest with non-existent file:// URLs to simulate network failure
     // Note: file:// URLs must use forward slashes even on Windows
-    let sources_path = project.sources_path().display().to_string().replace('\\', "/");
+    let sources_path = normalize_path_for_storage(project.sources_path());
     let official_url = format!("file://{}/nonexistent.git", sources_path);
     let community_url = format!("file://{}/also-nonexistent.git", sources_path);
 

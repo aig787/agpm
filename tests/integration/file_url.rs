@@ -1,3 +1,4 @@
+use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::Result;
 use std::path::Path;
 use tokio::fs;
@@ -6,8 +7,7 @@ use crate::common::{ManifestBuilder, TestProject};
 
 /// Convert a path to a file:// URL string, properly handling Windows paths
 async fn path_to_file_url(path: &Path) -> String {
-    let path_str = path.display().to_string().replace('\\', "/");
-    format!("file://{path_str}")
+    format!("file://{}", normalize_path_for_storage(path))
 }
 
 #[tokio::test]

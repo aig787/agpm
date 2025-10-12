@@ -1,3 +1,4 @@
+use agpm_cli::utils::normalize_path_for_storage;
 use predicates::prelude::*;
 use tokio::fs;
 
@@ -569,7 +570,7 @@ async fn test_validate_specific_file() {
     let project = TestProject::new().await.unwrap();
 
     // Create a manifest that uses file:// URLs
-    let sources_path_str = project.sources_path().display().to_string().replace('\\', "/");
+    let sources_path_str = normalize_path_for_storage(project.sources_path());
     let official_url = format!("file://{}/official", sources_path_str);
     let community_url = format!("file://{}/community", sources_path_str);
 

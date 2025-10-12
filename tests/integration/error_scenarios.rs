@@ -1,3 +1,4 @@
+use agpm_cli::utils::normalize_path_for_storage;
 use tokio::fs;
 
 use crate::common::{ManifestBuilder, TestProject};
@@ -72,8 +73,7 @@ async fn test_corrupted_git_repo() {
     fs::write(fake_repo_dir.join(".git/config"), "corrupted config").await.unwrap();
 
     // Create a manifest that references this corrupted repo
-    let fake_repo_url =
-        format!("file://{}", fake_repo_dir.display().to_string().replace('\\', "/"));
+    let fake_repo_url = format!("file://{}", normalize_path_for_storage(&fake_repo_dir));
     let manifest = ManifestBuilder::new()
         .add_source("official", &fake_repo_url)
         .add_standard_agent("test-agent", "official", "agents/test.md")

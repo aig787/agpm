@@ -284,10 +284,11 @@ standard = { source = "community", path = "agents/standard.md", version = "^v1.0
    - TOML manifest files (platform-independent)
    - Any serialized/stored path representation
 
-2. **Use `Path::display()` carefully**:
+2. **Use `normalize_path_for_storage()` for stored paths**:
    - `Path::display()` produces platform-specific separators (backslashes on Windows)
-   - Always normalize with `.replace('\\', "/")` when storing paths
-   - Example: `format!("{}/{}", artifact_path.display(), filename).replace('\\', "/")`
+   - Always use `normalize_path_for_storage()` when storing paths
+   - Example: `normalize_path_for_storage(format!("{}/{}", artifact_path.display(), filename))`
+   - Helper available at: `use crate::utils::normalize_path_for_storage;`
 
 3. **Runtime path operations**:
    - Use `Path`/`PathBuf` for filesystem operations (automatic platform handling)

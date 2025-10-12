@@ -93,6 +93,8 @@ use std::path::PathBuf;
 use crate::cache::Cache;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
+#[cfg(test)]
+use crate::utils::normalize_path_for_storage;
 
 /// Command to validate AGPM project configuration and dependencies.
 ///
@@ -1558,7 +1560,7 @@ mod tests {
 
         // Create manifest with local file:// URL to avoid network access
         let mut manifest = crate::manifest::Manifest::new();
-        let source_url = format!("file://{}", source_dir.display().to_string().replace('\\', "/"));
+        let source_url = format!("file://{}", normalize_path_for_storage(&source_dir));
         manifest.add_source("test".to_string(), source_url);
         manifest.save(&manifest_path).unwrap();
 
@@ -2040,8 +2042,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let nonexistent_path2 = temp.path().join("nonexistent2");
 
         // Convert to file:// URLs with proper formatting for Windows
-        let url1 = format!("file://{}", nonexistent_path1.display().to_string().replace('\\', "/"));
-        let url2 = format!("file://{}", nonexistent_path2.display().to_string().replace('\\', "/"));
+        let url1 = format!("file://{}", normalize_path_for_storage(&nonexistent_path1));
+        let url2 = format!("file://{}", normalize_path_for_storage(&nonexistent_path2));
 
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_source("official".to_string(), url1);
@@ -2076,8 +2078,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         let nonexistent_path2 = temp.path().join("nonexistent2");
 
         // Convert to file:// URLs with proper formatting for Windows
-        let url1 = format!("file://{}", nonexistent_path1.display().to_string().replace('\\', "/"));
-        let url2 = format!("file://{}", nonexistent_path2.display().to_string().replace('\\', "/"));
+        let url1 = format!("file://{}", normalize_path_for_storage(&nonexistent_path1));
+        let url2 = format!("file://{}", normalize_path_for_storage(&nonexistent_path2));
 
         let mut manifest = crate::manifest::Manifest::new();
         manifest.add_source("official".to_string(), url1);

@@ -60,7 +60,9 @@ pub use path_validation::{
     safe_relative_path, sanitize_file_name, validate_no_traversal, validate_project_path,
     validate_resource_path,
 };
-pub use platform::{get_git_command, get_home_dir, is_windows, resolve_path};
+pub use platform::{
+    get_git_command, get_home_dir, is_windows, normalize_path_for_storage, resolve_path,
+};
 pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_dependency_names};
 
 /// Determines if a given URL/path is a local filesystem path (not a Git repository URL).

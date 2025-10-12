@@ -3,6 +3,7 @@
 //! These tests verify that AGPM correctly manages .gitignore files
 //! based on the target.gitignore configuration setting.
 
+use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::Result;
 use assert_cmd::Command;
 use std::path::Path;
@@ -14,7 +15,7 @@ use crate::common::{ManifestBuilder, TestProject};
 /// Helper to create a test manifest with gitignore configuration
 async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
-    let source_path = source_dir.display().to_string().replace('\\', "/");
+    let source_path = normalize_path_for_storage(source_dir);
     ManifestBuilder::new()
         .with_target_config(|t| {
             t.agents(".claude/agents")
@@ -31,7 +32,7 @@ async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
 /// Helper to create a test manifest without explicit gitignore setting
 async fn create_test_manifest_default(source_dir: &Path) -> String {
     // Convert path to string with forward slashes for TOML compatibility
-    let source_path = source_dir.display().to_string().replace('\\', "/");
+    let source_path = normalize_path_for_storage(source_dir);
     ManifestBuilder::new()
         .with_target_config(|t| {
             t.agents(".claude/agents").snippets(".agpm/snippets").commands(".claude/commands")

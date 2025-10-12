@@ -220,6 +220,7 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{DependencySpec, DetailedDependency, Manifest, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
+use crate::utils::normalize_path_for_storage;
 use crate::version::conflict::ConflictDetector;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
@@ -1830,7 +1831,7 @@ impl DependencyResolver {
                             )
                         })?;
 
-                    if let Some(custom_target) = dep.get_target() {
+                    let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
                         let base_target = artifact_path.display().to_string();
                         format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
@@ -1840,8 +1841,8 @@ impl DependencyResolver {
                     } else {
                         // Use artifact configuration for default path
                         format!("{}/{}", artifact_path.display(), filename)
-                    }
-                    .replace('\\', "/")
+                    };
+                    normalize_path_for_storage(&path)
                 }
             };
 
@@ -1979,7 +1980,7 @@ impl DependencyResolver {
                             )
                         })?;
 
-                    if let Some(custom_target) = dep.get_target() {
+                    let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
                         let base_target = artifact_path.display().to_string();
                         format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
@@ -1989,8 +1990,8 @@ impl DependencyResolver {
                     } else {
                         // Use artifact configuration for default path
                         format!("{}/{}", artifact_path.display(), filename)
-                    }
-                    .replace('\\', "/")
+                    };
+                    normalize_path_for_storage(&path)
                 }
             };
 
@@ -2167,7 +2168,7 @@ impl DependencyResolver {
                             relative_path.to_string_lossy().to_string()
                         };
 
-                        format!("{target_dir}/{filename}")
+                        normalize_path_for_storage(format!("{target_dir}/{filename}"))
                     }
                 };
 
@@ -2294,7 +2295,7 @@ impl DependencyResolver {
                             relative_path.to_string_lossy().to_string()
                         };
 
-                        format!("{target_dir}/{filename}")
+                        normalize_path_for_storage(format!("{target_dir}/{filename}"))
                     }
                 };
 
@@ -3895,7 +3896,7 @@ mod tests {
         assert_eq!(agent.name, "custom-agent");
         // Verify the custom target is relative to the default agents directory
         // Normalize path separators for cross-platform testing
-        let normalized_path = agent.installed_at.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&agent.installed_at);
         assert!(normalized_path.contains(".claude/agents/integrations/custom"));
         assert_eq!(normalized_path, ".claude/agents/integrations/custom/custom-agent.md");
     }
@@ -3934,7 +3935,7 @@ mod tests {
         assert_eq!(agent.name, "standard-agent");
         // Verify the default target is used
         // Normalize path separators for cross-platform testing
-        let normalized_path = agent.installed_at.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&agent.installed_at);
         assert_eq!(normalized_path, ".claude/agents/standard-agent.md");
     }
 
@@ -3972,7 +3973,7 @@ mod tests {
         assert_eq!(agent.name, "my-agent");
         // Verify the custom filename is used
         // Normalize path separators for cross-platform testing
-        let normalized_path = agent.installed_at.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&agent.installed_at);
         assert_eq!(normalized_path, ".claude/agents/ai-assistant.txt");
     }
 
@@ -4011,7 +4012,7 @@ mod tests {
         // Verify both custom target and filename are used
         // Custom target is relative to default agents directory
         // Normalize path separators for cross-platform testing
-        let normalized_path = agent.installed_at.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&agent.installed_at);
         assert_eq!(normalized_path, ".claude/agents/tools/ai/assistant.markdown");
     }
 
@@ -4051,7 +4052,7 @@ mod tests {
         // Verify custom filename is used (with custom extension)
         // Normalize path separators for cross-platform testing
         // Uses claude-code tool, so snippets go to .claude/snippets/
-        let normalized_path = script.installed_at.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&script.installed_at);
         assert_eq!(normalized_path, ".claude/snippets/analyze.py");
     }
 
@@ -4561,7 +4562,7 @@ mod tests {
         // Check that commands are installed to the correct location
         for command in &lockfile.commands {
             // Normalize path separators for cross-platform testing
-            let normalized_path = command.installed_at.replace('\\', "/");
+            let normalized_path = normalize_path_for_storage(&command.installed_at);
             assert!(normalized_path.contains(".claude/commands/"));
             assert!(command.installed_at.ends_with(".md"));
         }

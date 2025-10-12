@@ -3,6 +3,7 @@
 //! These tests verify that transitive dependency relationships are properly maintained
 //! when dependencies are added incrementally to a project manifest.
 
+use agpm_cli::utils::normalize_path_for_storage;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::path::PathBuf;
@@ -24,7 +25,7 @@ async fn setup_test_project() -> Result<TempDir> {
     fs::create_dir_all(resources_dir.join("snippets")).await?;
 
     // Create manifest with local source
-    let resources_url = resources_dir.display().to_string().replace('\\', "/");
+    let resources_url = normalize_path_for_storage(&resources_dir);
     let manifest_content = ManifestBuilder::new()
         .add_source("local", &resources_url)
         .with_target_config(|t| {

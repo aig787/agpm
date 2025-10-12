@@ -292,8 +292,9 @@ Before considering any Rust code complete, you MUST:
     - Any serialized path representation
   - **Runtime operations**: Use `Path`/`PathBuf` for filesystem operations (automatic platform handling)
   - **`Path::display()` gotcha**: Produces platform-specific separators (backslashes on Windows)
-    - Always normalize when storing: `.replace('\\', "/")`
-    - Example: `format!("{}/{}", path.display(), file).replace('\\', "/")`
+    - Always use helper when storing: `normalize_path_for_storage()`
+    - Import: `use crate::utils::normalize_path_for_storage;`
+    - Example: `normalize_path_for_storage(format!("{}/{}", path.display(), file))`
   - **Use `join()` not string concatenation**: `path.join("file")` not `format!("{}/file", path)`
 - **Windows-specific considerations**:
   - Absolute paths: `C:\path` or `\\server\share` (UNC paths)

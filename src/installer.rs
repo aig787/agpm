@@ -133,6 +133,7 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::Manifest;
 use crate::markdown::MarkdownFile;
 use crate::utils::fs::{atomic_write, ensure_dir};
+use crate::utils::normalize_path_for_storage;
 use crate::utils::progress::ProgressBar;
 use hex;
 use std::collections::HashSet;
@@ -2077,7 +2078,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
         };
 
         // Normalize to forward slashes for .gitignore (Git expects forward slashes on all platforms)
-        let normalized_path = ignore_path.replace('\\', "/");
+        let normalized_path = normalize_path_for_storage(&ignore_path);
 
         new_content.push_str(&normalized_path);
         new_content.push('\n');

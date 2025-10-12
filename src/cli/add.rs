@@ -551,6 +551,7 @@ async fn install_single_dependency(
 mod tests {
     use super::*;
     use crate::models::DependencySpec;
+    use crate::utils::normalize_path_for_storage;
     use tempfile::TempDir;
 
     // Helper function to create a test manifest with basic structure
@@ -1028,7 +1029,7 @@ existing-mcp = "../local/mcp-servers/existing.json"
 [mcp-servers]
 test-mcp = "{}"
 "#,
-            mcp_file_path.display().to_string().replace('\\', "/")
+            normalize_path_for_storage(&mcp_file_path)
         );
 
         std::fs::write(&manifest_path, manifest_content).unwrap();
@@ -1074,7 +1075,7 @@ test = "{}"
 
 [commands]
 "#,
-            test_file.display().to_string().replace('\\', "/")
+            normalize_path_for_storage(&test_file)
         );
 
         std::fs::write(&manifest_path, manifest_content).unwrap();
@@ -1147,7 +1148,7 @@ existing-agent = "{}"
 
 [commands]
 "#,
-            original_agent_file.display().to_string().replace('\\', "/")
+            normalize_path_for_storage(&original_agent_file)
         );
         std::fs::write(&manifest_path, manifest_content).unwrap();
 

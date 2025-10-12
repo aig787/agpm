@@ -2,6 +2,7 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use super::super::*;
+    use crate::utils::normalize_path_for_storage;
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -896,7 +897,7 @@ mod tests {
             std::fs::set_permissions(&target_path, perms).unwrap();
         }
 
-        let source_url = format!("file://{}", source_path.display().to_string().replace('\\', "/"));
+        let source_url = format!("file://{}", normalize_path_for_storage(&source_path));
         let result = GitRepo::clone(&source_url, &target_path).await;
 
         // Clean up permissions before assertion

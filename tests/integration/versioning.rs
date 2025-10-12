@@ -1,3 +1,4 @@
+use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::Result;
 use tokio::fs;
 
@@ -92,7 +93,7 @@ async fn test_install_with_exact_version_tag() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("v1.0.0"))
         .build();
@@ -122,7 +123,7 @@ async fn test_install_with_caret_version_range() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("^1.0.0"))
         .build();
@@ -150,7 +151,7 @@ async fn test_install_with_tilde_version_range() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("~1.1.0"))
         .build();
@@ -178,7 +179,7 @@ async fn test_install_with_branch_reference() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("dev-example", |d| {
             d.source("versioned").path("agents/example.md").branch("develop")
@@ -215,7 +216,7 @@ async fn test_install_with_feature_branch() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("feature", |d| {
             d.source("versioned").path("agents/feature.md").branch("feature/new-agent")
@@ -246,7 +247,7 @@ async fn test_install_with_commit_hash() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("pinned", |d| d.source("versioned").path("agents/example.md").rev(&v1_commit))
         .build();
@@ -275,7 +276,7 @@ async fn test_install_with_wildcard_version() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("any", |d| d.source("versioned").path("agents/example.md").version("*"))
         .build();
@@ -303,7 +304,7 @@ async fn test_install_with_mixed_versioning_methods() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("stable", |d| d.source("versioned").path("agents/example.md").version("v1.1.0"))
         .add_agent("compatible", |d| {
@@ -339,7 +340,7 @@ async fn test_version_constraint_with_greater_than() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| {
             d.source("versioned").path("agents/example.md").version(">=1.1.0")
@@ -368,7 +369,7 @@ async fn test_version_constraint_with_range() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| {
             d.source("versioned").path("agents/example.md").version(">=1.1.0, <2.0.0")
@@ -398,7 +399,7 @@ async fn test_update_branch_reference() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("dev", |d| d.source("versioned").path("agents/example.md").branch("develop"))
         .build();
@@ -456,7 +457,7 @@ async fn test_lockfile_records_correct_version_info() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("tagged", |d| d.source("versioned").path("agents/example.md").version("v1.1.0"))
         .add_agent("branched", |d| {
@@ -491,7 +492,7 @@ async fn test_error_on_invalid_version_constraint() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| {
             d.source("versioned").path("agents/example.md").version("v99.0.0")
@@ -522,7 +523,7 @@ async fn test_error_on_nonexistent_branch() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| {
             d.source("versioned").path("agents/example.md").branch("nonexistent")
@@ -546,7 +547,7 @@ async fn test_frozen_install_uses_lockfile_versions() {
     let manifest = ManifestBuilder::new()
         .add_source(
             "versioned",
-            &format!("file://{}", source_repo.path.display().to_string().replace('\\', "/")),
+            &format!("file://{}", normalize_path_for_storage(&source_repo.path)),
         )
         .add_agent("example", |d| d.source("versioned").path("agents/example.md").version("^1.0.0"))
         .build();

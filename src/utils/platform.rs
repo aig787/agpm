@@ -388,6 +388,99 @@ pub fn normalize_path_separator(path: &Path) -> String {
     }
 }
 
+/// Normalizes a path for cross-platform storage by converting all separators to forward slashes.
+///
+/// This function ensures paths are stored consistently across all platforms by always using
+/// forward slashes as separators, regardless of the current platform. This is critical for:
+///
+/// - **Lockfiles** (`agpm.lock`): Must be identical across platforms for version control
+/// - **`.gitignore` entries**: Git requires forward slashes on all platforms
+/// - **TOML manifest files**: Forward slashes are platform-independent
+/// - **JSON configuration**: Forward slashes work universally
+///
+/// # Arguments
+///
+/// * `path` - The path to normalize (accepts both `Path` and string types)
+///
+/// # Returns
+///
+/// A string with all backslashes converted to forward slashes
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::utils::platform::normalize_path_for_storage;
+/// use std::path::Path;
+///
+/// // Windows path with backslashes
+/// let windows_path = Path::new(".claude\\agents\\example.md");
+/// assert_eq!(
+///     normalize_path_for_storage(windows_path),
+///     ".claude/agents/example.md"
+/// );
+///
+/// // Unix path (no change needed)
+/// let unix_path = Path::new(".claude/agents/example.md");
+/// assert_eq!(
+///     normalize_path_for_storage(unix_path),
+///     ".claude/agents/example.md"
+/// );
+///
+/// // Mixed separators (normalized to forward slashes)
+/// let mixed_path = Path::new("src/utils\\platform.rs");
+/// assert_eq!(
+///     normalize_path_for_storage(mixed_path),
+///     "src/utils/platform.rs"
+/// );
+/// ```
+///
+/// # Platform Behavior
+///
+/// - **Windows**: Converts `\` → `/`
+/// - **Unix-like**: Already uses `/`, but normalizes any stray `\` characters
+/// - **All platforms**: Output is always identical for the same logical path
+///
+/// # Use Cases
+///
+/// ```rust,no_run
+/// use agpm_cli::utils::platform::normalize_path_for_storage;
+/// use std::path::Path;
+///
+/// // Lockfile entries
+/// let installed_at = normalize_path_for_storage(
+///     Path::new(".claude\\agents\\example.md")
+/// );
+/// // Always produces: ".claude/agents/example.md"
+///
+/// // .gitignore entries
+/// let ignore_path = normalize_path_for_storage(
+///     Path::new(".claude\\cache")
+/// );
+/// // Always produces: ".claude/cache"
+///
+/// // Format strings with Path::display()
+/// let artifact_path = Path::new(".claude\\agents");
+/// let filename = "example.md";
+/// let full_path = format!("{}/{}", artifact_path.display(), filename);
+/// let normalized = normalize_path_for_storage(Path::new(&full_path));
+/// // Always produces: ".claude/agents/example.md"
+/// ```
+///
+/// # Important Notes
+///
+/// - **Always use this for stored paths**: Lockfiles, manifest files, .gitignore
+/// - **Don't use for runtime operations**: Use `Path`/`PathBuf` for filesystem operations
+/// - **Don't use for display**: Use `normalize_path_separator` for user-facing paths
+///
+/// # See Also
+///
+/// - [`normalize_path_separator`] for platform-native display formatting
+/// - CLAUDE.md "Cross-Platform Path Handling" section for complete guidelines
+#[must_use]
+pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
+    path.as_ref().to_string_lossy().replace('\\', "/")
+}
+
 /// Safely converts a path to a string, handling non-UTF-8 paths gracefully.
 ///
 /// This function converts a [`Path`] to a [`String`] using lossy conversion,
@@ -1319,6 +1412,43 @@ mod tests {
 
         #[cfg(not(windows))]
         assert_eq!(normalized, "test/path/file.txt");
+    }
+
+    #[test]
+    fn test_normalize_path_for_storage() {
+        // Test Unix-style path (should remain unchanged)
+        let unix_path = Path::new(".claude/agents/example.md");
+        assert_eq!(
+            normalize_path_for_storage(unix_path),
+            ".claude/agents/example.md"
+        );
+
+        // Test Windows-style path (should convert to forward slashes)
+        let windows_path = Path::new(".claude\\agents\\example.md");
+        assert_eq!(
+            normalize_path_for_storage(windows_path),
+            ".claude/agents/example.md"
+        );
+
+        // Test mixed separators (should normalize all to forward slashes)
+        let mixed_path = Path::new("src/utils\\platform.rs");
+        assert_eq!(
+            normalize_path_for_storage(mixed_path),
+            "src/utils/platform.rs"
+        );
+
+        // Test nested Windows path
+        let nested = Path::new(".claude\\agents\\ai\\gpt.md");
+        assert_eq!(
+            normalize_path_for_storage(nested),
+            ".claude/agents/ai/gpt.md"
+        );
+
+        // Test that result is always forward slashes regardless of platform
+        let path = Path::new("test\\nested\\path\\file.txt");
+        let normalized = normalize_path_for_storage(path);
+        assert_eq!(normalized, "test/nested/path/file.txt");
+        assert!(!normalized.contains('\\'));
     }
 
     #[test]

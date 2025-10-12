@@ -395,6 +395,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::Manifest;
+    use crate::utils::normalize_path_for_storage;
 
     fn create_test_lockfile() -> LockFile {
         let mut lockfile = LockFile::new();
@@ -628,12 +629,12 @@ mod tests {
 
         assert_eq!(entries[0].0.name, "test-agent");
         // Normalize path separators for cross-platform testing
-        assert_eq!(entries[0].1.replace('\\', "/"), ".claude/agents");
+        assert_eq!(normalize_path_for_storage(entries[0].1.as_ref()), ".claude/agents");
 
         assert_eq!(entries[1].0.name, "test-snippet");
         // Normalize path separators for cross-platform testing
         // Snippet uses claude-code tool, so it installs to .claude/snippets
-        assert_eq!(entries[1].1.replace('\\', "/"), ".claude/snippets");
+        assert_eq!(normalize_path_for_storage(entries[1].1.as_ref()), ".claude/snippets");
     }
 
     #[test]

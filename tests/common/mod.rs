@@ -107,6 +107,7 @@
 // and not all utilities are used in every test file
 #![allow(dead_code)]
 
+use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -593,8 +594,7 @@ impl TestSourceRepo {
 
     /// Get the file:// URL for this repository
     pub fn file_url(&self) -> String {
-        let path_str = self.path.display().to_string().replace('\\', "/");
-        format!("file://{}", path_str)
+        format!("file://{}", normalize_path_for_storage(&self.path))
     }
 
     /// Clone this repository to a bare repository for reliable serving
@@ -637,8 +637,7 @@ impl TestSourceRepo {
             format!("{}.git", self.path.file_name().and_then(|n| n.to_str()).unwrap_or("repo"));
         let bare_path = sources_dir.join(bare_name);
         self.to_bare_repo(&bare_path)?;
-        let path_str = bare_path.display().to_string().replace('\\', "/");
-        Ok(format!("file://{}", path_str))
+        Ok(format!("file://{}", normalize_path_for_storage(&bare_path)))
     }
 }
 
