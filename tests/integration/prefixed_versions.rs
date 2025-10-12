@@ -2,8 +2,8 @@
 //!
 //! Tests end-to-end workflows with monorepo-style prefixed tags.
 
-use agpm_cli::utils::normalize_path_for_storage;
 use crate::common::{ManifestBuilder, TestProject};
+use agpm_cli::utils::normalize_path_for_storage;
 use tokio::fs;
 
 /// Test installing a dependency with a prefixed version constraint

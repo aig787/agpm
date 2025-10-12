@@ -1418,31 +1418,19 @@ mod tests {
     fn test_normalize_path_for_storage() {
         // Test Unix-style path (should remain unchanged)
         let unix_path = Path::new(".claude/agents/example.md");
-        assert_eq!(
-            normalize_path_for_storage(unix_path),
-            ".claude/agents/example.md"
-        );
+        assert_eq!(normalize_path_for_storage(unix_path), ".claude/agents/example.md");
 
         // Test Windows-style path (should convert to forward slashes)
         let windows_path = Path::new(".claude\\agents\\example.md");
-        assert_eq!(
-            normalize_path_for_storage(windows_path),
-            ".claude/agents/example.md"
-        );
+        assert_eq!(normalize_path_for_storage(windows_path), ".claude/agents/example.md");
 
         // Test mixed separators (should normalize all to forward slashes)
         let mixed_path = Path::new("src/utils\\platform.rs");
-        assert_eq!(
-            normalize_path_for_storage(mixed_path),
-            "src/utils/platform.rs"
-        );
+        assert_eq!(normalize_path_for_storage(mixed_path), "src/utils/platform.rs");
 
         // Test nested Windows path
         let nested = Path::new(".claude\\agents\\ai\\gpt.md");
-        assert_eq!(
-            normalize_path_for_storage(nested),
-            ".claude/agents/ai/gpt.md"
-        );
+        assert_eq!(normalize_path_for_storage(nested), ".claude/agents/ai/gpt.md");
 
         // Test that result is always forward slashes regardless of platform
         let path = Path::new("test\\nested\\path\\file.txt");
