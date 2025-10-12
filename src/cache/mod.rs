@@ -444,7 +444,7 @@ impl Cache {
         Self::registry_path_for(&self.cache_dir)
     }
 
-    /// Verify that a worktree directory is fully accessible.
+    /// Verify that a worktree directory is fully accessible with actual content.
     ///
     /// This function ensures that a newly created worktree is fully accessible
     /// before it's marked as ready. This prevents race conditions in parallel
@@ -454,54 +454,72 @@ impl Cache {
     /// # Implementation
     ///
     /// Uses tokio-retry with exponential backoff to handle filesystem sync delays.
-    /// Checks:
-    /// - Directory exists and is accessible
-    /// - Directory can be read
-    /// - .git file exists (worktree marker)
+    ///
+    /// Verification uses `git diff-index --quiet HEAD` which provides a comprehensive
+    /// check that:
+    /// - The worktree directory and .git marker exist
+    /// - The git index is readable
+    /// - ALL files from the commit are present and match HEAD
+    /// - Git recognizes the worktree as valid
+    ///
+    /// This single command provides stronger guarantees than multi-level checks,
+    /// as it verifies complete checkout rather than partial availability.
     ///
     /// # Parameters
     ///
     /// * `worktree_path` - Path to the worktree directory to verify
+    /// * `sha` - The commit SHA being checked out (for logging)
     ///
     /// # Errors
     ///
     /// Returns an error if the worktree is not accessible after all retries.
-    async fn verify_worktree_accessible(worktree_path: &Path) -> Result<()> {
+    async fn verify_worktree_accessible(worktree_path: &Path, sha: &str) -> Result<()> {
         use tokio_retry::Retry;
         use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-        let retry_strategy = ExponentialBackoff::from_millis(10)
-            .max_delay(std::time::Duration::from_millis(500))
-            .take(5)
+        // Retry strategy with jitter for concurrent operations
+        let retry_strategy = ExponentialBackoff::from_millis(50)
+            .max_delay(std::time::Duration::from_secs(2))
+            .take(10)
             .map(jitter);
 
         let worktree_path = worktree_path.to_path_buf();
+        let sha_short = &sha[..8];
+
+        tracing::debug!(
+            target: "git::worktree",
+            "Verifying worktree at {} for SHA {}",
+            worktree_path.display(),
+            sha_short
+        );
 
         Retry::spawn(retry_strategy, || async {
-            // Check if directory exists and is readable
-            let mut entries = tokio::fs::read_dir(&worktree_path)
+            // Verify working tree matches HEAD (all files checked out)
+            // This verifies the worktree structure is valid and all files are present.
+            // Cache coherency (making files visible to the parent process) is now
+            // handled at the point of actual file read in installer.rs and resolver/mod.rs
+            // via read_with_cache_retry functions.
+            crate::git::command_builder::GitCommand::new()
+                .args(["diff-index", "--quiet", "HEAD"])
+                .current_dir(&worktree_path)
+                .execute_success()
                 .await
-                .map_err(|e| format!("Cannot read worktree directory: {}", e))?;
+                .map_err(|_| "Working tree doesn't match HEAD (checkout incomplete)".to_string())?;
 
-            // Verify we can actually read directory entries
-            entries
-                .next_entry()
-                .await
-                .map_err(|e| format!("Cannot read directory entries: {}", e))?;
-
-            // Verify the .git file exists (worktree marker)
-            let git_file = worktree_path.join(".git");
-            tokio::fs::metadata(&git_file)
-                .await
-                .map_err(|_| ".git file not found in worktree".to_string())?;
+            tracing::debug!(
+                target: "git::worktree",
+                "Worktree verification passed for {}",
+                worktree_path.display()
+            );
 
             Ok::<(), String>(())
         })
         .await
         .map_err(|e| {
             anyhow::anyhow!(
-                "Worktree not fully initialized after retries: {} - {}",
+                "Worktree not fully initialized after retries: {} @ {} - {}",
                 worktree_path.display(),
+                sha_short,
                 e
             )
         })
@@ -1112,7 +1130,7 @@ impl Cache {
                 // Verify worktree is fully accessible before marking as Ready
                 // This prevents race conditions where git worktree add returns
                 // but filesystem hasn't finished writing all files yet
-                Self::verify_worktree_accessible(&worktree_path).await?;
+                Self::verify_worktree_accessible(&worktree_path, sha).await?;
 
                 let mut cache_write = self.worktree_cache.write().await;
                 cache_write.insert(cache_key.clone(), WorktreeState::Ready(worktree_path.clone()));

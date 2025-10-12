@@ -224,6 +224,7 @@ use crate::version::conflict::ConflictDetector;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
@@ -262,6 +263,62 @@ type ResourceKey = (crate::core::ResourceType, String, Option<String>);
 /// resource metadata for cross-source dependency resolution. This allows the resolver
 /// to construct fully-qualified dependency references like `source:type/name:version`.
 type ResourceInfo = (Option<String>, Option<String>);
+
+/// Read a file with retry logic to handle cross-process filesystem cache coherency issues.
+///
+/// This function wraps `std::fs::read_to_string` with retry logic to handle cases where
+/// files created by Git subprocesses are not immediately visible to the parent Rust process
+/// due to filesystem cache propagation delays. This is particularly important in CI
+/// environments with network-attached storage where cache coherency delays can be significant.
+///
+/// # Arguments
+///
+/// * `path` - The file path to read
+///
+/// # Returns
+///
+/// Returns the file content as a `String`, or an error if the file cannot be read after retries.
+///
+/// # Retry Strategy
+///
+/// - Initial delay: 10ms
+/// - Max delay: 500ms (capped exponential backoff)
+/// - Max attempts: 10
+/// - Total max time: ~5 seconds
+///
+/// Only `NotFound` errors are retried, as these indicate cache coherency issues.
+/// Other errors (permissions, I/O errors) fail immediately.
+fn read_with_cache_retry_sync(path: &Path) -> Result<String> {
+    use std::io;
+    use std::thread;
+
+    let mut attempts = 0;
+    const MAX_ATTEMPTS: u32 = 10;
+
+    loop {
+        match std::fs::read_to_string(path) {
+            Ok(content) => return Ok(content),
+            Err(e) if e.kind() == io::ErrorKind::NotFound && attempts < MAX_ATTEMPTS => {
+                attempts += 1;
+                // Exponential backoff: 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 500ms (capped)
+                let delay_ms = std::cmp::min(10 * (1 << attempts), 500);
+                let delay = Duration::from_millis(delay_ms);
+
+                tracing::debug!(
+                    "File not yet visible (attempt {}/{}): {}",
+                    attempts,
+                    MAX_ATTEMPTS,
+                    path.display()
+                );
+
+                thread::sleep(delay);
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Failed to read file: {}", path.display()).context(e));
+            }
+        }
+    }
+}
 
 /// Core dependency resolver that transforms manifest dependencies into lockfile entries.
 ///
@@ -1299,11 +1356,9 @@ impl DependencyResolver {
                             .get_or_create_worktree_for_sha(source_name, &source_url, &sha, None)
                             .await?;
 
-                        // Read the file from worktree
+                        // Read the file from worktree (with cache coherency retry)
                         let file_path = worktree_path.join(&detailed.path);
-                        std::fs::read_to_string(&file_path).with_context(|| {
-                            format!("Failed to read file from worktree: {}", file_path.display())
-                        })
+                        read_with_cache_retry_sync(&file_path)
                     }
                 } else {
                     // Local dependency with detailed spec

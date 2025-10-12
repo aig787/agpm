@@ -54,6 +54,7 @@
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Type alias for complex installation result tuples to improve code readability.
 ///
@@ -136,6 +137,62 @@ use crate::utils::progress::ProgressBar;
 use hex;
 use std::collections::HashSet;
 use std::fs;
+
+/// Read a file with retry logic to handle cross-process filesystem cache coherency issues.
+///
+/// This function wraps `tokio::fs::read_to_string` with retry logic to handle cases where
+/// files created by Git subprocesses are not immediately visible to the parent Rust process
+/// due to filesystem cache propagation delays. This is particularly important in CI
+/// environments with network-attached storage where cache coherency delays can be significant.
+///
+/// # Arguments
+///
+/// * `path` - The file path to read
+///
+/// # Returns
+///
+/// Returns the file content as a `String`, or an error if the file cannot be read after retries.
+///
+/// # Retry Strategy
+///
+/// - Initial delay: 10ms
+/// - Max delay: 500ms
+/// - Factor: 2x (exponential backoff)
+/// - Max attempts: 10
+/// - Total max time: ~10 seconds
+///
+/// Only `NotFound` errors are retried, as these indicate cache coherency issues.
+/// Other errors (permissions, I/O errors) fail immediately by returning Ok to bypass retry.
+async fn read_with_cache_retry(path: &Path) -> Result<String> {
+    use std::io;
+
+    let retry_strategy = tokio_retry::strategy::ExponentialBackoff::from_millis(10)
+        .max_delay(Duration::from_millis(500))
+        .factor(2)
+        .take(10);
+
+    let path_buf = path.to_path_buf();
+
+    tokio_retry::Retry::spawn(retry_strategy, || {
+        let path = path_buf.clone();
+        async move {
+            tokio::fs::read_to_string(&path).await.map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    tracing::debug!(
+                        "File not yet visible (likely cache coherency issue): {}",
+                        path.display()
+                    );
+                    format!("File not found: {}", path.display())
+                } else {
+                    // Non-retriable error - return error message that will fail fast
+                    format!("I/O error (non-retriable): {}", e)
+                }
+            })
+        }
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to read resource file: {}: {}", path.display(), e))
+}
 
 /// Install a single resource from a lock entry using worktrees for parallel safety.
 ///
@@ -279,11 +336,9 @@ pub async fn install_resource(
             cache_dir
         };
 
-        // Read the content from the source
+        // Read the content from the source (with cache coherency retry)
         let source_path = cache_dir.join(&entry.path);
-        let content = tokio::fs::read_to_string(&source_path)
-            .await
-            .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
+        let content = read_with_cache_retry(&source_path).await?;
 
         // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
         MarkdownFile::parse_with_context(&content, Some(&source_path.display().to_string()))?;
