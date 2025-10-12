@@ -119,6 +119,11 @@ agpm add dep script ../shared/scripts/build.sh
 
 # Add pattern dependencies (bulk installation)
 agpm add dep agent "community:agents/ai/*.md@v1.0.0" --name ai-agents
+
+# Batch mode: Add multiple dependencies without installing, then install all at once
+agpm add dep agent --no-install community:agents/rust-expert.md@v1.0.0
+agpm add dep snippet --no-install community:snippets/utils.md@v1.0.0
+agpm install  # Install all dependencies at once
 ```
 
 ### Dependency Validation

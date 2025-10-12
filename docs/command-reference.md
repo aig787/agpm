@@ -361,7 +361,11 @@ Arguments:
 
 Options:
       --name <NAME>           Dependency name (default: derived from path)
+      --tool <TOOL>           Target tool: claude-code, opencode, agpm, custom
+      --target <PATH>         Custom installation path (relative to resource directory)
+      --filename <NAME>       Custom filename for the installed resource
   -f, --force                 Force overwrite if dependency exists
+      --no-install            Add to manifest without installing (install later with 'agpm install')
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
@@ -415,6 +419,17 @@ agpm add dep snippet "community:snippets/python/*.md" --name python-utils
 
 # Force overwrite existing dependency
 agpm add dep agent community:agents/new-version.md --name existing-agent --force
+
+# Add multiple dependencies without installing (batch mode)
+agpm add dep agent --no-install community:agents/rust-expert.md@v1.0.0 --name rust-expert
+agpm add dep agent --no-install community:agents/python-pro.md@v1.0.0 --name python-pro
+agpm add dep snippet --no-install community:snippets/utils.md@v1.0.0 --name utils
+# Then install all at once
+agpm install
+
+# Specify target tool for multi-tool projects
+agpm add dep agent community:agents/helper.md@v1.0.0 --tool opencode --name opencode-helper
+agpm add dep agent community:agents/helper.md@v1.0.0 --tool claude-code --name claude-helper
 ```
 
 **Name Derivation:**
