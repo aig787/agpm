@@ -212,8 +212,10 @@ dependencies:
   agents:
     - path: agents/helper.md
       version: v1.0.0
+      tool: claude-code  # Optional: specify target tool
   snippets:
     - path: snippets/utils.md
+    # version and tool inherited from parent if not specified
 ---
 ```
 
@@ -225,20 +227,31 @@ dependencies:
     "commands": [
       {
         "path": "commands/deploy.md",
-        "version": "v2.0.0"
+        "version": "v2.0.0",
+        "tool": "opencode"
       }
     ]
   }
 }
 ```
 
+**Supported Fields**:
+
+- `path` (required): Path to the dependency file within the source repository
+- `version` (optional): Version constraint (inherits from parent if not specified)
+- `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
+  - Inherits from parent if parent's tool supports this resource type
+  - Falls back to default tool for this resource type
+
 **Key Features**:
 
 - Graph-based resolution with topological ordering
 - Cycle detection prevents infinite loops
 - Version inheritance when not specified
+- Tool inheritance with automatic fallback
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
+- Unknown field detection with warnings (v0.4.5+)
 
 ## Versioned Prefixes (v0.3.19+)
 
