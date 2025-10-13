@@ -382,12 +382,6 @@ pub struct DependencyResolver {
     /// resolution and used to fill the dependencies field in `LockedResource` entries.
     /// The source is included to prevent cross-source dependency contamination.
     dependency_map: HashMap<(crate::core::ResourceType, String, Option<String>), Vec<String>>,
-    /// Resource type cache for transitive dependencies.
-    ///
-    /// Maps from (name, source) to `ResourceType` for transitive dependencies discovered
-    /// during resolution. This allows `get_resource_type()` to accurately determine the
-    /// type for transitive dependencies without defaulting to Snippet.
-    transitive_types: HashMap<(String, Option<String>), crate::core::ResourceType>,
     /// Conflict detector for identifying version conflicts.
     ///
     /// Tracks version requirements across all dependencies (direct and transitive)
@@ -436,7 +430,7 @@ impl DependencyResolver {
     ///
     /// # Resource Type Detection
     ///
-    /// Resource type is determined by calling `get_resource_type()` on the entry name,
+    /// Resource types are threaded from the manifest throughout the resolution pipeline,
     /// which maps to the following lockfile collections:
     /// - `"agent"` → `lockfile.agents`
     /// - `"snippet"` → `lockfile.snippets`
@@ -964,7 +958,6 @@ impl DependencyResolver {
             prepared_versions: HashMap::new(),
             version_resolver,
             dependency_map: HashMap::new(),
-            transitive_types: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
         })
     }
@@ -1001,7 +994,6 @@ impl DependencyResolver {
             prepared_versions: HashMap::new(),
             version_resolver,
             dependency_map: HashMap::new(),
-            transitive_types: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
         })
     }
@@ -1038,7 +1030,6 @@ impl DependencyResolver {
             prepared_versions: HashMap::new(),
             version_resolver,
             dependency_map: HashMap::new(),
-            transitive_types: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
         }
     }
@@ -1113,20 +1104,23 @@ impl DependencyResolver {
     ///
     /// # Returns
     /// A vector of all dependencies (direct + transitive) in topological order, including
-    /// all same-named resources from different sources
+    /// all same-named resources from different sources. Each tuple contains:
+    /// - Dependency name
+    /// - Resource dependency details
+    /// - Resource type (to avoid ambiguity when same name exists across types)
     async fn resolve_transitive_dependencies(
         &mut self,
-        base_deps: &[(String, ResourceDependency)],
+        base_deps: &[(String, ResourceDependency, crate::core::ResourceType)],
         enable_transitive: bool,
-    ) -> Result<Vec<(String, ResourceDependency)>> {
+    ) -> Result<Vec<(String, ResourceDependency, crate::core::ResourceType)>> {
         // Clear state from any previous resolution to prevent stale data
         // IMPORTANT: Must clear before early return to avoid contaminating non-transitive runs
         self.dependency_map.clear();
-        self.transitive_types.clear();
         // NOTE: Don't reset conflict_detector here - it was already populated with direct dependencies
 
         if !enable_transitive {
             // If transitive resolution is disabled, return base dependencies as-is
+            // with their resource types already threaded from the manifest
             return Ok(base_deps.to_vec());
         }
 
@@ -1141,29 +1135,67 @@ impl DependencyResolver {
         let mut queue: Vec<(String, ResourceDependency, Option<crate::core::ResourceType>)> =
             Vec::new();
 
-        // Add initial dependencies to queue
-        for (name, dep) in base_deps {
-            let resource_type = self.get_resource_type(name);
+        // Add initial dependencies to queue with their threaded types
+        for (name, dep, resource_type) in base_deps {
             let source = dep.get_source().map(std::string::ToString::to_string);
-            queue.push((name.clone(), dep.clone(), Some(resource_type)));
-            all_deps.insert((resource_type, name.clone(), source), dep.clone());
+            queue.push((name.clone(), dep.clone(), Some(*resource_type)));
+            all_deps.insert((*resource_type, name.clone(), source), dep.clone());
         }
 
         // Process queue to discover transitive dependencies
         while let Some((name, dep, resource_type)) = queue.pop() {
             let source = dep.get_source().map(std::string::ToString::to_string);
-            let resource_type = resource_type
-                .unwrap_or_else(|| self.get_resource_type_with_source(&name, source.as_deref()));
+            let resource_type =
+                resource_type.expect("resource_type should always be threaded through queue");
             let key = (resource_type, name.clone(), source.clone());
+
+            // Check if this queue entry is stale (superseded by conflict resolution)
+            // IMPORTANT: This must come BEFORE the processed check so that conflict-resolved
+            // entries can be reprocessed even if an older version was already processed.
+            // If all_deps has a different version than what we popped, skip this entry
+            if let Some(current_dep) = all_deps.get(&key) {
+                if current_dep.get_version() != dep.get_version() {
+                    // This entry was superseded by conflict resolution, skip it
+                    continue;
+                }
+            }
 
             if processed.contains(&key) {
                 continue;
             }
+
             processed.insert(key.clone());
 
-            // Skip pattern dependencies for transitive resolution (too complex for now)
+            // Handle pattern dependencies by expanding them to concrete files
             if dep.is_pattern() {
-                continue;
+                // Expand the pattern to get all matching files
+                match self.expand_pattern_to_concrete_deps(&name, &dep, resource_type).await {
+                    Ok(concrete_deps) => {
+                        // Queue each concrete dependency for transitive resolution
+                        for (concrete_name, concrete_dep) in concrete_deps {
+                            let concrete_source =
+                                concrete_dep.get_source().map(std::string::ToString::to_string);
+                            let concrete_key =
+                                (resource_type, concrete_name.clone(), concrete_source);
+
+                            // Only add if not already processed or queued
+                            if let std::collections::hash_map::Entry::Vacant(e) =
+                                all_deps.entry(concrete_key)
+                            {
+                                e.insert(concrete_dep.clone());
+                                queue.push((concrete_name, concrete_dep, Some(resource_type)));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to expand pattern '{}' for transitive dependency extraction: {}",
+                            dep.get_path(),
+                            e
+                        );
+                    }
+                }
+                continue; // Skip to next queue item
             }
 
             // Get the resource content to extract metadata
@@ -1184,22 +1216,29 @@ impl DependencyResolver {
 
             // Process transitive dependencies if present
             if let Some(deps_map) = metadata.dependencies {
-                // Check if this is a path-only dependency (Simple variant)
-                if matches!(dep, ResourceDependency::Simple(_)) {
-                    // Warn user that transitive dependencies are not supported for path-only deps
+                // Check if this is a local file dependency (no source)
+                if dep.get_source().is_none() {
+                    // Warn user that transitive dependencies are not supported for local file deps
+                    tracing::debug!("Skipping transitive deps for local dependency: {}", name);
                     eprintln!(
-                        "Warning: Resource '{}' at '{}' declares transitive dependencies, but path-only dependencies do not support this.",
+                        "Warning: Resource '{}' at '{}' declares transitive dependencies, but local file dependencies do not support this.",
                         name,
                         dep.get_path()
                     );
                     eprintln!(
-                        "         To enable transitive dependency resolution, create a local source with 'agpm add source <name> <path>'"
+                        "         To enable transitive dependency resolution, create a named source with 'agpm add source <name> <path>'"
                     );
                     eprintln!(
                         "         then reference this resource using the source instead of a direct path."
                     );
                     continue; // Skip processing transitive deps for this resource
                 }
+
+                tracing::debug!(
+                    "Processing transitive deps for: {} (has source: {:?})",
+                    name,
+                    dep.get_source()
+                );
 
                 for (dep_resource_type_str, dep_specs) in deps_map {
                     // Convert plural form from YAML (e.g., "agents") to ResourceType enum
@@ -1210,7 +1249,9 @@ impl DependencyResolver {
                     for dep_spec in dep_specs {
                         // Convert DependencySpec to ResourceDependency
                         // This will only be called for Detailed dependencies now
-                        let trans_dep = self.spec_to_dependency(&dep, &dep_spec)?;
+                        // Pass the child resource type so we can determine the correct tool
+                        let trans_dep =
+                            self.spec_to_dependency(&dep, &dep_spec, dep_resource_type)?;
 
                         // Generate a name for the transitive dependency
                         let trans_name = self.generate_dependency_name(&dep_spec.path);
@@ -1233,10 +1274,6 @@ impl DependencyResolver {
                         let dep_ref = format!("{dep_resource_type}/{trans_name}");
                         self.dependency_map.entry(from_key).or_default().push(dep_ref);
 
-                        // Cache the resource type for this transitive dependency
-                        let type_key = (trans_name.clone(), trans_source.clone());
-                        self.transitive_types.insert(type_key, dep_resource_type);
-
                         // Add to conflict detector for tracking version requirements
                         self.add_to_conflict_detector(&trans_name, &trans_dep, &name);
 
@@ -1246,15 +1283,39 @@ impl DependencyResolver {
 
                         if let Some(existing_dep) = all_deps.get(&trans_key) {
                             // Version conflict detected (same name and source, different version)
-                            let resolved_dep = self.resolve_version_conflict(
-                                &trans_name,
-                                existing_dep,
-                                &trans_dep,
-                                &name, // Who requires this version
-                            )?;
-                            all_deps.insert(trans_key.clone(), resolved_dep);
+                            let resolved_dep = self
+                                .resolve_version_conflict(
+                                    &trans_name,
+                                    existing_dep,
+                                    &trans_dep,
+                                    &name, // Who requires this version
+                                )
+                                .await?;
+
+                            // Only re-queue if the resolved version differs from existing
+                            let needs_reprocess =
+                                resolved_dep.get_version() != existing_dep.get_version();
+
+                            all_deps.insert(trans_key.clone(), resolved_dep.clone());
+
+                            if needs_reprocess {
+                                // Remove from processed so the resolved version can be processed
+                                // This ensures we fetch metadata for the correct version
+                                processed.remove(&trans_key);
+                                // Re-queue the resolved dependency
+                                queue.push((
+                                    trans_name.clone(),
+                                    resolved_dep,
+                                    Some(dep_resource_type),
+                                ));
+                            }
                         } else {
                             // No conflict, add the dependency
+                            tracing::debug!(
+                                "Adding transitive dep '{}' to all_deps and queue (parent: {})",
+                                trans_name,
+                                name
+                            );
                             all_deps.insert(trans_key.clone(), trans_dep.clone());
                             queue.push((trans_name, trans_dep, Some(dep_resource_type)));
                         }
@@ -1273,11 +1334,27 @@ impl DependencyResolver {
         let mut result = Vec::new();
         let mut added_keys = HashSet::new();
 
+        tracing::debug!(
+            "Transitive resolution - topological order has {} nodes, all_deps has {} entries",
+            ordered_nodes.len(),
+            all_deps.len()
+        );
+
         for node in ordered_nodes {
+            tracing::debug!(
+                "Processing ordered node: {}/{} (source: {:?})",
+                node.resource_type,
+                node.name,
+                node.source
+            );
             // Find matching dependency - now that nodes include source, we can match precisely
             for (key, dep) in &all_deps {
                 if key.0 == node.resource_type && key.1 == node.name && key.2 == node.source {
-                    result.push((node.name.clone(), dep.clone()));
+                    tracing::debug!(
+                        "  -> Found match in all_deps, adding to result with type {:?}",
+                        node.resource_type
+                    );
+                    result.push((node.name.clone(), dep.clone(), node.resource_type));
                     added_keys.insert(key.clone());
                     break; // Exact match found, no need to continue
                 }
@@ -1286,11 +1363,33 @@ impl DependencyResolver {
 
         // Add remaining dependencies that weren't in the graph (no transitive deps)
         // These can be added in any order since they have no dependencies
+        // IMPORTANT: Filter out patterns - they should only serve as expansion points,
+        // not final dependencies. The concrete deps from expansion are what we want.
         for (key, dep) in all_deps {
             if !added_keys.contains(&key) {
-                result.push((key.1.clone(), dep.clone()));
+                // Skip pattern dependencies - they were expanded to concrete deps
+                if dep.is_pattern() {
+                    tracing::debug!(
+                        "Skipping pattern dependency in final result: {}/{} (source: {:?})",
+                        key.0,
+                        key.1,
+                        key.2
+                    );
+                    continue;
+                }
+
+                tracing::debug!(
+                    "Adding non-graph dependency: {}/{} (source: {:?}) with type {:?}",
+                    key.0,
+                    key.1,
+                    key.2,
+                    key.0
+                );
+                result.push((key.1.clone(), dep.clone(), key.0));
             }
         }
+
+        tracing::debug!("Transitive resolution returning {} dependencies", result.len());
 
         Ok(result)
     }
@@ -1374,32 +1473,63 @@ impl DependencyResolver {
 
     /// Convert a `DependencySpec` to a `ResourceDependency`.
     ///
-    /// Inherits the source from the parent dependency.
+    /// Inherits the source and tool from the parent dependency. If the parent's tool
+    /// doesn't support the child's resource type, falls back to the default tool for
+    /// that resource type.
     ///
     /// For source-based dependencies (Detailed variant), transitive dependencies
     /// inherit the source and paths are relative to the source's root directory.
     ///
-    /// For path-only dependencies (Simple variant), this method should not be called
+    /// For local file dependencies (no source), this method should not be called
     /// as transitive dependencies are not supported for them.
     fn spec_to_dependency(
         &self,
         parent: &ResourceDependency,
         spec: &DependencySpec,
+        child_resource_type: crate::core::ResourceType,
     ) -> Result<ResourceDependency> {
+        // Check if parent has a source - local file dependencies don't support transitive deps
+        let parent_source = parent.get_source();
+        if parent_source.is_none() {
+            // Local file dependencies don't support transitive deps
+            // This case should be filtered out before calling this method
+            return Err(anyhow::anyhow!(
+                "Transitive dependencies are not supported for local file dependencies (no source)"
+            ));
+        }
+
         match parent {
             ResourceDependency::Simple(_) => {
-                // Path-only dependencies don't support transitive deps
-                // This case should be filtered out before calling this method
-                Err(anyhow::anyhow!(
-                    "Transitive dependencies are not supported for path-only dependencies"
-                ))
+                // Simple dependencies should never reach here since they have no source
+                unreachable!(
+                    "Simple dependencies should be filtered out before calling spec_to_dependency"
+                )
             }
             ResourceDependency::Detailed(parent_detail) => {
-                // Inherit source and artifact_type from parent
+                // Inherit source and version from parent
+                let version = spec.version.clone().or_else(|| parent_detail.version.clone());
+
+                // Determine tool: inherit from parent, but fall back to default if incompatible
+                let tool = if self
+                    .manifest
+                    .get_artifact_resource_path(&parent_detail.tool, child_resource_type)
+                    .is_some()
+                {
+                    // Parent's tool supports this resource type
+                    parent_detail.tool.clone()
+                } else {
+                    // Parent's tool doesn't support this resource type, use default
+                    // Snippets default to "agpm", everything else defaults to "claude-code"
+                    match child_resource_type {
+                        crate::core::ResourceType::Snippet => "agpm".to_string(),
+                        _ => "claude-code".to_string(),
+                    }
+                };
+
                 Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
                     source: parent_detail.source.clone(),
                     path: spec.path.clone(),
-                    version: spec.version.clone().or_else(|| parent_detail.version.clone()),
+                    version,
                     branch: None,
                     rev: None,
                     command: None,
@@ -1407,16 +1537,201 @@ impl DependencyResolver {
                     target: None,
                     filename: None,
                     dependencies: None, // Will be filled when fetched
-                    tool: parent_detail.tool.clone(),
+                    tool,
                 })))
             }
         }
     }
 
+    /// Expands a pattern dependency to concrete (non-pattern) dependencies.
+    ///
+    /// This method is used during transitive dependency resolution to handle
+    /// glob patterns declared in resource frontmatter. It expands the pattern
+    /// to all matching files and creates a concrete ResourceDependency for each.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The dependency name (used for logging)
+    /// * `dep` - The pattern-based dependency to expand
+    /// * `resource_type` - The resource type (for path construction)
+    ///
+    /// # Returns
+    ///
+    /// A vector of (name, ResourceDependency) tuples for each matched file.
+    async fn expand_pattern_to_concrete_deps(
+        &self,
+        _name: &str,
+        dep: &ResourceDependency,
+        _resource_type: crate::core::ResourceType,
+    ) -> Result<Vec<(String, ResourceDependency)>> {
+        use crate::manifest::DetailedDependency;
+
+        let pattern = dep.get_path();
+
+        if dep.is_local() {
+            // Local pattern dependency - search in filesystem
+            // For absolute patterns, use the parent directory as base and strip the pattern to just the filename part
+            // For relative patterns, use current directory
+            let pattern_path = Path::new(pattern);
+            let (base_path, search_pattern) = if pattern_path.is_absolute() {
+                // Absolute pattern: extract base directory and relative pattern
+                // Example: "/tmp/xyz/agents/*.md" -> base="/tmp/xyz", pattern="agents/*.md"
+                let components: Vec<_> = pattern_path.components().collect();
+
+                // Find the first component with a glob character
+                let glob_idx = components.iter().position(|c| {
+                    let s = c.as_os_str().to_string_lossy();
+                    s.contains('*') || s.contains('?') || s.contains('[')
+                });
+
+                if let Some(idx) = glob_idx {
+                    // Split at the glob component
+                    let base_components = &components[..idx];
+                    let pattern_components = &components[idx..];
+
+                    let base: PathBuf = base_components.iter().collect();
+                    let pattern: String = pattern_components
+                        .iter()
+                        .map(|c| c.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/");
+
+                    (base, pattern)
+                } else {
+                    // No glob characters, use as-is
+                    (PathBuf::from("."), pattern.to_string())
+                }
+            } else {
+                // Relative pattern, use current directory
+                (PathBuf::from("."), pattern.to_string())
+            };
+
+            let pattern_resolver = crate::pattern::PatternResolver::new();
+            let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
+
+            // Get tool and target from parent pattern dependency
+            let (tool, target) = match dep {
+                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
+                _ => ("claude-code".to_string(), None),
+            };
+
+            let mut concrete_deps = Vec::new();
+            for matched_path in matches {
+                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                // Convert matched path to absolute by joining with base_path
+                let absolute_path = base_path.join(&matched_path);
+                let concrete_path = absolute_path.to_string_lossy().to_string();
+
+                // Create a non-pattern Detailed dependency, inheriting tool and target from parent
+                concrete_deps.push((
+                    resource_name,
+                    ResourceDependency::Detailed(Box::new(DetailedDependency {
+                        source: None,
+                        path: concrete_path,
+                        version: None,
+                        branch: None,
+                        rev: None,
+                        command: None,
+                        args: None,
+                        target: target.clone(),
+                        filename: None,
+                        dependencies: None,
+                        tool: tool.clone(),
+                    })),
+                ));
+            }
+
+            Ok(concrete_deps)
+        } else {
+            // Git-based remote dependency - need worktree
+            let source_name = dep
+                .get_source()
+                .ok_or_else(|| anyhow::anyhow!("Pattern dependency missing source"))?;
+
+            // Get the prepared worktree for this source/version
+            let version_key = dep
+                .get_version()
+                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
+            let prepared_key = Self::group_key(source_name, &version_key);
+
+            let prepared = self.prepared_versions.get(&prepared_key).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Prepared state missing for source '{}' @ '{}'. Pattern expansion requires prepared worktree.",
+                    source_name,
+                    version_key
+                )
+            })?;
+
+            let repo_path = &prepared.worktree_path;
+
+            // Search for matching files in the repository
+            let pattern_resolver = crate::pattern::PatternResolver::new();
+            let matches = pattern_resolver.resolve(pattern, Path::new(repo_path))?;
+
+            // Create concrete dependencies for each match
+            let mut concrete_deps = Vec::new();
+            for matched_path in matches {
+                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+                // Use the matched path as-is (it's already relative to repo root)
+                // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
+                let concrete_path = matched_path.to_string_lossy().to_string();
+
+                // Get tool type and target from parent
+                let (tool, target) = match dep {
+                    ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
+                    _ => ("claude-code".to_string(), None),
+                };
+
+                // Create a non-pattern Detailed dependency, inheriting target from parent
+                concrete_deps.push((
+                    resource_name,
+                    ResourceDependency::Detailed(Box::new(DetailedDependency {
+                        source: Some(source_name.to_string()),
+                        path: concrete_path,
+                        version: dep.get_version().map(std::string::ToString::to_string),
+                        branch: None,
+                        rev: None,
+                        command: None,
+                        args: None,
+                        target, // Inherit custom target from parent pattern
+                        filename: None,
+                        dependencies: None,
+                        tool,
+                    })),
+                ));
+            }
+
+            Ok(concrete_deps)
+        }
+    }
+
     /// Generate a dependency name from a path.
+    /// Creates collision-resistant names by preserving directory structure.
     fn generate_dependency_name(&self, path: &str) -> String {
-        // Extract filename without extension
-        Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path).to_string()
+        // Convert path to a collision-resistant name
+        // Example: "agents/ai/helper.md" -> "ai/helper"
+        // Example: "snippets/commands/commit.md" -> "commands/commit"
+        // Example: "commit.md" -> "commit"
+
+        let path = Path::new(path);
+
+        // Get the path without extension
+        let without_ext = path.with_extension("");
+
+        // Convert to string and normalize separators
+        let path_str = without_ext.to_string_lossy();
+
+        // If the path has multiple components, skip the first directory (resource type)
+        // to avoid redundancy, but keep subdirectories for uniqueness
+        let components: Vec<&str> = path_str.split('/').collect();
+        if components.len() > 1 {
+            // Skip the first component (e.g., "agents", "snippets") and join the rest
+            components[1..].join("/")
+        } else {
+            // Single component, just return it
+            components[0].to_string()
+        }
     }
 
     /// Resolve all manifest dependencies into a deterministic lockfile.
@@ -1563,41 +1878,49 @@ impl DependencyResolver {
             lockfile.add_source(name.clone(), url.clone(), String::new());
         }
 
-        // Get all dependencies to resolve including MCP servers (clone to avoid borrow checker issues)
-        let base_deps: Vec<(String, ResourceDependency)> = self
+        // Get all dependencies with their types to avoid mis-typing same-named resources
+        let base_deps: Vec<(String, ResourceDependency, crate::core::ResourceType)> = self
             .manifest
-            .all_dependencies_with_mcp()
+            .all_dependencies_with_types()
             .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+            .map(|(name, dep, resource_type)| (name.to_string(), dep.into_owned(), resource_type))
             .collect();
 
         // Add direct dependencies to conflict detector
-        for (name, dep) in &base_deps {
+        for (name, dep, _) in &base_deps {
             self.add_to_conflict_detector(name, dep, "manifest");
         }
 
         // Show initial message about what we're doing
         // Sync sources (phase management is handled by caller)
-        self.prepare_remote_groups(&base_deps).await?;
+        // prepare_remote_groups only needs name and dep, not type
+        let base_deps_for_prep: Vec<(String, ResourceDependency)> =
+            base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
+        self.prepare_remote_groups(&base_deps_for_prep).await?;
 
         // Resolve transitive dependencies if enabled
         let deps = self.resolve_transitive_dependencies(&base_deps, enable_transitive).await?;
 
         // Resolve each dependency (including transitive ones)
-        for (name, dep) in &deps {
+        tracing::debug!("resolve_with_options - about to resolve {} dependencies", deps.len());
+        for (name, dep, resource_type) in &deps {
+            tracing::debug!(
+                "Resolving dependency: {} -> {} (type: {:?})",
+                name,
+                dep.get_path(),
+                resource_type
+            );
             // Progress is tracked at the phase level
 
             // Check if this is a pattern dependency
             if dep.is_pattern() {
                 // Pattern dependencies resolve to multiple resources
-                let entries = self.resolve_pattern_dependency(name, dep).await?;
+                let entries = self.resolve_pattern_dependency(name, dep, *resource_type).await?;
 
                 // Add each resolved entry to the appropriate resource type with deduplication
-                // Use source-aware lookup to correctly resolve transitive dependency types
-                let source = dep.get_source();
-                let resource_type = self.get_resource_type_with_source(name, source);
+                // Resource type was already determined during transitive resolution
                 for entry in entries {
-                    match resource_type {
+                    match *resource_type {
                         crate::core::ResourceType::Agent => {
                             // Match by (name, source) to allow same-named resources from different sources
                             if let Some(existing) = lockfile
@@ -1669,7 +1992,16 @@ impl DependencyResolver {
                 }
             } else {
                 // Regular single dependency
-                let entry = self.resolve_dependency(name, dep).await?;
+                // Pass the resource type from transitive resolution to ensure correct type
+                // This handles cases where transitive dependencies share the same name
+                // as direct manifest dependencies but have a different type
+                let entry = self.resolve_dependency(name, dep, *resource_type).await?;
+                tracing::debug!(
+                    "Resolved {} to resource_type={:?}, installed_at={}",
+                    name,
+                    entry.resource_type,
+                    entry.installed_at
+                );
                 // Add directly to lockfile to preserve (name, source) uniqueness
                 self.add_or_update_lockfile_entry(&mut lockfile, name, entry);
             }
@@ -1749,6 +2081,7 @@ impl DependencyResolver {
         &mut self,
         name: &str,
         dep: &ResourceDependency,
+        resource_type: crate::core::ResourceType,
     ) -> Result<LockedResource> {
         // Check if this is a pattern-based dependency
         if dep.is_pattern() {
@@ -1761,10 +2094,8 @@ impl DependencyResolver {
 
         if dep.is_local() {
             // Local dependency - just create entry with path
-            // Determine resource type from manifest (already returns enum)
-            // Use source-aware lookup to correctly resolve transitive dependency types
-            let source = dep.get_source();
-            let resource_type = self.get_resource_type_with_source(name, source);
+            // Resource type is passed as a parameter to ensure correct type resolution
+            // for both direct and transitive dependencies
 
             // Determine the filename to use
             let filename = if let Some(custom_filename) = dep.get_filename() {
@@ -1855,7 +2186,7 @@ impl DependencyResolver {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at,
-                dependencies: self.get_dependencies_for(name, None),
+                dependencies: self.get_dependencies_for(name, None, resource_type),
                 resource_type,
                 tool: match dep {
                     crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
@@ -1902,10 +2233,8 @@ impl DependencyResolver {
                 }
             };
 
-            // Determine resource type from manifest (already returns enum)
-            // Use source-aware lookup to correctly resolve transitive dependency types
-            let source = dep.get_source();
-            let resource_type = self.get_resource_type_with_source(name, source);
+            // Resource type is passed as a parameter to ensure correct type resolution
+            // for both direct and transitive dependencies
 
             // Determine the filename to use
             let filename = if let Some(custom_filename) = dep.get_filename() {
@@ -2004,7 +2333,7 @@ impl DependencyResolver {
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
-                dependencies: self.get_dependencies_for(name, Some(source_name)),
+                dependencies: self.get_dependencies_for(name, Some(source_name), resource_type),
                 resource_type,
                 tool: artifact_type_string,
             })
@@ -2018,8 +2347,14 @@ impl DependencyResolver {
     /// # Parameters
     /// - `name`: The resource name
     /// - `source`: The source name (None for local dependencies)
-    fn get_dependencies_for(&self, name: &str, source: Option<&str>) -> Vec<String> {
-        let resource_type = self.get_resource_type_with_source(name, source);
+    fn get_dependencies_for(
+        &self,
+        name: &str,
+        source: Option<&str>,
+        resource_type: crate::core::ResourceType,
+    ) -> Vec<String> {
+        // Use the threaded resource_type parameter from the manifest
+        // This prevents type misclassification when same names exist across types
         let key = (resource_type, name.to_string(), source.map(std::string::ToString::to_string));
         self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
@@ -2049,6 +2384,7 @@ impl DependencyResolver {
         &mut self,
         name: &str,
         dep: &ResourceDependency,
+        resource_type: crate::core::ResourceType,
     ) -> Result<Vec<LockedResource>> {
         // Pattern dependencies use the path field with glob characters
         if !dep.is_pattern() {
@@ -2092,7 +2428,7 @@ impl DependencyResolver {
             let pattern_resolver = crate::pattern::PatternResolver::new();
             let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
 
-            let resource_type = self.get_resource_type(name);
+            // Use the threaded resource_type from the parameter
             let mut resources = Vec::new();
 
             for matched_path in matches {
@@ -2114,8 +2450,7 @@ impl DependencyResolver {
                     format!("{}/{}", base_path.display(), matched_path.display())
                 };
 
-                // Determine resource type (pattern dependencies inherit from parent name)
-                let resource_type = self.get_resource_type(name);
+                // Use the threaded resource_type (pattern dependencies inherit from parent)
 
                 // Hooks and MCP servers are configured in config files, not installed as artifact files
                 let installed_at = match resource_type {
@@ -2181,7 +2516,7 @@ impl DependencyResolver {
                     resolved_commit: None,
                     checksum: String::new(),
                     installed_at,
-                    dependencies: self.get_dependencies_for(&resource_name, None),
+                    dependencies: self.get_dependencies_for(&resource_name, None, resource_type),
                     resource_type,
                     tool: match dep {
                         crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
@@ -2226,7 +2561,7 @@ impl DependencyResolver {
             let repo_path_ref = Path::new(&repo_path);
             let matches = pattern_resolver.resolve(pattern, repo_path_ref)?;
 
-            let resource_type = self.get_resource_type(name);
+            // Use the threaded resource_type parameter (no need to recompute)
             let mut resources = Vec::new();
 
             for matched_path in matches {
@@ -2241,8 +2576,7 @@ impl DependencyResolver {
                     _ => "claude-code",
                 };
 
-                // Determine resource type (pattern dependencies inherit from parent name)
-                let resource_type = self.get_resource_type(name);
+                // Use the threaded resource_type (pattern dependencies inherit from parent)
 
                 // Hooks and MCP servers are configured in config files, not installed as artifact files
                 let installed_at = match resource_type {
@@ -2308,7 +2642,11 @@ impl DependencyResolver {
                     resolved_commit: Some(resolved_commit.clone()),
                     checksum: String::new(),
                     installed_at,
-                    dependencies: self.get_dependencies_for(&resource_name, Some(source_name)),
+                    dependencies: self.get_dependencies_for(
+                        &resource_name,
+                        Some(source_name),
+                        resource_type,
+                    ),
                     resource_type,
                     tool: match dep {
                         crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
@@ -2391,47 +2729,6 @@ impl DependencyResolver {
     ///
     /// If a dependency is not found in the agents section, it defaults
     /// to `"snippet"`. This handles edge cases and maintains backward compatibility.
-    fn get_resource_type(&self, name: &str) -> crate::core::ResourceType {
-        self.get_resource_type_with_source(name, None)
-    }
-
-    /// Get resource type with optional source information for accurate transitive dependency lookup.
-    fn get_resource_type_with_source(
-        &self,
-        name: &str,
-        source: Option<&str>,
-    ) -> crate::core::ResourceType {
-        // First check the manifest for direct dependencies
-        if self.manifest.agents.contains_key(name) {
-            crate::core::ResourceType::Agent
-        } else if self.manifest.snippets.contains_key(name) {
-            crate::core::ResourceType::Snippet
-        } else if self.manifest.commands.contains_key(name) {
-            crate::core::ResourceType::Command
-        } else if self.manifest.scripts.contains_key(name) {
-            crate::core::ResourceType::Script
-        } else if self.manifest.hooks.contains_key(name) {
-            crate::core::ResourceType::Hook
-        } else if self.manifest.mcp_servers.contains_key(name) {
-            crate::core::ResourceType::McpServer
-        } else {
-            // Check transitive_types cache for discovered transitive dependencies
-            let type_key = (name.to_string(), source.map(std::string::ToString::to_string));
-            if let Some(&resource_type) = self.transitive_types.get(&type_key) {
-                return resource_type;
-            }
-
-            // Fallback: check dependency_map keys (less precise, doesn't use source)
-            for (resource_type, dep_name, _dep_source) in self.dependency_map.keys() {
-                if dep_name == name {
-                    return *resource_type;
-                }
-            }
-
-            crate::core::ResourceType::Snippet // Default fallback
-        }
-    }
-
     /// Resolve version conflicts between two dependencies.
     ///
     /// This method implements version conflict resolution strategies when the same
@@ -2461,7 +2758,7 @@ impl DependencyResolver {
     ///
     /// The resolved dependency that satisfies both requirements if possible,
     /// or the higher version with a warning if not compatible.
-    fn resolve_version_conflict(
+    async fn resolve_version_conflict(
         &self,
         resource_name: &str,
         existing: &ResourceDependency,
@@ -2484,20 +2781,11 @@ impl DependencyResolver {
             v.starts_with('^') || v.starts_with('~') || v.starts_with('>') || v.starts_with('<')
         });
 
+        // If we have semver ranges, resolve them to a concrete version
         if is_existing_range || is_new_range {
-            // Don't try to resolve semver ranges here - that should be handled by conflict detector
-            return Err(AgpmError::Other {
-                message: format!(
-                    "Version conflict for '{}': cannot resolve semver ranges automatically. \
-                     Existing: {:?}, Required by '{}': {:?}. \
-                     This should have been caught by conflict detection.",
-                    resource_name,
-                    existing_version.unwrap_or("HEAD"),
-                    requester,
-                    new_version.unwrap_or("HEAD")
-                ),
-            }
-            .into());
+            return self
+                .resolve_semver_range_conflict(resource_name, existing, new_dep, requester)
+                .await;
         }
 
         // Log the conflict for user awareness
@@ -2598,6 +2886,165 @@ impl DependencyResolver {
         }
     }
 
+    /// Resolve a version conflict where at least one version is a semver range.
+    ///
+    /// This method handles version resolution when one or both dependencies specify
+    /// semver ranges (like `^1.0.0`, `>=1.5.0`) instead of exact versions. It:
+    /// 1. Fetches available versions from the Git repository
+    /// 2. Uses the `ConflictDetector` to check if ranges are compatible
+    /// 3. Finds the best version that satisfies both constraints
+    /// 4. Returns a resolved dependency with the concrete version
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_name` - Name of the conflicting resource
+    /// * `existing` - Current dependency with version range
+    /// * `new_dep` - New dependency with version range
+    /// * `requester` - Name of the dependency requesting the new version
+    ///
+    /// # Returns
+    ///
+    /// A `ResourceDependency` with the resolved concrete version that satisfies both ranges.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Dependencies are local (no source) but have version ranges
+    /// - Source hasn't been synced yet
+    /// - Version ranges are incompatible (no common version)
+    /// - No available versions satisfy the constraints
+    async fn resolve_semver_range_conflict(
+        &self,
+        resource_name: &str,
+        existing: &ResourceDependency,
+        new_dep: &ResourceDependency,
+        requester: &str,
+    ) -> Result<ResourceDependency> {
+        use crate::manifest::DetailedDependency;
+        use crate::resolver::version_resolution::parse_tags_to_versions;
+        use semver::Version;
+        use std::collections::HashMap;
+
+        let existing_version = existing.get_version().unwrap_or("HEAD");
+        let new_version = new_dep.get_version().unwrap_or("HEAD");
+
+        tracing::info!(
+            "Resolving semver range conflict for '{}': existing '{}' vs required '{}'  by '{}'",
+            resource_name,
+            existing_version,
+            new_version,
+            requester
+        );
+
+        // Get source (both should have same source for transitive deps)
+        let source = existing.get_source().or_else(|| new_dep.get_source()).ok_or_else(|| {
+            AgpmError::Other {
+                message: format!(
+                    "Cannot resolve semver ranges for local dependencies: {}",
+                    resource_name
+                ),
+            }
+        })?;
+
+        // Get bare repo path
+        let repo_path =
+            self.version_resolver.get_bare_repo_path(source).ok_or_else(|| AgpmError::Other {
+                message: format!("Source '{}' not synced yet", source),
+            })?;
+
+        // List available tags from repository
+        let tags = self.get_available_versions(repo_path).await?;
+        tracing::debug!("Found {} tags for source '{}'", tags.len(), source);
+
+        // Parse tags to semver versions
+        let parsed_versions = parse_tags_to_versions(tags);
+        let available_versions: Vec<Version> =
+            parsed_versions.iter().map(|(_, v)| v.clone()).collect();
+
+        if available_versions.is_empty() {
+            return Err(AgpmError::Other {
+                message: format!(
+                    "No valid semver tags found for source '{}' to resolve range conflict",
+                    source
+                ),
+            }
+            .into());
+        }
+
+        // Use ConflictDetector to find best version
+        let mut detector = ConflictDetector::new();
+        let resource_id = format!("{}:{}", source, existing.get_path());
+        detector.add_requirement(&resource_id, "existing", existing_version);
+        detector.add_requirement(&resource_id, requester, new_version);
+
+        // Check for conflicts
+        let conflicts = detector.detect_conflicts();
+        if !conflicts.is_empty() {
+            return Err(AgpmError::Other {
+                message: format!(
+                    "Incompatible version ranges for '{}': existing '{}' vs required '{}' by '{}'",
+                    resource_name, existing_version, new_version, requester
+                ),
+            }
+            .into());
+        }
+
+        // Find best version that satisfies both ranges
+        let mut versions_map = HashMap::new();
+        versions_map.insert(resource_id.clone(), available_versions);
+
+        let resolved = detector.resolve_conflicts(&versions_map)?;
+        let best_version = resolved.get(&resource_id).ok_or_else(|| AgpmError::Other {
+            message: format!("Failed to resolve version for '{}'", resource_name),
+        })?;
+
+        // Find the tag for this version
+        let best_tag = parsed_versions
+            .iter()
+            .find(|(_, v)| v == best_version)
+            .map(|(tag, _)| tag.clone())
+            .ok_or_else(|| AgpmError::Other {
+                message: format!("Version {} not found in tags", best_version),
+            })?;
+
+        tracing::info!(
+            "Resolved '{}' to version {} (satisfies both '{}' and '{}')",
+            resource_name,
+            best_tag,
+            existing_version,
+            new_version
+        );
+
+        // Create new dependency with resolved version
+        // We need to create a Detailed variant with the concrete version
+        match new_dep {
+            ResourceDependency::Detailed(d) => {
+                let mut resolved_dep = (**d).clone();
+                resolved_dep.version = Some(best_tag);
+                resolved_dep.branch = None; // Clear branch/rev since we have concrete version
+                resolved_dep.rev = None;
+                Ok(ResourceDependency::Detailed(Box::new(resolved_dep)))
+            }
+            ResourceDependency::Simple(_) => {
+                // Create a DetailedDependency from the simple path
+                // This shouldn't happen since Simple deps don't have versions, but handle it
+                Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
+                    source: Some(source.to_string()),
+                    path: existing.get_path().to_string(),
+                    version: Some(best_tag),
+                    branch: None,
+                    rev: None,
+                    command: None,
+                    args: None,
+                    target: None,
+                    filename: None,
+                    dependencies: None,
+                    tool: "claude-code".to_string(), // Default tool
+                })))
+            }
+        }
+    }
+
     /// Updates an existing lockfile with new or changed dependencies.
     ///
     /// This method performs incremental dependency resolution by comparing
@@ -2666,12 +3113,12 @@ impl DependencyResolver {
             self.manifest.all_dependencies().iter().map(|(name, _)| (*name).to_string()).collect()
         };
 
-        // Get all base dependencies including MCP servers (clone to avoid borrow checker issues)
-        let base_deps: Vec<(String, ResourceDependency)> = self
+        // Get all base dependencies with their types to avoid mis-typing same-named resources
+        let base_deps: Vec<(String, ResourceDependency, crate::core::ResourceType)> = self
             .manifest
-            .all_dependencies_with_mcp()
+            .all_dependencies_with_types()
             .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+            .map(|(name, dep, resource_type)| (name.to_string(), dep.into_owned(), resource_type))
             .collect();
 
         // Note: We assume the update command has already called pre_sync_sources
@@ -2679,12 +3126,15 @@ impl DependencyResolver {
         // We just need to prepare and resolve versions now.
 
         // Prepare remote groups to resolve versions (reuses pre-synced repos)
-        self.prepare_remote_groups(&base_deps).await?;
+        // prepare_remote_groups only needs name and dep, not type
+        let base_deps_for_prep: Vec<(String, ResourceDependency)> =
+            base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
+        self.prepare_remote_groups(&base_deps_for_prep).await?;
 
         // Resolve transitive dependencies (always enabled for update to maintain consistency)
         let deps = self.resolve_transitive_dependencies(&base_deps, true).await?;
 
-        for (name, dep) in deps {
+        for (name, dep, resource_type) in deps {
             if !deps_to_check.contains(&name) {
                 // Skip this dependency
                 continue;
@@ -2693,10 +3143,10 @@ impl DependencyResolver {
             // Check if this is a pattern dependency
             if dep.is_pattern() {
                 // Pattern dependencies resolve to multiple resources
-                let entries = self.resolve_pattern_dependency(&name, &dep).await?;
+                let entries = self.resolve_pattern_dependency(&name, &dep, resource_type).await?;
 
                 // Add each resolved entry to the appropriate resource type with deduplication
-                let resource_type = self.get_resource_type(&name);
+                // Use resource_type from transitive resolution to avoid recomputing
                 for entry in entries {
                     match resource_type {
                         crate::core::ResourceType::Agent => {
@@ -2770,7 +3220,8 @@ impl DependencyResolver {
                 }
             } else {
                 // Regular single dependency
-                let entry = self.resolve_dependency(&name, &dep).await?;
+                // Use resource_type from transitive resolution to avoid recomputing
+                let entry = self.resolve_dependency(&name, &dep, resource_type).await?;
 
                 // Use the helper method to add or update the entry
                 self.add_or_update_lockfile_entry(&mut lockfile, &name, entry);
@@ -3107,14 +3558,11 @@ impl DependencyResolver {
     /// since network issues or missing versions can still cause failures.
     /// Use this method for fast validation before expensive resolution operations.
     pub fn verify(&mut self) -> Result<()> {
-        // Try to resolve all dependencies (clone to avoid borrow checker issues)
-        let deps: Vec<(String, ResourceDependency)> = self
-            .manifest
-            .all_dependencies()
-            .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.clone()))
-            .collect();
-        for (name, dep) in deps {
+        // Try to resolve all dependencies
+        let deps: Vec<(&str, std::borrow::Cow<'_, ResourceDependency>, crate::core::ResourceType)> =
+            self.manifest.all_dependencies_with_types();
+
+        for (name, dep, _resource_type) in deps {
             if dep.is_local() {
                 // Check if local path exists or is relative
                 let path = Path::new(dep.get_path());
@@ -3554,30 +4002,6 @@ mod tests {
         let result = resolver.verify();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("undefined source"));
-    }
-
-    #[test]
-    fn test_get_resource_type() {
-        let mut manifest = Manifest::new();
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Simple("a.md".to_string()),
-            true,
-        );
-        manifest.add_dependency(
-            "snippet1".to_string(),
-            ResourceDependency::Simple("s.md".to_string()),
-            false,
-        );
-        // Remove dev-snippet1 test as dev concept is removed
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        assert_eq!(resolver.get_resource_type("agent1"), crate::core::ResourceType::Agent);
-        assert_eq!(resolver.get_resource_type("snippet1"), crate::core::ResourceType::Snippet);
-        // Dev concept removed - no longer testing dev-agent1 and dev-snippet1
     }
 
     #[tokio::test]
@@ -4986,92 +5410,8 @@ mod tests {
         assert_eq!(lockfile.mcp_servers.len(), 1);
     }
 
-    #[test]
-    fn test_resolve_version_conflict_rejects_semver_ranges() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Test that caret ranges are rejected
-        let existing = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("^1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: "claude-code".to_string(),
-        }));
-
-        let new_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("^1.5.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: "claude-code".to_string(),
-        }));
-
-        let result = resolver.resolve_version_conflict("test-agent", &existing, &new_dep, "app1");
-        assert!(result.is_err(), "Should reject caret range");
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("cannot resolve semver ranges"),
-            "Error should mention semver ranges: {}",
-            err_msg
-        );
-
-        // Test that tilde ranges are rejected
-        let existing_tilde = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("~1.2.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: "claude-code".to_string(),
-        }));
-
-        let result2 =
-            resolver.resolve_version_conflict("test-agent", &existing_tilde, &new_dep, "app2");
-        assert!(result2.is_err(), "Should reject tilde range");
-
-        // Test that comparison operators are rejected
-        let existing_gte = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some(">=1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: "claude-code".to_string(),
-        }));
-
-        let result3 =
-            resolver.resolve_version_conflict("test-agent", &existing_gte, &new_dep, "app3");
-        assert!(result3.is_err(), "Should reject >= operator");
-    }
-
-    #[test]
-    fn test_resolve_version_conflict_semver_preference() {
+    #[tokio::test]
+    async fn test_resolve_version_conflict_semver_preference() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
@@ -5106,8 +5446,9 @@ mod tests {
             tool: "claude-code".to_string(),
         }));
 
-        let result =
-            resolver.resolve_version_conflict("test-agent", &existing_semver, &new_branch, "app1");
+        let result = resolver
+            .resolve_version_conflict("test-agent", &existing_semver, &new_branch, "app1")
+            .await;
         assert!(result.is_ok(), "Should succeed with semver preference");
         let resolved = result.unwrap();
         assert_eq!(
@@ -5117,8 +5458,9 @@ mod tests {
         );
 
         // Test reverse: git branch vs semver version
-        let result2 =
-            resolver.resolve_version_conflict("test-agent", &new_branch, &existing_semver, "app2");
+        let result2 = resolver
+            .resolve_version_conflict("test-agent", &new_branch, &existing_semver, "app2")
+            .await;
         assert!(result2.is_ok(), "Should succeed with semver preference");
         let resolved2 = result2.unwrap();
         assert_eq!(
@@ -5128,8 +5470,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_resolve_version_conflict_semver_comparison() {
+    #[tokio::test]
+    async fn test_resolve_version_conflict_semver_comparison() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
@@ -5164,14 +5506,15 @@ mod tests {
             tool: "claude-code".to_string(),
         }));
 
-        let result = resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1");
+        let result =
+            resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1").await;
         assert!(result.is_ok(), "Should succeed with higher version");
         let resolved = result.unwrap();
         assert_eq!(resolved.get_version(), Some("v2.0.0"), "Should use higher semver version");
 
         // Test reverse order
         let result2 =
-            resolver.resolve_version_conflict("test-agent", &new_v2, &existing_v1, "app2");
+            resolver.resolve_version_conflict("test-agent", &new_v2, &existing_v1, "app2").await;
         assert!(result2.is_ok(), "Should succeed with higher version");
         let resolved2 = result2.unwrap();
         assert_eq!(
@@ -5181,8 +5524,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_resolve_version_conflict_git_refs() {
+    #[tokio::test]
+    async fn test_resolve_version_conflict_git_refs() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
@@ -5217,8 +5560,9 @@ mod tests {
             tool: "claude-code".to_string(),
         }));
 
-        let result =
-            resolver.resolve_version_conflict("test-agent", &existing_main, &new_develop, "app1");
+        let result = resolver
+            .resolve_version_conflict("test-agent", &existing_main, &new_develop, "app1")
+            .await;
         assert!(result.is_ok(), "Should succeed with alphabetical ordering");
         let resolved = result.unwrap();
         assert_eq!(
@@ -5228,8 +5572,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_resolve_version_conflict_head_vs_specific() {
+    #[tokio::test]
+    async fn test_resolve_version_conflict_head_vs_specific() {
         let manifest = Manifest::new();
         let temp_dir = TempDir::new().unwrap();
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
@@ -5252,8 +5596,9 @@ mod tests {
             tool: "claude-code".to_string(),
         }));
 
-        let result =
-            resolver.resolve_version_conflict("test-agent", &existing_head, &new_specific, "app1");
+        let result = resolver
+            .resolve_version_conflict("test-agent", &existing_head, &new_specific, "app1")
+            .await;
         assert!(result.is_ok(), "Should succeed with specific version");
         let resolved = result.unwrap();
         assert_eq!(

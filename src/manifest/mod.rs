@@ -2142,6 +2142,31 @@ impl Manifest {
         deps
     }
 
+    /// Get all dependencies with their resource types.
+    ///
+    /// Returns a vector of tuples containing the dependency name, dependency details,
+    /// and the resource type. This preserves type information that is lost in
+    /// `all_dependencies_with_mcp()`.
+    ///
+    /// This is used by the resolver to correctly type transitive dependencies without
+    /// falling back to manifest section order lookups.
+    pub fn all_dependencies_with_types(
+        &self,
+    ) -> Vec<(&str, std::borrow::Cow<'_, ResourceDependency>, crate::core::ResourceType)> {
+        let mut deps = Vec::new();
+
+        // Use ResourceType::all() to iterate through all resource types
+        for resource_type in crate::core::ResourceType::all() {
+            if let Some(type_deps) = self.get_dependencies(*resource_type) {
+                for (name, dep) in type_deps {
+                    deps.push((name.as_str(), std::borrow::Cow::Borrowed(dep), *resource_type));
+                }
+            }
+        }
+
+        deps
+    }
+
     /// Check if a dependency with the given name exists in any section.
     ///
     /// Searches the `[agents]`, `[snippets]`, and `[commands]` sections for a dependency
