@@ -33,7 +33,7 @@ mod lockfile_tests {
                 installed_at: "agents/test-agent.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             true, // is_agent
         );
@@ -69,7 +69,7 @@ mod lockfile_tests {
                 installed_at: "agents/agent1.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             true, // is_agent
         );
@@ -109,7 +109,7 @@ mod lockfile_tests {
                 installed_at: "installed.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             true, // is_agent
         );
@@ -142,7 +142,7 @@ mod lockfile_tests {
                 installed_at: "agents/prod-agent.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             true, // is_agent
         );
@@ -160,7 +160,7 @@ mod lockfile_tests {
                 installed_at: "agents/dev-agent.md".to_string(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             true, // is_agent
         );

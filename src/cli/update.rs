@@ -620,7 +620,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }],
             snippets: vec![],
             mcp_servers: vec![],
