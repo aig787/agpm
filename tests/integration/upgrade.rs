@@ -155,11 +155,6 @@ async fn test_version_checker_caching() -> Result<()> {
         fs::create_dir_all(parent).await?;
     }
 
-    // Set up environment to use temp directory
-    unsafe {
-        std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join(".agpm").join("config.toml"));
-    }
-
     // Test save and load cache
     let cache = agpm_cli::upgrade::version_check::VersionCheckCache {
         latest_version: "0.5.0".to_string(),
@@ -181,11 +176,6 @@ async fn test_version_checker_caching() -> Result<()> {
     let loaded: agpm_cli::upgrade::version_check::VersionCheckCache =
         serde_json::from_str(&cache_content)?;
     assert_eq!(loaded.latest_version, "0.5.0");
-
-    // Clean up environment
-    unsafe {
-        std::env::remove_var("AGPM_CONFIG_PATH");
-    }
 
     Ok(())
 }
@@ -333,11 +323,6 @@ async fn test_version_cache_expiry() -> Result<()> {
 
     fs::write(&cache_path, serde_json::to_string(&expired_cache)?).await?;
 
-    // Set up environment to use temp directory
-    unsafe {
-        std::env::set_var("AGPM_CONFIG_PATH", temp_dir.path().join(".agpm").join("config.toml"));
-    }
-
     // Read cache and verify it's old
     let cache_content = tokio::fs::read_to_string(&cache_path).await?;
     let loaded: agpm_cli::upgrade::version_check::VersionCheckCache =
@@ -346,11 +331,6 @@ async fn test_version_cache_expiry() -> Result<()> {
     // Verify the cache has old timestamp
     let age = chrono::Utc::now().signed_duration_since(loaded.checked_at);
     assert!(age.num_hours() > 24); // Would be expired
-
-    // Clean up environment
-    unsafe {
-        std::env::remove_var("AGPM_CONFIG_PATH");
-    }
 
     Ok(())
 }
