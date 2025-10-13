@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 pub struct DependencySpec {
     /// Dependency specification string
     ///
-    /// Format: source:path[@version] for Git sources or path for local files
+    /// Format: `source:path[@version]` for Git sources or path for local files
     ///
-    /// GIT DEPENDENCIES (from a repository source defined in [sources]):
+    /// GIT DEPENDENCIES (from a repository source defined in `[sources]`):
     ///   source:path@version       - Specific version (tag/branch/commit)
     ///   source:path               - Defaults to "main" branch
     ///
