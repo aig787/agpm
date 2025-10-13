@@ -105,11 +105,13 @@ pub struct ResourceConfig {
 
 | Type | Base | Agents | Commands | Scripts | Hooks | MCP | Snippets | Status |
 |------|------|--------|----------|---------|-------|-----|----------|--------|
-| `claude-code` | `.claude` | `agents/` | `commands/` | `scripts/` | `hooks/` | `agpm/mcp-servers/` | `agpm/snippets/` | ✅ Stable |
-| `opencode` | `.opencode` | `agent/` | `command/` | ❌ | ❌ | `agpm/mcp-servers/` | ❌ | 🚧 Alpha |
+| `claude-code` | `.claude` | `agents/` | `commands/` | `scripts/` | `→ settings.local.json` | `→ .mcp.json` | `snippets/` | ✅ Stable |
+| `opencode` | `.opencode` | `agent/` | `command/` | ❌ | ❌ | `→ opencode.json` | ❌ | 🚧 Alpha |
 | `agpm` | `.agpm` | ❌ | ❌ | ❌ | ❌ | ❌ | `snippets/` | ✅ Stable |
 
-**Note**: OpenCode uses singular directory names (`agent/`, `command/`) while Claude Code uses plural (`agents/`, `commands/`).
+**Note**:
+- OpenCode uses singular directory names (`agent/`, `command/`) while Claude Code uses plural (`agents/`, `commands/`)
+- Hooks and MCP servers merge into configuration files (no file installation)
 
 ### Resource Routing
 

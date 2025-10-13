@@ -176,12 +176,13 @@ impl InitCommand {
 # Tool type configurations (multi-tool support)
 [tools.claude-code]
 path = ".claude"
-resources = { agents = { path = "agents" }, snippets = { path = "agpm/snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "mcp-servers" } }
+resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {} }
+# Note: hooks and mcp-servers merge into configuration files (no file installation)
 
 [tools.opencode]
 path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" } }
-# Note: OpenCode MCP servers merge into opencode.json (no file installation)
+resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
+# Note: MCP servers merge into opencode.json (no file installation)
 
 [tools.agpm]
 path = ".agpm"

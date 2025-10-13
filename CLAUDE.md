@@ -374,9 +374,9 @@ opencode-agent = { source = "community", path = "agents/helper.md", tool = "open
 | agents        | ✅ `.claude/agents/` | ✅ `.opencode/agent/` (singular) | ❌ | `claude-code` |
 | commands      | ✅ `.claude/commands/` | ✅ `.opencode/command/` (singular) | ❌ | `claude-code` |
 | scripts       | ✅ `.claude/scripts/` | ❌ | ❌ | `claude-code` |
-| hooks         | ✅ `.claude/hooks/` | ❌ | ❌ | `claude-code` |
+| hooks         | ✅ → `.claude/settings.local.json` | ❌ | ❌ | `claude-code` |
 | mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
-| snippets      | ✅ `.claude/agpm/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
+| snippets      | ✅ `.claude/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
 
 **Note**: Snippets default to `agpm` tool (shared infrastructure). Use `tool = "claude-code"` to override.
 
@@ -384,8 +384,8 @@ opencode-agent = { source = "community", path = "agents/helper.md", tool = "open
 
 Pluggable handlers for tool-specific MCP configuration:
 
-- **ClaudeCodeMcpHandler**: Copies to `.claude/agpm/mcp-servers/`, merges into `.mcp.json`
-- **OpenCodeMcpHandler**: Copies to `.opencode/agpm/mcp-servers/`, merges into `opencode.json`
+- **ClaudeCodeMcpHandler**: Merges into `.mcp.json` (no file installation)
+- **OpenCodeMcpHandler**: Merges into `opencode.json` (no file installation)
 - **Tracking**: Uses `_agpm` metadata to distinguish managed vs user servers
 
 ## Key Requirements
@@ -409,11 +409,11 @@ local = "../my-local-resources"  # Local directory support
 # Tool type configurations (optional - uses defaults if omitted)
 [tools.claude-code]
 path = ".claude"
-resources = { agents = { path = "agents" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { path = "hooks" }, mcp-servers = { path = "agpm/mcp-servers" }, snippets = { path = "agpm/snippets" } }
+resources = { agents = { path = "agents" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {}, snippets = { path = "snippets" } }
 
 [tools.opencode]
 path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = { path = "agpm/mcp-servers" } }
+resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
 
 [tools.agpm]
 path = ".agpm"

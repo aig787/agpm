@@ -300,9 +300,9 @@ tools from a single manifest, enabling shared workflows and infrastructure.
 | Agents      | ✅ `.claude/agents/`          | 🚧 `.opencode/agent/`          | ❌                    |
 | Commands    | ✅ `.claude/commands/`        | 🚧 `.opencode/command/`        | ❌                    |
 | Scripts     | ✅ `.claude/scripts/`         | ❌                             | ❌                    |
-| Hooks       | ✅ `.claude/hooks/`           | ❌                             | ❌                    |
-| MCP Servers | ✅ `.mcp.json`                | 🚧 `opencode.json`             | ❌                    |
-| Snippets    | ✅ `.claude/agpm/snippets/`   | ❌                             | ✅ `.agpm/snippets/` (default) |
+| Hooks       | ✅ → `.claude/settings.local.json` | ❌                      | ❌                    |
+| MCP Servers | ✅ → `.mcp.json`              | 🚧 → `opencode.json`           | ❌                    |
+| Snippets    | ✅ `.claude/snippets/`        | ❌                             | ✅ `.agpm/snippets/` (default) |
 
 ### Multi-Tool Manifest Example
 
@@ -399,9 +399,9 @@ Run `agpm --help` for full command reference.
 AGPM manages six types of resources that can target different AI coding assistants:
 
 - **Agents** - AI assistant configurations (`.claude/agents/` or `.opencode/agent/` 🚧)
-- **Snippets** - Reusable code templates (`.claude/agpm/snippets/` or `.agpm/snippets/`)
+- **Snippets** - Reusable code templates (`.claude/snippets/` or `.agpm/snippets/`)
 - **Commands** - Slash commands (`.claude/commands/` or `.opencode/command/` 🚧)
-- **Scripts** - Executable automation files (`.claude/agpm/scripts/`)
+- **Scripts** - Executable automation files (`.claude/scripts/`)
 - **Hooks** - Event-based automation (merged into `.claude/settings.local.json`)
 - **MCP Servers** - Model Context Protocol servers (merged into `.mcp.json` or `opencode.json` 🚧)
 
