@@ -919,7 +919,7 @@ impl OutdatedCommand {
             name: name.to_string(),
             resource_type: resource_type.to_string(),
             source: source_name.to_string(),
-            tool: locked.tool.clone(),
+            tool: locked.tool.clone().unwrap_or_else(|| "claude-code".to_string()),
             current: locked.version.clone().unwrap_or_else(|| "unknown".to_string()),
             latest: format_version(&latest_compatible),
             latest_available: format_version(&latest_available),

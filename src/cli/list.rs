@@ -117,7 +117,7 @@ struct ListItem {
     /// The resolved Git commit hash
     resolved_commit: Option<String>,
     /// The tool ("claude-code", "opencode", "agpm", or custom)
-    tool: String,
+    tool: Option<String>,
 }
 
 /// Command to list installed Claude Code resources.
@@ -422,10 +422,11 @@ impl ListCommand {
                             installed_at: None,
                             checksum: None,
                             resolved_commit: None,
-                            tool: dep
-                                .get_tool()
-                                .unwrap_or_else(|| resource_type.default_tool())
-                                .to_string(),
+                            tool: Some(
+                                dep.get_tool()
+                                    .unwrap_or_else(|| resource_type.default_tool())
+                                    .to_string(),
+                            ),
                         });
                     }
                 }
@@ -446,10 +447,14 @@ impl ListCommand {
                         installed_at: None,
                         checksum: None,
                         resolved_commit: None,
-                        tool: mcp_dep
-                            .get_tool()
-                            .unwrap_or_else(|| crate::core::ResourceType::McpServer.default_tool())
-                            .to_string(),
+                        tool: Some(
+                            mcp_dep
+                                .get_tool()
+                                .unwrap_or_else(|| {
+                                    crate::core::ResourceType::McpServer.default_tool()
+                                })
+                                .to_string(),
+                        ),
                     });
                 }
             }
@@ -649,7 +654,12 @@ impl ListCommand {
                     "type".to_string(),
                     serde_yaml::Value::String(item.resource_type.clone()),
                 );
-                obj.insert("tool".to_string(), serde_yaml::Value::String(item.tool.clone()));
+                obj.insert(
+                    "tool".to_string(),
+                    serde_yaml::Value::String(
+                        item.tool.clone().expect("Tool should always be set"),
+                    ),
+                );
 
                 if let Some(ref source) = item.source {
                     obj.insert("source".to_string(), serde_yaml::Value::String(source.clone()));
@@ -758,7 +768,7 @@ impl ListCommand {
                 version.yellow(),
                 source.bright_black(),
                 item.resource_type.bright_white(),
-                item.tool.bright_black()
+                item.tool.clone().expect("Tool should always be set").bright_black()
             );
         } else if self.files {
             if let Some(ref installed_at) = item.installed_at {
@@ -844,7 +854,7 @@ impl ListCommand {
             installed_at: Some(entry.installed_at.clone()),
             checksum: Some(entry.checksum.clone()),
             resolved_commit: entry.resolved_commit.clone(),
-            tool: entry.tool.clone(),
+            tool: Some(entry.tool.clone().unwrap_or_else(|| "claude-code".to_string())),
         }
     }
 }
@@ -963,7 +973,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile.agents.push(LockedResource {
@@ -978,7 +988,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add snippets
@@ -994,7 +1004,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile
@@ -1375,7 +1385,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1390,7 +1400,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         };
 
         let entry_without_source = LockedResource {
@@ -1405,7 +1415,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1432,7 +1442,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1457,7 +1467,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             ListItem {
                 name: "alpha".to_string(),
@@ -1468,7 +1478,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
         ];
 
@@ -1494,7 +1504,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1505,7 +1515,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
         ];
 
@@ -1531,7 +1541,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1542,7 +1552,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
             ListItem {
                 name: "test3".to_string(),
@@ -1553,7 +1563,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
         ];
 
@@ -1580,7 +1590,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "agpm".to_string(),
+                tool: Some("agpm".to_string()),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1591,7 +1601,7 @@ mod tests {
                 installed_at: None,
                 checksum: None,
                 resolved_commit: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             },
         ];
 
@@ -1616,7 +1626,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

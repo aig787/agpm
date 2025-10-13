@@ -232,8 +232,9 @@ impl ResourceIterator {
 
             for entry in entries {
                 // Get artifact configuration path
+                let tool = entry.tool.as_deref().unwrap_or("claude-code");
                 let artifact_path = manifest
-                    .get_artifact_resource_path(&entry.tool, *resource_type)
+                    .get_artifact_resource_path(tool, *resource_type)
                     .expect("Resource type should be supported by configured tools");
                 let target_dir = std::borrow::Cow::Owned(artifact_path.display().to_string());
 
@@ -412,7 +413,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -427,7 +428,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile
@@ -453,7 +454,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile.agents.push(LockedResource {
@@ -468,7 +469,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add commands from source1
@@ -484,7 +485,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Command,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add scripts
@@ -500,7 +501,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Script,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add hooks
@@ -516,7 +517,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Hook,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add MCP servers
@@ -532,7 +533,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::McpServer,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Add resource without source
@@ -548,7 +549,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Snippet,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         lockfile
@@ -590,7 +591,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         // Verify the agent was added
@@ -1041,7 +1042,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);
