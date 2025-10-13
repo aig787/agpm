@@ -1509,8 +1509,11 @@ impl DependencyResolver {
                 // Inherit source and version from parent
                 let version = spec.version.clone().or_else(|| parent_detail.version.clone());
 
-                // Determine tool: inherit from parent, but fall back to default if incompatible
-                let tool = if let Some(parent_tool) = parent_detail.tool.as_deref() {
+                // Determine tool: use explicit tool from spec, or inherit from parent, or fall back to default
+                let tool = if let Some(spec_tool) = &spec.tool {
+                    // Explicit tool specified in the dependency spec - use it
+                    Some(spec_tool.clone())
+                } else if let Some(parent_tool) = parent_detail.tool.as_deref() {
                     if self
                         .manifest
                         .get_artifact_resource_path(parent_tool, child_resource_type)
@@ -2186,10 +2189,11 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, None, resource_type),
                 resource_type,
-                tool: dep
-                    .get_tool()
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                tool: Some(
+                    dep.get_tool()
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                ),
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -2330,7 +2334,7 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, Some(source_name), resource_type),
                 resource_type,
-                tool: artifact_type_string,
+                tool: Some(artifact_type_string),
             })
         }
     }
@@ -2510,10 +2514,11 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, None, resource_type),
                     resource_type,
-                    tool: dep
-                        .get_tool()
-                        .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                    tool: Some(
+                        dep.get_tool()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                    ),
                 });
             }
 
@@ -2637,10 +2642,11 @@ impl DependencyResolver {
                         resource_type,
                     ),
                     resource_type,
-                    tool: dep
-                        .get_tool()
-                        .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                    tool: Some(
+                        dep.get_tool()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                    ),
                 });
             }
 

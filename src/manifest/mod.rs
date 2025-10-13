@@ -652,6 +652,18 @@ pub struct ArtifactTypeConfig {
 
     /// Map of resource type -> configuration
     pub resources: HashMap<String, ResourceConfig>,
+
+    /// Whether this tool is enabled (default: true)
+    ///
+    /// When disabled, dependencies for this tool will not be resolved,
+    /// installed, or included in the lockfile.
+    #[serde(default = "default_tool_enabled")]
+    pub enabled: bool,
+}
+
+/// Default value for tool enabled field (true for backward compatibility)
+const fn default_tool_enabled() -> bool {
+    true
 }
 
 /// Top-level tools configuration.
@@ -714,6 +726,7 @@ impl Default for ToolsConfig {
             ArtifactTypeConfig {
                 path: PathBuf::from(".claude"),
                 resources: claude_resources,
+                enabled: true,
             },
         );
 
@@ -743,6 +756,7 @@ impl Default for ToolsConfig {
             ArtifactTypeConfig {
                 path: PathBuf::from(".opencode"),
                 resources: opencode_resources,
+                enabled: true,
             },
         );
 
@@ -760,6 +774,7 @@ impl Default for ToolsConfig {
             ArtifactTypeConfig {
                 path: PathBuf::from(".agpm"),
                 resources: agpm_resources,
+                enabled: true,
             },
         );
 
@@ -2178,6 +2193,8 @@ impl Manifest {
     ///
     /// This is used by the resolver to correctly type transitive dependencies without
     /// falling back to manifest section order lookups.
+    ///
+    /// Dependencies for disabled tools are automatically filtered out.
     pub fn all_dependencies_with_types(
         &self,
     ) -> Vec<(&str, std::borrow::Cow<'_, ResourceDependency>, crate::core::ResourceType)> {
@@ -2187,6 +2204,22 @@ impl Manifest {
         for resource_type in crate::core::ResourceType::all() {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
                 for (name, dep) in type_deps {
+                    // Determine the tool for this dependency
+                    let tool = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+
+                    // Check if the tool is enabled
+                    if let Some(tool_config) = self.get_tools_config().types.get(tool) {
+                        if !tool_config.enabled {
+                            // Skip dependencies for disabled tools
+                            tracing::debug!(
+                                "Skipping dependency '{}' for disabled tool '{}'",
+                                name,
+                                tool
+                            );
+                            continue;
+                        }
+                    }
+
                     deps.push((name.as_str(), std::borrow::Cow::Borrowed(dep), *resource_type));
                 }
             }
@@ -3849,5 +3882,98 @@ test = { source = "test", path = "agents/test.md", version = "v1.0.0", tool = "m
         let manifest = manifest.unwrap();
         let result = manifest.validate();
         assert!(result.is_ok(), "Valid artifact type name should pass validation");
+    }
+
+    #[test]
+    fn test_disabled_tools_filter_dependencies() {
+        // Create a manifest with OpenCode disabled
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" } }
+
+[tools.opencode]
+enabled = false
+path = ".opencode"
+resources = { agents = { path = "agent" } }
+
+[agents]
+claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" }
+opencode-agent = { source = "test", path = "agents/opencode.md", version = "v1.0.0", tool = "opencode" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Get all dependencies with types
+        let deps = manifest.all_dependencies_with_types();
+
+        // Should only have the claude-code agent, not the opencode one
+        assert_eq!(deps.len(), 1, "Should only have 1 dependency (OpenCode is disabled)");
+        assert_eq!(deps[0].0, "claude-agent", "Should be the claude-agent");
+    }
+
+    #[test]
+    fn test_enabled_tools_include_dependencies() {
+        // Create a manifest with both tools enabled
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.claude-code]
+enabled = true
+path = ".claude"
+resources = { agents = { path = "agents" } }
+
+[tools.opencode]
+enabled = true
+path = ".opencode"
+resources = { agents = { path = "agent" } }
+
+[agents]
+claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" }
+opencode-agent = { source = "test", path = "agents/opencode.md", version = "v1.0.0", tool = "opencode" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Get all dependencies with types
+        let deps = manifest.all_dependencies_with_types();
+
+        // Should have both agents
+        assert_eq!(deps.len(), 2, "Should have 2 dependencies (both tools enabled)");
+        let dep_names: Vec<&str> = deps.iter().map(|(name, _, _)| *name).collect();
+        assert!(dep_names.contains(&"claude-agent"));
+        assert!(dep_names.contains(&"opencode-agent"));
+    }
+
+    #[test]
+    fn test_default_enabled_true() {
+        // Create a manifest without explicit enabled field (should default to true)
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" } }
+
+[agents]
+claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Check that the tool is enabled by default
+        let tool_config = manifest.get_tools_config();
+        let claude_config = tool_config.types.get("claude-code");
+        assert!(claude_config.is_some());
+        assert!(claude_config.unwrap().enabled, "Should be enabled by default");
+
+        // Get all dependencies - should include the agent
+        let deps = manifest.all_dependencies_with_types();
+        assert_eq!(deps.len(), 1, "Should have 1 dependency (enabled by default)");
     }
 }

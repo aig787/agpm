@@ -352,3 +352,78 @@ async fn test_install_allows_branch_references() -> Result<()> {
 
     Ok(())
 }
+
+/// Test that tool field change is detected
+#[tokio::test]
+async fn test_install_detects_tool_field_change() -> Result<()> {
+    let project = TestProject::new().await?;
+
+    // Create a source repo with an agent
+    let source_repo = project.create_source_repo("test-source").await?;
+    source_repo.add_resource("agents", "test-agent", "# Test Agent").await?;
+    source_repo.commit_all("Add agent")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    // Create manifest with agent using claude-code tool (default for agents, omitted in lockfile)
+    let manifest_claude = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_agent("test-agent", |d| {
+            d.source("test-source").path("agents/test-agent.md").version("v1.0.0")
+        })
+        .build();
+    project.write_manifest(&manifest_claude).await?;
+
+    // Install with claude-code tool (default)
+    let output = project.run_agpm(&["install", "--quiet"])?;
+    assert!(output.success, "Initial install failed: {}", output.stderr);
+
+    // Verify the lockfile does NOT have tool field (claude-code is default, omitted)
+    let lockfile = project.read_lockfile().await?;
+    assert!(
+        !lockfile.contains("tool ="),
+        "Lockfile should omit tool field when using claude-code default"
+    );
+
+    // Create new manifest with opencode tool explicitly (will be visible in lockfile)
+    let manifest_opencode = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_agent("test-agent", |d| {
+            d.source("test-source").path("agents/test-agent.md").version("v1.0.0").tool("opencode")
+        })
+        .build();
+    project.write_manifest(&manifest_opencode).await?;
+
+    // Normal install should auto-update for tool field change
+    let output = project.run_agpm(&["install", "--quiet"])?;
+    assert!(
+        output.success,
+        "Normal install should auto-update tool field change: {}",
+        output.stderr
+    );
+
+    // Verify the lockfile now has tool = "opencode"
+    let updated_lockfile = project.read_lockfile().await?;
+    assert!(
+        updated_lockfile.contains("tool = \"opencode\""),
+        "Lockfile should have been updated to tool = 'opencode', but got:\n{}",
+        updated_lockfile
+    );
+
+    // Revert to claude-code tool and reinstall
+    project.write_manifest(&manifest_claude).await?;
+    let output = project.run_agpm(&["install", "--quiet"])?;
+    assert!(output.success);
+
+    // Change back to opencode tool
+    project.write_manifest(&manifest_opencode).await?;
+
+    // --frozen mode should succeed (only checks corruption/security, not tool changes)
+    let output = project.run_agpm(&["install", "--frozen"])?;
+    assert!(
+        output.success,
+        "Frozen mode should succeed (ignores tool field changes): {}",
+        output.stderr
+    );
+
+    Ok(())
+}
