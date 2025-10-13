@@ -181,7 +181,7 @@ pub trait McpHandler: Send + Sync {
 
 Manages Claude Code MCP servers:
 - **Config File**: `.mcp.json`
-- **Storage Dir**: `.claude/agpm/mcp-servers/`
+- **Configuration**: Merged into `.mcp.json` (no separate directory)
 - **Format**: Standard MCP JSON with `mcpServers` object
 
 ```json
@@ -192,7 +192,7 @@ Manages Claude Code MCP servers:
       "args": ["-y", "@modelcontextprotocol/server-filesystem"],
       "_agpm": {
         "managed": true,
-        "config_file": ".claude/agpm/mcp-servers/filesystem.json"
+        "config_file": ".mcp.json"
       }
     }
   }
@@ -203,7 +203,7 @@ Manages Claude Code MCP servers:
 
 Manages OpenCode MCP servers:
 - **Config File**: `opencode.json`
-- **Storage Dir**: `.opencode/agpm/mcp-servers/`
+- **Configuration**: Merged into `opencode.json` (no separate directory)
 - **Format**: OpenCode-specific JSON structure
 
 ```json
@@ -214,7 +214,7 @@ Manages OpenCode MCP servers:
       "args": ["-y", "@modelcontextprotocol/server-filesystem"],
       "_agpm": {
         "managed": true,
-        "config_file": ".opencode/agpm/mcp-servers/filesystem.json"
+        "config_file": "opencode.json"
       }
     }
   }
@@ -249,7 +249,7 @@ AGPM adds `_agpm` metadata to distinguish managed servers from user-configured s
 ```json
 "_agpm": {
   "managed": true,
-  "config_file": ".claude/agpm/mcp-servers/filesystem.json",
+  "config_file": ".mcp.json",
   "installed_at": "2024-01-15T10:30:00Z"
 }
 ```

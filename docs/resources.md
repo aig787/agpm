@@ -41,7 +41,7 @@ These resources are copied directly to their target directories and used as stan
 
 ### Configuration-Merged Resources
 
-These resources are installed to `.claude/agpm/` and then their configurations are merged into Claude Code's settings:
+These resources have their configurations merged into Claude Code's settings files (no separate directory installation):
 
 - **Hooks** - Event-based automation
 - **MCP Servers** - Model Context Protocol servers
@@ -89,7 +89,7 @@ Reusable code templates and documentation fragments.
 
 **Default Location**: `.agpm/snippets/` ✅ **Stable** (AGPM tool)
 
-**Alternative Location**: `.claude/agpm/snippets/` (explicitly set `tool = "claude-code"`)
+**Alternative Location**: `.claude/snippets/` (explicitly set `tool = "claude-code"`)
 
 **Default Behavior**: Snippets automatically default to the `agpm` tool, meaning they install to `.agpm/snippets/`
 by default. This is because snippets are designed as shared content that can be referenced by resources from multiple
@@ -104,7 +104,7 @@ react-component = { source = "community", path = "snippets/react-component.md", 
 # Same as above - snippets are shared by default
 rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
 
-# Claude Code specific: explicitly override to install to .claude/agpm/snippets/
+# Claude Code specific: explicitly override to install to .claude/snippets/
 claude-only = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
 
 utils = { source = "local-deps", path = "snippets/utils.md" }
@@ -150,8 +150,7 @@ Scripts must be executable and can be written in any language supported by your 
 
 Event-based automation configurations for Claude Code. JSON files that define when to run scripts.
 
-**Default Location**: `.claude/agpm/hooks/`
-**Configuration**: Automatically merged into `.claude/settings.local.json`
+**Configuration**: Automatically merged into `.claude/settings.local.json` (no separate directory)
 
 #### Hook Structure
 
@@ -160,7 +159,7 @@ Event-based automation configurations for Claude Code. JSON files that define wh
   "events": ["PreToolUse"],
   "matcher": "Bash|Write|Edit",
   "type": "command",
-  "command": ".claude/agpm/scripts/security-check.sh",
+  "command": ".claude/scripts/security-check.sh",
   "timeout": 5000,
   "description": "Security validation before file operations"
 }
@@ -186,7 +185,7 @@ file-guard = { source = "security-tools", path = "hooks/file-guard.json", versio
 
 Model Context Protocol servers that extend AI assistant capabilities with external tools and APIs.
 
-**Default Locations**: `.claude/agpm/mcp-servers/` or `.opencode/agpm/mcp-servers/`
+**Configuration**: Merged into `.mcp.json` (Claude Code) or `opencode.json` (OpenCode) - no separate directory
 
 **Configuration Files**:
 - **Claude Code**: Automatically merged into `.mcp.json` ✅ **Stable**
@@ -231,7 +230,7 @@ postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 
 Configuration-merged resources (Hooks and MCP Servers) follow a two-step process:
 
-1. **File Installation**: JSON configuration files are installed to `.claude/agpm/`
+1. **Configuration Processing**: JSON configurations are processed by AGPM
 2. **Configuration Merging**: Settings are automatically merged into Claude Code's configuration files
 3. **Non-destructive Updates**: AGPM preserves user-configured entries while managing its own
 4. **Tracking**: AGPM adds metadata to track which entries it manages
@@ -257,7 +256,7 @@ After installation, `.mcp.json` contains both user and AGPM-managed servers:
       ],
       "_agpm": {
         "managed": true,
-        "config_file": ".claude/agpm/mcp-servers/filesystem.json",
+        "config_file": ".mcp.json",
         "installed_at": "2024-01-15T10:30:00Z"
       }
     }
@@ -309,11 +308,10 @@ Override default installation directories for all resources of a type:
 ```toml
 [target]
 agents = ".claude/agents"           # Default
-snippets = ".claude/agpm/snippets"  # Default
+snippets = ".agpm/snippets"         # Default (AGPM shared infrastructure)
 commands = ".claude/commands"        # Default
-scripts = ".claude/agpm/scripts"    # Default
-hooks = ".claude/agpm/hooks"        # Default
-mcp-servers = ".claude/agpm/mcp-servers"  # Default
+scripts = ".claude/scripts"          # Default
+# Note: hooks and mcp-servers are merged into config files, not directories
 
 # Or use custom paths
 agents = "custom/agents"
@@ -394,13 +392,13 @@ review-tools = { source = "community", path = "agents/**/review*.md", version = 
 
 [snippets]
 # All Python snippets - directory structure preserved
-# snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
-# snippets/python/helpers.md → .claude/agpm/snippets/python/helpers.md
+# snippets/python/utils.md → .agpm/snippets/python/utils.md
+# snippets/python/helpers.md → .agpm/snippets/python/helpers.md
 python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 # Multiple nested directories
-# snippets/web/react/hooks.md → .claude/agpm/snippets/web/react/hooks.md
-# snippets/web/vue/composables.md → .claude/agpm/snippets/web/vue/composables.md
+# snippets/web/react/hooks.md → .agpm/snippets/web/react/hooks.md
+# snippets/web/vue/composables.md → .agpm/snippets/web/vue/composables.md
 web-snippets = { source = "community", path = "snippets/web/**/*.md", version = "v1.0.0" }
 ```
 

@@ -1051,7 +1051,7 @@ This is a test agent.",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1111,7 +1111,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1176,7 +1176,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1211,7 +1211,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1251,7 +1251,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1288,7 +1288,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1343,7 +1343,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.add_mcp_server(
@@ -1359,7 +1359,7 @@ Body",
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         manifest.save(&manifest_path).unwrap();

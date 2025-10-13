@@ -300,6 +300,50 @@ impl ResourceType {
             Self::Hook => None, // Merged into .claude/settings.local.json, not staged to disk
         }
     }
+
+    /// Get the default tool for this resource type.
+    ///
+    /// Returns the default tool that should be used when no explicit tool is specified
+    /// in the dependency configuration. Different resource types have different defaults:
+    ///
+    /// - Most resources default to "claude-code"
+    /// - Snippets default to "agpm" (shared infrastructure across tools)
+    ///
+    /// # Returns
+    ///
+    /// - [`Agent`] → `"claude-code"`
+    /// - [`Snippet`] → `"agpm"` (shared infrastructure)
+    /// - [`Command`] → `"claude-code"`
+    /// - [`McpServer`] → `"claude-code"`
+    /// - [`Script`] → `"claude-code"`
+    /// - [`Hook`] → `"claude-code"`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::core::ResourceType;
+    ///
+    /// assert_eq!(ResourceType::Agent.default_tool(), "claude-code");
+    /// assert_eq!(ResourceType::Snippet.default_tool(), "agpm");
+    /// assert_eq!(ResourceType::Command.default_tool(), "claude-code");
+    /// ```
+    ///
+    /// # Rationale
+    ///
+    /// Snippets are designed to be shared content across multiple tools (Claude Code,
+    /// OpenCode, etc.). The `.agpm/snippets/` location provides shared infrastructure
+    /// that can be referenced by resources from different tools. Therefore, snippets
+    /// default to the "agpm" tool type.
+    ///
+    /// Users can still explicitly set `tool = "claude-code"` for a snippet if they want
+    /// it installed to `.claude/snippets/` instead.
+    #[must_use]
+    pub const fn default_tool(&self) -> &'static str {
+        match self {
+            Self::Snippet => "agpm", // Snippets use shared infrastructure
+            _ => "claude-code",      // All other resources default to claude-code
+        }
+    }
 }
 
 impl std::fmt::Display for ResourceType {

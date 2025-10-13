@@ -453,7 +453,7 @@ react-hooks = { source = "community", path = "snippets/react-hooks.md", version 
 python-tools = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
 
 [scripts]
-# Claude Code (default) - installed at .claude/agpm/scripts/build.sh
+# Claude Code (default) - installed at .claude/scripts/build.sh
 build = { source = "local", path = "scripts/build.sh" }
 
 [hooks]

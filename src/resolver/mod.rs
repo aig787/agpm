@@ -1510,20 +1510,21 @@ impl DependencyResolver {
                 let version = spec.version.clone().or_else(|| parent_detail.version.clone());
 
                 // Determine tool: inherit from parent, but fall back to default if incompatible
-                let tool = if self
-                    .manifest
-                    .get_artifact_resource_path(&parent_detail.tool, child_resource_type)
-                    .is_some()
-                {
-                    // Parent's tool supports this resource type
-                    parent_detail.tool.clone()
-                } else {
-                    // Parent's tool doesn't support this resource type, use default
-                    // Snippets default to "agpm", everything else defaults to "claude-code"
-                    match child_resource_type {
-                        crate::core::ResourceType::Snippet => "agpm".to_string(),
-                        _ => "claude-code".to_string(),
+                let tool = if let Some(parent_tool) = parent_detail.tool.as_deref() {
+                    if self
+                        .manifest
+                        .get_artifact_resource_path(parent_tool, child_resource_type)
+                        .is_some()
+                    {
+                        // Parent's tool supports this resource type
+                        parent_detail.tool.clone()
+                    } else {
+                        // Parent's tool doesn't support this resource type, use default
+                        Some(child_resource_type.default_tool().to_string())
                     }
+                } else {
+                    // No parent tool specified, use default for child resource type
+                    Some(child_resource_type.default_tool().to_string())
                 };
 
                 Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -1612,7 +1613,7 @@ impl DependencyResolver {
             // Get tool and target from parent pattern dependency
             let (tool, target) = match dep {
                 ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                _ => ("claude-code".to_string(), None),
+                _ => (None, None),
             };
 
             let mut concrete_deps = Vec::new();
@@ -1680,7 +1681,7 @@ impl DependencyResolver {
                 // Get tool type and target from parent
                 let (tool, target) = match dep {
                     ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                    _ => ("claude-code".to_string(), None),
+                    _ => (None, None),
                 };
 
                 // Create a non-pattern Detailed dependency, inheriting target from parent
@@ -2126,11 +2127,8 @@ impl DependencyResolver {
                 }
             };
 
-            // Determine artifact type
-            let artifact_type = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
-                _ => "claude-code",
-            };
+            // Determine artifact type - use get_tool() method, then apply defaults
+            let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
 
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
@@ -2142,7 +2140,7 @@ impl DependencyResolver {
                     // Determine config file based on tool type
                     match dep {
                         crate::manifest::ResourceDependency::Detailed(d)
-                            if d.tool == "opencode" =>
+                            if d.tool.as_deref() == Some("opencode") =>
                         {
                             ".opencode/opencode.json".to_string()
                         }
@@ -2188,10 +2186,10 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, None, resource_type),
                 resource_type,
-                tool: match dep {
-                    crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
-                    _ => "claude-code".to_string(),
-                },
+                tool: dep
+                    .get_tool()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| resource_type.default_tool().to_string()),
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -2265,22 +2263,19 @@ impl DependencyResolver {
                 }
             };
 
-            // Determine artifact type
-            let artifact_type = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
-                _ => "claude-code",
-            };
+            // Determine artifact type - use get_tool() method, then apply defaults
+            let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
             // Multiple entries with the same name but different sources can coexist
             // Version updates replace the existing entry for the same (name, source) pair
             let unique_name = name.to_string();
 
-            // Extract artifact_type from dependency
-            let artifact_type_string = match dep {
-                crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
-                _ => "claude-code".to_string(),
-            };
+            // Extract artifact_type from dependency - convert to String for lockfile
+            let artifact_type_string = dep
+                .get_tool()
+                .map(std::string::ToString::to_string)
+                .unwrap_or_else(|| resource_type.default_tool().to_string());
 
             // Hooks and MCP servers are configured in config files, not installed as artifact files
             let installed_at = match resource_type {
@@ -2289,7 +2284,7 @@ impl DependencyResolver {
                     // Determine config file based on tool type
                     match dep {
                         crate::manifest::ResourceDependency::Detailed(d)
-                            if d.tool == "opencode" =>
+                            if d.tool.as_deref() == Some("opencode") =>
                         {
                             ".opencode/opencode.json".to_string()
                         }
@@ -2437,11 +2432,8 @@ impl DependencyResolver {
                 // Extract relative path to preserve directory structure
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
-                // Determine artifact type
-                let artifact_type = match dep {
-                    crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
-                    _ => "claude-code",
-                };
+                // Determine artifact type - use get_tool() method, then apply defaults
+                let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
@@ -2459,7 +2451,7 @@ impl DependencyResolver {
                         // Determine config file based on tool type
                         match dep {
                             crate::manifest::ResourceDependency::Detailed(d)
-                                if d.tool == "opencode" =>
+                                if d.tool.as_deref() == Some("opencode") =>
                             {
                                 ".opencode/opencode.json".to_string()
                             }
@@ -2518,10 +2510,10 @@ impl DependencyResolver {
                     installed_at,
                     dependencies: self.get_dependencies_for(&resource_name, None, resource_type),
                     resource_type,
-                    tool: match dep {
-                        crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
-                        _ => "claude-code".to_string(),
-                    },
+                    tool: dep
+                        .get_tool()
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
                 });
             }
 
@@ -2570,11 +2562,8 @@ impl DependencyResolver {
                 // Extract relative path to preserve directory structure
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
-                // Determine artifact type
-                let artifact_type = match dep {
-                    crate::manifest::ResourceDependency::Detailed(d) => &d.tool,
-                    _ => "claude-code",
-                };
+                // Determine artifact type - use get_tool() method, then apply defaults
+                let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
 
@@ -2585,7 +2574,7 @@ impl DependencyResolver {
                         // Determine config file based on tool type
                         match dep {
                             crate::manifest::ResourceDependency::Detailed(d)
-                                if d.tool == "opencode" =>
+                                if d.tool.as_deref() == Some("opencode") =>
                             {
                                 ".opencode/opencode.json".to_string()
                             }
@@ -2648,10 +2637,10 @@ impl DependencyResolver {
                         resource_type,
                     ),
                     resource_type,
-                    tool: match dep {
-                        crate::manifest::ResourceDependency::Detailed(d) => d.tool.clone(),
-                        _ => "claude-code".to_string(),
-                    },
+                    tool: dep
+                        .get_tool()
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
                 });
             }
 
@@ -3039,7 +3028,7 @@ impl DependencyResolver {
                     target: None,
                     filename: None,
                     dependencies: None,
-                    tool: "claude-code".to_string(), // Default tool
+                    tool: Some("claude-code".to_string()), // Default tool
                 })))
             }
         }
@@ -3911,7 +3900,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -3990,7 +3979,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4068,7 +4057,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4116,7 +4105,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4195,7 +4184,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4304,7 +4293,7 @@ mod tests {
                 target: Some("integrations/custom".to_string()),
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4343,7 +4332,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4381,7 +4370,7 @@ mod tests {
                 target: None,
                 filename: Some("ai-assistant.txt".to_string()),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4419,7 +4408,7 @@ mod tests {
                 target: Some("tools/ai".to_string()),
                 filename: Some("assistant.markdown".to_string()),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4458,7 +4447,7 @@ mod tests {
                 target: None,
                 filename: Some("analyze.py".to_string()),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             false, // script (not agent)
         );
@@ -4591,7 +4580,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true, // agents
         );
@@ -4637,7 +4626,7 @@ mod tests {
                 target: Some("custom/agents".to_string()),
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4746,7 +4735,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4763,7 +4752,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4793,7 +4782,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -4810,7 +4799,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -5111,7 +5100,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -5173,7 +5162,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -5264,7 +5253,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -5347,7 +5336,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
             true,
         );
@@ -5429,7 +5418,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5443,7 +5432,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let result = resolver
@@ -5489,7 +5478,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5503,7 +5492,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let result =
@@ -5543,7 +5532,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5557,7 +5546,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let result = resolver
@@ -5593,7 +5582,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let result = resolver

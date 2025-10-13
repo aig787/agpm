@@ -121,11 +121,11 @@ direct = { path = "../agents/my-agent.md" }                 # Direct file path
 ### Where are resources installed?
 Default installation directories:
 - Agents: `.claude/agents/`
-- Snippets: `.claude/agpm/snippets/`
+- Snippets: `.agpm/snippets/` (default to agpm tool - shared infrastructure)
 - Commands: `.claude/commands/`
-- Scripts: `.claude/agpm/scripts/`
-- Hooks: `.claude/agpm/hooks/` (then merged into `.claude/settings.local.json`)
-- MCP Servers: `.claude/agpm/mcp-servers/` (then merged into `.mcp.json`)
+- Scripts: `.claude/scripts/`
+- Hooks: Merged into `.claude/settings.local.json` (no separate directory)
+- MCP Servers: Merged into `.mcp.json` (no separate directory)
 
 ### Can I customize installation directories?
 Yes, there are two ways to customize where resources are installed:
@@ -164,9 +164,9 @@ my-helper = { source = "repo", path = "agents/assistant.md" }
 
 ### How do hooks and MCP servers get configured?
 These are "configuration-merged" resources:
-1. JSON files are installed to `.claude/agpm/`
-2. Configurations are automatically merged into Claude Code's settings
-3. User-configured entries are preserved
+1. JSON configurations are processed and merged into Claude Code's settings
+2. User-configured entries are preserved while AGPM manages its own
+3. AGPM adds metadata to track which entries it manages
 
 ## Version Control
 

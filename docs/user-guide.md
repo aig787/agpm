@@ -400,8 +400,8 @@ review-agents = { source = "community", path = "agents/**/review*.md", version =
 
 [snippets]
 # All Python snippets - directory structure preserved
-# snippets/python/utils.md → .claude/agpm/snippets/python/utils.md
-# snippets/python/django/models.md → .claude/agpm/snippets/python/django/models.md
+# snippets/python/utils.md → .agpm/snippets/python/utils.md
+# snippets/python/django/models.md → .agpm/snippets/python/django/models.md
 python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
 ```
 
@@ -542,7 +542,7 @@ Resources are installed to these default locations, with source directory struct
 - Commands: `.claude/commands/` (e.g., `commands/build/deploy.md` → `.claude/commands/build/deploy.md`)
 - Scripts: `.claude/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`)
 - Hooks: `.claude/hooks/`
-- MCP Servers: `.claude/agpm/mcp-servers/` (merged into `.mcp.json`)
+- MCP Servers: Merged into `.mcp.json` (no separate directory)
 
 **Path Preservation**: The relative directory structure from the source repository is maintained during installation. This means:
 - `agents/example.md` → `.claude/agents/example.md`

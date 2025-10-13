@@ -422,7 +422,10 @@ impl ListCommand {
                             installed_at: None,
                             checksum: None,
                             resolved_commit: None,
-                            tool: dep.get_tool().to_string(),
+                            tool: dep
+                                .get_tool()
+                                .unwrap_or_else(|| resource_type.default_tool())
+                                .to_string(),
                         });
                     }
                 }
@@ -443,7 +446,10 @@ impl ListCommand {
                         installed_at: None,
                         checksum: None,
                         resolved_commit: None,
-                        tool: mcp_dep.get_tool().to_string(),
+                        tool: mcp_dep
+                            .get_tool()
+                            .unwrap_or_else(|| crate::core::ResourceType::McpServer.default_tool())
+                            .to_string(),
                     });
                 }
             }
@@ -893,7 +899,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
 
@@ -916,7 +922,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
 
@@ -1313,7 +1319,7 @@ mod tests {
             target: None,
             filename: None,
             dependencies: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         }));
 
         let dep_with_different_source =
@@ -1328,7 +1334,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());

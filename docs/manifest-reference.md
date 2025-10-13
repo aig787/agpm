@@ -105,7 +105,7 @@ opencode-agent = { source = "community", path = "agents/helper.md", version = "v
 # Default: snippets install to .agpm/snippets/ (snippets default to agpm, not claude-code)
 shared = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0" }
 
-# Claude Code specific: explicitly set tool to install to .claude/agpm/snippets/
+# Claude Code specific: explicitly set tool to install to .claude/snippets/
 claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
 ```
 

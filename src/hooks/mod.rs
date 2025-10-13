@@ -725,7 +725,7 @@ mod tests {
         let temp = tempdir().unwrap();
 
         // Create the expected directory structure with script
-        // Scripts are now in .claude/scripts/ not .claude/agpm/scripts/
+        // Scripts are in .claude/scripts/ directory
         let claude_dir = temp.path().join(".claude");
         let scripts_dir = claude_dir.join("scripts");
         fs::create_dir_all(&scripts_dir).unwrap();

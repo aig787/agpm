@@ -4,7 +4,7 @@
   ],
   "matcher": "Bash|Write",
   "type": "command",
-  "command": ".claude/agpm/scripts/build.sh",
+  "command": ".claude/scripts/build.sh",
   "timeout": 5000,
   "description": "Validate dangerous operations before execution",
   "dependencies": {

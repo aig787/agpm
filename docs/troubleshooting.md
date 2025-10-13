@@ -209,14 +209,14 @@ cache_dir = "/larger/disk/cache"
 
 **Check permissions:**
 ```bash
-ls -la .claude/agpm/scripts/
-chmod +x .claude/agpm/scripts/*.sh
+ls -la .claude/scripts/
+chmod +x .claude/scripts/*.sh
 ```
 
 **Check interpreter:**
 ```bash
 # Verify shebang line
-head -1 .claude/agpm/scripts/script.sh
+head -1 .claude/scripts/script.sh
 
 # Check if interpreter exists
 which bash
@@ -231,7 +231,7 @@ which python3
 cat .claude/settings.local.json | grep "hook-name"
 
 # Check hook file exists
-ls .claude/agpm/hooks/
+cat .claude/settings.local.json  # Hooks are merged into this file
 ```
 
 **Debug hooks:**
@@ -284,7 +284,7 @@ New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
 git config --global core.autocrlf true
 
 # Convert existing files
-dos2unix .claude/agpm/scripts/*.sh
+dos2unix .claude/scripts/*.sh
 ```
 
 ### macOS Gatekeeper

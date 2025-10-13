@@ -67,7 +67,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                     target: None,
                     filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
                     dependencies: None,
-                    tool: "claude-code".to_string(),
+                    tool: Some("claude-code".to_string()),
                 })),
             );
             total_agents += 1;
@@ -303,7 +303,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     target: None,
                     filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
                     dependencies: None,
-                    tool: "claude-code".to_string(),
+                    tool: Some("claude-code".to_string()),
                 })),
             );
             total_agents += 1;
@@ -361,7 +361,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     target: None,
                     filename: Some(format!("repo{}_agent_{:03}.md", repo_idx, i)),
                     dependencies: None,
-                    tool: "claude-code".to_string(),
+                    tool: Some("claude-code".to_string()),
                 })),
             );
         }
@@ -490,7 +490,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                     target: None,
                     filename: Some(format!("local_repo{}_agent_{:03}.md", repo_idx, i)),
                     dependencies: None,
-                    tool: "claude-code".to_string(),
+                    tool: Some("claude-code".to_string()),
                 })),
             );
             total_resources += 1;
@@ -525,7 +525,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 target: None,
                 filename: Some(format!("community_agent_{}.md", idx)),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
         total_resources += 1;
@@ -678,7 +678,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
                 target: None,
                 filename: Some(format!("{}.md", name)),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
     }
@@ -848,7 +848,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
                 target: None,
                 filename: Some(unique_filename),
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
     }

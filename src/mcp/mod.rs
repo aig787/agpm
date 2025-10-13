@@ -136,18 +136,21 @@ impl ClaudeSettings {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            // Put backup in .claude/agpm directory
-            let agpm_dir =
-                path.parent().ok_or_else(|| anyhow!("Invalid settings path"))?.join("agpm");
+            // Put backup in .agpm/backups directory
+            let backup_dir = path
+                .parent()
+                .ok_or_else(|| anyhow!("Invalid settings path"))?
+                .join(".agpm")
+                .join("backups");
 
-            // Ensure .claude/agpm directory exists
-            if !agpm_dir.exists() {
-                std::fs::create_dir_all(&agpm_dir).with_context(|| {
-                    format!("Failed to create directory: {}", agpm_dir.display())
+            // Ensure .agpm/backups directory exists
+            if !backup_dir.exists() {
+                std::fs::create_dir_all(&backup_dir).with_context(|| {
+                    format!("Failed to create directory: {}", backup_dir.display())
                 })?;
             }
 
-            let backup_path = agpm_dir.join("settings.local.json.backup");
+            let backup_path = backup_dir.join("settings.local.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!("Failed to create backup of settings at: {}", backup_path.display())
             })?;
@@ -236,21 +239,21 @@ impl McpConfig {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            // Put backup in .claude/agpm directory
-            let agpm_dir = path
+            // Put backup in .agpm/backups directory
+            let backup_dir = path
                 .parent()
                 .ok_or_else(|| anyhow!("Invalid MCP config path"))?
-                .join(".claude")
-                .join("agpm");
+                .join(".agpm")
+                .join("backups");
 
-            // Ensure .claude/agpm directory exists
-            if !agpm_dir.exists() {
-                std::fs::create_dir_all(&agpm_dir).with_context(|| {
-                    format!("Failed to create directory: {}", agpm_dir.display())
+            // Ensure .agpm/backups directory exists
+            if !backup_dir.exists() {
+                std::fs::create_dir_all(&backup_dir).with_context(|| {
+                    format!("Failed to create directory: {}", backup_dir.display())
                 })?;
             }
 
-            let backup_path = agpm_dir.join(".mcp.json.backup");
+            let backup_path = backup_dir.join(".mcp.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of MCP configuration at: {}",
@@ -555,7 +558,8 @@ mod tests {
     fn test_claude_settings_save_creates_backup() {
         let temp = tempdir().unwrap();
         let settings_path = temp.path().join("settings.local.json");
-        let backup_path = temp.path().join("agpm").join("settings.local.json.backup");
+        let backup_path =
+            temp.path().join(".agpm").join("backups").join("settings.local.json.backup");
 
         // Create initial file
         fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
@@ -850,7 +854,7 @@ mod tests {
     fn test_mcp_config_save_creates_backup() {
         let temp = tempdir().unwrap();
         let config_path = temp.path().join("mcp.json");
-        let backup_path = temp.path().join(".claude").join("agpm").join(".mcp.json.backup");
+        let backup_path = temp.path().join(".agpm").join("backups").join(".mcp.json.backup");
 
         // Create initial file
         fs::write(&config_path, r#"{"mcpServers": {"old": {"command": "old"}}}"#).unwrap();
@@ -858,7 +862,7 @@ mod tests {
         let config = McpConfig::default();
         config.save(&config_path).unwrap();
 
-        // Backup should be created in .claude/agpm directory
+        // Backup should be created in .agpm/backups directory
         assert!(backup_path.exists());
         let backup_content = fs::read_to_string(backup_path).unwrap();
         assert!(backup_content.contains("old"));
@@ -1616,7 +1620,8 @@ mod tests {
     fn test_claude_settings_save_backup() {
         let temp = tempfile::TempDir::new().unwrap();
         let settings_path = temp.path().join("settings.local.json");
-        let backup_path = temp.path().join("agpm").join("settings.local.json.backup");
+        let backup_path =
+            temp.path().join(".agpm").join("backups").join("settings.local.json.backup");
 
         // Create initial settings
         let settings1 = ClaudeSettings::default();
@@ -1647,7 +1652,7 @@ mod tests {
     fn test_mcp_config_save_backup() {
         let temp = tempfile::TempDir::new().unwrap();
         let config_path = temp.path().join(".mcp.json");
-        let backup_path = temp.path().join(".claude").join("agpm").join(".mcp.json.backup");
+        let backup_path = temp.path().join(".agpm").join("backups").join(".mcp.json.backup");
 
         // Create initial config
         let config1 = McpConfig::default();
@@ -1671,7 +1676,7 @@ mod tests {
         );
         config2.save(&config_path).unwrap();
 
-        // Verify backup was created in .claude/agpm directory
+        // Verify backup was created in .agpm/backups directory
         assert!(backup_path.exists());
 
         // Verify backup contains original content

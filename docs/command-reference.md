@@ -699,8 +699,8 @@ AGPM manages six types of resources with optimized parallel installation:
 
 ### Configuration-Merged Resources
 
-- **Hooks**: Event-based automation (installed to `.claude/agpm/hooks/`, merged into `.claude/settings.local.json`)
-- **MCP Servers**: Model Context Protocol servers (installed to `.claude/agpm/mcp-servers/`, merged into `.mcp.json`)
+- **Hooks**: Event-based automation (merged into `.claude/settings.local.json`)
+- **MCP Servers**: Model Context Protocol servers (merged into `.mcp.json`)
 
 ### Parallel Installation Features
 

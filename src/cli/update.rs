@@ -582,7 +582,7 @@ mod tests {
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             })),
         );
 

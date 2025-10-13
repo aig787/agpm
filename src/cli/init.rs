@@ -99,6 +99,52 @@ pub struct InitCommand {
 }
 
 impl InitCommand {
+    /// Updates the .gitignore file to include AGPM-specific entries.
+    ///
+    /// This method ensures that `.agpm/backups/` is added to the project's `.gitignore` file.
+    /// If the `.gitignore` file doesn't exist, it will be created. If the entry already exists,
+    /// it won't be duplicated.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_dir` - The directory where the `.gitignore` file should be updated or created
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the `.gitignore` was updated successfully
+    /// - `Err(anyhow::Error)` if unable to read or write the `.gitignore` file
+    fn update_gitignore(target_dir: &std::path::Path) -> Result<()> {
+        let gitignore_path = target_dir.join(".gitignore");
+        let entry = ".agpm/backups/";
+
+        // Read existing .gitignore or start with empty content
+        let mut content = if gitignore_path.exists() {
+            fs::read_to_string(&gitignore_path)?
+        } else {
+            String::new()
+        };
+
+        // Check if entry already exists
+        if content.lines().any(|line| line.trim() == entry) {
+            return Ok(());
+        }
+
+        // Add entry (ensure there's a newline before it if content exists)
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        if !content.is_empty() {
+            content.push('\n');
+            content.push_str("# AGPM\n");
+        }
+        content.push_str(entry);
+        content.push('\n');
+
+        fs::write(&gitignore_path, content)?;
+
+        Ok(())
+    }
+
     /// Execute the init command with an optional manifest path (for API compatibility)
     pub async fn execute_with_manifest_path(
         self,
@@ -215,8 +261,8 @@ resources = { snippets = { path = "snippets" } }
 "#;
         fs::write(&manifest_path, template)?;
 
-        // Gitignore entries are managed at the artifact level (e.g., .claude/settings.local.json, .mcp.json)
-        // No top-level AGPM directories need to be ignored
+        // Add .agpm/backups/ to .gitignore
+        Self::update_gitignore(&target_dir)?;
 
         println!("{} Initialized agpm.toml at {}", "✓".green(), manifest_path.display());
 
@@ -398,5 +444,93 @@ mod tests {
         let new_content = fs::read_to_string(&manifest_path).unwrap();
         assert!(new_content.contains("# AGPM Manifest"));
         assert!(!new_content.contains("# Old manifest"));
+    }
+
+    #[tokio::test]
+    async fn test_init_creates_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        assert!(gitignore_path.exists());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains(".agpm/backups/"));
+    }
+
+    #[tokio::test]
+    async fn test_init_updates_existing_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let gitignore_path = temp_dir.path().join(".gitignore");
+
+        // Create existing .gitignore with some content
+        fs::write(&gitignore_path, "node_modules/\n*.log\n").unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains("node_modules/"));
+        assert!(content.contains("*.log"));
+        assert!(content.contains(".agpm/backups/"));
+        assert!(content.contains("# AGPM"));
+    }
+
+    #[tokio::test]
+    async fn test_init_doesnt_duplicate_gitignore_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let gitignore_path = temp_dir.path().join(".gitignore");
+
+        // Create existing .gitignore with the entry already present
+        fs::write(&gitignore_path, ".agpm/backups/\n").unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        // Count occurrences - should be exactly 1
+        let count = content.matches(".agpm/backups/").count();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_init_gitignore_with_no_trailing_newline() {
+        let temp_dir = TempDir::new().unwrap();
+        let gitignore_path = temp_dir.path().join(".gitignore");
+
+        // Create existing .gitignore with no trailing newline
+        fs::write(&gitignore_path, "node_modules/").unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains("node_modules/"));
+        assert!(content.contains(".agpm/backups/"));
+        // Verify proper formatting (no missing newlines)
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.contains(&"node_modules/"));
+        assert!(lines.contains(&".agpm/backups/"));
     }
 }

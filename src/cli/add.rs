@@ -183,7 +183,7 @@ async fn add_dependency_with_manifest_path(
     if needs_detailed {
         if let ResourceDependency::Simple(path) = &dependency {
             // Convert Simple to Detailed to support advanced options
-            let tool = common.tool.clone().unwrap_or_else(|| "claude-code".to_string());
+            let tool = common.tool.clone();
             dependency = ResourceDependency::Detailed(Box::new(DetailedDependency {
                 source: None,
                 path: path.clone(),
@@ -203,7 +203,7 @@ async fn add_dependency_with_manifest_path(
     // Apply fields to Detailed dependencies
     if let ResourceDependency::Detailed(detailed) = &mut dependency {
         if let Some(tool) = &common.tool {
-            detailed.tool = tool.clone();
+            detailed.tool = Some(tool.clone());
         }
         if let Some(target) = &common.target {
             detailed.target = Some(target.clone());
@@ -495,7 +495,7 @@ fn parse_dependency_spec(
                 target: None,
                 filename: None,
                 dependencies: None,
-                tool: "claude-code".to_string(),
+                tool: None,
             })),
         ))
     } else if is_local_path {
