@@ -256,8 +256,8 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
 ///     tool: Some("claude-code".to_string()),
-///     applied_patches: std::collections::HashMap::new(),
 ///     manifest_alias: None,
+///     applied_patches: std::collections::HashMap::new(),
 /// };
 ///
 /// let (installed, checksum, _patches) = install_resource(&entry, Path::new("."), "agents", &cache, false, None, None).await?;
@@ -474,8 +474,8 @@ pub async fn install_resource(
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
 ///     tool: Some("claude-code".to_string()),
-///     applied_patches: std::collections::HashMap::new(),
 ///     manifest_alias: None,
+///     applied_patches: std::collections::HashMap::new(),
 /// };
 ///
 /// let (installed, checksum, _patches) = install_resource_with_progress(
@@ -2688,8 +2688,8 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
                 manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             }
         } else {
             LockedResource {
@@ -2704,8 +2704,8 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
                 manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             }
         }
     }

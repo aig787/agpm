@@ -1114,8 +1114,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1407,8 +1407,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
                 manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2373,8 +2373,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2856,8 +2856,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3047,8 +3047,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
