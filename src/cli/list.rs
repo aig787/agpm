@@ -91,7 +91,9 @@ use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::cache::Cache;
 use crate::lockfile::LockFile;
+use crate::lockfile::patch_display::extract_patch_displays;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 
 /// Internal representation for list items used in various output formats.
@@ -118,6 +120,8 @@ struct ListItem {
     resolved_commit: Option<String>,
     /// The tool ("claude-code", "opencode", "agpm", or custom)
     tool: Option<String>,
+    /// Patches that were applied to this resource
+    applied_patches: std::collections::HashMap<String, toml::Value>,
 }
 
 /// Command to list installed Claude Code resources.
@@ -343,7 +347,7 @@ impl ListCommand {
             self.list_from_manifest(&manifest_path)?;
         } else {
             // List from lockfile
-            self.list_from_lockfile(project_dir)?;
+            self.list_from_lockfile(project_dir).await?;
         }
 
         Ok(())
@@ -427,6 +431,7 @@ impl ListCommand {
                                     .unwrap_or_else(|| resource_type.default_tool())
                                     .to_string(),
                             ),
+                            applied_patches: std::collections::HashMap::new(),
                         });
                     }
                 }
@@ -455,6 +460,7 @@ impl ListCommand {
                                 })
                                 .to_string(),
                         ),
+                        applied_patches: std::collections::HashMap::new(),
                     });
                 }
             }
@@ -469,7 +475,7 @@ impl ListCommand {
         Ok(())
     }
 
-    fn list_from_lockfile(&self, project_dir: &std::path::Path) -> Result<()> {
+    async fn list_from_lockfile(&self, project_dir: &std::path::Path) -> Result<()> {
         let lockfile_path = project_dir.join("agpm.lock");
 
         if !lockfile_path.exists() {
@@ -483,6 +489,13 @@ impl ListCommand {
         }
 
         let lockfile = LockFile::load(&lockfile_path)?;
+
+        // Create cache if needed for detailed mode with patches
+        let cache = if self.detailed {
+            Some(Cache::new().context("Failed to initialize cache")?)
+        } else {
+            None
+        };
 
         // Collect and filter entries
         let mut items = Vec::new();
@@ -510,7 +523,17 @@ impl ListCommand {
         // Handle special flags
 
         // Output results
-        self.output_items(&items, "Installed resources from agpm.lock:")?;
+        if self.detailed {
+            self.output_items_detailed(
+                &items,
+                "Installed resources from agpm.lock:",
+                &lockfile,
+                cache.as_ref(),
+            )
+            .await?;
+        } else {
+            self.output_items(&items, "Installed resources from agpm.lock:")?;
+        }
 
         Ok(())
     }
@@ -709,14 +732,14 @@ impl ListCommand {
         // Show headers for table format (but not verbose mode)
         if !items.is_empty() && self.format == "table" && !self.verbose {
             println!(
-                "{:<20} {:<15} {:<15} {:<12} {:<15}",
+                "{:<32} {:<15} {:<15} {:<12} {:<15}",
                 "Name".cyan().bold(),
                 "Version".cyan().bold(),
                 "Source".cyan().bold(),
                 "Type".cyan().bold(),
                 "Artifact".cyan().bold()
             );
-            println!("{}", "-".repeat(80).bright_black());
+            println!("{}", "-".repeat(92).bright_black());
         }
 
         if self.format == "table" && !self.files && !self.detailed && !self.verbose {
@@ -755,6 +778,145 @@ impl ListCommand {
         println!("{}: {} resources", "Total".green().bold(), items.len());
     }
 
+    /// Output items in detailed mode with patch comparisons
+    async fn output_items_detailed(
+        &self,
+        items: &[ListItem],
+        title: &str,
+        lockfile: &LockFile,
+        cache: Option<&Cache>,
+    ) -> Result<()> {
+        if items.is_empty() {
+            if self.format == "json" {
+                println!("{{}}");
+            } else {
+                println!("No installed resources found.");
+            }
+            return Ok(());
+        }
+
+        println!("{}", title.bold());
+        println!();
+
+        // Group by resource type
+        let show_agents = self.should_show_resource_type(crate::core::ResourceType::Agent);
+        let show_snippets = self.should_show_resource_type(crate::core::ResourceType::Snippet);
+
+        if show_agents {
+            let agents: Vec<_> = items.iter().filter(|i| i.resource_type == "agent").collect();
+            if !agents.is_empty() {
+                println!("{}:", "Agents".cyan().bold());
+                for item in agents {
+                    self.print_item_detailed(item, lockfile, cache).await;
+                }
+                println!();
+            }
+        }
+
+        if show_snippets {
+            let snippets: Vec<_> = items.iter().filter(|i| i.resource_type == "snippet").collect();
+            if !snippets.is_empty() {
+                println!("{}:", "Snippets".cyan().bold());
+                for item in snippets {
+                    self.print_item_detailed(item, lockfile, cache).await;
+                }
+            }
+        }
+
+        println!("{}: {} resources", "Total".green().bold(), items.len());
+
+        Ok(())
+    }
+
+    /// Print a single item in detailed mode with patch comparison
+    async fn print_item_detailed(
+        &self,
+        item: &ListItem,
+        lockfile: &LockFile,
+        cache: Option<&Cache>,
+    ) {
+        let source = item.source.as_deref().unwrap_or("local");
+        let version = item.version.as_deref().unwrap_or("latest");
+
+        println!("    {}", item.name.bright_white());
+        println!("      Source: {}", source.bright_black());
+        println!("      Version: {}", version.yellow());
+        if let Some(ref path) = item.path {
+            println!("      Path: {}", path.bright_black());
+        }
+        if let Some(ref installed_at) = item.installed_at {
+            println!("      Installed at: {}", installed_at.bright_black());
+        }
+        if let Some(ref checksum) = item.checksum {
+            println!("      Checksum: {}", checksum.bright_black());
+        }
+
+        // Show patches with original → overridden comparison
+        if !item.applied_patches.is_empty() {
+            println!("      Applied patches:");
+
+            // If we have cache, try to get original values
+            if let Some(cache) = cache {
+                // Find the locked resource for this item
+                if let Some(locked_resource) = self.find_locked_resource(item, lockfile) {
+                    let patch_displays = extract_patch_displays(locked_resource, cache).await;
+                    for display in patch_displays {
+                        let formatted = display.format();
+                        // Indent each line of the multi-line diff output
+                        for (i, line) in formatted.lines().enumerate() {
+                            if i == 0 {
+                                // First line: bullet point
+                                println!("        • {}", line);
+                            } else {
+                                // Subsequent lines: indent to align with content
+                                println!("          {}", line);
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback: just show overridden values
+                    self.print_patches_fallback(&item.applied_patches);
+                }
+            } else {
+                // No cache: just show overridden values
+                self.print_patches_fallback(&item.applied_patches);
+            }
+        }
+        println!();
+    }
+
+    /// Fallback patch display without original values
+    fn print_patches_fallback(&self, patches: &HashMap<String, toml::Value>) {
+        let mut patch_keys: Vec<_> = patches.keys().collect();
+        patch_keys.sort();
+        for key in patch_keys {
+            let value = &patches[key];
+            let formatted_value = format_patch_value(value);
+            println!("        • {}: {}", key.blue(), formatted_value);
+        }
+    }
+
+    /// Find the locked resource corresponding to a list item
+    fn find_locked_resource<'a>(
+        &self,
+        item: &ListItem,
+        lockfile: &'a LockFile,
+    ) -> Option<&'a crate::lockfile::LockedResource> {
+        // Determine resource type
+        let resource_type = match item.resource_type.as_str() {
+            "agent" => crate::core::ResourceType::Agent,
+            "snippet" => crate::core::ResourceType::Snippet,
+            "command" => crate::core::ResourceType::Command,
+            "script" => crate::core::ResourceType::Script,
+            "hook" => crate::core::ResourceType::Hook,
+            "mcp-server" => crate::core::ResourceType::McpServer,
+            _ => return None,
+        };
+
+        // Find matching resource in lockfile
+        lockfile.get_resources(resource_type).iter().find(|r| r.name == item.name)
+    }
+
     /// Print a single item
     fn print_item(&self, item: &ListItem) {
         let source = item.source.as_deref().unwrap_or("local");
@@ -762,9 +924,20 @@ impl ListCommand {
 
         if self.format == "table" && !self.files && !self.detailed {
             // Table format with columns
+            // Build the name field with proper padding before adding colors
+            let name_with_indicator = if !item.applied_patches.is_empty() {
+                format!("{} (patched)", item.name)
+            } else {
+                item.name.clone()
+            };
+
+            // Apply padding to plain text, then colorize
+            let name_field = format!("{:<32}", name_with_indicator);
+            let colored_name = name_field.bright_white();
+
             println!(
-                "{:<20} {:<15} {:<15} {:<12} {:<15}",
-                item.name.bright_white(),
+                "{} {:<15} {:<15} {:<12} {:<15}",
+                colored_name,
                 version.yellow(),
                 source.bright_black(),
                 item.resource_type.bright_white(),
@@ -788,6 +961,16 @@ impl ListCommand {
             }
             if let Some(ref checksum) = item.checksum {
                 println!("      Checksum: {}", checksum.bright_black());
+            }
+            if !item.applied_patches.is_empty() {
+                println!("      {}", "Patches:".cyan());
+                let mut patch_keys: Vec<_> = item.applied_patches.keys().collect();
+                patch_keys.sort(); // Sort for consistent display
+                for key in patch_keys {
+                    let value = &item.applied_patches[key];
+                    let formatted_value = format_patch_value(value);
+                    println!("        {}: {}", key.yellow(), formatted_value.green());
+                }
             }
             println!();
         } else {
@@ -855,6 +1038,30 @@ impl ListCommand {
             checksum: Some(entry.checksum.clone()),
             resolved_commit: entry.resolved_commit.clone(),
             tool: Some(entry.tool.clone().unwrap_or_else(|| "claude-code".to_string())),
+            applied_patches: entry.applied_patches.clone(),
+        }
+    }
+}
+
+/// Format a toml::Value for display in patch output.
+///
+/// Produces clean, readable output:
+/// - Strings: wrapped in quotes `"value"`
+/// - Numbers/Booleans: plain text
+/// - Arrays/Tables: formatted as TOML syntax
+fn format_patch_value(value: &toml::Value) -> String {
+    match value {
+        toml::Value::String(s) => format!("\"{}\"", s),
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Array(arr) => {
+            let elements: Vec<String> = arr.iter().map(format_patch_value).collect();
+            format!("[{}]", elements.join(", "))
+        }
+        toml::Value::Table(_) | toml::Value::Datetime(_) => {
+            // For complex types, use to_string() as fallback
+            value.to_string()
         }
     }
 }
@@ -974,6 +1181,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -989,6 +1198,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add snippets
@@ -1005,6 +1216,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Snippet,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile
@@ -1386,6 +1599,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1401,6 +1616,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         };
 
         let entry_without_source = LockedResource {
@@ -1416,6 +1633,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1443,6 +1662,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1468,6 +1689,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
             ListItem {
                 name: "alpha".to_string(),
@@ -1479,6 +1701,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
         ];
 
@@ -1505,6 +1728,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1516,6 +1740,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
         ];
 
@@ -1542,6 +1767,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1553,6 +1779,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
             ListItem {
                 name: "test3".to_string(),
@@ -1564,6 +1791,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
         ];
 
@@ -1591,6 +1819,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("agpm".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1602,6 +1831,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
             },
         ];
 
@@ -1627,6 +1857,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");
