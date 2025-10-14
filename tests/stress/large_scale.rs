@@ -83,7 +83,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     debug!("Starting parallel installation of {} agents", total_agents);
     let start = std::time::Instant::now();
 
-    let (count, _) = install_resources(
+    let (count, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile,
         &manifest,
@@ -318,7 +318,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     println!("📦 Installing initial version (v1.0.0) of {} agents", total_agents);
     let start_install = std::time::Instant::now();
 
-    let (count, _) = install_resources(
+    let (count, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile_v1,
         &manifest_v1,
@@ -376,7 +376,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     println!("🔄 Updating all {} agents to v2.0.0", total_agents);
     let start_update = std::time::Instant::now();
 
-    let (update_count, _) = install_resources(
+    let (update_count, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile_v2,
         &manifest_v2,
@@ -543,7 +543,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     );
     let start = std::time::Instant::now();
 
-    let (count, _) = install_resources(
+    let (count, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile,
         &manifest,
@@ -696,7 +696,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let (count, _) = install_resources(
+    let (count, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile,
         &manifest,
@@ -861,7 +861,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     let start = std::time::Instant::now();
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
-    let (_, _) = install_resources(
+    let (_, _, _) = install_resources(
         ResourceFilter::All,
         &lockfile,
         &manifest,
