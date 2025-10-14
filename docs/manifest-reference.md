@@ -140,8 +140,213 @@ claude-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.
 opencode-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }
 ```
 
+## Patches and Overrides
+
+Override YAML frontmatter or JSON fields in resource files without forking upstream repositories. Patches enable customization of model settings, temperature, API keys, and any other metadata field.
+
+### Syntax
+
+```toml
+[patch.<resource-type>.<alias>]
+field = "value"
+nested.field = "value"
+```
+
+- `<resource-type>`: The resource section (agents, snippets, commands, scripts, hooks, mcp-servers)
+- `<alias>`: Must match a dependency name from the corresponding resource section
+- Fields support all TOML types: strings, numbers, booleans, arrays, tables
+
+### Project-Level Patches (agpm.toml)
+
+Committed to version control. Applied to all users of the project:
+
+```toml
+[agents]
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+ai-assistant = { source = "community", path = "agents/ai/assistant.md", version = "v1.0.0" }
+
+[patch.agents.rust-expert]
+model = "claude-3-haiku"       # Override model
+temperature = "0.8"            # Adjust temperature
+max_tokens = "4096"            # Set token limit
+
+[patch.agents.ai-assistant]
+system_prompt = "You are a helpful AI assistant focused on clarity."
+tools = ["web-search", "calculator"]
+```
+
+### Private Patches (agpm.private.toml)
+
+User-level overrides, never committed (add to .gitignore). Private patches **extend** project patches:
+
+```toml
+# agpm.private.toml
+[patch.agents.rust-expert]
+api_key = "${MY_ANTHROPIC_KEY}"          # Personal API key
+custom_endpoint = "https://my-proxy.internal"
+logging_level = "debug"
+
+# Different fields from project patch - no conflict!
+# Project patch: model, temperature, max_tokens
+# Private patch: api_key, custom_endpoint, logging_level
+```
+
+### Conflict Behavior
+
+When the **same field** appears in both project and private patches, installation fails with a clear error:
+
+```text
+Error: Patch conflict for agents/rust-expert
+  Field 'model' appears in both agpm.toml and agpm.private.toml
+  Resolution: Keep the field in one file only
+```
+
+**When fields differ**, patches merge successfully:
+- Project patch: `model`, `temperature`
+- Private patch: `api_key`, `logging_level`
+- Result: All four fields applied
+
+### Supported Resource Types
+
+Patches work with all resource types:
+
+```toml
+[patch.agents.my-agent]
+model = "claude-3-haiku"
+
+[patch.snippets.python-utils]
+author = "Internal Team"
+version = "2.0.0"
+
+[patch.commands.deploy]
+timeout = "300"
+retry_count = "3"
+
+[patch.scripts.build]
+shell = "/bin/bash"
+environment.NODE_ENV = "production"
+
+[patch.hooks.pre-commit]
+enabled = false
+
+[patch.mcp-servers.filesystem]
+args = ["--root", "/custom/path"]
+```
+
+### Pattern Dependencies
+
+Patches require explicit dependency names. For pattern dependencies, you must reference individual resolved files:
+
+```toml
+# Pattern dependency
+[agents]
+ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
+
+# After installation, check `agpm list` to see resolved names
+# Then patch specific files that matched the pattern:
+[patch.agents.ai-assistant]
+model = "claude-3-haiku"
+
+[patch.agents.ai-analyzer]
+model = "claude-3-opus"
+```
+
+### Validation
+
+Patches are validated during installation:
+
+```bash
+# Check for unknown dependency aliases
+agpm validate
+
+# Full validation including patch application
+agpm install
+```
+
+**Validation rules:**
+1. Patch alias must exist in the corresponding resource section
+2. Cannot patch dependencies that don't exist in manifest
+3. Conflicting fields between project and private patches cause hard failure
+4. All TOML syntax must be valid
+
+### Lockfile Tracking
+
+Applied patches are tracked in `agpm.lock` for reproducibility:
+
+```toml
+[[agents]]
+name = "rust-expert"
+source = "community"
+path = "agents/rust-expert.md"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/agents/rust-expert.md"
+patches = ["model", "temperature", "max_tokens", "api_key"]
+```
+
+The `patches` field lists all applied patch fields (from both project and private patches).
+
+### Viewing Patched Resources
+
+Use `agpm list` to identify patched resources:
+
+```bash
+$ agpm list
+Name          Type    Version  Source     Installed At                    Status
+rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
+ai-assistant  agent   v1.0.0   community  .claude/agents/ai-assistant.md  (patched)
+helper        agent   v1.0.0   community  .claude/agents/helper.md
+```
+
+Detailed view shows patch fields:
+
+```bash
+$ agpm list --format json
+{
+  "agents": [
+    {
+      "name": "rust-expert",
+      "version": "v1.0.0",
+      "patches": ["model", "temperature", "max_tokens", "api_key"]
+    }
+  ]
+}
+```
+
+### Use Cases
+
+**Team Configuration** (agpm.toml):
+```toml
+[patch.agents.code-reviewer]
+model = "claude-3-opus"        # Team standard model
+guidelines_url = "https://internal.wiki/code-review"
+```
+
+**Personal Customization** (agpm.private.toml):
+```toml
+[patch.agents.code-reviewer]
+temperature = "0.9"            # Personal preference
+api_key = "${ANTHROPIC_KEY}"  # Personal credentials
+```
+
+**Development vs Production**:
+```toml
+# Development agpm.toml
+[patch.agents.deployer]
+environment = "development"
+dry_run = true
+
+# Production agpm.toml
+[patch.agents.deployer]
+environment = "production"
+dry_run = false
+```
+
 ## Recommended Workflow
 
 1. Use `agpm add dep` for initial entries—this ensures naming and defaults are correct.
 2. Edit the generated inline table when you need advanced selectors (`branch`, `rev`, `tool`), custom install paths, or MCP launch commands.
-3. Re-run `agpm install` (or `agpm validate --resolve`) after manual edits to confirm the manifest parses and resolves correctly.
+3. Add `[patch]` sections to customize resource metadata without forking.
+4. Use `agpm.private.toml` for personal overrides (API keys, preferences).
+5. Re-run `agpm install` (or `agpm validate --resolve`) after manual edits to confirm the manifest parses and resolves correctly.

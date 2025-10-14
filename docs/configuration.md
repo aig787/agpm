@@ -20,6 +20,14 @@ The global configuration stores sensitive data like authentication tokens.
 **Purpose**: Store authentication tokens and private sources
 **Version Control**: ❌ Never commit to Git
 
+### Private Configuration (agpm.private.toml)
+
+User-level patches and overrides that should not be shared with the team.
+
+**Location**: Project root directory (next to agpm.toml)
+**Purpose**: Personal resource field overrides and customizations
+**Version Control**: ❌ Never commit to Git (add to .gitignore)
+
 ## Global Configuration
 
 ### Initial Setup
@@ -67,6 +75,228 @@ max_parallel = 8
 # Optional: Enable enhanced progress reporting
 enhanced_progress = true
 ```
+
+## Private Configuration
+
+The `agpm.private.toml` file enables user-level customization without affecting team configuration.
+
+### Purpose
+
+Use private configuration for:
+- Personal API keys and credentials
+- Custom model preferences (temperature, max_tokens)
+- Development-specific settings
+- Local endpoint overrides
+- Any field you don't want to share with your team
+
+### Location and Setup
+
+**File**: `agpm.private.toml` (same directory as `agpm.toml`)
+
+**Add to .gitignore**:
+```gitignore
+# User-specific AGPM configuration
+agpm.private.toml
+```
+
+### Syntax
+
+Private patches use the same syntax as project patches:
+
+```toml
+# agpm.private.toml
+[patch.agents.rust-expert]
+model = "claude-3-opus"              # Personal model preference
+temperature = "0.9"                  # Custom temperature
+api_key = "${ANTHROPIC_API_KEY}"    # Personal API key
+custom_endpoint = "https://proxy.internal"
+
+[patch.commands.deploy]
+dry_run = true                       # Always dry-run in your environment
+notification_email = "me@example.com"
+```
+
+### How Private Patches Work
+
+Private patches **extend** project patches rather than replacing them:
+
+**Project patch** (agpm.toml - committed):
+```toml
+[patch.agents.rust-expert]
+model = "claude-3-haiku"
+max_tokens = "4096"
+```
+
+**Private patch** (agpm.private.toml - not committed):
+```toml
+[patch.agents.rust-expert]
+temperature = "0.9"
+api_key = "${MY_KEY}"
+```
+
+**Result**: All four fields are applied:
+- `model` = "claude-3-haiku" (from project)
+- `max_tokens` = "4096" (from project)
+- `temperature` = "0.9" (from private)
+- `api_key` = "${MY_KEY}" (from private)
+
+### Conflict Detection
+
+If the **same field** appears in both files, installation fails immediately:
+
+```text
+Error: Patch conflict for agents/rust-expert
+  Field 'model' appears in both agpm.toml and agpm.private.toml
+  Resolution: Remove the field from one of the files
+```
+
+This prevents silent overwrites and ensures explicit configuration.
+
+### Common Use Cases
+
+#### Personal API Keys
+
+```toml
+# agpm.private.toml
+[patch.agents.claude-assistant]
+api_key = "${ANTHROPIC_API_KEY}"
+organization_id = "org-123"
+
+[patch.mcp-servers.openai]
+api_key = "${OPENAI_API_KEY}"
+```
+
+#### Model Preferences
+
+```toml
+# Team uses Haiku by default, you prefer Opus
+[patch.agents.code-reviewer]
+model = "claude-3-opus"
+temperature = "0.8"
+```
+
+#### Development Settings
+
+```toml
+# Enable debug mode and verbose logging for local development
+[patch.agents.deployer]
+debug = true
+log_level = "debug"
+dry_run = true
+
+[patch.commands.test]
+parallel = false  # Sequential execution for easier debugging
+```
+
+#### Endpoint Overrides
+
+```toml
+# Use local proxy or custom endpoint
+[patch.agents.assistant]
+custom_endpoint = "https://localhost:8080/v1"
+verify_ssl = false
+```
+
+### Security Considerations
+
+**DO** ✅:
+- Add `agpm.private.toml` to `.gitignore`
+- Use environment variables for sensitive values (`${VAR_NAME}`)
+- Keep credentials in `agpm.private.toml`, never in `agpm.toml`
+- Document required private patches in project README
+- Use read-only or scoped API keys when possible
+
+**DON'T** ❌:
+- Commit `agpm.private.toml` to version control
+- Hard-code sensitive values (use env vars instead)
+- Share your `agpm.private.toml` file
+- Put team-wide configuration in private patches
+- Use admin or full-access API keys
+
+### Validation
+
+Private patches are validated with the same rules as project patches:
+
+```bash
+# Validate both project and private patches
+agpm validate
+
+# Install and apply all patches
+agpm install
+```
+
+Validation checks:
+1. Syntax is valid TOML
+2. Patched dependencies exist in manifest
+3. No conflicting fields between project and private patches
+4. All field types are valid
+
+### Example: Complete Setup
+
+**agpm.toml** (team configuration, committed):
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+code-reviewer = { source = "community", path = "agents/code-reviewer.md", version = "v1.0.0" }
+
+# Team-wide model settings
+[patch.agents.rust-expert]
+model = "claude-3-haiku"
+max_tokens = "4096"
+
+[patch.agents.code-reviewer]
+model = "claude-3-opus"
+```
+
+**agpm.private.toml** (personal configuration, not committed):
+```toml
+# Personal model preferences
+[patch.agents.rust-expert]
+temperature = "0.9"                  # I prefer higher creativity
+api_key = "${ANTHROPIC_API_KEY}"    # My personal API key
+
+[patch.agents.code-reviewer]
+temperature = "0.7"                  # Different preference for reviews
+custom_endpoint = "https://my-proxy.internal"
+```
+
+**.gitignore**:
+```gitignore
+# AGPM private configuration
+agpm.private.toml
+```
+
+**README.md** (document requirements):
+```markdown
+## Setup
+
+1. Clone the repository
+2. Run `agpm install`
+3. (Optional) Create `agpm.private.toml` for personal settings:
+   - Add `api_key` fields if using personal API keys
+   - Customize `temperature` or `model` preferences
+   - See `docs/configuration.md` for examples
+```
+
+### Troubleshooting
+
+**Private patches not applied**:
+- Verify `agpm.private.toml` is in the same directory as `agpm.toml`
+- Check file syntax: `agpm validate`
+- Ensure patched dependencies exist in manifest
+
+**Conflict errors**:
+- Identify which field appears in both files
+- Decide which file should own that field
+- Remove from the other file
+
+**Environment variables not expanded**:
+- Ensure variables are set in your shell
+- Use `${VAR_NAME}` syntax in TOML
+- Test with: `echo $VAR_NAME`
 
 ## Source Priority
 

@@ -103,6 +103,34 @@ agpm install --max-parallel 8
 agpm install --no-cache
 ```
 
+## Patches and Overrides
+
+Override resource fields without forking upstream repositories. Perfect for customizing model settings, temperature, or any YAML/JSON field:
+
+```toml
+# agpm.toml (project-level, committed to git)
+[agents]
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+
+[patch.agents.rust-expert]
+model = "claude-3-haiku"       # Override model selection
+temperature = "0.8"            # Adjust temperature
+max_tokens = "4096"            # Set token limit
+
+# agpm.private.toml (user-level, in .gitignore)
+[patch.agents.rust-expert]
+api_key = "${MY_API_KEY}"      # Personal credentials
+custom_endpoint = "https://my-proxy.internal"
+```
+
+**Key Features:**
+- Works with both Markdown (YAML frontmatter) and JSON files
+- Private patches extend project patches (no conflicts)
+- Tracked in lockfile for reproducibility
+- See `agpm list` for "(patched)" indicator
+
+See the [User Guide](docs/user-guide.md#overriding-resource-fields) for detailed examples and workflows.
+
 ### Adding Dependencies
 
 ```bash
