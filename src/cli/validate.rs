@@ -750,6 +750,33 @@ impl ValidateCommand {
                 }
                 warnings.push("No lockfile found".to_string());
             }
+
+            // Check private lockfile validity if it exists
+            let private_lock_path = project_dir.join("agpm.private.lock");
+            if private_lock_path.exists() {
+                if self.verbose && !self.quiet {
+                    println!("\n🔍 Checking private lockfile...");
+                }
+
+                match crate::lockfile::PrivateLockFile::load(project_dir) {
+                    Ok(Some(_)) => {
+                        if !self.quiet && self.verbose {
+                            println!("✓ Private lockfile is valid");
+                        }
+                    }
+                    Ok(None) => {
+                        // File exists but couldn't be loaded - this shouldn't happen
+                        warnings.push("Private lockfile exists but is empty".to_string());
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Failed to parse private lockfile: {e}");
+                        errors.push(error_msg.to_string());
+                        if !self.quiet {
+                            println!("{} {}", "✗".red(), error_msg);
+                        }
+                    }
+                }
+            }
         }
 
         // Handle strict mode - treat warnings as errors
@@ -1087,6 +1114,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1378,6 +1407,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
+                manifest_alias: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2342,6 +2373,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2823,6 +2856,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3012,6 +3047,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

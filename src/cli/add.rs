@@ -258,8 +258,6 @@ async fn add_dependency_with_manifest_path(
     if !common.no_install {
         println!("{}", "Installing dependency...".cyan());
         install_single_dependency(&name, resource_type, &manifest, &manifest_path).await?;
-    } else {
-        println!("{}", "Skipped installation (use 'agpm install' to install later)".yellow());
     }
 
     Ok(())

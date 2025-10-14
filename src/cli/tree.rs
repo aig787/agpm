@@ -64,7 +64,9 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use crate::cache::Cache;
 use crate::core::ResourceType;
+use crate::lockfile::patch_display::extract_patch_displays;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::find_manifest_with_optional;
 
@@ -157,6 +159,20 @@ pub struct TreeCommand {
     /// on each package. Useful for understanding the impact of changes.
     #[arg(short = 'i', long)]
     invert: bool,
+
+    /// Show detailed information including installation paths and applied patches
+    ///
+    /// When enabled, displays the absolute installation path for each resource
+    /// and lists all applied patches with their values. This is useful for
+    /// debugging patch application and understanding where resources are installed.
+    ///
+    /// # Examples
+    ///
+    /// ```bash
+    /// agpm tree --detailed
+    /// ```
+    #[arg(long)]
+    detailed: bool,
 }
 
 impl TreeCommand {
@@ -202,6 +218,13 @@ impl TreeCommand {
         // Load lockfile
         let lockfile = LockFile::load(&lockfile_path).context("Failed to load lockfile")?;
 
+        // Create cache if needed for detailed mode with patches
+        let cache = if self.detailed {
+            Some(Cache::new().context("Failed to initialize cache")?)
+        } else {
+            None
+        };
+
         // Build and display tree
         let builder = TreeBuilder::new(&lockfile, project_name);
         let tree = builder.build(&self)?;
@@ -209,7 +232,7 @@ impl TreeCommand {
         match self.format.as_str() {
             "json" => self.output_json(&tree)?,
             "text" => self.output_text(&tree),
-            _ => self.output_tree(&tree),
+            _ => self.output_tree_with_cache(&tree, &lockfile, cache.as_ref()).await,
         }
 
         Ok(())
@@ -262,7 +285,12 @@ impl TreeCommand {
         }
     }
 
-    fn output_tree(&self, tree: &DependencyTree) {
+    async fn output_tree_with_cache(
+        &self,
+        tree: &DependencyTree,
+        lockfile: &LockFile,
+        cache: Option<&Cache>,
+    ) {
         if tree.roots.is_empty() {
             println!("No dependencies found.");
             return;
@@ -276,7 +304,8 @@ impl TreeCommand {
 
         for (i, root) in tree.roots.iter().enumerate() {
             let is_last = i == tree.roots.len() - 1;
-            self.print_node(root, "", is_last, &mut displayed, tree, 0);
+            self.print_node_with_cache(root, "", is_last, &mut displayed, tree, 0, lockfile, cache)
+                .await;
         }
 
         // Print legend if there are duplicates
@@ -286,87 +315,179 @@ impl TreeCommand {
         }
     }
 
-    fn print_node(
-        &self,
-        node: &TreeNode,
-        prefix: &str,
+    #[allow(clippy::too_many_arguments)]
+    fn print_node_with_cache<'a>(
+        &'a self,
+        node: &'a TreeNode,
+        prefix: &'a str,
         is_last: bool,
-        displayed: &mut HashSet<String>,
-        tree: &DependencyTree,
+        displayed: &'a mut HashSet<String>,
+        tree: &'a DependencyTree,
         current_depth: usize,
-    ) {
-        // Check depth limit
-        if let Some(max_depth) = self.depth
-            && current_depth >= max_depth
-        {
-            return;
-        }
+        lockfile: &'a LockFile,
+        cache: Option<&'a Cache>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(async move {
+            // Check depth limit
+            if let Some(max_depth) = self.depth
+                && current_depth >= max_depth
+            {
+                return;
+            }
 
-        let node_id = format!("{}/{}", node.resource_type, node.name);
-        let is_duplicate = !self.no_dedupe && displayed.contains(&node_id);
+            let node_id = format!("{}/{}", node.resource_type, node.name);
+            let is_duplicate = !self.no_dedupe && displayed.contains(&node_id);
 
-        // Print connector
-        let connector = if is_last {
-            "└── "
-        } else {
-            "├── "
-        };
-
-        // Format node display: type/name version (source) [tool]
-        // Use blue for secondary text - readable on both light and dark backgrounds
-        let type_str = format!("{}", node.resource_type).blue();
-        let name_str = node.name.cyan();
-        let version_str =
-            node.version.as_deref().map(|v| format!(" {}", v.blue())).unwrap_or_default();
-        let source_str = node
-            .source
-            .as_deref()
-            .map_or_else(|| " (local)".blue().to_string(), |s| format!(" ({})", s.blue()));
-        let tool_str = node
-            .tool
-            .as_deref()
-            .map(|tool| format!(" [{}]", tool.bright_yellow()))
-            .unwrap_or_default();
-        let dup_marker = if is_duplicate {
-            " (*)".blue().to_string()
-        } else {
-            String::new()
-        };
-
-        println!(
-            "{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{dup_marker}"
-        );
-
-        // If this is a duplicate and we're deduplicating, don't show children
-        if is_duplicate {
-            return;
-        }
-
-        // Mark as displayed
-        displayed.insert(node_id);
-
-        // Print children
-        if !node.dependencies.is_empty() {
-            let child_prefix = if is_last {
-                format!("{prefix}    ")
+            // Print connector
+            let connector = if is_last {
+                "└── "
             } else {
-                format!("{prefix}│   ")
+                "├── "
             };
 
-            for (i, dep_id) in node.dependencies.iter().enumerate() {
-                if let Some(child_node) = tree.nodes.get(dep_id) {
-                    let is_last_child = i == node.dependencies.len() - 1;
-                    self.print_node(
-                        child_node,
-                        &child_prefix,
-                        is_last_child,
-                        displayed,
-                        tree,
-                        current_depth + 1,
+            // Format node display: type/name version (source) [tool] (patched)
+            // Use blue for secondary text - readable on both light and dark backgrounds
+            let type_str = format!("{}", node.resource_type).blue();
+            let name_str = node.name.cyan();
+            let version_str =
+                node.version.as_deref().map(|v| format!(" {}", v.blue())).unwrap_or_default();
+            let source_str = node
+                .source
+                .as_deref()
+                .map_or_else(|| " (local)".blue().to_string(), |s| format!(" ({})", s.blue()));
+            let tool_str = node
+                .tool
+                .as_deref()
+                .map(|tool| format!(" [{}]", tool.bright_yellow()))
+                .unwrap_or_default();
+            let patch_marker = if node.has_patches {
+                format!(" {}", "(patched)".blue())
+            } else {
+                String::new()
+            };
+            let dup_marker = if is_duplicate {
+                " (*)".blue().to_string()
+            } else {
+                String::new()
+            };
+
+            println!(
+                "{prefix}{connector}{type_str}/{name_str}{version_str}{source_str}{tool_str}{patch_marker}{dup_marker}"
+            );
+
+            // Show detailed information if --detailed flag is set
+            if self.detailed && !is_duplicate {
+                let detail_prefix = if is_last {
+                    format!("{prefix}    ")
+                } else {
+                    format!("{prefix}│   ")
+                };
+
+                // Show installation path
+                if !node.installed_at.is_empty() {
+                    println!(
+                        "{}    {}: {}",
+                        detail_prefix,
+                        "Installed at".bright_yellow(),
+                        node.installed_at.bright_black()
                     );
                 }
+
+                // Show applied patches with original → overridden comparison
+                if !node.applied_patches.is_empty() {
+                    println!("{}    {}", detail_prefix, "Applied patches:".bright_yellow());
+
+                    // If we have cache, try to get original values
+                    if let Some(cache) = cache {
+                        // Find the locked resource for this node
+                        if let Some(locked_resource) =
+                            self.find_locked_resource_for_node(node, lockfile)
+                        {
+                            let patch_displays =
+                                extract_patch_displays(locked_resource, cache).await;
+                            for display in patch_displays {
+                                let formatted = display.format();
+                                // Indent each line of the multi-line diff output
+                                for (i, line) in formatted.lines().enumerate() {
+                                    if i == 0 {
+                                        // First line: bullet point
+                                        println!("{}       • {}", detail_prefix, line);
+                                    } else {
+                                        // Subsequent lines: indent to align with content
+                                        println!("{}         {}", detail_prefix, line);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Fallback: just show overridden values
+                            self.print_patches_fallback_tree(&node.applied_patches, &detail_prefix);
+                        }
+                    } else {
+                        // No cache: just show overridden values
+                        self.print_patches_fallback_tree(&node.applied_patches, &detail_prefix);
+                    }
+                }
             }
+
+            // If this is a duplicate and we're deduplicating, don't show children
+            if is_duplicate {
+                return;
+            }
+
+            // Mark as displayed
+            displayed.insert(node_id);
+
+            // Print children
+            if !node.dependencies.is_empty() {
+                let child_prefix = if is_last {
+                    format!("{prefix}    ")
+                } else {
+                    format!("{prefix}│   ")
+                };
+
+                for (i, dep_id) in node.dependencies.iter().enumerate() {
+                    if let Some(child_node) = tree.nodes.get(dep_id) {
+                        let is_last_child = i == node.dependencies.len() - 1;
+                        self.print_node_with_cache(
+                            child_node,
+                            &child_prefix,
+                            is_last_child,
+                            displayed,
+                            tree,
+                            current_depth + 1,
+                            lockfile,
+                            cache,
+                        )
+                        .await;
+                    }
+                }
+            }
+        })
+    }
+
+    /// Fallback patch display without original values for tree output
+    fn print_patches_fallback_tree(&self, patches: &HashMap<String, toml::Value>, prefix: &str) {
+        let mut patch_keys: Vec<_> = patches.keys().collect();
+        patch_keys.sort();
+        for key in patch_keys {
+            let value = &patches[key];
+            let value_str = format_patch_value(value);
+            println!("{}       • {}: {}", prefix, key.blue(), value_str);
         }
+    }
+
+    /// Find the locked resource corresponding to a tree node
+    fn find_locked_resource_for_node<'a>(
+        &self,
+        node: &TreeNode,
+        lockfile: &'a LockFile,
+    ) -> Option<&'a LockedResource> {
+        // Find matching resource in lockfile by name and resource type
+        lockfile.get_resources(node.resource_type).iter().find(|r| {
+            // Extract display name from locked resource's unique name
+            let display_name = TreeBuilder::extract_display_name(&r.name);
+            display_name == node.name && r.source == node.source && r.version == node.version
+        })
     }
 
     fn output_json(&self, tree: &DependencyTree) -> Result<()> {
@@ -410,6 +531,7 @@ impl TreeCommand {
             "version": node.version,
             "source": node.source,
             "tool": node.tool.as_deref().unwrap_or("claude-code"),
+            "has_patches": node.has_patches,
             "dependencies": children,
         })
     }
@@ -449,6 +571,11 @@ impl TreeCommand {
         let indent_str = "  ".repeat(indent);
         let version_str = node.version.as_deref().unwrap_or("latest");
         let source_str = node.source.as_deref().unwrap_or("local");
+        let patch_marker = if node.has_patches {
+            format!(" {}", "(patched)".blue())
+        } else {
+            String::new()
+        };
         let dup_marker = if is_duplicate {
             " (*)"
         } else {
@@ -456,13 +583,14 @@ impl TreeCommand {
         };
 
         println!(
-            "{}{}/{} {} ({}) {}{}",
+            "{}{}/{} {} ({}) {}{}{}",
             indent_str,
             node.resource_type,
             node.name,
             version_str,
             source_str,
             node.tool.as_deref().map(|tool| format!("[{}] ", tool)).unwrap_or_default(),
+            patch_marker,
             dup_marker
         );
 
@@ -489,6 +617,9 @@ struct TreeNode {
     source: Option<String>,
     tool: Option<String>,
     dependencies: Vec<String>, // IDs of dependency nodes
+    has_patches: bool,         // True if resource has applied patches
+    installed_at: String,      // Installation path for detailed output
+    applied_patches: std::collections::HashMap<String, toml::Value>, // Patch field -> value mapping
 }
 
 /// The complete dependency tree structure
@@ -669,6 +800,9 @@ impl<'a> TreeBuilder<'a> {
                         source: dep_resource.source.clone(),
                         tool: dep_resource.tool.clone(),
                         dependencies: vec![], // Don't need dependencies for ID generation
+                        has_patches: !dep_resource.applied_patches.is_empty(),
+                        installed_at: dep_resource.installed_at.clone(),
+                        applied_patches: dep_resource.applied_patches.clone(),
                     };
                     Some(self.node_id(&dep_node))
                 } else {
@@ -684,6 +818,9 @@ impl<'a> TreeBuilder<'a> {
             source: resource.source.clone(),
             tool: resource.tool.clone(),
             dependencies: dependency_node_ids,
+            has_patches: !resource.applied_patches.is_empty(),
+            installed_at: resource.installed_at.clone(),
+            applied_patches: resource.applied_patches.clone(),
         })
     }
 
@@ -694,7 +831,7 @@ impl<'a> TreeBuilder<'a> {
     /// - "source:name" → "name" (e.g., "local-deps:rust-haiku" → "rust-haiku")
     /// - "name@version" → "name"
     /// - "name" → "name"
-    fn extract_display_name(unique_name: &str) -> String {
+    pub fn extract_display_name(unique_name: &str) -> String {
         // Remove source prefix if present (e.g., "local-deps:name" → "name")
         let after_source = if let Some((_source, rest)) = unique_name.split_once(':') {
             rest
@@ -836,6 +973,29 @@ impl<'a> TreeBuilder<'a> {
     }
 }
 
+/// Format a toml::Value for display in patch output.
+///
+/// Produces clean, readable output:
+/// - Strings: wrapped in quotes `"value"`
+/// - Numbers/Booleans: plain text
+/// - Arrays/Tables: formatted as TOML syntax
+fn format_patch_value(value: &toml::Value) -> String {
+    match value {
+        toml::Value::String(s) => format!("\"{}\"", s),
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Array(arr) => {
+            let elements: Vec<String> = arr.iter().map(format_patch_value).collect();
+            format!("[{}]", elements.join(", "))
+        }
+        toml::Value::Table(_) | toml::Value::Datetime(_) => {
+            // For complex types, use to_string() as fallback
+            value.to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,6 +1014,7 @@ mod tests {
             hooks: false,
             mcp_servers: false,
             invert: false,
+            detailed: false,
         }
     }
 
@@ -929,6 +1090,9 @@ mod tests {
             source: Some("community".to_string()),
             tool: Some("claude-code".to_string()),
             dependencies: vec![],
+            has_patches: false,
+            installed_at: ".claude/agents/test-agent.md".to_string(),
+            applied_patches: HashMap::new(),
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
 
@@ -940,6 +1104,9 @@ mod tests {
             source: Some("local-deps".to_string()),
             tool: Some("claude-code".to_string()),
             dependencies: vec![],
+            has_patches: false,
+            installed_at: ".claude/agents/local-agent.md".to_string(),
+            applied_patches: HashMap::new(),
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
 
@@ -951,6 +1118,9 @@ mod tests {
             source: None,
             tool: Some("claude-code".to_string()),
             dependencies: vec![],
+            has_patches: false,
+            installed_at: ".claude/agents/local-agent.md".to_string(),
+            applied_patches: HashMap::new(),
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
 
@@ -962,6 +1132,9 @@ mod tests {
             source: Some("community".to_string()),
             tool: Some("claude-code".to_string()),
             dependencies: vec![],
+            has_patches: false,
+            installed_at: ".claude/agents/test-agent.md".to_string(),
+            applied_patches: HashMap::new(),
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");
     }

@@ -390,7 +390,11 @@ impl InstallCommand {
             return Err(anyhow::anyhow!("No agpm.toml found at {}", manifest_path.display()));
         }
 
-        let manifest = Manifest::load(&manifest_path)?;
+        let (manifest, _patch_conflicts) = Manifest::load_with_private(&manifest_path)?;
+
+        // Note: Private patches silently override project patches when they conflict.
+        // This allows users to customize their local configuration without modifying
+        // the team-wide project configuration.
 
         // In --frozen mode, check for corruption and security issues only
         let lockfile_path =
@@ -557,10 +561,15 @@ impl InstallCommand {
             )
             .await
             {
-                Ok((count, checksums)) => {
+                Ok((count, checksums, applied_patches_list)) => {
                     // Update lockfile with checksums
                     for (name, checksum) in checksums {
                         lockfile.update_resource_checksum(&name, &checksum);
+                    }
+
+                    // Update lockfile with applied patches
+                    for (name, applied_patches) in applied_patches_list {
+                        lockfile.update_resource_applied_patches(&name, &applied_patches);
                     }
 
                     // Complete installation phase
@@ -599,6 +608,10 @@ impl InstallCommand {
                     servers_by_type.entry(tool).or_default().push(server);
                 }
 
+                // Collect all applied patches to update lockfile after iteration
+                let mut all_mcp_patches: Vec<(String, crate::manifest::patches::AppliedPatches)> =
+                    Vec::new();
+
                 // Configure MCP servers for each artifact type using appropriate handler
                 for (artifact_type, servers) in servers_by_type {
                     if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
@@ -621,13 +634,14 @@ impl InstallCommand {
                         // Convert Vec<&LockedResource> to Vec<LockedResource> for the handler
                         let server_entries: Vec<_> = servers.iter().map(|s| (*s).clone()).collect();
 
-                        // Reuse the existing cache instance
-                        handler
+                        // Reuse the existing cache instance and collect applied patches
+                        let applied_patches_list = handler
                             .configure_mcp_servers(
                                 actual_project_dir,
                                 &artifact_base,
                                 &server_entries,
                                 &cache,
+                                &manifest,
                             )
                             .await
                             .with_context(|| {
@@ -637,8 +651,16 @@ impl InstallCommand {
                                 )
                             })?;
 
+                        // Collect patches for later application
+                        all_mcp_patches.extend(applied_patches_list);
+
                         server_count += servers.len();
                     }
+                }
+
+                // Update lockfile with all collected applied patches
+                for (name, applied_patches) in all_mcp_patches {
+                    lockfile.update_resource_applied_patches(&name, &applied_patches);
                 }
 
                 if server_count > 0 && !self.quiet {
@@ -676,6 +698,31 @@ impl InstallCommand {
                 lockfile.save(&lockfile_path).with_context(|| {
                     format!("Failed to save lockfile to {}", lockfile_path.display())
                 })?;
+
+                // Build and save private lockfile if there are private patches
+                use crate::lockfile::PrivateLockFile;
+                let mut private_lock = PrivateLockFile::new();
+
+                // Collect private patches for all installed resources
+                for (entry, _) in ResourceIterator::collect_all_entries(&lockfile, &manifest) {
+                    let resource_type = entry.resource_type.to_plural();
+                    // For pattern-expanded resources, use manifest_alias; otherwise use name
+                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    if let Some(private_patches) =
+                        manifest.private_patches.get(resource_type, lookup_name)
+                    {
+                        private_lock.add_private_patches(
+                            resource_type,
+                            &entry.name,
+                            private_patches.clone(),
+                        );
+                    }
+                }
+
+                // Save private lockfile (automatically deletes if empty)
+                private_lock
+                    .save(actual_project_dir)
+                    .with_context(|| "Failed to save private lockfile".to_string())?;
             }
 
             // Update .gitignore only if installation succeeded
@@ -1133,6 +1180,8 @@ Body",
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
+                manifest_alias: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

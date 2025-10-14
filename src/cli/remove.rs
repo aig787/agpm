@@ -352,6 +352,23 @@ async fn remove_source_with_manifest_path(
 
         // Save the updated lockfile
         lockfile.save(&lockfile_path)?;
+
+        // Update private lockfile - remove entries for removed resources
+        use crate::lockfile::PrivateLockFile;
+        if let Ok(Some(mut private_lock)) = PrivateLockFile::load(project_root) {
+            // Remove entries for resources that were removed
+            for agent_name in &agents_to_remove {
+                private_lock.agents.retain(|r| &r.name != agent_name);
+            }
+            for snippet_name in &snippets_to_remove {
+                private_lock.snippets.retain(|r| &r.name != snippet_name);
+            }
+            for command_name in &commands_to_remove {
+                private_lock.commands.retain(|r| &r.name != command_name);
+            }
+            // Save (will delete if empty)
+            private_lock.save(project_root)?;
+        }
     }
 
     println!("{}", format!("Removed source '{name}'").green());
@@ -453,6 +470,34 @@ async fn remove_dependency_with_manifest_path(
 
         // Save the updated lockfile
         lockfile.save(&lockfile_path)?;
+
+        // Update private lockfile - remove entry for this resource
+        use crate::lockfile::PrivateLockFile;
+        if let Ok(Some(mut private_lock)) = PrivateLockFile::load(project_root) {
+            // Remove the entry based on resource type
+            match resource_type {
+                ResourceType::Agent => {
+                    private_lock.agents.retain(|r| r.name != name);
+                }
+                ResourceType::Snippet => {
+                    private_lock.snippets.retain(|r| r.name != name);
+                }
+                ResourceType::Command => {
+                    private_lock.commands.retain(|r| r.name != name);
+                }
+                ResourceType::Script => {
+                    private_lock.scripts.retain(|r| r.name != name);
+                }
+                ResourceType::McpServer => {
+                    private_lock.mcp_servers.retain(|r| r.name != name);
+                }
+                ResourceType::Hook => {
+                    private_lock.hooks.retain(|r| r.name != name);
+                }
+            }
+            // Save (will delete if empty)
+            private_lock.save(project_root)?;
+        }
     }
 
     Ok(())
@@ -855,6 +900,8 @@ test-agent = "../test/agent.md"
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -992,6 +1039,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1008,6 +1057,8 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             resource_type: crate::core::ResourceType::Snippet,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1094,6 +1145,8 @@ test-hook = "../test/hook.json"
             resource_type: crate::core::ResourceType::Script,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1108,6 +1161,8 @@ test-hook = "../test/hook.json"
             resource_type: crate::core::ResourceType::Hook,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1179,6 +1234,8 @@ test-snippet = "../local/snippet.md"
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1193,6 +1250,8 @@ test-snippet = "../local/snippet.md"
             resource_type: crate::core::ResourceType::Snippet,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1373,6 +1432,8 @@ test-script = "../test/script.sh"
             resource_type: crate::core::ResourceType::Script,
 
             tool: Some("claude-code".to_string()),
+            applied_patches: std::collections::HashMap::new(),
+            manifest_alias: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
