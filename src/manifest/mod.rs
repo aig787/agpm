@@ -477,6 +477,7 @@
 //! ```
 
 pub mod dependency_spec;
+pub mod patches;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -484,6 +485,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub use dependency_spec::{DependencyMetadata, DependencySpec};
+pub use patches::{ManifestPatches, PatchConflict, PatchData, PatchOrigin};
 
 /// The main manifest file structure representing a complete `agpm.toml` file.
 ///
@@ -624,6 +626,37 @@ pub struct Manifest {
     /// See [`ResourceDependency`] for specification format details.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub hooks: HashMap<String, ResourceDependency>,
+
+    /// Patches for overriding resource metadata.
+    ///
+    /// Patches allow overriding YAML frontmatter fields (like `model`) in
+    /// resources without forking upstream repositories. They are keyed by
+    /// resource type and manifest alias.
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [patch.agents.my-agent]
+    /// model = "claude-3-haiku"
+    /// temperature = "0.7"
+    /// ```
+    #[serde(default, skip_serializing_if = "ManifestPatches::is_empty", rename = "patch")]
+    pub patches: ManifestPatches,
+
+    /// Project-level patches (from agpm.toml).
+    ///
+    /// This field is not serialized - it's populated during loading to track
+    /// which patches came from the project manifest vs private config.
+    #[serde(skip)]
+    pub project_patches: ManifestPatches,
+
+    /// Private patches (from agpm.private.toml).
+    ///
+    /// This field is not serialized - it's populated during loading to track
+    /// which patches came from private config. These are kept separate from
+    /// project patches to maintain deterministic lockfiles.
+    #[serde(skip)]
+    pub private_patches: ManifestPatches,
 
     /// Directory containing the manifest file (for resolving relative paths).
     ///
@@ -1414,6 +1447,9 @@ impl Manifest {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            patches: ManifestPatches::new(),
+            project_patches: ManifestPatches::new(),
+            private_patches: ManifestPatches::new(),
             manifest_dir: None,
         }
     }
@@ -1505,6 +1541,135 @@ impl Manifest {
         );
 
         manifest.validate()?;
+
+        Ok(manifest)
+    }
+
+    /// Load manifest with private config merged.
+    ///
+    /// Loads the project manifest from `agpm.toml` and then attempts to load
+    /// `agpm.private.toml` from the same directory. If a private config exists,
+    /// its patches are merged with the project patches (private silently takes precedence).
+    ///
+    /// Any conflicts (same field defined in both files with different values) are
+    /// returned for informational purposes only. Private patches always override
+    /// project patches without raising an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the project manifest file (`agpm.toml`)
+    ///
+    /// # Returns
+    ///
+    /// A manifest with merged patches and a list of any conflicts detected (for
+    /// informational/debugging purposes).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use agpm_cli::manifest::Manifest;
+    /// use std::path::Path;
+    ///
+    /// let (manifest, conflicts) = Manifest::load_with_private(Path::new("agpm.toml"))?;
+    /// // Conflicts are informational only - private patches already won
+    /// if !conflicts.is_empty() {
+    ///     eprintln!("Note: {} private patch(es) override project settings", conflicts.len());
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn load_with_private(path: &Path) -> Result<(Self, Vec<PatchConflict>)> {
+        // Load the main project manifest
+        let mut manifest = Self::load(path)?;
+
+        // Store project patches before merging
+        manifest.project_patches = manifest.patches.clone();
+
+        // Try to load private config
+        let private_path = if let Some(parent) = path.parent() {
+            parent.join("agpm.private.toml")
+        } else {
+            PathBuf::from("agpm.private.toml")
+        };
+
+        if private_path.exists() {
+            let private_manifest = Self::load_private(&private_path)?;
+
+            // Store private patches
+            manifest.private_patches = private_manifest.patches.clone();
+
+            // Merge patches (private takes precedence)
+            let (merged_patches, conflicts) =
+                manifest.patches.merge_with(&private_manifest.patches);
+            manifest.patches = merged_patches;
+
+            Ok((manifest, conflicts))
+        } else {
+            // No private config, keep private_patches empty
+            manifest.private_patches = ManifestPatches::new();
+            Ok((manifest, Vec::new()))
+        }
+    }
+
+    /// Load a private manifest file.
+    ///
+    /// Private manifests can only contain patches - they cannot define sources,
+    /// tools, or dependencies. This method loads and validates that the private
+    /// config follows these rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the private manifest file (`agpm.private.toml`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The file cannot be read
+    /// - The TOML syntax is invalid
+    /// - The private config contains non-patch fields
+    fn load_private(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path).with_context(|| {
+            format!(
+                "Cannot read private manifest file: {}\n\n\
+                    Possible causes:\n\
+                    - File doesn't exist or has been moved\n\
+                    - Permission denied (check file ownership)\n\
+                    - File is locked by another process",
+                path.display()
+            )
+        })?;
+
+        let manifest: Self = toml::from_str(&content)
+            .map_err(|e| crate::core::AgpmError::ManifestParseError {
+                file: path.display().to_string(),
+                reason: e.to_string(),
+            })
+            .with_context(|| {
+                format!(
+                    "Invalid TOML syntax in private manifest file: {}\n\n\
+                    Common TOML syntax errors:\n\
+                    - Missing quotes around strings\n\
+                    - Unmatched brackets [ ] or braces {{ }}\n\
+                    - Invalid characters in keys or values\n\
+                    - Incorrect indentation or structure",
+                    path.display()
+                )
+            })?;
+
+        // Validate that private config only contains patches
+        if !manifest.sources.is_empty()
+            || manifest.tools.is_some()
+            || !manifest.agents.is_empty()
+            || !manifest.snippets.is_empty()
+            || !manifest.commands.is_empty()
+            || !manifest.mcp_servers.is_empty()
+            || !manifest.scripts.is_empty()
+            || !manifest.hooks.is_empty()
+        {
+            anyhow::bail!(
+                "Private manifest file ({}) can only contain [patch] sections, not sources, tools, or dependencies",
+                path.display()
+            );
+        }
 
         Ok(manifest)
     }
@@ -2006,6 +2171,61 @@ impl Manifest {
                 }
             }
         }
+
+        // Validate patches reference valid aliases
+        self.validate_patches()?;
+
+        Ok(())
+    }
+
+    /// Validate that patches reference valid manifest aliases.
+    ///
+    /// This method checks that all patch aliases correspond to actual dependencies
+    /// defined in the manifest. Patches for non-existent aliases are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a patch references an alias that doesn't exist in the manifest.
+    fn validate_patches(&self) -> Result<()> {
+        use crate::core::ResourceType;
+
+        // Helper to check if an alias exists for a resource type
+        let check_patch_aliases = |resource_type: ResourceType,
+                                   patches: &HashMap<String, PatchData>|
+         -> Result<()> {
+            let deps = self.get_dependencies(resource_type);
+
+            for alias in patches.keys() {
+                // Check if this alias exists in the manifest
+                let exists = if let Some(deps) = deps {
+                    deps.contains_key(alias)
+                } else {
+                    false
+                };
+
+                if !exists {
+                    return Err(crate::core::AgpmError::ManifestValidationError {
+                            reason: format!(
+                                "Patch references unknown alias '{alias}' in [patch.{}] section.\n\
+                                The alias must be defined in [{}] section of agpm.toml.\n\
+                                To patch a transitive dependency, first add it explicitly to your manifest.",
+                                resource_type.to_plural(),
+                                resource_type.to_plural()
+                            ),
+                        }
+                        .into());
+                }
+            }
+            Ok(())
+        };
+
+        // Validate patches for each resource type
+        check_patch_aliases(ResourceType::Agent, &self.patches.agents)?;
+        check_patch_aliases(ResourceType::Snippet, &self.patches.snippets)?;
+        check_patch_aliases(ResourceType::Command, &self.patches.commands)?;
+        check_patch_aliases(ResourceType::Script, &self.patches.scripts)?;
+        check_patch_aliases(ResourceType::McpServer, &self.patches.mcp_servers)?;
+        check_patch_aliases(ResourceType::Hook, &self.patches.hooks)?;
 
         Ok(())
     }
