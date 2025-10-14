@@ -160,7 +160,6 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
-use crate::version::constraints::VersionConstraint;
 
 /// Command to check for available updates to installed dependencies.
 ///
@@ -678,39 +677,68 @@ impl OutdatedCommand {
             // Progress is automatically handled by MultiPhaseProgress
         }
 
-        // 5. Check each dependency for updates
+        // 5. Check each dependency for updates using the same resolution path as `update`
         if let Some(ref progress) = progress {
             progress
                 .start_phase(InstallationPhase::ResolvingDependencies, Some("Checking versions"));
         }
 
-        let mut outdated_deps = Vec::new();
+        // Use DependencyResolver.update() to get what would be updated
+        // This ensures consistent behavior with the `update` command
+        let deps_to_check = if self.dependencies.is_empty() {
+            None
+        } else {
+            Some(self.dependencies.clone())
+        };
 
-        for locked in lockfile.all_resources() {
-            let name = &locked.name;
-            // Filter by specific dependencies if requested
-            if !self.dependencies.is_empty() && !self.dependencies.contains(name) {
-                continue;
-            }
-
-            debug!("Checking dependency: {}", name);
-
-            if let Some(outdated_info) =
-                self.check_dependency(name, locked, &manifest, &cache, &resolver).await?
-            {
-                outdated_deps.push(outdated_info);
-            }
-        }
+        let updated_lockfile = resolver.update(&lockfile, deps_to_check.clone()).await?;
 
         // Progress is automatically handled by MultiPhaseProgress
 
-        // 6. Calculate summary
+        // 6. Compare lockfiles to detect what changed and analyze versions
+        let mut outdated_deps = Vec::new();
+
+        for new_entry in updated_lockfile.all_resources() {
+            // Filter by specific dependencies if requested
+            if !self.dependencies.is_empty() && !self.dependencies.contains(&new_entry.name) {
+                continue;
+            }
+
+            // Find corresponding old entry
+            if let Some((_, old_entry)) =
+                crate::core::ResourceIterator::find_resource_by_name_and_source(
+                    &lockfile,
+                    &new_entry.name,
+                    new_entry.source.as_deref(),
+                )
+            {
+                if let Some(outdated_info) = self
+                    .analyze_update(
+                        &new_entry.name,
+                        old_entry,
+                        new_entry,
+                        &manifest,
+                        &cache,
+                        &resolver,
+                    )
+                    .await?
+                {
+                    // Only add to list if there's actually an update or major update available
+                    // This ensures "All dependencies are up to date!" shows when everything is current
+                    if outdated_info.has_update || outdated_info.has_major_update {
+                        outdated_deps.push(outdated_info);
+                    }
+                }
+            }
+        }
+
+        // 7. Calculate summary
         let summary = self.calculate_summary(&outdated_deps, lockfile.all_resources().len());
 
-        // 7. Display results
+        // 8. Display results
         self.display_results(&outdated_deps, &summary)?;
 
-        // 8. Exit with appropriate code
+        // 9. Exit with appropriate code
         if self.check && outdated_deps.iter().any(|d| d.has_update || d.has_major_update) {
             std::process::exit(1);
         }
@@ -718,19 +746,20 @@ impl OutdatedCommand {
         Ok(())
     }
 
-    /// Analyze a single dependency for available updates.
+    /// Analyze a single dependency update by comparing old and new lockfile entries.
     ///
     /// Performs the core update analysis for one dependency by:
     /// 1. Finding the dependency specification in the manifest
-    /// 2. Retrieving available versions from the Git repository
-    /// 3. Filtering versions based on semantic version constraints
+    /// 2. Getting version information from both old and new lockfile entries
+    /// 3. Retrieving available versions to find the absolute latest
     /// 4. Comparing current, latest compatible, and latest available versions
     /// 5. Determining update availability within and beyond constraints
     ///
     /// # Arguments
     ///
     /// * `name` - The dependency name from the lockfile
-    /// * `locked` - The locked resource information from `agpm.lock`
+    /// * `old_entry` - The current locked resource from existing lockfile
+    /// * `new_entry` - The updated locked resource from resolver.update()
     /// * `manifest` - The project manifest containing dependency specifications
     /// * `cache` - Cache instance for accessing Git repositories
     /// * `resolver` - Dependency resolver for version operations
@@ -750,53 +779,21 @@ impl OutdatedCommand {
     ///
     /// # Version Analysis
     ///
-    /// The method performs semantic version analysis:
-    /// 1. Parses all repository tags as semantic versions
-    /// 2. Filters versions that satisfy the manifest constraint
-    /// 3. Identifies the latest compatible version within the constraint
-    /// 4. Identifies the absolute latest version available
-    /// 5. Compares against the currently installed version
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// # use agpm_cli::cli::outdated::OutdatedCommand;
-    /// # use agpm_cli::lockfile::LockedResource;
-    /// # use agpm_cli::manifest::Manifest;
-    /// # use agpm_cli::cache::Cache;
-    /// # use agpm_cli::resolver::DependencyResolver;
-    /// # async fn example(
-    /// #     cmd: &OutdatedCommand,
-    /// #     locked: &LockedResource,
-    /// #     manifest: &Manifest,
-    /// #     cache: &Cache,
-    /// #     resolver: &DependencyResolver,
-    /// # ) -> anyhow::Result<()> {
-    /// if let Some(info) = cmd.check_dependency(
-    ///     "my-agent",
-    ///     locked,
-    ///     manifest,
-    ///     cache,
-    ///     resolver,
-    /// ).await? {
-    ///     println!("Found update for {}: {} -> {}",
-    ///         info.name, info.current, info.latest);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// The method uses the resolver.update() result for the latest compatible version,
+    /// then queries the repository to find the absolute latest version available.
+    /// This ensures consistent behavior with the `update` command.
     ///
     /// # Errors
     ///
     /// Returns errors for:
-    /// - Invalid version constraint parsing
     /// - Git repository access failures
     /// - Version parsing errors
     /// - Missing source repository in manifest
-    async fn check_dependency(
+    async fn analyze_update(
         &self,
         name: &str,
-        locked: &LockedResource,
+        old_entry: &LockedResource,
+        new_entry: &LockedResource,
         manifest: &Manifest,
         cache: &Cache,
         resolver: &DependencyResolver,
@@ -823,21 +820,19 @@ impl OutdatedCommand {
         let constraint_str = dep
             .get_version()
             .map_or_else(|| "latest".to_string(), std::string::ToString::to_string);
-        let constraint = VersionConstraint::parse(&constraint_str)?;
 
-        // Get available versions from the repository
-        // Construct the bare repo path based on source URL
+        // The new_entry version is the latest compatible (resolved by DependencyResolver.update())
+        // The old_entry version is the currently installed version
+
+        // Now we need to find the absolute latest available version (may be beyond constraints)
         let source_url = manifest
             .sources
             .get(source_name)
             .ok_or_else(|| anyhow::anyhow!("Source {source_name} not found in manifest"))?;
 
-        // Parse the Git URL to get owner and repo name
         let (owner, repo) = parse_git_url(source_url)
             .unwrap_or_else(|_| ("unknown".to_string(), source_name.to_string()));
 
-        // Construct the bare repo path: cache_dir/sources/owner_repo.git
-        // Bare repositories have .git suffix in the cache
         let bare_repo_path =
             cache.get_cache_location().join("sources").join(format!("{owner}_{repo}.git"));
 
@@ -852,7 +847,6 @@ impl OutdatedCommand {
         let mut semver_versions: Vec<semver::Version> = available_versions
             .iter()
             .filter_map(|v| {
-                // Try to parse as semver (with or without 'v' prefix)
                 let version_str = v.trim_start_matches('v');
                 semver::Version::parse(version_str).ok()
             })
@@ -865,38 +859,6 @@ impl OutdatedCommand {
             debug!("No semantic versions found for {}", name);
             return Ok(None);
         }
-
-        // Get current version
-        let version_str = locked
-            .version
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Dependency {name} has no version in lockfile"))?;
-        let current_str = version_str.trim_start_matches('v');
-        let current_version = semver::Version::parse(current_str)
-            .with_context(|| format!("Failed to parse current version {version_str} for {name}"))?;
-
-        // Find latest within constraint
-        let latest_compatible = semver_versions
-            .iter()
-            .find(|v| constraint.matches(v))
-            .cloned()
-            .unwrap_or_else(|| current_version.clone());
-
-        // Find absolute latest
-        let latest_available = semver_versions[0].clone();
-
-        // Determine if updates are available
-        let has_update = latest_compatible > current_version;
-        let has_major_update = latest_available > latest_compatible;
-
-        // Format versions with 'v' prefix if original had it
-        let format_version = |v: &semver::Version| {
-            if locked.version.as_ref().is_some_and(|s| s.starts_with('v')) {
-                format!("v{v}")
-            } else {
-                v.to_string()
-            }
-        };
 
         // Determine resource type from manifest
         let resource_type = if manifest.agents.contains_key(name) {
@@ -915,14 +877,29 @@ impl OutdatedCommand {
             "unknown"
         };
 
+        // Compare old vs new to detect updates
+        let current_version = old_entry.version.clone().unwrap_or_else(|| "unknown".to_string());
+        let latest_compatible = new_entry.version.clone().unwrap_or_else(|| "unknown".to_string());
+
+        // Format absolute latest with 'v' prefix if original had it
+        let latest_available = if old_entry.version.as_ref().is_some_and(|s| s.starts_with('v')) {
+            format!("v{}", semver_versions[0])
+        } else {
+            semver_versions[0].to_string()
+        };
+
+        // Determine if updates are available
+        let has_update = old_entry.resolved_commit != new_entry.resolved_commit;
+        let has_major_update = latest_compatible != latest_available;
+
         Ok(Some(OutdatedInfo {
             name: name.to_string(),
             resource_type: resource_type.to_string(),
             source: source_name.to_string(),
-            tool: locked.tool.clone().unwrap_or_else(|| "claude-code".to_string()),
-            current: locked.version.clone().unwrap_or_else(|| "unknown".to_string()),
-            latest: format_version(&latest_compatible),
-            latest_available: format_version(&latest_available),
+            tool: old_entry.tool.clone().unwrap_or_else(|| "claude-code".to_string()),
+            current: current_version,
+            latest: latest_compatible,
+            latest_available,
             constraint: constraint_str,
             has_update,
             has_major_update,
