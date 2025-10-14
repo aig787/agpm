@@ -22,6 +22,7 @@ pub trait McpHandler: Send + Sync {
     ///
     /// This method reads MCP server configurations directly from source locations
     /// (Git worktrees or local paths) and merges them into the tool's config file.
+    /// Patches from the manifest are applied to each server configuration before merging.
     ///
     /// # Arguments
     ///
@@ -29,17 +30,26 @@ pub trait McpHandler: Send + Sync {
     /// * `artifact_base` - The base directory for this tool
     /// * `lockfile_entries` - Locked MCP server resources with source information
     /// * `cache` - Cache for accessing Git worktrees
+    /// * `manifest` - Manifest containing patch definitions
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, or an error if the configuration failed.
+    /// `Ok(Vec<(name, applied_patches)>)` with applied patches for each server, or an error if the configuration failed.
+    #[allow(clippy::type_complexity)]
     fn configure_mcp_servers(
         &self,
         project_root: &Path,
         artifact_base: &Path,
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+        manifest: &crate::manifest::Manifest,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
+                + Send
+                + '_,
+        >,
+    >;
 
     /// Clean/remove all managed MCP servers for this handler.
     ///
@@ -71,19 +81,28 @@ impl McpHandler for ClaudeCodeMcpHandler {
         _artifact_base: &Path,
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        manifest: &crate::manifest::Manifest,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
+                + Send
+                + '_,
+        >,
+    > {
         let project_root = project_root.to_path_buf();
         let entries = lockfile_entries.to_vec();
         let cache = cache.clone();
+        let manifest = manifest.clone();
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(());
+                return Ok(Vec::new());
             }
 
             // Read MCP server configurations directly from source files
             let mut mcp_servers: std::collections::HashMap<String, super::McpServerConfig> =
                 std::collections::HashMap::new();
+            let mut all_applied_patches = Vec::new();
 
             for entry in &entries {
                 // Get the source file path
@@ -126,10 +145,39 @@ impl McpHandler for ClaudeCodeMcpHandler {
                     }
                 };
 
-                // Read and parse the MCP server configuration
-                let mut config: super::McpServerConfig = crate::utils::read_json_file(&source_path)
-                    .with_context(|| {
+                // Read the MCP server configuration as string first (for patch application)
+                let json_content =
+                    tokio::fs::read_to_string(&source_path).await.with_context(|| {
                         format!("Failed to read MCP server file: {}", source_path.display())
+                    })?;
+
+                // Apply patches if present
+                let (patched_content, applied_patches) = {
+                    // Look up patches for this MCP server
+                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    let project_patches = manifest.project_patches.get("mcp-servers", lookup_name);
+                    let private_patches = manifest.private_patches.get("mcp-servers", lookup_name);
+
+                    if project_patches.is_some() || private_patches.is_some() {
+                        use crate::manifest::patches::apply_patches_to_content_with_origin;
+                        apply_patches_to_content_with_origin(
+                            &json_content,
+                            &source_path.display().to_string(),
+                            project_patches.unwrap_or(&std::collections::HashMap::new()),
+                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                        )?
+                    } else {
+                        (json_content, crate::manifest::patches::AppliedPatches::default())
+                    }
+                };
+
+                // Collect applied patches for this server
+                all_applied_patches.push((entry.name.clone(), applied_patches));
+
+                // Parse the patched JSON
+                let mut config: super::McpServerConfig = serde_json::from_str(&patched_content)
+                    .with_context(|| {
+                        format!("Failed to parse MCP server JSON from {}", source_path.display())
                     })?;
 
                 // Add AGPM metadata
@@ -148,7 +196,7 @@ impl McpHandler for ClaudeCodeMcpHandler {
             let mcp_config_path = project_root.join(".mcp.json");
             super::merge_mcp_servers(&mcp_config_path, mcp_servers).await?;
 
-            Ok(())
+            Ok(all_applied_patches)
         })
     }
 
@@ -175,16 +223,26 @@ impl McpHandler for OpenCodeMcpHandler {
         artifact_base: &Path,
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        manifest: &crate::manifest::Manifest,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
+                + Send
+                + '_,
+        >,
+    > {
         let project_root = project_root.to_path_buf();
         let artifact_base = artifact_base.to_path_buf();
         let entries = lockfile_entries.to_vec();
         let cache = cache.clone();
+        let manifest = manifest.clone();
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(());
+                return Ok(Vec::new());
             }
+
+            let mut all_applied_patches = Vec::new();
 
             // Read MCP server configurations directly from source files
             let mut mcp_servers: std::collections::HashMap<String, super::McpServerConfig> =
@@ -231,10 +289,39 @@ impl McpHandler for OpenCodeMcpHandler {
                     }
                 };
 
-                // Read and parse the MCP server configuration
-                let mut config: super::McpServerConfig = crate::utils::read_json_file(&source_path)
-                    .with_context(|| {
+                // Read the MCP server configuration as string first (for patch application)
+                let json_content =
+                    tokio::fs::read_to_string(&source_path).await.with_context(|| {
                         format!("Failed to read MCP server file: {}", source_path.display())
+                    })?;
+
+                // Apply patches if present
+                let (patched_content, applied_patches) = {
+                    // Look up patches for this MCP server
+                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    let project_patches = manifest.project_patches.get("mcp-servers", lookup_name);
+                    let private_patches = manifest.private_patches.get("mcp-servers", lookup_name);
+
+                    if project_patches.is_some() || private_patches.is_some() {
+                        use crate::manifest::patches::apply_patches_to_content_with_origin;
+                        apply_patches_to_content_with_origin(
+                            &json_content,
+                            &source_path.display().to_string(),
+                            project_patches.unwrap_or(&std::collections::HashMap::new()),
+                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                        )?
+                    } else {
+                        (json_content, crate::manifest::patches::AppliedPatches::default())
+                    }
+                };
+
+                // Collect applied patches for this server
+                all_applied_patches.push((entry.name.clone(), applied_patches));
+
+                // Parse the patched JSON
+                let mut config: super::McpServerConfig = serde_json::from_str(&patched_content)
+                    .with_context(|| {
+                        format!("Failed to parse MCP server JSON from {}", source_path.display())
                     })?;
 
                 // Add AGPM metadata
@@ -284,7 +371,7 @@ impl McpHandler for OpenCodeMcpHandler {
                     format!("Failed to write OpenCode config: {}", opencode_config_path.display())
                 })?;
 
-            Ok(())
+            Ok(all_applied_patches)
         })
     }
 
@@ -376,14 +463,29 @@ impl McpHandler for ConcreteMcpHandler {
         artifact_base: &Path,
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        manifest: &crate::manifest::Manifest,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
+                + Send
+                + '_,
+        >,
+    > {
         match self {
-            Self::ClaudeCode(h) => {
-                h.configure_mcp_servers(project_root, artifact_base, lockfile_entries, cache)
-            }
-            Self::OpenCode(h) => {
-                h.configure_mcp_servers(project_root, artifact_base, lockfile_entries, cache)
-            }
+            Self::ClaudeCode(h) => h.configure_mcp_servers(
+                project_root,
+                artifact_base,
+                lockfile_entries,
+                cache,
+                manifest,
+            ),
+            Self::OpenCode(h) => h.configure_mcp_servers(
+                project_root,
+                artifact_base,
+                lockfile_entries,
+                cache,
+                manifest,
+            ),
         }
     }
 

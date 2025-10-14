@@ -214,7 +214,7 @@ pub mod version_resolution;
 pub mod version_resolver;
 
 use crate::cache::Cache;
-use crate::core::AgpmError;
+use crate::core::{AgpmError, ResourceType};
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
@@ -387,6 +387,20 @@ pub struct DependencyResolver {
     /// Tracks version requirements across all dependencies (direct and transitive)
     /// and detects incompatible version constraints before lockfile creation.
     conflict_detector: ConflictDetector,
+    /// Maps resource names to their original pattern alias for pattern-expanded dependencies.
+    ///
+    /// When a pattern dependency (e.g., `all-helpers = { path = "agents/helpers/*.md" }`)
+    /// expands to multiple concrete dependencies (helper-alpha, helper-beta, etc.), this
+    /// map tracks which pattern alias each expanded resource came from. This enables
+    /// patches defined under the pattern alias to be correctly applied to all matched resources.
+    ///
+    /// Example: If "all-helpers" expands to "helper-alpha" and "helper-beta", this map contains:
+    /// - (ResourceType::Agent, "helper-alpha") -> "all-helpers"
+    /// - (ResourceType::Agent, "helper-beta") -> "all-helpers"
+    ///
+    /// The key includes ResourceType to prevent collisions when different resource types
+    /// have the same concrete name (e.g., agents/deploy.md and commands/deploy.md).
+    pattern_alias_map: HashMap<(ResourceType, String), String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -959,6 +973,7 @@ impl DependencyResolver {
             version_resolver,
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
+            pattern_alias_map: HashMap::new(),
         })
     }
 
@@ -995,6 +1010,7 @@ impl DependencyResolver {
             version_resolver,
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
+            pattern_alias_map: HashMap::new(),
         })
     }
 
@@ -1031,6 +1047,7 @@ impl DependencyResolver {
             version_resolver,
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
+            pattern_alias_map: HashMap::new(),
         }
     }
 
@@ -1173,6 +1190,12 @@ impl DependencyResolver {
                     Ok(concrete_deps) => {
                         // Queue each concrete dependency for transitive resolution
                         for (concrete_name, concrete_dep) in concrete_deps {
+                            // Record the mapping from concrete resource name to pattern alias
+                            // This enables patches defined under the pattern alias to be applied to all matched resources
+                            // Key includes ResourceType to prevent collisions between different resource types
+                            self.pattern_alias_map
+                                .insert((resource_type, concrete_name.clone()), name.clone());
+
                             let concrete_source =
                                 concrete_dep.get_source().map(std::string::ToString::to_string);
                             let concrete_key =
@@ -2438,6 +2461,11 @@ impl DependencyResolver {
                         .map(std::string::ToString::to_string)
                         .unwrap_or_else(|| resource_type.default_tool().to_string()),
                 ),
+                manifest_alias: self
+                    .pattern_alias_map
+                    .get(&(resource_type, name.to_string()))
+                    .cloned(), // Check if this came from a pattern expansion
+                applied_patches: HashMap::new(), // Populated during installation, not resolution
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -2579,6 +2607,11 @@ impl DependencyResolver {
                 dependencies: self.get_dependencies_for(name, Some(source_name), resource_type),
                 resource_type,
                 tool: Some(artifact_type_string),
+                manifest_alias: self
+                    .pattern_alias_map
+                    .get(&(resource_type, name.to_string()))
+                    .cloned(), // Check if this came from a pattern expansion
+                applied_patches: HashMap::new(), // Populated during installation, not resolution
             })
         }
     }
@@ -2769,6 +2802,8 @@ impl DependencyResolver {
                             .map(std::string::ToString::to_string)
                             .unwrap_or_else(|| resource_type.default_tool().to_string()),
                     ),
+                    manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
+                    applied_patches: HashMap::new(), // Populated during installation, not resolution
                 });
             }
 
@@ -2897,6 +2932,8 @@ impl DependencyResolver {
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| resource_type.default_tool().to_string()),
                     ),
+                    manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
+                    applied_patches: HashMap::new(), // Populated during installation, not resolution
                 });
             }
 
