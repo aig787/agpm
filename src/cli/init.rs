@@ -101,9 +101,13 @@ pub struct InitCommand {
 impl InitCommand {
     /// Updates the .gitignore file to include AGPM-specific entries.
     ///
-    /// This method ensures that `.agpm/backups/` is added to the project's `.gitignore` file.
-    /// If the `.gitignore` file doesn't exist, it will be created. If the entry already exists,
-    /// it won't be duplicated.
+    /// This method ensures that the following entries are added to the project's `.gitignore` file:
+    /// - `.agpm/backups/` - AGPM backup directory
+    /// - `agpm.private.toml` - User-level patches (private configuration)
+    /// - `agpm.private.lock` - Private lockfile
+    ///
+    /// If the `.gitignore` file doesn't exist, it will be created. If entries already exist,
+    /// they won't be duplicated.
     ///
     /// # Arguments
     ///
@@ -115,7 +119,11 @@ impl InitCommand {
     /// - `Err(anyhow::Error)` if unable to read or write the `.gitignore` file
     fn update_gitignore(target_dir: &std::path::Path) -> Result<()> {
         let gitignore_path = target_dir.join(".gitignore");
-        let entry = ".agpm/backups/";
+        let entries = vec![
+            ".agpm/backups/",
+            "agpm.private.toml",
+            "agpm.private.lock",
+        ];
 
         // Read existing .gitignore or start with empty content
         let mut content = if gitignore_path.exists() {
@@ -124,12 +132,18 @@ impl InitCommand {
             String::new()
         };
 
-        // Check if entry already exists
-        if content.lines().any(|line| line.trim() == entry) {
+        // Check which entries need to be added
+        let entries_to_add: Vec<&str> = entries
+            .iter()
+            .filter(|entry| !content.lines().any(|line| line.trim() == **entry))
+            .copied()
+            .collect();
+
+        if entries_to_add.is_empty() {
             return Ok(());
         }
 
-        // Add entry (ensure there's a newline before it if content exists)
+        // Add entries (ensure there's a newline before it if content exists)
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
@@ -137,8 +151,10 @@ impl InitCommand {
             content.push('\n');
             content.push_str("# AGPM\n");
         }
-        content.push_str(entry);
-        content.push('\n');
+        for entry in entries_to_add {
+            content.push_str(entry);
+            content.push('\n');
+        }
 
         fs::write(&gitignore_path, content)?;
 
@@ -468,6 +484,8 @@ mod tests {
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains(".agpm/backups/"));
+        assert!(content.contains("agpm.private.toml"));
+        assert!(content.contains("agpm.private.lock"));
     }
 
     #[tokio::test]
@@ -490,6 +508,8 @@ mod tests {
         assert!(content.contains("node_modules/"));
         assert!(content.contains("*.log"));
         assert!(content.contains(".agpm/backups/"));
+        assert!(content.contains("agpm.private.toml"));
+        assert!(content.contains("agpm.private.lock"));
         assert!(content.contains("# AGPM"));
     }
 
@@ -498,8 +518,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let gitignore_path = temp_dir.path().join(".gitignore");
 
-        // Create existing .gitignore with the entry already present
-        fs::write(&gitignore_path, ".agpm/backups/\n").unwrap();
+        // Create existing .gitignore with all entries already present
+        fs::write(
+            &gitignore_path,
+            ".agpm/backups/\nagpm.private.toml\nagpm.private.lock\n"
+        ).unwrap();
 
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
@@ -510,9 +533,10 @@ mod tests {
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&gitignore_path).unwrap();
-        // Count occurrences - should be exactly 1
-        let count = content.matches(".agpm/backups/").count();
-        assert_eq!(count, 1);
+        // Count occurrences - each should be exactly 1
+        assert_eq!(content.matches(".agpm/backups/").count(), 1);
+        assert_eq!(content.matches("agpm.private.toml").count(), 1);
+        assert_eq!(content.matches("agpm.private.lock").count(), 1);
     }
 
     #[tokio::test]
@@ -534,9 +558,13 @@ mod tests {
         let content = fs::read_to_string(&gitignore_path).unwrap();
         assert!(content.contains("node_modules/"));
         assert!(content.contains(".agpm/backups/"));
+        assert!(content.contains("agpm.private.toml"));
+        assert!(content.contains("agpm.private.lock"));
         // Verify proper formatting (no missing newlines)
         let lines: Vec<&str> = content.lines().collect();
         assert!(lines.contains(&"node_modules/"));
         assert!(lines.contains(&".agpm/backups/"));
+        assert!(lines.contains(&"agpm.private.toml"));
+        assert!(lines.contains(&"agpm.private.lock"));
     }
 }
