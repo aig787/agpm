@@ -1,7 +1,6 @@
 ---
 description: Fast test failure fixer. Handles assertion failures, missing imports, test setup issues. Delegates complex refactoring to rust-expert-advanced.
 mode: subagent
-model: zai-coding-plan/glm-4.6
 temperature: 0.2
 tools:
   read: true
