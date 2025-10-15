@@ -204,86 +204,16 @@ Key benefits:
 
 Resources can declare dependencies within their files:
 
-**Markdown files** (YAML frontmatter):
+**Markdown** (YAML): `dependencies.agents[].path`, `.version`, `.tool`
+**JSON** (top-level): `dependencies.commands[].path`, `.version`, `.tool`
 
-```yaml
----
-dependencies:
-  agents:
-    - path: agents/helper.md
-      version: v1.0.0
-      tool: claude-code  # Optional: specify target tool
-  snippets:
-    - path: snippets/utils.md
-    # version and tool inherited from parent if not specified
----
-```
+**Paths**: File-relative (`./sibling.md`, `../parent/file.md`) resolved from parent file location
 
-**JSON files** (top-level field):
-
-```json
-{
-  "dependencies": {
-    "commands": [
-      {
-        "path": "commands/deploy.md",
-        "version": "v2.0.0",
-        "tool": "opencode"
-      }
-    ]
-  }
-}
-```
-
-**Supported Fields**:
-
-- `path` (required): Path to the dependency file within the source repository
-- `version` (optional): Version constraint (inherits from parent if not specified)
-- `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
-  - Inherits from parent if parent's tool supports this resource type
-  - Falls back to default tool for this resource type
-
-**Key Features**:
-
-- Graph-based resolution with topological ordering
-- Cycle detection prevents infinite loops
-- Version inheritance when not specified
-- Tool inheritance with automatic fallback
-- Same-source dependency model (inherits parent's source)
-- Parallel resolution for maximum efficiency
-- Unknown field detection with warnings (v0.4.5+)
+**Features**: Path-only transitive support, file-relative paths, graph-based resolution with cycle detection, version/tool inheritance
 
 ## Versioned Prefixes (v0.3.19+)
 
-AGPM supports monorepo-style versioned prefixes, allowing independent semantic versioning for different components within a single repository.
-
-### Syntax
-
-Tags and constraints can include optional prefixes separated from the version by a hyphen:
-- `agents-v1.0.0` - Prefixed tag
-- `agents-^v1.0.0` - Prefixed constraint
-- `my-tool-v2.0.0` - Multi-hyphen prefix
-
-### Prefix Isolation
-
-Prefixes create isolated version namespaces:
-- `agents-^v1.0.0` matches only `agents-v*` tags, not `snippets-v*` or unprefixed `v*`
-- Unprefixed constraints like `^v1.0.0` only match unprefixed tags
-- Different prefixes never conflict with each other
-
-### Examples
-
-```toml
-[agents]
-# Prefixed constraint - matches agents-v1.x.x tags only
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "agents-^v1.0.0" }
-
-# Different prefix - independent versioning
-code-helper = { source = "community", path = "agents/code/helper.md", version = "snippets-^v2.0.0" }
-
-# Unprefixed - traditional versioning
-standard = { source = "community", path = "agents/standard.md", version = "^v1.0.0" }
-```
+Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate version namespaces (`agents-^v1.0.0` matches only `agents-v*` tags).
 
 ## Cross-Platform Path Handling
 
