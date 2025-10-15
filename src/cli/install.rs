@@ -92,6 +92,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::cache::Cache;
 use crate::core::ResourceIterator;
@@ -197,6 +198,12 @@ pub struct InstallCommand {
     #[arg(skip)]
     pub no_progress: bool,
 
+    /// Enable verbose output (for programmatic use, not exposed as CLI arg)
+    ///
+    /// This flag is populated from the global --verbose flag via execute_with_config
+    #[arg(skip)]
+    pub verbose: bool,
+
     /// Don't resolve transitive dependencies
     ///
     /// When enabled, only direct dependencies from the manifest will be installed.
@@ -226,6 +233,18 @@ pub struct InstallCommand {
     /// - 1: Changes would be made (useful for CI checks)
     #[arg(long)]
     dry_run: bool,
+
+    /// Disable template rendering for markdown resources
+    ///
+    /// When enabled, markdown files will be installed as-is without processing
+    /// any template syntax ({{ }}) or {% %} tags. This is useful for:
+    /// - Installing resources that contain literal template syntax
+    /// - Debugging template rendering issues
+    /// - Legacy resources that haven't been updated for templating
+    ///
+    /// Template rendering is enabled by default for all .md files.
+    #[arg(long)]
+    no_templating: bool,
 }
 
 impl InstallCommand {
@@ -255,8 +274,10 @@ impl InstallCommand {
             max_parallel: None,
             quiet: false,
             no_progress: false,
+            verbose: false,
             no_transitive: false,
             dry_run: false,
+            no_templating: false,
         }
     }
 
@@ -283,8 +304,10 @@ impl InstallCommand {
             max_parallel: None,
             quiet: true,
             no_progress: true,
+            verbose: false,
             no_transitive: false,
             dry_run: false,
+            no_templating: false,
         }
     }
 
@@ -519,6 +542,8 @@ impl InstallCommand {
 
         // Handle dry-run mode: show what would be installed without making changes
         if self.dry_run {
+            // For dry-run, we can wrap in Arc since we won't modify it
+            let lockfile = Arc::new(lockfile);
             return self.handle_dry_run(&lockfile, &lockfile_path, &multi_phase);
         }
 
@@ -549,15 +574,19 @@ impl InstallCommand {
             });
 
             // Install resources using the main installation function
+            // We need to wrap in Arc for the call, but we'll apply updates to the mutable version
+            let lockfile_for_install = Arc::new(lockfile.clone());
             match install_resources(
                 ResourceFilter::All,
-                &lockfile,
+                &lockfile_for_install,
                 &manifest,
                 actual_project_dir,
                 cache.clone(),
                 self.no_cache,
                 Some(max_concurrency),
                 Some(multi_phase.clone()),
+                self.no_templating,
+                self.verbose,
             )
             .await
             {
@@ -784,7 +813,7 @@ impl InstallCommand {
     /// - 1: Changes would be made (useful for CI pipelines)
     fn handle_dry_run(
         &self,
-        new_lockfile: &LockFile,
+        new_lockfile: &Arc<LockFile>,
         lockfile_path: &Path,
         multi_phase: &std::sync::Arc<crate::utils::progress::MultiPhaseProgress>,
     ) -> Result<()> {
@@ -1064,8 +1093,10 @@ mod tests {
             max_parallel: None,
             quiet: false,
             no_progress: false,
+            verbose: false,
             no_transitive: false,
             dry_run: false,
+            no_templating: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -1198,8 +1229,10 @@ Body",
             max_parallel: None,
             quiet: false,
             no_progress: false,
+            verbose: false,
             no_transitive: false,
             dry_run: false,
+            no_templating: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -1350,8 +1383,10 @@ Body",
             max_parallel: None,
             quiet: true, // Suppress output in test
             no_progress: true,
+            verbose: false,
             no_transitive: false,
             dry_run: true,
+            no_templating: false,
         };
 
         // In dry-run mode, this should return an error indicating changes would be made

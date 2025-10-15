@@ -726,13 +726,15 @@ impl Cli {
             Commands::Add(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Remove(cmd) => cmd.execute_with_manifest_path(self.manifest_path).await,
             Commands::Install(mut cmd) => {
-                // Pass no_progress flag to install command
+                // Pass no_progress and verbose flags to install command
                 cmd.no_progress = cmd.no_progress || config.no_progress;
+                cmd.verbose = config.log_level == Some("debug".to_string());
                 cmd.execute_with_manifest_path(self.manifest_path).await
             }
             Commands::Update(mut cmd) => {
-                // Pass no_progress flag to update command
+                // Pass no_progress and verbose flags to update command
                 cmd.no_progress = cmd.no_progress || config.no_progress;
+                cmd.verbose = config.log_level == Some("debug".to_string());
                 cmd.execute_with_manifest_path(self.manifest_path).await
             }
             Commands::Outdated(mut cmd) => {

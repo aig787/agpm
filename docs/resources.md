@@ -299,6 +299,93 @@ reviewer = {
 # Installed as: .claude/agents/ai/my-reviewer.md (preserves ai/ directory)
 ```
 
+## Resource Frontmatter and Templating
+
+Markdown resources (agents, snippets, commands) can include YAML frontmatter to control behavior and declare dependencies.
+
+### YAML Frontmatter Structure
+
+Frontmatter appears at the top of Markdown files between `---` delimiters:
+
+```markdown
+---
+title: My Agent
+description: A helpful agent
+agpm:
+  templating: false
+dependencies:
+  snippets:
+    - path: snippets/utils.md
+      version: v1.0.0
+---
+# Agent content starts here
+```
+
+### Templating Control
+
+AGPM automatically processes Tera template syntax in Markdown resources during installation. You can disable this per-resource using frontmatter:
+
+**Disable templating for a specific resource:**
+```markdown
+---
+agpm:
+  templating: false
+---
+# This file contains literal {{ template.syntax }}
+
+It will NOT be processed during installation.
+```
+
+**Disable templating globally:**
+```bash
+agpm install --no-templating
+agpm update --no-templating
+```
+
+### Template Variables
+
+When templating is enabled (the default), you can use template variables to create dynamic content:
+
+```markdown
+---
+title: {{ agpm.resource.name }}
+dependencies:
+  snippets:
+    - path: snippets/helper.md
+---
+# {{ agpm.resource.name }}
+
+**Version**: {{ agpm.resource.version }}
+**Install Location**: `{{ agpm.resource.install_path }}`
+
+{% if agpm.deps.snippets.helper %}
+See also: [Helper Snippet]({{ agpm.deps.snippets.helper.install_path }})
+{% endif %}
+```
+
+**Available Variables:**
+- `agpm.resource.*` - Current resource metadata (name, version, install_path, etc.)
+- `agpm.deps.<category>.<name>.*` - Dependency metadata for resources declared in frontmatter
+
+**Full Documentation**: See [Markdown Templating Guide](templating.md) for complete variable reference, examples, and best practices.
+
+### Dependency Declarations
+
+Resources can declare dependencies in frontmatter. AGPM automatically resolves and installs them:
+
+```markdown
+---
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0
+  snippets:
+    - path: snippets/utils.md
+---
+```
+
+Dependencies are accessible in templates via `agpm.deps.<category>.<name>`. See the [Templating Guide](templating.md#template-variables-reference) for details.
+
 ## Custom Installation Paths
 
 ### Global Target Directories

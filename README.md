@@ -23,6 +23,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, works for Git-backed and path-only deps with file-relative path support
+- 📝 **Markdown templating** - Dynamic content generation with access to installation metadata and dependency references
 
 ## Requirements
 
@@ -446,6 +447,7 @@ Resources route to the appropriate directory based on the `type` field.
 - ⚙️ **[Configuration Guide](docs/configuration.md)** - Global config and authentication
 - 🗂️ **[Manifest Reference](docs/manifest-reference.md)** - Field-by-field manifest schema and CLI mapping
 - 🏗️ **[Architecture](docs/architecture.md)** - Technical details and design decisions
+- 📝 **[Templating Guide](docs/templating.md)** - Dynamic content generation with Tera templates
 - ❓ **[FAQ](docs/faq.md)** - Frequently asked questions
 - 🐛 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 

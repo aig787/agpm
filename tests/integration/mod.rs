@@ -68,6 +68,7 @@ mod outdated;
 mod patch_integration;
 mod pattern;
 mod prefixed_versions;
+mod templating;
 mod transitive;
 mod tree;
 mod upd_progress;

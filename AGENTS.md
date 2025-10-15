@@ -79,11 +79,69 @@ src/
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile
 
+## Resource Authoring and Templating
+
+When creating agents, snippets, or commands for AGPM, you can use Tera-based templating to create dynamic content that adapts during installation.
+
+### Quick Start
+
+Resources support template variables for metadata and dependencies:
+
+```markdown
+---
+title: {{ agpm.resource.name }}
+dependencies:
+  snippets:
+    - path: snippets/utils.md
+      version: v1.0.0
+---
+# {{ agpm.resource.name }}
+
+Version: {{ agpm.resource.version }}
+Install path: `{{ agpm.resource.install_path }}`
+
+{% if agpm.deps.snippets.utils %}
+Uses helper: `{{ agpm.deps.snippets.utils.install_path }}`
+{% endif %}
+```
+
+### Available Template Variables
+
+- **`agpm.resource.*`** - Current resource metadata (name, version, install_path, source, checksum, etc.)
+- **`agpm.deps.<category>.<name>.*`** - Dependency metadata for resources declared in frontmatter
+
+**Full Variable Reference**: See [docs/templating.md](../docs/templating.md#template-variables-reference) for the complete variable table.
+
+### Best Practices
+
+1. **Use descriptive variable names** - Resource names become template variables (sanitized with underscores)
+2. **Avoid hyphens in resource names** - Use underscores to prevent confusion (hyphens are converted to underscores in templates)
+3. **Test with different dependency combinations** - Ensure conditionals work when dependencies are missing
+4. **Keep templates simple** - Avoid complex logic for maintainability
+5. **Use `{% raw %}...{% endraw %}` for literal template syntax** - When documenting template syntax itself
+
+### Disabling Templating
+
+To include literal template syntax (e.g., in documentation or examples), disable templating via frontmatter:
+
+```markdown
+---
+agpm:
+  templating: false
+---
+# This {{ template.syntax }} won't be processed
+```
+
+### Documentation
+
+- **Complete Guide**: [docs/templating.md](../docs/templating.md) - Full syntax, examples, and troubleshooting
+- **Resource Formats**: [docs/resources.md](../docs/resources.md#resource-frontmatter-and-templating) - Frontmatter structure
+
 ## Dependencies
 
 Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
 indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell,
-dashmap (v6.1)
+dashmap (v6.1), tera
 
 Dev: assert_cmd, predicates
 

@@ -2802,11 +2802,8 @@ impl DependencyResolver {
                             .map(std::string::ToString::to_string)
                             .unwrap_or_else(|| resource_type.default_tool().to_string()),
                     ),
-<<<<<<< HEAD
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
-=======
->>>>>>> 81eee07 (feat: add tool field support to transitive dependencies)
                 });
             }
 
@@ -2932,17 +2929,11 @@ impl DependencyResolver {
                     resource_type,
                     tool: Some(
                         dep.get_tool()
-<<<<<<< HEAD
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| resource_type.default_tool().to_string()),
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
-=======
-                            .map(std::string::ToString::to_string)
-                            .unwrap_or_else(|| resource_type.default_tool().to_string()),
-                    ),
->>>>>>> 81eee07 (feat: add tool field support to transitive dependencies)
                 });
             }
 

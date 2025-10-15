@@ -85,13 +85,15 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
 
     let (count, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile,
+        &Arc::new(lockfile),
         &manifest,
         &project_dir,
         cache.clone(),
         false,
         None,
         Some(progress),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
 
@@ -320,13 +322,15 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
 
     let (count, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile_v1,
+        &Arc::new(lockfile_v1),
         &manifest_v1,
         &project_dir,
         cache.clone(),
         false,
         None,
-        Some(progress.clone()),
+        Some(progress),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
     assert_eq!(count, total_agents);
@@ -378,13 +382,15 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
 
     let (update_count, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile_v2,
+        &Arc::new(lockfile_v2),
         &manifest_v2,
         &project_dir,
         cache.clone(),
         false,
         None,
         Some(progress2),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
 
@@ -545,13 +551,15 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
 
     let (count, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile,
+        &Arc::new(lockfile),
         &manifest,
         &project_dir,
         cache.clone(),
         false,
         None,
         Some(progress),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
 
@@ -698,13 +706,15 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     let (count, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile,
+        &Arc::new(lockfile),
         &manifest,
         &project_dir,
         cache.clone(),
         false,
         None,
         Some(progress),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
 
@@ -863,13 +873,15 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
 
     let (_, _, _) = install_resources(
         ResourceFilter::All,
-        &lockfile,
+        &Arc::new(lockfile),
         &manifest,
         &project_dir,
         cache,
         false,
         None,
         Some(progress),
+        false, // no_templating
+        false, // verbose
     )
     .await?;
 

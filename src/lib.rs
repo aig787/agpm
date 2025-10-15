@@ -144,6 +144,7 @@ pub mod manifest;
 pub mod markdown;
 pub mod metadata;
 pub mod pattern;
+pub mod templating;
 
 // Resource types
 pub mod hooks;
