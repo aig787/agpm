@@ -30,6 +30,7 @@
 //! - **multi_artifact**: Multiple artifact types
 //! - **multi_resource**: Multiple resource management
 //! - **outdated**: Outdated dependency detection
+//! - **patch_integration**: Patch/override functionality
 //! - **pattern**: Pattern-based dependency installation
 //! - **transitive**: Transitive dependency resolution
 //! - **tree**: Dependency tree visualization
@@ -64,6 +65,7 @@ mod max_parallel_flag;
 mod multi_artifact;
 mod multi_resource;
 mod outdated;
+mod patch_integration;
 mod pattern;
 mod prefixed_versions;
 mod transitive;

@@ -1,7 +1,6 @@
 ---
 description: Expert Rust developer for implementation, refactoring, API design. Delegates memory issues and deep debugging to rust-troubleshooter-advanced.
 mode: subagent
-model: zai-coding-plan/glm-4.6
 temperature: 0.2
 tools:
   read: true

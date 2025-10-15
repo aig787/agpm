@@ -175,14 +175,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
 - **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
-
-## Breaking Changes (v0.3.18+)
-
-### Custom Target Behavior
-- **Old**: Custom targets were relative to project root
-- **New**: Custom targets are relative to default resource directory (e.g., `.claude/agents/`)
-- **Migration**: Update custom targets to use paths relative to resource directory, not project root
-- **Rationale**: Prevents naming conflicts between different resource types
+- **Patch/Override System** (v0.4.x+): TOML-based field overrides without forking, private config layer, lockfile tracking
 
 ## Resolver Architecture
 
@@ -352,59 +345,30 @@ Pluggable handlers for tool-specific MCP configuration:
 ```toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
-local = "../my-local-resources"  # Local directory support
-
-# Tool type configurations (optional - uses defaults if omitted)
-[tools.claude-code]
-path = ".claude"
-resources = { agents = { path = "agents" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {}, snippets = { path = "snippets" } }
-
-[tools.opencode]
-path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
-
-[tools.agpm]
-path = ".agpm"
-resources = { snippets = { path = "snippets" } }
+local = "../my-local-resources"
 
 [agents]
-# Single file dependency - installs as .claude/agents/example.md (basename from path)
-example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-local-agent = { path = "../local-agents/helper.md" }  # Direct local path
-
-# Nested paths preserve directory structure (v0.3.18+)
-# "agents/ai/gpt.md" → ".claude/agents/ai/gpt.md" (preserves ai/ subdirectory)
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }
-
-# Pattern-based dependencies (glob patterns in path field)
-ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # All AI agents
-review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }  # All review agents recursively
-
-# Custom target (v0.3.18+ BREAKING: relative to .claude/agents/, not project root)
-special = { source = "community", path = "agents/special.md", target = "custom/special.md" }
-
-# OpenCode agent (installs to .opencode/agent/)
-opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
+example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }  # Preserves subdirs
+ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern support
+opencode = { source = "community", path = "agents/helper.md", tool = "opencode" }
 
 [snippets]
-example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
-# Pattern for all Python snippets
-python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
+example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 
 [commands]
-deployment = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-
-[scripts]
-build-script = { source = "community", path = "scripts/build.sh", version = "v1.0.0" }
-test-runner = { source = "local", path = "scripts/test.js" }
+deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
 
 [hooks]
 pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
-user-prompt-submit = { source = "local", path = "hooks/user-prompt-submit.json" }
 
 [mcp-servers]
 filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
-postgres = { source = "local", path = "mcp-servers/postgres.json" }
+
+# Patches - override resource fields without forking
+[patch.agents.example]
+model = "claude-3-haiku"
+temperature = "0.8"
 ```
 
 ## Example agpm.lock
@@ -412,24 +376,14 @@ postgres = { source = "local", path = "mcp-servers/postgres.json" }
 ```toml
 # Auto-generated lockfile
 [[agents]]
-name = "example-agent"
+name = "example"
 source = "community"
 path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example.md"  # Uses basename from path (v0.3.18+)
-tool = "claude-code"  # Defaults to claude-code, omitted if default
-
-[[agents]]
-name = "opencode-helper"
-source = "community"
-path = "agents/helper.md"
-version = "v1.0.0"
-resolved_commit = "abc123..."
-checksum = "sha256:..."
-installed_at = ".opencode/agent/helper.md"  # OpenCode uses singular "agent"
-tool = "opencode"
+installed_at = ".claude/agents/example.md"
+patches = ["model", "temperature"]  # Applied patches tracked
 
 [[agents]]
 name = "ai-helper"
@@ -438,13 +392,19 @@ path = "agents/ai/gpt.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirectory structure
-# Similar format for snippets, commands, scripts, hooks, mcp-servers
+installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirs
 ```
 
 ## Config Priority
 
 1. `~/.agpm/config.toml` - Global config with auth tokens (not in git)
 2. `agpm.toml` - Project manifest (in git)
+3. `agpm.private.toml` - User-level patches (not in git, add to .gitignore)
+
+**Patch Merging** (v0.4.x+):
+- Project patches (`agpm.toml`) define team-wide overrides
+- Private patches (`agpm.private.toml`) extend with personal settings
+- Different fields combine; same field in both - private silently overrides project
+- Applied patches tracked in lockfile `patches` field
 
 Keeps secrets out of version control.

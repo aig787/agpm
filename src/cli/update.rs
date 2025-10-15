@@ -305,14 +305,15 @@ impl UpdateCommand {
         let project_dir = manifest_path.parent().unwrap();
         let multi_phase = Arc::new(MultiPhaseProgress::new(!self.quiet && !self.no_progress));
 
-        // Load manifest
-        let manifest = Manifest::load(&manifest_path).with_context(|| {
-            format!(
-                "Failed to parse manifest file: {}\n\n\
+        // Load manifest with private config merged
+        let (manifest, _conflicts) =
+            Manifest::load_with_private(&manifest_path).with_context(|| {
+                format!(
+                    "Failed to parse manifest file: {}\n\n\
                 Please check the TOML syntax and fix any errors before updating.",
-                manifest_path.display()
-            )
-        })?;
+                    manifest_path.display()
+                )
+            })?;
 
         // Load existing lockfile or perform fresh install if missing
         let lockfile_path = project_dir.join("agpm.lock");
@@ -407,16 +408,25 @@ impl UpdateCommand {
                 &existing_lockfile,
                 &new_entry.name,
                 new_entry.source.as_deref(),
-            ) && old_entry.resolved_commit != new_entry.resolved_commit
-            {
-                let old_version = old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
-                let new_version = new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
-                updates.push((
-                    new_entry.name.clone(),
-                    new_entry.source.clone(),
-                    old_version,
-                    new_version,
-                ));
+            ) {
+                // Resource needs update if:
+                // 1. Version changed (resolved_commit differs), OR
+                // 2. Patches changed (applied_patches differs)
+                let version_changed = old_entry.resolved_commit != new_entry.resolved_commit;
+                let patches_changed = old_entry.applied_patches != new_entry.applied_patches;
+
+                if version_changed || patches_changed {
+                    let old_version =
+                        old_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                    let new_version =
+                        new_entry.version.clone().unwrap_or_else(|| "latest".to_string());
+                    updates.push((
+                        new_entry.name.clone(),
+                        new_entry.source.clone(),
+                        old_version,
+                        new_version,
+                    ));
+                }
             }
         });
 
@@ -458,7 +468,7 @@ impl UpdateCommand {
                 );
             }
 
-            let (install_count, checksums) = install_resources(
+            let (install_count, checksums, applied_patches_list) = install_resources(
                 ResourceFilter::Updated(updates.clone()),
                 &new_lockfile,
                 &manifest,
@@ -479,6 +489,11 @@ impl UpdateCommand {
                 new_lockfile.update_resource_checksum(&name, &checksum);
             }
 
+            // Update lockfile with applied patches
+            for (name, applied_patches) in applied_patches_list {
+                new_lockfile.update_resource_applied_patches(&name, &applied_patches);
+            }
+
             // Complete installation phase
             if install_count > 0 && !self.quiet && !self.no_progress {
                 multi_phase.complete_phase(Some(&format!("Updated {install_count} resources")));
@@ -493,6 +508,31 @@ impl UpdateCommand {
             match new_lockfile.save(&lockfile_path) {
                 Ok(()) => {
                     // Lockfile saved successfully (no progress needed for this quick operation)
+
+                    // Build and save private lockfile if there are private patches
+                    use crate::lockfile::PrivateLockFile;
+                    let mut private_lock = PrivateLockFile::new();
+
+                    // Collect private patches for all installed resources
+                    for (entry, _) in
+                        ResourceIterator::collect_all_entries(&new_lockfile, &manifest)
+                    {
+                        let resource_type = entry.resource_type.to_plural();
+                        if let Some(private_patches) =
+                            manifest.private_patches.get(resource_type, &entry.name)
+                        {
+                            private_lock.add_private_patches(
+                                resource_type,
+                                &entry.name,
+                                private_patches.clone(),
+                            );
+                        }
+                    }
+
+                    // Save private lockfile (automatically deletes if empty)
+                    private_lock
+                        .save(project_dir)
+                        .with_context(|| "Failed to save private lockfile".to_string())?;
 
                     // Update .gitignore
                     // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
@@ -595,6 +635,9 @@ mod tests {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            patches: crate::manifest::patches::ManifestPatches::default(),
+            project_patches: crate::manifest::patches::ManifestPatches::default(),
+            private_patches: crate::manifest::patches::ManifestPatches::default(),
             manifest_dir: None,
         }
     }
@@ -622,6 +665,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

@@ -117,7 +117,10 @@ use std::time::Duration;
 /// - **Code clarity**: Makes function signatures more readable and self-documenting
 /// - **Error context**: Preserves resource name context when installation fails
 /// - **Batch processing**: Enables efficient collection and processing of parallel results
-type InstallResult = Result<(String, bool, String), (String, anyhow::Error)>;
+type InstallResult = Result<
+    (String, bool, String, crate::manifest::patches::AppliedPatches),
+    (String, anyhow::Error),
+>;
 
 use futures::{
     future,
@@ -253,9 +256,11 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
 ///     tool: Some("claude-code".to_string()),
+///     applied_patches: std::collections::HashMap::new(),
+///     manifest_alias: None,
 /// };
 ///
-/// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
+/// let (installed, checksum, _patches) = install_resource(&entry, Path::new("."), "agents", &cache, false, None, None).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
 /// } else {
@@ -279,7 +284,9 @@ pub async fn install_resource(
     resource_dir: &str,
     cache: &Cache,
     force_refresh: bool,
-) -> Result<(bool, String)> {
+    project_patches: Option<&crate::manifest::PatchData>,
+    private_patches: Option<&crate::manifest::PatchData>,
+) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
     // Determine destination path
     let dest_path = if entry.installed_at.is_empty() {
         project_dir.join(resource_dir).join(format!("{}.md", entry.name))
@@ -374,11 +381,27 @@ pub async fn install_resource(
         content
     };
 
-    // Calculate checksum of new content
+    // Apply patches if provided
+    let (final_content, applied_patches) = if project_patches.is_some() || private_patches.is_some()
+    {
+        use crate::manifest::patches::apply_patches_to_content_with_origin;
+        let file_path = entry.installed_at.as_str();
+        apply_patches_to_content_with_origin(
+            &new_content,
+            file_path,
+            project_patches.unwrap_or(&std::collections::HashMap::new()),
+            private_patches.unwrap_or(&std::collections::HashMap::new()),
+        )
+        .with_context(|| format!("Failed to apply patches to resource {}", entry.name))?
+    } else {
+        (new_content, crate::manifest::patches::AppliedPatches::default())
+    };
+
+    // Calculate checksum of patched content
     let new_checksum = {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-        hasher.update(new_content.as_bytes());
+        hasher.update(final_content.as_bytes());
         let hash = hasher.finalize();
         format!("sha256:{}", hex::encode(hash))
     };
@@ -392,11 +415,11 @@ pub async fn install_resource(
             ensure_dir(parent)?;
         }
 
-        atomic_write(&dest_path, new_content.as_bytes())
+        atomic_write(&dest_path, final_content.as_bytes())
             .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
     }
 
-    Ok((actually_installed, new_checksum))
+    Ok((actually_installed, new_checksum, applied_patches))
 }
 
 /// Install a single resource with progress bar updates for user feedback.
@@ -451,15 +474,19 @@ pub async fn install_resource(
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
 ///     tool: Some("claude-code".to_string()),
+///     applied_patches: std::collections::HashMap::new(),
+///     manifest_alias: None,
 /// };
 ///
-/// let (installed, checksum) = install_resource_with_progress(
+/// let (installed, checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     Path::new("."),
 ///     "agents",
 ///     &cache,
 ///     false,
-///     &pb
+///     &pb,
+///     None,
+///     None
 /// ).await?;
 ///
 /// pb.inc(1);
@@ -474,6 +501,7 @@ pub async fn install_resource(
 /// - File system operation errors
 /// - Invalid markdown content
 /// - Git worktree creation failures
+#[allow(clippy::too_many_arguments)]
 pub async fn install_resource_with_progress(
     entry: &LockedResource,
     project_dir: &Path,
@@ -481,9 +509,20 @@ pub async fn install_resource_with_progress(
     cache: &Cache,
     force_refresh: bool,
     pb: &ProgressBar,
-) -> Result<(bool, String)> {
+    project_patches: Option<&crate::manifest::PatchData>,
+    private_patches: Option<&crate::manifest::PatchData>,
+) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
     pb.set_message(format!("Installing {}", entry.name));
-    install_resource(entry, project_dir, resource_dir, cache, force_refresh).await
+    install_resource(
+        entry,
+        project_dir,
+        resource_dir,
+        cache,
+        force_refresh,
+        project_patches,
+        private_patches,
+    )
+    .await
 }
 
 /// Install multiple resources in parallel using worktree-based concurrency.
@@ -660,11 +699,12 @@ pub async fn install_resources_parallel(
                     &resource_dir,
                     cache.as_ref(),
                     force_refresh,
+                    manifest,
                 )
                 .await;
 
                 match res {
-                    Ok((actually_installed, checksum)) => {
+                    Ok((actually_installed, checksum, applied_patches)) => {
                         if actually_installed {
                             let mut count = installed_count.lock().await;
                             *count += 1;
@@ -672,7 +712,7 @@ pub async fn install_resources_parallel(
                         let count = *installed_count.lock().await;
                         pb.set_message(format!("Installing {count}/{total} resources"));
                         pb.inc(1);
-                        Ok((entry.name.clone(), actually_installed, checksum))
+                        Ok((entry.name.clone(), actually_installed, checksum, applied_patches))
                     }
                     Err(err) => Err((entry.name.clone(), err)),
                 }
@@ -685,8 +725,8 @@ pub async fn install_resources_parallel(
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum)) => {
-                // Old function doesn't return checksums
+            Ok((_name, _installed, _checksum, _applied_patches)) => {
+                // Old function doesn't return checksums or patches
             }
             Err((name, error)) => {
                 errors.push((name, error));
@@ -780,8 +820,26 @@ async fn install_resource_for_parallel(
     resource_dir: &str,
     cache: &Cache,
     force_refresh: bool,
-) -> Result<(bool, String)> {
-    install_resource(entry, project_dir, resource_dir, cache, force_refresh).await
+    manifest: &Manifest,
+) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+    // Look up patches for this resource from the manifest
+    // For pattern-expanded resources, use manifest_alias; otherwise use name
+    let resource_type = entry.resource_type.to_plural();
+    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+
+    let project_patches = manifest.project_patches.get(resource_type, lookup_name);
+    let private_patches = manifest.private_patches.get(resource_type, lookup_name);
+
+    install_resource(
+        entry,
+        project_dir,
+        resource_dir,
+        cache,
+        force_refresh,
+        project_patches,
+        private_patches,
+    )
+    .await
 }
 
 /// Progress update message for parallel installation operations.
@@ -1058,6 +1116,7 @@ pub async fn install_resources_parallel_with_progress(
                     &resource_dir,
                     cache.as_ref(),
                     force_refresh,
+                    manifest,
                 )
                 .await;
 
@@ -1066,7 +1125,7 @@ pub async fn install_resources_parallel_with_progress(
                     let mut active = active_deps.lock().await;
                     active.retain(|x| x != &entry.name);
 
-                    if let Ok((actually_installed, _checksum)) = &res {
+                    if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
                         if *actually_installed {
                             let mut count = installed_count.lock().await;
                             *count += 1;
@@ -1084,7 +1143,9 @@ pub async fn install_resources_parallel_with_progress(
                 }
 
                 match res {
-                    Ok((installed, checksum)) => Ok((entry.name.clone(), installed, checksum)),
+                    Ok((installed, checksum, applied_patches)) => {
+                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                    }
                     Err(err) => Err((entry.name.clone(), err)),
                 }
             }
@@ -1096,8 +1157,8 @@ pub async fn install_resources_parallel_with_progress(
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum)) => {
-                // Old function doesn't return checksums
+            Ok((_name, _installed, _checksum, _applied_patches)) => {
+                // Old function doesn't return checksums or patches
             }
             Err((name, error)) => {
                 errors.push((name, error));
@@ -1273,7 +1334,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let progress = Arc::new(MultiPhaseProgress::new(true));
 ///
-/// let (count, _checksums) = install_resources(
+/// let (count, _checksums, _patches) = install_resources(
 ///     ResourceFilter::All,
 ///     &lockfile,
 ///     &manifest,
@@ -1304,7 +1365,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let updates = vec![("agent1".to_string(), None, "v1.0".to_string(), "v1.1".to_string())];
 ///
-/// let (count, _checksums) = install_resources(
+/// let (count, _checksums, _patches) = install_resources(
 ///     ResourceFilter::Updated(updates),
 ///     &lockfile,
 ///     &manifest,
@@ -1329,7 +1390,8 @@ pub async fn install_resources(
     force_refresh: bool,
     max_concurrency: Option<usize>,
     progress: Option<Arc<MultiPhaseProgress>>,
-) -> Result<(usize, Vec<(String, String)>)> {
+) -> Result<(usize, Vec<(String, String)>, Vec<(String, crate::manifest::patches::AppliedPatches)>)>
+{
     // Collect entries to install based on filter
     let all_entries: Vec<(LockedResource, String)> = match filter {
         ResourceFilter::All => {
@@ -1364,7 +1426,7 @@ pub async fn install_resources(
     };
 
     if all_entries.is_empty() {
-        return Ok((0, Vec::new()));
+        return Ok((0, Vec::new(), Vec::new()));
     }
 
     let total = all_entries.len();
@@ -1441,11 +1503,12 @@ pub async fn install_resources(
                     &resource_dir,
                     &cache,
                     force_refresh,
+                    manifest,
                 )
                 .await;
 
                 // Update progress on success - but only count if actually installed
-                if let Ok((actually_installed, _checksum)) = &res {
+                if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
                     if *actually_installed {
                         let mut count = installed_count.lock().await;
                         *count += 1;
@@ -1459,7 +1522,9 @@ pub async fn install_resources(
                 }
 
                 match res {
-                    Ok((installed, checksum)) => Ok((entry.name.clone(), installed, checksum)),
+                    Ok((installed, checksum, applied_patches)) => {
+                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                    }
                     Err(err) => Err((entry.name.clone(), err)),
                 }
             }
@@ -1468,13 +1533,15 @@ pub async fn install_resources(
         .collect()
         .await;
 
-    // Handle errors and collect checksums
+    // Handle errors and collect checksums and applied patches
     let mut errors = Vec::new();
     let mut checksums = Vec::new();
+    let mut applied_patches_list = Vec::new();
     for result in results {
         match result {
-            Ok((name, _installed, checksum)) => {
-                checksums.push((name, checksum));
+            Ok((name, _installed, checksum, applied_patches)) => {
+                checksums.push((name.clone(), checksum));
+                applied_patches_list.push((name, applied_patches));
             }
             Err((name, error)) => {
                 errors.push((name, error));
@@ -1506,7 +1573,7 @@ pub async fn install_resources(
         pm.complete_phase(Some(&format!("Installed {final_count} resources")));
     }
 
-    Ok((final_count, checksums))
+    Ok((final_count, checksums, applied_patches_list))
 }
 
 /// Install resources with real-time dynamic progress management.
@@ -1678,11 +1745,12 @@ pub async fn install_resources_with_dynamic_progress(
                     &resource_dir,
                     cache.as_ref(),
                     force_refresh,
+                    manifest,
                 )
                 .await;
 
                 // Signal completion and update count only if actually installed
-                if let Ok((actually_installed, _checksum)) = &res {
+                if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
                     if *actually_installed {
                         let mut count = installed_count.lock().await;
                         *count += 1;
@@ -1694,7 +1762,9 @@ pub async fn install_resources_with_dynamic_progress(
                 }
 
                 match res {
-                    Ok((installed, checksum)) => Ok((entry.name.clone(), installed, checksum)),
+                    Ok((installed, checksum, applied_patches)) => {
+                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                    }
                     Err(err) => Err((entry.name.clone(), err)),
                 }
             }
@@ -1706,8 +1776,8 @@ pub async fn install_resources_with_dynamic_progress(
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum)) => {
-                // Old function doesn't return checksums
+            Ok((_name, _installed, _checksum, _applied_patches)) => {
+                // Old function doesn't return checksums or patches
             }
             Err((name, error)) => {
                 errors.push((name, error));
@@ -1950,6 +2020,7 @@ pub async fn install_updated_resources(
                     &resource_dir,
                     cache.as_ref(),
                     false,
+                    manifest,
                 )
                 .await?;
 
@@ -2065,6 +2136,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     // Add AGPM managed section
     new_content.push_str("# AGPM managed entries - do not edit below this line\n");
 
+    // Always include private config files
+    new_content.push_str("agpm.private.toml\n");
+    new_content.push_str("agpm.private.lock\n");
+
     // Convert paths to gitignore format (relative to project root)
     // Sort paths for consistent output
     let mut sorted_paths: Vec<_> = paths_to_ignore.into_iter().collect();
@@ -2104,6 +2179,10 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
         default_content.push_str("# AGPM entries are automatically generated\n");
         default_content.push('\n');
         default_content.push_str("# AGPM managed entries - do not edit below this line\n");
+
+        // Always include private config files
+        default_content.push_str("agpm.private.toml\n");
+        default_content.push_str("agpm.private.lock\n");
 
         // Add the AGPM paths
         for path in &sorted_paths {
@@ -2608,8 +2687,9 @@ mod tests {
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
+                manifest_alias: None,
             }
         } else {
             LockedResource {
@@ -2623,8 +2703,9 @@ mod tests {
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-
                 tool: Some("claude-code".to_string()),
+                applied_patches: std::collections::HashMap::new(),
+                manifest_alias: None,
             }
         }
     }
@@ -2644,11 +2725,12 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Install the resource
-        let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, "agents", &cache, false, None, None).await;
         assert!(result.is_ok(), "Failed to install local resource: {:?}", result);
 
         // Should be installed the first time
-        let (installed, _checksum) = result.unwrap();
+        let (installed, _checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed
@@ -2676,9 +2758,10 @@ mod tests {
         entry.installed_at = "custom/location/resource.md".to_string();
 
         // Install the resource
-        let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, "agents", &cache, false, None, None).await;
         assert!(result.is_ok());
-        let (installed, _checksum) = result.unwrap();
+        let (installed, _checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed at custom path
@@ -2697,7 +2780,8 @@ mod tests {
         entry.path = "/non/existent/file.md".to_string();
 
         // Try to install the resource
-        let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, "agents", &cache, false, None, None).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Local file") && error_msg.contains("not found"));
@@ -2718,9 +2802,10 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
-        let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, "agents", &cache, false, None, None).await;
         assert!(result.is_ok());
-        let (installed, _checksum) = result.unwrap();
+        let (installed, _checksum, _applied_patches) = result.unwrap();
         assert!(installed);
 
         // Verify the file was installed
@@ -2750,8 +2835,17 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Install with progress
-        let result =
-            install_resource_with_progress(&entry, project_dir, "agents", &cache, false, &pb).await;
+        let result = install_resource_with_progress(
+            &entry,
+            project_dir,
+            "agents",
+            &cache,
+            false,
+            &pb,
+            None,
+            None,
+        )
+        .await;
         assert!(result.is_ok());
 
         // Verify installation
@@ -2769,7 +2863,7 @@ mod tests {
         let lockfile = LockFile::new();
         let manifest = Manifest::new();
 
-        let (count, _) = install_resources(
+        let (count, _, _) = install_resources(
             ResourceFilter::All,
             &lockfile,
             &manifest,
@@ -2821,7 +2915,7 @@ mod tests {
 
         let manifest = Manifest::new();
 
-        let (count, _) = install_resources(
+        let (count, _, _) = install_resources(
             ResourceFilter::All,
             &lockfile,
             &manifest,
@@ -2946,9 +3040,13 @@ mod tests {
         let mut entry = create_test_locked_resource("parallel-test", true);
         entry.path = local_file.to_string_lossy().to_string();
 
+        // Create a manifest (needed for patches)
+        let manifest = Manifest::new();
+
         // Install using the parallel function
         let result =
-            install_resource_for_parallel(&entry, project_dir, "agents", &cache, false).await;
+            install_resource_for_parallel(&entry, project_dir, "agents", &cache, false, &manifest)
+                .await;
         assert!(result.is_ok());
 
         // Verify installation
@@ -2972,9 +3070,10 @@ mod tests {
         entry.installed_at = "very/deeply/nested/path/resource.md".to_string();
 
         // Install the resource
-        let result = install_resource(&entry, project_dir, "agents", &cache, false).await;
+        let result =
+            install_resource(&entry, project_dir, "agents", &cache, false, None, None).await;
         assert!(result.is_ok());
-        let (installed, _checksum) = result.unwrap();
+        let (installed, _checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify nested directories were created

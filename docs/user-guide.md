@@ -494,6 +494,296 @@ Error: Version conflict for agents/helper.md
 - Update version constraints in manifest or resource metadata
 - Add `filename`/`target` overrides for duplicate install paths
 
+## Overriding Resource Fields
+
+AGPM's patch system allows you to override YAML frontmatter or JSON fields in resource files without forking upstream repositories. This is perfect for customizing model settings, adding API keys, or adjusting any metadata field.
+
+### When to Use Patches vs Forking
+
+**Use Patches When:**
+- Customizing model, temperature, or other runtime parameters
+- Adding personal API keys or credentials
+- Overriding team defaults with personal preferences
+- Making small metadata changes that don't affect core functionality
+- You want to receive upstream updates while maintaining customizations
+
+**Fork Upstream When:**
+- Changing the core content or logic of the resource
+- Making structural changes to the resource format
+- Creating a derivative work with significant modifications
+- You need to share customizations with a team (use project patches in agpm.toml)
+
+### Tutorial: Common Scenarios
+
+#### Scenario 1: Override Model for a Single Agent
+
+You want to use a different model than the upstream default:
+
+**Step 1**: Add the dependency normally
+```toml
+# agpm.toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+```
+
+**Step 2**: Add a patch to override the model
+```toml
+# agpm.toml (continued)
+[patch.agents.rust-expert]
+model = "claude-3-opus"      # Override to use Opus instead of default
+max_tokens = "8192"          # Increase token limit
+```
+
+**Step 3**: Install and verify
+```bash
+agpm install
+agpm list  # Shows "(patched)" indicator
+```
+
+#### Scenario 2: Personal Configuration (Temperature, API Keys)
+
+Add personal preferences without affecting team configuration:
+
+**Step 1**: Create `agpm.private.toml` (not committed to git)
+```toml
+# agpm.private.toml
+[patch.agents.rust-expert]
+temperature = "0.9"              # Personal preference: higher creativity
+api_key = "${ANTHROPIC_API_KEY}" # Personal API key from environment
+custom_endpoint = "https://my-proxy.internal"
+```
+
+**Step 2**: Add to .gitignore
+```bash
+echo "agpm.private.toml" >> .gitignore
+```
+
+**Step 3**: Install with your personal overrides
+```bash
+export ANTHROPIC_API_KEY="sk-..."
+agpm install
+```
+
+The result combines both project and private patches:
+- `model` = "claude-3-opus" (from project)
+- `max_tokens` = "8192" (from project)
+- `temperature` = "0.9" (from private)
+- `api_key` = "sk-..." (from private)
+- `custom_endpoint` = "https://my-proxy.internal" (from private)
+
+#### Scenario 3: Override Multiple Agents with Team Defaults
+
+Set consistent configuration across multiple agents:
+
+```toml
+# agpm.toml
+[agents]
+agent1 = { source = "community", path = "agents/agent1.md", version = "v1.0.0" }
+agent2 = { source = "community", path = "agents/agent2.md", version = "v1.0.0" }
+agent3 = { source = "community", path = "agents/agent3.md", version = "v1.0.0" }
+
+# Team-wide standards
+[patch.agents.agent1]
+model = "claude-3-opus"
+max_tokens = "8192"
+organization = "MyCompany"
+
+[patch.agents.agent2]
+model = "claude-3-opus"
+max_tokens = "8192"
+organization = "MyCompany"
+
+[patch.agents.agent3]
+model = "claude-3-opus"
+max_tokens = "8192"
+organization = "MyCompany"
+```
+
+#### Scenario 4: Patch Transitive Dependencies
+
+Transitive dependencies can be patched, but they must first be added to your manifest:
+
+**Step 1**: Identify transitive dependency
+```bash
+agpm tree  # Shows full dependency tree
+# Output shows: agent/code-reviewer depends on agent/rust-helper
+```
+
+**Step 2**: Add transitive dependency to manifest explicitly
+```toml
+# agpm.toml
+[agents]
+code-reviewer = { source = "community", path = "agents/code-reviewer.md", version = "v1.0.0" }
+rust-helper = { source = "community", path = "agents/rust-helper.md", version = "v1.0.0" }
+```
+
+**Step 3**: Add patch for transitive dependency
+```toml
+[patch.agents.rust-helper]
+model = "claude-3-haiku"  # Use faster model for helper
+temperature = "0.5"
+```
+
+**Step 4**: Install
+```bash
+agpm install
+```
+
+### Troubleshooting Patch Conflicts
+
+#### Problem: Patch Conflict Error
+
+```text
+Error: Patch conflict for agents/rust-expert
+  Field 'model' appears in both agpm.toml and agpm.private.toml
+  Resolution: Remove the field from one of the files
+```
+
+**Solution**: Decide which file should own the field
+
+**Option A**: Keep in project (team standard)
+```toml
+# agpm.toml
+[patch.agents.rust-expert]
+model = "claude-3-opus"      # Keep this
+
+# agpm.private.toml
+[patch.agents.rust-expert]
+# model = "claude-3-haiku"   # Remove this line
+temperature = "0.9"          # Keep personal preferences
+```
+
+**Option B**: Keep in private (personal override)
+```toml
+# agpm.toml
+[patch.agents.rust-expert]
+# model = "claude-3-opus"    # Remove this line
+max_tokens = "8192"          # Keep team settings
+
+# agpm.private.toml
+[patch.agents.rust-expert]
+model = "claude-3-haiku"     # Keep personal override
+temperature = "0.9"
+```
+
+#### Problem: Patch Not Applied
+
+**Symptoms**: Changes in patch don't appear in installed resource
+
+**Solution 1**: Verify patch alias matches dependency name
+```bash
+# Check installed resources
+agpm list
+
+# Ensure patch uses exact dependency name
+# agpm.toml
+[agents]
+rust-expert = { ... }       # Name is "rust-expert"
+
+[patch.agents.rust-expert]  # Must match exactly (not "rust_expert" or "rustexpert")
+model = "claude-3-opus"
+```
+
+**Solution 2**: Validate syntax
+```bash
+agpm validate
+```
+
+**Solution 3**: Check file location
+- `agpm.toml` should be in project root
+- `agpm.private.toml` should be next to `agpm.toml`
+
+#### Problem: Unknown Dependency Alias
+
+```text
+Error: Patch references unknown dependency 'my-agent' in section 'agents'
+```
+
+**Solution**: Add dependency to manifest first
+```toml
+# agpm.toml
+[agents]
+my-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+[patch.agents.my-agent]  # Now valid
+model = "claude-3-opus"
+```
+
+### Best Practices
+
+1. **Use Project Patches for Team Standards**
+   - Model selection for different use cases
+   - Organization-wide settings
+   - Compliance requirements
+   - Shared endpoint configuration
+
+2. **Use Private Patches for Personal Settings**
+   - API keys and credentials
+   - Personal model preferences
+   - Development debugging settings
+   - Local endpoint overrides
+
+3. **Document Required Patches**
+   ```markdown
+   # README.md
+   ## Setup
+
+   Some agents require additional configuration:
+
+   1. Copy `agpm.private.toml.example` to `agpm.private.toml`
+   2. Set your API key: `api_key = "${ANTHROPIC_API_KEY}"`
+   3. (Optional) Customize model preferences
+   ```
+
+4. **Validate Before Committing**
+   ```bash
+   agpm validate
+   agpm install --frozen  # Test locked install
+   ```
+
+5. **Use Environment Variables for Secrets**
+   ```toml
+   # Good: Uses environment variable
+   [patch.agents.assistant]
+   api_key = "${ANTHROPIC_API_KEY}"
+
+   # Bad: Hard-coded secret
+   [patch.agents.assistant]
+   api_key = "sk-ant-..."
+   ```
+
+6. **Keep Patches Simple**
+   - Override only what you need
+   - Don't duplicate upstream fields unless changing them
+   - Comment why each override is needed
+
+### Viewing Applied Patches
+
+Check which resources have patches applied:
+
+```bash
+# Table view shows "(patched)" indicator
+$ agpm list
+Name          Type    Version  Source     Installed At                    Status
+rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
+helper        agent   v1.0.0   community  .claude/agents/helper.md
+
+# JSON view shows which fields were patched
+$ agpm list --format json
+{
+  "agents": [
+    {
+      "name": "rust-expert",
+      "version": "v1.0.0",
+      "patches": ["model", "temperature", "max_tokens", "api_key"]
+    }
+  ]
+}
+```
+
 ## Resource Organization
 
 ### Default Locations

@@ -1,7 +1,7 @@
 ---
 description: Advanced linting and code quality fixes. Handles complex clippy warnings and refactoring suggestions. Delegates architectural changes to rust-expert-advanced.
 mode: subagent
-model: zai/glm-4.6
+model: zai-coding-plan/glm-4.6
 temperature: 0.2
 tools:
   read: true
@@ -15,8 +15,10 @@ permission:
 ---
 
 **IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:
+
 - `.agpm/snippets/agents/rust-linting-advanced.md`
 
 **Additional tool-specific context**:
+
 - For OpenCode specific features, refer to OpenCode documentation
 - Agent invocation: Suggest invoking specialized agents when needed (e.g., "Please invoke rust-expert-advanced agent")

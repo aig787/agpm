@@ -1,7 +1,7 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-troubleshooter-standard fails repeatedly. Advanced Rust troubleshooting expert for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving."
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-5-20250929
 temperature: 0.3
 tools:
   read: true

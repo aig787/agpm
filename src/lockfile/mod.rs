@@ -291,6 +291,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -778,11 +779,97 @@ pub struct LockedResource {
     /// Always serialized (even if Some) to avoid ambiguity.
     #[serde(skip_serializing_if = "is_default_tool")]
     pub tool: Option<String>,
+
+    /// Original manifest alias for pattern-expanded dependencies.
+    ///
+    /// When a pattern dependency (e.g., `agents/helpers/*.md` with alias "all-helpers")
+    /// expands to multiple files, each file gets its own lockfile entry with a unique `name`
+    /// (e.g., "helper-alpha", "helper-beta"). The `manifest_alias` field preserves the
+    /// original pattern alias so patches defined under that alias can be correctly applied
+    /// to all matched files.
+    ///
+    /// For non-pattern dependencies, this field is `None` since `name` already represents
+    /// the manifest alias.
+    ///
+    /// Example lockfile entry for pattern-expanded resource:
+    /// ```toml
+    /// [[agents]]
+    /// name = "helper-alpha"                    # Individual file name
+    /// manifest_alias = "all-helpers"           # Original pattern alias
+    /// path = "agents/helpers/helper-alpha.md"
+    /// ...
+    /// ```
+    ///
+    /// This enables pattern patching: all files matched by "all-helpers" pattern can
+    /// have patches applied via `[patch.agents.all-helpers]` in the manifest.
+    ///
+    /// Omitted from TOML serialization when `None` (for non-pattern dependencies).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_alias: Option<String>,
+
+    /// Applied patches from manifest configuration.
+    ///
+    /// Contains the key-value pairs that were applied to this resource's metadata
+    /// via `[patch.<resource-type>.<alias>]` sections in agpm.toml or agpm.private.toml.
+    ///
+    /// This enables reproducible installations and provides visibility into which
+    /// resources have been patched.
+    ///
+    /// Omitted from TOML serialization when empty.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub applied_patches: HashMap<String, toml::Value>,
 }
 
 fn is_default_tool(tool: &Option<String>) -> bool {
     // Default tool is claude-code, so always skip serializing when it's Some("claude-code")
     matches!(tool, Some(t) if t == "claude-code")
+}
+
+/// Convert lockfile to TOML string with inline tables for `applied_patches`.
+///
+/// Uses `toml_edit` to ensure `applied_patches` fields are serialized as inline tables:
+/// ```toml
+/// [[agents]]
+/// name = "example"
+/// applied_patches = { model = "haiku", temperature = "0.9" }
+/// ```
+///
+/// Instead of the confusing separate table format produced by standard TOML serialization:
+/// ```toml
+/// [[agents]]
+/// name = "example"
+///
+/// [agents.applied_patches]
+/// model = "haiku"
+/// ```
+fn serialize_lockfile_with_inline_patches<T: serde::Serialize>(lockfile: &T) -> Result<String> {
+    use toml_edit::{DocumentMut, Item};
+
+    // First serialize to a toml_edit document
+    let toml_str = toml::to_string_pretty(lockfile).context("Failed to serialize to TOML")?;
+    let mut doc: DocumentMut = toml_str.parse().context("Failed to parse TOML document")?;
+
+    // Convert all `applied_patches` tables to inline tables
+    let resource_types = ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+
+    for resource_type in &resource_types {
+        if let Some(Item::ArrayOfTables(array)) = doc.get_mut(resource_type) {
+            for table in array.iter_mut() {
+                if let Some(Item::Table(patches_table)) = table.get_mut("applied_patches") {
+                    // Convert to inline table
+                    let mut inline = toml_edit::InlineTable::new();
+                    for (key, val) in patches_table.iter() {
+                        if let Some(v) = val.as_value() {
+                            inline.insert(key, v.clone());
+                        }
+                    }
+                    table.insert("applied_patches", toml_edit::value(inline));
+                }
+            }
+        }
+    }
+
+    Ok(doc.to_string())
 }
 
 impl LockFile {
@@ -1044,10 +1131,9 @@ impl LockFile {
     /// fetched_at = "2024-01-15T10:30:00Z"
     /// ```
     pub fn save(&self, path: &Path) -> Result<()> {
-        // Use proper TOML serialization instead of manual string building
+        // Use toml_edit to ensure applied_patches are formatted as inline tables
         let mut content = String::from("# Auto-generated lockfile - DO NOT EDIT\n");
-        let toml_content =
-            toml::to_string_pretty(self).context("Failed to serialize lockfile to TOML")?;
+        let toml_content = serialize_lockfile_with_inline_patches(self)?;
         content.push_str(&toml_content);
 
         atomic_write(path, content.as_bytes()).with_context(|| {
@@ -1156,6 +1242,8 @@ impl LockFile {
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Agent,
     ///     tool: Some("claude-code".to_string()),
+    ///     manifest_alias: None,
+    ///     applied_patches: std::collections::HashMap::new(),
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1180,6 +1268,8 @@ impl LockFile {
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Snippet,
     ///     tool: Some("claude-code".to_string()),
+    ///     manifest_alias: None,
+    ///     applied_patches: std::collections::HashMap::new(),
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1227,6 +1317,8 @@ impl LockFile {
     ///     dependencies: vec![],
     ///     resource_type: ResourceType::Command,
     ///     tool: Some("claude-code".to_string()),
+    ///     manifest_alias: None,
+    ///     applied_patches: std::collections::HashMap::new(),
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -1938,6 +2030,8 @@ impl LockFile {
     /// #     dependencies: vec![],
     /// #     resource_type: ResourceType::Agent,
     /// #     tool: Some("claude-code".to_string()),
+    /// #     manifest_alias: None,
+    /// #     applied_patches: std::collections::HashMap::new(),
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -1985,6 +2079,94 @@ impl LockFile {
         for resource in &mut self.mcp_servers {
             if resource.name == name {
                 resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Updates the applied patches for a resource in the lockfile by name.
+    ///
+    /// This method searches through all resource types to find a resource with the
+    /// matching name and updates its `applied_patches` field with the patches that
+    /// were actually applied during installation.
+    ///
+    /// The `applied_patches` parameter should be the `AppliedPatches` struct returned
+    /// from the installer, which contains both project and private patches that were
+    /// successfully applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the resource to update
+    /// * `applied_patches` - The patches that were applied (from `AppliedPatches` struct)
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the resource was found and updated, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use agpm_cli::manifest::patches::AppliedPatches;
+    /// # use std::collections::HashMap;
+    /// # let mut lockfile = LockFile::new();
+    /// let mut applied = AppliedPatches::new();
+    /// applied.project.insert("model".to_string(), toml::Value::String("haiku".into()));
+    ///
+    /// let updated = lockfile.update_resource_applied_patches("my-agent", &applied);
+    /// assert!(updated);
+    /// ```
+    pub fn update_resource_applied_patches(
+        &mut self,
+        name: &str,
+        applied_patches: &crate::manifest::patches::AppliedPatches,
+    ) -> bool {
+        // Store ONLY project patches in the main lockfile (agpm.lock)
+        // Private patches are stored separately in agpm.private.lock
+        // This ensures the main lockfile is deterministic and safe to commit
+        let project_patches = applied_patches.project.clone();
+
+        // Try each resource type until we find a match
+        for resource in &mut self.agents {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.snippets {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.commands {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.scripts {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.hooks {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
+                return true;
+            }
+        }
+
+        for resource in &mut self.mcp_servers {
+            if resource.name == name {
+                resource.applied_patches = project_patches;
                 return true;
             }
         }
@@ -2077,6 +2259,14 @@ pub fn find_lockfile() -> Option<PathBuf> {
     }
 }
 
+// Private lockfile module for user-level patches
+pub mod private_lock;
+pub use private_lock::PrivateLockFile;
+
+// Patch display utilities (currently unused - TODO: integrate with Cache API)
+#[allow(dead_code)]
+pub mod patch_display;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2120,6 +2310,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             true,
         );
@@ -2219,6 +2411,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             true, // is_agent
         );
@@ -2238,6 +2432,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Snippet,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             false, // is_agent
         );
@@ -2257,6 +2453,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             true, // is_agent
         );
@@ -2310,6 +2508,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Command,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2342,6 +2542,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             true,
         );
@@ -2361,6 +2563,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Snippet,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             false,
         );
@@ -2380,6 +2584,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Command,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2417,6 +2623,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Command,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             crate::core::ResourceType::Command,
         );
@@ -2455,6 +2663,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             true,
         );
@@ -2474,6 +2684,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Command,
 
                 tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             },
             crate::core::ResourceType::Command,
         );

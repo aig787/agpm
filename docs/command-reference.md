@@ -46,7 +46,7 @@ agpm init --force
 
 ### `agpm install`
 
-Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
+Install dependencies from `agpm.toml` and generate/update `agpm.lock`. Automatically updates the lockfile when manifest changes (similar to `cargo build`). Applies patches from both `agpm.toml` and `agpm.private.toml` during installation. Uses centralized version resolution and SHA-based worktree optimization for maximum performance.
 
 ```bash
 agpm install [OPTIONS]
@@ -62,7 +62,7 @@ Options:
 
 **Examples:**
 ```bash
-# Standard installation (auto-updates lockfile)
+# Standard installation (auto-updates lockfile, applies patches)
 agpm install
 
 # CI/production mode - fail if lockfile out of sync (like cargo build --locked)
@@ -80,6 +80,14 @@ agpm install --max-parallel 8
 # Use custom manifest path
 agpm install --manifest-path ./configs/agpm.toml
 ```
+
+**Patch Behavior:**
+- Reads patches from `[patch.*]` sections in `agpm.toml` (project-level)
+- Reads patches from `agpm.private.toml` if present (user-level)
+- Private patches extend project patches (different fields combine)
+- Conflicts (same field in both) cause installation failure with clear error
+- Applied patches are tracked in lockfile `patches` field
+- Validates patch aliases match manifest dependencies
 
 ### `agpm update`
 
@@ -199,7 +207,7 @@ When using `--format json`, the output includes:
 
 ### `agpm list`
 
-List installed resources from `agpm.lock`.
+List installed resources from `agpm.lock`. Shows "(patched)" indicator for resources with applied patches.
 
 ```bash
 agpm list [OPTIONS]
@@ -219,11 +227,34 @@ agpm list
 # List only agents
 agpm list --type agents
 
-# Output as JSON
+# Output as JSON (includes patch field names)
 agpm list --format json
 
 # Use custom manifest path
 agpm list --manifest-path ./configs/agpm.toml
+```
+
+**Output Details:**
+
+Table format shows "(patched)" indicator:
+```text
+Name          Type    Version  Source     Installed At                    Status
+rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
+helper        agent   v1.0.0   community  .claude/agents/helper.md
+```
+
+JSON format includes patch field names:
+```json
+{
+  "agents": [
+    {
+      "name": "rust-expert",
+      "version": "v1.0.0",
+      "source": "community",
+      "patches": ["model", "temperature", "max_tokens"]
+    }
+  ]
+}
 ```
 
 ### `agpm tree`
@@ -305,7 +336,7 @@ Use `--format json` for programmatic access to dependency information, which inc
 
 ### `agpm validate`
 
-Validate `agpm.toml` syntax and dependency resolution.
+Validate `agpm.toml` syntax, dependency resolution, and patch configuration. Also validates `agpm.private.toml` if present.
 
 ```bash
 agpm validate [OPTIONS]
@@ -319,7 +350,7 @@ Options:
 
 **Examples:**
 ```bash
-# Basic syntax validation
+# Basic syntax validation (includes patch validation)
 agpm validate
 
 # Validate with lockfile consistency check
@@ -331,6 +362,27 @@ agpm validate --resolve
 # Validate custom manifest
 agpm validate --manifest-path ./configs/agpm.toml
 ```
+
+**Validation Checks:**
+
+Manifest validation includes:
+- TOML syntax correctness
+- Source and dependency definitions
+- Patch syntax and structure
+- Patch aliases match manifest dependencies
+- No unknown patch references
+
+When `--check-lock` is used:
+- Lockfile exists and is valid
+- Lockfile matches manifest (no staleness)
+- All dependencies are present
+- Applied patches tracked correctly
+
+When `--resolve` is used:
+- Full dependency resolution
+- Version constraint satisfaction
+- Transitive dependency resolution
+- Patch conflict detection between project and private patches
 
 ### `agpm add`
 

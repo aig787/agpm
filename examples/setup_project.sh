@@ -128,14 +128,75 @@ agpm add dep snippet --no-install --name rest-api "local-deps:snippets/rest-api-
 agpm add dep snippet --no-install --name test-coverage "local-deps:snippets/test-coverage.md"
 
 
-# Show the generated manifest
+# Add project-level patches to agpm.toml
 echo ""
-echo "→ Generated agpm.toml:"
+echo -e "${YELLOW}→ Adding project-level patches to agpm.toml${NC}"
+echo "  These patches are checked into git and apply to all team members"
+cat >> agpm.toml << 'EOF'
+
+# Project-level patches - override resource fields for the whole team
+# These are checked into version control and apply to all developers
+
+[patch.agents.rust-haiku]
+# Use faster model for quick Rust tasks
+model = "haiku"
+description = "Rust assistant optimized for speed (team override)"
+
+[patch.agents.javascript-haiku]
+# Use faster model for JavaScript tasks
+model = "haiku"
+description = "JavaScript assistant optimized for speed (team override)"
+
+[patch.agents.security-auditor]
+# Security audits need the most capable model
+model = "opus"
+description = "Security auditor using Opus for thorough analysis (team override)"
+
+[patch.agents.code-reviewer]
+# Code reviews benefit from Opus-level reasoning
+model = "opus"
+EOF
+
+echo ""
+echo "→ Generated agpm.toml with project patches:"
 cat agpm.toml
+
+# Create private patches in agpm.private.toml
+echo ""
+echo -e "${YELLOW}→ Creating agpm.private.toml with user-specific patches${NC}"
+echo "  These patches are NOT checked into git (add to .gitignore)"
+echo "  They extend project patches with personal preferences"
+cat > agpm.private.toml << 'EOF'
+# Private patches - user-specific overrides
+# Add this file to .gitignore - it contains personal preferences
+# Different fields combine with project patches; same field causes conflict
+
+[patch.agents.api-designer]
+# Personal preference: customize description for my workflow
+description = "API designer customized for my microservices architecture"
+
+[patch.agents.documentation-engineer]
+# Personal preference: use Opus for comprehensive documentation
+model = "opus"
+
+[patch.agents.ml-engineer]
+# Personal preference: use Opus for ML work (I work on ML a lot)
+model = "opus"
+description = "ML engineer using Opus for complex model development"
+EOF
+
+echo ""
+echo "→ Generated agpm.private.toml:"
+cat agpm.private.toml
+
+# Add to .gitignore
+echo ""
+echo "→ Adding agpm.private.toml to .gitignore"
+echo "agpm.private.toml" > .gitignore
 
 # Validate the manifest
 echo ""
-echo "→ Validating manifest"
+echo "→ Validating manifest (with patches)"
 agpm validate
 
 # Install dependencies
@@ -147,6 +208,21 @@ agpm install
 echo ""
 echo "→ Listing installed resources"
 agpm list
+
+# Show applied patches in lockfile
+echo ""
+echo -e "${YELLOW}→ Checking lockfile for applied patches${NC}"
+echo "  The lockfile tracks which patches were applied to each resource:"
+grep -A 2 "patches =" agpm.lock || echo "  (No patches shown - format may vary)"
+
+# Show a specific patched agent file
+echo ""
+echo -e "${YELLOW}→ Example: rust-haiku agent with applied patches${NC}"
+echo "  Project patches changed model to 'haiku' and updated description:"
+if [ -f ".claude/agents/rust-haiku.md" ]; then
+    echo ""
+    head -n 25 .claude/agents/rust-haiku.md | grep -E "^(model|description):" || echo "  (Fields may not be in frontmatter)"
+fi
 
 # Update dependencies
 echo ""
@@ -161,7 +237,7 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo "Your Claude Code project '$PROJECT_NAME' is ready:"
 echo ""
-agpm tree
+agpm tree --detailed
 
 # Show final structure
 echo ""
@@ -170,6 +246,36 @@ tree -a -L 4
 
 echo ""
 echo "Project location: $PROJECT_DIR"
+echo ""
+echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}                    Patch System Overview                          ${NC}"
+echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
+echo ""
+echo -e "${YELLOW}Project Patches (agpm.toml):${NC}"
+echo "  ✓ Checked into git"
+echo "  ✓ Apply to all team members"
+echo "  ✓ Define team-wide model overrides"
+echo "  Examples in this project:"
+echo "    - rust-haiku: model='haiku' + custom description"
+echo "    - javascript-haiku: model='haiku' + custom description"
+echo "    - security-auditor: model='opus' + custom description"
+echo "    - code-reviewer: model='opus'"
+echo ""
+echo -e "${YELLOW}Private Patches (agpm.private.toml):${NC}"
+echo "  ✓ NOT checked into git (in .gitignore)"
+echo "  ✓ Personal preferences only"
+echo "  ✓ Extend project patches with user-specific settings"
+echo "  Examples in this project:"
+echo "    - api-designer: Custom description for personal workflow"
+echo "    - documentation-engineer: model='opus'"
+echo "    - ml-engineer: model='opus' + custom description"
+echo ""
+echo -e "${YELLOW}Patch Merging Rules:${NC}"
+echo "  ✓ Different fields: Combine (project + private patches both apply)"
+echo "  ✓ Same field: Hard failure (prevents conflicts)"
+echo "  ✓ Lockfile: Tracks applied patches in 'patches' field"
+echo ""
+echo -e "${BLUE}═══════════════════════════════════════════════════════════════════${NC}"
 echo ""
 echo "To clean up this project, run:"
 echo "  ./examples/cleanup_project.sh $PROJECT_NAME"
