@@ -1431,3 +1431,138 @@ priority = 5
     // The key verification is that the patch extraction logic works correctly
     // when reading from source files (tested in unit tests above)
 }
+
+#[tokio::test]
+async fn test_validate_check_lock_with_patches() {
+    test_config::init_test_env();
+    let project = TestProject::new().await.unwrap();
+
+    // Create test repository with agent
+    let (url, path) = create_repo_with_model_agent(&project).await.unwrap();
+
+    // Create project manifest with project-level patch
+    let manifest = format!(
+        r#"[sources]
+test = "{}"
+
+[agents]
+my-agent = {{ source = "test", path = "{}", version = "v1.0.0" }}
+
+[patch.agents.my-agent]
+model = "claude-3-haiku"
+temperature = "0.7"
+"#,
+        url, path
+    );
+
+    project.write_manifest(&manifest).await.unwrap();
+
+    // Create private manifest with additional patches
+    let private_manifest = r#"[patch.agents.my-agent]
+max_tokens = 4000
+"#;
+
+    let private_path = project.project_path().join("agpm.private.toml");
+    fs::write(&private_path, private_manifest).await.unwrap();
+
+    // Run install
+    let output = project.run_agpm(&["install"]).unwrap();
+    output.assert_success();
+
+    // Run validate --check-lock to verify it recognizes patched resources
+    let output = project.run_agpm(&["validate", "--check-lock"]).unwrap();
+    assert!(
+        output.success,
+        "validate --check-lock should succeed with patched resources. Stderr:\n{}",
+        output.stderr
+    );
+
+    // Verify output mentions the resource is patched or validates successfully
+    assert!(
+        output.stdout.contains("✓") || output.stdout.contains("valid"),
+        "Validate should report success for patched resources. Output:\n{}",
+        output.stdout
+    );
+
+    // Verify lockfile contains patch information
+    let lockfile_content = project.read_lockfile().await.unwrap();
+    assert!(
+        lockfile_content.contains("applied_patches"),
+        "Lockfile should track applied patches"
+    );
+}
+
+#[tokio::test]
+async fn test_validate_resolve_with_patches() {
+    test_config::init_test_env();
+    let project = TestProject::new().await.unwrap();
+
+    // Create test repository with agent
+    let (url, path) = create_repo_with_model_agent(&project).await.unwrap();
+
+    // Create manifest with patches
+    let manifest = format!(
+        r#"[sources]
+test = "{}"
+
+[agents]
+my-agent = {{ source = "test", path = "{}", version = "v1.0.0" }}
+
+[patch.agents.my-agent]
+model = "claude-3-haiku"
+"#,
+        url, path
+    );
+
+    project.write_manifest(&manifest).await.unwrap();
+
+    // Run validate --resolve (which should work with patches)
+    let output = project.run_agpm(&["validate", "--resolve"]).unwrap();
+
+    // This should succeed - validate --resolve should handle patches
+    assert!(
+        output.success,
+        "validate --resolve should succeed with patches. Stderr:\n{}",
+        output.stderr
+    );
+}
+
+#[tokio::test]
+async fn test_validate_detects_unknown_patch_alias() {
+    test_config::init_test_env();
+    let project = TestProject::new().await.unwrap();
+
+    // Create test repository
+    let (url, path) = create_repo_with_model_agent(&project).await.unwrap();
+
+    // Create manifest with patch for unknown alias
+    let manifest = format!(
+        r#"[sources]
+test = "{}"
+
+[agents]
+my-agent = {{ source = "test", path = "{}", version = "v1.0.0" }}
+
+[patch.agents.nonexistent-agent]
+model = "claude-3-haiku"
+"#,
+        url, path
+    );
+
+    project.write_manifest(&manifest).await.unwrap();
+
+    // Run validate - should detect unknown alias in patch
+    let output = project.run_agpm(&["validate"]).unwrap();
+
+    assert!(
+        !output.success,
+        "validate should fail when patch references unknown alias"
+    );
+
+    assert!(
+        output.stderr.contains("nonexistent-agent") || output.stdout.contains("nonexistent-agent"),
+        "Error should mention the unknown alias in patch section. Output:\nstdout: {}\nstderr: {}",
+        output.stdout,
+        output.stderr
+    );
+}
