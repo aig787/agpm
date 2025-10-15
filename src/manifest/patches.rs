@@ -404,13 +404,32 @@ pub fn apply_patches_to_content_with_origin(
     project_patches: &PatchData,
     private_patches: &PatchData,
 ) -> anyhow::Result<(String, AppliedPatches)> {
-    // Apply project patches first
-    let (content_after_project, project_applied) =
-        apply_patches_to_content(content, file_path, project_patches)?;
+    // Merge patches first, with private taking precedence over project
+    let mut merged_patches = project_patches.clone();
+    for (key, value) in private_patches {
+        merged_patches.insert(key.clone(), value.clone());
+    }
 
-    // Then apply private patches (can override project in the file, but tracked separately)
-    let (final_content, private_applied) =
-        apply_patches_to_content(&content_after_project, file_path, private_patches)?;
+    // Apply the merged patches in a single pass to avoid duplicate frontmatter
+    let (final_content, all_applied) =
+        apply_patches_to_content(content, file_path, &merged_patches)?;
+
+    // Track which patches were actually applied by origin
+    // Note: When both project and private define the same key, we track BOTH
+    // even though only the private value ends up in the content
+    let mut project_applied = HashMap::new();
+    let mut private_applied = HashMap::new();
+
+    for (key, _) in &all_applied {
+        // Track project patches
+        if let Some(value) = project_patches.get(key) {
+            project_applied.insert(key.clone(), value.clone());
+        }
+        // Track private patches (may override project)
+        if let Some(value) = private_patches.get(key) {
+            private_applied.insert(key.clone(), value.clone());
+        }
+    }
 
     Ok((
         final_content,
