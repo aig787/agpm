@@ -311,12 +311,12 @@ impl ResourceType {
     ///
     /// # Returns
     ///
-    /// - [`Agent`] → `"claude-code"`
-    /// - [`Snippet`] → `"agpm"` (shared infrastructure)
-    /// - [`Command`] → `"claude-code"`
-    /// - [`McpServer`] → `"claude-code"`
-    /// - [`Script`] → `"claude-code"`
-    /// - [`Hook`] → `"claude-code"`
+    /// - [`ResourceType::Agent`] → `"claude-code"`
+    /// - [`ResourceType::Snippet`] → `"agpm"` (shared infrastructure)
+    /// - [`ResourceType::Command`] → `"claude-code"`
+    /// - [`ResourceType::McpServer`] → `"claude-code"`
+    /// - [`ResourceType::Script`] → `"claude-code"`
+    /// - [`ResourceType::Hook`] → `"claude-code"`
     ///
     /// # Examples
     ///

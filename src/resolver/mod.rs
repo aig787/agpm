@@ -2138,7 +2138,7 @@ impl DependencyResolver {
     ///
     /// - [`resolve()`]: Convenience method that enables transitive resolution by default
     /// - [`DependencyGraph`]: Graph structure used for cycle detection and ordering
-    /// - [`DependencySpec`]: Specification format for transitive dependencies
+    /// - [`DependencySpec`](crate::manifest::DependencySpec): Specification format for transitive dependencies
     ///
     /// [`resolve()`]: DependencyResolver::resolve
     pub async fn resolve_with_options(&mut self, enable_transitive: bool) -> Result<LockFile> {
