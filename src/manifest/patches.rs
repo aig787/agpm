@@ -420,7 +420,7 @@ pub fn apply_patches_to_content_with_origin(
     let mut project_applied = HashMap::new();
     let mut private_applied = HashMap::new();
 
-    for (key, _) in &all_applied {
+    for key in all_applied.keys() {
         // Track project patches
         if let Some(value) = project_patches.get(key) {
             project_applied.insert(key.clone(), value.clone());
