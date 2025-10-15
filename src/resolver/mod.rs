@@ -1305,12 +1305,19 @@ impl DependencyResolver {
                             // Convert canonical path back to manifest-relative for proper name generation
                             let manifest_dir = self.manifest.manifest_dir.as_ref()
                                 .ok_or_else(|| anyhow::anyhow!("Manifest directory not available for path-only transitive dep"))?;
+
+                            // Canonicalize manifest_dir to ensure consistent path comparison on Windows
+                            // (canonicalize produces \\?\ prefixes that must match)
+                            let canonical_manifest_dir = manifest_dir.canonicalize().with_context(|| {
+                                format!("Failed to canonicalize manifest directory: {}", manifest_dir.display())
+                            })?;
+
                             let manifest_relative =
-                                trans_canonical.strip_prefix(manifest_dir).with_context(|| {
+                                trans_canonical.strip_prefix(&canonical_manifest_dir).with_context(|| {
                                     format!(
                                         "Transitive dep path {} is not under manifest directory {}",
                                         trans_canonical.display(),
-                                        manifest_dir.display()
+                                        canonical_manifest_dir.display()
                                     )
                                 })?;
 
@@ -1399,8 +1406,10 @@ impl DependencyResolver {
                                     .await?;
 
                                 // Canonicalize worktree path to handle symlinks (e.g., /var -> /private/var on macOS)
-                                let canonical_worktree =
-                                    worktree_path.canonicalize().unwrap_or(worktree_path.clone());
+                                // and ensure consistent path formats on Windows (\\?\ prefix)
+                                let canonical_worktree = worktree_path.canonicalize().with_context(|| {
+                                    format!("Failed to canonicalize worktree path: {}", worktree_path.display())
+                                })?;
 
                                 trans_canonical.strip_prefix(&canonical_worktree)
                                     .with_context(|| format!(
