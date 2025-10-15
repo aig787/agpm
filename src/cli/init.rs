@@ -119,11 +119,7 @@ impl InitCommand {
     /// - `Err(anyhow::Error)` if unable to read or write the `.gitignore` file
     fn update_gitignore(target_dir: &std::path::Path) -> Result<()> {
         let gitignore_path = target_dir.join(".gitignore");
-        let entries = vec![
-            ".agpm/backups/",
-            "agpm.private.toml",
-            "agpm.private.lock",
-        ];
+        let entries = [".agpm/backups/", "agpm.private.toml", "agpm.private.lock"];
 
         // Read existing .gitignore or start with empty content
         let mut content = if gitignore_path.exists() {
@@ -519,10 +515,8 @@ mod tests {
         let gitignore_path = temp_dir.path().join(".gitignore");
 
         // Create existing .gitignore with all entries already present
-        fs::write(
-            &gitignore_path,
-            ".agpm/backups/\nagpm.private.toml\nagpm.private.lock\n"
-        ).unwrap();
+        fs::write(&gitignore_path, ".agpm/backups/\nagpm.private.toml\nagpm.private.lock\n")
+            .unwrap();
 
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
