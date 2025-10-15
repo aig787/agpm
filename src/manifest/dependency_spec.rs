@@ -12,6 +12,7 @@ use std::collections::HashMap;
 /// from the same source repository. The source is implicit and inherited
 /// from the resource that declares the dependency.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct DependencySpec {
     /// Path to the dependency file within the source repository.
     ///
@@ -30,6 +31,16 @@ pub struct DependencySpec {
     /// - Commit: `"abc123..."`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+
+    /// Optional tool specification for this dependency.
+    ///
+    /// If not specified, inherits from parent (if parent's tool supports this resource type)
+    /// or falls back to the default tool for this resource type.
+    /// - "claude-code" - Install to `.claude/` directories
+    /// - "opencode" - Install to `.opencode/` directories
+    /// - "agpm" - Install to `.agpm/` directories
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// Metadata extracted from resource files.
@@ -92,6 +103,7 @@ mod tests {
         let spec = DependencySpec {
             path: "agents/helper.md".to_string(),
             version: Some("v1.0.0".to_string()),
+            tool: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -100,6 +112,24 @@ mod tests {
 
         let deserialized: DependencySpec = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(spec, deserialized);
+    }
+
+    #[test]
+    fn test_dependency_spec_with_tool() {
+        let spec = DependencySpec {
+            path: "agents/helper.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            tool: Some("opencode".to_string()),
+        };
+
+        let yaml = serde_yaml::to_string(&spec).unwrap();
+        assert!(yaml.contains("path: agents/helper.md"));
+        assert!(yaml.contains("version: v1.0.0"));
+        assert!(yaml.contains("tool: opencode"));
+
+        let deserialized: DependencySpec = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(spec, deserialized);
+        assert_eq!(deserialized.tool, Some("opencode".to_string()));
     }
 
     #[test]
@@ -121,6 +151,7 @@ mod tests {
             vec![DependencySpec {
                 path: "test.md".to_string(),
                 version: None,
+                tool: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -136,6 +167,7 @@ mod tests {
             vec![DependencySpec {
                 path: "agent1.md".to_string(),
                 version: None,
+                tool: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -147,6 +179,7 @@ mod tests {
             vec![DependencySpec {
                 path: "agent2.md".to_string(),
                 version: None,
+                tool: None,
             }],
         );
         deps2.insert(
@@ -154,6 +187,7 @@ mod tests {
             vec![DependencySpec {
                 path: "snippet1.md".to_string(),
                 version: Some("v1.0.0".to_string()),
+                tool: None,
             }],
         );
         metadata2.dependencies = Some(deps2);

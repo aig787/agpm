@@ -595,6 +595,7 @@ mod tests {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            manifest_dir: None,
         }
     }
 
@@ -620,7 +621,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }],
             snippets: vec![],
             mcp_servers: vec![],

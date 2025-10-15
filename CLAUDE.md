@@ -204,73 +204,16 @@ Key benefits:
 
 Resources can declare dependencies within their files:
 
-**Markdown files** (YAML frontmatter):
+**Markdown** (YAML): `dependencies.agents[].path`, `.version`, `.tool`
+**JSON** (top-level): `dependencies.commands[].path`, `.version`, `.tool`
 
-```yaml
----
-dependencies:
-  agents:
-    - path: agents/helper.md
-      version: v1.0.0
-  snippets:
-    - path: snippets/utils.md
----
-```
+**Paths**: File-relative (`./sibling.md`, `../parent/file.md`) resolved from parent file location
 
-**JSON files** (top-level field):
-
-```json
-{
-  "dependencies": {
-    "commands": [
-      {
-        "path": "commands/deploy.md",
-        "version": "v2.0.0"
-      }
-    ]
-  }
-}
-```
-
-**Key Features**:
-
-- Graph-based resolution with topological ordering
-- Cycle detection prevents infinite loops
-- Version inheritance when not specified
-- Same-source dependency model (inherits parent's source)
-- Parallel resolution for maximum efficiency
+**Features**: Path-only transitive support, file-relative paths, graph-based resolution with cycle detection, version/tool inheritance
 
 ## Versioned Prefixes (v0.3.19+)
 
-AGPM supports monorepo-style versioned prefixes, allowing independent semantic versioning for different components within a single repository.
-
-### Syntax
-
-Tags and constraints can include optional prefixes separated from the version by a hyphen:
-- `agents-v1.0.0` - Prefixed tag
-- `agents-^v1.0.0` - Prefixed constraint
-- `my-tool-v2.0.0` - Multi-hyphen prefix
-
-### Prefix Isolation
-
-Prefixes create isolated version namespaces:
-- `agents-^v1.0.0` matches only `agents-v*` tags, not `snippets-v*` or unprefixed `v*`
-- Unprefixed constraints like `^v1.0.0` only match unprefixed tags
-- Different prefixes never conflict with each other
-
-### Examples
-
-```toml
-[agents]
-# Prefixed constraint - matches agents-v1.x.x tags only
-ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "agents-^v1.0.0" }
-
-# Different prefix - independent versioning
-code-helper = { source = "community", path = "agents/code/helper.md", version = "snippets-^v2.0.0" }
-
-# Unprefixed - traditional versioning
-standard = { source = "community", path = "agents/standard.md", version = "^v1.0.0" }
-```
+Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate version namespaces (`agents-^v1.0.0` matches only `agents-v*` tags).
 
 ## Cross-Platform Path Handling
 
@@ -278,16 +221,21 @@ standard = { source = "community", path = "agents/standard.md", version = "^v1.0
 
 ### Path Separator Rules
 
+**CRITICAL**: Lockfiles (`agpm.lock`) MUST use Unix-style forward slashes for ALL path fields to ensure cross-platform compatibility. Team members on different platforms must be able to share lockfiles.
+
 1. **Forward slashes ONLY** in these contexts:
-   - Lockfile `installed_at` fields (cross-platform consistency)
+   - **Lockfile fields** (cross-platform portability):
+     - `name` field (e.g., `"agents/helper"`, not `'agents\helper'`)
+     - `path` field (e.g., `"snippets/utils.md"`, not `'snippets\utils.md'`)
+     - `installed_at` field (e.g., `".claude/agents/helper.md"`)
    - `.gitignore` entries (Git requirement)
    - TOML manifest files (platform-independent)
    - Any serialized/stored path representation
 
-2. **Use `normalize_path_for_storage()` for stored paths**:
+2. **Use `normalize_path_for_storage()` for ALL lockfile paths**:
    - `Path::display()` produces platform-specific separators (backslashes on Windows)
-   - Always use `normalize_path_for_storage()` when storing paths
-   - Example: `normalize_path_for_storage(format!("{}/{}", artifact_path.display(), filename))`
+   - **ALWAYS** call `normalize_path_for_storage()` when creating `LockedResource` instances
+   - Example: `path: normalize_path_for_storage(dep.get_path())`
    - Helper available at: `use crate::utils::normalize_path_for_storage;`
 
 3. **Runtime path operations**:

@@ -23,23 +23,36 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
 2. Parse arguments to determine review target and type:
 
-   First, analyze the arguments provided: $ARGUMENTS
+   **IMPORTANT**: First check what arguments were provided: $ARGUMENTS
 
-   **Determine the review target**:
-   - Check if arguments contain the DIFF keyword (for staged but uncommitted changes):
-     * DIFF represents the current staged changes (as shown by `git diff --cached`)
-     * For ranges like `HEAD..DIFF`: Compare HEAD to staged changes using `git diff --cached HEAD --stat`
-     * For ranges like `HEAD~2..DIFF`: Compare HEAD~2 to staged changes using `git diff --cached HEAD~2 --stat`
-     * Use `git diff --cached --name-status` to list staged files
-   - Check if arguments start with a commit range (pattern: `<ref>..<ref>` like `abc123..def456` or `main..HEAD`):
-     * If yes: Use `git log --oneline <range>` and `git diff --stat <range>` to see the changes
-     * Use `git diff --name-status <range>` to list changed files
-   - Check if arguments start with a single commit hash (6-40 character hex string):
-     * If yes: Use `git show --stat <commit>` to see the commit details
-     * Use `git diff-tree --no-commit-id --name-status -r <commit>` to list changed files
-   - If no commit/range specified:
-     * Review current working changes using `git diff HEAD --stat`
-     * Use `git status --short` to see modified files
+   **Determine the review target** (in order of precedence):
+
+   1. **DEFAULT (no arguments)**: Review uncommitted working directory changes
+      - This is the PRIMARY use case - reviewing your work-in-progress before committing
+      - Use `git status --short` to list modified/staged files
+      - Use `git diff HEAD --stat` to see all uncommitted changes (staged + unstaged)
+      - **DO NOT review branch commits or commit history when no arguments provided**
+      - Examples: `/pr-self-review`, `/pr-self-review --quick`
+
+   2. **DIFF keyword**: Review only staged (but uncommitted) changes
+      - Arguments contain the DIFF keyword (e.g., `DIFF`, `HEAD..DIFF`, `HEAD~2..DIFF`)
+      - DIFF represents staged changes ready for commit (`git diff --cached`)
+      - For ranges like `HEAD..DIFF`: Use `git diff --cached HEAD --stat`
+      - For ranges like `HEAD~2..DIFF`: Use `git diff --cached HEAD~2 --stat`
+      - Use `git diff --cached --name-status` to list staged files
+      - Examples: `/pr-self-review DIFF`, `/pr-self-review HEAD~2..DIFF`
+
+   3. **Commit range**: Review multiple commits
+      - Pattern: `<ref>..<ref>` (e.g., `abc123..def456`, `main..HEAD`, `origin/main..HEAD`)
+      - Use `git log --oneline <range>` to see commit history
+      - Use `git diff --stat <range>` and `git diff --name-status <range>` for changes
+      - Examples: `/pr-self-review main..HEAD`, `/pr-self-review abc123..def456 --security`
+
+   4. **Single commit**: Review one specific commit
+      - Pattern: 6-40 character hex string (e.g., `abc123`, `5b3ee1d`)
+      - Use `git show --stat <commit>` for commit details
+      - Use `git diff-tree --no-commit-id --name-status -r <commit>` to list files
+      - Examples: `/pr-self-review abc123`, `/pr-self-review 5b3ee1d --quick`
 
    **Determine the review type** from remaining arguments after the target:
    - `--quick`: Basic formatting and linting only
@@ -153,19 +166,28 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 6. Focus only on tracked files - ignore untracked files marked with ?? in git status
 
 Examples of usage:
-- `/pr-review` - performs full comprehensive review of current changes (review only, no PR creation)
-- `/pr-review --quick` - quick formatting and linting check of current changes
-- `/pr-review --security` - focused security review of current changes
-- `/pr-review --performance` - performance-focused analysis of current changes
+
+**DEFAULT - Review uncommitted changes (most common)**:
+- `/pr-review` - full review of all uncommitted changes (staged + unstaged)
+- `/pr-review --quick` - quick review of uncommitted changes
+- `/pr-review --security` - security-focused review of uncommitted changes
+- `/pr-review --performance` - performance-focused review of uncommitted changes
+
+**DIFF - Review only staged changes**:
+- `/pr-review DIFF` - review staged changes ready for commit
+- `/pr-review DIFF --quick` - quick review of staged changes
+- `/pr-review HEAD..DIFF` - review the most recent commit plus staged changes
+- `/pr-review HEAD~2..DIFF` - review the last 2 commits plus staged changes
+
+**Single commit review**:
 - `/pr-review abc123` - full review of specific commit abc123
 - `/pr-review HEAD~1 --quick` - quick review of the previous commit
 - `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d
+
+**Commit range review**:
 - `/pr-review main..HEAD` - full review of all changes from main to HEAD
 - `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456
 - `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main
 - `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range
-- `/pr-review HEAD..DIFF` - review the most recent commit plus staged changes
-- `/pr-review HEAD~2..DIFF` - review the last 2 commits plus staged changes
-- `/pr-review DIFF --quick` - quick review of just the staged changes
 
 **Note**: This command only reviews and reports on changes. To create an actual pull request after review, use the `gh-pr-create` command.

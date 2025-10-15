@@ -140,3 +140,129 @@ pub fn is_local_path(url: &str) -> bool {
 pub fn is_git_url(url: &str) -> bool {
     !is_local_path(url)
 }
+
+/// Resolves a file-relative path from a transitive dependency.
+///
+/// This function resolves paths that start with `./` or `../` relative to the
+/// directory containing the parent resource file. This provides a unified way to
+/// resolve transitive dependencies for both Git-backed and path-only resources.
+///
+/// # Arguments
+///
+/// * `parent_file_path` - Absolute path to the file declaring the dependency
+/// * `relative_path` - Path from the transitive dep spec (must start with `./` or `../`)
+///
+/// # Returns
+///
+/// Canonical absolute path to the dependency.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `relative_path` doesn't start with `./` or `../`
+/// - The resolved path doesn't exist
+/// - Canonicalization fails
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use agpm_cli::utils::resolve_file_relative_path;
+///
+/// let parent = Path::new("/project/agents/helper.md");
+/// let resolved = resolve_file_relative_path(parent, "./snippets/utils.md")?;
+/// // Returns: /project/agents/snippets/utils.md
+///
+/// let resolved = resolve_file_relative_path(parent, "../common/base.md")?;
+/// // Returns: /project/common/base.md
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+pub fn resolve_file_relative_path(
+    parent_file_path: &std::path::Path,
+    relative_path: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    use anyhow::{Context, anyhow};
+
+    // Validate it's a file-relative path
+    if !relative_path.starts_with("./") && !relative_path.starts_with("../") {
+        return Err(anyhow!(
+            "Transitive dependency path must start with './' or '../': {}",
+            relative_path
+        ));
+    }
+
+    // Get parent directory
+    let parent_dir = parent_file_path
+        .parent()
+        .ok_or_else(|| anyhow!("Parent file has no directory: {}", parent_file_path.display()))?;
+
+    // Resolve relative to parent's directory
+    let resolved = parent_dir.join(relative_path);
+
+    // Canonicalize (resolves .. and ., checks existence)
+    resolved.canonicalize().with_context(|| {
+        format!(
+            "Transitive dependency does not exist: {} (resolved from '{}' relative to '{}')",
+            resolved.display(),
+            relative_path,
+            parent_dir.display()
+        )
+    })
+}
+
+/// Resolves a path relative to the manifest directory.
+///
+/// This function handles shell expansion and both relative and absolute paths,
+/// resolving them relative to the directory containing the manifest file.
+///
+/// # Arguments
+///
+/// * `manifest_dir` - The directory containing the agpm.toml manifest
+/// * `rel_path` - The path to resolve (can be relative or absolute)
+///
+/// # Returns
+///
+/// Canonical absolute path to the resource.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Shell expansion fails
+/// - The path doesn't exist
+/// - Canonicalization fails
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use agpm_cli::utils::resolve_path_relative_to_manifest;
+///
+/// let manifest_dir = Path::new("/project");
+/// let resolved = resolve_path_relative_to_manifest(manifest_dir, "../shared/agents/helper.md")?;
+/// // Returns: /shared/agents/helper.md
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+pub fn resolve_path_relative_to_manifest(
+    manifest_dir: &std::path::Path,
+    rel_path: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    use anyhow::Context;
+
+    let expanded = shellexpand::full(rel_path)
+        .with_context(|| format!("Failed to expand path: {}", rel_path))?;
+    let path = std::path::PathBuf::from(expanded.as_ref());
+
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        manifest_dir.join(path)
+    };
+
+    resolved.canonicalize().with_context(|| {
+        format!(
+            "Path does not exist: {} (resolved from manifest dir '{}')",
+            resolved.display(),
+            manifest_dir.display()
+        )
+    })
+}

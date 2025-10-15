@@ -22,7 +22,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 🎯 **Pattern-based dependencies** - Use glob patterns (`agents/*.md`, `**/*.md`) for batch installation
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support with enhanced path handling
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
-- 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, automatic graph-based resolution
+- 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, works for Git-backed and path-only deps with file-relative path support
 
 ## Requirements
 
@@ -212,7 +212,7 @@ See the [Command Reference](docs/command-reference.md#add-dependency) for all su
 
 ### Declaring Dependencies in Resource Files
 
-Resources can declare their own dependencies within their files, creating a complete dependency graph:
+Resources can declare their own dependencies within their files, creating a complete dependency graph. This works for both Git-backed and path-only (local file) dependencies.
 
 **Markdown files (.md)** use YAML frontmatter:
 
@@ -222,10 +222,11 @@ title: My Agent
 description: An example agent with dependencies
 dependencies:
   agents:
-    - path: agents/helper.md
+    - path: ./helper.md
       version: v1.0.0
+    - path: ../shared/common.md
   snippets:
-    - path: snippets/utils.md
+    - path: ./utils.md
       version: v2.0.0
 ---
 
@@ -236,17 +237,13 @@ dependencies:
 
 ```json
 {
-  "events": [
-    "SessionStart"
-  ],
+  "events": ["SessionStart"],
   "type": "command",
   "command": "echo 'Starting session'",
   "dependencies": {
     "commands": [
-      {
-        "path": "commands/setup.md",
-        "version": "v1.0.0"
-      }
+      {"path": "./setup.md", "version": "v1.0.0"},
+      {"path": "../shared/common-setup.md"}
     ]
   }
 }
@@ -254,8 +251,10 @@ dependencies:
 
 **Key Features:**
 
-- Dependencies inherit the source from their parent resource
-- Version is optional - defaults to parent's version if not specified
+- **Path-only transitive support**: Dependencies without Git sources now support transitive dependencies
+- **File-relative paths**: Paths starting with `./` or `../` are resolved relative to the parent resource file
+- Dependencies inherit the source from their parent resource (Git URL or local path)
+- Version is optional - defaults to parent's version if not specified (Git-backed only)
 - Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
 - Graph-based resolution with topological ordering ensures correct installation order
 - Circular dependency detection prevents infinite loops

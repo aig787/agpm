@@ -322,7 +322,11 @@ impl TreeCommand {
             .source
             .as_deref()
             .map_or_else(|| " (local)".blue().to_string(), |s| format!(" ({})", s.blue()));
-        let tool_str = format!(" [{}]", node.tool.bright_yellow());
+        let tool_str = node
+            .tool
+            .as_deref()
+            .map(|tool| format!(" [{}]", tool.bright_yellow()))
+            .unwrap_or_default();
         let dup_marker = if is_duplicate {
             " (*)".blue().to_string()
         } else {
@@ -405,7 +409,7 @@ impl TreeCommand {
             "type": node.resource_type.to_string(),
             "version": node.version,
             "source": node.source,
-            "tool": node.tool,
+            "tool": node.tool.as_deref().unwrap_or("claude-code"),
             "dependencies": children,
         })
     }
@@ -452,13 +456,13 @@ impl TreeCommand {
         };
 
         println!(
-            "{}{}/{} {} ({}) [{}]{}",
+            "{}{}/{} {} ({}) {}{}",
             indent_str,
             node.resource_type,
             node.name,
             version_str,
             source_str,
-            node.tool,
+            node.tool.as_deref().map(|tool| format!("[{}] ", tool)).unwrap_or_default(),
             dup_marker
         );
 
@@ -483,7 +487,7 @@ struct TreeNode {
     resource_type: ResourceType,
     version: Option<String>,
     source: Option<String>,
-    tool: String,
+    tool: Option<String>,
     dependencies: Vec<String>, // IDs of dependency nodes
 }
 
@@ -923,7 +927,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("v1.0.0".to_string()),
             source: Some("community".to_string()),
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
@@ -934,7 +938,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("local".to_string()),
             source: Some("local-deps".to_string()),
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
@@ -945,7 +949,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: Some("local".to_string()),
             source: None,
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
@@ -956,7 +960,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             version: None,
             source: Some("community".to_string()),
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
             dependencies: vec![],
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");

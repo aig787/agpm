@@ -1,31 +1,8 @@
 # User Guide
 
-This guide will help you get started with AGPM and cover common workflows.
+This guide covers common AGPM workflows. See [Installation](installation.md) for setup instructions.
 
 ## Getting Started
-
-### Prerequisites
-
-- Git 2.0 or later installed
-- Claude Code, OpenCode, or another supported AI coding assistant
-- (Optional) Rust toolchain for building from source
-
-### Installation
-
-The quickest way to install AGPM:
-
-```bash
-# If you have Rust installed
-cargo install agpm-cli
-
-# For latest development version
-cargo install --git https://github.com/aig787/agpm.git
-
-# Or download pre-built binaries
-# See the Installation Guide for platform-specific instructions
-```
-
-### Your First Project
 
 1. **Initialize a new project:**
 
@@ -120,7 +97,7 @@ AGPM supports multiple AI coding assistants from a single manifest using the too
 
 ### Using Multiple Tools
 
-By default, resources install for Claude Code. To target a different tool, add the `type` field:
+By default, resources install for Claude Code. To target a different tool, add the `tool` field:
 
 ```toml
 [sources]
@@ -131,7 +108,7 @@ community = "https://github.com/aig787/agpm-community.git"
 rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
 # → Installs to .claude/agents/rust-expert.md
 
-# OpenCode agent (explicit type)
+# OpenCode agent (explicit tool)
 rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 # → Installs to .opencode/agent/rust-expert.md
 
@@ -151,7 +128,7 @@ rust-patterns = { source = "community", path = "snippets/rust-patterns.md", vers
 | Commands | `.claude/commands/` | 🚧 `.opencode/command/` |
 | MCP Servers | `.mcp.json` | 🚧 `opencode.json` |
 
-AGPM handles this automatically based on the `type` field.
+AGPM handles this automatically based on the `tool` field.
 
 ### Multi-Tool Project Example
 
@@ -415,54 +392,46 @@ Resources can declare their own dependencies, and AGPM will automatically resolv
 
 ### Declaring Dependencies
 
-**In Markdown files (.md)**, use YAML frontmatter:
+**Markdown files (.md)** - YAML frontmatter:
 ```markdown
 ---
-title: My Agent
-description: Helper agent with dependencies
 dependencies:
   agents:
-    - path: agents/utils.md
+    - path: ./helper.md
       version: v1.0.0
   snippets:
-    - path: snippets/helpers.md
+    - path: ../shared/utils.md
 ---
-
-# Agent content here
 ```
 
-**In JSON files (.json)**, use a top-level field:
+**JSON files (.json)** - top-level field:
 ```json
 {
-  "events": ["SessionStart"],
-  "type": "command",
-  "command": "echo 'Starting'",
   "dependencies": {
     "commands": [
-      {"path": "commands/setup.md", "version": "v1.0.0"}
+      {"path": "./setup.md", "version": "v1.0.0"}
     ]
   }
 }
 ```
 
-### How It Works
+### Path Resolution
 
-1. **Automatic Discovery**: When installing resources, AGPM scans their contents for dependency declarations
-2. **Graph Building**: All dependencies (direct and transitive) are collected into a dependency graph
-3. **Cycle Detection**: Circular dependencies are detected and reported as errors
-4. **Topological Ordering**: Dependencies are installed before their dependents
-5. **Version Resolution**: Conflicts are automatically resolved using the highest compatible version
+All transitive dependency paths are **file-relative** - resolved from the parent resource file's location.
 
-### Dependency Inheritance
+Examples: `./sibling.md`, `../parent/file.md`, `../../shared/common.md`
 
-Transitive dependencies inherit properties from their parent:
-- **Source**: Always inherits from the parent resource's source
-- **Version**: Defaults to parent's version if not specified
+### Inheritance
 
-### Example
+Dependencies inherit from their parent:
+- **Source**: Git URL or local path
+- **Version**: Defaults to parent's version (Git-backed only)
+- **Tool**: Parent's tool if compatible, otherwise resource type default
 
+### Examples
+
+**Git-backed:**
 ```toml
-# agpm.toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
 
@@ -470,66 +439,60 @@ community = "https://github.com/aig787/agpm-community.git"
 deploy = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
 ```
 
-If `deploy.md` declares:
+`deploy.md` declares:
 ```markdown
 ---
 dependencies:
   agents:
-    - path: agents/deploy-helper.md
+    - path: ../agents/helper.md
   snippets:
-    - path: snippets/aws-utils.md
+    - path: ../snippets/utils.md
       version: v2.0.0
 ---
 ```
 
-Running `agpm install` will automatically install:
-1. `deploy.md` (direct dependency)
-2. `agents/deploy-helper.md` (transitive, inherits v1.0.0)
-3. `snippets/aws-utils.md` (transitive, uses v2.0.0)
+Installs: `deploy.md`, `agents/helper.md` (inherits v1.0.0), `snippets/utils.md` (v2.0.0)
 
-### Resource-Specific Notes
-
-- **Scripts & hooks**: Transitive scripts inherit the parent's source but still require executable permissions. Hooks declared in metadata merge into `.claude/settings.local.json`; use `target` or `filename` overrides in the manifest if two hooks would collide.
-- **MCP servers**: Transitive MCP definitions inherit `command`/`args` from the file itself. Edit the manifest entry if you need to override runtime arguments.
-- **Version overrides**: If a downstream resource needs a different version than its parent, specify `version:` in the resource metadata. AGPM will prioritize the explicit value over inheritance.
-
-### Lockfile Tracking
-
-Transitive dependencies are tracked in `agpm.lock`:
+**Path-only:**
 ```toml
-[[commands]]
-name = "deploy"
-path = "commands/deploy.md"
-version = "v1.0.0"
-dependencies = [
-    "agents/deploy-helper@v1.0.0",
-    "snippets/aws-utils@v2.0.0"
-]
+[agents]
+local-agent = { path = "../local-agents/main.md" }
 ```
+
+`main.md` declares:
+```markdown
+---
+dependencies:
+  agents:
+    - path: ./helper.md
+    - path: ../shared/common.md
+---
+```
+
+Installs: `main.md`, `helper.md`, `common.md`
+
+### Notes
+
+- Scripts require executable permissions
+- Hooks merge into `.claude/settings.local.json`
+- MCP servers inherit `command`/`args` from file
+- Override versions by specifying explicit `version:` in metadata
+- Path-only deps don't support version constraints
 
 ### Conflict Resolution
 
-When multiple resources depend on the same resource, AGPM attempts to converge on a single version:
-- Compatible constraints resolve to the highest satisfying tag and the decision is logged in the CLI output.
-- Incompatible constraints (`v1` vs `v2` with no overlap) make the install fail with a detailed error.
-- Duplicate install paths (for example, two patterns resolving to `.claude/agents/reviewer.md`) also trigger a hard error.
-
-Typical failure output:
+Compatible version constraints resolve to the highest satisfying version. Incompatible constraints fail with an error.
 
 ```text
 Error: Version conflict for agents/helper.md
   requested: v1.0.0 (manifest)
   requested: v2.0.0 (transitive via agents/deploy.md)
-  resolution: no compatible tag satisfies both constraints
 ```
 
-**Troubleshooting steps:**
-1. Run `agpm validate --resolve --format json` to see the dependency graph AGPM built.
-2. If the conflict is transitive, update the declaring resource's metadata to pin a specific `version` or fork the dependency.
-3. If it is direct, align your manifest constraints (e.g., bump both to `v2.0.0`) and run `agpm install` to auto-update the lockfile.
-4. For duplicate install paths, add `filename` or `target` overrides so the files land in distinct locations.
-
-After making changes, re-run `agpm install` to refresh `agpm.lock`. Use `RUST_LOG=debug` when you need the full resolver trace.
+**Fix conflicts:**
+- Run `agpm validate --resolve` to see the dependency graph
+- Update version constraints in manifest or resource metadata
+- Add `filename`/`target` overrides for duplicate install paths
 
 ## Resource Organization
 

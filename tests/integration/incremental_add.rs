@@ -43,9 +43,9 @@ title: Test Command
 description: A test command with dependencies
 dependencies:
   agents:
-    - path: agents/test-agent.md
+    - path: ../agents/test-agent.md
   snippets:
-    - path: snippets/test-snippet.md
+    - path: ../snippets/test-snippet.md
 ---
 
 # Test Command
@@ -60,7 +60,7 @@ title: Test Agent
 description: A test agent with dependencies
 dependencies:
   snippets:
-    - path: snippets/helper-snippet.md
+    - path: ../snippets/helper-snippet.md
 ---
 
 # Test Agent
@@ -256,7 +256,7 @@ async fn test_incremental_add_with_shared_dependency() {
 title: Second Command
 dependencies:
   snippets:
-    - path: snippets/test-snippet.md
+    - path: ../snippets/test-snippet.md
 ---
 
 # Second Command

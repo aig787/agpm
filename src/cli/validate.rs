@@ -1086,7 +1086,7 @@ mod tests {
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1377,7 +1377,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2341,7 +2341,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2822,7 +2822,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3011,7 +3011,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             dependencies: vec![],
             resource_type: crate::core::ResourceType::Agent,
 
-            tool: "claude-code".to_string(),
+            tool: Some("claude-code".to_string()),
         });
         lockfile.save(&lockfile_path).unwrap();
 

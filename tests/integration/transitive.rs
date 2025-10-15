@@ -38,7 +38,7 @@ This is a helper agent with no dependencies.
             r#"---
 dependencies:
   agents:
-    - path: agents/helper.md
+    - path: ./helper.md
       version: v1.0.0
 ---
 
@@ -61,12 +61,18 @@ This agent depends on the helper agent.
     project.write_manifest(&manifest).await?;
 
     // Run install
-    project.run_agpm(&["install"])?;
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed. Stderr: {}", output.stderr);
 
     // Verify both agents were installed (main + transitive helper)
     let lockfile_content = project.read_lockfile().await?;
     assert!(lockfile_content.contains("main-app"), "Main agent should be in lockfile");
-    assert!(lockfile_content.contains("helper"), "Helper agent should be in lockfile (transitive)");
+    assert!(
+        lockfile_content.contains("helper"),
+        "Helper agent should be in lockfile (transitive). Lockfile:\n{}\nStderr: {}",
+        lockfile_content,
+        output.stderr
+    );
 
     // Verify both were actually installed to .claude/agents
     let main_app_path = project.project_path().join(".claude/agents/main-app.md");
@@ -112,7 +118,7 @@ async fn test_transitive_cross_source_same_names() -> Result<()> {
             r#"---
 dependencies:
   agents:
-    - path: agents/utils.md
+    - path: ./utils.md
       version: v1.0.0
 ---
 
@@ -136,7 +142,7 @@ Uses utils from same source
             r#"---
 dependencies:
   agents:
-    - path: agents/utils.md
+    - path: ./utils.md
       version: v1.0.0
 ---
 
@@ -195,7 +201,7 @@ async fn test_transitive_cycle_detection() -> Result<()> {
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-b.md
+    - path: ./agent-b.md
       version: v1.0.0
 ---
 
@@ -212,7 +218,7 @@ Depends on Agent B
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-c.md
+    - path: ./agent-c.md
       version: v1.0.0
 ---
 
@@ -229,7 +235,7 @@ Depends on Agent C
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-a.md
+    - path: ./agent-a.md
       version: v1.0.0
 ---
 
@@ -297,7 +303,7 @@ Base agent with no dependencies
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-d.md
+    - path: ./agent-d.md
       version: v1.0.0
 ---
 
@@ -314,7 +320,7 @@ Depends on Agent D
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-d.md
+    - path: ./agent-d.md
       version: v1.0.0
 ---
 
@@ -331,9 +337,9 @@ Depends on Agent D
         r#"---
 dependencies:
   agents:
-    - path: agents/agent-b.md
+    - path: ./agent-b.md
       version: v1.0.0
-    - path: agents/agent-c.md
+    - path: ./agent-c.md
       version: v1.0.0
 ---
 
@@ -422,9 +428,9 @@ async fn test_transitive_deps_duplicate_names_different_paths() -> Result<()> {
         r#"---
 dependencies:
   snippets:
-    - path: snippets/commands/commit.md
+    - path: ../snippets/commands/commit.md
       version: v1.0.0
-    - path: snippets/logit/commit.md
+    - path: ../snippets/logit/commit.md
       version: v1.0.0
 ---
 
@@ -519,10 +525,10 @@ async fn test_transitive_deps_cross_type_collision() -> Result<()> {
         r#"---
 dependencies:
   agents:
-    - path: agents/helper.md
+    - path: ./helper.md
       version: v1.0.0
   commands:
-    - path: commands/helper.md
+    - path: ../commands/helper.md
       version: v1.0.0
 ---
 
@@ -629,7 +635,7 @@ async fn test_version_conflict_uses_correct_metadata() -> Result<()> {
         r#"---
 dependencies:
   commands:
-    - path: commands/old-command.md
+    - path: ../commands/old-command.md
       version: v1.0.0
 ---
 
@@ -655,7 +661,7 @@ This is version 1.0.0 of the shared snippet.
         r#"---
 dependencies:
   commands:
-    - path: commands/new-command.md
+    - path: ../commands/new-command.md
       version: v2.0.0
 ---
 
@@ -676,7 +682,7 @@ This is version 2.0.0 of the shared snippet.
         r#"---
 dependencies:
   snippets:
-    - path: snippets/shared.md
+    - path: ../snippets/shared.md
       version: v2.0.0
 ---
 
@@ -692,7 +698,7 @@ Requires shared@v2.0.0
         r#"---
 dependencies:
   snippets:
-    - path: snippets/shared.md
+    - path: ../snippets/shared.md
       version: v2.0.0
 ---
 
@@ -765,7 +771,7 @@ async fn test_install_update_parity() -> Result<()> {
         r#"---
 dependencies:
   snippets:
-    - path: snippets/helper.md
+    - path: ../snippets/helper.md
       version: v1.0.0
 ---
 
@@ -927,10 +933,10 @@ async fn test_type_resolution_fallback_ambiguity() -> Result<()> {
         r#"---
 dependencies:
   snippets:
-    - path: snippets/helper.md
+    - path: ../snippets/helper.md
       version: v1.0.0
   agents:
-    - path: agents/helper.md
+    - path: ./helper.md
       version: v1.0.0
 ---
 
@@ -1020,7 +1026,7 @@ async fn test_transitive_version_conflict_metadata_from_winner() -> Result<()> {
         r#"---
 dependencies:
   commands:
-    - path: commands/old-dep.md
+    - path: ../commands/old-dep.md
 ---
 # Shared v1.0.0
 Version 1 with old-dep.
@@ -1041,7 +1047,7 @@ Version 1 with old-dep.
         r#"---
 dependencies:
   commands:
-    - path: commands/new-dep.md
+    - path: ../commands/new-dep.md
 ---
 # Shared v2.0.0
 Version 2 with new-dep.
@@ -1059,7 +1065,7 @@ Version 2 with new-dep.
         r#"---
 dependencies:
   snippets:
-    - path: snippets/shared.md
+    - path: ../snippets/shared.md
       version: ">=v1.0.0"
 ---
 # Parent A
@@ -1075,7 +1081,7 @@ Depends on shared@>=v1.0.0 (accepts any version >= 1.0.0).
         r#"---
 dependencies:
   snippets:
-    - path: snippets/shared.md
+    - path: ../snippets/shared.md
       version: ">=v1.5.0"
 ---
 # Parent B
@@ -1170,7 +1176,7 @@ async fn test_cross_source_same_name_disambiguation() -> Result<()> {
             r#"---
 dependencies:
   snippets:
-    - path: snippets/helper.md
+    - path: ../snippets/helper.md
       version: v1.0.0
 ---
 # Main Agent
@@ -1274,7 +1280,7 @@ async fn test_shared_dependency_deduplication() -> Result<()> {
         r#"---
 dependencies:
   snippets:
-    - path: snippets/shared.md
+    - path: ../snippets/shared.md
       version: v1.0.0
 ---
 # Parent Agent
@@ -1354,7 +1360,7 @@ async fn test_local_file_dependency_skips_transitive_with_warning() -> Result<()
     let local_agent_content = r#"---
 dependencies:
   snippets:
-    - path: snippets/helper.md
+    - path: ../snippets/helper.md
       version: v1.0.0
 ---
 # Local Agent
@@ -1437,7 +1443,7 @@ async fn test_transitive_pattern_dependency_expands() -> Result<()> {
         r#"---
 dependencies:
   commands:
-    - path: commands/cmd-one.md
+    - path: ../commands/cmd-one.md
 ---
 # Helper One
 First helper with transitive dependency on cmd-one.
@@ -1451,7 +1457,7 @@ First helper with transitive dependency on cmd-one.
         r#"---
 dependencies:
   commands:
-    - path: commands/cmd-two.md
+    - path: ../commands/cmd-two.md
 ---
 # Helper Two
 Second helper with transitive dependency on cmd-two.
@@ -1468,7 +1474,7 @@ Second helper with transitive dependency on cmd-two.
         r#"---
 dependencies:
   snippets:
-    - path: snippets/helper-*.md
+    - path: ../snippets/helper-*.md
 ---
 # Parent Agent
 Has a glob pattern in transitive dependencies that matches multiple snippets.
@@ -1571,7 +1577,7 @@ async fn test_manifest_pattern_has_transitive_deps_resolved() -> Result<()> {
         r#"---
 dependencies:
   commands:
-    - path: commands/cmd-a.md
+    - path: ../commands/cmd-a.md
 ---
 # Util One
 First utility with transitive dependency on cmd-a.
@@ -1585,7 +1591,7 @@ First utility with transitive dependency on cmd-a.
         r#"---
 dependencies:
   commands:
-    - path: commands/cmd-b.md
+    - path: ../commands/cmd-b.md
 ---
 # Util Two
 Second utility with transitive dependency on cmd-b.
@@ -1677,7 +1683,7 @@ async fn test_mixed_local_remote_transitive_tree() -> Result<()> {
         r#"---
 dependencies:
   snippets:
-    - path: snippets/remote-helper.md
+    - path: ../snippets/remote-helper.md
       version: v1.0.0
 ---
 # Remote Parent Agent
@@ -1750,6 +1756,356 @@ Depends on remote-helper from same Git source.
     assert!(
         lockfile_content.contains(r#"source = "community""#),
         "Lockfile should show community source for remote resources"
+    );
+
+    Ok(())
+}
+
+/// Test local file dependency with same-directory transitive dependency (./relative)
+///
+/// This test verifies that local file dependencies (path-only, no Git source) can now
+/// declare transitive dependencies using file-relative paths starting with `./`.
+///
+/// Scenario:
+/// - Local agent at `agents/local-agent.md` depends on `./helper.md`
+/// - Helper is in the same directory: `agents/helper.md`
+/// - Both should be installed correctly
+#[tokio::test]
+async fn test_local_with_current_dir_transitive() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create directory structure
+    let agents_dir = project.project_path().join("agents");
+    tokio::fs::create_dir_all(&agents_dir).await?;
+
+    // Create helper (the transitive dependency)
+    let helper_path = agents_dir.join("helper.md");
+    tokio::fs::write(&helper_path, "# Helper Agent\n\nA helper agent without dependencies.")
+        .await?;
+
+    // Create main agent that depends on helper via ./relative path
+    let local_agent_path = agents_dir.join("local-agent.md");
+    tokio::fs::write(
+        &local_agent_path,
+        r#"---
+dependencies:
+  agents:
+    - path: ./helper.md
+---
+# Local Agent
+This is a local agent with a transitive dependency on ./helper.md.
+"#,
+    )
+    .await?;
+
+    // Create manifest with local file dependency (absolute path)
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install
+    project.run_agpm(&["install"])?.assert_success();
+
+    // Verify both agents were installed
+    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
+    let installed_helper = project.project_path().join(".claude/agents/helper.md");
+
+    assert!(
+        tokio::fs::metadata(&installed_local).await.is_ok(),
+        "Local agent should be installed at {:?}",
+        installed_local
+    );
+    assert!(
+        tokio::fs::metadata(&installed_helper).await.is_ok(),
+        "Helper agent (transitive) should be installed at {:?}",
+        installed_helper
+    );
+
+    // Verify lockfile contains both resources
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(
+        lockfile_content.contains(r#"name = "local-agent""#),
+        "Lockfile should contain local-agent"
+    );
+    assert!(
+        lockfile_content.contains(r#"name = "helper""#),
+        "Lockfile should contain helper (transitive). Lockfile:\n{}",
+        lockfile_content
+    );
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "agents/helper.md""#));
+
+    Ok(())
+}
+
+/// Test local file dependency with parent-directory transitive dependency (../relative)
+///
+/// This test verifies that local file dependencies can declare transitive dependencies
+/// using file-relative paths with `..` to navigate up directories.
+///
+/// Scenario:
+/// - Local agent at `agents/subfolder/local-agent.md` depends on `../helper.md`
+/// - Helper resolves to `agents/helper.md`
+/// - Both should be installed correctly
+#[tokio::test]
+async fn test_local_with_parent_dir_transitive() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create directory structure
+    let agents_dir = project.project_path().join("agents");
+    let subfolder = agents_dir.join("subfolder");
+    tokio::fs::create_dir_all(&subfolder).await?;
+
+    // Create helper in parent directory
+    let helper_path = agents_dir.join("helper.md");
+    tokio::fs::write(&helper_path, "# Helper Agent\n\nA helper agent without dependencies.")
+        .await?;
+
+    // Create main agent in subfolder that depends on ../helper.md
+    let local_agent_path = subfolder.join("local-agent.md");
+    tokio::fs::write(
+        &local_agent_path,
+        r#"---
+dependencies:
+  agents:
+    - path: ../helper.md
+---
+# Local Agent
+This agent depends on ../helper.md (parent directory).
+"#,
+    )
+    .await?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install
+    project.run_agpm(&["install"])?.assert_success();
+
+    // Verify both agents were installed
+    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
+    let installed_helper = project.project_path().join(".claude/agents/helper.md");
+
+    assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
+    assert!(
+        tokio::fs::metadata(&installed_helper).await.is_ok(),
+        "Helper agent (transitive from parent dir) should be installed"
+    );
+
+    // Verify lockfile
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(lockfile_content.contains(r#"name = "local-agent""#));
+    assert!(lockfile_content.contains(r#"name = "helper""#));
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "agents/helper.md""#));
+
+    Ok(())
+}
+
+/// Test local file dependency with cross-directory transitive dependency
+///
+/// This test verifies that transitive dependencies can navigate across different
+/// resource type directories (e.g., agents -> snippets).
+///
+/// Scenario:
+/// - Local agent at `agents/local-agent.md` depends on `../snippets/utils.md`
+/// - Utils snippet is at `snippets/utils.md`
+/// - Both should be installed to their correct directories
+#[tokio::test]
+async fn test_local_with_cross_directory_transitive() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create directory structure
+    let agents_dir = project.project_path().join("agents");
+    let snippets_dir = project.project_path().join("snippets");
+    tokio::fs::create_dir_all(&agents_dir).await?;
+    tokio::fs::create_dir_all(&snippets_dir).await?;
+
+    // Create snippet (the transitive dependency)
+    let utils_path = snippets_dir.join("utils.md");
+    tokio::fs::write(&utils_path, "# Utils Snippet\n\nUtility functions.").await?;
+
+    // Create agent that depends on snippet in different directory
+    let local_agent_path = agents_dir.join("local-agent.md");
+    tokio::fs::write(
+        &local_agent_path,
+        r#"---
+dependencies:
+  snippets:
+    - path: ../snippets/utils.md
+---
+# Local Agent
+This agent depends on a snippet in a different directory.
+"#,
+    )
+    .await?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install
+    project.run_agpm(&["install"])?.assert_success();
+
+    // Verify agent installed to .claude/agents
+    let installed_agent = project.project_path().join(".claude/agents/local-agent.md");
+    assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Local agent should be installed");
+
+    // Verify snippet installed to .claude/snippets (inherits claude-code tool from parent agent)
+    // Note: Transitive snippets inherit the parent's tool if that tool supports snippets
+    let installed_snippet = project.project_path().join(".claude/snippets/utils.md");
+    assert!(
+        tokio::fs::metadata(&installed_snippet).await.is_ok(),
+        "Utils snippet (transitive) should be installed to .claude/snippets (inheriting parent's tool)"
+    );
+
+    // Verify lockfile
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(lockfile_content.contains(r#"name = "local-agent""#));
+    assert!(lockfile_content.contains(r#"name = "utils""#));
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "snippets/utils.md""#));
+
+    Ok(())
+}
+
+/// Test local file transitive dependency with non-existent file
+///
+/// This test verifies proper error handling when a transitive dependency
+/// path resolves to a file that doesn't exist.
+///
+/// Scenario:
+/// - Local agent declares transitive dependency on ./missing.md
+/// - File doesn't exist
+/// - Should emit warning and skip the transitive dep (not fail install)
+#[tokio::test]
+async fn test_local_transitive_missing_file() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create directory structure
+    let agents_dir = project.project_path().join("agents");
+    tokio::fs::create_dir_all(&agents_dir).await?;
+
+    // Create agent with transitive dep pointing to non-existent file
+    let local_agent_path = agents_dir.join("local-agent.md");
+    tokio::fs::write(
+        &local_agent_path,
+        r#"---
+dependencies:
+  agents:
+    - path: ./missing.md
+---
+# Local Agent
+This agent has a transitive dependency that doesn't exist.
+"#,
+    )
+    .await?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install - should succeed but skip the missing transitive dep
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed despite missing transitive dep");
+
+    // Verify main agent was installed
+    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
+    assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
+
+    // Verify missing transitive dep was NOT installed
+    let missing_path = project.project_path().join(".claude/agents/missing.md");
+    assert!(
+        tokio::fs::metadata(&missing_path).await.is_err(),
+        "Missing transitive dependency should NOT be installed"
+    );
+
+    // Verify lockfile only has the main agent
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(lockfile_content.contains(r#"name = "local-agent""#));
+    assert!(!lockfile_content.contains(r#"name = "missing""#));
+
+    Ok(())
+}
+
+/// Test local file transitive dependency with invalid path format
+///
+/// This test verifies that transitive dependency paths that don't start with
+/// `./` or `../` are rejected with a clear error message.
+///
+/// Scenario:
+/// - Local agent declares transitive dependency with plain relative path (no ./ or ../)
+/// - Should emit warning about invalid path format
+/// - Should skip the transitive dep
+#[tokio::test]
+async fn test_local_transitive_invalid_path_format() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+
+    // Create directory structure
+    let agents_dir = project.project_path().join("agents");
+    tokio::fs::create_dir_all(&agents_dir).await?;
+
+    // Create helper file
+    let helper_path = agents_dir.join("helper.md");
+    tokio::fs::write(&helper_path, "# Helper\n").await?;
+
+    // Create agent with invalid transitive dep path (doesn't start with ./ or ../)
+    let local_agent_path = agents_dir.join("local-agent.md");
+    tokio::fs::write(
+        &local_agent_path,
+        r#"---
+dependencies:
+  agents:
+    - path: helper.md
+---
+# Local Agent
+This agent has an invalid transitive dependency path.
+"#,
+    )
+    .await?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install - should succeed but skip the invalid transitive dep
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed despite invalid transitive path");
+
+    // Verify main agent was installed
+    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
+    assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
+
+    // Verify invalid transitive dep was NOT installed
+    let helper_installed = project.project_path().join(".claude/agents/helper.md");
+    assert!(
+        tokio::fs::metadata(&helper_installed).await.is_err(),
+        "Helper should NOT be installed due to invalid path format"
     );
 
     Ok(())

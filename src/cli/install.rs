@@ -595,7 +595,8 @@ impl InstallCommand {
                 let mut servers_by_type: HashMap<String, Vec<&crate::lockfile::LockedResource>> =
                     HashMap::new();
                 for server in &lockfile.mcp_servers {
-                    servers_by_type.entry(server.tool.clone()).or_default().push(server);
+                    let tool = server.tool.clone().unwrap_or_else(|| "claude-code".to_string());
+                    servers_by_type.entry(tool).or_default().push(server);
                 }
 
                 // Configure MCP servers for each artifact type using appropriate handler
@@ -1131,7 +1132,7 @@ Body",
                 installed_at: ".claude/agents/test-agent.md".into(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }],
             snippets: vec![],
             mcp_servers: vec![],

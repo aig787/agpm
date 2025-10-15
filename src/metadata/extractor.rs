@@ -6,6 +6,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::manifest::DependencyMetadata;
@@ -69,8 +70,27 @@ impl MetadataExtractor {
             match serde_yaml::from_str::<DependencyMetadata>(frontmatter) {
                 Ok(metadata) => Ok(metadata),
                 Err(e) => {
-                    // Log warning but don't fail - malformed frontmatter is not fatal
-                    tracing::warn!("Warning: Unable to parse YAML frontmatter: {}", e);
+                    // Provide detailed error message for common issues
+                    let error_msg = e.to_string();
+                    if error_msg.contains("unknown field") {
+                        tracing::warn!(
+                            "Warning: YAML frontmatter contains unknown field(s): {}. \
+                            Supported fields are: path, version, tool",
+                            e
+                        );
+                        eprintln!(
+                            "Warning: YAML frontmatter contains unknown field(s).\n\
+                            Supported fields in dependencies are:\n\
+                            - path: Path to the dependency file (required)\n\
+                            - version: Version constraint (optional)\n\
+                            - tool: Target tool (optional: claude-code, opencode, agpm)\n\
+                            \nError: {}",
+                            e
+                        );
+                    } else {
+                        tracing::warn!("Warning: Unable to parse YAML frontmatter: {}", e);
+                        eprintln!("Warning: Unable to parse YAML frontmatter: {}", e);
+                    }
                     Ok(DependencyMetadata::default())
                 }
             }
@@ -89,12 +109,37 @@ impl MetadataExtractor {
 
         if let Some(deps) = json.get("dependencies") {
             // The dependencies field should match our expected structure
-            let dependencies = serde_json::from_value(deps.clone())
-                .with_context(|| "Failed to parse dependencies field")?;
-
-            Ok(DependencyMetadata {
-                dependencies: Some(dependencies),
-            })
+            match serde_json::from_value::<HashMap<String, Vec<crate::manifest::DependencySpec>>>(
+                deps.clone(),
+            ) {
+                Ok(dependencies) => Ok(DependencyMetadata {
+                    dependencies: Some(dependencies),
+                }),
+                Err(e) => {
+                    // Provide detailed error message for common issues
+                    let error_msg = e.to_string();
+                    if error_msg.contains("unknown field") {
+                        tracing::warn!(
+                            "Warning: JSON dependencies contain unknown field(s): {}. \
+                            Supported fields are: path, version, tool",
+                            e
+                        );
+                        eprintln!(
+                            "Warning: JSON dependencies contain unknown field(s).\n\
+                            Supported fields in dependencies are:\n\
+                            - path: Path to the dependency file (required)\n\
+                            - version: Version constraint (optional)\n\
+                            - tool: Target tool (optional: claude-code, opencode, agpm)\n\
+                            \nError: {}",
+                            e
+                        );
+                    } else {
+                        tracing::warn!("Warning: Unable to parse dependencies field: {}", e);
+                        eprintln!("Warning: Unable to parse dependencies field: {}", e);
+                    }
+                    Ok(DependencyMetadata::default())
+                }
+            }
         } else {
             Ok(DependencyMetadata::default())
         }
@@ -297,5 +342,56 @@ dependencies:
         assert!(result.is_ok());
         let metadata = result.unwrap();
         assert!(metadata.dependencies.is_none());
+    }
+
+    #[test]
+    fn test_extract_with_tool_field() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/backend.md
+      version: v1.0.0
+      tool: opencode
+    - path: agents/frontend.md
+      tool: claude-code
+---
+
+# Command with multi-tool dependencies"#;
+
+        let path = Path::new("command.md");
+        let metadata = MetadataExtractor::extract(path, content).unwrap();
+
+        assert!(metadata.has_dependencies());
+        let deps = metadata.dependencies.unwrap();
+        assert_eq!(deps["agents"].len(), 2);
+
+        // Verify tool fields are preserved
+        assert_eq!(deps["agents"][0].path, "agents/backend.md");
+        assert_eq!(deps["agents"][0].tool, Some("opencode".to_string()));
+
+        assert_eq!(deps["agents"][1].path, "agents/frontend.md");
+        assert_eq!(deps["agents"][1].tool, Some("claude-code".to_string()));
+    }
+
+    #[test]
+    fn test_extract_unknown_field_warning() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/test.md
+      version: v1.0.0
+      invalid_field: should_warn
+---
+
+# Content"#;
+
+        let path = Path::new("command.md");
+        let result = MetadataExtractor::extract(path, content);
+
+        // Should succeed but return empty metadata due to unknown field
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+        // With deny_unknown_fields, the parsing fails and we get empty metadata
+        assert!(!metadata.has_dependencies());
     }
 }

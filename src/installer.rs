@@ -252,7 +252,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
-///     tool: "claude-code".to_string(),
+///     tool: Some("claude-code".to_string()),
 /// };
 ///
 /// let (installed, checksum) = install_resource(&entry, Path::new("."), "agents", &cache, false).await?;
@@ -450,7 +450,7 @@ pub async fn install_resource(
 ///     installed_at: ".claude/agents/example.md".to_string(),
 ///     dependencies: vec![],
 ///     resource_type: ResourceType::Agent,
-///     tool: "claude-code".to_string(),
+///     tool: Some("claude-code".to_string()),
 /// };
 ///
 /// let (installed, checksum) = install_resource_with_progress(
@@ -1351,8 +1351,9 @@ pub async fn install_resources(
                     )
                 {
                     // Get artifact configuration path
+                    let tool = entry.tool.as_deref().unwrap_or("claude-code");
                     let artifact_path = manifest
-                        .get_artifact_resource_path(&entry.tool, resource_type)
+                        .get_artifact_resource_path(tool, resource_type)
                         .expect("Resource type should be supported by configured tools");
                     let target_dir = artifact_path.display().to_string();
                     entries.push((entry.clone(), target_dir));
@@ -1867,8 +1868,9 @@ pub async fn install_updated_resources(
             ResourceIterator::find_resource_by_name_and_source(lockfile, name, source.as_deref())
         {
             // Get artifact configuration path
+            let tool = entry.tool.as_deref().unwrap_or("claude-code");
             let artifact_path = manifest
-                .get_artifact_resource_path(&entry.tool, resource_type)
+                .get_artifact_resource_path(tool, resource_type)
                 .expect("Resource type should be supported by configured tools");
             let target_dir = artifact_path.display().to_string();
             entries_to_install.push((entry.clone(), target_dir));
@@ -2607,7 +2609,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }
         } else {
             LockedResource {
@@ -2622,7 +2624,7 @@ mod tests {
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
 
-                tool: "claude-code".to_string(),
+                tool: Some("claude-code".to_string()),
             }
         }
     }
@@ -2807,7 +2809,7 @@ mod tests {
         let mut snippet = create_test_locked_resource("test-snippet", true);
         snippet.path = file2.to_string_lossy().to_string();
         snippet.resource_type = crate::core::ResourceType::Snippet;
-        snippet.tool = "agpm".to_string(); // Snippets use agpm tool
+        snippet.tool = Some("agpm".to_string()); // Snippets use agpm tool
         snippet.installed_at = ".agpm/snippets/test-snippet.md".to_string();
         lockfile.snippets.push(snippet);
 

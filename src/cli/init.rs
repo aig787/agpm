@@ -226,6 +226,7 @@ resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, co
 # Note: hooks and mcp-servers merge into configuration files (no file installation)
 
 [tools.opencode]
+enabled = false  # Enable if you want to use OpenCode resources
 path = ".opencode"
 resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
 # Note: MCP servers merge into opencode.json (no file installation)
@@ -393,6 +394,11 @@ mod tests {
         assert!(content.contains("# Example: my-agent ="));
         assert!(content.contains("# Add your snippet dependencies here"));
         assert!(content.contains("# Example: utils ="));
+
+        // Verify opencode is disabled by default
+        assert!(content.contains("[tools.opencode]"));
+        assert!(content.contains("enabled = false"));
+        assert!(content.contains("# Enable if you want to use OpenCode resources"));
     }
 
     #[tokio::test]
