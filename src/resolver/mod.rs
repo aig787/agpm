@@ -1308,12 +1308,17 @@ impl DependencyResolver {
 
                             // Canonicalize manifest_dir to ensure consistent path comparison on Windows
                             // (canonicalize produces \\?\ prefixes that must match)
-                            let canonical_manifest_dir = manifest_dir.canonicalize().with_context(|| {
-                                format!("Failed to canonicalize manifest directory: {}", manifest_dir.display())
-                            })?;
+                            let canonical_manifest_dir =
+                                manifest_dir.canonicalize().with_context(|| {
+                                    format!(
+                                        "Failed to canonicalize manifest directory: {}",
+                                        manifest_dir.display()
+                                    )
+                                })?;
 
-                            let manifest_relative =
-                                trans_canonical.strip_prefix(&canonical_manifest_dir).with_context(|| {
+                            let manifest_relative = trans_canonical
+                                .strip_prefix(&canonical_manifest_dir)
+                                .with_context(|| {
                                     format!(
                                         "Transitive dep path {} is not under manifest directory {}",
                                         trans_canonical.display(),
@@ -1348,7 +1353,9 @@ impl DependencyResolver {
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
                                 source: None,
-                                path: crate::utils::normalize_path_for_storage(manifest_relative.to_string_lossy().to_string()),
+                                path: crate::utils::normalize_path_for_storage(
+                                    manifest_relative.to_string_lossy().to_string(),
+                                ),
                                 version: None,
                                 branch: None,
                                 rev: None,
@@ -1407,9 +1414,13 @@ impl DependencyResolver {
 
                                 // Canonicalize worktree path to handle symlinks (e.g., /var -> /private/var on macOS)
                                 // and ensure consistent path formats on Windows (\\?\ prefix)
-                                let canonical_worktree = worktree_path.canonicalize().with_context(|| {
-                                    format!("Failed to canonicalize worktree path: {}", worktree_path.display())
-                                })?;
+                                let canonical_worktree =
+                                    worktree_path.canonicalize().with_context(|| {
+                                        format!(
+                                            "Failed to canonicalize worktree path: {}",
+                                            worktree_path.display()
+                                        )
+                                    })?;
 
                                 trans_canonical.strip_prefix(&canonical_worktree)
                                     .with_context(|| format!(
@@ -1447,7 +1458,9 @@ impl DependencyResolver {
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
                                 source: Some(source_name.to_string()),
-                                path: crate::utils::normalize_path_for_storage(repo_relative.to_string_lossy().to_string()),
+                                path: crate::utils::normalize_path_for_storage(
+                                    repo_relative.to_string_lossy().to_string(),
+                                ),
                                 version: dep_spec
                                     .version
                                     .clone()
@@ -2672,9 +2685,15 @@ impl DependencyResolver {
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
-                    crate::utils::normalize_path_for_storage(matched_path.to_string_lossy().to_string())
+                    crate::utils::normalize_path_for_storage(
+                        matched_path.to_string_lossy().to_string(),
+                    )
                 } else {
-                    crate::utils::normalize_path_for_storage(format!("{}/{}", base_path.display(), matched_path.display()))
+                    crate::utils::normalize_path_for_storage(format!(
+                        "{}/{}",
+                        base_path.display(),
+                        matched_path.display()
+                    ))
                 };
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
