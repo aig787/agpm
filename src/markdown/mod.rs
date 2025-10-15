@@ -824,7 +824,10 @@ impl MarkdownDocument {
     /// Format a document with YAML frontmatter
     fn format_with_frontmatter(metadata: &MarkdownMetadata, content: &str) -> String {
         let yaml = serde_yaml::to_string(metadata).unwrap_or_default();
-        format!("---\n{yaml}---\n\n{content}")
+        // Trim trailing whitespace from YAML and ensure newline before closing delimiter
+        // This prevents the closing --- from being concatenated with the YAML content
+        let yaml_trimmed = yaml.trim_end();
+        format!("---\n{}\n---\n\n{}", yaml_trimmed, content)
     }
 
     /// Update the document's metadata and regenerate the raw content.
