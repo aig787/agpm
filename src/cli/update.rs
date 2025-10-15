@@ -595,6 +595,7 @@ mod tests {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            manifest_dir: None,
         }
     }
 

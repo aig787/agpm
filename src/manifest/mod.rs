@@ -624,6 +624,16 @@ pub struct Manifest {
     /// See [`ResourceDependency`] for specification format details.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub hooks: HashMap<String, ResourceDependency>,
+
+    /// Directory containing the manifest file (for resolving relative paths).
+    ///
+    /// This field is populated when loading the manifest and is used to resolve
+    /// relative paths in dependencies, particularly for path-only dependencies
+    /// and their transitive dependencies.
+    ///
+    /// This field is not serialized and only exists at runtime.
+    #[serde(skip)]
+    pub manifest_dir: Option<std::path::PathBuf>,
 }
 
 /// Resource configuration within a tool.
@@ -1404,6 +1414,7 @@ impl Manifest {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            manifest_dir: None,
         }
     }
 
@@ -1485,6 +1496,13 @@ impl Manifest {
         // Apply resource-type-specific defaults for tool
         // Snippets default to "agpm" (shared infrastructure) instead of "claude-code"
         manifest.apply_tool_defaults();
+
+        // Store the manifest directory for resolving relative paths
+        manifest.manifest_dir = Some(
+            path.parent()
+                .ok_or_else(|| anyhow::anyhow!("Manifest path has no parent directory"))?
+                .to_path_buf(),
+        );
 
         manifest.validate()?;
 
