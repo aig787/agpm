@@ -1833,8 +1833,11 @@ This is a local agent with a transitive dependency on ./helper.md.
     );
     assert!(
         lockfile_content.contains(r#"name = "helper""#),
-        "Lockfile should contain helper (transitive)"
+        "Lockfile should contain helper (transitive). Lockfile:\n{}",
+        lockfile_content
     );
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "agents/helper.md""#));
 
     Ok(())
 }
@@ -1903,6 +1906,8 @@ This agent depends on ../helper.md (parent directory).
     let lockfile_content = project.read_lockfile().await?;
     assert!(lockfile_content.contains(r#"name = "local-agent""#));
     assert!(lockfile_content.contains(r#"name = "helper""#));
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "agents/helper.md""#));
 
     Ok(())
 }
@@ -1973,6 +1978,8 @@ This agent depends on a snippet in a different directory.
     let lockfile_content = project.read_lockfile().await?;
     assert!(lockfile_content.contains(r#"name = "local-agent""#));
     assert!(lockfile_content.contains(r#"name = "utils""#));
+    // Verify path uses forward slashes
+    assert!(lockfile_content.contains(r#"path = "snippets/utils.md""#));
 
     Ok(())
 }

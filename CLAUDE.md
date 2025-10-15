@@ -221,16 +221,21 @@ Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isol
 
 ### Path Separator Rules
 
+**CRITICAL**: Lockfiles (`agpm.lock`) MUST use Unix-style forward slashes for ALL path fields to ensure cross-platform compatibility. Team members on different platforms must be able to share lockfiles.
+
 1. **Forward slashes ONLY** in these contexts:
-   - Lockfile `installed_at` fields (cross-platform consistency)
+   - **Lockfile fields** (cross-platform portability):
+     - `name` field (e.g., `"agents/helper"`, not `'agents\helper'`)
+     - `path` field (e.g., `"snippets/utils.md"`, not `'snippets\utils.md'`)
+     - `installed_at` field (e.g., `".claude/agents/helper.md"`)
    - `.gitignore` entries (Git requirement)
    - TOML manifest files (platform-independent)
    - Any serialized/stored path representation
 
-2. **Use `normalize_path_for_storage()` for stored paths**:
+2. **Use `normalize_path_for_storage()` for ALL lockfile paths**:
    - `Path::display()` produces platform-specific separators (backslashes on Windows)
-   - Always use `normalize_path_for_storage()` when storing paths
-   - Example: `normalize_path_for_storage(format!("{}/{}", artifact_path.display(), filename))`
+   - **ALWAYS** call `normalize_path_for_storage()` when creating `LockedResource` instances
+   - Example: `path: normalize_path_for_storage(dep.get_path())`
    - Helper available at: `use crate::utils::normalize_path_for_storage;`
 
 3. **Runtime path operations**:

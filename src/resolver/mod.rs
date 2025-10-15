@@ -1348,7 +1348,7 @@ impl DependencyResolver {
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
                                 source: None,
-                                path: manifest_relative.to_string_lossy().to_string(),
+                                path: crate::utils::normalize_path_for_storage(manifest_relative.to_string_lossy().to_string()),
                                 version: None,
                                 branch: None,
                                 rev: None,
@@ -1447,7 +1447,7 @@ impl DependencyResolver {
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
                                 source: Some(source_name.to_string()),
-                                path: repo_relative.to_string_lossy().to_string(),
+                                path: crate::utils::normalize_path_for_storage(repo_relative.to_string_lossy().to_string()),
                                 version: dep_spec
                                     .version
                                     .clone()
@@ -2413,7 +2413,7 @@ impl DependencyResolver {
                 name: unique_name,
                 source: None,
                 url: None,
-                path: dep.get_path().to_string(),
+                path: normalize_path_for_storage(dep.get_path()),
                 version: None,
                 resolved_commit: None,
                 checksum: String::new(),
@@ -2558,7 +2558,7 @@ impl DependencyResolver {
                 name: unique_name,
                 source: Some(source_name.to_string()),
                 url: Some(source_url.clone()),
-                path: dep.get_path().to_string(),
+                path: normalize_path_for_storage(dep.get_path()),
                 version: resolved_version, // Resolved version (tag/branch like "v2.1.4" or "main")
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
@@ -2672,9 +2672,9 @@ impl DependencyResolver {
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
-                    matched_path.to_string_lossy().to_string()
+                    crate::utils::normalize_path_for_storage(matched_path.to_string_lossy().to_string())
                 } else {
-                    format!("{}/{}", base_path.display(), matched_path.display())
+                    crate::utils::normalize_path_for_storage(format!("{}/{}", base_path.display(), matched_path.display()))
                 };
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
@@ -2862,7 +2862,7 @@ impl DependencyResolver {
                     name: resource_name.clone(),
                     source: Some(source_name.to_string()),
                     url: Some(source_url.clone()),
-                    path: matched_path.to_string_lossy().to_string(),
+                    path: normalize_path_for_storage(matched_path.to_string_lossy().to_string()),
                     version: resolved_version.clone(), // Use the resolved version (e.g., "main")
                     resolved_commit: Some(resolved_commit.clone()),
                     checksum: String::new(),
@@ -2875,7 +2875,7 @@ impl DependencyResolver {
                     resource_type,
                     tool: Some(
                         dep.get_tool()
-                            .map(std::string::ToString::to_string)
+                            .map(|s| s.to_string())
                             .unwrap_or_else(|| resource_type.default_tool().to_string()),
                     ),
                 });
