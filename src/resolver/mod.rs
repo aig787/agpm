@@ -217,7 +217,7 @@ use crate::cache::Cache;
 use crate::core::AgpmError;
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
-use crate::manifest::{DependencySpec, DetailedDependency, Manifest, ResourceDependency};
+use crate::manifest::{Manifest, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
 use crate::utils::normalize_path_for_storage;
@@ -1216,24 +1216,6 @@ impl DependencyResolver {
 
             // Process transitive dependencies if present
             if let Some(deps_map) = metadata.dependencies {
-                // Check if this is a local file dependency (no source)
-                if dep.get_source().is_none() {
-                    // Warn user that transitive dependencies are not supported for local file deps
-                    tracing::debug!("Skipping transitive deps for local dependency: {}", name);
-                    eprintln!(
-                        "Warning: Resource '{}' at '{}' declares transitive dependencies, but local file dependencies do not support this.",
-                        name,
-                        dep.get_path()
-                    );
-                    eprintln!(
-                        "         To enable transitive dependency resolution, create a named source with 'agpm add source <name> <path>'"
-                    );
-                    eprintln!(
-                        "         then reference this resource using the source instead of a direct path."
-                    );
-                    continue; // Skip processing transitive deps for this resource
-                }
-
                 tracing::debug!(
                     "Processing transitive deps for: {} (has source: {:?})",
                     name,
@@ -1247,14 +1229,233 @@ impl DependencyResolver {
                         dep_resource_type_str.parse().unwrap_or(crate::core::ResourceType::Snippet);
 
                     for dep_spec in dep_specs {
-                        // Convert DependencySpec to ResourceDependency
-                        // This will only be called for Detailed dependencies now
-                        // Pass the child resource type so we can determine the correct tool
-                        let trans_dep =
-                            self.spec_to_dependency(&dep, &dep_spec, dep_resource_type)?;
+                        // UNIFIED APPROACH: File-relative path resolution for all transitive dependencies
+
+                        // Get the canonical path to the parent resource file
+                        let parent_file_path = match self
+                            .get_canonical_path_for_dependency(&dep)
+                            .await
+                        {
+                            Ok(path) => path,
+                            Err(e) => {
+                                eprintln!(
+                                    "Warning: Skipping transitive dependencies for '{}': failed to get parent path: {}",
+                                    name, e
+                                );
+                                continue;
+                            }
+                        };
+
+                        // Check if this is a glob pattern
+                        let is_pattern = dep_spec.path.contains('*')
+                            || dep_spec.path.contains('?')
+                            || dep_spec.path.contains('[');
+
+                        let trans_canonical = if is_pattern {
+                            // For patterns, normalize (resolve .. and .) but don't canonicalize
+                            let parent_dir = match parent_file_path.parent() {
+                                Some(dir) => dir,
+                                None => {
+                                    eprintln!(
+                                        "Warning: Skipping transitive dependency '{}' for '{}': parent file has no directory",
+                                        dep_spec.path, name
+                                    );
+                                    continue;
+                                }
+                            };
+                            let resolved = parent_dir.join(&dep_spec.path);
+                            // IMPORTANT: Preserve the root component when normalizing
+                            let mut result = PathBuf::new();
+                            for component in resolved.components() {
+                                match component {
+                                    std::path::Component::RootDir => {
+                                        result.push(component);
+                                    } // Preserve root!
+                                    std::path::Component::ParentDir => {
+                                        result.pop();
+                                    }
+                                    std::path::Component::CurDir => {}
+                                    _ => {
+                                        result.push(component);
+                                    }
+                                }
+                            }
+                            result
+                        } else {
+                            // For regular paths, fully resolve and canonicalize
+                            match crate::utils::resolve_file_relative_path(
+                                &parent_file_path,
+                                &dep_spec.path,
+                            ) {
+                                Ok(path) => path,
+                                Err(e) => {
+                                    eprintln!(
+                                        "Warning: Skipping transitive dependency '{}' for '{}': {}",
+                                        dep_spec.path, name, e
+                                    );
+                                    continue;
+                                }
+                            }
+                        };
+
+                        // Create the transitive dependency based on whether parent is Git or path-only
+                        use crate::manifest::DetailedDependency;
+                        let trans_dep = if dep.get_source().is_none() {
+                            // Path-only transitive dep (parent is path-only)
+                            // Convert canonical path back to manifest-relative for proper name generation
+                            let manifest_dir = self.manifest.manifest_dir.as_ref()
+                                .ok_or_else(|| anyhow::anyhow!("Manifest directory not available for path-only transitive dep"))?;
+                            let manifest_relative =
+                                trans_canonical.strip_prefix(manifest_dir).with_context(|| {
+                                    format!(
+                                        "Transitive dep path {} is not under manifest directory {}",
+                                        trans_canonical.display(),
+                                        manifest_dir.display()
+                                    )
+                                })?;
+
+                            // Determine tool with proper inheritance
+                            let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
+                                // Explicit tool specified in YAML frontmatter
+                                Some(explicit_tool.clone())
+                            } else {
+                                // Determine parent's effective tool (explicit or default for its resource type)
+                                let parent_tool = dep
+                                    .get_tool()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| resource_type.default_tool().to_string());
+
+                                // Check if parent's tool supports this resource type
+                                if self
+                                    .manifest
+                                    .get_artifact_resource_path(&parent_tool, dep_resource_type)
+                                    .is_some()
+                                {
+                                    // Parent's tool supports this resource type - inherit it
+                                    Some(parent_tool)
+                                } else {
+                                    // Parent's tool doesn't support this resource type, use default
+                                    Some(dep_resource_type.default_tool().to_string())
+                                }
+                            };
+
+                            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                                source: None,
+                                path: manifest_relative.to_string_lossy().to_string(),
+                                version: None,
+                                branch: None,
+                                rev: None,
+                                command: None,
+                                args: None,
+                                target: None,
+                                filename: None,
+                                dependencies: None,
+                                tool: trans_tool,
+                            }))
+                        } else {
+                            // Git-backed transitive dep (parent is Git-backed)
+                            // The resolved path is within the worktree - need to convert back to repo-relative
+                            let source_name = dep.get_source().ok_or_else(|| {
+                                anyhow::anyhow!("Expected source for Git-backed dependency")
+                            })?;
+                            let version = dep.get_version().unwrap_or("main").to_string();
+                            let source_url =
+                                self.source_manager.get_source_url(source_name).ok_or_else(
+                                    || anyhow::anyhow!("Source '{source_name}' not found"),
+                                )?;
+
+                            // Get repo-relative path by stripping the appropriate prefix
+                            let repo_relative = if crate::utils::is_local_path(&source_url) {
+                                // For local directory sources, strip the source path to get relative path
+                                let source_path = PathBuf::from(&source_url).canonicalize()?;
+                                trans_canonical.strip_prefix(&source_path)
+                                    .with_context(|| format!(
+                                        "Transitive dep resolved outside parent's source directory: {} not under {}",
+                                        trans_canonical.display(),
+                                        source_path.display()
+                                    ))?
+                                    .to_path_buf()
+                            } else {
+                                // For Git sources, get worktree and strip it
+                                let sha = self
+                                    .prepared_versions
+                                    .get(&Self::group_key(source_name, &version))
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "Parent version not resolved for {}",
+                                            source_name
+                                        )
+                                    })?
+                                    .resolved_commit
+                                    .clone();
+                                let worktree_path = self
+                                    .cache
+                                    .get_or_create_worktree_for_sha(
+                                        source_name,
+                                        &source_url,
+                                        &sha,
+                                        None,
+                                    )
+                                    .await?;
+
+                                // Canonicalize worktree path to handle symlinks (e.g., /var -> /private/var on macOS)
+                                let canonical_worktree =
+                                    worktree_path.canonicalize().unwrap_or(worktree_path.clone());
+
+                                trans_canonical.strip_prefix(&canonical_worktree)
+                                    .with_context(|| format!(
+                                        "Transitive dep resolved outside parent's worktree: {} not under {}",
+                                        trans_canonical.display(),
+                                        canonical_worktree.display()
+                                    ))?
+                                    .to_path_buf()
+                            };
+
+                            // Determine tool with proper inheritance
+                            let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
+                                // Explicit tool specified in YAML frontmatter
+                                Some(explicit_tool.clone())
+                            } else {
+                                // Determine parent's effective tool (explicit or default for its resource type)
+                                let parent_tool = dep
+                                    .get_tool()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| resource_type.default_tool().to_string());
+
+                                // Check if parent's tool supports this resource type
+                                if self
+                                    .manifest
+                                    .get_artifact_resource_path(&parent_tool, dep_resource_type)
+                                    .is_some()
+                                {
+                                    // Parent's tool supports this resource type - inherit it
+                                    Some(parent_tool)
+                                } else {
+                                    // Parent's tool doesn't support this resource type, use default
+                                    Some(dep_resource_type.default_tool().to_string())
+                                }
+                            };
+
+                            ResourceDependency::Detailed(Box::new(DetailedDependency {
+                                source: Some(source_name.to_string()),
+                                path: repo_relative.to_string_lossy().to_string(),
+                                version: dep_spec
+                                    .version
+                                    .clone()
+                                    .or_else(|| dep.get_version().map(|v| v.to_string())),
+                                branch: None,
+                                rev: None,
+                                command: None,
+                                args: None,
+                                target: None,
+                                filename: None,
+                                dependencies: None,
+                                tool: trans_tool,
+                            }))
+                        };
 
                         // Generate a name for the transitive dependency
-                        let trans_name = self.generate_dependency_name(&dep_spec.path);
+                        let trans_name = self.generate_dependency_name(trans_dep.get_path());
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
@@ -1402,9 +1603,12 @@ impl DependencyResolver {
     ) -> Result<String> {
         match dep {
             ResourceDependency::Simple(path) => {
-                // Local file - path is relative to where agpm was invoked
-                // Since we don't track the manifest path, assume relative path
-                let full_path = PathBuf::from(path);
+                // Local file - resolve relative to manifest directory
+                let manifest_dir = self.manifest.manifest_dir.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("Manifest directory not available for Simple dependency")
+                })?;
+                let full_path =
+                    crate::utils::resolve_path_relative_to_manifest(manifest_dir, path)?;
                 std::fs::read_to_string(&full_path)
                     .with_context(|| format!("Failed to read local file: {}", full_path.display()))
             }
@@ -1441,13 +1645,27 @@ impl DependencyResolver {
                             );
                             self.version_resolver.resolve_all().await?;
 
-                            self.version_resolver
+                            let resolved_sha = self
+                                .version_resolver
                                 .get_resolved_sha(source_name, &version)
                                 .ok_or_else(|| {
                                     anyhow::anyhow!(
                                         "Failed to resolve version for {source_name} @ {version}"
                                     )
-                                })?
+                                })?;
+
+                            // Cache the resolved version for nested transitive dependency resolution
+                            // Note: worktree_path will be set when get_or_create_worktree_for_sha is called below
+                            self.prepared_versions.insert(
+                                Self::group_key(source_name, &version),
+                                PreparedSourceVersion {
+                                    worktree_path: PathBuf::new(), // Placeholder, will be set after worktree creation
+                                    resolved_version: Some(version.clone()),
+                                    resolved_commit: resolved_sha.clone(),
+                                },
+                            );
+
+                            resolved_sha
                         };
 
                         // Get worktree for this SHA
@@ -1461,8 +1679,16 @@ impl DependencyResolver {
                         read_with_cache_retry_sync(&file_path)
                     }
                 } else {
-                    // Local dependency with detailed spec
-                    let full_path = PathBuf::from(&detailed.path);
+                    // Local dependency with detailed spec - resolve relative to manifest directory
+                    let manifest_dir = self.manifest.manifest_dir.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Manifest directory not available for local Detailed dependency"
+                        )
+                    })?;
+                    let full_path = crate::utils::resolve_path_relative_to_manifest(
+                        manifest_dir,
+                        &detailed.path,
+                    )?;
                     std::fs::read_to_string(&full_path).with_context(|| {
                         format!("Failed to read local file: {}", full_path.display())
                     })
@@ -1471,78 +1697,74 @@ impl DependencyResolver {
         }
     }
 
-    /// Convert a `DependencySpec` to a `ResourceDependency`.
+    /// Gets the canonical file path for a dependency (unified for Git and path-only).
     ///
-    /// Inherits the source and tool from the parent dependency. If the parent's tool
-    /// doesn't support the child's resource type, falls back to the default tool for
-    /// that resource type.
-    ///
-    /// For source-based dependencies (Detailed variant), transitive dependencies
-    /// inherit the source and paths are relative to the source's root directory.
-    ///
-    /// For local file dependencies (no source), this method should not be called
-    /// as transitive dependencies are not supported for them.
-    fn spec_to_dependency(
-        &self,
-        parent: &ResourceDependency,
-        spec: &DependencySpec,
-        child_resource_type: crate::core::ResourceType,
-    ) -> Result<ResourceDependency> {
-        // Check if parent has a source - local file dependencies don't support transitive deps
-        let parent_source = parent.get_source();
-        if parent_source.is_none() {
-            // Local file dependencies don't support transitive deps
-            // This case should be filtered out before calling this method
-            return Err(anyhow::anyhow!(
-                "Transitive dependencies are not supported for local file dependencies (no source)"
-            ));
-        }
+    /// For path-only deps: resolves from manifest directory
+    /// For Git-backed deps: resolves from worktree path
+    async fn get_canonical_path_for_dependency(
+        &mut self,
+        dep: &ResourceDependency,
+    ) -> Result<PathBuf> {
+        if dep.get_source().is_none() {
+            // Path-only: resolve from manifest directory
+            let manifest_dir = self
+                .manifest
+                .manifest_dir
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Manifest directory not available"))?;
+            crate::utils::resolve_path_relative_to_manifest(manifest_dir, dep.get_path())
+        } else {
+            // Git-backed: get worktree path and join with repo-relative path
+            let source_name = dep
+                .get_source()
+                .ok_or_else(|| anyhow::anyhow!("Cannot get worktree for path-only dependency"))?;
+            let version = dep.get_version().unwrap_or("main").to_string();
 
-        match parent {
-            ResourceDependency::Simple(_) => {
-                // Simple dependencies should never reach here since they have no source
-                unreachable!(
-                    "Simple dependencies should be filtered out before calling spec_to_dependency"
-                )
-            }
-            ResourceDependency::Detailed(parent_detail) => {
-                // Inherit source and version from parent
-                let version = spec.version.clone().or_else(|| parent_detail.version.clone());
+            // Get source URL
+            let source_url = self
+                .source_manager
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{source_name}' not found"))?;
 
-                // Determine tool: use explicit tool from spec, or inherit from parent, or fall back to default
-                let tool = if let Some(spec_tool) = &spec.tool {
-                    // Explicit tool specified in the dependency spec - use it
-                    Some(spec_tool.clone())
-                } else if let Some(parent_tool) = parent_detail.tool.as_deref() {
-                    if self
-                        .manifest
-                        .get_artifact_resource_path(parent_tool, child_resource_type)
-                        .is_some()
-                    {
-                        // Parent's tool supports this resource type
-                        parent_detail.tool.clone()
-                    } else {
-                        // Parent's tool doesn't support this resource type, use default
-                        Some(child_resource_type.default_tool().to_string())
-                    }
+            // Check if this is a local directory source (not a Git repo)
+            if crate::utils::is_local_path(&source_url) {
+                // Local directory source - resolve directly from source path
+                let file_path = PathBuf::from(&source_url).join(dep.get_path());
+                file_path.canonicalize().with_context(|| {
+                    format!("Failed to canonicalize local source resource: {}", file_path.display())
+                })
+            } else {
+                // Git-backed: resolve from worktree
+                // Get the resolved SHA
+                let sha = if let Some(prepared) =
+                    self.prepared_versions.get(&Self::group_key(source_name, &version))
+                {
+                    prepared.resolved_commit.clone()
                 } else {
-                    // No parent tool specified, use default for child resource type
-                    Some(child_resource_type.default_tool().to_string())
+                    // Need to resolve this version
+                    self.version_resolver.add_version(source_name, &source_url, Some(&version));
+                    self.version_resolver.resolve_all().await?;
+
+                    self.version_resolver.get_resolved_sha(source_name, &version).ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "Failed to resolve version for {source_name} @ {version}"
+                            )
+                        },
+                    )?
                 };
 
-                Ok(ResourceDependency::Detailed(Box::new(DetailedDependency {
-                    source: parent_detail.source.clone(),
-                    path: spec.path.clone(),
-                    version,
-                    branch: None,
-                    rev: None,
-                    command: None,
-                    args: None,
-                    target: None,
-                    filename: None,
-                    dependencies: None, // Will be filled when fetched
-                    tool,
-                })))
+                // Get worktree path
+                let worktree_path = self
+                    .cache
+                    .get_or_create_worktree_for_sha(source_name, &source_url, &sha, None)
+                    .await?;
+
+                // Join with repo-relative path and canonicalize
+                let full_path = worktree_path.join(dep.get_path());
+                full_path.canonicalize().with_context(|| {
+                    format!("Failed to canonicalize Git resource: {}", full_path.display())
+                })
             }
         }
     }
@@ -3802,6 +4024,7 @@ pub fn extract_relative_path(path: &Path, resource_type: &crate::core::ResourceT
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::DetailedDependency;
     use tempfile::TempDir;
 
     #[test]
