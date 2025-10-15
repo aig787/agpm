@@ -1486,10 +1486,7 @@ max_tokens = 4000
 
     // Verify lockfile contains patch information
     let lockfile_content = project.read_lockfile().await.unwrap();
-    assert!(
-        lockfile_content.contains("applied_patches"),
-        "Lockfile should track applied patches"
-    );
+    assert!(lockfile_content.contains("applied_patches"), "Lockfile should track applied patches");
 }
 
 #[tokio::test]
@@ -1554,10 +1551,7 @@ model = "claude-3-haiku"
     // Run validate - should detect unknown alias in patch
     let output = project.run_agpm(&["validate"]).unwrap();
 
-    assert!(
-        !output.success,
-        "validate should fail when patch references unknown alias"
-    );
+    assert!(!output.success, "validate should fail when patch references unknown alias");
 
     assert!(
         output.stderr.contains("nonexistent-agent") || output.stdout.contains("nonexistent-agent"),
