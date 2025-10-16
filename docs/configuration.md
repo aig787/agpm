@@ -249,17 +249,21 @@ api_key = "${MY_KEY}"
 - `temperature` = "0.9" (from private)
 - `api_key` = "${MY_KEY}" (from private)
 
-### Conflict Detection
+### Conflict Resolution
 
-If the **same field** appears in both files, installation fails immediately:
+If the **same field** appears in both files, private patches silently override project patches:
 
-```text
-Error: Patch conflict for agents/rust-expert
-  Field 'model' appears in both agpm.toml and agpm.private.toml
-  Resolution: Remove the field from one of the files
+```toml
+# agpm.toml (project-level)
+[patch.agents.rust-expert]
+model = "claude-3-opus"
+
+# agpm.private.toml (private, takes precedence)
+[patch.agents.rust-expert]
+model = "claude-3-haiku"  # This value wins
 ```
 
-This prevents silent overwrites and ensures explicit configuration.
+This allows team members to customize their local environment without modifying the shared project configuration. The conflict is detected and logged for informational purposes, but installation proceeds successfully.
 
 ### Common Use Cases
 

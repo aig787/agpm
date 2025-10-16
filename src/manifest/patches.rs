@@ -505,6 +505,33 @@ fn apply_patches_to_json(
 
 /// Convert toml::Value to serde_json::Value.
 fn toml_value_to_json(value: &toml::Value) -> anyhow::Result<serde_json::Value> {
+    toml_value_to_json_with_depth(value, 0)
+}
+
+/// Convert toml::Value to serde_json::Value with recursion depth limit.
+///
+/// # Arguments
+///
+/// * `value` - The TOML value to convert
+/// * `depth` - Current recursion depth
+///
+/// # Returns
+///
+/// The converted JSON value, or an error if depth limit is exceeded
+fn toml_value_to_json_with_depth(
+    value: &toml::Value,
+    depth: usize,
+) -> anyhow::Result<serde_json::Value> {
+    const MAX_DEPTH: usize = 100;
+
+    if depth > MAX_DEPTH {
+        anyhow::bail!(
+            "TOML value nesting exceeds maximum depth of {}. \
+             This may indicate a malformed patch configuration.",
+            MAX_DEPTH
+        );
+    }
+
     match value {
         toml::Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         toml::Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
@@ -515,13 +542,14 @@ fn toml_value_to_json(value: &toml::Value) -> anyhow::Result<serde_json::Value> 
         }
         toml::Value::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
         toml::Value::Array(arr) => {
-            let json_arr: Result<Vec<_>, _> = arr.iter().map(toml_value_to_json).collect();
+            let json_arr: Result<Vec<_>, _> =
+                arr.iter().map(|v| toml_value_to_json_with_depth(v, depth + 1)).collect();
             Ok(serde_json::Value::Array(json_arr?))
         }
         toml::Value::Table(table) => {
             let mut json_map = serde_json::Map::new();
             for (k, v) in table {
-                json_map.insert(k.clone(), toml_value_to_json(v)?);
+                json_map.insert(k.clone(), toml_value_to_json_with_depth(v, depth + 1)?);
             }
             Ok(serde_json::Value::Object(json_map))
         }

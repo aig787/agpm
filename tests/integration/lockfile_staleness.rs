@@ -301,10 +301,10 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
     let output = project.run_agpm(&["install", "--frozen"])?;
     assert!(!output.success, "Expected failure due to duplicate entries, but command succeeded");
     assert!(
-        output.stderr.contains("duplicate entries")
-            || output.stderr.contains("Found") && output.stderr.contains("duplicate")
-            || output.stderr.contains("out of sync"),
-        "Expected duplicate entries error, got: {}",
+        output.stderr.contains("corruption")
+            || output.stderr.contains("duplicate")
+            || output.stderr.contains("Duplicate"),
+        "Expected duplicate entries/corruption error, got: {}",
         output.stderr
     );
 

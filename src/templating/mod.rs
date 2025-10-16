@@ -73,7 +73,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json;
+use serde_json::{Map, to_string, to_value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tera::{Context as TeraContext, Tera};
@@ -237,15 +237,15 @@ impl TemplateContextBuilder {
         let mut context = TeraContext::new();
 
         // Build the nested agpm structure
-        let mut agpm = serde_json::Map::new();
+        let mut agpm = Map::new();
 
         // Build current resource data
         let resource_data = self.build_resource_data(resource_name, resource_type)?;
-        agpm.insert("resource".to_string(), serde_json::to_value(resource_data)?);
+        agpm.insert("resource".to_string(), to_value(resource_data)?);
 
         // Build dependency data
         let deps_data = self.build_dependencies_data()?;
-        agpm.insert("deps".to_string(), serde_json::to_value(deps_data)?);
+        agpm.insert("deps".to_string(), to_value(deps_data)?);
 
         // Insert the complete agpm object
         context.insert("agpm", &agpm);
@@ -438,8 +438,8 @@ impl TemplateContextBuilder {
         }
 
         // Serialize to JSON for stable representation
-        let json_str = serde_json::to_string(&digest_data)
-            .context("Failed to serialize template context for digest")?;
+        let json_str =
+            to_string(&digest_data).context("Failed to serialize template context for digest")?;
 
         // Compute SHA-256 hash
         let mut hasher = Sha256::new();
