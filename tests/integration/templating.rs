@@ -396,8 +396,13 @@ It should be installed exactly as-is.
     let installed_path = project.project_path().join(".claude/agents/plain-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
 
-    // Verify content is identical
-    assert_eq!(content, original_content, "Plain files should be unchanged");
+    // Verify content is identical (normalize line endings for cross-platform compatibility)
+    let normalized_content = content.replace("\r\n", "\n");
+    let normalized_original = original_content.replace("\r\n", "\n");
+    assert_eq!(
+        normalized_content, normalized_original,
+        "Plain files should be unchanged (modulo line endings)"
+    );
 
     Ok(())
 }
