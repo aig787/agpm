@@ -2000,6 +2000,72 @@ impl LockFile {
         Ok(None)
     }
 
+    /// Validate that there are no duplicate names within each resource type.
+    ///
+    /// This method checks for lockfile corruption by ensuring that no resource type
+    /// contains multiple entries with the same name. This is a stricter validation
+    /// than `detect_duplicate_entries` and is used during lockfile loading to
+    /// catch corruption early.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the lockfile (used for error messages)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - No duplicates found
+    /// * `Err(anyhow::Error)` - Duplicates found with detailed error message
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any resource type contains duplicate names, with
+    /// details about which resource type and names are duplicated.
+    pub fn validate_no_duplicates(&self, path: &Path) -> Result<()> {
+        use std::collections::HashMap;
+
+        let mut found_duplicates = false;
+        let mut error_messages = Vec::new();
+
+        // Check each resource type for duplicates
+        for resource_type in crate::core::ResourceType::all() {
+            let resources = self.get_resources(*resource_type);
+            let mut name_counts = HashMap::new();
+
+            // Count occurrences of each name
+            for resource in resources {
+                *name_counts.entry(&resource.name).or_insert(0) += 1;
+            }
+
+            // Find duplicates
+            let duplicates: Vec<_> = name_counts.iter().filter(|(_, count)| **count > 1).collect();
+
+            if !duplicates.is_empty() {
+                found_duplicates = true;
+                let dup_names: Vec<_> = duplicates
+                    .iter()
+                    .map(|(name, count)| format!("{} ({} times)", name, **count))
+                    .collect();
+                error_messages.push(format!("  {}: {}", resource_type, dup_names.join(", ")));
+            }
+        }
+
+        if found_duplicates {
+            return Err(crate::core::AgpmError::Other {
+                message: format!(
+                    "Lockfile corruption detected in {}:\nDuplicate resource names found:\n{}\n\n\
+                    This indicates lockfile corruption. To fix:\n\
+                    - Delete agpm.lock and run 'agpm install' to regenerate it\n\
+                    - Or restore from a backup if available",
+                    path.display(),
+                    error_messages.join("\n")
+                ),
+            }
+            .into());
+        }
+
+        Ok(())
+    }
+
     /// Find a specific resource by name and type.
     ///
     /// This method searches for a resource with the given name within the specified

@@ -69,6 +69,145 @@ pinned  = { source = "community", path = "agents/dev.md", rev = "abc123def" }
 - AGPM expands the pattern during install and records every concrete match in `agpm.lock` under the resolved dependency, using `resource_type/name@resolved_version` entries.
 - Conflicts are detected after expansion—if two patterns resolve to the same install location, the install fails with a duplicate-path error (see the conflicts section for remediation guidance).
 
+## Transitive Dependencies
+
+Resources can declare their own dependencies within their content using YAML frontmatter (for Markdown files) or JSON fields (for JSON files). AGPM automatically resolves these transitive dependencies during installation, creating a complete dependency graph.
+
+### Declaration Syntax
+
+**Markdown files** (YAML frontmatter):
+
+```yaml
+---
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0        # Optional: inherits parent's version if not specified
+      tool: claude-code      # Optional: inherits parent's tool if not specified
+  snippets:
+    - path: snippets/utils.md
+---
+# Your resource content here...
+```
+
+**JSON files** (top-level field):
+
+```json
+{
+  "dependencies": {
+    "commands": [
+      {
+        "path": "commands/deploy.md",
+        "version": "v2.0.0",
+        "tool": "opencode"
+      }
+    ]
+  },
+  "mcpServers": {
+    "myserver": {
+      "command": "npx",
+      "args": ["-y", "myserver"]
+    }
+  }
+}
+```
+
+### Dependency Fields
+
+- **`path`** (required): Path to the dependency file within the same source repository
+- **`version`** (optional): Version constraint (e.g., `v1.0.0`, `^v2.1.0`). If omitted, inherits from parent resource
+- **`tool`** (optional): Target tool (`claude-code`, `opencode`, `agpm`). If omitted, inherits from parent if compatible, otherwise uses resource type default
+
+### Resolution Rules
+
+**Same-Source Model**: Transitive dependencies must come from the same source repository as their parent. This ensures version consistency and simplifies dependency management.
+
+**Version Inheritance**: If a transitive dependency doesn't specify a version, it inherits the parent resource's version. This allows dependency trees to stay synchronized across releases.
+
+```toml
+# agpm.toml
+[agents]
+ai-assistant = { source = "community", path = "agents/assistant.md", version = "v2.0.0" }
+```
+
+If `agents/assistant.md` declares dependencies without versions:
+```yaml
+---
+dependencies:
+  snippets:
+    - path: snippets/prompts.md  # Inherits v2.0.0
+    - path: snippets/utils.md    # Inherits v2.0.0
+---
+```
+
+**Tool Inheritance**: Tools are inherited when the parent's tool supports the child's resource type. For example, if a `claude-code` agent depends on a snippet:
+- If parent explicitly sets `tool: claude-code` and `claude-code` supports snippets → inherits
+- If not compatible → falls back to resource type's default tool
+
+### Graph-Based Resolution
+
+AGPM uses a dependency graph with topological ordering to resolve transitive dependencies:
+
+1. **Collection**: Gathers all direct dependencies from manifest
+2. **Expansion**: Extracts transitive dependencies from each resource's metadata
+3. **Graph Building**: Constructs dependency graph with cycle detection
+4. **Topological Sort**: Orders dependencies so each resource is installed after its dependencies
+5. **Parallel Resolution**: Resolves independent branches concurrently for maximum efficiency
+
+**Cycle Detection**: If a circular dependency is detected (A → B → C → A), installation fails with a clear error:
+
+```text
+Error: Circular dependency detected
+  agents/a.md → agents/b.md → agents/c.md → agents/a.md
+```
+
+### Deduplication
+
+If multiple resources depend on the same file, AGPM automatically deduplicates:
+
+```toml
+[agents]
+agent-a = { source = "community", path = "agents/a.md", version = "v1.0.0" }
+agent-b = { source = "community", path = "agents/b.md", version = "v1.0.0" }
+```
+
+If both `a.md` and `b.md` declare:
+```yaml
+dependencies:
+  snippets:
+    - path: snippets/shared.md
+```
+
+Result: `snippets/shared.md` is installed once and shared by both agents.
+
+### Conflict Resolution
+
+If the same resource is needed at different versions, AGPM selects the highest version that satisfies all constraints:
+
+- `agents/a.md` requires `snippets/helper.md` at `^v1.0.0`
+- `agents/b.md` requires `snippets/helper.md` at `^v1.2.0`
+- **Resolution**: Installs `v1.2.0` (satisfies both `^v1.0.0` and `^v1.2.0`)
+
+If constraints are incompatible, installation fails with a version conflict error.
+
+### Viewing the Dependency Tree
+
+Use `agpm tree` to visualize the complete dependency graph:
+
+```bash
+agpm tree
+```
+
+Output shows transitive relationships:
+```
+agents/assistant (v2.0.0)
+├─ snippets/prompts (v2.0.0) [transitive]
+└─ snippets/utils (v2.0.0) [transitive]
+    └─ snippets/common (v2.0.0) [transitive]
+```
+
+See `agpm tree --help` for filtering options.
+
 ## Naming Overrides
 
 | Setting | Section | Purpose | Example |

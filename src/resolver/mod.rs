@@ -504,13 +504,166 @@ impl DependencyResolver {
         // Get the appropriate resource collection based on the entry's type
         let resources = lockfile.get_resources_mut(entry.resource_type);
 
-        // Find existing entry by name and source (excluding version to allow updates)
+        // Use (name, source) matching for deduplication
+        // This allows multiple entries with the same name from different sources,
+        // which will be caught by conflict detection if they map to the same path
         if let Some(existing) =
             resources.iter_mut().find(|e| e.name == entry.name && e.source == entry.source)
         {
             *existing = entry;
         } else {
             resources.push(entry);
+        }
+    }
+
+    /// Removes lockfile entries for manifest dependencies that will be re-resolved.
+    ///
+    /// This method removes old entries for direct manifest dependencies before updating,
+    /// which handles the case where a dependency's source or resource type changes.
+    /// This prevents duplicate entries with the same name but different sources.
+    ///
+    /// Pattern-expanded and transitive dependencies are preserved because:
+    /// - Pattern expansions will be re-added during resolution with (name, source) matching
+    /// - Transitive dependencies aren't manifest keys and won't be removed
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The mutable lockfile to clean
+    /// * `manifest_keys` - Set of manifest dependency keys being updated
+    fn remove_manifest_entries_for_update(
+        &self,
+        lockfile: &mut LockFile,
+        manifest_keys: &HashSet<String>,
+    ) {
+        use std::collections::HashSet;
+
+        // Collect (name, source) pairs to remove
+        // We use (name, source) tuples to distinguish same-named resources from different sources
+        let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
+
+        // Step 1: Find direct manifest entries and collect them for transitive traversal
+        let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
+
+        for resource_type in crate::core::ResourceType::all() {
+            let resources = lockfile.get_resources(*resource_type);
+            for entry in resources {
+                // Check if this entry originates from a manifest key being updated
+                if manifest_keys.contains(&entry.name)
+                    || entry
+                        .manifest_alias
+                        .as_ref()
+                        .is_some_and(|alias| manifest_keys.contains(alias))
+                {
+                    let key = (entry.name.clone(), entry.source.clone());
+                    entries_to_remove.insert(key.clone());
+                    direct_entries.push(key);
+                }
+            }
+        }
+
+        // Step 2: For each direct entry, recursively collect its transitive children
+        // This ensures that when "agent-A" changes from repo1 to repo2, we also remove
+        // all transitive dependencies that came from repo1 via agent-A
+        for (parent_name, parent_source) in direct_entries {
+            // Find the parent entry in the lockfile
+            for resource_type in crate::core::ResourceType::all() {
+                if let Some(parent_entry) = lockfile
+                    .get_resources(*resource_type)
+                    .iter()
+                    .find(|e| e.name == parent_name && e.source == parent_source)
+                {
+                    // Walk its dependency tree
+                    Self::collect_transitive_children(
+                        lockfile,
+                        parent_entry,
+                        &mut entries_to_remove,
+                    );
+                }
+            }
+        }
+
+        // Step 3: Remove all marked entries
+        let should_remove = |entry: &crate::lockfile::LockedResource| {
+            entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
+        };
+
+        lockfile.agents.retain(|entry| !should_remove(entry));
+        lockfile.snippets.retain(|entry| !should_remove(entry));
+        lockfile.commands.retain(|entry| !should_remove(entry));
+        lockfile.scripts.retain(|entry| !should_remove(entry));
+        lockfile.hooks.retain(|entry| !should_remove(entry));
+        lockfile.mcp_servers.retain(|entry| !should_remove(entry));
+    }
+
+    /// Recursively collect all transitive children of a lockfile entry.
+    ///
+    /// This walks the dependency graph starting from `parent`, following the `dependencies`
+    /// field to find all resources that transitively depend on the parent. Only dependencies
+    /// with the same source as the parent are collected (to avoid removing unrelated resources).
+    ///
+    /// The `dependencies` field contains strings in the format:
+    /// - `"resource_type/name"` for dependencies from the same source
+    /// - `"source:resource_type/name:version"` for explicit source references
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The lockfile to search for dependencies
+    /// * `parent` - The parent entry whose children we want to collect
+    /// * `entries_to_remove` - Set of (name, source) pairs to populate with found children
+    fn collect_transitive_children(
+        lockfile: &crate::lockfile::LockFile,
+        parent: &crate::lockfile::LockedResource,
+        entries_to_remove: &mut std::collections::HashSet<(String, Option<String>)>,
+    ) {
+        // For each dependency declared by this parent
+        for dep_ref in &parent.dependencies {
+            // Parse dependency reference: "source:resource_type/name:version" or "resource_type/name"
+            // Examples: "repo1:snippet/utils:v1.0.0" or "agent/helper"
+            let (dep_source, dep_name) = if let Some(colon_pos) = dep_ref.find(':') {
+                // Format: "source:resource_type/name:version"
+                let source_part = &dep_ref[..colon_pos];
+                let rest = &dep_ref[colon_pos + 1..];
+                // Find the resource_type/name part (before optional :version)
+                let type_name_part = if let Some(ver_colon) = rest.rfind(':') {
+                    &rest[..ver_colon]
+                } else {
+                    rest
+                };
+                // Extract name from "resource_type/name"
+                if let Some(slash_pos) = type_name_part.find('/') {
+                    let name = &type_name_part[slash_pos + 1..];
+                    (Some(source_part.to_string()), name.to_string())
+                } else {
+                    continue; // Invalid format, skip
+                }
+            } else {
+                // Format: "resource_type/name"
+                if let Some(slash_pos) = dep_ref.find('/') {
+                    let name = &dep_ref[slash_pos + 1..];
+                    // Inherit parent's source
+                    (parent.source.clone(), name.to_string())
+                } else {
+                    continue; // Invalid format, skip
+                }
+            };
+
+            // Find the dependency entry with matching name and source
+            for resource_type in crate::core::ResourceType::all() {
+                if let Some(dep_entry) = lockfile
+                    .get_resources(*resource_type)
+                    .iter()
+                    .find(|e| e.name == dep_name && e.source == dep_source)
+                {
+                    let key = (dep_entry.name.clone(), dep_entry.source.clone());
+
+                    // Add to removal set and recurse (if not already processed)
+                    if !entries_to_remove.contains(&key) {
+                        entries_to_remove.insert(key);
+                        // Recursively collect this dependency's children
+                        Self::collect_transitive_children(lockfile, dep_entry, entries_to_remove);
+                    }
+                }
+            }
         }
     }
 
@@ -3467,6 +3620,12 @@ impl DependencyResolver {
     ) -> Result<LockFile> {
         let mut lockfile = existing.clone();
 
+        // Update sources from manifest (handles source URL changes and new sources)
+        lockfile.sources.clear();
+        for (name, url) in &self.manifest.sources {
+            lockfile.add_source(name.clone(), url.clone(), String::new());
+        }
+
         // Determine which dependencies to update
         let deps_to_check: HashSet<String> = if let Some(specific) = deps_to_update {
             specific.into_iter().collect()
@@ -3493,12 +3652,30 @@ impl DependencyResolver {
             base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
         self.prepare_remote_groups(&base_deps_for_prep).await?;
 
+        // Remove old entries for manifest dependencies being updated
+        // This handles source changes (e.g., Git -> local path) and type changes
+        self.remove_manifest_entries_for_update(&mut lockfile, &deps_to_check);
+
         // Resolve transitive dependencies (always enabled for update to maintain consistency)
         let deps = self.resolve_transitive_dependencies(&base_deps, true).await?;
 
         for (name, dep, resource_type) in deps {
-            if !deps_to_check.contains(&name) {
-                // Skip this dependency
+            // Determine if this dependency should be skipped:
+            // Skip ONLY if it's a manifest dependency that's NOT being updated
+            // Always process:
+            // - Manifest deps being updated (name in deps_to_check)
+            // - Pattern expansions whose alias is being updated
+            // - Transitive deps (not in manifest at all)
+
+            let is_manifest_dep = self.manifest.all_dependencies().iter().any(|(n, _)| *n == name);
+            let pattern_alias = self.pattern_alias_map.get(&(resource_type, name.clone()));
+
+            let should_skip = is_manifest_dep
+                && !deps_to_check.contains(&name)
+                && !pattern_alias.is_some_and(|alias| deps_to_check.contains(alias));
+
+            if should_skip {
+                // This is a manifest dependency not being updated - skip to avoid unnecessary work
                 continue;
             }
 
