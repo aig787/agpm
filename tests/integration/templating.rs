@@ -61,9 +61,17 @@ Version: {{ agpm.resource.version }}
 
     // Verify variables were substituted
     assert!(content.contains("# test-agent"), "Resource name should be substituted");
+
+    // Check for platform-native path separators
+    #[cfg(windows)]
+    let expected_path = "installed at: `.claude\\agents\\test-agent.md`";
+    #[cfg(not(windows))]
+    let expected_path = "installed at: `.claude/agents/test-agent.md`";
+
     assert!(
-        content.contains("installed at: `.claude/agents/test-agent.md`"),
-        "Install path should be substituted"
+        content.contains(expected_path),
+        "Install path should be substituted with platform-native separators. Content:\n{}",
+        content
     );
     assert!(content.contains("Version: v1.0.0"), "Version should be substituted");
 
@@ -213,9 +221,17 @@ Helper is available with version: {{ agpm.deps.snippets.helper_snippet.version }
 
     // Verify dependency reference was substituted
     assert!(content.contains("# main-agent"), "Resource name should be substituted");
+
+    // Check for platform-native path separators
+    #[cfg(windows)]
+    let expected_snippet_path = ".agpm\\snippets\\helper.md";
+    #[cfg(not(windows))]
+    let expected_snippet_path = ".agpm/snippets/helper.md";
+
     assert!(
-        content.contains(".agpm/snippets/helper.md"),
-        "Dependency install path should be substituted"
+        content.contains(expected_snippet_path),
+        "Dependency install path should be substituted with platform-native separators. Content:\n{}",
+        content
     );
     assert!(
         content.contains("Helper is available with version: v1.0.0"),
@@ -507,14 +523,33 @@ title: Main Agent
     let content = fs::read_to_string(&agent_path).await?;
 
     // Verify loop was processed and snippets are listed
-    assert!(
-        content.contains("- helper1: .agpm/snippets/helper1.md"),
-        "First snippet should be listed"
-    );
-    assert!(
-        content.contains("- helper2: .agpm/snippets/helper2.md"),
-        "Second snippet should be listed"
-    );
+    // Check for platform-native path separators
+    #[cfg(windows)]
+    {
+        assert!(
+            content.contains("- helper1: .agpm\\snippets\\helper1.md"),
+            "First snippet should be listed with Windows-style path. Content:\n{}",
+            content
+        );
+        assert!(
+            content.contains("- helper2: .agpm\\snippets\\helper2.md"),
+            "Second snippet should be listed with Windows-style path. Content:\n{}",
+            content
+        );
+    }
+    #[cfg(not(windows))]
+    {
+        assert!(
+            content.contains("- helper1: .agpm/snippets/helper1.md"),
+            "First snippet should be listed with Unix-style path. Content:\n{}",
+            content
+        );
+        assert!(
+            content.contains("- helper2: .agpm/snippets/helper2.md"),
+            "Second snippet should be listed with Unix-style path. Content:\n{}",
+            content
+        );
+    }
     assert!(!content.contains("{% for"), "Loop syntax should be removed");
 
     Ok(())
