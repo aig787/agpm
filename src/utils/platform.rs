@@ -495,6 +495,108 @@ pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
     cleaned.replace('\\', "/")
 }
 
+/// Computes the relative install path by removing redundant directory prefixes.
+///
+/// This function intelligently strips redundant path components when a dependency's path
+/// starts with the same directory name as the tool's installation root. This prevents
+/// duplicate directory names like `.claude/agents/agents/example.md`.
+///
+/// # Algorithm
+///
+/// 1. Extract the last component of the tool root (e.g., `agents` from `.claude/agents/`)
+/// 2. Check if the dependency path starts with that same component (case-sensitive)
+/// 3. If yes, strip that leading component from the dependency path
+/// 4. If no, return the dependency path unchanged
+///
+/// # Arguments
+///
+/// * `tool_root` - The base installation directory (e.g., `.claude/agents/`)
+/// * `dep_path` - The relative path from the dependency (e.g., `agents/example.md`)
+///
+/// # Returns
+///
+/// The relative path to use for installation, with redundant prefixes removed.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::utils::platform::compute_relative_install_path;
+/// use std::path::Path;
+///
+/// // Standard case: strip redundant prefix
+/// let tool_root = Path::new(".claude/agents");
+/// let dep_path = Path::new("agents/carrots/agent.md");
+/// let result = compute_relative_install_path(tool_root, dep_path);
+/// assert_eq!(result, Path::new("carrots/agent.md"));
+///
+/// // No match: preserve full path
+/// let tool_root = Path::new(".claude/agents");
+/// let dep_path = Path::new("helpers/agent.md");
+/// let result = compute_relative_install_path(tool_root, dep_path);
+/// assert_eq!(result, Path::new("helpers/agent.md"));
+///
+/// // Custom target with different name
+/// let tool_root = Path::new(".custom/my-stuff");
+/// let dep_path = Path::new("agents/helper.md");
+/// let result = compute_relative_install_path(tool_root, dep_path);
+/// assert_eq!(result, Path::new("agents/helper.md")); // No stripping
+/// ```
+///
+/// # Use Cases
+///
+/// - Installing resources from well-organized repositories
+/// - Preventing `.claude/snippets/snippets/example.md` duplication
+/// - Working with custom installation targets
+/// - Preserving intentional directory structures
+///
+/// # Design Rationale
+///
+/// This approach is more generic than hardcoded resource type stripping:
+/// - Works with custom targets (e.g., `.custom/my-agents/`)
+/// - No dependency on resource type names
+/// - Handles edge cases like single-file dependencies
+/// - Respects intentional hierarchies (e.g., `helpers/agent.md` preserved)
+#[must_use]
+pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    // Extract the last directory component from tool root
+    let tool_dir_name = tool_root.file_name().and_then(|n| n.to_str());
+
+    // Find the first Normal component and its position in the dependency path
+    let components: Vec<_> = dep_path.components().collect();
+    let (dep_first, first_normal_idx) = components
+        .iter()
+        .enumerate()
+        .find_map(|(idx, c)| {
+            if let Component::Normal(s) = c {
+                s.to_str().map(|s| (s, idx))
+            } else {
+                None
+            }
+        })
+        .map(|(s, idx)| (Some(s), Some(idx)))
+        .unwrap_or((None, None));
+
+    // If they match, strip up to and including the matching component
+    if tool_dir_name.is_some() && tool_dir_name.map(Some) == Some(dep_first) {
+        // Skip everything up to and including the matching Normal component
+        if let Some(idx) = first_normal_idx {
+            components.iter().skip(idx + 1).collect()
+        } else {
+            dep_path.to_path_buf()
+        }
+    } else {
+        // No match - return the full path (but skip any leading CurDir/ParentDir for cleanliness)
+        components
+            .iter()
+            .skip_while(|c| {
+                matches!(c, Component::CurDir | Component::Prefix(_) | Component::RootDir)
+            })
+            .collect()
+    }
+}
+
 /// Safely converts a path to a string, handling non-UTF-8 paths gracefully.
 ///
 /// This function converts a [`Path`] to a [`String`] using lossy conversion,

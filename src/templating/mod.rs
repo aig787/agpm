@@ -595,7 +595,13 @@ impl TemplateRenderer {
                 serde_json::Value::String(s) => {
                     // Truncate long strings
                     if s.len() > 100 {
-                        lines.push(format!("{}{}: \"{}...\" ({} chars)", prefix, key, &s[..97], s.len()));
+                        lines.push(format!(
+                            "{}{}: \"{}...\" ({} chars)",
+                            prefix,
+                            key,
+                            &s[..97],
+                            s.len()
+                        ));
                     } else {
                         lines.push(format!("{}{}: \"{}\"", prefix, key, s));
                     }

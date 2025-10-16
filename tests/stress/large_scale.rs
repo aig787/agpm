@@ -108,8 +108,8 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     // Verify a sample of files
     for repo_idx in 0..5 {
         for i in (0..100).step_by(10) {
-            let path =
-                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
+            let path = project_dir
+                .join(format!(".claude/agents/agents/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Agent from repo {} #{} should exist", repo_idx, i);
         }
     }
@@ -409,8 +409,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     // Verify files are updated (check a sample)
     for repo_idx in 0..5 {
         for i in (0..5).step_by(1) {
-            let path =
-                project_dir.join(format!(".claude/agents/repo{}_agent_{:03}.md", repo_idx, i));
+            let path = project_dir
+                .join(format!(".claude/agents/agents/repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Updated agent from repo {} #{} should exist", repo_idx, i);
 
             // For the first 5 agents of each repo, they should have v2.0.0 content
@@ -575,14 +575,14 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     for repo_idx in 0..2 {
         for i in (0..50).step_by(10) {
             let path = project_dir
-                .join(format!(".claude/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
+                .join(format!(".claude/agents/agents/local_repo{}_agent_{:03}.md", repo_idx, i));
             assert!(path.exists(), "Local agent from repo {} #{} should exist", repo_idx, i);
         }
     }
 
     // Verify community files exist
     for idx in 0..community_agents.len() {
-        let path = project_dir.join(format!(".claude/agents/community_agent_{}.md", idx));
+        let path = project_dir.join(format!(".claude/agents/agents/community_agent_{}.md", idx));
         assert!(path.exists(), "Community agent #{} should exist", idx);
     }
 
@@ -727,7 +727,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
 
     // Verify all community agents were installed
     for (name, _) in community_agents.iter() {
-        let path = project_dir.join(format!(".claude/agents/{}.md", name));
+        let path = project_dir.join(format!(".claude/agents/agents/{}.md", name));
         assert!(path.exists(), "Community agent '{}' should exist", name);
 
         // Verify the file has content (not empty)

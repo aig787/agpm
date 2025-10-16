@@ -508,6 +508,47 @@ impl ManifestBuilder {
         format_dependencies(&mut toml, "hooks", &self.hooks);
         format_dependencies(&mut toml, "mcp-servers", &self.mcp_servers);
 
+        // Target configuration section
+        if let Some(config) = self.target_config {
+            let mut has_fields = false;
+            let mut target_section = String::from("[target]\n");
+
+            if let Some(path) = config.agents {
+                target_section.push_str(&format!("agents = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.snippets {
+                target_section.push_str(&format!("snippets = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.commands {
+                target_section.push_str(&format!("commands = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.scripts {
+                target_section.push_str(&format!("scripts = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.hooks {
+                target_section.push_str(&format!("hooks = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.mcp_servers {
+                target_section
+                    .push_str(&format!("mcp-servers = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(enabled) = config.gitignore {
+                target_section.push_str(&format!("gitignore = {}\n", enabled));
+                has_fields = true;
+            }
+
+            if has_fields {
+                toml.push_str(&target_section);
+                toml.push('\n');
+            }
+        }
+
         toml
     }
 }

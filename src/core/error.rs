@@ -1134,11 +1134,8 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     if is_template_error {
         // Build full error chain for template errors
         let mut message = error.to_string();
-        let chain: Vec<String> = error
-            .chain()
-            .skip(1)
-            .map(std::string::ToString::to_string)
-            .collect();
+        let chain: Vec<String> =
+            error.chain().skip(1).map(std::string::ToString::to_string).collect();
 
         if !chain.is_empty() {
             message.push_str("\n\nCaused by:");
