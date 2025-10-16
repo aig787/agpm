@@ -266,3 +266,132 @@ pub fn resolve_path_relative_to_manifest(
         )
     })
 }
+
+/// Computes a relative path from a base directory to a target path.
+///
+/// This function handles paths both inside and outside the base directory,
+/// using `../` notation when the target is outside. Both paths should be
+/// absolute and canonicalized for correct results.
+///
+/// This is critical for lockfile portability - we must store manifest-relative
+/// paths even when they go outside the project with `../`.
+///
+/// # Arguments
+///
+/// * `base` - The base directory (should be absolute and canonicalized)
+/// * `target` - The target path (should be absolute and canonicalized)
+///
+/// # Returns
+///
+/// A relative path from base to target, using `../` notation if needed.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use agpm_cli::utils::compute_relative_path;
+///
+/// let base = Path::new("/project");
+/// let target = Path::new("/project/agents/helper.md");
+/// let relative = compute_relative_path(base, target);
+/// // Returns: "agents/helper.md"
+///
+/// let target_outside = Path::new("/shared/utils.md");
+/// let relative = compute_relative_path(base, target_outside);
+/// // Returns: "../shared/utils.md"
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+pub fn compute_relative_path(base: &std::path::Path, target: &std::path::Path) -> String {
+    use std::path::Component;
+
+    // Try simple strip_prefix first (common case: target inside base)
+    if let Ok(relative) = target.strip_prefix(base) {
+        return relative.to_string_lossy().to_string();
+    }
+
+    // Target is outside base - need to compute path with ../
+    let base_components: Vec<_> = base.components().collect();
+    let target_components: Vec<_> = target.components().collect();
+
+    // Find the common prefix
+    let mut common_prefix_len = 0;
+    for (b, t) in base_components.iter().zip(target_components.iter()) {
+        if b == t {
+            common_prefix_len += 1;
+        } else {
+            break;
+        }
+    }
+
+    // Use slices instead of drain for better performance (avoid reallocation)
+    let base_remainder = &base_components[common_prefix_len..];
+    let target_remainder = &target_components[common_prefix_len..];
+
+    // Build the relative path
+    let mut result = std::path::PathBuf::new();
+
+    // Add ../ for each remaining base component
+    for _ in base_remainder {
+        result.push("..");
+    }
+
+    // Add the remaining target components
+    for component in target_remainder {
+        if let Component::Normal(c) = component {
+            result.push(c);
+        }
+    }
+
+    result.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_compute_relative_path_inside_base() {
+        // Target inside base directory
+        let base = Path::new("/project");
+        let target = Path::new("/project/agents/helper.md");
+        let result = compute_relative_path(base, target);
+        assert_eq!(result, "agents/helper.md");
+    }
+
+    #[test]
+    fn test_compute_relative_path_outside_base() {
+        // Target outside base directory (sibling)
+        let base = Path::new("/project");
+        let target = Path::new("/shared/utils.md");
+        let result = compute_relative_path(base, target);
+        assert_eq!(result, "../shared/utils.md");
+    }
+
+    #[test]
+    fn test_compute_relative_path_multiple_levels_up() {
+        // Target multiple levels up
+        let base = Path::new("/project/subdir");
+        let target = Path::new("/other/file.md");
+        let result = compute_relative_path(base, target);
+        assert_eq!(result, "../../other/file.md");
+    }
+
+    #[test]
+    fn test_compute_relative_path_same_directory() {
+        // Base and target are the same
+        let base = Path::new("/project");
+        let target = Path::new("/project");
+        let result = compute_relative_path(base, target);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_compute_relative_path_nested() {
+        // Complex nesting
+        let base = Path::new("/a/b/c");
+        let target = Path::new("/a/d/e/f.md");
+        let result = compute_relative_path(base, target);
+        assert_eq!(result, "../../d/e/f.md");
+    }
+}
