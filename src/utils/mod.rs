@@ -306,7 +306,8 @@ pub fn compute_relative_path(base: &std::path::Path, target: &std::path::Path) -
 
     // Try simple strip_prefix first (common case: target inside base)
     if let Ok(relative) = target.strip_prefix(base) {
-        return relative.to_string_lossy().to_string();
+        // Normalize to forward slashes for cross-platform storage
+        return normalize_path_for_storage(relative);
     }
 
     // Target is outside base - need to compute path with ../
@@ -342,7 +343,8 @@ pub fn compute_relative_path(base: &std::path::Path, target: &std::path::Path) -
         }
     }
 
-    result.to_string_lossy().to_string()
+    // Normalize to forward slashes for cross-platform storage
+    normalize_path_for_storage(result)
 }
 
 #[cfg(test)]
