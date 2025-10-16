@@ -478,7 +478,21 @@ pub fn normalize_path_separator(path: &Path) -> String {
 /// - CLAUDE.md "Cross-Platform Path Handling" section for complete guidelines
 #[must_use]
 pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
-    path.as_ref().to_string_lossy().replace('\\', "/")
+    let path_str = path.as_ref().to_string_lossy();
+
+    // Strip Windows extended-length path prefixes before normalization
+    // These prefixes are used internally by canonicalize() but shouldn't be stored
+    let cleaned = if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
+        // Extended UNC path: \\?\UNC\server\share -> //server/share
+        format!("//{}", stripped)
+    } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+        // Extended path: \\?\C:\path -> C:\path
+        stripped.to_string()
+    } else {
+        path_str.to_string()
+    };
+
+    cleaned.replace('\\', "/")
 }
 
 /// Safely converts a path to a string, handling non-UTF-8 paths gracefully.
@@ -1878,5 +1892,49 @@ mod tests {
         {
             text.replace("\r\n", "\n")
         }
+    }
+
+    #[test]
+    fn test_normalize_path_for_storage_unix() {
+        use std::path::Path;
+        // Unix-style paths should just normalize separators
+        assert_eq!(
+            normalize_path_for_storage(Path::new("/project/agents/helper.md")),
+            "/project/agents/helper.md"
+        );
+        assert_eq!(normalize_path_for_storage(Path::new("agents/helper.md")), "agents/helper.md");
+        assert_eq!(
+            normalize_path_for_storage(Path::new("../shared/utils.md")),
+            "../shared/utils.md"
+        );
+    }
+
+    #[test]
+    fn test_normalize_path_for_storage_windows_extended() {
+        use std::path::Path;
+        // Windows extended-length path prefix should be stripped AND backslashes converted
+        // This tests the combined behavior: \\?\C:\path -> C:/path
+        let path = Path::new(r"\\?\C:\project\agents\helper.md");
+        assert_eq!(
+            normalize_path_for_storage(path),
+            "C:/project/agents/helper.md",
+            "Should strip extended-length prefix (\\\\?\\) AND convert backslashes to forward slashes"
+        );
+    }
+
+    #[test]
+    fn test_normalize_path_for_storage_windows_extended_unc() {
+        use std::path::Path;
+        // Windows extended-length UNC path should be converted to //server/share format
+        let path = Path::new(r"\\?\UNC\server\share\file.md");
+        assert_eq!(normalize_path_for_storage(path), "//server/share/file.md");
+    }
+
+    #[test]
+    fn test_normalize_path_for_storage_windows_backslash() {
+        use std::path::Path;
+        // Windows backslashes should be converted to forward slashes
+        let path = Path::new(r"C:\project\agents\helper.md");
+        assert_eq!(normalize_path_for_storage(path), "C:/project/agents/helper.md");
     }
 }

@@ -160,6 +160,7 @@ Dev: assert_cmd, predicates
   Test both modes.
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
+- **CRITICAL**: Lockfiles (`agpm.lock`) must store manifest-relative paths only (no absolute paths) and always use Unix-style forward slashes so they remain portable across machines.
 
 ## Build & CI
 

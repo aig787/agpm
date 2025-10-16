@@ -1325,29 +1325,38 @@ impl DependencyResolver {
                         use crate::manifest::DetailedDependency;
                         let trans_dep = if dep.get_source().is_none() {
                             // Path-only transitive dep (parent is path-only)
-                            // Convert canonical path back to manifest-relative for proper name generation
+                            // The path was resolved relative to the parent file (file-relative resolution)
+                            // CRITICAL: Always store as manifest-relative path (even with ../) for lockfile portability
+                            // Absolute paths in lockfiles break cross-machine sharing
+
                             let manifest_dir = self.manifest.manifest_dir.as_ref()
                                 .ok_or_else(|| anyhow::anyhow!("Manifest directory not available for path-only transitive dep"))?;
 
-                            // Canonicalize manifest_dir to ensure consistent path comparison on Windows
-                            // (canonicalize produces \\?\ prefixes that must match)
-                            let canonical_manifest_dir =
-                                manifest_dir.canonicalize().with_context(|| {
-                                    format!(
-                                        "Failed to canonicalize manifest directory: {}",
-                                        manifest_dir.display()
+                            // Always compute relative path from manifest to target
+                            // This handles both inside (agents/foo.md) and outside (../shared/utils.md) cases
+                            let dep_path_str = match manifest_dir.canonicalize() {
+                                Ok(canonical_manifest) => {
+                                    // Normal case: both paths are canonical, compute relative path
+                                    crate::utils::compute_relative_path(
+                                        &canonical_manifest,
+                                        &trans_canonical,
                                     )
-                                })?;
-
-                            let manifest_relative = trans_canonical
-                                .strip_prefix(&canonical_manifest_dir)
-                                .with_context(|| {
-                                    format!(
-                                        "Transitive dep path {} is not under manifest directory {}",
-                                        trans_canonical.display(),
-                                        canonical_manifest_dir.display()
+                                }
+                                Err(e) => {
+                                    // Canonicalization failed (broken symlink, permissions, etc.)
+                                    // We MUST still produce a relative path for lockfile portability.
+                                    // Use the non-canonical manifest_dir - not ideal but better than absolute paths.
+                                    eprintln!(
+                                        "Warning: Could not canonicalize manifest directory {}: {}. Using non-canonical path for relative path computation.",
+                                        manifest_dir.display(),
+                                        e
+                                    );
+                                    crate::utils::compute_relative_path(
+                                        manifest_dir,
+                                        &trans_canonical,
                                     )
-                                })?;
+                                }
+                            };
 
                             // Determine tool with proper inheritance
                             let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
@@ -1376,9 +1385,7 @@ impl DependencyResolver {
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
                                 source: None,
-                                path: crate::utils::normalize_path_for_storage(
-                                    manifest_relative.to_string_lossy().to_string(),
-                                ),
+                                path: crate::utils::normalize_path_for_storage(dep_path_str),
                                 version: None,
                                 branch: None,
                                 rev: None,
@@ -1984,20 +1991,38 @@ impl DependencyResolver {
         // Example: "agents/ai/helper.md" -> "ai/helper"
         // Example: "snippets/commands/commit.md" -> "commands/commit"
         // Example: "commit.md" -> "commit"
+        // Example (absolute): "/private/tmp/shared/snippets/utils.md" -> "/private/tmp/shared/snippets/utils"
+        // Example (Windows absolute): "C:/team/tools/foo.md" -> "C:/team/tools/foo"
+        // Example (parent-relative): "../shared/utils.md" -> "../shared/utils"
 
         let path = Path::new(path);
 
         // Get the path without extension
         let without_ext = path.with_extension("");
 
-        // Convert to string and normalize separators
-        let path_str = without_ext.to_string_lossy();
+        // Convert to string and normalize separators to forward slashes
+        // This ensures consistent behavior on Windows where Path::to_string_lossy()
+        // produces backslashes, which would break our split('/') logic below
+        let path_str = without_ext.to_string_lossy().replace('\\', "/");
+
+        // Check if this is an absolute path or starts with ../ (cross-directory)
+        // Note: With the fix to always use manifest-relative paths (even with ../),
+        // lockfiles should never contain absolute paths. We check path.is_absolute()
+        // defensively for manually-edited lockfiles.
+        let is_absolute = path.is_absolute();
+        let is_cross_directory = path_str.starts_with("../");
 
         // If the path has multiple components, skip the first directory (resource type)
         // to avoid redundancy, but keep subdirectories for uniqueness
+        // EXCEPTIONS that keep all components to avoid collisions:
+        // 1. Absolute paths (e.g., C:/team/tools/foo.md vs D:/team/tools/foo.md)
+        // 2. Cross-directory paths with ../ (e.g., ../shared/a.md vs ../other/a.md)
         let components: Vec<&str> = path_str.split('/').collect();
-        if components.len() > 1 {
-            // Skip the first component (e.g., "agents", "snippets") and join the rest
+        if is_absolute || is_cross_directory {
+            // Keep all components to avoid collisions
+            path_str.to_string()
+        } else if components.len() > 1 {
+            // Regular relative path: skip the first component (e.g., "agents", "snippets") and join the rest
             components[1..].join("/")
         } else {
             // Single component, just return it
@@ -5944,5 +5969,26 @@ mod tests {
             Some("v1.0.0"),
             "Should prefer specific version over HEAD"
         );
+    }
+
+    #[test]
+    fn test_generate_dependency_name_manifest_relative() {
+        let manifest = Manifest::new();
+        let temp_dir = TempDir::new().unwrap();
+        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let resolver = DependencyResolver::with_cache(manifest, cache);
+
+        // Regular relative paths - strip resource type directory
+        assert_eq!(resolver.generate_dependency_name("agents/helper.md"), "helper");
+        assert_eq!(resolver.generate_dependency_name("snippets/utils.md"), "utils");
+
+        // Cross-directory paths with ../ - keep all components to avoid collisions
+        assert_eq!(resolver.generate_dependency_name("../shared/utils.md"), "../shared/utils");
+        assert_eq!(resolver.generate_dependency_name("../other/utils.md"), "../other/utils");
+
+        // Ensure different cross-directory paths get different names
+        let name1 = resolver.generate_dependency_name("../shared/foo.md");
+        let name2 = resolver.generate_dependency_name("../other/foo.md");
+        assert_ne!(name1, name2, "Different parent directories should produce different names");
     }
 }

@@ -257,7 +257,7 @@ Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isol
 
 ### Path Separator Rules
 
-**CRITICAL**: Lockfiles (`agpm.lock`) MUST use Unix-style forward slashes for ALL path fields to ensure cross-platform compatibility. Team members on different platforms must be able to share lockfiles.
+**CRITICAL**: Lockfiles (`agpm.lock`) MUST store manifest-relative paths only (no absolute paths) and use Unix-style forward slashes for every field. Team members on different machines must be able to share lockfiles without path rewriting.
 
 1. **Forward slashes ONLY** in these contexts:
    - **Lockfile fields** (cross-platform portability):

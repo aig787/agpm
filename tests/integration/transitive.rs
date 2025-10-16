@@ -2110,3 +2110,117 @@ This agent has an invalid transitive dependency path.
 
     Ok(())
 }
+
+/// Test local file transitive dependency outside the manifest directory
+///
+/// This is a regression test for the bug where transitive dependencies
+/// resolved to paths outside the manifest directory would fail with
+/// "not under manifest directory" error.
+///
+/// Scenario:
+/// - Create a shared directory outside the project
+/// - Local agent in project references snippet in shared directory
+/// - Should use absolute paths in lockfile for cross-directory references
+/// - Should install successfully to tool-specific directory
+#[tokio::test]
+async fn test_local_transitive_outside_manifest_directory() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    // Create the test project first
+    let project = TestProject::new().await?;
+
+    // Create a shared directory as a sibling to the project directory
+    // Structure: <temp_parent>/project/ and <temp_parent>/shared/
+    let project_parent = project.project_path().parent().unwrap();
+    let shared_dir = project_parent.join("shared");
+    tokio::fs::create_dir_all(&shared_dir).await?;
+
+    // Create a shared snippet
+    let shared_snippet = shared_dir.join("utils.md");
+    tokio::fs::write(
+        &shared_snippet,
+        r#"# Shared Utils
+Common utilities shared across projects.
+"#,
+    )
+    .await?;
+
+    // Create agent that references the shared snippet (outside manifest directory)
+    let agents_dir = project.project_path().join("agents");
+    tokio::fs::create_dir_all(&agents_dir).await?;
+
+    // Calculate relative path from agent to shared directory
+    // <project>/agents/my-agent.md -> ../../shared/utils.md
+    let relative_to_shared = "../../shared/utils.md";
+
+    let agent_path = agents_dir.join("my-agent.md");
+    tokio::fs::write(
+        &agent_path,
+        format!(
+            r#"---
+dependencies:
+  snippets:
+    - path: {}
+      tool: agpm
+---
+# My Agent
+Uses a shared snippet outside the project directory.
+"#,
+            relative_to_shared
+        ),
+    )
+    .await?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_local_agent("my-agent", &agent_path.display().to_string())
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install - should succeed with manifest-relative path handling
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Install should succeed with cross-directory transitive dependency");
+
+    // Verify agent installed
+    let installed_agent = project.project_path().join(".claude/agents/my-agent.md");
+    assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Agent should be installed");
+
+    // Verify shared snippet installed to agpm tool directory (since tool=agpm was specified)
+    // For manifest-relative paths with ../, like "../shared/utils.md",
+    // the installed path becomes ".agpm/shared/utils.md" (strips ../ during install)
+    let expected_snippet_path = project.project_path().join(".agpm/shared/utils.md");
+    assert!(
+        tokio::fs::metadata(&expected_snippet_path).await.is_ok(),
+        "Shared snippet should be installed at .agpm/shared/utils.md"
+    );
+
+    // Verify content matches
+    let installed_content = tokio::fs::read(&expected_snippet_path).await?;
+    let expected_content = b"# Shared Utils\nCommon utilities shared across projects.\n";
+    assert_eq!(
+        installed_content, expected_content,
+        "Installed snippet should have correct content"
+    );
+
+    // Verify lockfile contains manifest-relative path (even with ../) for portability
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(lockfile_content.contains(r#"name = "my-agent""#), "Lockfile should contain agent");
+
+    // The path should be manifest-relative with ../ since it's outside the project
+    // Structure: <parent>/project/ and <parent>/shared/utils.md
+    // Relative path from project to shared: ../shared/utils.md
+    assert!(
+        lockfile_content.contains(r#"path = "../shared/utils.md""#),
+        "Lockfile should contain manifest-relative path (with ../) for cross-directory dependency.\nLockfile:\n{}",
+        lockfile_content
+    );
+
+    // Verify tool field is set correctly
+    assert!(
+        lockfile_content.contains(r#"tool = "agpm""#),
+        "Lockfile should specify agpm tool for snippet"
+    );
+
+    Ok(())
+}
