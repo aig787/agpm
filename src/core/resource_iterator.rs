@@ -414,8 +414,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -431,8 +431,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Snippet,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile
@@ -459,8 +459,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -476,8 +476,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add commands from source1
@@ -494,8 +494,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Command,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add scripts
@@ -512,8 +512,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Script,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add hooks
@@ -530,8 +530,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Hook,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add MCP servers
@@ -548,8 +548,8 @@ mod tests {
             resource_type: crate::core::ResourceType::McpServer,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Add resource without source
@@ -566,8 +566,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Snippet,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         lockfile
@@ -610,8 +610,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         // Verify the agent was added
@@ -1063,8 +1063,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

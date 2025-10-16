@@ -1997,6 +1997,96 @@ impl LockFile {
         Ok(None)
     }
 
+    /// Find a specific resource by name and type.
+    ///
+    /// This method searches for a resource with the given name within the specified
+    /// resource type only. It's more precise than `get_resource` when you know the
+    /// resource type and need to avoid ambiguity when multiple resource types have
+    /// resources with the same name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Resource name to search for
+    /// * `resource_type` - The type of resource to search within
+    ///
+    /// # Returns
+    ///
+    /// * `Some(&LockedResource)` - Reference to the found resource
+    /// * `None` - No resource with that name exists in the specified type
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use agpm_cli::core::ResourceType;
+    /// # let lockfile = LockFile::new();
+    /// // Find a specific agent
+    /// if let Some(agent) = lockfile.find_resource("helper", ResourceType::Agent) {
+    ///     println!("Found agent: {}", agent.installed_at);
+    /// }
+    ///
+    /// // Find a specific snippet
+    /// if let Some(snippet) = lockfile.find_resource("utils", ResourceType::Snippet) {
+    ///     println!("Found snippet: {}", snippet.installed_at);
+    /// }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// * [`get_resource`](Self::get_resource) - Search across all resource types
+    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Search with source filtering
+    #[must_use]
+    pub fn find_resource(
+        &self,
+        name: &str,
+        resource_type: crate::core::ResourceType,
+    ) -> Option<&LockedResource> {
+        self.get_resources(resource_type).iter().find(|r| r.name == name)
+    }
+
+    /// Get all resources of a specific type for templating.
+    ///
+    /// This method returns all resources of the specified type, which is useful
+    /// for templating operations that need to iterate over all resources of a
+    /// particular type (e.g., all agents, all snippets).
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_type` - The type of resources to retrieve
+    ///
+    /// # Returns
+    ///
+    /// A slice of all resources of the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// # use agpm_cli::core::ResourceType;
+    /// # let lockfile = LockFile::new();
+    /// // Get all agents for templating
+    /// let agents = lockfile.get_resources_by_type(ResourceType::Agent);
+    /// for agent in agents {
+    ///     println!("Agent: {} -> {}", agent.name, agent.installed_at);
+    /// }
+    ///
+    /// // Get all snippets for templating
+    /// let snippets = lockfile.get_resources_by_type(ResourceType::Snippet);
+    /// println!("Found {} snippets", snippets.len());
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// * [`get_resources`](Self::get_resources) - Get resources by type (same method)
+    /// * [`all_resources`](Self::all_resources) - Get all resources across all types
+    #[must_use]
+    pub fn get_resources_by_type(
+        &self,
+        resource_type: crate::core::ResourceType,
+    ) -> &[LockedResource] {
+        self.get_resources(resource_type)
+    }
+
     /// Update the checksum for a specific resource in the lockfile.
     ///
     /// This method finds a resource by name across all resource types and updates

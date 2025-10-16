@@ -88,11 +88,15 @@
 use anyhow::Result;
 use clap::Args;
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::cache::Cache;
+use crate::core::ResourceType;
+use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
+use crate::templating::{TemplateContextBuilder, TemplateRenderer};
 #[cfg(test)]
 use crate::utils::normalize_path_for_storage;
 
@@ -126,6 +130,7 @@ use crate::utils::normalize_path_for_storage;
 ///     verbose: false,
 ///     quiet: false,
 ///     strict: false,
+///     render: false,
 /// };
 ///
 /// // Comprehensive CI validation
@@ -139,6 +144,7 @@ use crate::utils::normalize_path_for_storage;
 ///     verbose: false,
 ///     quiet: true,
 ///     strict: true,
+///     render: false,
 /// };
 /// ```
 #[derive(Args)]
@@ -210,6 +216,25 @@ pub struct ValidateCommand {
     /// deployment or integration.
     #[arg(long)]
     pub strict: bool,
+
+    /// Pre-render markdown templates without installing
+    ///
+    /// Validates that all markdown resources can be successfully rendered
+    /// with their template syntax. This catches template errors before
+    /// installation. Requires a lockfile to build the template context.
+    ///
+    /// When enabled:
+    /// - Reads all markdown resources from worktrees/local paths
+    /// - Attempts to render each with the current template context
+    /// - Reports syntax errors and missing variables
+    /// - Returns non-zero exit code on rendering failures
+    ///
+    /// This is useful for:
+    /// - Catching template errors in CI/CD before deployment
+    /// - Validating template syntax during development
+    /// - Testing template rendering without modifying the filesystem
+    #[arg(long)]
+    pub render: bool,
 }
 
 /// Output format options for validation results.
@@ -303,6 +328,7 @@ impl ValidateCommand {
     ///     verbose: true,
     ///     quiet: false,
     ///     strict: false,
+    ///     render: false,
     /// };
     /// // cmd.execute().await?;
     /// ```
@@ -779,6 +805,200 @@ impl ValidateCommand {
             }
         }
 
+        // Validate template rendering if requested
+        if self.render {
+            if self.verbose && !self.quiet {
+                println!("\n🔍 Validating template rendering...");
+            }
+
+            // Load lockfile - required for template context
+            let project_dir = manifest_path.parent().unwrap();
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            if !lockfile_path.exists() {
+                let error_msg =
+                    "Lockfile required for template rendering (run 'agpm install' first)";
+                errors.push(error_msg.to_string());
+
+                if matches!(self.format, OutputFormat::Json) {
+                    validation_results.valid = false;
+                    validation_results.errors = errors;
+                    validation_results.warnings = warnings;
+                    println!("{}", serde_json::to_string_pretty(&validation_results)?);
+                    return Err(anyhow::anyhow!("{}", error_msg));
+                } else if !self.quiet {
+                    println!("{} {}", "✗".red(), error_msg);
+                }
+                return Err(anyhow::anyhow!("{}", error_msg));
+            }
+
+            let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
+            let cache = Cache::new()?;
+
+            // Collect all markdown resources from manifest
+            let mut template_results = Vec::new();
+            let mut templates_found = 0;
+            let mut templates_rendered = 0;
+
+            // Helper macro to validate template rendering
+            macro_rules! validate_resource_template {
+                ($name:expr, $entry:expr, $resource_type:expr) => {{
+                    // Read the resource content
+                    let content = if $entry.source.is_some() && $entry.resolved_commit.is_some() {
+                        // Git resource - read from worktree
+                        let source_name = $entry.source.as_ref().unwrap();
+                        let sha = $entry.resolved_commit.as_ref().unwrap();
+                        let url = match $entry.url.as_ref() {
+                            Some(u) => u,
+                            None => {
+                                template_results
+                                    .push(format!("{}: Missing URL for Git resource", $name));
+                                continue;
+                            }
+                        };
+
+                        let cache_dir = match cache
+                            .get_or_create_worktree_for_sha(source_name, url, sha, Some($name))
+                            .await
+                        {
+                            Ok(dir) => dir,
+                            Err(e) => {
+                                template_results.push(format!("{}: {}", $name, e));
+                                continue;
+                            }
+                        };
+
+                        let source_path = cache_dir.join(&$entry.path);
+                        match tokio::fs::read_to_string(&source_path).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                template_results
+                                    .push(format!("{}: Failed to read file: {}", $name, e));
+                                continue;
+                            }
+                        }
+                    } else {
+                        // Local resource - read from project directory
+                        let source_path = {
+                            let candidate = Path::new(&$entry.path);
+                            if candidate.is_absolute() {
+                                candidate.to_path_buf()
+                            } else {
+                                project_dir.join(candidate)
+                            }
+                        };
+
+                        match tokio::fs::read_to_string(&source_path).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                template_results
+                                    .push(format!("{}: Failed to read file: {}", $name, e));
+                                continue;
+                            }
+                        }
+                    };
+
+                    // Check if it contains template syntax
+                    let has_template_syntax =
+                        content.contains("{{") || content.contains("{%") || content.contains("{#");
+
+                    if !has_template_syntax {
+                        continue; // Not a template
+                    }
+
+                    templates_found += 1;
+
+                    // Build template context
+                    let context_builder = TemplateContextBuilder::new(Arc::clone(&lockfile));
+                    let context = match context_builder.build_context($name, $resource_type) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            template_results.push(format!("{}: {}", $name, e));
+                            continue;
+                        }
+                    };
+
+                    // Try to render
+                    let mut renderer = match TemplateRenderer::new(true) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            template_results.push(format!("{}: {}", $name, e));
+                            continue;
+                        }
+                    };
+
+                    match renderer.render_template(&content, &context) {
+                        Ok(_) => {
+                            templates_rendered += 1;
+                        }
+                        Err(e) => {
+                            template_results.push(format!("{}: {}", $name, e));
+                        }
+                    }
+                }};
+            }
+
+            // Process each resource type
+            for name in manifest.agents.keys() {
+                if let Some(entry) = lockfile.agents.iter().find(|e| &e.name == name) {
+                    validate_resource_template!(name, entry, ResourceType::Agent);
+                }
+            }
+
+            for name in manifest.snippets.keys() {
+                if let Some(entry) = lockfile.snippets.iter().find(|e| &e.name == name) {
+                    validate_resource_template!(name, entry, ResourceType::Snippet);
+                }
+            }
+
+            for name in manifest.commands.keys() {
+                if let Some(entry) = lockfile.commands.iter().find(|e| &e.name == name) {
+                    validate_resource_template!(name, entry, ResourceType::Command);
+                }
+            }
+
+            for name in manifest.scripts.keys() {
+                if let Some(entry) = lockfile.scripts.iter().find(|e| &e.name == name) {
+                    validate_resource_template!(name, entry, ResourceType::Script);
+                }
+            }
+
+            // Update validation results
+            validation_results.templates_total = templates_found;
+            validation_results.templates_rendered = templates_rendered;
+            validation_results.templates_valid = template_results.is_empty();
+
+            // Report results (only for text output, not JSON)
+            if template_results.is_empty() {
+                if templates_found > 0 {
+                    if !self.quiet && self.format == OutputFormat::Text {
+                        println!("✓ All {} templates rendered successfully", templates_found);
+                    }
+                } else if !self.quiet && self.format == OutputFormat::Text {
+                    println!("⚠ No templates found in resources");
+                }
+            } else {
+                let error_msg =
+                    format!("Template rendering failed for {} resource(s)", template_results.len());
+                errors.push(error_msg.clone());
+
+                if matches!(self.format, OutputFormat::Json) {
+                    validation_results.valid = false;
+                    validation_results.errors.extend(template_results);
+                    validation_results.errors.push(error_msg);
+                    validation_results.warnings = warnings;
+                    println!("{}", serde_json::to_string_pretty(&validation_results)?);
+                    return Err(anyhow::anyhow!("Template rendering failed"));
+                } else if !self.quiet {
+                    println!("{} {}", "✗".red(), error_msg);
+                    for error in &template_results {
+                        println!("  {}", error);
+                    }
+                }
+                return Err(anyhow::anyhow!("Template rendering failed"));
+            }
+        }
+
         // Handle strict mode - treat warnings as errors
         if self.strict && !warnings.is_empty() {
             let error_msg = "Strict mode: Warnings treated as errors";
@@ -868,6 +1088,12 @@ struct ValidationResults {
     local_paths_exist: bool,
     /// Whether the lockfile is consistent with the manifest
     lockfile_consistent: bool,
+    /// Whether all templates rendered successfully (when --render is used)
+    templates_valid: bool,
+    /// Number of templates successfully rendered
+    templates_rendered: usize,
+    /// Total number of templates found
+    templates_total: usize,
     /// List of error messages that caused validation failure
     errors: Vec<String>,
     /// List of warning messages (non-fatal issues)
@@ -883,6 +1109,9 @@ impl Default for ValidationResults {
             sources_accessible: false,
             local_paths_exist: false,
             lockfile_consistent: false,
+            templates_valid: false,
+            templates_rendered: 0,
+            templates_total: 0,
             errors: Vec::new(),
             warnings: Vec::new(),
         }
@@ -911,6 +1140,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -937,6 +1167,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -981,6 +1212,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1007,6 +1239,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1052,6 +1285,7 @@ mod tests {
             verbose: false,
             quiet: true, // Make quiet to avoid output
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1083,6 +1317,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1114,8 +1349,8 @@ mod tests {
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1129,6 +1364,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1155,6 +1391,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: true, // Strict mode treats warnings as errors
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1182,6 +1419,7 @@ mod tests {
             verbose: true, // Enable verbose output
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1230,6 +1468,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1259,6 +1498,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1303,6 +1543,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1334,6 +1575,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path.clone()).await;
@@ -1353,6 +1595,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1384,6 +1627,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path.clone()).await;
@@ -1407,8 +1651,8 @@ mod tests {
                 resource_type: crate::core::ResourceType::Agent,
 
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
                 manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1427,6 +1671,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1451,6 +1696,7 @@ mod tests {
             verbose: true,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1477,6 +1723,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: true, // Strict mode
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1524,6 +1771,7 @@ mod tests {
             verbose: false,
             quiet: true, // Enable quiet
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1567,6 +1815,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1605,6 +1854,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         // This will check if the local source is accessible
@@ -1653,6 +1903,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1676,6 +1927,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -1698,6 +1950,7 @@ mod tests {
             verbose: false,
             quiet: false, // Not quiet - should print error message
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -1720,6 +1973,7 @@ mod tests {
             verbose: false,
             quiet: true, // Quiet mode - should not print
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -1742,6 +1996,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(nonexistent_path).await;
@@ -1764,6 +2019,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(nonexistent_path).await;
@@ -1789,6 +2045,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1814,6 +2071,7 @@ mod tests {
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1859,6 +2117,7 @@ mod tests {
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1895,6 +2154,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         // Version conflicts are automatically resolved during installation
@@ -1943,6 +2203,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -1989,6 +2250,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2055,6 +2317,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2091,6 +2354,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2127,6 +2391,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2200,6 +2465,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2244,6 +2510,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2270,6 +2537,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: true, // Test verbose mode with lockfile check
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2300,6 +2568,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2341,6 +2610,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2373,8 +2643,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2388,6 +2658,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2414,6 +2685,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: true, // Strict mode with JSON output
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2440,6 +2712,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false, // Not quiet - should print error message
             strict: true,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2466,6 +2739,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false, // Not strict - warnings don't cause failure
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2503,6 +2777,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: true, // Verbose mode to show summary
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2538,6 +2813,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: true,
             quiet: false,
             strict: true,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2563,6 +2839,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -2588,6 +2865,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2631,6 +2909,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
         assert_eq!(cmd.file, None);
         assert!(!cmd.resolve);
@@ -2661,6 +2940,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2685,6 +2965,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: true,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2709,6 +2990,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: true,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2734,6 +3016,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: true, // Strict mode will fail on warnings
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2762,6 +3045,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2794,6 +3078,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2821,6 +3106,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2856,8 +3142,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -2871,6 +3157,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2899,6 +3186,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2941,6 +3229,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2965,6 +3254,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -2986,6 +3276,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -3007,6 +3298,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -3047,8 +3339,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             resource_type: crate::core::ResourceType::Agent,
 
             tool: Some("claude-code".to_string()),
-            applied_patches: std::collections::HashMap::new(),
             manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3062,6 +3354,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
@@ -3084,6 +3377,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -3108,6 +3402,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -3129,6 +3424,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: false,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute().await;
@@ -3160,6 +3456,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             verbose: true,
             quiet: false,
             strict: false,
+            render: false,
         };
 
         let result = cmd.execute_from_path(manifest_path).await;
