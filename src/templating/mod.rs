@@ -507,13 +507,89 @@ impl TemplateRenderer {
             return Ok(template_content.to_string());
         }
 
+        // Log the template context for debugging
         tracing::debug!("Rendering template with context");
+        Self::log_context_as_kv(context, "debug");
+
         // Render the template
-        self.tera.render_str(template_content, context).map_err(|e| {
-            // Extract more details from the Tera error
-            let error_msg = format!("{:?}", e);
-            anyhow::anyhow!("Template rendering failed: {}", error_msg)
-        })
+        self.tera
+            .render_str(template_content, context)
+            .map_err(|e| {
+                // Use Display format for more user-friendly error messages
+                // The Tera error already contains detailed information about:
+                // - Missing variables (e.g., "Variable `foo` not found")
+                // - Syntax errors (e.g., "Unexpected end of template")
+                // - Filter/function errors (e.g., "Filter `unknown` not found")
+                // Preserve this information in the error chain
+                tracing::error!("Template rendering failed. Context was:");
+                Self::log_context_as_kv(context, "error");
+                anyhow::Error::new(e)
+                    .context("Template rendering failed - check syntax and variable names")
+            })
+    }
+
+    /// Log the template context as key-value pairs for better readability.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The Tera context to log
+    /// * `level` - The log level to use ("debug" or "error")
+    fn log_context_as_kv(context: &TeraContext, level: &str) {
+        // Clone context and convert to JSON for iteration
+        let context_clone = context.clone();
+        let json_value = context_clone.into_json();
+
+        // Helper to log at the appropriate level
+        let log_fn = |msg: String| match level {
+            "error" => tracing::error!("{}", msg),
+            _ => tracing::debug!("{}", msg),
+        };
+
+        // Recursively log the JSON structure with indentation
+        fn log_value(key: &str, value: &serde_json::Value, indent: usize, log_fn: &dyn Fn(String)) {
+            let prefix = "  ".repeat(indent);
+            match value {
+                serde_json::Value::Object(map) => {
+                    log_fn(format!("{}{}:", prefix, key));
+                    for (k, v) in map {
+                        log_value(k, v, indent + 1, log_fn);
+                    }
+                }
+                serde_json::Value::Array(arr) => {
+                    log_fn(format!("{}{}: [{} items]", prefix, key, arr.len()));
+                    // Only show first few items to avoid spam
+                    for (i, item) in arr.iter().take(3).enumerate() {
+                        log_value(&format!("[{}]", i), item, indent + 1, log_fn);
+                    }
+                    if arr.len() > 3 {
+                        log_fn(format!("{}  ... {} more items", prefix, arr.len() - 3));
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    // Truncate long strings
+                    if s.len() > 100 {
+                        log_fn(format!("{}{}: \"{}...\" ({} chars)", prefix, key, &s[..97], s.len()));
+                    } else {
+                        log_fn(format!("{}{}: \"{}\"", prefix, key, s));
+                    }
+                }
+                serde_json::Value::Number(n) => {
+                    log_fn(format!("{}{}: {}", prefix, key, n));
+                }
+                serde_json::Value::Bool(b) => {
+                    log_fn(format!("{}{}: {}", prefix, key, b));
+                }
+                serde_json::Value::Null => {
+                    log_fn(format!("{}{}: null", prefix, key));
+                }
+            }
+        }
+
+        if let serde_json::Value::Object(map) = &json_value {
+            for (key, value) in map {
+                log_value(key, value, 1, &log_fn);
+            }
+        }
     }
 
     /// Check if content contains Tera template syntax.

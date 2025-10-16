@@ -549,10 +549,27 @@ pub async fn install_resource(
                 let rendered = renderer
                     .render_template(&patched_content, &template_context)
                     .map_err(|e| {
-                        tracing::error!("Template rendering error for {}: {}", entry.name, e);
+                        // Log detailed error with full error chain
+                        tracing::error!(
+                            "Template rendering failed for resource '{}' ({}): {}",
+                            entry.name,
+                            entry.path,
+                            e
+                        );
+                        // Log error chain if available
+                        for (i, cause) in e.chain().skip(1).enumerate() {
+                            tracing::error!("  Caused by [{}]: {}", i + 1, cause);
+                        }
                         e
                     })
-                    .with_context(|| format!("Failed to render template for {}", entry.name))?;
+                    .with_context(|| {
+                        format!(
+                            "Failed to render template for '{}' (source: {}, path: {})",
+                            entry.name,
+                            entry.source.as_deref().unwrap_or("local"),
+                            entry.path
+                        )
+                    })?;
 
                 tracing::debug!("Successfully rendered template for {}", entry.name);
 
