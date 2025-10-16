@@ -150,7 +150,9 @@ Scripts must be executable and can be written in any language supported by your 
 
 Event-based automation configurations for Claude Code. JSON files that define when to run scripts.
 
-**Configuration**: Automatically merged into `.claude/settings.local.json` (no separate directory)
+**Merge Target**: Automatically merged into `.claude/settings.local.json` (no separate directory installation)
+
+**How It Works**: Instead of installing hook files to a directory, AGPM merges their configuration into Claude Code's settings file. This allows Claude Code to natively recognize and execute the hooks.
 
 #### Hook Structure
 
@@ -185,13 +187,17 @@ file-guard = { source = "security-tools", path = "hooks/file-guard.json", versio
 
 Model Context Protocol servers that extend AI assistant capabilities with external tools and APIs.
 
-**Configuration**: Merged into `.mcp.json` (Claude Code) or `opencode.json` (OpenCode) - no separate directory
+**Merge Targets**: Configuration automatically merged into tool-specific files (no separate directory installation)
+- **Claude Code**: `.mcp.json` ✅ **Stable**
+- **OpenCode**: `.opencode/opencode.json` 🚧 **Alpha**
 
-**Configuration Files**:
-- **Claude Code**: Automatically merged into `.mcp.json` ✅ **Stable**
-- **OpenCode**: Automatically merged into `opencode.json` 🚧 **Alpha**
+**How It Works**: AGPM uses pluggable MCP handlers to:
+1. Read MCP server JSON configurations
+2. Merge them into the tool's native configuration file
+3. Track managed servers with `_agpm` metadata
+4. Preserve user-configured servers alongside AGPM-managed ones
 
-AGPM uses pluggable MCP handlers to route configuration to the correct file based on the `type` field.
+AGPM routes configuration to the correct file based on the `tool` field (defaults to `claude-code`).
 
 #### MCP Server Structure
 
@@ -228,12 +234,44 @@ postgres = { source = "local-deps", path = "mcp-servers/postgres.json" }
 
 ### How It Works
 
-Configuration-merged resources (Hooks and MCP Servers) follow a two-step process:
+Configuration-merged resources (Hooks and MCP Servers) follow a specialized installation process:
 
 1. **Configuration Processing**: JSON configurations are processed by AGPM
-2. **Configuration Merging**: Settings are automatically merged into Claude Code's configuration files
-3. **Non-destructive Updates**: AGPM preserves user-configured entries while managing its own
-4. **Tracking**: AGPM adds metadata to track which entries it manages
+2. **Tool Routing**: Settings are automatically routed to the correct tool's configuration file based on the `tool` field
+3. **Configuration Merging**: Settings are merged into the target configuration file (merge target)
+4. **Non-destructive Updates**: AGPM preserves user-configured entries while managing its own
+5. **Tracking**: AGPM adds `_agpm` metadata to track which entries it manages
+
+### Merge Targets
+
+Merge targets define where configuration-merged resources are installed:
+
+**Built-in Merge Targets**:
+- **Hooks** (claude-code): `.claude/settings.local.json`
+- **MCP Servers** (claude-code): `.mcp.json`
+- **MCP Servers** (opencode): `.opencode/opencode.json`
+
+**Custom Merge Targets**:
+
+You can override merge targets for custom tools or alternative configurations:
+
+```toml
+# Override Claude Code MCP merge target
+[tools.claude-code.resources.mcp-servers]
+merge-target = ".claude/my-mcp-config.json"
+
+# Define custom tool with merge targets
+[tools.my-tool]
+path = ".my-tool"
+
+[tools.my-tool.resources.hooks]
+merge-target = ".my-tool/hooks.json"
+
+[tools.my-tool.resources.mcp-servers]
+merge-target = ".my-tool/servers.json"
+```
+
+**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers. Custom merge targets work best by overriding defaults for built-in tools.
 
 ### Example: Merged .mcp.json
 

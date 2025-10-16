@@ -357,9 +357,39 @@ rust-patterns = { source = "community", path = "snippets/rust/*.md", version = "
 1. **Default Behavior**:
    - **Snippets** default to `agpm` (shared infrastructure at `.agpm/snippets/`)
    - **All other resources** default to `claude-code`
-2. **Explicit Routing**: Add `tool = "opencode"` or `tool = "claude-code"` to override defaults
-3. **Shared Content**: Snippets use `.agpm/snippets/` by default for cross-tool sharing
-4. **Tool-Specific MCP**: MCP servers automatically merge into the correct configuration file
+2. **Configurable Defaults**: Override defaults with `[default-tools]` in your manifest
+3. **Explicit Routing**: Add `tool = "opencode"` or `tool = "claude-code"` to override defaults
+4. **Shared Content**: Snippets use `.agpm/snippets/` by default for cross-tool sharing
+5. **Tool-Specific MCP**: MCP servers automatically merge into the correct configuration file
+
+### Configuring Default Tools
+
+Override which tool is used by default for each resource type:
+
+```toml
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+
+# Configure default tools per resource type
+[default-tools]
+snippets = "claude-code"  # Claude-only users: install to .claude/snippets/
+agents = "claude-code"    # Explicit (already the default)
+commands = "opencode"     # Default commands to OpenCode
+
+[agents]
+# Uses default from [default-tools]: installs to .claude/agents/
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# Explicit tool overrides the default: installs to .opencode/agent/
+opencode-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
+```
+
+**Use Cases**:
+- **Claude Code only**: Set `snippets = "claude-code"` to install to `.claude/snippets/`
+- **OpenCode preferred**: Set `agents = "opencode"` and `commands = "opencode"`
+- **Mixed workflows**: Configure different defaults for different resource types
+
+See the [Configuration Guide](docs/configuration.md#default-tool-configuration) for detailed examples.
 
 ### Example: Mixed-Tool Project
 

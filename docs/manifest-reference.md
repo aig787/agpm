@@ -6,6 +6,7 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 
 ```toml
 [sources]                 # Named Git or local repositories
+[default-tools]           # Optional: Override default tool for resource types
 [tools.claude-code]       # Optional: Configure Claude Code tool
 [tools.opencode]          # Optional: Configure OpenCode tool
 [tools.agpm]              # Optional: Configure AGPM tool
@@ -15,6 +16,7 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 [scripts]
 [hooks]
 [mcp-servers]
+[patch.<type>.<name>]     # Optional: Override resource fields
 ```
 
 Each resource table maps a dependency name (key) to either a simple string path or an inline table with detailed settings.
@@ -129,7 +131,7 @@ resources = { agents = { path = "agents" }, commands = { path = "cmds" } }
 
 ### MCP Server Configuration
 
-MCP servers automatically route to the correct configuration file based on type:
+MCP servers automatically route to the correct configuration file based on tool:
 
 ```toml
 [mcp-servers]
@@ -138,6 +140,119 @@ claude-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.
 
 # Merges into opencode.json - Alpha
 opencode-fs = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }
+```
+
+### Merge Targets
+
+Some resource types (hooks, MCP servers) don't install as individual files but merge into shared configuration files. The `merge-target` field in tool resource configuration specifies these merge destinations.
+
+**Default Merge Targets**:
+- **Hooks** (claude-code): `.claude/settings.local.json`
+- **MCP Servers** (claude-code): `.mcp.json`
+- **MCP Servers** (opencode): `.opencode/opencode.json`
+
+**Custom Merge Targets**:
+
+You can override merge targets for custom tools or alternative configurations:
+
+```toml
+# Define custom tool with custom merge target
+[tools.my-tool]
+path = ".my-tool"
+
+[tools.my-tool.resources.hooks]
+merge-target = ".my-tool/hooks.json"
+
+[tools.my-tool.resources.mcp-servers]
+merge-target = ".my-tool/servers.json"
+```
+
+**Path vs. Merge Target**:
+
+- **`path`**: Used for file-based resources (agents, snippets, commands, scripts) that install as individual `.md`, `.sh`, `.js`, or `.py` files in subdirectories
+- **`merge-target`**: Used for configuration-based resources (hooks, MCP servers) that merge into shared JSON configuration files
+- A resource type is supported if **either** `path` OR `merge-target` is specified
+
+**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers. Custom merge targets work best by overriding defaults for built-in tools rather than creating wholly custom tools.
+
+## Default Tools Configuration
+
+The `[default-tools]` section allows you to override which tool is used by default for each resource type when a dependency doesn't explicitly specify a `tool` field.
+
+### Built-in Defaults
+
+When not configured, AGPM uses these defaults:
+- `snippets` → `agpm` (shared infrastructure)
+- All other resources → `claude-code`
+
+### Configuration Syntax
+
+```toml
+[default-tools]
+snippets = "claude-code"  # Override default for Claude-only users
+agents = "claude-code"    # Explicit (already the default)
+commands = "opencode"     # Default to OpenCode for commands
+```
+
+### Supported Keys
+
+You can configure defaults for any resource type:
+
+| Key | Description | Built-in Default |
+| --- | --- | --- |
+| `agents` | Default tool for agent resources | `claude-code` |
+| `snippets` | Default tool for snippet resources | `agpm` |
+| `commands` | Default tool for command resources | `claude-code` |
+| `scripts` | Default tool for script resources | `claude-code` |
+| `hooks` | Default tool for hook resources | `claude-code` |
+| `mcp-servers` | Default tool for MCP server resources | `claude-code` |
+
+### Behavior
+
+**Default Application**:
+```toml
+[default-tools]
+agents = "opencode"
+
+[agents]
+# Uses default: installs to .opencode/agent/
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+```
+
+**Explicit Override**:
+```toml
+[default-tools]
+agents = "opencode"  # Default for agents
+
+[agents]
+# Uses default: .opencode/agent/
+default-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# Explicit tool overrides default: .claude/agents/
+claude-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "claude-code" }
+```
+
+### Use Cases
+
+**Claude Code Only Users**:
+```toml
+[default-tools]
+snippets = "claude-code"  # Install snippets to .claude/snippets/ instead of .agpm/snippets/
+```
+
+**OpenCode Preferred**:
+```toml
+[default-tools]
+agents = "opencode"
+commands = "opencode"
+```
+
+**Mixed Workflows**:
+```toml
+[default-tools]
+snippets = "agpm"        # Shared snippets (explicit, already default)
+agents = "claude-code"   # Claude Code agents
+commands = "opencode"    # OpenCode commands
 ```
 
 ## Patches and Overrides

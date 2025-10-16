@@ -351,6 +351,61 @@ example = { source = "community", path = "agents/example.md", version = "v1.0.0"
 opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
 ```
 
+### Default Tool Configuration
+
+Override the default tool for resource types via the `[default-tools]` section:
+
+```toml
+[default-tools]
+snippets = "claude-code"  # Claude-only users: install snippets to .claude/snippets/
+agents = "claude-code"    # Explicit (already the default)
+commands = "opencode"     # Default to OpenCode for commands
+```
+
+**Built-in Defaults**:
+- `snippets` → `agpm` (shared infrastructure)
+- All other resources → `claude-code`
+
+**Use Cases**:
+- Claude Code only users: `snippets = "claude-code"` to install to `.claude/snippets/`
+- OpenCode preferred: `agents = "opencode"` to default agents to `.opencode/agent/`
+- Mixed workflows: Configure per-resource-type defaults
+
+Dependencies with explicit `tool` fields override these defaults.
+
+### Merge Targets
+
+Some resource types (hooks, MCP servers) don't install as individual files but merge into shared configuration files. The `merge-target` field specifies these merge destinations.
+
+**Default Merge Targets**:
+- **Hooks** (claude-code): `.claude/settings.local.json`
+- **MCP Servers** (claude-code): `.mcp.json`
+- **MCP Servers** (opencode): `.opencode/opencode.json`
+
+**Custom Merge Targets**:
+
+Override merge targets for custom tools or alternative configurations:
+
+```toml
+# Define custom tool with custom merge target
+[tools.my-tool]
+path = ".my-tool"
+
+[tools.my-tool.resources.hooks]
+merge-target = ".my-tool/hooks.json"
+
+[tools.my-tool.resources.mcp-servers]
+merge-target = ".my-tool/servers.json"
+```
+
+**Path vs. Merge Target**:
+
+- **`path`**: Used for file-based resources (agents, snippets, commands, scripts) that install as individual `.md`, `.sh`, `.js`, or `.py` files in subdirectories
+- **`merge-target`**: Used for configuration-based resources (hooks, MCP servers) that merge into shared JSON configuration files
+- A resource type is supported if EITHER `path` OR `merge-target` is specified
+
+**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers. Custom merge targets work best by overriding defaults for built-in tools rather than creating wholly custom tools.
+
 ### Resource Type Support Matrix
 
 | Resource      | claude-code | opencode | agpm | Default Type |
@@ -389,6 +444,11 @@ Pluggable handlers for tool-specific MCP configuration:
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
 local = "../my-local-resources"
+
+# Default tools per resource type (optional)
+[default-tools]
+snippets = "claude-code"  # Override default for Claude-only users
+agents = "claude-code"    # Explicit (already the default)
 
 [agents]
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }

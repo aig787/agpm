@@ -428,8 +428,8 @@ impl ListCommand {
                             resolved_commit: None,
                             tool: Some(
                                 dep.get_tool()
-                                    .unwrap_or_else(|| resource_type.default_tool())
-                                    .to_string(),
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| manifest.get_default_tool(*resource_type)),
                             ),
                             applied_patches: std::collections::HashMap::new(),
                         });
@@ -452,14 +452,9 @@ impl ListCommand {
                         installed_at: None,
                         checksum: None,
                         resolved_commit: None,
-                        tool: Some(
-                            mcp_dep
-                                .get_tool()
-                                .unwrap_or_else(|| {
-                                    crate::core::ResourceType::McpServer.default_tool()
-                                })
-                                .to_string(),
-                        ),
+                        tool: Some(mcp_dep.get_tool().map(|s| s.to_string()).unwrap_or_else(
+                            || manifest.get_default_tool(crate::core::ResourceType::McpServer),
+                        )),
                         applied_patches: std::collections::HashMap::new(),
                     });
                 }

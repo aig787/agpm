@@ -1355,10 +1355,10 @@ impl DependencyResolver {
                                 Some(explicit_tool.clone())
                             } else {
                                 // Determine parent's effective tool (explicit or default for its resource type)
-                                let parent_tool = dep
-                                    .get_tool()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| resource_type.default_tool().to_string());
+                                let parent_tool =
+                                    dep.get_tool().map(|s| s.to_string()).unwrap_or_else(|| {
+                                        self.manifest.get_default_tool(resource_type)
+                                    });
 
                                 // Check if parent's tool supports this resource type
                                 if self
@@ -1370,7 +1370,7 @@ impl DependencyResolver {
                                     Some(parent_tool)
                                 } else {
                                     // Parent's tool doesn't support this resource type, use default
-                                    Some(dep_resource_type.default_tool().to_string())
+                                    Some(self.manifest.get_default_tool(dep_resource_type))
                                 }
                             };
 
@@ -1460,10 +1460,10 @@ impl DependencyResolver {
                                 Some(explicit_tool.clone())
                             } else {
                                 // Determine parent's effective tool (explicit or default for its resource type)
-                                let parent_tool = dep
-                                    .get_tool()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| resource_type.default_tool().to_string());
+                                let parent_tool =
+                                    dep.get_tool().map(|s| s.to_string()).unwrap_or_else(|| {
+                                        self.manifest.get_default_tool(resource_type)
+                                    });
 
                                 // Check if parent's tool supports this resource type
                                 if self
@@ -1475,7 +1475,7 @@ impl DependencyResolver {
                                     Some(parent_tool)
                                 } else {
                                     // Parent's tool doesn't support this resource type, use default
-                                    Some(dep_resource_type.default_tool().to_string())
+                                    Some(self.manifest.get_default_tool(dep_resource_type))
                                 }
                             };
 
@@ -2398,23 +2398,38 @@ impl DependencyResolver {
             };
 
             // Determine artifact type - use get_tool() method, then apply defaults
-            let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+            let artifact_type_string = dep
+                .get_tool()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+            let artifact_type = artifact_type_string.as_str();
 
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
 
             // Hooks and MCP servers are configured in config files, not installed as artifact files
             let installed_at = match resource_type {
-                crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
-                crate::core::ResourceType::McpServer => {
-                    // Determine config file based on tool type
-                    match dep {
-                        crate::manifest::ResourceDependency::Detailed(d)
-                            if d.tool.as_deref() == Some("opencode") =>
-                        {
-                            ".opencode/opencode.json".to_string()
+                crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                    // Use configured merge target, with fallback to hardcoded defaults
+                    if let Some(merge_target) =
+                        self.manifest.get_merge_target(artifact_type, resource_type)
+                    {
+                        normalize_path_for_storage(merge_target.display().to_string())
+                    } else {
+                        // Fallback to hardcoded defaults if not configured
+                        match resource_type {
+                            crate::core::ResourceType::Hook => {
+                                ".claude/settings.local.json".to_string()
+                            }
+                            crate::core::ResourceType::McpServer => {
+                                if artifact_type == "opencode" {
+                                    ".opencode/opencode.json".to_string()
+                                } else {
+                                    ".mcp.json".to_string()
+                                }
+                            }
+                            _ => unreachable!(),
                         }
-                        _ => ".mcp.json".to_string(), // Default to claude-code
                     }
                 }
                 _ => {
@@ -2459,7 +2474,7 @@ impl DependencyResolver {
                 tool: Some(
                     dep.get_tool()
                         .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
                 ),
                 manifest_alias: self
                     .pattern_alias_map
@@ -2540,31 +2555,41 @@ impl DependencyResolver {
             };
 
             // Determine artifact type - use get_tool() method, then apply defaults
-            let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+            // Extract artifact_type from dependency - convert to String for lockfile
+            let artifact_type_string = dep
+                .get_tool()
+                .map(std::string::ToString::to_string)
+                .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+            let artifact_type = artifact_type_string.as_str();
 
             // Use simple name from manifest - lockfile entries are identified by (name, source)
             // Multiple entries with the same name but different sources can coexist
             // Version updates replace the existing entry for the same (name, source) pair
             let unique_name = name.to_string();
 
-            // Extract artifact_type from dependency - convert to String for lockfile
-            let artifact_type_string = dep
-                .get_tool()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_else(|| resource_type.default_tool().to_string());
-
             // Hooks and MCP servers are configured in config files, not installed as artifact files
             let installed_at = match resource_type {
-                crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
-                crate::core::ResourceType::McpServer => {
-                    // Determine config file based on tool type
-                    match dep {
-                        crate::manifest::ResourceDependency::Detailed(d)
-                            if d.tool.as_deref() == Some("opencode") =>
-                        {
-                            ".opencode/opencode.json".to_string()
+                crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                    // Use configured merge target, with fallback to hardcoded defaults
+                    if let Some(merge_target) =
+                        self.manifest.get_merge_target(artifact_type, resource_type)
+                    {
+                        normalize_path_for_storage(merge_target.display().to_string())
+                    } else {
+                        // Fallback to hardcoded defaults if not configured
+                        match resource_type {
+                            crate::core::ResourceType::Hook => {
+                                ".claude/settings.local.json".to_string()
+                            }
+                            crate::core::ResourceType::McpServer => {
+                                if artifact_type == "opencode" {
+                                    ".opencode/opencode.json".to_string()
+                                } else {
+                                    ".mcp.json".to_string()
+                                }
+                            }
+                            _ => unreachable!(),
                         }
-                        _ => ".mcp.json".to_string(), // Default to claude-code
                     }
                 }
                 _ => {
@@ -2714,7 +2739,11 @@ impl DependencyResolver {
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
                 // Determine artifact type - use get_tool() method, then apply defaults
-                let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+                let artifact_type_string = dep
+                    .get_tool()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+                let artifact_type = artifact_type_string.as_str();
 
                 // Construct full relative path from base_path and matched_path
                 let full_relative_path = if base_path == Path::new(".") {
@@ -2733,16 +2762,27 @@ impl DependencyResolver {
 
                 // Hooks and MCP servers are configured in config files, not installed as artifact files
                 let installed_at = match resource_type {
-                    crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
-                    crate::core::ResourceType::McpServer => {
-                        // Determine config file based on tool type
-                        match dep {
-                            crate::manifest::ResourceDependency::Detailed(d)
-                                if d.tool.as_deref() == Some("opencode") =>
-                            {
-                                ".opencode/opencode.json".to_string()
+                    crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                        // Use configured merge target, with fallback to hardcoded defaults
+                        if let Some(merge_target) =
+                            self.manifest.get_merge_target(artifact_type, resource_type)
+                        {
+                            normalize_path_for_storage(merge_target.display().to_string())
+                        } else {
+                            // Fallback to hardcoded defaults if not configured
+                            match resource_type {
+                                crate::core::ResourceType::Hook => {
+                                    ".claude/settings.local.json".to_string()
+                                }
+                                crate::core::ResourceType::McpServer => {
+                                    if artifact_type == "opencode" {
+                                        ".opencode/opencode.json".to_string()
+                                    } else {
+                                        ".mcp.json".to_string()
+                                    }
+                                }
+                                _ => unreachable!(),
                             }
-                            _ => ".mcp.json".to_string(), // Default to claude-code
                         }
                     }
                     _ => {
@@ -2800,7 +2840,7 @@ impl DependencyResolver {
                     tool: Some(
                         dep.get_tool()
                             .map(std::string::ToString::to_string)
-                            .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                            .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
@@ -2853,22 +2893,37 @@ impl DependencyResolver {
                 let relative_path = extract_relative_path(&matched_path, &resource_type);
 
                 // Determine artifact type - use get_tool() method, then apply defaults
-                let artifact_type = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+                let artifact_type_string = dep
+                    .get_tool()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+                let artifact_type = artifact_type_string.as_str();
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
 
                 // Hooks and MCP servers are configured in config files, not installed as artifact files
                 let installed_at = match resource_type {
-                    crate::core::ResourceType::Hook => ".claude/settings.local.json".to_string(),
-                    crate::core::ResourceType::McpServer => {
-                        // Determine config file based on tool type
-                        match dep {
-                            crate::manifest::ResourceDependency::Detailed(d)
-                                if d.tool.as_deref() == Some("opencode") =>
-                            {
-                                ".opencode/opencode.json".to_string()
+                    crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
+                        // Use configured merge target, with fallback to hardcoded defaults
+                        if let Some(merge_target) =
+                            self.manifest.get_merge_target(artifact_type, resource_type)
+                        {
+                            normalize_path_for_storage(merge_target.display().to_string())
+                        } else {
+                            // Fallback to hardcoded defaults if not configured
+                            match resource_type {
+                                crate::core::ResourceType::Hook => {
+                                    ".claude/settings.local.json".to_string()
+                                }
+                                crate::core::ResourceType::McpServer => {
+                                    if artifact_type == "opencode" {
+                                        ".opencode/opencode.json".to_string()
+                                    } else {
+                                        ".mcp.json".to_string()
+                                    }
+                                }
+                                _ => unreachable!(),
                             }
-                            _ => ".mcp.json".to_string(), // Default to claude-code
                         }
                     }
                     _ => {
@@ -2930,7 +2985,7 @@ impl DependencyResolver {
                     tool: Some(
                         dep.get_tool()
                             .map(|s| s.to_string())
-                            .unwrap_or_else(|| resource_type.default_tool().to_string()),
+                            .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution

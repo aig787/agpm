@@ -1913,8 +1913,11 @@ impl LockFile {
                             }
 
                             // Check for tool changes (apply defaults if not specified)
-                            let manifest_tool =
-                                dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+                            let manifest_tool_string = dep
+                                .get_tool()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| manifest.get_default_tool(*resource_type));
+                            let manifest_tool = manifest_tool_string.as_str();
                             let locked_tool = locked.tool.as_deref().unwrap_or("claude-code");
                             if manifest_tool != locked_tool {
                                 return Ok(Some(StalenessReason::ToolChanged {

@@ -76,6 +76,115 @@ max_parallel = 8
 enhanced_progress = true
 ```
 
+## Default Tool Configuration
+
+AGPM allows you to override which tool is used by default for each resource type. This is useful when you work primarily with one tool (e.g., Claude Code only) or want to customize the default routing behavior.
+
+### Overview
+
+By default, AGPM uses these tool assignments:
+- **Snippets** → `agpm` (shared infrastructure)
+- **All other resources** (agents, commands, scripts, hooks, mcp-servers) → `claude-code`
+
+You can override these defaults using the `[default-tools]` section in your manifest.
+
+### Configuration
+
+Add the `[default-tools]` section to your `agpm.toml`:
+
+```toml
+# agpm.toml
+[default-tools]
+snippets = "claude-code"  # Claude-only users: install snippets to .claude/snippets/
+agents = "claude-code"    # Explicit (already the default)
+commands = "opencode"     # Default to OpenCode for commands
+```
+
+### Supported Resource Types
+
+You can configure defaults for any resource type:
+
+- `agents` - Default tool for agent resources
+- `snippets` - Default tool for snippet resources
+- `commands` - Default tool for command resources
+- `scripts` - Default tool for script resources
+- `hooks` - Default tool for hook resources
+- `mcp-servers` - Default tool for MCP server resources
+
+### Use Cases
+
+#### Claude Code Only Users
+
+If you only use Claude Code and want snippets in `.claude/snippets/` instead of `.agpm/snippets/`:
+
+```toml
+[default-tools]
+snippets = "claude-code"
+
+[snippets]
+# Now installs to .claude/snippets/ by default
+rust-patterns = { source = "community", path = "snippets/rust.md", version = "v1.0.0" }
+```
+
+#### OpenCode Preferred
+
+If you primarily use OpenCode:
+
+```toml
+[default-tools]
+agents = "opencode"
+commands = "opencode"
+
+[agents]
+# Now installs to .opencode/agent/ by default
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+```
+
+#### Mixed Workflows
+
+Configure different defaults for different resource types:
+
+```toml
+[default-tools]
+snippets = "agpm"        # Shared snippets (default, shown for clarity)
+agents = "claude-code"   # Claude Code agents
+commands = "opencode"    # OpenCode commands
+```
+
+### Overriding Defaults
+
+Dependencies with explicit `tool` fields always override the configured defaults:
+
+```toml
+[default-tools]
+agents = "claude-code"   # Default for agents
+
+[agents]
+# Uses default: installs to .claude/agents/
+default-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# Explicit override: installs to .opencode/agent/
+opencode-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
+```
+
+### Validation
+
+The configured tool names must be valid tool identifiers:
+
+```bash
+# Validate manifest including default-tools configuration
+agpm validate
+
+# Install with configured defaults
+agpm install
+```
+
+**Valid tool names:**
+- `claude-code` (built-in)
+- `opencode` (built-in, alpha)
+- `agpm` (built-in)
+- Custom tool names defined in `[tools.custom-name]` sections
+
 ## Private Configuration
 
 The `agpm.private.toml` file enables user-level customization without affecting team configuration.
