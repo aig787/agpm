@@ -658,6 +658,29 @@ pub struct Manifest {
     #[serde(skip)]
     pub private_patches: ManifestPatches,
 
+    /// Default tool overrides for resource types.
+    ///
+    /// Allows users to override which tool is used by default when a dependency
+    /// doesn't explicitly specify a tool. Keys are resource type names (agents,
+    /// snippets, commands, scripts, hooks, mcp-servers), values are tool names
+    /// (claude-code, opencode, agpm, or custom tool names).
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [default-tools]
+    /// snippets = "claude-code"  # Override default for Claude-only users
+    /// agents = "claude-code"    # Explicit (already the default)
+    /// commands = "opencode"     # Use OpenCode by default for commands
+    /// ```
+    ///
+    /// # Built-in Defaults (when not configured)
+    ///
+    /// - `snippets` → `"agpm"` (shared infrastructure)
+    /// - All other resource types → `"claude-code"`
+    #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "default-tools")]
+    pub default_tools: HashMap<String, String>,
+
     /// Directory containing the manifest file (for resolving relative paths).
     ///
     /// This field is populated when loading the manifest and is used to resolve
@@ -672,15 +695,32 @@ pub struct Manifest {
 /// Resource configuration within a tool.
 ///
 /// Defines the installation path for a specific resource type within a tool.
-/// The path can be omitted for resources that have special handling (e.g., MCP servers
-/// that merge into configuration files instead of being installed as separate files).
+/// Resources can either:
+/// - Install to a subdirectory (via `path`)
+/// - Merge into a configuration file (via `merge_target`)
+///
+/// At least one of `path` or `merge_target` should be set for a resource type
+/// to be considered supported by a tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResourceConfig {
     /// Subdirectory path for this resource type relative to the tool's base directory.
     ///
-    /// None means special handling (e.g., MCP servers that merge into config files)
+    /// Used for resources that install as separate files (agents, snippets, commands, scripts).
+    /// When None, this resource type either uses merge_target or is not supported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+
+    /// Target configuration file for merging this resource type.
+    ///
+    /// Used for resources that merge into configuration files (hooks, MCP servers).
+    /// The path is relative to the project root.
+    ///
+    /// # Examples
+    ///
+    /// - Hooks: `.claude/settings.local.json`
+    /// - MCP servers: `.mcp.json` or `.opencode/opencode.json`
+    #[serde(skip_serializing_if = "Option::is_none", rename = "merge-target")]
+    pub merge_target: Option<String>,
 }
 
 /// Tool configuration.
@@ -731,36 +771,42 @@ impl Default for ToolsConfig {
             ResourceType::Agent.to_plural().to_string(),
             ResourceConfig {
                 path: Some("agents".to_string()),
+                merge_target: None,
             },
         );
         claude_resources.insert(
             ResourceType::Snippet.to_plural().to_string(),
             ResourceConfig {
                 path: Some("snippets".to_string()),
+                merge_target: None,
             },
         );
         claude_resources.insert(
             ResourceType::Command.to_plural().to_string(),
             ResourceConfig {
                 path: Some("commands".to_string()),
+                merge_target: None,
             },
         );
         claude_resources.insert(
             ResourceType::Script.to_plural().to_string(),
             ResourceConfig {
                 path: Some("scripts".to_string()),
+                merge_target: None,
             },
         );
         claude_resources.insert(
             ResourceType::Hook.to_plural().to_string(),
             ResourceConfig {
-                path: None, // Hooks are merged into .claude/settings.local.json, not staged to disk
+                path: None, // Hooks are merged into configuration file
+                merge_target: Some(".claude/settings.local.json".to_string()),
             },
         );
         claude_resources.insert(
             ResourceType::McpServer.to_plural().to_string(),
             ResourceConfig {
-                path: None, // MCP servers are merged into .mcp.json, not staged to disk
+                path: None, // MCP servers are merged into configuration file
+                merge_target: Some(".mcp.json".to_string()),
             },
         );
 
@@ -779,18 +825,21 @@ impl Default for ToolsConfig {
             ResourceType::Agent.to_plural().to_string(),
             ResourceConfig {
                 path: Some("agent".to_string()), // Singular
+                merge_target: None,
             },
         );
         opencode_resources.insert(
             ResourceType::Command.to_plural().to_string(),
             ResourceConfig {
                 path: Some("command".to_string()), // Singular
+                merge_target: None,
             },
         );
         opencode_resources.insert(
             ResourceType::McpServer.to_plural().to_string(),
             ResourceConfig {
-                path: None, // MCP servers are merged into opencode.json, not staged to disk
+                path: None, // MCP servers are merged into configuration file
+                merge_target: Some(".opencode/opencode.json".to_string()),
             },
         );
 
@@ -809,6 +858,7 @@ impl Default for ToolsConfig {
             ResourceType::Snippet.to_plural().to_string(),
             ResourceConfig {
                 path: Some("snippets".to_string()),
+                merge_target: None,
             },
         );
 
@@ -1450,6 +1500,7 @@ impl Manifest {
             patches: ManifestPatches::new(),
             project_patches: ManifestPatches::new(),
             private_patches: ManifestPatches::new(),
+            default_tools: HashMap::new(),
             manifest_dir: None,
         }
     }
@@ -1674,48 +1725,71 @@ impl Manifest {
         Ok(manifest)
     }
 
-    /// Apply resource-type-specific defaults for tool.
+    /// Get the default tool for a resource type.
     ///
-    /// This method adjusts the tool field based on the resource type to provide
-    /// more sensible defaults:
-    /// - **Snippets**: Default to "agpm" (shared infrastructure) instead of "claude-code"
-    /// - **All other resources**: Keep "claude-code" as the default
+    /// Checks the `[default-tools]` configuration first, then falls back to
+    /// the built-in defaults:
+    /// - `snippets` → `"agpm"` (shared infrastructure)
+    /// - All other resource types → `"claude-code"`
     ///
-    /// This is called automatically after deserialization in `load()`.
+    /// # Arguments
     ///
-    /// # Rationale
+    /// * `resource_type` - The resource type to get the default tool for
     ///
-    /// Snippets are designed to be shared content across multiple tools (Claude Code,
-    /// OpenCode, etc.). The `.agpm/snippets/` location provides a shared infrastructure
-    /// that can be referenced by resources from different tools. Therefore, snippets
-    /// should default to the "agpm" tool type.
+    /// # Returns
     ///
-    /// Users can still explicitly set `tool = "claude-code"` for a snippet if they want
-    /// it installed to `.claude/snippets/` instead.
-    fn apply_tool_defaults(&mut self) {
-        // Apply resource-type-specific defaults only when tool is not explicitly specified
-        for dependency in self.snippets.values_mut() {
-            if let ResourceDependency::Detailed(details) = dependency {
-                // If tool is None, apply snippet-specific default: "agpm"
-                if details.tool.is_none() {
-                    details.tool = Some("agpm".to_string());
-                }
-            }
+    /// The default tool name as a string.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::core::ResourceType;
+    ///
+    /// let manifest = Manifest::new();
+    /// assert_eq!(manifest.get_default_tool(ResourceType::Snippet), "agpm");
+    /// assert_eq!(manifest.get_default_tool(ResourceType::Agent), "claude-code");
+    /// ```
+    #[must_use]
+    pub fn get_default_tool(&self, resource_type: crate::core::ResourceType) -> String {
+        // Get the resource name in plural form for consistency with TOML section names
+        // (agents, snippets, commands, etc.)
+        let resource_name = match resource_type {
+            crate::core::ResourceType::Agent => "agents",
+            crate::core::ResourceType::Snippet => "snippets",
+            crate::core::ResourceType::Command => "commands",
+            crate::core::ResourceType::Script => "scripts",
+            crate::core::ResourceType::Hook => "hooks",
+            crate::core::ResourceType::McpServer => "mcp-servers",
+        };
+
+        // Check if there's a configured override
+        if let Some(tool) = self.default_tools.get(resource_name) {
+            return tool.clone();
         }
 
-        // Apply "claude-code" default for all other resource types when not specified
+        // Fall back to built-in defaults
+        resource_type.default_tool().to_string()
+    }
+
+    fn apply_tool_defaults(&mut self) {
+        // Apply resource-type-specific defaults only when tool is not explicitly specified
         for resource_type in [
+            crate::core::ResourceType::Snippet,
             crate::core::ResourceType::Agent,
             crate::core::ResourceType::Command,
             crate::core::ResourceType::Script,
             crate::core::ResourceType::Hook,
             crate::core::ResourceType::McpServer,
         ] {
+            // Get the default tool before the mutable borrow to avoid borrow conflicts
+            let default_tool = self.get_default_tool(resource_type);
+
             if let Some(deps) = self.get_dependencies_mut(resource_type) {
                 for dependency in deps.values_mut() {
                     if let ResourceDependency::Detailed(details) = dependency {
                         if details.tool.is_none() {
-                            details.tool = Some("claude-code".to_string());
+                            details.tool = Some(default_tool.clone());
                         }
                     }
                 }
@@ -2075,7 +2149,11 @@ impl Manifest {
             if let Some(deps) = self.get_dependencies(*resource_type) {
                 for (name, dep) in deps {
                     // Get tool from dependency (defaults based on resource type)
-                    let tool = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+                    let tool_string = dep
+                        .get_tool()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| self.get_default_tool(*resource_type));
+                    let tool = tool_string.as_str();
 
                     // Check if tool is configured
                     if self.get_tool_config(tool).is_none() {
@@ -2343,9 +2421,59 @@ impl Manifest {
         resource_config.path.as_ref().map(|subdir| artifact_config.path.join(subdir))
     }
 
+    /// Get the merge target configuration file path for a resource type.
+    ///
+    /// Returns the path to the configuration file where resources of this type
+    /// should be merged (e.g., hooks, MCP servers). Returns None if the resource
+    /// type doesn't use merge targets or if the tool doesn't support this resource type.
+    ///
+    /// # Arguments
+    ///
+    /// * `tool` - The tool name (e.g., "claude-code", "opencode")
+    /// * `resource_type` - The resource type to look up
+    ///
+    /// # Returns
+    ///
+    /// The merge target path if configured, otherwise None.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::core::ResourceType;
+    ///
+    /// let manifest = Manifest::new();
+    ///
+    /// // Hooks merge into .claude/settings.local.json
+    /// let hook_target = manifest.get_merge_target("claude-code", ResourceType::Hook);
+    /// assert_eq!(hook_target, Some(".claude/settings.local.json".into()));
+    ///
+    /// // MCP servers merge into .mcp.json for claude-code
+    /// let mcp_target = manifest.get_merge_target("claude-code", ResourceType::McpServer);
+    /// assert_eq!(mcp_target, Some(".mcp.json".into()));
+    ///
+    /// // MCP servers merge into .opencode/opencode.json for opencode
+    /// let opencode_mcp = manifest.get_merge_target("opencode", ResourceType::McpServer);
+    /// assert_eq!(opencode_mcp, Some(".opencode/opencode.json".into()));
+    /// ```
+    pub fn get_merge_target(
+        &self,
+        tool: &str,
+        resource_type: crate::core::ResourceType,
+    ) -> Option<PathBuf> {
+        let artifact_config = self.get_tool_config(tool)?;
+        let resource_config = artifact_config.resources.get(resource_type.to_plural())?;
+
+        resource_config.merge_target.as_ref().map(PathBuf::from)
+    }
+
     /// Check if a resource type is supported by a tool.
     ///
-    /// Returns true if the tool has configuration for the given resource type.
+    /// A resource type is considered supported if it has either:
+    /// - A configured installation path (for file-based resources)
+    /// - A configured merge target (for resources that merge into config files)
+    ///
+    /// Returns true if the tool has valid configuration for the given resource type.
     pub fn is_resource_supported(
         &self,
         tool: &str,
@@ -2353,7 +2481,8 @@ impl Manifest {
     ) -> bool {
         self.get_tool_config(tool)
             .and_then(|config| config.resources.get(resource_type.to_plural()))
-            .is_some()
+            .map(|res_config| res_config.path.is_some() || res_config.merge_target.is_some())
+            .unwrap_or(false)
     }
 
     /// Returns all dependencies from all resource types.
@@ -2443,7 +2572,11 @@ impl Manifest {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
                 for (name, dep) in type_deps {
                     // Determine the tool for this dependency
-                    let tool = dep.get_tool().unwrap_or_else(|| resource_type.default_tool());
+                    let tool_string = dep
+                        .get_tool()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| self.get_default_tool(*resource_type));
+                    let tool = tool_string.as_str();
 
                     // Check if the tool is enabled
                     if let Some(tool_config) = self.get_tools_config().types.get(tool) {
@@ -4213,5 +4346,276 @@ claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" 
         // Get all dependencies - should include the agent
         let deps = manifest.all_dependencies_with_types();
         assert_eq!(deps.len(), 1, "Should have 1 dependency (enabled by default)");
+    }
+
+    #[test]
+    fn test_default_tools_parsing() {
+        let toml = r#"
+[default-tools]
+snippets = "claude-code"
+agents = "opencode"
+
+[sources]
+test = "https://example.com/repo.git"
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        assert_eq!(manifest.default_tools.len(), 2);
+        assert_eq!(manifest.default_tools.get("snippets"), Some(&"claude-code".to_string()));
+        assert_eq!(manifest.default_tools.get("agents"), Some(&"opencode".to_string()));
+    }
+
+    #[test]
+    fn test_get_default_tool_with_config() {
+        let mut manifest = Manifest::new();
+
+        // Add custom default tools
+        manifest.default_tools.insert("snippets".to_string(), "claude-code".to_string());
+        manifest.default_tools.insert("agents".to_string(), "opencode".to_string());
+
+        // Test configured overrides
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Snippet), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Agent), "opencode");
+
+        // Test unconfigured types (should use built-in defaults)
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Command), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Script), "claude-code");
+    }
+
+    #[test]
+    fn test_get_default_tool_without_config() {
+        let manifest = Manifest::new();
+
+        // Test built-in defaults when no config is provided
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Snippet), "agpm");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Agent), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Command), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Script), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::Hook), "claude-code");
+        assert_eq!(manifest.get_default_tool(crate::core::ResourceType::McpServer), "claude-code");
+    }
+
+    #[test]
+    fn test_apply_tool_defaults_with_custom_config() {
+        use tempfile::tempdir;
+
+        let toml = r#"
+[default-tools]
+snippets = "claude-code"
+
+[sources]
+test = "https://example.com/repo.git"
+
+[snippets]
+example = { source = "test", path = "snippets/example.md", version = "v1.0.0" }
+"#;
+
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+        std::fs::write(&manifest_path, toml).unwrap();
+
+        let manifest = Manifest::load(&manifest_path).expect("Failed to load manifest");
+
+        // Check that the snippet got the configured default tool
+        let snippet = manifest.snippets.get("example").unwrap();
+        match snippet {
+            ResourceDependency::Detailed(d) => {
+                assert_eq!(d.tool, Some("claude-code".to_string()));
+            }
+            _ => panic!("Expected detailed dependency"),
+        }
+    }
+
+    #[test]
+    fn test_apply_tool_defaults_without_custom_config() {
+        use tempfile::tempdir;
+
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[snippets]
+example = { source = "test", path = "snippets/example.md", version = "v1.0.0" }
+
+[agents]
+example = { source = "test", path = "agents/example.md", version = "v1.0.0" }
+"#;
+
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+        std::fs::write(&manifest_path, toml).unwrap();
+
+        let manifest = Manifest::load(&manifest_path).expect("Failed to load manifest");
+
+        // Check that snippet got the built-in default
+        let snippet = manifest.snippets.get("example").unwrap();
+        match snippet {
+            ResourceDependency::Detailed(d) => {
+                assert_eq!(d.tool, Some("agpm".to_string()));
+            }
+            _ => panic!("Expected detailed dependency"),
+        }
+
+        // Check that agent got the built-in default
+        let agent = manifest.agents.get("example").unwrap();
+        match agent {
+            ResourceDependency::Detailed(d) => {
+                assert_eq!(d.tool, Some("claude-code".to_string()));
+            }
+            _ => panic!("Expected detailed dependency"),
+        }
+    }
+
+    #[test]
+    fn test_default_tools_serialization() {
+        let mut manifest = Manifest::new();
+        manifest.add_source("test".to_string(), "https://example.com/repo.git".to_string());
+        manifest.default_tools.insert("snippets".to_string(), "claude-code".to_string());
+
+        let toml = toml::to_string(&manifest).expect("Failed to serialize");
+
+        // Check that default-tools section is present
+        assert!(toml.contains("[default-tools]"));
+        assert!(toml.contains("snippets = \"claude-code\""));
+    }
+
+    #[test]
+    fn test_default_tools_empty_not_serialized() {
+        let manifest = Manifest::new();
+
+        let toml = toml::to_string(&manifest).expect("Failed to serialize");
+
+        // Empty default_tools should not be serialized
+        assert!(!toml.contains("[default-tools]"));
+    }
+
+    #[test]
+    fn test_merge_target_parsing() {
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.custom-tool]
+path = ".custom"
+enabled = true
+
+[tools.custom-tool.resources.hooks]
+merge-target = ".custom/hooks.json"
+
+[tools.custom-tool.resources.mcp-servers]
+merge-target = ".custom/mcp.json"
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Check that custom tool has merge targets configured
+        let tools = manifest.get_tools_config();
+        let custom_tool = tools.types.get("custom-tool").expect("custom-tool should exist");
+
+        let hooks_config = custom_tool.resources.get("hooks").expect("hooks config should exist");
+        assert_eq!(hooks_config.merge_target, Some(".custom/hooks.json".to_string()));
+        assert_eq!(hooks_config.path, None);
+
+        let mcp_config =
+            custom_tool.resources.get("mcp-servers").expect("mcp-servers config should exist");
+        assert_eq!(mcp_config.merge_target, Some(".custom/mcp.json".to_string()));
+        assert_eq!(mcp_config.path, None);
+    }
+
+    #[test]
+    fn test_get_merge_target() {
+        let manifest = Manifest::new();
+
+        // Test claude-code hooks
+        let hook_target = manifest.get_merge_target("claude-code", crate::core::ResourceType::Hook);
+        assert_eq!(hook_target, Some(PathBuf::from(".claude/settings.local.json")));
+
+        // Test claude-code MCP servers
+        let mcp_target =
+            manifest.get_merge_target("claude-code", crate::core::ResourceType::McpServer);
+        assert_eq!(mcp_target, Some(PathBuf::from(".mcp.json")));
+
+        // Test opencode MCP servers
+        let opencode_mcp =
+            manifest.get_merge_target("opencode", crate::core::ResourceType::McpServer);
+        assert_eq!(opencode_mcp, Some(PathBuf::from(".opencode/opencode.json")));
+
+        // Test resource type that doesn't have merge target (agents)
+        let agent_target =
+            manifest.get_merge_target("claude-code", crate::core::ResourceType::Agent);
+        assert_eq!(agent_target, None);
+
+        // Test unsupported tool
+        let invalid = manifest.get_merge_target("nonexistent", crate::core::ResourceType::Hook);
+        assert_eq!(invalid, None);
+    }
+
+    #[test]
+    fn test_is_resource_supported_with_merge_target() {
+        let manifest = Manifest::new();
+
+        // Hooks should be supported (via merge_target)
+        assert!(manifest.is_resource_supported("claude-code", crate::core::ResourceType::Hook));
+
+        // MCP servers should be supported (via merge_target)
+        assert!(
+            manifest.is_resource_supported("claude-code", crate::core::ResourceType::McpServer)
+        );
+        assert!(manifest.is_resource_supported("opencode", crate::core::ResourceType::McpServer));
+
+        // Agents should be supported (via path)
+        assert!(manifest.is_resource_supported("claude-code", crate::core::ResourceType::Agent));
+
+        // Hooks not supported by opencode (no merge_target or path)
+        assert!(!manifest.is_resource_supported("opencode", crate::core::ResourceType::Hook));
+
+        // Scripts not supported by opencode
+        assert!(!manifest.is_resource_supported("opencode", crate::core::ResourceType::Script));
+    }
+
+    #[test]
+    fn test_merge_target_serialization() {
+        use tempfile::tempdir;
+
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.custom-tool]
+path = ".custom"
+enabled = true
+
+[tools.custom-tool.resources.hooks]
+merge-target = ".custom/hooks.json"
+"#;
+
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+        std::fs::write(&manifest_path, toml).unwrap();
+
+        let manifest = Manifest::load(&manifest_path).expect("Failed to load");
+
+        // Serialize and check
+        let output_path = temp.path().join("output.toml");
+        manifest.save(&output_path).expect("Failed to save");
+
+        let output_toml = std::fs::read_to_string(&output_path).expect("Failed to read output");
+
+        // Should contain merge-target
+        assert!(output_toml.contains("merge-target"));
+        assert!(output_toml.contains(".custom/hooks.json"));
+    }
+
+    #[test]
+    fn test_merge_target_not_serialized_when_none() {
+        // This test verifies the skip_serializing_if works for merge_target
+        let config = ResourceConfig {
+            path: Some("test".to_string()),
+            merge_target: None,
+        };
+
+        let config_toml = toml::to_string(&config).expect("Failed to serialize config");
+        assert!(!config_toml.contains("merge-target"));
     }
 }

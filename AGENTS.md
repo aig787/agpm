@@ -299,6 +299,41 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Hooks**: Configure in .claude/settings.local.json
 - **MCP**: Configure in .mcp.json
 
+### Multi-Tool Support & Merge Targets
+
+AGPM supports multiple AI coding tools (claude-code, opencode, agpm, custom) via configurable tools. Some resource types (hooks, MCP servers) don't install as individual files but merge into shared configuration files.
+
+**Default Merge Targets**:
+- **Hooks** (claude-code): `.claude/settings.local.json`
+- **MCP Servers** (claude-code): `.mcp.json`
+- **MCP Servers** (opencode): `.opencode/opencode.json`
+
+**Custom Tool Configuration**:
+
+```toml
+# Override merge targets for custom tools
+[tools.my-tool]
+path = ".my-tool"
+
+[tools.my-tool.resources.hooks]
+merge-target = ".my-tool/hooks.json"
+
+[tools.my-tool.resources.mcp-servers]
+merge-target = ".my-tool/servers.json"
+
+# Configure default tools per resource type
+[default-tools]
+snippets = "claude-code"  # Override default (agpm) for Claude-only users
+agents = "opencode"       # Default agents to OpenCode
+```
+
+**Resource Configuration**:
+- **`path`**: File-based resources (agents, snippets, commands, scripts) install as individual files
+- **`merge-target`**: Config-based resources (hooks, MCP servers) merge into shared JSON files
+- A resource type is supported if EITHER `path` OR `merge-target` is specified
+
+**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers.
+
 ## Example agpm.toml Format
 
 ```toml
