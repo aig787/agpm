@@ -1660,7 +1660,12 @@ impl DependencyResolver {
                         };
 
                         // Generate a name for the transitive dependency
-                        let trans_name = self.generate_dependency_name(trans_dep.get_path());
+                        // Use explicit name from DependencySpec if provided, otherwise derive from path
+                        let trans_name = dep_spec
+                            .name
+                            .as_ref()
+                            .map(|s| s.clone())
+                            .unwrap_or_else(|| self.generate_dependency_name(trans_dep.get_path()));
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =

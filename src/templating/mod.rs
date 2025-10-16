@@ -45,6 +45,10 @@
 //!
 //! ## Dependency References
 //!
+//! Dependencies are accessible by name in the template context. The name is determined by:
+//! 1. For manifest deps: the key in `[agents]`, `[snippets]`, etc.
+//! 2. For transitive deps: the `name` field if specified, otherwise derived from path
+//!
 //! ```markdown
 //! ## Dependencies
 //!
@@ -57,6 +61,17 @@
 //! - {{ agent.name }} ({{ agent.version }})
 //! {% endfor %}
 //! {% endif %}
+//! ```
+//!
+//! ### Custom Names for Transitive Dependencies
+//!
+//! ```yaml
+//! ---
+//! dependencies:
+//!   agents:
+//!     - path: "../shared/complex-path/helper.md"
+//!       name: "helper"  # Use "helper" instead of deriving from path
+//! ---
 //! ```
 //!
 //! ## Conditional Content
