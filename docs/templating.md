@@ -138,6 +138,76 @@ Refer to:
 
 See the [Manifest Reference](manifest-reference.md#project-variables) for more details.
 
+### Templating Dependency Paths
+
+Project variables can be used in **transitive dependency paths** within resource frontmatter. This enables dynamic dependency resolution based on project configuration.
+
+**Use Case**: Language-specific or framework-specific dependency paths.
+
+**Example** - Language-specific style guide:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: snippets/standards/{{ agpm.project.language }}-guide.md
+      version: v1.0.0
+---
+# Code Reviewer Agent
+
+Reviews code according to language-specific standards.
+```
+
+With `agpm.toml`:
+```toml
+[project]
+language = "rust"
+```
+
+The dependency path resolves to: `snippets/standards/rust-guide.md`
+
+**Example** - Framework-specific configuration:
+
+```yaml
+---
+dependencies:
+  commands:
+    - path: commands/{{ agpm.project.framework }}/deploy.md
+---
+# Deployment Agent
+```
+
+**Optional Variables**: Use the `default` filter for optional variables:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: configs/{{ agpm.project.env | default(value="development") }}-config.md
+---
+```
+
+**Opt-Out**: Disable templating for specific resources using `agpm.templating: false`:
+
+```yaml
+---
+agpm:
+  templating: false
+dependencies:
+  snippets:
+    # Template syntax preserved literally - not rendered
+    - path: examples/{{ literal_syntax }}.md
+---
+```
+
+**Key Features**:
+- ✅ Uses same `agpm.project.*` variables as content templates
+- ✅ Respects per-resource `agpm.templating` opt-out setting
+- ✅ Works in both YAML frontmatter and JSON dependencies
+- ✅ Errors on undefined variables (use `default` filter for optional vars)
+
+See [Transitive Dependencies](manifest-reference.md#transitive-dependencies) for more details on dependency declaration.
+
 ### Important Notes
 
 **Resource Name Sanitization**: Resource names containing hyphens are automatically converted to underscores in template variable names to avoid conflicts with Tera's minus operator. For example:

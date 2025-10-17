@@ -115,9 +115,45 @@ dependencies:
 
 ### Dependency Fields
 
-- **`path`** (required): Path to the dependency file within the same source repository
+- **`path`** (required): Path to the dependency file within the same source repository. **Supports templates** using `{{ agpm.project.* }}` variables
 - **`version`** (optional): Version constraint (e.g., `v1.0.0`, `^v2.1.0`). If omitted, inherits from parent resource
 - **`tool`** (optional): Target tool (`claude-code`, `opencode`, `agpm`). If omitted, inherits from parent if compatible, otherwise uses resource type default
+
+### Templated Dependency Paths
+
+Dependency paths support template variables from the `[project]` section, enabling dynamic dependency resolution based on project configuration.
+
+**Example** - Language-specific dependencies:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: snippets/standards/{{ agpm.project.language }}-guide.md
+      version: v1.0.0
+  commands:
+    - path: commands/{{ agpm.project.framework }}/deploy.md
+---
+```
+
+With project configuration:
+```toml
+[project]
+language = "rust"
+framework = "tokio"
+```
+
+Resolves to:
+- `snippets/standards/rust-guide.md`
+- `commands/tokio/deploy.md`
+
+**Features**:
+- Uses same `agpm.project.*` context as content templating
+- Supports the `default` filter for optional variables: `{{ agpm.project.env | default(value="dev") }}`
+- Respects per-resource `agpm.templating: false` opt-out
+- Errors on undefined variables (use `default` filter for optional variables)
+
+See [Templating Guide](templating.md#templating-dependency-paths) for more details and examples.
 
 ### Resolution Rules
 

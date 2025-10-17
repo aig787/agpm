@@ -25,6 +25,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, works for Git-backed and path-only deps with file-relative path support
 - 📝 **Markdown templating** - Optional dynamic content generation with access to installation metadata and dependency references (opt-in per resource via frontmatter)
 - 🎨 **Project template variables** - Define arbitrary project-specific variables for AI agents (style guides, conventions, coding standards)
+- 🎯 **Templated dependency paths** - Use project variables in transitive dependency paths for dynamic, configuration-driven resolution
 
 ## Requirements
 
@@ -283,6 +284,7 @@ dependencies:
 
 - **Path-only transitive support**: Dependencies without Git sources now support transitive dependencies
 - **File-relative paths**: Paths starting with `./` or `../` are resolved relative to the parent resource file
+- **Templated dependency paths**: Use `{{ agpm.project.* }}` variables in dependency paths for dynamic resolution
 - Dependencies inherit the source from their parent resource (Git URL or local path)
 - Version is optional - defaults to parent's version if not specified (Git-backed only)
 - Supports all resource types: agents, snippets, commands, scripts, hooks, mcp-servers
