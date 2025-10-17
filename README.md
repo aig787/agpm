@@ -69,6 +69,9 @@ For more installation options, see the [Installation Guide](docs/installation.md
 # Initialize a new AGPM project
 agpm init
 
+# Update existing manifest with default configurations (preserves comments and values)
+agpm init --defaults
+
 # Or manually create agpm.toml:
 ```
 

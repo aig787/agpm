@@ -21,7 +21,7 @@ Options:
 
 ### `agpm init`
 
-Initialize a new AGPM project by creating a `agpm.toml` manifest file.
+Initialize a new AGPM project by creating a `agpm.toml` manifest file, or merge default configurations into an existing manifest.
 
 ```bash
 agpm init [OPTIONS]
@@ -29,10 +29,11 @@ agpm init [OPTIONS]
 Options:
       --path <PATH>    Initialize in specific directory (default: current directory)
       --force          Overwrite existing agpm.toml file
+      --defaults       Merge default configurations into existing manifest
   -h, --help           Print help information
 ```
 
-**Example:**
+**Examples:**
 ```bash
 # Initialize in current directory
 agpm init
@@ -42,7 +43,26 @@ agpm init --path ./my-project
 
 # Force overwrite existing manifest
 agpm init --force
+
+# Update existing manifest with default configurations
+# (preserves all existing values, comments, and formatting)
+agpm init --defaults
+
+# Useful for updating old manifests to include new default sections
+# like [tools.claude-code], [tools.opencode], [tools.agpm], etc.
 ```
+
+**About --defaults flag:**
+
+The `--defaults` flag merges missing default configurations into an existing `agpm.toml` while preserving:
+- All existing values and dependencies
+- All comments and formatting
+- Custom tool configurations
+
+This is useful for:
+- Updating old manifests created before multi-tool support
+- Adding new default sections (tools, resource types) to existing projects
+- Ensuring your manifest has all standard configurations without manual editing
 
 ### `agpm install`
 

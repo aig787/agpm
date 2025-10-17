@@ -57,6 +57,73 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
+/// Default manifest template used for fresh initialization.
+///
+/// This template includes all standard tool configurations (claude-code, opencode, agpm)
+/// with their default resource paths and settings. It's also used by the `--defaults`
+/// flag to merge missing configurations into existing manifests.
+const DEFAULT_MANIFEST_TEMPLATE: &str = r#"# AGPM Manifest
+# This file defines your Claude Code resource dependencies
+
+[sources]
+# Add your Git repository sources here
+# Example: official = "https://github.com/aig787/agpm-community.git"
+
+# Project-specific template variables (optional)
+# Provides context to AI agents - use any structure you want!
+# [project]
+# style_guide = "docs/STYLE_GUIDE.md"
+# max_line_length = 100
+# test_framework = "pytest"
+#
+# [project.paths]
+# architecture = "docs/ARCHITECTURE.md"
+# conventions = "docs/CONVENTIONS.md"
+#
+# Access in templates: {{ agpm.project.style_guide }}
+
+# Tool type configurations (multi-tool support)
+[tools.claude-code]
+path = ".claude"
+resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {} }
+# Note: hooks and mcp-servers merge into configuration files (no file installation)
+
+[tools.opencode]
+enabled = false  # Enable if you want to use OpenCode resources
+path = ".opencode"
+resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
+# Note: MCP servers merge into opencode.json (no file installation)
+
+[tools.agpm]
+path = ".agpm"
+resources = { snippets = { path = "snippets" } }
+
+[agents]
+# Add your agent dependencies here
+# Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
+# For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", tool = "opencode" }
+
+[snippets]
+# Add your snippet dependencies here
+# Example: utils = { source = "official", path = "snippets/utils.md", tool = "agpm" }
+
+[commands]
+# Add your command dependencies here
+# Example: deploy = { source = "official", path = "commands/deploy.md" }
+
+[scripts]
+# Add your script dependencies here
+# Example: build = { source = "official", path = "scripts/build.sh" }
+
+[hooks]
+# Add your hook dependencies here
+# Example: pre-commit = { source = "official", path = "hooks/pre-commit.json" }
+
+[mcp-servers]
+# Add your MCP server dependencies here
+# Example: filesystem = { source = "official", path = "mcp-servers/filesystem.json" }
+"#;
+
 /// Command to initialize a new AGPM project with a manifest file.
 ///
 /// This command creates a `agpm.toml` manifest file in the specified directory
@@ -73,12 +140,21 @@ use std::path::PathBuf;
 /// let cmd = InitCommand {
 ///     path: None,
 ///     force: false,
+///     defaults: false,
 /// };
 ///
 /// // Initialize in specific directory with force overwrite
 /// let cmd = InitCommand {
 ///     path: Some(PathBuf::from("./my-project")),
 ///     force: true,
+///     defaults: false,
+/// };
+///
+/// // Merge defaults into existing manifest
+/// let cmd = InitCommand {
+///     path: None,
+///     force: false,
+///     defaults: true,
 /// };
 /// ```
 #[derive(Args)]
@@ -96,6 +172,17 @@ pub struct InitCommand {
     /// in the target directory. Use this flag to overwrite an existing file.
     #[arg(short, long)]
     force: bool,
+
+    /// Merge default configurations into existing manifest
+    ///
+    /// Instead of creating a new manifest, this flag loads an existing `agpm.toml`,
+    /// merges in any missing default configurations (tool configs, resource sections),
+    /// and saves the result while preserving all existing values and comments.
+    ///
+    /// This is useful for updating old manifests to include new default configurations
+    /// without overwriting customizations.
+    #[arg(long)]
+    defaults: bool,
 }
 
 impl InitCommand {
@@ -207,6 +294,11 @@ impl InitCommand {
     /// # });
     /// ```
     pub async fn execute(self) -> Result<()> {
+        // If --defaults flag is set, merge defaults into existing manifest
+        if self.defaults {
+            return self.execute_with_defaults().await;
+        }
+
         let target_dir = self.path.unwrap_or_else(|| PathBuf::from("."));
         let manifest_path = target_dir.join("agpm.toml");
 
@@ -223,69 +315,8 @@ impl InitCommand {
             fs::create_dir_all(&target_dir)?;
         }
 
-        // Write a minimal template with empty sections
-        let template = r#"# AGPM Manifest
-# This file defines your Claude Code resource dependencies
-
-[sources]
-# Add your Git repository sources here
-# Example: official = "https://github.com/aig787/agpm-community.git"
-
-# Project-specific template variables (optional)
-# Provides context to AI agents - use any structure you want!
-# [project]
-# style_guide = "docs/STYLE_GUIDE.md"
-# max_line_length = 100
-# test_framework = "pytest"
-#
-# [project.paths]
-# architecture = "docs/ARCHITECTURE.md"
-# conventions = "docs/CONVENTIONS.md"
-#
-# Access in templates: {{ agpm.project.style_guide }}
-
-# Tool type configurations (multi-tool support)
-[tools.claude-code]
-path = ".claude"
-resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {} }
-# Note: hooks and mcp-servers merge into configuration files (no file installation)
-
-[tools.opencode]
-enabled = false  # Enable if you want to use OpenCode resources
-path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
-# Note: MCP servers merge into opencode.json (no file installation)
-
-[tools.agpm]
-path = ".agpm"
-resources = { snippets = { path = "snippets" } }
-
-[agents]
-# Add your agent dependencies here
-# Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-# For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", tool = "opencode" }
-
-[snippets]
-# Add your snippet dependencies here
-# Example: utils = { source = "official", path = "snippets/utils.md", tool = "agpm" }
-
-[commands]
-# Add your command dependencies here
-# Example: deploy = { source = "official", path = "commands/deploy.md" }
-
-[scripts]
-# Add your script dependencies here
-# Example: build = { source = "official", path = "scripts/build.sh" }
-
-[hooks]
-# Add your hook dependencies here
-# Example: pre-commit = { source = "official", path = "hooks/pre-commit.json" }
-
-[mcp-servers]
-# Add your MCP server dependencies here
-# Example: filesystem = { source = "official", path = "mcp-servers/filesystem.json" }
-"#;
-        fs::write(&manifest_path, template)?;
+        // Write the default template
+        fs::write(&manifest_path, DEFAULT_MANIFEST_TEMPLATE)?;
 
         // Add .agpm/backups/ to .gitignore
         Self::update_gitignore(&target_dir)?;
@@ -302,6 +333,119 @@ resources = { snippets = { path = "snippets" } }
 
         Ok(())
     }
+
+    /// Execute init with --defaults flag to merge default configurations.
+    ///
+    /// This method loads an existing manifest, parses the default template, merges
+    /// them at the TOML document level (preserving comments), and saves the result.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if defaults were successfully merged
+    /// - `Err(anyhow::Error)` if:
+    ///   - No manifest exists at the target path
+    ///   - Unable to parse existing manifest or default template
+    ///   - Unable to write the merged result
+    async fn execute_with_defaults(&self) -> Result<()> {
+        let target_dir = self.path.clone().unwrap_or_else(|| PathBuf::from("."));
+        let manifest_path = target_dir.join("agpm.toml");
+
+        // Check that manifest exists
+        if !manifest_path.exists() {
+            return Err(anyhow!(
+                "No manifest found at {}\nRun 'agpm init' first to create a new manifest.",
+                manifest_path.display()
+            ));
+        }
+
+        // Parse default template as Document
+        let default_doc = DEFAULT_MANIFEST_TEMPLATE
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|e| anyhow!("Failed to parse default template: {}", e))?;
+
+        // Load existing manifest as Document (preserves comments!)
+        let existing_content = fs::read_to_string(&manifest_path)?;
+        let mut existing_doc = existing_content
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|e| anyhow!("Failed to parse existing manifest: {}", e))?;
+
+        // Merge: add missing keys from defaults, preserve existing
+        Self::merge_toml_documents(&mut existing_doc, &default_doc);
+
+        // Write merged document back
+        fs::write(&manifest_path, existing_doc.to_string())?;
+
+        // Update .gitignore
+        Self::update_gitignore(&target_dir)?;
+
+        println!("{} Updated agpm.toml with default configurations", "✓".green());
+
+        Ok(())
+    }
+
+    /// Merge two TOML documents, with existing values taking precedence.
+    ///
+    /// This is a wrapper around `merge_toml_tables` that operates at the document level.
+    ///
+    /// # Arguments
+    ///
+    /// * `existing` - The existing document (will be modified in place)
+    /// * `defaults` - The default template document (read-only)
+    fn merge_toml_documents(
+        existing: &mut toml_edit::DocumentMut,
+        defaults: &toml_edit::DocumentMut,
+    ) {
+        Self::merge_toml_tables(existing.as_table_mut(), defaults.as_table());
+    }
+
+    /// Recursively merge TOML tables, with existing values taking precedence.
+    ///
+    /// For each key in the defaults table:
+    /// - If the key doesn't exist in existing, add it from defaults
+    /// - If both are tables (regular or inline), recurse to merge nested keys
+    /// - Otherwise, keep the existing value unchanged
+    ///
+    /// This preserves all comments, formatting, and existing values in the existing table.
+    ///
+    /// # Arguments
+    ///
+    /// * `existing` - The existing table (modified in place)
+    /// * `defaults` - The defaults table (read-only)
+    fn merge_toml_tables(existing: &mut toml_edit::Table, defaults: &toml_edit::Table) {
+        for (key, default_value) in defaults.iter() {
+            if !existing.contains_key(key) {
+                // Key missing in existing - add from defaults
+                existing.insert(key, default_value.clone());
+            } else {
+                // Key exists - recurse if both are tables
+                match (existing.get_mut(key), default_value) {
+                    (
+                        Some(toml_edit::Item::Table(existing_table)),
+                        toml_edit::Item::Table(default_table),
+                    ) => {
+                        // Both are regular tables - recurse
+                        Self::merge_toml_tables(existing_table, default_table);
+                    }
+                    (
+                        Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(
+                            existing_inline,
+                        ))),
+                        toml_edit::Item::Value(toml_edit::Value::InlineTable(default_inline)),
+                    ) => {
+                        // Both are inline tables - merge keys
+                        for (inline_key, inline_default_value) in default_inline.iter() {
+                            if !existing_inline.contains_key(inline_key) {
+                                existing_inline.insert(inline_key, inline_default_value.clone());
+                            }
+                        }
+                    }
+                    _ => {
+                        // Different types or non-table - existing wins, do nothing
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -315,6 +459,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -337,6 +482,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(new_dir.clone()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -355,6 +501,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -371,6 +518,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: true,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -389,6 +537,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -402,6 +551,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -434,6 +584,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(nested_path.clone()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -455,6 +606,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
         let result = cmd.execute().await;
         assert!(result.is_err());
@@ -467,6 +619,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: true,
+            defaults: false,
         };
         let result = cmd.execute().await;
         assert!(result.is_ok());
@@ -483,6 +636,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -508,6 +662,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -534,6 +689,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -557,6 +713,7 @@ mod tests {
         let cmd = InitCommand {
             path: Some(temp_dir.path().to_path_buf()),
             force: false,
+            defaults: false,
         };
 
         let result = cmd.execute().await;
@@ -573,5 +730,170 @@ mod tests {
         assert!(lines.contains(&".agpm/backups/"));
         assert!(lines.contains(&"agpm.private.toml"));
         assert!(lines.contains(&"agpm.private.lock"));
+    }
+
+    #[tokio::test]
+    async fn test_init_defaults_preserves_comments() {
+        let temp_dir = TempDir::new().unwrap();
+        let manifest_path = temp_dir.path().join("agpm.toml");
+
+        // Create manifest with custom comments
+        let manifest_content = r#"
+# My custom comment about sources
+[sources]
+community = "https://github.com/example/repo.git"
+
+# Note: I only use Claude Code
+[agents]
+my-agent = { source = "community", path = "agents/my-agent.md", version = "v1.0.0" }
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        // Verify comments are preserved
+        assert!(content.contains("# My custom comment about sources"));
+        assert!(content.contains("# Note: I only use Claude Code"));
+        // Verify existing values preserved
+        assert!(content.contains("community"));
+        assert!(content.contains("my-agent"));
+        // Verify tools were added
+        assert!(content.contains("[tools.claude-code]"));
+        assert!(content.contains("[tools.opencode]"));
+        assert!(content.contains("[tools.agpm]"));
+    }
+
+    #[tokio::test]
+    async fn test_init_defaults_adds_missing_sections() {
+        let temp_dir = TempDir::new().unwrap();
+        let manifest_path = temp_dir.path().join("agpm.toml");
+
+        // Create minimal manifest with only sources
+        let manifest_content = r#"
+[sources]
+community = "https://github.com/example/repo.git"
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        // Verify all tool sections were added
+        assert!(content.contains("[tools.claude-code]"));
+        assert!(content.contains("[tools.opencode]"));
+        assert!(content.contains("[tools.agpm]"));
+        // Verify existing source preserved
+        assert!(content.contains("community"));
+        assert!(content.contains("https://github.com/example/repo.git"));
+        // Verify resource sections added
+        assert!(content.contains("[agents]"));
+        assert!(content.contains("[snippets]"));
+        assert!(content.contains("[commands]"));
+    }
+
+    #[tokio::test]
+    async fn test_init_defaults_preserves_existing_tools() {
+        let temp_dir = TempDir::new().unwrap();
+        let manifest_path = temp_dir.path().join("agpm.toml");
+
+        // Create manifest with custom claude-code config
+        let manifest_content = r#"
+[sources]
+community = "https://github.com/example/repo.git"
+
+[tools.claude-code]
+path = ".my-custom-claude"
+resources = { agents = { path = "my-agents" } }
+
+[agents]
+my-agent = { source = "community", path = "agents/my-agent.md" }
+"#;
+        fs::write(&manifest_path, manifest_content).unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        // Verify custom claude-code config preserved
+        assert!(content.contains(".my-custom-claude"));
+        assert!(content.contains("my-agents"));
+        // Verify other tools added
+        assert!(content.contains("[tools.opencode]"));
+        assert!(content.contains("[tools.agpm]"));
+        // Verify existing agent preserved
+        assert!(content.contains("my-agent"));
+    }
+
+    #[tokio::test]
+    async fn test_init_defaults_fails_if_no_manifest() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("No manifest found"));
+        assert!(error_msg.contains("agpm init"));
+    }
+
+    #[tokio::test]
+    async fn test_init_defaults_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let manifest_path = temp_dir.path().join("agpm.toml");
+
+        // Write the default template
+        fs::write(&manifest_path, DEFAULT_MANIFEST_TEMPLATE).unwrap();
+
+        // Run --defaults on already complete manifest
+        let cmd = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result = cmd.execute().await;
+        assert!(result.is_ok());
+
+        // Verify content is essentially unchanged (toml_edit may normalize formatting)
+        let content = fs::read_to_string(&manifest_path).unwrap();
+        assert!(content.contains("[tools.claude-code]"));
+        assert!(content.contains("[tools.opencode]"));
+        assert!(content.contains("[tools.agpm]"));
+
+        // Run again to verify true idempotency
+        let cmd2 = InitCommand {
+            path: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            defaults: true,
+        };
+
+        let result2 = cmd2.execute().await;
+        assert!(result2.is_ok());
     }
 }
