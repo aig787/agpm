@@ -56,7 +56,7 @@ async fn test_instance_cache_reuse() -> Result<()> {
     );
 
     // Verify all files were installed correctly
-    // Files use basename from path, not dependency name
+    // Paths are preserved as-is from dependency specification
     assert!(project.project_path().join(".claude/agents/agent-1.md").exists());
     assert!(project.project_path().join(".claude/agents/agent-2.md").exists());
     assert!(project.project_path().join(".claude/agents/agent-3.md").exists());
@@ -107,7 +107,7 @@ async fn test_fetch_caching_prevents_redundancy() -> Result<()> {
     );
 
     // Verify all resources installed
-    // Files use basename from path, not dependency name
+    // Paths are preserved as-is from dependency specification
     assert!(project.project_path().join(".claude/agents/fetch-agent-1.md").exists());
     assert!(project.project_path().join(".claude/agents/fetch-agent-2.md").exists());
     assert!(project.project_path().join(".agpm/snippets/fetch-snippet-1.md").exists());
@@ -159,7 +159,7 @@ async fn test_cache_high_concurrency() -> Result<()> {
     println!("High concurrency install took: {:?}", duration);
 
     // Verify all agents were installed
-    // Files use basename from path, not dependency name
+    // Paths are preserved as-is from dependency specification
     for i in 0..20 {
         let agent_path =
             project.project_path().join(format!(".claude/agents/concurrent-agent-{:02}.md", i));
@@ -210,7 +210,7 @@ async fn test_cache_persistence() -> Result<()> {
     output.assert_success();
 
     // Verify final state
-    // Files use basename from path, not dependency name
+    // Paths are preserved as-is from dependency specification
     assert!(project.project_path().join(".claude/agents/persistent-agent.md").exists());
     assert!(project.project_path().join(".agpm/snippets/persistent-snippet.md").exists());
 

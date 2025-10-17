@@ -3,7 +3,6 @@
 //! These tests verify that AGPM correctly manages .gitignore files
 //! based on the target.gitignore configuration setting.
 
-use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::Result;
 use std::path::Path;
 use tokio::fs;
@@ -11,9 +10,9 @@ use tokio::fs;
 use crate::common::{ManifestBuilder, TestProject};
 
 /// Helper to create a test manifest with gitignore configuration
-async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
-    // Convert path to string with forward slashes for TOML compatibility
-    let source_path = normalize_path_for_storage(source_dir);
+async fn create_test_manifest(gitignore: bool, _source_dir: &Path) -> String {
+    // Use relative paths from project directory to sources directory
+    // This avoids deep nesting from absolute temp paths
     ManifestBuilder::new()
         .with_target_config(|t| {
             t.agents(".claude/agents")
@@ -21,21 +20,24 @@ async fn create_test_manifest(gitignore: bool, source_dir: &Path) -> String {
                 .commands(".claude/commands")
                 .gitignore(gitignore)
         })
-        .add_local_agent("test-agent", &format!("{}/agents/test.md", source_path))
-        .add_local_snippet("test-snippet", &format!("{}/snippets/test.md", source_path))
-        .add_local_command("test-command", &format!("{}/commands/test.md", source_path))
+        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
+        .add_snippet("test-snippet", |d| {
+            d.path("../sources/source/snippets/test.md").flatten(false)
+        })
+        .add_command("test-command", |d| {
+            d.path("../sources/source/commands/test.md").flatten(false)
+        })
         .build()
 }
 
 /// Helper to create a test manifest without explicit gitignore setting
-async fn create_test_manifest_default(source_dir: &Path) -> String {
-    // Convert path to string with forward slashes for TOML compatibility
-    let source_path = normalize_path_for_storage(source_dir);
+async fn create_test_manifest_default(_source_dir: &Path) -> String {
+    // Use relative paths from project directory to sources directory
     ManifestBuilder::new()
         .with_target_config(|t| {
             t.agents(".claude/agents").snippets(".agpm/snippets").commands(".claude/commands")
         })
-        .add_local_agent("test-agent", &format!("{}/agents/test.md", source_path))
+        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
         .build()
 }
 
@@ -150,7 +152,7 @@ temp/
     // Check that AGPM section exists (entries will be based on what was actually installed)
     assert!(updated_content.contains("AGPM managed entries"));
     assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".agpm/snippets/test-snippet.md"));
+    assert!(updated_content.contains(".agpm/snippets/sources/source/snippets/test.md"));
 }
 
 #[tokio::test]
@@ -199,7 +201,7 @@ debug/
     // Check AGPM section is updated
     assert!(updated_content.contains("AGPM managed entries"));
     assert!(updated_content.contains("# End of AGPM managed entries"));
-    assert!(updated_content.contains(".agpm/snippets/test-snippet.md"));
+    assert!(updated_content.contains(".agpm/snippets/sources/source/snippets/test.md"));
 
     // Check content after AGPM section is preserved
     assert!(updated_content.contains("# Additional entries after AGPM section"));
@@ -286,6 +288,7 @@ async fn test_gitignore_handles_external_paths() {
     assert!(content.contains("# End of AGPM managed entries"), "Should have end marker");
 
     // Scripts default to .claude/scripts/ directory
+    // Paths are preserved as-is from dependency specification
     assert!(
         content.contains(".claude/scripts/test.sh")
             || content.contains(".claude/scripts/external-script.sh"),
@@ -294,6 +297,7 @@ async fn test_gitignore_handles_external_paths() {
     );
 
     // Agents go to .claude/agents/
+    // Paths are preserved as-is from dependency specification
     assert!(
         content.contains(".claude/agents/test-agent.md")
             || content.contains(".claude/agents/internal-agent.md"),
@@ -430,25 +434,27 @@ async fn test_gitignore_actually_ignored_by_git() {
 
     project.run_agpm(&["install", "--quiet"]).unwrap().assert_success();
 
-    assert!(project_dir.join(".claude/agents/test-agent.md").exists());
-    assert!(project_dir.join(".agpm/snippets/test-snippet.md").exists());
-    assert!(project_dir.join(".claude/commands/test-command.md").exists());
+    // After stripping parent directory components from paths like "../sources/source/agents/test.md"
+    // we get "sources/source/agents/test.md" which installs to ".claude/agents/sources/source/agents/test.md"
+    assert!(project_dir.join(".claude/agents/sources/source/agents/test.md").exists());
+    assert!(project_dir.join(".agpm/snippets/sources/source/snippets/test.md").exists());
+    assert!(project_dir.join(".claude/commands/sources/source/commands/test.md").exists());
 
     git.add_all().unwrap();
     let status = git.status_porcelain().unwrap();
 
     assert!(
-        !status.contains("agents/test-agent.md"),
+        !status.contains("sources/source/agents/test.md"),
         "Agent file should be ignored by git\nGit status:\n{}",
         status
     );
     assert!(
-        !status.contains("snippets/test-snippet.md"),
+        !status.contains("sources/source/snippets/test.md"),
         "Snippet file should be ignored by git\nGit status:\n{}",
         status
     );
     assert!(
-        !status.contains("commands/test-command.md"),
+        !status.contains("sources/source/commands/test.md"),
         "Command file should be ignored by git\nGit status:\n{}",
         status
     );
@@ -469,15 +475,15 @@ async fn test_gitignore_actually_ignored_by_git() {
     );
 
     assert!(
-        git.check_ignore(".claude/agents/test-agent.md").unwrap(),
+        git.check_ignore(".claude/agents/sources/source/agents/test.md").unwrap(),
         "Agent file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".agpm/snippets/test-snippet.md").unwrap(),
+        git.check_ignore(".agpm/snippets/sources/source/snippets/test.md").unwrap(),
         "Snippet file should be ignored by git check-ignore"
     );
     assert!(
-        git.check_ignore(".claude/commands/test-command.md").unwrap(),
+        git.check_ignore(".claude/commands/sources/source/commands/test.md").unwrap(),
         "Command file should be ignored by git check-ignore"
     );
 }

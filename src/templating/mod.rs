@@ -45,6 +45,10 @@
 //!
 //! ## Dependency References
 //!
+//! Dependencies are accessible by name in the template context. The name is determined by:
+//! 1. For manifest deps: the key in `[agents]`, `[snippets]`, etc.
+//! 2. For transitive deps: the `name` field if specified, otherwise derived from path
+//!
 //! ```markdown
 //! ## Dependencies
 //!
@@ -57,6 +61,17 @@
 //! - {{ agent.name }} ({{ agent.version }})
 //! {% endfor %}
 //! {% endif %}
+//! ```
+//!
+//! ### Custom Names for Transitive Dependencies
+//!
+//! ```yaml
+//! ---
+//! dependencies:
+//!   agents:
+//!     - path: "../shared/complex-path/helper.md"
+//!       name: "helper"  # Use "helper" instead of deriving from path
+//! ---
 //! ```
 //!
 //! ## Conditional Content
@@ -317,9 +332,27 @@ impl TemplateContextBuilder {
                     checksum: resource.checksum.clone(),
                     path: resource.path.clone(),
                 };
+
+                // Use manifest_alias if available, otherwise use resource name
+                // For path-like names (containing / or \), extract just the basename
+                // This ensures clean keys like "ai_attribution" instead of full paths
+                let key_name = if let Some(alias) = &resource.manifest_alias {
+                    alias.clone()
+                } else if resource.name.contains('/') || resource.name.contains('\\') {
+                    // Name looks like a path - extract basename without extension
+                    std::path::Path::new(&resource.name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&resource.name)
+                        .to_string()
+                } else {
+                    // Use name as-is
+                    resource.name.clone()
+                };
+
                 // Sanitize the key name by replacing hyphens with underscores
                 // to avoid Tera interpreting them as minus operators
-                let sanitized_key = resource.name.replace('-', "_");
+                let sanitized_key = key_name.replace('-', "_");
                 type_deps.insert(sanitized_key, template_data);
             }
 
@@ -507,13 +540,105 @@ impl TemplateRenderer {
             return Ok(template_content.to_string());
         }
 
+        // Log the template context for debugging
         tracing::debug!("Rendering template with context");
+        Self::log_context_as_kv(context);
+
         // Render the template
-        self.tera.render_str(template_content, context).map_err(|e| {
-            // Extract more details from the Tera error
-            let error_msg = format!("{:?}", e);
-            anyhow::anyhow!("Template rendering failed: {}", error_msg)
-        })
+        self.tera
+            .render_str(template_content, context)
+            .map_err(|e| {
+                // Use Display format for more user-friendly error messages
+                // The Tera error already contains detailed information about:
+                // - Missing variables (e.g., "Variable `foo` not found")
+                // - Syntax errors (e.g., "Unexpected end of template")
+                // - Filter/function errors (e.g., "Filter `unknown` not found")
+                // Include the context in the error message for user visibility
+                let context_str = Self::format_context_as_string(context);
+                anyhow::Error::new(e)
+                    .context(format!("Template rendering failed - check syntax and variable names\n\nTemplate context:\n{}", context_str))
+            })
+    }
+
+    /// Format the template context as a string for error messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The Tera context to format
+    fn format_context_as_string(context: &TeraContext) -> String {
+        let context_clone = context.clone();
+        let json_value = context_clone.into_json();
+        let mut output = String::new();
+
+        // Recursively format the JSON structure with indentation
+        fn format_value(key: &str, value: &serde_json::Value, indent: usize) -> Vec<String> {
+            let prefix = "  ".repeat(indent);
+            let mut lines = Vec::new();
+
+            match value {
+                serde_json::Value::Object(map) => {
+                    lines.push(format!("{}{}:", prefix, key));
+                    for (k, v) in map {
+                        lines.extend(format_value(k, v, indent + 1));
+                    }
+                }
+                serde_json::Value::Array(arr) => {
+                    lines.push(format!("{}{}: [{} items]", prefix, key, arr.len()));
+                    // Only show first few items to avoid spam
+                    for (i, item) in arr.iter().take(3).enumerate() {
+                        lines.extend(format_value(&format!("[{}]", i), item, indent + 1));
+                    }
+                    if arr.len() > 3 {
+                        lines.push(format!("{}  ... {} more items", prefix, arr.len() - 3));
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    // Truncate long strings
+                    if s.len() > 100 {
+                        lines.push(format!(
+                            "{}{}: \"{}...\" ({} chars)",
+                            prefix,
+                            key,
+                            &s[..97],
+                            s.len()
+                        ));
+                    } else {
+                        lines.push(format!("{}{}: \"{}\"", prefix, key, s));
+                    }
+                }
+                serde_json::Value::Number(n) => {
+                    lines.push(format!("{}{}: {}", prefix, key, n));
+                }
+                serde_json::Value::Bool(b) => {
+                    lines.push(format!("{}{}: {}", prefix, key, b));
+                }
+                serde_json::Value::Null => {
+                    lines.push(format!("{}{}: null", prefix, key));
+                }
+            }
+            lines
+        }
+
+        if let serde_json::Value::Object(map) = &json_value {
+            for (key, value) in map {
+                output.push_str(&format_value(key, value, 1).join("\n"));
+                output.push('\n');
+            }
+        }
+
+        output
+    }
+
+    /// Log the template context as key-value pairs at debug level.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The Tera context to log
+    fn log_context_as_kv(context: &TeraContext) {
+        let formatted = Self::format_context_as_string(context);
+        for line in formatted.lines() {
+            tracing::debug!("{}", line);
+        }
     }
 
     /// Check if content contains Tera template syntax.

@@ -26,24 +26,29 @@ async fn test_opencode_agent_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_agent("opencode-helper", |d| {
-            d.source("test_repo").path("agents/helper.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("agents/helper.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify agent installed to .opencode/agent/ (singular)
-    let agent_path = project.project_path().join(".opencode/agent/helper.md");
-    assert!(agent_path.exists(), "OpenCode agent should be installed to .opencode/agent/");
+    // Verify agent installed to .opencode/agent/agents/ (preserves source structure)
+    // Path agents/helper.md doesn't match .opencode/agent (agent != agents), so full path preserved
+    let agent_path = project.project_path().join(".opencode/agent/agents/helper.md");
+    assert!(agent_path.exists(), "OpenCode agent should be installed to .opencode/agent/agents/");
 
     let content = fs::read_to_string(&agent_path).await?;
     assert!(content.contains("OpenCode helper agent"));
 
-    // Verify lockfile contains opencode tool type
+    // Verify lockfile contains opencode tool type and path
     let lockfile_content = project.read_lockfile().await?;
     assert!(lockfile_content.contains(r#"tool = "opencode""#));
-    assert!(lockfile_content.contains(r#"installed_at = ".opencode/agent/helper.md""#));
+    assert!(lockfile_content.contains(r#"installed_at = ".opencode/agent/agents/helper.md""#));
 
     Ok(())
 }
@@ -70,7 +75,11 @@ async fn test_opencode_command_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_command("deploy", |d| {
-            d.source("test_repo").path("commands/deploy.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("commands/deploy.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 
@@ -78,7 +87,7 @@ async fn test_opencode_command_installation() -> Result<()> {
     project.run_agpm(&["install"])?;
 
     // Verify command installed to .opencode/command/ (singular)
-    let command_path = project.project_path().join(".opencode/command/deploy.md");
+    let command_path = project.project_path().join(".opencode/command/commands/deploy.md");
     assert!(command_path.exists(), "OpenCode command should be installed to .opencode/command/");
 
     let content = fs::read_to_string(&command_path).await?;
@@ -186,34 +195,36 @@ async fn test_mixed_artifact_types() -> Result<()> {
         .add_source("test_repo", &repo_url)
         // Claude Code agents
         .add_standard_agent("claude-agent", "test_repo", "agents/claude-agent.md")
-        // OpenCode agents
+        // OpenCode agents (preserve directory structure for cross-tool path testing)
         .add_agent("opencode-agent", |d| {
             d.source("test_repo")
                 .path("agents/opencode-agent.md")
                 .version("v1.0.0")
                 .tool("opencode")
+                .flatten(false)
         })
         // Claude Code commands
         .add_standard_command("claude-cmd", "test_repo", "commands/claude-cmd.md")
-        // OpenCode commands
+        // OpenCode commands (preserve directory structure for cross-tool path testing)
         .add_command("opencode-cmd", |d| {
             d.source("test_repo")
                 .path("commands/opencode-cmd.md")
                 .version("v1.0.0")
                 .tool("opencode")
+                .flatten(false)
         })
         .build();
 
     project.write_manifest(&manifest).await?;
     project.run_agpm(&["install"])?;
 
-    // Verify Claude Code resources
+    // Verify Claude Code resources (prefix stripped: agents/x.md -> x.md)
     assert!(project.project_path().join(".claude/agents/claude-agent.md").exists());
     assert!(project.project_path().join(".claude/commands/claude-cmd.md").exists());
 
-    // Verify OpenCode resources (singular directories)
-    assert!(project.project_path().join(".opencode/agent/opencode-agent.md").exists());
-    assert!(project.project_path().join(".opencode/command/opencode-cmd.md").exists());
+    // Verify OpenCode resources (prefix not stripped: agent != agents, command != commands)
+    assert!(project.project_path().join(".opencode/agent/agents/opencode-agent.md").exists());
+    assert!(project.project_path().join(".opencode/command/commands/opencode-cmd.md").exists());
 
     // Verify lockfile has both tool types
     let lockfile_content = project.read_lockfile().await?;
@@ -409,11 +420,17 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     // Test for both Claude Code and OpenCode
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
-        // Claude Code agent (preserves nested structure)
-        .add_standard_agent("claude-ai", "test_repo", "agents/ai/gpt.md")
-        // OpenCode agent (preserves nested structure)
+        // Claude Code agent (preserves nested structure with flatten=false)
+        .add_agent("claude-ai", |d| {
+            d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").flatten(false)
+        })
+        // OpenCode agent (preserves nested structure with flatten=false)
         .add_agent("opencode-ai", |d| {
-            d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("agents/ai/gpt.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 
@@ -426,10 +443,10 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
         "Claude Code should preserve ai/ subdirectory"
     );
 
-    // Verify OpenCode preserves nested structure (but in singular "agent")
+    // Verify OpenCode preserves full nested structure (agent != agents, so no stripping)
     assert!(
-        project.project_path().join(".opencode/agent/ai/gpt.md").exists(),
-        "OpenCode should preserve ai/ subdirectory in agent/"
+        project.project_path().join(".opencode/agent/agents/ai/gpt.md").exists(),
+        "OpenCode should preserve agents/ai/ subdirectory in agent/"
     );
 
     Ok(())

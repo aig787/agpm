@@ -151,7 +151,7 @@ artifact_type = "claude-code"
         output.stdout
     );
 
-    // Verify agents directory was created and populated
+    // Verify agents directory was created and populated (prefix stripped)
     let agents_dir = project.project_path().join(".claude").join("agents");
     DirAssert::exists(&agents_dir).await;
     DirAssert::contains_file(&agents_dir, "my-agent.md").await;
@@ -280,7 +280,7 @@ async fn test_install_local_dependencies() {
     let manifest = ManifestBuilder::new()
         .add_source("official", &official_url)
         .add_standard_agent("my-agent", "official", "agents/test-agent.md")
-        .add_local_agent("local-agent", "../local-agents/helper.md")
+        .add_agent("local-agent", |d| d.path("../local-agents/helper.md").flatten(false))
         .add_local_snippet("local-utils", "./snippets/local-utils.md")
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -306,11 +306,16 @@ async fn test_install_local_dependencies() {
     // Verify all dependencies were installed
     let agents_dir = project.project_path().join(".claude").join("agents");
     assert!(agents_dir.join("test-agent.md").exists()); // From create_standard_v1_repo
-    assert!(agents_dir.join("local-agent.md").exists());
+
+    // Local files preserve their relative path structure (after stripping ../)
+    // ../local-agents/helper.md becomes local-agents/helper.md, installed to .claude/agents/local-agents/helper.md
+    let local_helper_path = project.project_path().join(".claude/agents/local-agents/helper.md");
+    assert!(local_helper_path.exists(), "Local helper should be at {:?}", local_helper_path);
 
     // Snippets now default to .agpm/snippets (agpm artifact type)
-    let snippets_dir = project.project_path().join(".agpm").join("snippets");
-    assert!(snippets_dir.join("local-utils.md").exists());
+    // ./snippets/local-utils.md has ./ stripped, then snippets/ stripped → local-utils.md
+    let local_utils_path = project.project_path().join(".agpm/snippets/local-utils.md");
+    assert!(local_utils_path.exists(), "Local utils should be at {:?}", local_utils_path);
 }
 
 // TODO: Implement --dry-run flag for install command

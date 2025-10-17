@@ -41,12 +41,18 @@ async fn test_pattern_based_installation() -> Result<()> {
     // Get repo URL as file://
     let repo_url = test_repo.bare_file_url(project.sources_path())?;
 
-    // Create manifest with pattern dependencies
+    // Create manifest with pattern dependencies (preserving nested structure)
     let manifest = ManifestBuilder::new()
         .add_source("test-repo", &repo_url)
-        .add_agent_pattern("ai-agents", "test-repo", "agents/ai/*.md", "v1.0.0")
-        .add_agent_pattern("review-agents", "test-repo", "agents/review*.md", "v1.0.0")
-        .add_agent_pattern("all-agents", "test-repo", "agents/**/*.md", "v1.0.0")
+        .add_agent("ai-agents", |d| {
+            d.source("test-repo").path("agents/ai/*.md").version("v1.0.0").flatten(false)
+        })
+        .add_agent("review-agents", |d| {
+            d.source("test-repo").path("agents/review*.md").version("v1.0.0").flatten(false)
+        })
+        .add_agent("all-agents", |d| {
+            d.source("test-repo").path("agents/**/*.md").version("v1.0.0").flatten(false)
+        })
         .build();
 
     project.write_manifest(&manifest).await?;

@@ -155,8 +155,8 @@ invalid yaml: [ unclosed
     );
 
     // Verify the file was installed despite invalid frontmatter
-    // Default installation path is .claude/agents/
-    let installed_path = project.project_path().join(".claude/agents/broken-agent.md");
+    // Paths are preserved as-is from dependency specification
+    let installed_path = project.project_path().join(".claude/agents/broken.md");
     assert!(
         installed_path.exists(),
         "File should be installed despite invalid frontmatter at: {:?}",

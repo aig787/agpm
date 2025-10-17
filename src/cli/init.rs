@@ -253,7 +253,7 @@ resources = { snippets = { path = "snippets" } }
 # For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", tool = "opencode" }
 
 [snippets]
-# Add your snippet dependencies here (AGPM-specific resources)
+# Add your snippet dependencies here
 # Example: utils = { source = "official", path = "snippets/utils.md", tool = "agpm" }
 
 [commands]

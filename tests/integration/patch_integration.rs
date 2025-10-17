@@ -608,7 +608,7 @@ async fn test_patch_nested_paths_windows() {
         r#"[sources]
 test = "{}"
 [agents]
-nested = {{ source = "test", path = "agents/category/subcategory/deep.md", version = "v1.0.0" }}
+nested = {{ source = "test", path = "agents/category/subcategory/deep.md", version = "v1.0.0", flatten = false }}
 [patch.agents.nested]
 model = "haiku"
 category = "deeply/nested/path"
@@ -664,12 +664,12 @@ async fn test_patch_applies_to_all_pattern_matched_resources() {
 
     let url = repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Install with pattern alias and patch
+    // Install with pattern alias and patch (preserving helpers/ subdirectory)
     let manifest = format!(
         r#"[sources]
 test = "{}"
 [agents]
-all-helpers = {{ source = "test", path = "agents/helpers/*.md", version = "v1.0.0" }}
+all-helpers = {{ source = "test", path = "agents/helpers/*.md", version = "v1.0.0", flatten = false }}
 
 [patch.agents.all-helpers]
 model = "claude-3-haiku"
@@ -762,13 +762,13 @@ async fn test_patch_with_recursive_glob_pattern() {
 
     let url = repo.bare_file_url(project.sources_path()).unwrap();
 
-    // Use recursive pattern for ai/** and install code agent separately
+    // Use recursive pattern for ai/** and install code agent separately (preserving nested structure)
     let manifest = format!(
         r#"[sources]
 test = "{}"
 [agents]
-ai-agents = {{ source = "test", path = "agents/ai/**/*.md", version = "v1.0.0" }}
-code-helper = {{ source = "test", path = "agents/code/rust/rustacean.md", version = "v1.0.0" }}
+ai-agents = {{ source = "test", path = "agents/ai/**/*.md", version = "v1.0.0", flatten = false }}
+code-helper = {{ source = "test", path = "agents/code/rust/rustacean.md", version = "v1.0.0", flatten = false }}
 
 [patch.agents.ai-agents]
 category = "ai-assistant"

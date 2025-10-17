@@ -21,6 +21,22 @@ pub struct DependencySpec {
     /// - A glob pattern: `"agents/*.md"`, `"agents/**/review*.md"`
     pub path: String,
 
+    /// Optional custom name for the dependency in template context.
+    ///
+    /// If specified, this name will be used as the key when accessing this
+    /// dependency in templates (e.g., `agpm.deps.agents.custom_name`).
+    /// If not specified, the name is derived from the path.
+    ///
+    /// Example:
+    /// ```yaml
+    /// dependencies:
+    ///   agents:
+    ///     - path: "agents/complex-path/helper.md"
+    ///       name: "helper"
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     /// Optional version constraint for the dependency.
     ///
     /// If not specified, the version of the declaring resource is used.
@@ -41,6 +57,18 @@ pub struct DependencySpec {
     /// - "agpm" - Install to `.agpm/` directories
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+
+    /// Optional flatten flag to control directory structure preservation.
+    ///
+    /// When `true`, only the filename is used for installation (e.g., `nested/dir/file.md` → `file.md`).
+    /// When `false` (default for most resources), the full relative path is preserved.
+    ///
+    /// Default values by resource type:
+    /// - `agents`: `true` (flatten by default)
+    /// - `commands`: `true` (flatten by default)
+    /// - All others: `false` (preserve directory structure)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
 }
 
 /// Metadata extracted from resource files.
@@ -102,8 +130,10 @@ mod tests {
     fn test_dependency_spec_serialization() {
         let spec = DependencySpec {
             path: "agents/helper.md".to_string(),
+            name: None,
             version: Some("v1.0.0".to_string()),
             tool: None,
+            flatten: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -118,8 +148,10 @@ mod tests {
     fn test_dependency_spec_with_tool() {
         let spec = DependencySpec {
             path: "agents/helper.md".to_string(),
+            name: None,
             version: Some("v1.0.0".to_string()),
             tool: Some("opencode".to_string()),
+            flatten: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -150,8 +182,10 @@ mod tests {
             "agents".to_string(),
             vec![DependencySpec {
                 path: "test.md".to_string(),
+                name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -166,8 +200,10 @@ mod tests {
             "agents".to_string(),
             vec![DependencySpec {
                 path: "agent1.md".to_string(),
+                name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -178,16 +214,20 @@ mod tests {
             "agents".to_string(),
             vec![DependencySpec {
                 path: "agent2.md".to_string(),
+                name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         deps2.insert(
             "snippets".to_string(),
             vec![DependencySpec {
                 path: "snippet1.md".to_string(),
+                name: None,
                 version: Some("v1.0.0".to_string()),
                 tool: None,
+                flatten: None,
             }],
         );
         metadata2.dependencies = Some(deps2);

@@ -55,7 +55,7 @@
 //! 2. **SHA-based Worktree Creation**: Create worktrees keyed by commit SHA for maximum deduplication
 //! 3. **Conflict Detection**: Check for path conflicts and incompatible versions
 //! 4. **Redundancy Analysis**: Identify duplicate resources across sources
-//! 5. **Path Processing**: Preserve directory structure via [`extract_relative_path`] for resources from Git sources
+//! 5. **Path Processing**: Preserve directory structure by using paths directly from dependencies
 //! 6. **Resource Installation**: Copy resources to target locations with checksums
 //! 7. **Lockfile Generation**: Create deterministic lockfile entries with resolved SHAs and preserved paths
 //!
@@ -220,7 +220,7 @@ use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
-use crate::utils::normalize_path_for_storage;
+use crate::utils::{compute_relative_install_path, normalize_path, normalize_path_for_storage};
 use crate::version::conflict::ConflictDetector;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
@@ -229,6 +229,73 @@ use std::time::Duration;
 
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
+
+/// Extract meaningful path structure from a dependency path.
+///
+/// This function handles three cases:
+/// 1. Relative paths with `../` - strips all parent directory components
+/// 2. Absolute paths - resolves `..` components and strips root/prefix
+/// 3. Clean relative paths - uses as-is with normalized separators
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// # use agpm_cli::resolver::extract_meaningful_path;
+///
+/// // Relative paths with parent navigation
+/// assert_eq!(extract_meaningful_path(Path::new("../../snippets/dir/file.md")), "snippets/dir/file.md");
+///
+/// // Absolute paths (root stripped, .. resolved) - Unix-style path
+/// #[cfg(unix)]
+/// assert_eq!(extract_meaningful_path(Path::new("/tmp/foo/../bar/agent.md")), "tmp/bar/agent.md");
+///
+/// // Absolute paths (root stripped, .. resolved) - Windows-style path
+/// #[cfg(windows)]
+/// assert_eq!(extract_meaningful_path(Path::new("C:\\tmp\\foo\\..\\bar\\agent.md")), "tmp/bar/agent.md");
+///
+/// // Clean relative paths
+/// assert_eq!(extract_meaningful_path(Path::new("agents/test.md")), "agents/test.md");
+/// ```
+pub fn extract_meaningful_path(path: &Path) -> String {
+    let components: Vec<_> = path.components().collect();
+
+    if path.is_absolute() {
+        // Case 2: Absolute path - resolve ".." components first, then strip root
+        let mut resolved = Vec::new();
+
+        for component in components.iter() {
+            match component {
+                std::path::Component::Normal(name) => {
+                    resolved.push(name.to_str().unwrap_or(""));
+                }
+                std::path::Component::ParentDir => {
+                    // Pop the last component if there is one
+                    resolved.pop();
+                }
+                // Skip RootDir, Prefix, and CurDir
+                _ => {}
+            }
+        }
+
+        resolved.join("/")
+    } else if components.iter().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        // Case 1: Relative path with "../" - skip all parent components
+        let start_idx = components
+            .iter()
+            .position(|c| matches!(c, std::path::Component::Normal(_)))
+            .unwrap_or(0);
+
+        components[start_idx..]
+            .iter()
+            .filter_map(|c| c.as_os_str().to_str())
+            .collect::<Vec<_>>()
+            .join("/")
+    } else {
+        // Case 3: Clean relative path - use as-is
+        path.to_str().unwrap_or("").replace('\\', "/") // Normalize to forward slashes
+    }
+}
 
 /// Type alias for resource lookup key: (`ResourceType`, name, source).
 ///
@@ -1511,29 +1578,14 @@ impl DependencyResolver {
                                 }
                             };
 
-                            // Determine tool with proper inheritance
+                            // Determine tool for transitive dependency
                             let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
-                                // Explicit tool specified in YAML frontmatter
+                                // Explicit tool specified in YAML frontmatter - use it
                                 Some(explicit_tool.clone())
                             } else {
-                                // Determine parent's effective tool (explicit or default for its resource type)
-                                let parent_tool =
-                                    dep.get_tool().map(|s| s.to_string()).unwrap_or_else(|| {
-                                        self.manifest.get_default_tool(resource_type)
-                                    });
-
-                                // Check if parent's tool supports this resource type
-                                if self
-                                    .manifest
-                                    .get_artifact_resource_path(&parent_tool, dep_resource_type)
-                                    .is_some()
-                                {
-                                    // Parent's tool supports this resource type - inherit it
-                                    Some(parent_tool)
-                                } else {
-                                    // Parent's tool doesn't support this resource type, use default
-                                    Some(self.manifest.get_default_tool(dep_resource_type))
-                                }
+                                // No explicit tool - use configured default for this resource type
+                                // This respects [default-tools] configuration in the manifest
+                                Some(self.manifest.get_default_tool(dep_resource_type))
                             };
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -1548,6 +1600,7 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
+                                flatten: None,
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -1614,29 +1667,14 @@ impl DependencyResolver {
                                     .to_path_buf()
                             };
 
-                            // Determine tool with proper inheritance
+                            // Determine tool for transitive dependency
                             let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
-                                // Explicit tool specified in YAML frontmatter
+                                // Explicit tool specified in YAML frontmatter - use it
                                 Some(explicit_tool.clone())
                             } else {
-                                // Determine parent's effective tool (explicit or default for its resource type)
-                                let parent_tool =
-                                    dep.get_tool().map(|s| s.to_string()).unwrap_or_else(|| {
-                                        self.manifest.get_default_tool(resource_type)
-                                    });
-
-                                // Check if parent's tool supports this resource type
-                                if self
-                                    .manifest
-                                    .get_artifact_resource_path(&parent_tool, dep_resource_type)
-                                    .is_some()
-                                {
-                                    // Parent's tool supports this resource type - inherit it
-                                    Some(parent_tool)
-                                } else {
-                                    // Parent's tool doesn't support this resource type, use default
-                                    Some(self.manifest.get_default_tool(dep_resource_type))
-                                }
+                                // No explicit tool - use configured default for this resource type
+                                // This respects [default-tools] configuration in the manifest
+                                Some(self.manifest.get_default_tool(dep_resource_type))
                             };
 
                             ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -1656,11 +1694,16 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
+                                flatten: None,
                             }))
                         };
 
                         // Generate a name for the transitive dependency
-                        let trans_name = self.generate_dependency_name(trans_dep.get_path());
+                        // Use explicit name from DependencySpec if provided, otherwise derive from path
+                        let trans_name = dep_spec
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| self.generate_dependency_name(trans_dep.get_path()));
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
@@ -2040,10 +2083,10 @@ impl DependencyResolver {
             let pattern_resolver = crate::pattern::PatternResolver::new();
             let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
 
-            // Get tool and target from parent pattern dependency
-            let (tool, target) = match dep {
-                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                _ => (None, None),
+            // Get tool, target, and flatten from parent pattern dependency
+            let (tool, target, flatten) = match dep {
+                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone(), d.flatten),
+                _ => (None, None, None),
             };
 
             let mut concrete_deps = Vec::new();
@@ -2053,7 +2096,7 @@ impl DependencyResolver {
                 let absolute_path = base_path.join(&matched_path);
                 let concrete_path = absolute_path.to_string_lossy().to_string();
 
-                // Create a non-pattern Detailed dependency, inheriting tool and target from parent
+                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
                 concrete_deps.push((
                     resource_name,
                     ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2068,6 +2111,7 @@ impl DependencyResolver {
                         filename: None,
                         dependencies: None,
                         tool: tool.clone(),
+                        flatten,
                     })),
                 ));
             }
@@ -2108,13 +2152,15 @@ impl DependencyResolver {
                 // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
                 let concrete_path = matched_path.to_string_lossy().to_string();
 
-                // Get tool type and target from parent
-                let (tool, target) = match dep {
-                    ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                    _ => (None, None),
+                // Get tool, target, and flatten from parent
+                let (tool, target, flatten) = match dep {
+                    ResourceDependency::Detailed(d) => {
+                        (d.tool.clone(), d.target.clone(), d.flatten)
+                    }
+                    _ => (None, None, None),
                 };
 
-                // Create a non-pattern Detailed dependency, inheriting target from parent
+                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
                 concrete_deps.push((
                     resource_name,
                     ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2129,6 +2175,7 @@ impl DependencyResolver {
                         filename: None,
                         dependencies: None,
                         tool,
+                        flatten,
                     })),
                 ));
             }
@@ -2551,28 +2598,8 @@ impl DependencyResolver {
                 // Use custom filename as-is (includes extension)
                 custom_filename.to_string()
             } else {
-                // Extract relative path from the dependency path to preserve directory structure
-                let dep_path = Path::new(dep.get_path());
-                let relative_path = extract_relative_path(dep_path, &resource_type);
-
-                // If a relative path exists, preserve it; otherwise use dependency name
-                if relative_path.as_os_str().is_empty() || relative_path == dep_path {
-                    // No relative path preserved, use default filename
-                    let extension = match resource_type {
-                        crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
-                            "json"
-                        }
-                        crate::core::ResourceType::Script => {
-                            // Scripts maintain their original extension
-                            dep_path.extension().and_then(|e| e.to_str()).unwrap_or("sh")
-                        }
-                        _ => "md",
-                    };
-                    format!("{name}.{extension}")
-                } else {
-                    // Preserve the relative path structure
-                    relative_path.to_string_lossy().to_string()
-                }
+                // Extract meaningful path structure from dependency path
+                extract_meaningful_path(Path::new(dep.get_path()))
             };
 
             // Determine artifact type - use get_tool() method, then apply defaults
@@ -2623,18 +2650,40 @@ impl DependencyResolver {
                             )
                         })?;
 
+                    // Determine flatten behavior: use explicit setting or tool config default
+                    let flatten = dep
+                        .get_flatten()
+                        .or_else(|| {
+                            // Get flatten default from tool config
+                            self.manifest
+                                .get_tool_config(artifact_type)
+                                .and_then(|config| config.resources.get(resource_type.to_plural()))
+                                .and_then(|resource_config| resource_config.flatten)
+                        })
+                        .unwrap_or(false); // Default to false if not configured
+
                     let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
-                        let base_target = artifact_path.display().to_string();
-                        format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                            .replace("//", "/")
-                            + "/"
-                            + &filename
+                        let base_target = PathBuf::from(artifact_path.display().to_string())
+                            .join(custom_target.trim_start_matches('/'));
+                        // For custom targets, still strip prefix based on the original artifact path
+                        // (not the custom target), to avoid duplicate directories
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        base_target.join(relative_path)
                     } else {
                         // Use artifact configuration for default path
-                        format!("{}/{}", artifact_path.display(), filename)
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        artifact_path.join(relative_path)
                     };
-                    normalize_path_for_storage(&path)
+                    normalize_path_for_storage(normalize_path(&path))
                 }
             };
 
@@ -2708,28 +2757,9 @@ impl DependencyResolver {
                 // Use custom filename as-is (includes extension)
                 custom_filename.to_string()
             } else {
-                // Extract relative path from the dependency path to preserve directory structure
+                // Preserve the dependency path structure directly
                 let dep_path = Path::new(dep.get_path());
-                let relative_path = extract_relative_path(dep_path, &resource_type);
-
-                // If a relative path exists, preserve it; otherwise use dependency name
-                if relative_path.as_os_str().is_empty() || relative_path == dep_path {
-                    // No relative path preserved, use default filename
-                    let extension = match resource_type {
-                        crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
-                            "json"
-                        }
-                        crate::core::ResourceType::Script => {
-                            // Scripts maintain their original extension
-                            dep_path.extension().and_then(|e| e.to_str()).unwrap_or("sh")
-                        }
-                        _ => "md",
-                    };
-                    format!("{name}.{extension}")
-                } else {
-                    // Preserve the relative path structure
-                    relative_path.to_string_lossy().to_string()
-                }
+                dep_path.to_string_lossy().to_string()
             };
 
             // Determine artifact type - use get_tool() method, then apply defaults
@@ -2783,18 +2813,40 @@ impl DependencyResolver {
                             )
                         })?;
 
+                    // Determine flatten behavior: use explicit setting or tool config default
+                    let flatten = dep
+                        .get_flatten()
+                        .or_else(|| {
+                            // Get flatten default from tool config
+                            self.manifest
+                                .get_tool_config(artifact_type)
+                                .and_then(|config| config.resources.get(resource_type.to_plural()))
+                                .and_then(|resource_config| resource_config.flatten)
+                        })
+                        .unwrap_or(false); // Default to false if not configured
+
                     let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
-                        let base_target = artifact_path.display().to_string();
-                        format!("{}/{}", base_target, custom_target.trim_start_matches('/'))
-                            .replace("//", "/")
-                            + "/"
-                            + &filename
+                        let base_target = PathBuf::from(artifact_path.display().to_string())
+                            .join(custom_target.trim_start_matches('/'));
+                        // For custom targets, still strip prefix based on the original artifact path
+                        // (not the custom target), to avoid duplicate directories
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        base_target.join(relative_path)
                     } else {
                         // Use artifact configuration for default path
-                        format!("{}/{}", artifact_path.display(), filename)
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        artifact_path.join(relative_path)
                     };
-                    normalize_path_for_storage(&path)
+                    normalize_path_for_storage(normalize_path(&path))
                 }
             };
 
@@ -2913,9 +2965,6 @@ impl DependencyResolver {
             for matched_path in matches {
                 let resource_name = crate::pattern::extract_resource_name(&matched_path);
 
-                // Extract relative path to preserve directory structure
-                let relative_path = extract_relative_path(&matched_path, &resource_type);
-
                 // Determine artifact type - use get_tool() method, then apply defaults
                 let artifact_type_string = dep
                     .get_tool()
@@ -2976,31 +3025,43 @@ impl DependencyResolver {
                                 )
                             })?;
 
-                        // Determine the target directory
-                        let target_dir = if let Some(custom_target) = dep.get_target() {
+                        // Determine flatten behavior: use explicit setting or tool config default
+                        let dep_flatten = dep.get_flatten();
+                        let tool_flatten = self
+                            .manifest
+                            .get_tool_config(artifact_type)
+                            .and_then(|config| config.resources.get(resource_type.to_plural()))
+                            .and_then(|resource_config| resource_config.flatten);
+
+                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false); // Default to false if not configured
+
+                        // Determine the base target directory
+                        let base_target = if let Some(custom_target) = dep.get_target() {
                             // Custom target is relative to the artifact's resource directory
-                            format!(
-                                "{}/{}",
-                                artifact_path.display(),
-                                custom_target.trim_start_matches('/')
-                            )
-                            .replace("//", "/")
+                            PathBuf::from(artifact_path.display().to_string())
+                                .join(custom_target.trim_start_matches('/'))
                         } else {
-                            artifact_path.display().to_string()
+                            artifact_path.to_path_buf()
                         };
 
-                        // Use relative path if it exists, otherwise use resource name
-                        let filename = if relative_path.as_os_str().is_empty()
-                            || relative_path == matched_path
-                        {
-                            let extension =
-                                matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
-                            format!("{resource_name}.{extension}")
-                        } else {
-                            relative_path.to_string_lossy().to_string()
+                        // Extract the meaningful path structure
+                        let filename = {
+                            // Construct full path from base_path and matched_path for extraction
+                            let full_path = if base_path == Path::new(".") {
+                                matched_path.to_path_buf()
+                            } else {
+                                base_path.join(&matched_path)
+                            };
+                            extract_meaningful_path(&full_path)
                         };
 
-                        normalize_path_for_storage(format!("{target_dir}/{filename}"))
+                        // Use compute_relative_install_path to avoid redundant prefixes
+                        let relative_path = compute_relative_install_path(
+                            &base_target,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
                     }
                 };
 
@@ -3067,9 +3128,6 @@ impl DependencyResolver {
             for matched_path in matches {
                 let resource_name = crate::pattern::extract_resource_name(&matched_path);
 
-                // Extract relative path to preserve directory structure
-                let relative_path = extract_relative_path(&matched_path, &resource_type);
-
                 // Determine artifact type - use get_tool() method, then apply defaults
                 let artifact_type_string = dep
                     .get_tool()
@@ -3117,31 +3175,81 @@ impl DependencyResolver {
                                 )
                             })?;
 
-                        // Determine the target directory
-                        let target_dir = if let Some(custom_target) = dep.get_target() {
+                        // Determine flatten behavior: use explicit setting or tool config default
+                        let dep_flatten = dep.get_flatten();
+                        let tool_flatten = self
+                            .manifest
+                            .get_tool_config(artifact_type)
+                            .and_then(|config| config.resources.get(resource_type.to_plural()))
+                            .and_then(|resource_config| resource_config.flatten);
+
+                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false); // Default to false if not configured
+
+                        // Determine the base target directory
+                        let base_target = if let Some(custom_target) = dep.get_target() {
                             // Custom target is relative to the artifact's resource directory
-                            format!(
-                                "{}/{}",
-                                artifact_path.display(),
-                                custom_target.trim_start_matches('/')
-                            )
-                            .replace("//", "/")
+                            PathBuf::from(artifact_path.display().to_string())
+                                .join(custom_target.trim_start_matches('/'))
                         } else {
-                            artifact_path.display().to_string()
+                            artifact_path.to_path_buf()
                         };
 
-                        // Use relative path if it exists, otherwise use resource name
-                        let filename = if relative_path.as_os_str().is_empty()
-                            || relative_path == matched_path
-                        {
-                            let extension =
-                                matched_path.extension().and_then(|e| e.to_str()).unwrap_or("md");
-                            format!("{resource_name}.{extension}")
-                        } else {
-                            relative_path.to_string_lossy().to_string()
+                        // Extract the meaningful path structure
+                        // 1. For relative paths with "../", strip parent components: "../../snippets/dir/file.md" → "snippets/dir/file.md"
+                        // 2. For absolute paths, resolve ".." first then strip root: "/tmp/foo/../bar/agent.md" → "tmp/bar/agent.md"
+                        // 3. For clean relative paths, use as-is: "agents/test.md" → "agents/test.md"
+                        let filename = {
+                            // Construct full path from repo_path and matched_path for extraction
+                            let full_path = repo_path_ref.join(&matched_path);
+                            let components: Vec<_> = full_path.components().collect();
+
+                            if full_path.is_absolute() {
+                                // Case 2: Absolute path - resolve ".." components first, then strip root
+                                let mut resolved = Vec::new();
+
+                                for component in components.iter() {
+                                    match component {
+                                        std::path::Component::Normal(name) => {
+                                            resolved.push(name.to_str().unwrap_or(""));
+                                        }
+                                        std::path::Component::ParentDir => {
+                                            // Pop the last component if there is one
+                                            resolved.pop();
+                                        }
+                                        // Skip RootDir, Prefix, and CurDir
+                                        _ => {}
+                                    }
+                                }
+
+                                resolved.join("/")
+                            } else if components
+                                .iter()
+                                .any(|c| matches!(c, std::path::Component::ParentDir))
+                            {
+                                // Case 1: Relative path with "../" - skip all parent components
+                                let start_idx = components
+                                    .iter()
+                                    .position(|c| matches!(c, std::path::Component::Normal(_)))
+                                    .unwrap_or(0);
+
+                                components[start_idx..]
+                                    .iter()
+                                    .filter_map(|c| c.as_os_str().to_str())
+                                    .collect::<Vec<_>>()
+                                    .join("/")
+                            } else {
+                                // Case 3: Clean relative path - use as-is
+                                full_path.to_str().unwrap_or("").replace('\\', "/") // Normalize to forward slashes
+                            }
                         };
 
-                        normalize_path_for_storage(format!("{target_dir}/{filename}"))
+                        // Use compute_relative_install_path to avoid redundant prefixes
+                        let relative_path = compute_relative_install_path(
+                            &base_target,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
                     }
                 };
 
@@ -3555,6 +3663,7 @@ impl DependencyResolver {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()), // Default tool
+                    flatten: None,
                 })))
             }
         }
@@ -4128,221 +4237,6 @@ impl DependencyResolver {
     }
 }
 
-/// Extracts the relative path from a resource by removing the resource type directory prefix.
-///
-/// This function preserves directory structure when installing resources from Git sources
-/// by intelligently stripping the resource type directory (e.g., "agents/", "snippets/")
-/// from source repository paths. This allows subdirectories within a resource category
-/// to be maintained in the installation target, enabling organized source repositories
-/// to retain their structure.
-///
-/// # Path Processing Strategy
-///
-/// The function implements a **prefix-aware extraction** algorithm:
-/// 1. Converts the resource type string to its expected directory name (e.g., "agent" → "agents")
-/// 2. Checks if the path starts with this directory name as its first component
-/// 3. If matched, returns the path with the first component stripped
-/// 4. If not matched, returns the original path unchanged
-///
-/// This approach ensures that:
-/// - Nested directories within a category are preserved (e.g., `agents/ai/helper.md` → `ai/helper.md`)
-/// - Paths without the expected prefix remain unchanged (backwards compatibility)
-/// - Cross-platform path handling works correctly (Windows and Unix separators)
-///
-/// # Arguments
-///
-/// * `path` - The original resource path from the dependency specification (e.g., from a Git repository)
-/// * `resource_type` - The resource type string: `"agent"`, `"snippet"`, `"command"`, `"script"`, `"hook"`, or `"mcp-server"`
-///
-/// # Returns
-///
-/// A [`PathBuf`] containing:
-/// - The path with the resource type prefix removed (if the prefix matched)
-/// - The original path unchanged (if no prefix matched)
-///
-/// # Resource Type Mapping
-///
-/// | Input Type   | Expected Directory | Example Input Path      | Example Output Path    |
-/// |--------------|-------------------|-------------------------|------------------------|
-/// | `"agent"`    | `agents/`         | `agents/ai/helper.md`   | `ai/helper.md`         |
-/// | `"snippet"`  | `snippets/`       | `snippets/tools/fmt.md` | `tools/fmt.md`         |
-/// | `"command"`  | `commands/`       | `commands/build.md`     | `build.md`             |
-/// | `"script"`   | `scripts/`        | `scripts/test.sh`       | `test.sh`              |
-/// | `"hook"`     | `hooks/`          | `hooks/pre-commit.json` | `pre-commit.json`      |
-/// | `"mcp-server"` | `mcp-servers/`  | `mcp-servers/db.json`   | `db.json`              |
-///
-/// # Examples
-///
-/// ## Basic Path Extraction
-///
-/// ```no_run
-/// use std::path::{Path, PathBuf};
-/// # use agpm_cli::resolver::extract_relative_path;
-/// # use agpm_cli::core::ResourceType;
-///
-/// // Resource type prefix is removed
-/// let path = Path::new("snippets/directives/thing.md");
-/// let result = extract_relative_path(path, &ResourceType::Snippet);
-/// assert_eq!(result, PathBuf::from("directives/thing.md"));
-///
-/// // No matching prefix - path unchanged
-/// let path = Path::new("directives/thing.md");
-/// let result = extract_relative_path(path, &ResourceType::Snippet);
-/// assert_eq!(result, PathBuf::from("directives/thing.md"));
-///
-/// // Works with deeply nested directories
-/// let path = Path::new("agents/ai/helper.md");
-/// let result = extract_relative_path(path, &ResourceType::Agent);
-/// assert_eq!(result, PathBuf::from("ai/helper.md"));
-/// ```
-///
-/// ## Preserving Directory Structure
-///
-/// ```no_run
-/// # use std::path::{Path, PathBuf};
-/// # use agpm_cli::resolver::extract_relative_path;
-/// # use agpm_cli::core::ResourceType;
-///
-/// // Multi-level nested directories are fully preserved
-/// let path = Path::new("agents/languages/rust/expert.md");
-/// let result = extract_relative_path(path, &ResourceType::Agent);
-/// assert_eq!(result, PathBuf::from("languages/rust/expert.md"));
-/// // This will install to: .claude/agents/languages/rust/expert.md
-/// ```
-///
-/// ## Pattern Matching Use Case
-///
-/// When used with glob patterns like `agents/**/*.md`, this function ensures each
-/// matched file preserves its subdirectory structure:
-///
-/// ```no_run
-/// # use std::path::{Path, PathBuf};
-/// # use agpm_cli::resolver::extract_relative_path;
-/// # use agpm_cli::core::ResourceType;
-///
-/// // Example: glob pattern "agents/**/*.md" matches these paths
-/// let matched_paths = vec![
-///     "agents/rust/expert.md",
-///     "agents/rust/testing.md",
-///     "agents/python/async.md",
-///     "agents/go/concurrency.md",
-/// ];
-///
-/// for path_str in matched_paths {
-///     let path = Path::new(path_str);
-///     let relative = extract_relative_path(path, &ResourceType::Agent);
-///     // Produces: "rust/expert.md", "rust/testing.md", "python/async.md", "go/concurrency.md"
-///     // Each installs to: .claude/agents/<relative_path>
-/// }
-/// ```
-///
-/// ## Integration with Custom Targets
-///
-/// Custom targets work in conjunction with relative path extraction:
-///
-/// ```toml
-/// # In agpm.toml
-/// [agents]
-/// # Path: agents/rust/expert.md → extract → rust/expert.md
-/// # Target: custom → combined → custom/rust/expert.md
-/// # Final: .claude/agents/custom/rust/expert.md
-/// rust-agents = {
-///     source = "community",
-///     path = "agents/rust/*.md",
-///     target = "custom",
-///     version = "v1.0.0"
-/// }
-/// ```
-///
-/// # Use Cases
-///
-/// ## Organized Source Repository
-///
-/// For a source repository with categorized resources:
-/// ```text
-/// agpm-community/
-/// ├── agents/
-/// │   ├── languages/
-/// │   │   ├── rust/
-/// │   │   │   ├── expert.md
-/// │   │   │   └── testing.md
-/// │   │   └── python/
-/// │   │       └── async.md
-/// │   └── tools/
-/// │       └── git-helper.md
-/// └── snippets/
-///     ├── directives/
-///     │   └── custom.md
-///     └── templates/
-///         └── api.md
-/// ```
-///
-/// After installation, the structure is preserved:
-/// ```text
-/// .claude/
-/// ├── agents/
-/// │   ├── languages/
-/// │   │   ├── rust/
-/// │   │   │   ├── expert.md
-/// │   │   │   └── testing.md
-/// │   │   └── python/
-/// │   │       └── async.md
-/// │   └── tools/
-/// │       └── git-helper.md
-/// └── snippets/
-///     ├── directives/
-///     │   └── custom.md
-///     └── templates/
-///         └── api.md
-/// ```
-///
-/// ## Pattern-Based Installation
-///
-/// Bulk installation with patterns preserves organization:
-/// ```toml
-/// [agents]
-/// # Installs all Rust agents with subdirectory structure intact
-/// rust-tools = { source = "community", path = "agents/languages/rust/**/*.md", version = "v1.0.0" }
-/// # Results in: .claude/agents/<files from rust/ and subdirectories>
-/// ```
-///
-/// # Implementation Notes
-///
-/// - Uses path component analysis for cross-platform compatibility
-/// - Only examines the first path component to determine prefix match
-/// - Empty paths or invalid components are handled gracefully
-/// - Unknown resource types cause the path to be returned unchanged
-/// - Works with both absolute and relative paths from source repositories
-///
-/// # Version History
-///
-/// - **v0.3.18**: Introduced to support relative path preservation during installation
-/// - Works in conjunction with updated lockfile `installed_at` path generation
-pub fn extract_relative_path(path: &Path, resource_type: &crate::core::ResourceType) -> PathBuf {
-    // Convert resource type to expected directory name
-    let expected_prefix = match resource_type {
-        crate::core::ResourceType::Agent => "agents",
-        crate::core::ResourceType::Snippet => "snippets",
-        crate::core::ResourceType::Command => "commands",
-        crate::core::ResourceType::Script => "scripts",
-        crate::core::ResourceType::Hook => "hooks",
-        crate::core::ResourceType::McpServer => "mcp-servers",
-    };
-
-    // Check if path starts with the expected prefix
-    let components: Vec<_> = path.components().collect();
-    if let Some(first) = components.first()
-        && let std::path::Component::Normal(name) = first
-        && name.to_str() == Some(expected_prefix)
-    {
-        // Skip the first component and collect the rest
-        let remaining: PathBuf = components[1..].iter().collect();
-        return remaining;
-    }
-
-    path.to_path_buf()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4452,6 +4346,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4531,6 +4426,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4609,6 +4505,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4657,6 +4554,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4736,6 +4634,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4845,6 +4744,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4862,7 +4762,8 @@ mod tests {
         // Normalize path separators for cross-platform testing
         let normalized_path = normalize_path_for_storage(&agent.installed_at);
         assert!(normalized_path.contains(".claude/agents/integrations/custom"));
-        assert_eq!(normalized_path, ".claude/agents/integrations/custom/custom-agent.md");
+        // Path ../test.md extracts to test.md after stripping parent components
+        assert_eq!(normalized_path, ".claude/agents/integrations/custom/test.md");
     }
 
     #[tokio::test]
@@ -4884,6 +4785,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4900,7 +4802,8 @@ mod tests {
         // Verify the default target is used
         // Normalize path separators for cross-platform testing
         let normalized_path = normalize_path_for_storage(&agent.installed_at);
-        assert_eq!(normalized_path, ".claude/agents/standard-agent.md");
+        // Path ../test.md extracts to test.md after stripping parent components
+        assert_eq!(normalized_path, ".claude/agents/test.md");
     }
 
     #[tokio::test]
@@ -4922,6 +4825,7 @@ mod tests {
                 filename: Some("ai-assistant.txt".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4960,6 +4864,7 @@ mod tests {
                 filename: Some("assistant.markdown".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4999,6 +4904,7 @@ mod tests {
                 filename: Some("analyze.py".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             false, // script (not agent)
         );
@@ -5132,6 +5038,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true, // agents
         );
@@ -5178,6 +5085,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5287,6 +5195,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5304,6 +5213,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5334,6 +5244,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5351,6 +5262,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5652,6 +5564,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5714,6 +5627,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5805,6 +5719,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5888,6 +5803,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5970,6 +5886,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5984,6 +5901,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver
@@ -6030,6 +5948,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6044,6 +5963,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result =
@@ -6084,6 +6004,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6098,6 +6019,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver
@@ -6134,6 +6056,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver

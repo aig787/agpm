@@ -1124,6 +1124,43 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         .with_details("TOML parsing errors are usually caused by syntax issues like missing quotes or mismatched brackets");
     }
 
+    // Check for template rendering errors by examining the error message
+    let error_msg = error.to_string().to_lowercase();
+    let is_template_error = error_msg.contains("template")
+        || error_msg.contains("variable")
+        || error_msg.contains("filter")
+        || error_msg.contains("tera");
+
+    if is_template_error {
+        // Build full error chain for template errors
+        let mut message = error.to_string();
+        let chain: Vec<String> =
+            error.chain().skip(1).map(std::string::ToString::to_string).collect();
+
+        if !chain.is_empty() {
+            message.push_str("\n\nCaused by:");
+            for (i, cause) in chain.iter().enumerate() {
+                message.push_str(&format!("\n  {}: {}", i + 1, cause));
+            }
+        }
+
+        return ErrorContext::new(AgpmError::InvalidResource {
+            name: "template".to_string(),
+            reason: message,
+        })
+        .with_suggestion(
+            "Check template syntax: variables use {{ var }}, comments use {# #}, control flow uses {% %}. \
+             Ensure all variables referenced in the template exist in the context (agpm.resource, agpm.deps)",
+        )
+        .with_details(
+            "Template errors occur when Tera cannot render the template. Common issues:\n\
+             - Undefined variables (use {% if var is defined %} to check)\n\
+             - Syntax errors (unclosed {{ or {% delimiters)\n\
+             - Invalid filters or functions\n\
+             - Type mismatches in operations",
+        );
+    }
+
     // Generic error - include the full error chain for better diagnostics
     let mut message = error.to_string();
 

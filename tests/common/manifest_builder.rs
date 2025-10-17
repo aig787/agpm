@@ -161,6 +161,7 @@ struct DependencyEntry {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    flatten: Option<bool>,
 }
 
 /// Builder for configuring a single dependency
@@ -177,6 +178,7 @@ pub struct DependencyBuilder {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    flatten: Option<bool>,
 }
 
 impl DependencyBuilder {
@@ -222,6 +224,12 @@ impl DependencyBuilder {
         self
     }
 
+    /// Control directory structure flattening
+    pub fn flatten(mut self, flatten: bool) -> Self {
+        self.flatten = Some(flatten);
+        self
+    }
+
     /// Build the dependency entry (internal use)
     fn build(self) -> DependencyEntry {
         DependencyEntry {
@@ -233,6 +241,7 @@ impl DependencyBuilder {
             rev: self.rev,
             tool: self.tool,
             target: self.target,
+            flatten: self.flatten,
         }
     }
 }
@@ -335,6 +344,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.agents.push(entry);
@@ -355,6 +365,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.snippets.push(entry);
@@ -375,6 +386,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.commands.push(entry);
@@ -395,6 +407,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.scripts.push(entry);
@@ -415,6 +428,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.hooks.push(entry);
@@ -435,6 +449,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.mcp_servers.push(entry);
@@ -494,6 +509,10 @@ impl ManifestBuilder {
                         toml.push_str(&format!(", target = \"{}\"", escape_toml_string(target)));
                     }
 
+                    if let Some(flatten) = dep.flatten {
+                        toml.push_str(&format!(", flatten = {}", flatten));
+                    }
+
                     toml.push_str(" }\n");
                 }
                 toml.push('\n');
@@ -507,6 +526,47 @@ impl ManifestBuilder {
         format_dependencies(&mut toml, "scripts", &self.scripts);
         format_dependencies(&mut toml, "hooks", &self.hooks);
         format_dependencies(&mut toml, "mcp-servers", &self.mcp_servers);
+
+        // Target configuration section
+        if let Some(config) = self.target_config {
+            let mut has_fields = false;
+            let mut target_section = String::from("[target]\n");
+
+            if let Some(path) = config.agents {
+                target_section.push_str(&format!("agents = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.snippets {
+                target_section.push_str(&format!("snippets = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.commands {
+                target_section.push_str(&format!("commands = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.scripts {
+                target_section.push_str(&format!("scripts = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.hooks {
+                target_section.push_str(&format!("hooks = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(path) = config.mcp_servers {
+                target_section
+                    .push_str(&format!("mcp-servers = \"{}\"\n", escape_toml_string(&path)));
+                has_fields = true;
+            }
+            if let Some(enabled) = config.gitignore {
+                target_section.push_str(&format!("gitignore = {}\n", enabled));
+                has_fields = true;
+            }
+
+            if has_fields {
+                toml.push_str(&target_section);
+                toml.push('\n');
+            }
+        }
 
         toml
     }

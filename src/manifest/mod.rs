@@ -721,6 +721,16 @@ pub struct ResourceConfig {
     /// - MCP servers: `.mcp.json` or `.opencode/opencode.json`
     #[serde(skip_serializing_if = "Option::is_none", rename = "merge-target")]
     pub merge_target: Option<String>,
+
+    /// Default flatten behavior for this resource type.
+    ///
+    /// When `true`: Only the filename is used for installation (e.g., `nested/dir/file.md` → `file.md`)
+    /// When `false`: Full relative path is preserved (e.g., `nested/dir/file.md` → `nested/dir/file.md`)
+    ///
+    /// This default can be overridden per-dependency using the `flatten` field.
+    /// If not specified, defaults to `false` (preserve directory structure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
 }
 
 /// Tool configuration.
@@ -772,6 +782,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("agents".to_string()),
                 merge_target: None,
+                flatten: Some(true), // Agents flatten by default
             },
         );
         claude_resources.insert(
@@ -779,6 +790,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("snippets".to_string()),
                 merge_target: None,
+                flatten: Some(false), // Snippets preserve directory structure
             },
         );
         claude_resources.insert(
@@ -786,6 +798,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("commands".to_string()),
                 merge_target: None,
+                flatten: Some(true), // Commands flatten by default
             },
         );
         claude_resources.insert(
@@ -793,6 +806,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("scripts".to_string()),
                 merge_target: None,
+                flatten: Some(false), // Scripts preserve directory structure
             },
         );
         claude_resources.insert(
@@ -800,6 +814,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: None, // Hooks are merged into configuration file
                 merge_target: Some(".claude/settings.local.json".to_string()),
+                flatten: None, // N/A for merge targets
             },
         );
         claude_resources.insert(
@@ -807,6 +822,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: None, // MCP servers are merged into configuration file
                 merge_target: Some(".mcp.json".to_string()),
+                flatten: None, // N/A for merge targets
             },
         );
 
@@ -826,6 +842,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("agent".to_string()), // Singular
                 merge_target: None,
+                flatten: Some(true), // Agents flatten by default
             },
         );
         opencode_resources.insert(
@@ -833,6 +850,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("command".to_string()), // Singular
                 merge_target: None,
+                flatten: Some(true), // Commands flatten by default
             },
         );
         opencode_resources.insert(
@@ -840,6 +858,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: None, // MCP servers are merged into configuration file
                 merge_target: Some(".opencode/opencode.json".to_string()),
+                flatten: None, // N/A for merge targets
             },
         );
 
@@ -859,6 +878,7 @@ impl Default for ToolsConfig {
             ResourceConfig {
                 path: Some("snippets".to_string()),
                 merge_target: None,
+                flatten: Some(false), // Snippets preserve directory structure
             },
         );
 
@@ -1460,6 +1480,36 @@ pub struct DetailedDependency {
     /// Omitted from TOML serialization when not specified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+
+    /// Control directory structure preservation during installation.
+    ///
+    /// When `true`, only the filename is used for installation (e.g., `nested/dir/file.md` → `file.md`).
+    /// When `false`, the full relative path is preserved (e.g., `nested/dir/file.md` → `nested/dir/file.md`).
+    ///
+    /// Default values by resource type (from tool configuration):
+    /// - `agents`: `true` (flatten by default - no nested directories)
+    /// - `commands`: `true` (flatten by default - no nested directories)
+    /// - All others: `false` (preserve directory structure)
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [agents]
+    /// # Default behavior (flatten=true) - installs as "helper.md"
+    /// agent1 = { source = "repo", path = "agents/subdir/helper.md", version = "v1.0.0" }
+    ///
+    /// # Preserve structure - installs as "subdir/helper.md"
+    /// agent2 = { source = "repo", path = "agents/subdir/helper.md", version = "v1.0.0", flatten = false }
+    ///
+    /// [snippets]
+    /// # Default behavior (flatten=false) - installs as "utils/helper.md"
+    /// snippet1 = { source = "repo", path = "snippets/utils/helper.md", version = "v1.0.0" }
+    ///
+    /// # Flatten - installs as "helper.md"
+    /// snippet2 = { source = "repo", path = "snippets/utils/helper.md", version = "v1.0.0", flatten = true }
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
 }
 
 impl Manifest {
@@ -1959,6 +2009,7 @@ impl Manifest {
     ///         filename: None,
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
+    ///         flatten: None,
     ///     })),
     ///     true
     /// );
@@ -2800,6 +2851,7 @@ impl Manifest {
     ///         filename: None,
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
+    ///         flatten: None,
     ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -2921,6 +2973,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -2963,6 +3016,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
@@ -3018,6 +3072,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
     ///
@@ -3030,6 +3085,27 @@ impl ResourceDependency {
         match self {
             Self::Simple(_) => None,
             Self::Detailed(d) => d.filename.as_deref(),
+        }
+    }
+
+    /// Get the flatten flag for this dependency.
+    ///
+    /// Returns the flatten setting if explicitly specified, or `None` if the
+    /// dependency should use the default flatten behavior based on tool configuration.
+    ///
+    /// When `flatten = true`: Only the filename is used (e.g., `nested/dir/file.md` → `file.md`)
+    /// When `flatten = false`: Full path is preserved (e.g., `nested/dir/file.md` → `nested/dir/file.md`)
+    ///
+    /// # Default Behavior (from tool configuration)
+    ///
+    /// - **Agents**: Default to `true` (flatten)
+    /// - **Commands**: Default to `true` (flatten)
+    /// - **All others**: Default to `false` (preserve structure)
+    #[must_use]
+    pub fn get_flatten(&self) -> Option<bool> {
+        match self {
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.flatten,
         }
     }
 
@@ -3063,6 +3139,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -3119,6 +3196,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -3146,6 +3224,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -3162,6 +3241,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -3215,6 +3295,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert!(!remote.is_local());
     ///
@@ -3231,6 +3312,7 @@ impl ResourceDependency {
     ///     filename: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
     /// }));
     /// assert!(local_detailed.is_local());
     /// ```
@@ -3578,6 +3660,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -3617,6 +3700,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -3648,6 +3732,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -3765,6 +3850,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             crate::core::ResourceType::Command,
         );
@@ -3801,6 +3887,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
 
@@ -3850,6 +3937,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
@@ -3871,6 +3959,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert!(dep.get_target().is_none());
@@ -3908,6 +3997,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -3938,6 +4028,7 @@ mod tests {
             filename: Some("ai-assistant.md".to_string()),
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
@@ -3959,6 +4050,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert!(dep.get_filename().is_none());
@@ -3996,6 +4088,7 @@ mod tests {
                 args: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4026,6 +4119,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert!(dep.is_pattern());
@@ -4055,6 +4149,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
 
@@ -4075,6 +4170,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
 
@@ -4104,6 +4200,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
 
@@ -4126,6 +4223,7 @@ mod tests {
             filename: Some("assistant.markdown".to_string()),
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));
@@ -4613,9 +4711,46 @@ merge-target = ".custom/hooks.json"
         let config = ResourceConfig {
             path: Some("test".to_string()),
             merge_target: None,
+            flatten: None,
         };
 
         let config_toml = toml::to_string(&config).expect("Failed to serialize config");
         assert!(!config_toml.contains("merge-target"));
+    }
+}
+
+#[cfg(test)]
+mod flatten_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_flatten_field() {
+        let toml = r#"
+[sources]
+test = "file:///test.git"
+
+[agents]
+with-flatten-false = { source = "test", path = "agents/test.md", version = "v1.0.0", flatten = false }
+with-flatten-true = { source = "test", path = "agents/test2.md", version = "v1.0.0", flatten = true }
+without-flatten = { source = "test", path = "agents/test3.md", version = "v1.0.0" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).unwrap();
+        let agents = &manifest.agents;
+
+        // Check with-flatten-false
+        let dep1 = agents.get("with-flatten-false").expect("with-flatten-false not found");
+        eprintln!("with-flatten-false: {:?}", dep1.get_flatten());
+        assert_eq!(dep1.get_flatten(), Some(false), "flatten=false should parse as Some(false)");
+
+        // Check with-flatten-true
+        let dep2 = agents.get("with-flatten-true").expect("with-flatten-true not found");
+        eprintln!("with-flatten-true: {:?}", dep2.get_flatten());
+        assert_eq!(dep2.get_flatten(), Some(true), "flatten=true should parse as Some(true)");
+
+        // Check without-flatten
+        let dep3 = agents.get("without-flatten").expect("without-flatten not found");
+        eprintln!("without-flatten: {:?}", dep3.get_flatten());
+        assert_eq!(dep3.get_flatten(), None, "missing flatten should parse as None");
     }
 }

@@ -67,7 +67,7 @@ path = "snippets/utils.md"
 version = "v1.0.0"
 resolved_commit = "abc123def456"
 checksum = "sha256:ghi789"
-installed_at = ".claude/snippets/utils.md"
+installed_at = ".agpm/snippets/utils.md"
 dependencies = []
 resource_type = "snippet"
 "#;

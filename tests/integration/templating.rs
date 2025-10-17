@@ -27,6 +27,8 @@ async fn test_basic_template_substitution() -> Result<()> {
             "test-agent",
             r#"---
 title: Test Agent
+agpm:
+  templating: true
 ---
 # {{ agpm.resource.name }}
 
@@ -51,7 +53,7 @@ Version: {{ agpm.resource.version }}
 
     project.write_manifest(&manifest).await?;
 
-    // Install with templating enabled (default)
+    // Install - templating enabled via frontmatter
     let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
@@ -110,6 +112,8 @@ This is a helper snippet.
             "main-agent",
             r#"---
 title: Main Agent
+agpm:
+  templating: true
 ---
 # {{ agpm.resource.name }}
 
@@ -142,7 +146,7 @@ Helper is available with version: {{ agpm.deps.snippets.helper_snippet.version }
 
     project.write_manifest(&manifest).await?;
 
-    // Install
+    // Install - templating enabled via frontmatter
     let output = project.run_agpm(&["install"])?;
     println!("=== INSTALL OUTPUT ===");
     println!("stdout: {}", output.stdout);
@@ -298,9 +302,9 @@ The syntax should not be processed.
     Ok(())
 }
 
-/// Test that --no-templating flag disables all template processing.
+/// Test that templating is disabled by default (template syntax preserved).
 #[tokio::test]
-async fn test_no_templating_flag() -> Result<()> {
+async fn test_templating_disabled_by_default() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
 
     let project = TestProject::new().await?;
@@ -335,22 +339,22 @@ Install path: {{ agpm.resource.install_path }}
 
     project.write_manifest(&manifest).await?;
 
-    // Install with --no-templating flag
-    let output = project.run_agpm(&["install", "--no-templating"])?;
+    // Install without --templating flag (templating disabled by default)
+    let output = project.run_agpm(&["install"])?;
     assert!(output.success);
 
     // Read the installed file
     let installed_path = project.project_path().join(".claude/agents/test-agent.md");
     let content = fs::read_to_string(&installed_path).await?;
 
-    // Verify template syntax was NOT processed
+    // Verify template syntax was NOT processed (default behavior)
     assert!(
         content.contains("# {{ agpm.resource.name }}"),
-        "Template syntax should remain literal with --no-templating flag"
+        "Template syntax should remain literal by default"
     );
     assert!(
         content.contains("{{ agpm.resource.install_path }}"),
-        "All template syntax should be preserved"
+        "All template syntax should be preserved by default"
     );
 
     Ok(())
@@ -421,6 +425,8 @@ async fn test_conditional_rendering() -> Result<()> {
             "conditional",
             r#"---
 title: Conditional Agent
+agpm:
+  templating: true
 ---
 # Conditional Content
 
@@ -493,6 +499,8 @@ async fn test_loop_over_dependencies() -> Result<()> {
             "main",
             r#"---
 title: Main Agent
+agpm:
+  templating: true
 ---
 # Available Snippets
 
@@ -658,8 +666,8 @@ This template has a syntax error.
 
     project.write_manifest(&manifest).await?;
 
-    // Install with --no-templating to create lockfile despite template errors
-    let install_output = project.run_agpm(&["install", "--no-templating"])?;
+    // Install without --templating to create lockfile despite template errors
+    let install_output = project.run_agpm(&["install"])?;
     assert!(install_output.success, "Install without templating should succeed");
 
     // Now validate with --render flag - should fail due to template syntax errors
@@ -714,8 +722,8 @@ This uses a non-existent variable: {{ agpm.nonexistent.field }}
 
     project.write_manifest(&manifest).await?;
 
-    // Install with --no-templating to create lockfile
-    let install_output = project.run_agpm(&["install", "--no-templating"])?;
+    // Install without --templating to create lockfile
+    let install_output = project.run_agpm(&["install"])?;
     assert!(install_output.success, "Install without templating should succeed");
 
     // Validate with --render should fail due to missing variable
@@ -836,6 +844,8 @@ async fn test_templating_checksum_enforced() -> Result<()> {
     // Create an agent with template variables
     let template_content = r#"---
 title: Test Agent
+agpm:
+  templating: true
 ---
 # {{ agpm.resource.name }}
 
@@ -934,6 +944,8 @@ async fn test_template_paths_platform_native() -> Result<()> {
     // Create an agent that references its install path
     let template_content = r#"---
 title: Path Test Agent
+agpm:
+  templating: true
 ---
 # {{ agpm.resource.name }}
 
@@ -948,6 +960,8 @@ You can find it at the following location:
     // Also create a snippet with a nested path
     let snippet_content = r#"---
 title: Nested Snippet
+agpm:
+  templating: true
 ---
 # Utility Snippet
 

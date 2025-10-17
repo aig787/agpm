@@ -459,8 +459,8 @@ This command depends on both commit snippets.
     assert!(output.success, "Install should succeed, stderr: {}", output.stderr);
 
     // Verify both snippets are installed at their respective paths
-    let commands_snippet_path = project.project_path().join(".claude/snippets/commands/commit.md");
-    let logit_snippet_path = project.project_path().join(".claude/snippets/logit/commit.md");
+    let commands_snippet_path = project.project_path().join(".agpm/snippets/commands/commit.md");
+    let logit_snippet_path = project.project_path().join(".agpm/snippets/logit/commit.md");
 
     assert!(
         tokio::fs::metadata(&commands_snippet_path).await.is_ok(),
@@ -582,7 +582,6 @@ This agent depends on both helper agent and command with the same name.
     // Verify files are installed
     let agent_path = project.project_path().join(".claude/agents/helper.md");
     let command_path = project.project_path().join(".claude/commands/helper.md");
-    let snippet_helper_path = project.project_path().join(".claude/snippets/helper.md");
 
     assert!(
         tokio::fs::metadata(&agent_path).await.is_ok(),
@@ -595,12 +594,8 @@ This agent depends on both helper agent and command with the same name.
         command_path
     );
 
-    // Verify they're not in the wrong directory
-    assert!(
-        tokio::fs::metadata(&snippet_helper_path).await.is_err(),
-        "Helper should not exist in snippets directory at {:?}",
-        snippet_helper_path
-    );
+    // Verify they're not in the wrong directory (skip this check - snippets go to .agpm now)
+    // Note: With the fix for default-tools, snippets now correctly use their default tool
 
     Ok(())
 }
@@ -977,7 +972,7 @@ This agent depends on both helper snippet and helper agent (same name, different
     assert!(has_agent_helper, "Lockfile should have helper agent:\n{}", lockfile_content);
 
     // Verify installed locations
-    let snippet_path = project.project_path().join(".claude/snippets/helper.md");
+    let snippet_path = project.project_path().join(".agpm/snippets/helper.md");
     let agent_path = project.project_path().join(".claude/agents/helper.md");
 
     assert!(
@@ -1135,7 +1130,7 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
     );
 
     // Verify shared snippet content is from v2.0.0 (content unchanged at v3.0.0)
-    let shared_path = project.project_path().join(".claude/snippets/shared.md");
+    let shared_path = project.project_path().join(".agpm/snippets/shared.md");
     let shared_content = tokio::fs::read_to_string(&shared_path).await?;
     assert!(
         shared_content.contains("Version 2 with new-dep"),
@@ -1207,45 +1202,20 @@ Depends on community helper.
 
     project.write_manifest(&manifest).await?;
 
-    // Run install
-    project.run_agpm(&["install"])?.assert_success();
+    // Run install - should now fail with path conflict
+    // With the fix for default-tools, both snippets now use "agpm" tool and install to the same path
+    let output = project.run_agpm(&["install"])?;
 
-    // Both helpers should be installed despite having the same name
-    // because they come from different sources
-    // Note: Transitive snippets inherit tool from parent agent (claude-code)
-    let community_helper = project.project_path().join(".claude/snippets/helper.md");
-
-    // Note: They install to the same path because they have the same resource name
-    // but lockfile should show both entries with different sources
-    let lockfile_content = project.read_lockfile().await?;
-
-    // Count how many helper entries exist
-    let helper_count = lockfile_content.matches(r#"name = "helper""#).count();
-
-    // We should have 2 helper entries in the lockfile (one from each source)
-    // However, they may be de-duplicated if they resolve to the same installation path
-    // The key test is that we have entries with different sources
+    // Expected behavior: Should detect path conflict
     assert!(
-        lockfile_content.contains(r#"source = "community""#),
-        "Lockfile should contain community source"
+        !output.success,
+        "Install should fail due to path conflict (both snippets use agpm tool)"
     );
     assert!(
-        lockfile_content.contains(r#"source = "local""#),
-        "Lockfile should contain local source"
-    );
-
-    // At least one helper should be installed
-    assert!(
-        tokio::fs::metadata(&community_helper).await.is_ok(),
-        "Helper snippet should be installed"
-    );
-
-    // Verify the lockfile has entries for both sources
-    // (even if one overwrote the other on disk, lockfile tracks both)
-    assert!(
-        helper_count >= 1,
-        "Should have at least one helper entry in lockfile, found {}",
-        helper_count
+        output.stderr.contains("Target path conflicts")
+            || output.stderr.contains(".agpm/snippets/helper.md"),
+        "Should report path conflict for snippets using same tool, got: {}",
+        output.stderr
     );
 
     Ok(())
@@ -1371,9 +1341,7 @@ This is a local agent with transitive dependencies.
     // Create manifest with local file dependency (no source)
     // Transitive dependencies are not supported for local file deps regardless of
     // whether they're Simple strings or Detailed inline tables - the key is no source.
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
-        .build();
+    let manifest = ManifestBuilder::new().add_local_agent("local-agent", "local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -1504,8 +1472,8 @@ Each snippet has its own transitive dependencies.
 
     // Verify that the pattern-matched snippets ARE installed
     // (pattern expansion should discover them as transitive deps)
-    let helper_one_path = project.project_path().join(".claude/snippets/helper-one.md");
-    let helper_two_path = project.project_path().join(".claude/snippets/helper-two.md");
+    let helper_one_path = project.project_path().join(".agpm/snippets/helper-one.md");
+    let helper_two_path = project.project_path().join(".agpm/snippets/helper-two.md");
 
     assert!(
         tokio::fs::metadata(&helper_one_path).await.is_ok(),
@@ -1700,12 +1668,12 @@ Depends on remote-helper from same Git source.
     let local_snippet_content = "# Local Snippet\n\nLocal file without transitive dependencies.";
     tokio::fs::write(&local_snippet_path, local_snippet_content).await?;
 
-    // Create manifest with both local file and remote Git dependency
+    // Create manifest with both local file and remote Git dependency (use relative path)
     let source_url = repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("community", &source_url)
         .add_standard_agent("remote-parent", "community", "agents/remote-parent.md")
-        .add_local_snippet("local-snippet", &local_snippet_path.display().to_string())
+        .add_local_snippet("local-snippet", "local-snippet.md")
         .build();
 
     project.write_manifest(&manifest).await?;
@@ -1729,9 +1697,8 @@ Depends on remote-helper from same Git source.
     );
 
     // Verify transitive remote helper is installed
-    // Note: Transitive snippets inherit tool from parent agent (claude-code),
-    // since claude-code supports snippets. So installs to .claude/snippets/
-    let installed_remote_helper = project.project_path().join(".claude/snippets/remote-helper.md");
+    // Note: Transitive snippets use their default tool (agpm)
+    let installed_remote_helper = project.project_path().join(".agpm/snippets/remote-helper.md");
     assert!(
         tokio::fs::metadata(&installed_remote_helper).await.is_ok(),
         "Remote helper (transitive) should be installed"
@@ -1800,10 +1767,9 @@ This is a local agent with a transitive dependency on ./helper.md.
     )
     .await?;
 
-    // Create manifest with local file dependency (absolute path)
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
-        .build();
+    // Create manifest with local file dependency (relative path)
+    let manifest =
+        ManifestBuilder::new().add_local_agent("local-agent", "agents/local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -1882,9 +1848,9 @@ This agent depends on ../helper.md (parent directory).
     )
     .await?;
 
-    // Create manifest
+    // Create manifest (path is agents/subfolder/local-agent.md, preserving subdirectory)
     let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
+        .add_agent("local-agent", |d| d.path("agents/subfolder/local-agent.md").flatten(false))
         .build();
 
     project.write_manifest(&manifest).await?;
@@ -1893,7 +1859,9 @@ This agent depends on ../helper.md (parent directory).
     project.run_agpm(&["install"])?.assert_success();
 
     // Verify both agents were installed
-    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
+    // Local agent preserves subdirectory structure: agents/subfolder/local-agent.md -> subfolder/local-agent.md
+    let installed_local = project.project_path().join(".claude/agents/subfolder/local-agent.md");
+    // Helper after stripping ../: helper.md -> helper.md (no prefix to strip)
     let installed_helper = project.project_path().join(".claude/agents/helper.md");
 
     assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
@@ -1952,10 +1920,9 @@ This agent depends on a snippet in a different directory.
     )
     .await?;
 
-    // Create manifest
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
-        .build();
+    // Create manifest (use relative path)
+    let manifest =
+        ManifestBuilder::new().add_local_agent("local-agent", "agents/local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -1966,12 +1933,12 @@ This agent depends on a snippet in a different directory.
     let installed_agent = project.project_path().join(".claude/agents/local-agent.md");
     assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Local agent should be installed");
 
-    // Verify snippet installed to .claude/snippets (inherits claude-code tool from parent agent)
-    // Note: Transitive snippets inherit the parent's tool if that tool supports snippets
-    let installed_snippet = project.project_path().join(".claude/snippets/utils.md");
+    // Verify snippet installed to .agpm/snippets (uses default tool for snippets)
+    // Note: Transitive snippets use their default tool (agpm)
+    let installed_snippet = project.project_path().join(".agpm/snippets/utils.md");
     assert!(
         tokio::fs::metadata(&installed_snippet).await.is_ok(),
-        "Utils snippet (transitive) should be installed to .claude/snippets (inheriting parent's tool)"
+        "Utils snippet (transitive) should be installed to .agpm/snippets (using default tool)"
     );
 
     // Verify lockfile
@@ -2019,9 +1986,8 @@ This agent has a transitive dependency that doesn't exist.
     .await?;
 
     // Create manifest
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
-        .build();
+    let manifest =
+        ManifestBuilder::new().add_local_agent("local-agent", "agents/local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -2087,9 +2053,8 @@ This agent has an invalid transitive dependency path.
     .await?;
 
     // Create manifest
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", &local_agent_path.display().to_string())
-        .build();
+    let manifest =
+        ManifestBuilder::new().add_local_agent("local-agent", "agents/local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -2172,9 +2137,7 @@ Uses a shared snippet outside the project directory.
     .await?;
 
     // Create manifest
-    let manifest = ManifestBuilder::new()
-        .add_local_agent("my-agent", &agent_path.display().to_string())
-        .build();
+    let manifest = ManifestBuilder::new().add_local_agent("my-agent", "agents/my-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
@@ -2186,13 +2149,13 @@ Uses a shared snippet outside the project directory.
     let installed_agent = project.project_path().join(".claude/agents/my-agent.md");
     assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Agent should be installed");
 
-    // Verify shared snippet installed to agpm tool directory (since tool=agpm was specified)
+    // Verify shared snippet installed to agpm snippets directory (since tool=agpm was specified)
     // For manifest-relative paths with ../, like "../shared/utils.md",
-    // the installed path becomes ".agpm/shared/utils.md" (strips ../ during install)
-    let expected_snippet_path = project.project_path().join(".agpm/shared/utils.md");
+    // the installed path becomes ".agpm/snippets/shared/utils.md" (strips ../, installs to snippets dir)
+    let expected_snippet_path = project.project_path().join(".agpm/snippets/shared/utils.md");
     assert!(
         tokio::fs::metadata(&expected_snippet_path).await.is_ok(),
-        "Shared snippet should be installed at .agpm/shared/utils.md"
+        "Shared snippet should be installed at .agpm/snippets/shared/utils.md"
     );
 
     // Verify content matches

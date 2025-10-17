@@ -14,7 +14,7 @@ AGPM supports powerful Tera-based templating for Markdown resources, enabling dy
 
 ## Overview
 
-When you install a Markdown resource (agent, snippet, command, etc.), AGPM automatically processes any template syntax it contains. This allows you to:
+When you install a Markdown resource (agent, snippet, command, etc.) that has templating enabled via frontmatter, AGPM processes any template syntax it contains. This allows you to:
 
 - **Reference other resources**: Access install paths and versions of dependencies
 - **Access installation metadata**: Use project paths, versions, and source information
@@ -23,6 +23,8 @@ When you install a Markdown resource (agent, snippet, command, etc.), AGPM autom
 - **Normalize paths**: Convert between platform-specific path formats
 
 Templates use the [Tera](https://keats.github.io/tera/) template engine with a restricted, secure configuration.
+
+**Templating is opt-in**: Resources must explicitly enable templating in their YAML frontmatter by setting `agpm.templating: true`. By default, all template syntax is preserved as literal text.
 
 ## Template Variables Reference
 
@@ -238,20 +240,24 @@ This {{ agpm.resource.type }} resource has the following dependencies:
 
 ## Controlling Templating
 
-### Disabling Templating Globally
+### Enabling Templating Per-Resource
 
-Use the `--no-templating` flag to disable all template processing:
+Templating is **disabled by default** for all resources. To enable template processing for a specific resource, add `templating: true` to its YAML frontmatter:
 
-```bash
-agpm install --no-templating
-agpm update --no-templating
+```markdown
+---
+title: My Agent
+agpm:
+  templating: true
+---
+# {{ agpm.resource.name }}
+
+This resource will have its template syntax processed during installation.
 ```
 
-This keeps all template syntax literal (useful for debugging or legacy resources).
+### Disabling Templating (Default)
 
-### Disabling Templating Per-Resource
-
-Add `templating: false` to the resource's YAML frontmatter:
+By default, all template syntax is kept literal and not processed. To explicitly document this intent, you can set `templating: false`:
 
 ```markdown
 ---
@@ -261,8 +267,13 @@ agpm:
 ---
 # This file contains literal {{ template.syntax }}
 
-It will NOT be processed during installation.
+The template syntax above will be preserved as-is.
 ```
+
+This default behavior is useful for:
+- Resources that contain literal template syntax for documentation
+- Example code that shows template usage
+- Resources that don't need dynamic content
 
 ### Files Without Template Syntax
 
@@ -469,8 +480,8 @@ This means the **installed content will differ by platform**, but the lockfile r
 
 ### Template syntax not processed
 
-- **Cause**: Templating disabled via frontmatter or flag
-- **Solution**: Remove `templating: false` from frontmatter or omit `--no-templating` flag
+- **Cause**: Templating disabled by default (resources must opt-in via frontmatter)
+- **Solution**: Add `templating: true` to the resource's YAML frontmatter under the `agpm` key
 
 ### "Variable not found" with hyphenated names
 

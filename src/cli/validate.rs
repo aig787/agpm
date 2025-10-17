@@ -1196,6 +1196,7 @@ mod tests {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -1269,6 +1270,7 @@ mod tests {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -1452,6 +1454,7 @@ mod tests {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -1527,6 +1530,7 @@ mod tests {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -1801,6 +1805,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1886,6 +1891,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2101,6 +2107,7 @@ mod tests {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -2187,6 +2194,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -2234,6 +2242,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -2282,6 +2291,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             true,
@@ -2301,6 +2311,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
             false,
@@ -2423,6 +2434,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
         );
@@ -2443,6 +2455,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
         );
@@ -2495,6 +2508,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
+                    flatten: None,
                 },
             )),
         );
@@ -3215,6 +3229,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
