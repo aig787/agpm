@@ -217,18 +217,6 @@ pub struct UpdateCommand {
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
     pub no_progress: bool,
-
-    /// Disable template rendering for markdown resources
-    ///
-    /// When enabled, markdown files will be installed as-is without processing
-    /// any template syntax ({{ }}) or {% %} tags. This is useful for:
-    /// - Installing resources that contain literal template syntax
-    /// - Debugging template rendering issues
-    /// - Legacy resources that haven't been updated for templating
-    ///
-    /// Template rendering is enabled by default for all .md files.
-    #[arg(long)]
-    pub no_templating: bool,
 }
 
 impl UpdateCommand {
@@ -493,7 +481,6 @@ impl UpdateCommand {
                 } else {
                     Some(multi_phase.clone())
                 },
-                self.no_templating,
                 self.verbose,
             )
             .await?;
@@ -613,7 +600,6 @@ mod tests {
             quiet: true,       // Quiet by default for tests
             no_progress: true, // No progress bars in tests
             max_parallel: None,
-            no_templating: false,
         }
     }
 
@@ -1117,7 +1103,6 @@ mod tests {
             quiet: false,
             no_progress: false,
             max_parallel: None,
-            no_templating: false,
         };
 
         assert!(cmd.dependencies.is_empty());
@@ -1139,7 +1124,6 @@ mod tests {
             quiet: true,
             no_progress: true,
             max_parallel: Some(4),
-            no_templating: true,
         };
 
         assert_eq!(cmd.dependencies.len(), 2);

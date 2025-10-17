@@ -361,9 +361,20 @@ dependencies:
 
 ### Templating Control
 
-AGPM automatically processes Tera template syntax in Markdown resources during installation. You can disable this per-resource using frontmatter:
+AGPM can process Tera template syntax in Markdown resources during installation. Templating is **disabled by default** and must be enabled per-resource via frontmatter.
 
-**Disable templating for a specific resource:**
+**Enable templating for a resource:**
+```markdown
+---
+agpm:
+  templating: true
+---
+# {{ agpm.resource.name }}
+
+This resource will have its template syntax processed during installation.
+```
+
+**Disable templating (default):**
 ```markdown
 ---
 agpm:
@@ -371,18 +382,12 @@ agpm:
 ---
 # This file contains literal {{ template.syntax }}
 
-It will NOT be processed during installation.
-```
-
-**Disable templating globally:**
-```bash
-agpm install --no-templating
-agpm update --no-templating
+The template syntax above will be preserved as-is.
 ```
 
 ### Template Variables
 
-When templating is enabled (the default), you can use template variables to create dynamic content:
+When templating is enabled in a resource's frontmatter, you can use template variables to create dynamic content:
 
 ```markdown
 ---

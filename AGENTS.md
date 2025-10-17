@@ -81,15 +81,17 @@ src/
 
 ## Resource Authoring and Templating
 
-When creating agents, snippets, or commands for AGPM, you can use Tera-based templating to create dynamic content that adapts during installation.
+When creating agents, snippets, or commands for AGPM, you can use Tera-based templating to create dynamic content that adapts during installation. **Templating is opt-in** - resources must enable it via frontmatter.
 
 ### Quick Start
 
-Resources support template variables for metadata and dependencies:
+Resources support template variables for metadata and dependencies. Enable templating with `agpm.templating: true`:
 
 ```markdown
 ---
 title: {{ agpm.resource.name }}
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: snippets/utils.md

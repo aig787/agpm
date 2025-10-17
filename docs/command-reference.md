@@ -55,6 +55,7 @@ Options:
       --no-lock                  Don't write lockfile after installation
       --frozen                   Require exact lockfile match (like cargo build --locked)
       --no-cache                 Bypass cache and fetch directly from sources
+      --templating               Enable template rendering for markdown resources
       --max-parallel <NUMBER>    Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>     Path to agpm.toml (default: ./agpm.toml)
   -h, --help                     Print help information
@@ -76,6 +77,9 @@ agpm install --no-cache
 
 # Control parallelism (default: max(10, 2 × CPU cores))
 agpm install --max-parallel 8
+
+# Enable template rendering for markdown resources
+agpm install --templating
 
 # Use custom manifest path
 agpm install --manifest-path ./configs/agpm.toml
@@ -101,6 +105,7 @@ Arguments:
 
 Options:
       --dry-run               Preview changes without applying
+      --templating            Enable template rendering for markdown resources
       --max-parallel <NUMBER> Maximum parallel operations (default: max(10, 2 × CPU cores))
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
@@ -116,6 +121,9 @@ agpm update rust-expert
 
 # Preview changes
 agpm update --dry-run
+
+# Update with template rendering enabled
+agpm update --templating
 
 # Update with custom parallelism
 agpm update --max-parallel 6

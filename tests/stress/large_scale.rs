@@ -93,7 +93,6 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
         false,
         None,
         Some(progress),
-        false, // no_templating
         false, // verbose
     )
     .await?;
@@ -331,7 +330,6 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         false,
         None,
         Some(progress),
-        false, // no_templating
         false, // verbose
     )
     .await?;
@@ -392,7 +390,6 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
         false,
         None,
         Some(progress2),
-        false, // no_templating
         false, // verbose
     )
     .await?;
@@ -563,7 +560,6 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
         false,
         None,
         Some(progress),
-        false, // no_templating
         false, // verbose
     )
     .await?;
@@ -719,7 +715,6 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
         false,
         None,
         Some(progress),
-        false, // no_templating
         false, // verbose
     )
     .await?;
@@ -887,7 +882,6 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
         false,
         None,
         Some(progress),
-        false, // no_templating
         false, // verbose
     )
     .await?;

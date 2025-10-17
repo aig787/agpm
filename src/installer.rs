@@ -153,7 +153,6 @@ use std::fs;
 /// * `project_dir` - Root directory of the project where resources will be installed
 /// * `cache` - Cache instance for managing Git repositories and worktrees
 /// * `force_refresh` - Whether to force refresh of cached worktrees
-/// * `no_templating` - Whether to disable template rendering for markdown files
 /// * `manifest` - Optional reference to the project manifest for template context
 /// * `lockfile` - Optional reference to the lockfile for template context
 /// * `project_patches` - Optional project-level patches from agpm.toml
@@ -162,7 +161,6 @@ pub struct InstallContext<'a> {
     pub project_dir: &'a Path,
     pub cache: &'a Cache,
     pub force_refresh: bool,
-    pub no_templating: bool,
     pub verbose: bool,
     pub manifest: Option<&'a Manifest>,
     pub lockfile: Option<&'a Arc<LockFile>>,
@@ -177,7 +175,6 @@ impl<'a> InstallContext<'a> {
         project_dir: &'a Path,
         cache: &'a Cache,
         force_refresh: bool,
-        no_templating: bool,
         verbose: bool,
         manifest: Option<&'a Manifest>,
         lockfile: Option<&'a Arc<LockFile>>,
@@ -188,7 +185,6 @@ impl<'a> InstallContext<'a> {
             project_dir,
             cache,
             force_refresh,
-            no_templating,
             verbose,
             manifest,
             lockfile,
@@ -316,7 +312,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     applied_patches: std::collections::HashMap::new(),
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
@@ -468,27 +464,24 @@ pub async fn install_resource(
             (new_content.clone(), crate::manifest::patches::AppliedPatches::default())
         };
 
-    // Apply templating to markdown files if enabled (after patching)
+    // Apply templating to markdown files if enabled in frontmatter (after patching)
     // Track whether templating was applied and the context digest for cache invalidation
-    let (final_content, template_context_digest) = if !context.no_templating
-        && entry.path.ends_with(".md")
-    {
-        // Check for opt-out in frontmatter
-        let templating_disabled = if let Ok(md_file) = MarkdownFile::parse(&patched_content) {
+    let (final_content, template_context_digest) = if entry.path.ends_with(".md") {
+        // Check for opt-in in frontmatter
+        let templating_enabled = if let Ok(md_file) = MarkdownFile::parse(&patched_content) {
             md_file
                 .metadata
                 .as_ref()
                 .and_then(|m| m.extra.get("agpm"))
                 .and_then(|agpm| agpm.get("templating"))
                 .and_then(|v| v.as_bool())
-                .map(|b| !b)
                 .unwrap_or(false)
         } else {
             false
         };
 
-        if templating_disabled {
-            tracing::debug!("Templating disabled via frontmatter for {}", entry.name);
+        if !templating_enabled {
+            tracing::debug!("Templating not enabled via frontmatter for {}", entry.name);
             (patched_content, None)
         } else if patched_content.contains("{{")
             || patched_content.contains("{%")
@@ -600,11 +593,7 @@ pub async fn install_resource(
             (patched_content, None)
         }
     } else {
-        if context.no_templating {
-            tracing::debug!("Templating disabled for {}", entry.name);
-        } else {
-            tracing::debug!("Not a markdown file: {}", entry.path);
-        }
+        tracing::debug!("Not a markdown file: {}", entry.path);
         (patched_content, None)
     };
 
@@ -697,7 +686,7 @@ pub async fn install_resource(
 ///     applied_patches: std::collections::HashMap::new(),
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
@@ -793,7 +782,7 @@ pub async fn install_resource_with_progress(
 ///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
 /// let pb = ProgressBar::new(total as u64);
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
 /// let count = install_resources_parallel(
 ///     &lockfile,
 ///     &manifest,
@@ -829,7 +818,6 @@ pub async fn install_resources_parallel(
     let project_dir = install_ctx.project_dir;
     let cache = install_ctx.cache;
     let force_refresh = install_ctx.force_refresh;
-    let no_templating = install_ctx.no_templating;
     // Collect all entries to install using ResourceIterator
     let all_entries = ResourceIterator::collect_all_entries(lockfile, manifest);
 
@@ -901,7 +889,6 @@ pub async fn install_resources_parallel(
                     &project_dir,
                     cache.as_ref(),
                     force_refresh,
-                    no_templating,
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(lockfile),
@@ -1222,7 +1209,6 @@ pub async fn install_resources_parallel_with_progress(
     let project_dir = install_ctx.project_dir;
     let cache = install_ctx.cache;
     let force_refresh = install_ctx.force_refresh;
-    let no_templating = install_ctx.no_templating;
     // Collect all entries to install using ResourceIterator
     let all_entries = ResourceIterator::collect_all_entries(lockfile, manifest);
 
@@ -1304,7 +1290,6 @@ pub async fn install_resources_parallel_with_progress(
                     &project_dir,
                     cache.as_ref(),
                     force_refresh,
-                    no_templating,
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
@@ -1536,7 +1521,6 @@ pub enum ResourceFilter {
 ///     false,
 ///     Some(8), // Limit to 8 concurrent operations
 ///     Some(progress),
-///     false, // no_templating
 ///     false, // verbose
 /// ).await?;
 ///
@@ -1570,7 +1554,6 @@ pub enum ResourceFilter {
 ///     false,
 ///     None, // Unlimited concurrency
 ///     None, // No progress output
-///     false, // no_templating
 ///     false, // verbose
 /// ).await?;
 ///
@@ -1588,7 +1571,6 @@ pub async fn install_resources(
     force_refresh: bool,
     max_concurrency: Option<usize>,
     progress: Option<Arc<MultiPhaseProgress>>,
-    no_templating: bool,
     verbose: bool,
 ) -> Result<(usize, Vec<(String, String)>, Vec<(String, crate::manifest::patches::AppliedPatches)>)>
 {
@@ -1701,7 +1683,6 @@ pub async fn install_resources(
                     &project_dir,
                     &cache,
                     force_refresh,
-                    no_templating,
                     verbose,
                     Some(manifest),
                     Some(lockfile),
@@ -1832,7 +1813,7 @@ pub async fn install_resources(
 /// // Create dynamic progress manager
 /// let progress_bar = Arc::new(ProgressBar::new(100));
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
 /// let count = install_resources_with_dynamic_progress(
 ///     &lockfile,
 ///     &manifest,
@@ -1877,7 +1858,6 @@ pub async fn install_resources_with_dynamic_progress(
     let project_dir = install_ctx.project_dir;
     let cache = install_ctx.cache;
     let force_refresh = install_ctx.force_refresh;
-    let no_templating = install_ctx.no_templating;
     // Collect all entries to install using ResourceIterator
     let all_entries = ResourceIterator::collect_all_entries(lockfile, manifest);
 
@@ -1950,7 +1930,6 @@ pub async fn install_resources_with_dynamic_progress(
                     &project_dir,
                     cache.as_ref(),
                     force_refresh,
-                    no_templating,
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
@@ -2077,7 +2056,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -2137,7 +2116,6 @@ pub async fn install_updated_resources(
 ) -> Result<usize> {
     let project_dir = install_ctx.project_dir;
     let cache = install_ctx.cache;
-    let no_templating = install_ctx.no_templating;
     if updates.is_empty() {
         return Ok(0);
     }
@@ -2232,7 +2210,6 @@ pub async fn install_updated_resources(
                     &project_dir,
                     cache.as_ref(),
                     false,
-                    no_templating,
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
@@ -2943,7 +2920,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -2979,7 +2956,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3004,7 +2981,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Try to install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3029,7 +3006,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
@@ -3065,7 +3042,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install with progress
         let result = install_resource_with_progress(&entry, "agents", &context, &pb).await;
@@ -3095,7 +3072,6 @@ mod tests {
             false,
             None,
             None,
-            false, // no_templating
             false, // verbose
         )
         .await
@@ -3149,7 +3125,6 @@ mod tests {
             false,
             None,
             None,
-            false, // no_templating
             false, // verbose
         )
         .await
@@ -3202,7 +3177,6 @@ mod tests {
             &cache,
             false,
             false,
-            false,
             Some(&manifest),
             Some(&lockfile),
             None,
@@ -3253,7 +3227,6 @@ mod tests {
             &cache,
             false,
             false,
-            false,
             Some(&manifest),
             Some(&lockfile),
             None,
@@ -3286,7 +3259,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install using the parallel function
         let result = install_resource_for_parallel(&entry, "agents", &context).await;
@@ -3314,7 +3287,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3529,7 +3502,6 @@ local-config.json
         let context = InstallContext::new(
             project_dir,
             &cache,
-            false,
             false,
             false,
             Some(&manifest),

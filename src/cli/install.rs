@@ -233,18 +233,6 @@ pub struct InstallCommand {
     /// - 1: Changes would be made (useful for CI checks)
     #[arg(long)]
     dry_run: bool,
-
-    /// Disable template rendering for markdown resources
-    ///
-    /// When enabled, markdown files will be installed as-is without processing
-    /// any template syntax ({{ }}) or {% %} tags. This is useful for:
-    /// - Installing resources that contain literal template syntax
-    /// - Debugging template rendering issues
-    /// - Legacy resources that haven't been updated for templating
-    ///
-    /// Template rendering is enabled by default for all .md files.
-    #[arg(long)]
-    no_templating: bool,
 }
 
 impl InstallCommand {
@@ -277,7 +265,6 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
-            no_templating: false,
         }
     }
 
@@ -307,7 +294,6 @@ impl InstallCommand {
             verbose: false,
             no_transitive: false,
             dry_run: false,
-            no_templating: false,
         }
     }
 
@@ -585,7 +571,6 @@ impl InstallCommand {
                 self.no_cache,
                 Some(max_concurrency),
                 Some(multi_phase.clone()),
-                self.no_templating,
                 self.verbose,
             )
             .await
@@ -1096,7 +1081,6 @@ mod tests {
             verbose: false,
             no_transitive: false,
             dry_run: false,
-            no_templating: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -1234,7 +1218,6 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: false,
-            no_templating: false,
         };
 
         let result = cmd.execute_from_path(Some(&manifest_path)).await;
@@ -1392,7 +1375,6 @@ Body",
             verbose: false,
             no_transitive: false,
             dry_run: true,
-            no_templating: false,
         };
 
         // In dry-run mode, this should return an error indicating changes would be made
