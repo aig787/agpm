@@ -24,6 +24,8 @@ async fn test_project_template_vars_in_transitive_deps() -> Result<()> {
             "agents",
             "main-agent",
             r#"---
+agpm:
+  templating: true
 dependencies:
   agents:
     - path: ./{{ agpm.project.language }}-helper.md
@@ -107,6 +109,8 @@ async fn test_undefined_template_var_error() -> Result<()> {
             "agents",
             "test-agent",
             r#"---
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: ../snippets/{{ agpm.project.undefined_var }}-guide.md

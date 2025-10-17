@@ -219,6 +219,7 @@ impl MetadataExtractor {
     /// Check if templating is disabled in YAML frontmatter.
     ///
     /// Parses the YAML to check for `agpm.templating: false` field.
+    /// Templating is opt-in: disabled by default unless explicitly set to true.
     fn is_templating_disabled_yaml(frontmatter: &str) -> bool {
         // Try to parse as raw YAML value to check agpm.templating field
         if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter) {
@@ -227,15 +228,16 @@ impl MetadataExtractor {
                 .and_then(|agpm| agpm.get("templating"))
                 .and_then(|v| v.as_bool())
                 .map(|b| !b)
-                .unwrap_or(false)
+                .unwrap_or(true) // Opt-in: disabled by default
         } else {
-            false
+            true // Opt-in: disabled by default
         }
     }
 
     /// Check if templating is disabled in JSON content.
     ///
     /// Parses the JSON to check for `agpm.templating: false` field.
+    /// Templating is opt-in: disabled by default unless explicitly set to true.
     fn is_templating_disabled_json(content: &str) -> bool {
         // Try to parse JSON to check agpm.templating field
         if let Ok(json) = serde_json::from_str::<JsonValue>(content) {
@@ -243,9 +245,9 @@ impl MetadataExtractor {
                 .and_then(|agpm| agpm.get("templating"))
                 .and_then(|v| v.as_bool())
                 .map(|b| !b)
-                .unwrap_or(false)
+                .unwrap_or(true) // Opt-in: disabled by default
         } else {
-            false
+            true // Opt-in: disabled by default
         }
     }
 
@@ -564,6 +566,8 @@ dependencies:
 
         // Markdown with templated dependency path
         let content = r#"---
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: standards/{{ agpm.project.language }}-guide.md
@@ -597,6 +601,8 @@ dependencies:
 
         // Template references undefined variable (should error with helpful message)
         let content = r#"---
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: standards/{{ agpm.project.language }}-{{ agpm.project.undefined }}-guide.md
@@ -623,6 +629,8 @@ dependencies:
 
         // Use default filter for undefined variable (recommended pattern)
         let content = r#"---
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: standards/{{ agpm.project.language }}-{{ agpm.project.style | default(value="standard") }}-guide.md
@@ -652,6 +660,9 @@ dependencies:
         let content = r#"{
   "events": ["UserPromptSubmit"],
   "command": "node",
+  "agpm": {
+    "templating": true
+  },
   "dependencies": {
     "scripts": [
       { "path": "scripts/{{ agpm.project.tool }}.js", "version": "v1.0.0" }
@@ -732,6 +743,8 @@ dependencies:
 
         // Test that dependency paths in frontmatter are templated correctly
         let content = r#"---
+agpm:
+  templating: true
 dependencies:
   agents:
     - path: agents/{{ agpm.project.language }}-helper.md

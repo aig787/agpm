@@ -1081,6 +1081,8 @@ async fn test_project_template_variables() -> Result<()> {
             "project-agent",
             r#"---
 title: Project Code Reviewer
+agpm:
+  templating: true
 ---
 # {{ agpm.project.name }} Code Reviewer
 
@@ -1244,6 +1246,8 @@ async fn test_templates_without_project_variables() -> Result<()> {
             "simple-agent",
             r#"---
 title: Simple Agent
+agpm:
+  templating: true
 ---
 # {{ agpm.resource.name }}
 
