@@ -26,6 +26,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 📝 **Markdown templating** - Optional dynamic content generation with access to installation metadata and dependency references (opt-in per resource via frontmatter)
 - 🎨 **Project template variables** - Define arbitrary project-specific variables for AI agents (style guides, conventions, coding standards)
 - 🎯 **Templated dependency paths** - Use project variables in transitive dependency paths for dynamic, configuration-driven resolution
+- 🔍 **File reference validation** - Automatic auditing of markdown file references to catch broken cross-references before deployment
 
 ## Requirements
 
@@ -168,8 +169,29 @@ agpm validate
 # Full validation with all checks
 agpm validate --resolve --sources --paths --check-lock
 
+# Validate template rendering and file references
+agpm validate --render
+
 # JSON output for CI/CD integration
 agpm validate --format json
+```
+
+#### Template and File Reference Validation
+
+The `--render` flag provides additional validation for markdown resources:
+
+- **Template Rendering**: Validates that all markdown resources with template syntax (`{{`, `{%`, `{#`) can be successfully rendered
+- **File Reference Auditing**: Checks that all file references within markdown content point to existing files
+  - Validates markdown links: `[text](path.md)`
+  - Validates direct file paths: `.agpm/snippets/file.md`, `docs/guide.md`
+  - Ignores URLs, code blocks, and absolute paths
+  - Reports broken references with clear error messages
+
+This is especially useful in CI/CD pipelines to catch broken cross-references before deployment:
+
+```bash
+# Validate everything before deployment
+agpm validate --render --strict
 ```
 
 #### Transitive Dependencies and Conflict Resolution

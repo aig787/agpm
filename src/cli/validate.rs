@@ -95,6 +95,7 @@ use crate::cache::Cache;
 use crate::core::ResourceType;
 use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, find_manifest_with_optional};
+use crate::markdown::reference_extractor::{extract_file_references, validate_file_references};
 use crate::resolver::DependencyResolver;
 use crate::templating::{TemplateContextBuilder, TemplateRenderer};
 #[cfg(test)]
@@ -217,21 +218,25 @@ pub struct ValidateCommand {
     #[arg(long)]
     pub strict: bool,
 
-    /// Pre-render markdown templates without installing
+    /// Pre-render markdown templates and validate file references
     ///
     /// Validates that all markdown resources can be successfully rendered
-    /// with their template syntax. This catches template errors before
-    /// installation. Requires a lockfile to build the template context.
+    /// with their template syntax, and that all file references within the
+    /// markdown content point to existing files. This catches template errors
+    /// and broken cross-references before installation. Requires a lockfile
+    /// to build the template context.
     ///
     /// When enabled:
     /// - Reads all markdown resources from worktrees/local paths
     /// - Attempts to render each with the current template context
-    /// - Reports syntax errors and missing variables
-    /// - Returns non-zero exit code on rendering failures
+    /// - Extracts and validates file references (markdown links and direct paths)
+    /// - Reports syntax errors, missing variables, and broken file references
+    /// - Returns non-zero exit code on validation failures
     ///
     /// This is useful for:
     /// - Catching template errors in CI/CD before deployment
     /// - Validating template syntax during development
+    /// - Ensuring referential integrity of documentation
     /// - Testing template rendering without modifying the filesystem
     #[arg(long)]
     pub render: bool,
@@ -998,6 +1003,137 @@ impl ValidateCommand {
                     }
                 }
                 return Err(anyhow::anyhow!("Template rendering failed"));
+            }
+
+            // Validate file references in markdown content
+            if self.verbose && !self.quiet {
+                println!("\n🔍 Validating file references in markdown content...");
+            }
+
+            let mut file_reference_errors = Vec::new();
+            let mut total_references_checked = 0;
+
+            // Helper macro to validate file references in markdown resources
+            macro_rules! validate_file_references_in_resource {
+                ($name:expr, $entry:expr) => {{
+                    // Read the resource content
+                    let content = if $entry.source.is_some() && $entry.resolved_commit.is_some() {
+                        // Git resource - read from worktree
+                        let source_name = $entry.source.as_ref().unwrap();
+                        let sha = $entry.resolved_commit.as_ref().unwrap();
+                        let url = match $entry.url.as_ref() {
+                            Some(u) => u,
+                            None => {
+                                continue;
+                            }
+                        };
+
+                        let cache_dir = match cache
+                            .get_or_create_worktree_for_sha(source_name, url, sha, Some($name))
+                            .await
+                        {
+                            Ok(dir) => dir,
+                            Err(_) => {
+                                continue;
+                            }
+                        };
+
+                        let source_path = cache_dir.join(&$entry.path);
+                        match tokio::fs::read_to_string(&source_path).await {
+                            Ok(c) => c,
+                            Err(_) => {
+                                continue;
+                            }
+                        }
+                    } else {
+                        // Local resource - read from installed location
+                        let installed_path = project_dir.join(&$entry.installed_at);
+
+                        match tokio::fs::read_to_string(&installed_path).await {
+                            Ok(c) => c,
+                            Err(_) => {
+                                continue;
+                            }
+                        }
+                    };
+
+                    // Extract file references from markdown content
+                    let references = extract_file_references(&content);
+
+                    if !references.is_empty() {
+                        total_references_checked += references.len();
+
+                        // Validate each reference exists
+                        match validate_file_references(&references, project_dir) {
+                            Ok(missing) => {
+                                for missing_ref in missing {
+                                    file_reference_errors.push(format!(
+                                        "{}: references non-existent file '{}'",
+                                        $entry.installed_at, missing_ref
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                file_reference_errors.push(format!(
+                                    "{}: failed to validate references: {}",
+                                    $entry.installed_at, e
+                                ));
+                            }
+                        }
+                    }
+                }};
+            }
+
+            // Process each markdown resource type from lockfile
+            for entry in &lockfile.agents {
+                validate_file_references_in_resource!(&entry.name, entry);
+            }
+
+            for entry in &lockfile.snippets {
+                validate_file_references_in_resource!(&entry.name, entry);
+            }
+
+            for entry in &lockfile.commands {
+                validate_file_references_in_resource!(&entry.name, entry);
+            }
+
+            for entry in &lockfile.scripts {
+                validate_file_references_in_resource!(&entry.name, entry);
+            }
+
+            // Report file reference validation results
+            if file_reference_errors.is_empty() {
+                if total_references_checked > 0 {
+                    if !self.quiet && self.format == OutputFormat::Text {
+                        println!(
+                            "✓ All {} file references validated successfully",
+                            total_references_checked
+                        );
+                    }
+                } else if self.verbose && !self.quiet && self.format == OutputFormat::Text {
+                    println!("⚠ No file references found in resources");
+                }
+            } else {
+                let error_msg = format!(
+                    "File reference validation failed: {} broken reference(s) found",
+                    file_reference_errors.len()
+                );
+                errors.push(error_msg.clone());
+
+                if matches!(self.format, OutputFormat::Json) {
+                    validation_results.valid = false;
+                    validation_results.errors.extend(file_reference_errors);
+                    validation_results.errors.push(error_msg);
+                    validation_results.warnings = warnings;
+                    println!("{}", serde_json::to_string_pretty(&validation_results)?);
+                    return Err(anyhow::anyhow!("File reference validation failed"));
+                } else if !self.quiet {
+                    println!("{} {}", "✗".red(), error_msg);
+                    for error in &file_reference_errors {
+                        println!("  {}", error);
+                    }
+                }
+                return Err(anyhow::anyhow!("File reference validation failed"));
             }
         }
 
@@ -3478,5 +3614,360 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
         let result = cmd.execute_from_path(manifest_path).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_reference_validation_with_valid_references() {
+        use crate::lockfile::LockedResource;
+        use std::fs;
+
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create manifest
+        let manifest_path = project_dir.join("agpm.toml");
+        let mut manifest = Manifest::new();
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        // Create referenced files
+        let snippets_dir = project_dir.join(".agpm").join("snippets");
+        fs::create_dir_all(&snippets_dir).unwrap();
+        fs::write(snippets_dir.join("helper.md"), "# Helper\nSome content").unwrap();
+
+        // Create agent with valid file reference
+        let agents_dir = project_dir.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let agent_content = r#"---
+title: Test Agent
+---
+
+# Test Agent
+
+See [helper](.agpm/snippets/helper.md) for details.
+"#;
+        fs::write(agents_dir.join("test.md"), agent_content).unwrap();
+
+        // Create lockfile
+        let lockfile_path = project_dir.join("agpm.lock");
+        let mut lockfile = LockFile::default();
+        lockfile.agents.push(LockedResource {
+            name: "test-agent".to_string(),
+            source: None,
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "abc123".to_string(),
+            installed_at: normalize_path_for_storage(agents_dir.join("test.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+            render: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_reference_validation_with_broken_references() {
+        use crate::lockfile::LockedResource;
+        use std::fs;
+
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create manifest
+        let manifest_path = project_dir.join("agpm.toml");
+        let mut manifest = Manifest::new();
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        // Create agent with broken file reference (file doesn't exist)
+        let agents_dir = project_dir.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let agent_content = r#"---
+title: Test Agent
+---
+
+# Test Agent
+
+See [missing](.agpm/snippets/missing.md) for details.
+Also check `.claude/nonexistent.md`.
+"#;
+        fs::write(agents_dir.join("test.md"), agent_content).unwrap();
+
+        // Create lockfile
+        let lockfile_path = project_dir.join("agpm.lock");
+        let mut lockfile = LockFile::default();
+        lockfile.agents.push(LockedResource {
+            name: "test-agent".to_string(),
+            source: None,
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "abc123".to_string(),
+            installed_at: normalize_path_for_storage(agents_dir.join("test.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+            render: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("File reference validation failed"));
+    }
+
+    #[tokio::test]
+    async fn test_file_reference_validation_ignores_urls() {
+        use crate::lockfile::LockedResource;
+        use std::fs;
+
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create manifest
+        let manifest_path = project_dir.join("agpm.toml");
+        let mut manifest = Manifest::new();
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        // Create agent with URL references (should be ignored)
+        let agents_dir = project_dir.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let agent_content = r#"---
+title: Test Agent
+---
+
+# Test Agent
+
+Check [GitHub](https://github.com/user/repo) for source.
+Visit http://example.com for more info.
+"#;
+        fs::write(agents_dir.join("test.md"), agent_content).unwrap();
+
+        // Create lockfile
+        let lockfile_path = project_dir.join("agpm.lock");
+        let mut lockfile = LockFile::default();
+        lockfile.agents.push(LockedResource {
+            name: "test-agent".to_string(),
+            source: None,
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "abc123".to_string(),
+            installed_at: normalize_path_for_storage(agents_dir.join("test.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+            render: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_reference_validation_ignores_code_blocks() {
+        use crate::lockfile::LockedResource;
+        use std::fs;
+
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create manifest
+        let manifest_path = project_dir.join("agpm.toml");
+        let mut manifest = Manifest::new();
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        // Create agent with file references in code blocks (should be ignored)
+        let agents_dir = project_dir.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        let agent_content = r#"---
+title: Test Agent
+---
+
+# Test Agent
+
+```bash
+# This reference in code should be ignored
+cat .agpm/snippets/nonexistent.md
+```
+
+Inline code `example.md` should also be ignored.
+"#;
+        fs::write(agents_dir.join("test.md"), agent_content).unwrap();
+
+        // Create lockfile
+        let lockfile_path = project_dir.join("agpm.lock");
+        let mut lockfile = LockFile::default();
+        lockfile.agents.push(LockedResource {
+            name: "test-agent".to_string(),
+            source: None,
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "abc123".to_string(),
+            installed_at: normalize_path_for_storage(agents_dir.join("test.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+            render: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_reference_validation_multiple_resources() {
+        use crate::lockfile::LockedResource;
+        use std::fs;
+
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create manifest
+        let manifest_path = project_dir.join("agpm.toml");
+        let mut manifest = Manifest::new();
+        manifest.sources.insert("test".to_string(), "https://github.com/test/repo.git".to_string());
+        manifest.save(&manifest_path).unwrap();
+
+        // Create referenced snippets
+        let snippets_dir = project_dir.join(".agpm").join("snippets");
+        fs::create_dir_all(&snippets_dir).unwrap();
+        fs::write(snippets_dir.join("util.md"), "# Utilities").unwrap();
+
+        // Create agent with valid reference
+        let agents_dir = project_dir.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(agents_dir.join("agent1.md"), "# Agent 1\n\nSee [util](.agpm/snippets/util.md).")
+            .unwrap();
+
+        // Create command with broken reference
+        let commands_dir = project_dir.join(".claude").join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        fs::write(commands_dir.join("cmd1.md"), "# Command\n\nCheck `.agpm/snippets/missing.md`.")
+            .unwrap();
+
+        // Create lockfile
+        let lockfile_path = project_dir.join("agpm.lock");
+        let mut lockfile = LockFile::default();
+        lockfile.agents.push(LockedResource {
+            name: "agent1".to_string(),
+            source: None,
+            path: "agents/agent1.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "abc123".to_string(),
+            installed_at: normalize_path_for_storage(agents_dir.join("agent1.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.commands.push(LockedResource {
+            name: "cmd1".to_string(),
+            source: None,
+            path: "commands/cmd1.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: None,
+            url: None,
+            checksum: "def456".to_string(),
+            installed_at: normalize_path_for_storage(commands_dir.join("cmd1.md")),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Command,
+            tool: None,
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+        });
+        lockfile.save(&lockfile_path).unwrap();
+
+        let cmd = ValidateCommand {
+            file: None,
+            resolve: false,
+            check_lock: false,
+            sources: false,
+            paths: false,
+            format: OutputFormat::Text,
+            verbose: true,
+            quiet: false,
+            strict: false,
+            render: true,
+        };
+
+        let result = cmd.execute_from_path(manifest_path).await;
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("File reference validation failed"));
     }
 }

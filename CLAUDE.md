@@ -99,7 +99,7 @@ src/
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
 - `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
 - `list` - List installed resources
-- `validate [--check-lock] [--resolve]` - Validate manifest
+- `validate [--check-lock] [--resolve] [--render]` - Validate manifest, templates, and file references
 - `cache [clean|list]` - Manage cache
 - `config [get|set]` - Global config
 - `add [source|dep]` - Add to manifest
@@ -180,6 +180,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Flatten configuration** (v0.4.5+): Pattern dependencies support `flatten` field to control directory structure preservation (defaults: agents/commands flatten, others preserve)
 - **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
 - **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
+- **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
 
 ## Resolver Architecture
 
