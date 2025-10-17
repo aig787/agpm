@@ -65,7 +65,7 @@ Squash commits between the specified range into a single commit, with optional i
      * Include a body section listing the original commits being squashed
    - Analyze the code diff to determine appropriate attribution:
      * Review the actual changes being squashed: `git diff <from> <to>`
-     * Apply attribution analysis from `.claude/snippets/attribution.md` to determine AI contribution percentage
+     * Apply attribution analysis from `.agpm/snippets/attribution.md` to determine AI contribution percentage
    - Use reset + commit approach:
      ```bash
      git reset --soft <from>
@@ -113,7 +113,7 @@ Squash commits between the specified range into a single commit, with optional i
       - For each logical group identified:
         * Stage relevant files: `git add <files>`
         * Analyze the diff to determine AI contribution: `git diff --cached`
-        * Apply attribution analysis and thresholds from `.claude/snippets/attribution.md`
+        * Apply attribution analysis and thresholds from `.agpm/snippets/attribution.md`
         * Create commit with appropriate message and attribution:
           ```
           git commit -m "$(cat <<'EOF'
@@ -141,7 +141,7 @@ Squash commits between the specified range into a single commit, with optional i
    - Use present tense, be concise (≤72 chars)
    - For squashed commits, include summary in body
    - **Apply attribution based on code analysis**:
-     * Analyze the actual diff using logic and thresholds from `.claude/snippets/attribution.md`
+     * Analyze the actual diff using logic and thresholds from `.agpm/snippets/attribution.md`
      * The squashing operation itself doesn't require attribution - only the actual code changes matter
      * Example attribution when warranted:
        ```

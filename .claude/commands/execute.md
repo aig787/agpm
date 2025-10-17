@@ -9,7 +9,7 @@ argument-hint: <prompt-name> [additional-args...] - e.g., "fix-failing-tests" or
 
 ## Context
 
-- Available prompts: !`{ ls -1 .claude/*.md 2>/dev/null | grep -v commands; ls -1 .claude/snippets/prompts/*.md 2>/dev/null; } | xargs -I {} basename {} .md | sort -u`
+- Available prompts: !`{ ls -1 .claude/*.md 2>/dev/null | grep -v commands; ls -1 .agpm/snippets/prompts/*.md 2>/dev/null; } | xargs -I {} basename {} .md | sort -u`
 - Current directory: !`pwd`
 - Git status: !`git status --short`
 

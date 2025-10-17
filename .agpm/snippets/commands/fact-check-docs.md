@@ -30,7 +30,7 @@ Systematically verify the accuracy of all documentation files against the curren
    **Claude Code saved prompts**:
    - **.claude/commands/*.md**: Custom commands
    - **.claude/agents/*.md**: Agent definitions
-   - **.claude/snippets/*.md**: Code snippets
+   - **.agpm/snippets/*.md**: Code snippets (default location)
    - **.claude/scripts/*.md**: Script definitions
 
 3. For each documentation file, systematically verify:
