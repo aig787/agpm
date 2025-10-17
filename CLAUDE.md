@@ -176,6 +176,10 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
 - **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
 - **Patch/Override System** (v0.4.x+): TOML-based field overrides without forking, private config layer, lockfile tracking
+- **Opt-in templating** (v0.4.5+): Markdown template rendering disabled by default, enabled per-resource via `agpm.templating: true` in frontmatter
+- **Flatten configuration** (v0.4.5+): Pattern dependencies support `flatten` field to control directory structure preservation (defaults: agents/commands flatten, others preserve)
+- **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
+- **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
 
 ## Resolver Architecture
 
@@ -207,9 +211,11 @@ dependencies:
     - path: agents/helper.md
       version: v1.0.0
       tool: claude-code  # Optional: specify target tool
+      name: custom_helper  # Optional: custom template variable name
   snippets:
     - path: snippets/utils.md
-    # version and tool inherited from parent if not specified
+      flatten: true  # Optional: flatten directory structure
+    # version, tool, name, and flatten inherited from parent if not specified
 ---
 ```
 
@@ -236,6 +242,8 @@ dependencies:
 - `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
   - Inherits from parent if parent's tool supports this resource type
   - Falls back to default tool for this resource type
+- `name` (optional): Custom name for template variable references (defaults to sanitized filename)
+- `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
 
 **Key Features**:
 
