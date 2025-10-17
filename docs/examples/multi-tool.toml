@@ -1,0 +1,61 @@
+# Multi-Tool Project Configuration
+# This example shows how to manage resources for multiple AI assistants
+
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+internal = "https://github.com/myorg/internal-resources.git"
+
+# Configure default tools per resource type
+[default-tools]
+snippets = "agpm"        # Shared snippets (default)
+agents = "claude-code"   # Claude Code for agents by default
+commands = "claude-code" # Claude Code for commands by default
+
+[agents]
+# Claude Code agents (using defaults)
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+python-helper = { source = "community", path = "agents/python-helper.md", version = "v1.0.0" }
+
+# OpenCode agents (explicit tool specification)
+rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
+python-helper-oc = { source = "community", path = "agents/python-helper.md", version = "v1.0.0", tool = "opencode" }
+
+# Mixed - same resource for different tools
+ai-assistant-cc = { source = "internal", path = "agents/ai-assistant.md", version = "v2.0.0" }
+ai-assistant-oc = { source = "internal", path = "agents/ai-assistant.md", version = "v2.0.0", tool = "opencode" }
+
+[commands]
+# Claude Code commands
+deploy-cc = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
+test-cc = { source = "community", path = "commands/test-runner.md", version = "v1.5.0" }
+
+# OpenCode commands
+deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", tool = "opencode" }
+test-oc = { source = "community", path = "commands/test-runner.md", version = "v1.5.0", tool = "opencode" }
+
+[snippets]
+# Shared snippets (default to agpm tool, accessible by all)
+react-patterns = { source = "community", path = "snippets/react/*.md", version = "v1.0.0" }
+rust-macros = { source = "community", path = "snippets/rust-macros.md", version = "v2.0.0" }
+python-utils = { source = "internal", path = "snippets/python/*.md", version = "^1.0.0" }
+
+# Claude Code specific snippets (override default)
+claude-specific = { source = "community", path = "snippets/claude.md", version = "v1.0.0", tool = "claude-code" }
+
+[scripts]
+# Scripts are Claude Code only
+build = { source = "community", path = "scripts/build.sh", version = "v1.0.0" }
+validate = { source = "internal", path = "scripts/validate.py", version = "v2.0.0" }
+
+[hooks]
+# Hooks are Claude Code only
+pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
+session-start = { source = "internal", path = "hooks/session.json", version = "v1.2.0" }
+
+[mcp-servers]
+# MCP servers for both tools
+filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }
+
+database-cc = { source = "internal", path = "mcp/database.json", version = "v2.0.0" }
+database-oc = { source = "internal", path = "mcp/database.json", version = "v2.0.0", tool = "opencode" }

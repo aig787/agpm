@@ -71,6 +71,51 @@ agpm/
 - ResolvedVersion tracking with both SHA and resolved reference information
 - Single fetch per repository per command execution
 
+## Performance Architecture
+
+AGPM v0.3.2+ features significant performance optimizations focused on minimizing Git operations and maximizing reuse.
+
+### Centralized Version Resolution
+
+The `VersionResolver` provides batch resolution of all dependency versions to commit SHAs:
+- **Batch Processing**: All version constraints resolved in a single operation per repository
+- **Automatic Deduplication**: Identical version requirements processed only once
+- **Minimal Git Operations**: Single fetch per repository per command execution
+- **Upfront Resolution**: All versions resolved before any worktree operations begin
+
+### SHA-Based Worktree Deduplication
+
+The cache system uses commit-level deduplication for maximum efficiency:
+- **Commit-Level Caching**: Worktrees keyed by commit SHA, not version reference
+- **Maximum Reuse**: Multiple tags/branches pointing to same commit share one worktree
+- **Parallel Safety**: Independent worktrees enable conflict-free concurrent operations
+- **Smart Caching**: Command-instance caching prevents redundant network operations
+
+### Parallelism Control
+
+AGPM provides configurable parallelism with intelligent defaults:
+- **Default**: `max(10, 2 × CPU cores)` for optimal performance
+- **Configurable**: `--max-parallel` flag for fine-grained control
+- **Per-Command**: Parallelism settings apply at command level
+- **Resource-Aware**: Automatically adjusts based on system capabilities
+
+### Cache Architecture
+
+```
+~/.agpm/cache/
+├── sources/        # Bare repositories (.git suffix)
+│   └── github_owner_repo.git/
+├── worktrees/      # SHA-based worktrees (deduplicated)
+│   └── github_owner_repo_abc12345/  # First 8 chars of commit SHA
+└── .locks/         # File-based locks for safety
+```
+
+Key features:
+- **Single Clone Per Repo**: Bare repository shared by all operations
+- **SHA-Keyed Worktrees**: One worktree per unique commit (not per version)
+- **Instance-Level Cache**: WorktreeState (Pending/Ready) tracks creation status
+- **Per-Worktree Locks**: Fine-grained locking for parallel operations
+
 ## Multi-Tool System
 
 AGPM v0.4.0 introduces a pluggable tool system enabling support for multiple AI coding assistants from a single manifest.

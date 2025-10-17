@@ -1,0 +1,68 @@
+# Patches and Overrides Example
+# This demonstrates how to customize resources without forking
+
+# ===== agpm.toml (committed to git) =====
+
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+templates = "https://github.com/myorg/templates.git"
+
+[agents]
+# Standard agents that will be patched
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+python-helper = { source = "community", path = "agents/python-helper.md", version = "v2.0.0" }
+code-reviewer = { source = "templates", path = "agents/reviewer.md", version = "v1.5.0" }
+
+[snippets]
+react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "v1.0.0" }
+test-utils = { source = "templates", path = "snippets/testing.md", version = "v2.0.0" }
+
+[commands]
+deploy = { source = "community", path = "commands/deploy.md", version = "v3.0.0" }
+
+[hooks]
+pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
+
+# ===== PROJECT-LEVEL PATCHES =====
+# These are shared with the team and committed to version control
+
+[patch.agents.rust-expert]
+# Override model settings
+model = "claude-3-haiku"
+temperature = "0.7"
+max_tokens = "4096"
+system_prompt_suffix = "\nAlways use Rust 2024 edition features."
+
+[patch.agents.python-helper]
+# Adjust Python agent behavior
+model = "claude-3-sonnet"
+temperature = "0.5"
+python_version = "3.12"
+use_type_hints = "always"
+import_style = "explicit"
+
+[patch.agents.code-reviewer]
+# Configure code review preferences
+review_level = "strict"
+check_tests = "true"
+check_documentation = "true"
+languages = ["rust", "python", "typescript"]
+
+[patch.snippets.react-hooks]
+# Update React version in snippets
+react_version = "18"
+typescript = "true"
+strict_mode = "true"
+
+[patch.commands.deploy]
+# Customize deployment command
+environment = "staging"  # Default to staging
+require_approval = "true"
+notification_channel = "#deployments"
+
+[patch.hooks.pre-commit]
+# Modify pre-commit hook configuration
+run_tests = "true"
+run_linting = "true"
+check_formatting = "true"
+block_on_warnings = "false"

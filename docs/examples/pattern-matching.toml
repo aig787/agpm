@@ -1,0 +1,77 @@
+# Pattern Matching Example
+# This demonstrates bulk installation using glob patterns
+
+[sources]
+community = "https://github.com/aig787/agpm-community.git"
+templates = "https://github.com/myorg/template-library.git"
+
+[agents]
+# Install all AI-related agents with one pattern
+# agents/ai/assistant.md → .claude/agents/assistant.md (flatten=true by default)
+# agents/ai/analyzer.md → .claude/agents/analyzer.md
+# agents/ai/reviewer.md → .claude/agents/reviewer.md
+ai-agents = { source = "community", path = "agents/ai/*.md", version = "^1.0.0" }
+
+# Install all testing agents
+# Pattern with directory preservation (flatten=false)
+# agents/testing/unit.md → .claude/agents/testing/unit.md
+# agents/testing/integration.md → .claude/agents/testing/integration.md
+testing-agents = { source = "community", path = "agents/testing/*.md", version = "v2.0.0", flatten = false }
+
+# Recursive pattern for all Rust-related agents
+# Matches any .md file under agents/rust/ at any depth
+rust-all = { source = "community", path = "agents/rust/**/*.md", version = "v1.5.0" }
+
+[snippets]
+# All React component snippets
+# snippets/react/component.md → .agpm/snippets/react/component.md (preserves structure by default)
+# snippets/react/hook.md → .agpm/snippets/react/hook.md
+react-components = { source = "templates", path = "snippets/react/*.md", version = "v3.0.0" }
+
+# All Python utility snippets (recursive)
+# Matches all .md files at any depth under snippets/python/
+python-utils = { source = "community", path = "snippets/python/**/*.md", version = "^2.0.0" }
+
+# Database-related snippets from multiple subdirectories
+# snippets/db/postgres.md → .agpm/snippets/db/postgres.md
+# snippets/db/mysql.md → .agpm/snippets/db/mysql.md
+# snippets/db/mongo.md → .agpm/snippets/db/mongo.md
+database-snippets = { source = "templates", path = "snippets/db/*.md", version = "v1.0.0" }
+
+[commands]
+# Install all deployment-related commands
+# commands/deploy-staging.md → .claude/commands/deploy-staging.md
+# commands/deploy-prod.md → .claude/commands/deploy-prod.md
+deployment-commands = { source = "community", path = "commands/deploy-*.md", version = "v2.0.0" }
+
+# All CI/CD commands with flatten option
+# commands/ci/github.md → .claude/commands/github.md (flattened)
+# commands/ci/gitlab.md → .claude/commands/gitlab.md (flattened)
+ci-commands = { source = "templates", path = "commands/ci/*.md", version = "v1.0.0", flatten = true }
+
+[scripts]
+# All build scripts
+# scripts/build-dev.sh → .claude/scripts/build-dev.sh
+# scripts/build-prod.sh → .claude/scripts/build-prod.sh
+build-scripts = { source = "community", path = "scripts/build-*.sh", version = "v1.0.0" }
+
+# All Python automation scripts
+automation = { source = "templates", path = "scripts/automation/*.py", version = "v2.0.0" }
+
+# Pattern Matching Notes:
+# - Use * for single-level wildcards (matches any characters except /)
+# - Use ** for recursive wildcards (matches any number of directories)
+# - Use ? for single character wildcard
+# - Use [abc] for character sets
+# - Use {option1,option2} for alternatives
+#
+# Directory Structure Control:
+# - agents and commands default to flatten=true (only filename is used)
+# - snippets, scripts, hooks, mcp-servers default to flatten=false (preserves directory structure)
+# - Override with explicit flatten field when needed
+#
+# Examples of complex patterns:
+# "agents/**/test-*.md" - All test agents at any depth
+# "snippets/[a-z]*.md" - Snippets starting with lowercase letter
+# "scripts/{build,deploy,test}.sh" - Specific script names
+# "**/*.md" - All markdown files at any depth

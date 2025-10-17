@@ -1,0 +1,36 @@
+# Basic AGPM Project Configuration
+# This is a minimal example showing the most common use cases
+
+[sources]
+# Define your Git sources
+community = "https://github.com/aig787/agpm-community.git"
+
+[agents]
+# Basic agent with exact version
+rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
+
+# Agent with compatible version updates
+code-reviewer = { source = "community", path = "agents/code-reviewer.md", version = "^1.0.0" }
+
+[snippets]
+# Snippet with patch updates only
+react-hooks = { source = "community", path = "snippets/react-hooks.md", version = "~1.2.0" }
+
+# Local snippet (no versioning)
+local-utils = { path = "./local-snippets/utils.md" }
+
+[commands]
+# Command tracking a branch
+deploy = { source = "community", path = "commands/deploy.md", branch = "main" }
+
+[scripts]
+# Local script file
+build = { path = "./scripts/build.sh" }
+
+[hooks]
+# Hook with exact version
+pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
+
+[mcp-servers]
+# MCP server using latest stable version
+filesystem = { source = "community", path = "mcp/filesystem.json", version = "latest" }

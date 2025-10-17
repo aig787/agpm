@@ -1,43 +1,34 @@
 # User Guide
 
-This guide covers common AGPM workflows. See [Installation](installation.md) for setup instructions.
+This guide covers getting started with AGPM and common workflows. For detailed installation instructions, see the [Installation Guide](installation.md).
 
-## Getting Started
+## Quick Start
 
-1. **Initialize a new project:**
+### 1. Initialize a Project
 
 ```bash
+# Create a new agpm.toml with defaults
 agpm init
-```
 
-This creates a basic `agpm.toml` file with example dependencies and default tool configurations.
-
-**Updating existing manifests:**
-
-If you have an old `agpm.toml` manifest (created before multi-tool support), you can update it with the latest default configurations:
-
-```bash
+# Update an existing manifest with latest defaults
 agpm init --defaults
 ```
 
-This will:
-- Add missing default sections ([tools.claude-code], [tools.opencode], [tools.agpm], etc.)
-- Preserve all your existing values, comments, and custom configurations
-- Be safe to run multiple times (idempotent operation)
-- Help ensure your manifest has all standard configurations
+The `--defaults` flag is useful for updating old manifests to include multi-tool support configurations while preserving your existing settings.
 
-2. **Install dependencies:**
+### 2. Install Dependencies
 
 ```bash
+# Standard installation
 agpm install
+
+# CI/production mode (requires exact lockfile match)
+agpm install --frozen
 ```
 
-This will:
-- Clone the required Git repositories to `~/.agpm/cache/`
-- Copy resources to your project directories
-- Generate a `agpm.lock` file with exact versions
+This clones repositories to `~/.agpm/cache/` and installs resources to your project directories.
 
-3. **Verify installation:**
+### 3. Verify Installation
 
 ```bash
 agpm list
@@ -51,19 +42,16 @@ The manifest defines your project's dependencies:
 
 ```toml
 [sources]
-# Define Git repositories to pull resources from
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Install AI agents - agents flatten by default (only filename is used)
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-# → Installed as: .claude/agents/example.md
 
-nested = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
-# → Installed as: .claude/agents/helper.md (flatten=true is the default for agents)
+[snippets]
+utils = { source = "community", path = "snippets/utils.md", version = "^1.0.0" }
 ```
 
-See the [Manifest Reference](manifest-reference.md) for a complete field-by-field breakdown and CLI mapping guidance.
+See the [Manifest Reference](manifest-reference.md) for complete schema documentation or check out [examples](examples/) for more configurations.
 
 ### Lockfile (agpm.lock)
 
@@ -74,19 +62,21 @@ The lockfile records exact versions for reproducible installations:
 
 #### Lifecycle and Guarantees
 
-- `agpm install` always re-runs dependency resolution using the current manifest and lockfile. If nothing has changed, it writes the same resolved versions and SHAs back to disk—versions do **not** automatically advance just because you reinstalled.
-- Resolution only diverges when the manifest changed, a tag/branch now points somewhere else, or a dependency was missing from the previous lockfile.
-- Use `agpm install --no-lock` when you want to verify installs without touching `agpm.lock` (e.g., local experiments).
-- Use `agpm install --frozen` in CI or release pipelines to assert that the existing lockfile matches the manifest exactly. The command fails instead of regenerating when staleness is detected.
+- `agpm install` always re-runs dependency resolution using the current manifest and lockfile
+- Versions do **not** automatically advance just because you reinstalled
+- Use `agpm install --frozen` in CI to ensure exact reproducibility
 
 #### Detecting Staleness
 
-AGPM automatically checks for stale lockfiles during install and via `agpm validate --check-lock`:
-- Duplicate entries or source URL drift (security-critical issues)
+AGPM automatically checks for stale lockfiles:
+- Duplicate entries or source URL drift
 - Manifest entries missing from the lockfile
-- Version/path changes that have not been resolved yet
+- Version/path changes that haven't been resolved
 
-If any of these occur, rerun `agpm install` (without `--frozen`) to regenerate the lockfile so teammates stay in sync.
+If stale, regenerate with:
+```bash
+agpm install  # Without --frozen flag
+```
 
 ### Sources
 
@@ -95,159 +85,49 @@ Sources are Git repositories containing resources:
 - Can be local directories for development
 - Authentication handled via global config
 
-## Multi-Tool Support
-
-AGPM supports multiple AI coding assistants from a single manifest using the tool configuration system.
-
-> ⚠️ **Alpha Feature**: OpenCode support is currently in alpha. While functional, it may have incomplete features or breaking
-> changes in future releases. Use with caution in production environments. Claude Code support is stable and production-ready.
-
-### Supported Tools
-
-- **Claude Code** (default) - Full support for agents, commands, scripts, hooks, MCP servers, and snippets ✅ **Stable**
-- **OpenCode** - Support for agents, commands, and MCP servers 🚧 **Alpha**
-- **AGPM** - Shared snippets that can be referenced by multiple tools ✅ **Stable**
-- **Custom** - Define your own custom tools via configuration
-
-### Using Multiple Tools
-
-By default, resources install for Claude Code. To target a different tool, add the `tool` field:
-
-```toml
-[sources]
-community = "https://github.com/aig787/agpm-community.git"
-
-[agents]
-# Claude Code agent (default - no tool field needed)
-rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-# → Installs to .claude/agents/rust-expert.md
-
-# OpenCode agent (explicit tool)
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
-# → Installs to .opencode/agent/rust-expert.md
-
-[snippets]
-# Shared snippet (accessible to both tools)
-rust-patterns = { source = "community", path = "snippets/rust-patterns.md", version = "v1.0.0", tool = "agpm" }
-# → Installs to .agpm/snippets/rust-patterns.md
-```
-
-### Directory Differences
-
-**Important**: OpenCode uses singular directory names while Claude Code uses plural:
-
-| Resource | Claude Code | OpenCode (Alpha) |
-|----------|-------------|------------------|
-| Agents | `.claude/agents/` | 🚧 `.opencode/agent/` |
-| Commands | `.claude/commands/` | 🚧 `.opencode/command/` |
-| MCP Servers | `.mcp.json` | 🚧 `opencode.json` |
-
-AGPM handles this automatically based on the `tool` field.
-
-### Multi-Tool Project Example
-
-```toml
-[sources]
-community = "https://github.com/aig787/agpm-community.git"
-
-[agents]
-# Install the same agent for both tools
-helper-cc = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }  # Alpha
-
-# Rust experts for both
-rust-expert-cc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }  # Alpha
-
-[commands]
-# Deployment commands for both tools
-deploy-cc = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-deploy-oc = { source = "community", path = "commands/deploy.md", version = "v2.0.0", tool = "opencode" }  # Alpha
-
-[mcp-servers]
-# MCP servers (automatically routed to correct config file)
-filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0" }
-filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v1.0.0", tool = "opencode" }  # Alpha
-
-[snippets]
-# Shared snippets usable by both tools
-shared-patterns = { source = "community", path = "snippets/patterns/*.md", version = "v1.0.0", tool = "agpm" }
-```
-
-### Benefits
-
-- **Unified Management**: One manifest for all your AI assistant resources
-- **Consistent Versioning**: Keep all tools synchronized to the same resource versions
-- **Shared Infrastructure**: Reuse snippets and patterns across tools
-- **Easy Migration**: Switch between tools without recreating your resource setup
+See the [Configuration Guide](configuration.md) for setting up private sources.
 
 ## Common Workflows
 
 ### Adding Dependencies
 
-#### Method 1: Edit agpm.toml directly
-
-```toml
-[agents]
-my-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-```
-
-Then run:
 ```bash
+# Add via CLI
+agpm add dep agent community:agents/helper.md@v1.0.0 --name my-agent
+
+# Or edit agpm.toml and install
 agpm install
 ```
 
-#### Method 2: Use CLI commands
-
-```bash
-# Add a source
-agpm add source community https://github.com/aig787/agpm-community.git
-
-# Add a dependency
-agpm add dep agent community:agents/helper.md --name my-agent
-```
+See the [Dependencies Guide](dependencies.md) for:
+- Version constraints and patterns
+- Transitive dependencies
+- Conflict resolution
+- Patches and overrides
 
 ### Checking for Updates
 
-Before updating, check what updates are available:
-
 ```bash
-# Check all dependencies for available updates
+# Check all dependencies
 agpm outdated
 
-# Check specific dependencies
-agpm outdated my-agent other-agent
+# Check specific ones
+agpm outdated my-agent
 
-# Use in CI to fail if updates are available
+# CI mode (fails if updates available)
 agpm outdated --check
-
-# Get JSON output for automation
-agpm outdated --format json
 ```
-
-The `outdated` command shows:
-- Current version from your lockfile
-- Latest available version in the repository
-- Compatible updates within your version constraints
-- Major updates that would require constraint changes
 
 ### Updating Dependencies
 
-Update all dependencies within version constraints:
-
 ```bash
+# Update all within constraints
 agpm update
-```
 
-Update specific dependency:
-
-```bash
+# Update specific dependency
 agpm update my-agent
-```
 
-Preview updates without making changes:
-
-```bash
+# Preview updates
 agpm update --dry-run
 ```
 
@@ -286,37 +166,6 @@ Then reference in your manifest:
 internal = { source = "private", path = "agents/internal.md", version = "v1.0.0" }
 ```
 
-## Version Management
-
-### Version Constraints
-
-AGPM supports flexible version constraints:
-
-```toml
-# Exact version
-agent1 = { source = "community", path = "agents/a1.md", version = "v1.0.0" }
-
-# Compatible updates (1.x.x)
-agent2 = { source = "community", path = "agents/a2.md", version = "^1.0.0" }
-
-# Patch updates only (1.0.x)
-agent3 = { source = "community", path = "agents/a3.md", version = "~1.0.0" }
-
-# Latest stable
-agent4 = { source = "community", path = "agents/a4.md", version = "latest" }
-```
-
-### Branch Tracking
-
-For development, track branches:
-
-```toml
-[agents]
-dev-agent = { source = "community", path = "agents/dev.md", branch = "main" }
-```
-
-⚠️ **Note**: Branches update on each `agpm update`. Use tags for stability.
-
 ## Team Collaboration
 
 ### Setting Up
@@ -354,7 +203,7 @@ When updating dependencies:
 
 ```yaml
 - name: Install AGPM
-  run: cargo install --git https://github.com/aig787/agpm.git
+  run: cargo install agpm-cli
 
 - name: Install dependencies
   run: agpm install --frozen
@@ -373,505 +222,60 @@ When updating dependencies:
   run: agpm install --frozen
 ```
 
+## Multi-Tool Support
+
+AGPM supports multiple AI coding assistants. By default:
+- Snippets install to `.agpm/snippets/` (shared)
+- Other resources install for Claude Code
+
+To use resources with different tools:
+
+```toml
+[agents]
+# Claude Code (default)
+helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
+
+# OpenCode (explicit)
+helper-oc = { source = "community", path = "agents/helper.md", version = "v1.0.0", tool = "opencode" }
+```
+
+See the [Multi-Tool Support Guide](multi-tool-support.md) for complete details.
+
 ## Pattern Matching
 
-Install multiple resources using glob patterns. Directory structure preservation depends on the resource type's `flatten` setting (agents/commands flatten by default, snippets/scripts preserve structure):
+Install multiple resources using glob patterns:
 
 ```toml
 [agents]
-# All markdown files in agents/ai/ - agents flatten by default (only filename)
-# agents/ai/assistant.md → .claude/agents/assistant.md
-# agents/ai/analyzer.md → .claude/agents/analyzer.md
+# All AI agents
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
-# All review agents recursively - flatten removes directory structure
-# agents/code/review-expert.md → .claude/agents/review-expert.md
-# agents/security/review-scanner.md → .claude/agents/review-scanner.md
-review-agents = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
-
-# To preserve directory structure for agents, set flatten=false explicitly
-# agents/code/review-expert.md → .claude/agents/code/review-expert.md
-structured-review = { source = "community", path = "agents/**/review*.md", version = "v1.0.0", flatten = false }
-
-[snippets]
-# All Python snippets - directory structure preserved
-# snippets/python/utils.md → .agpm/snippets/python/utils.md
-# snippets/python/django/models.md → .agpm/snippets/python/django/models.md
-python = { source = "community", path = "snippets/python/**/*.md", version = "v1.0.0" }
+# Recursive patterns
+all-rust = { source = "community", path = "agents/rust/**/*.md", version = "v1.5.0" }
 ```
 
-During `agpm install`, AGPM expands each glob, installs every concrete match, and records them individually in `agpm.lock` under the pattern dependency. Lockfile entries use the `resource_type/name@resolved_version` format so you can track the exact files that were installed.
-
-> **Tip**: Pair pattern entries with descriptive keys (like `ai-agents`) and review the resolved output with `agpm list` or by inspecting `agpm.lock` to confirm the matches.
-
-## Transitive Dependencies
-
-Resources can declare their own dependencies, and AGPM will automatically resolve the entire dependency tree.
-
-### Declaring Dependencies
-
-**Markdown files (.md)** - YAML frontmatter:
-```markdown
----
-dependencies:
-  agents:
-    - path: ./helper.md
-      version: v1.0.0
-  snippets:
-    - path: ../shared/utils.md
----
-```
-
-**JSON files (.json)** - top-level field:
-```json
-{
-  "dependencies": {
-    "commands": [
-      {"path": "./setup.md", "version": "v1.0.0"}
-    ]
-  }
-}
-```
-
-### Path Resolution
-
-All transitive dependency paths are **file-relative** - resolved from the parent resource file's location.
-
-Examples: `./sibling.md`, `../parent/file.md`, `../../shared/common.md`
-
-### Inheritance
-
-Dependencies inherit from their parent:
-- **Source**: Git URL or local path
-- **Version**: Defaults to parent's version (Git-backed only)
-- **Tool**: Parent's tool if compatible, otherwise resource type default
-
-### Examples
-
-**Git-backed:**
-```toml
-[sources]
-community = "https://github.com/aig787/agpm-community.git"
-
-[commands]
-deploy = { source = "community", path = "commands/deploy.md", version = "v1.0.0" }
-```
-
-`deploy.md` declares:
-```markdown
----
-dependencies:
-  agents:
-    - path: ../agents/helper.md
-  snippets:
-    - path: ../snippets/utils.md
-      version: v2.0.0
----
-```
-
-Installs: `deploy.md`, `agents/helper.md` (inherits v1.0.0), `snippets/utils.md` (v2.0.0)
-
-**Path-only:**
-```toml
-[agents]
-local-agent = { path = "../local-agents/main.md" }
-```
-
-`main.md` declares:
-```markdown
----
-dependencies:
-  agents:
-    - path: ./helper.md
-    - path: ../shared/common.md
----
-```
-
-Installs: `main.md`, `helper.md`, `common.md`
-
-### Notes
-
-- Scripts require executable permissions
-- Hooks merge into `.claude/settings.local.json`
-- MCP servers inherit `command`/`args` from file
-- Override versions by specifying explicit `version:` in metadata
-- Path-only deps don't support version constraints
-
-### Conflict Resolution
-
-Compatible version constraints resolve to the highest satisfying version. Incompatible constraints fail with an error.
-
-```text
-Error: Version conflict for agents/helper.md
-  requested: v1.0.0 (manifest)
-  requested: v2.0.0 (transitive via agents/deploy.md)
-```
-
-**Fix conflicts:**
-- Run `agpm validate --resolve` to see the dependency graph
-- Update version constraints in manifest or resource metadata
-- Add `filename`/`target` overrides for duplicate install paths
-
-## Overriding Resource Fields
-
-AGPM's patch system allows you to override YAML frontmatter or JSON fields in resource files without forking upstream repositories. This is perfect for customizing model settings, adding API keys, or adjusting any metadata field.
-
-### When to Use Patches vs Forking
-
-**Use Patches When:**
-- Customizing model, temperature, or other runtime parameters
-- Adding personal API keys or credentials
-- Overriding team defaults with personal preferences
-- Making small metadata changes that don't affect core functionality
-- You want to receive upstream updates while maintaining customizations
-
-**Fork Upstream When:**
-- Changing the core content or logic of the resource
-- Making structural changes to the resource format
-- Creating a derivative work with significant modifications
-- You need to share customizations with a team (use project patches in agpm.toml)
-
-### Tutorial: Common Scenarios
-
-#### Scenario 1: Override Model for a Single Agent
-
-You want to use a different model than the upstream default:
-
-**Step 1**: Add the dependency normally
-```toml
-# agpm.toml
-[sources]
-community = "https://github.com/aig787/agpm-community.git"
-
-[agents]
-rust-expert = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0" }
-```
-
-**Step 2**: Add a patch to override the model
-```toml
-# agpm.toml (continued)
-[patch.agents.rust-expert]
-model = "claude-3-opus"      # Override to use Opus instead of default
-max_tokens = "8192"          # Increase token limit
-```
-
-**Step 3**: Install and verify
-```bash
-agpm install
-agpm list  # Shows "(patched)" indicator
-```
-
-#### Scenario 2: Personal Configuration (Temperature, API Keys)
-
-Add personal preferences without affecting team configuration:
-
-**Step 1**: Create `agpm.private.toml` (not committed to git)
-```toml
-# agpm.private.toml
-[patch.agents.rust-expert]
-temperature = "0.9"              # Personal preference: higher creativity
-api_key = "${ANTHROPIC_API_KEY}" # Personal API key from environment
-custom_endpoint = "https://my-proxy.internal"
-```
-
-**Step 2**: Add to .gitignore
-```bash
-echo "agpm.private.toml" >> .gitignore
-```
-
-**Step 3**: Install with your personal overrides
-```bash
-export ANTHROPIC_API_KEY="sk-..."
-agpm install
-```
-
-The result combines both project and private patches:
-- `model` = "claude-3-opus" (from project)
-- `max_tokens` = "8192" (from project)
-- `temperature` = "0.9" (from private)
-- `api_key` = "sk-..." (from private)
-- `custom_endpoint` = "https://my-proxy.internal" (from private)
-
-#### Scenario 3: Override Multiple Agents with Team Defaults
-
-Set consistent configuration across multiple agents:
-
-```toml
-# agpm.toml
-[agents]
-agent1 = { source = "community", path = "agents/agent1.md", version = "v1.0.0" }
-agent2 = { source = "community", path = "agents/agent2.md", version = "v1.0.0" }
-agent3 = { source = "community", path = "agents/agent3.md", version = "v1.0.0" }
-
-# Team-wide standards
-[patch.agents.agent1]
-model = "claude-3-opus"
-max_tokens = "8192"
-organization = "MyCompany"
-
-[patch.agents.agent2]
-model = "claude-3-opus"
-max_tokens = "8192"
-organization = "MyCompany"
-
-[patch.agents.agent3]
-model = "claude-3-opus"
-max_tokens = "8192"
-organization = "MyCompany"
-```
-
-#### Scenario 4: Patch Transitive Dependencies
-
-Transitive dependencies can be patched, but they must first be added to your manifest:
-
-**Step 1**: Identify transitive dependency
-```bash
-agpm tree  # Shows full dependency tree
-# Output shows: agent/code-reviewer depends on agent/rust-helper
-```
-
-**Step 2**: Add transitive dependency to manifest explicitly
-```toml
-# agpm.toml
-[agents]
-code-reviewer = { source = "community", path = "agents/code-reviewer.md", version = "v1.0.0" }
-rust-helper = { source = "community", path = "agents/rust-helper.md", version = "v1.0.0" }
-```
-
-**Step 3**: Add patch for transitive dependency
-```toml
-[patch.agents.rust-helper]
-model = "claude-3-haiku"  # Use faster model for helper
-temperature = "0.5"
-```
-
-**Step 4**: Install
-```bash
-agpm install
-```
-
-### Troubleshooting Patch Conflicts
-
-#### Problem: Patch Conflict Error
-
-```text
-Error: Patch conflict for agents/rust-expert
-  Field 'model' appears in both agpm.toml and agpm.private.toml
-  Resolution: Remove the field from one of the files
-```
-
-**Solution**: Decide which file should own the field
-
-**Option A**: Keep in project (team standard)
-```toml
-# agpm.toml
-[patch.agents.rust-expert]
-model = "claude-3-opus"      # Keep this
-
-# agpm.private.toml
-[patch.agents.rust-expert]
-# model = "claude-3-haiku"   # Remove this line
-temperature = "0.9"          # Keep personal preferences
-```
-
-**Option B**: Keep in private (personal override)
-```toml
-# agpm.toml
-[patch.agents.rust-expert]
-# model = "claude-3-opus"    # Remove this line
-max_tokens = "8192"          # Keep team settings
-
-# agpm.private.toml
-[patch.agents.rust-expert]
-model = "claude-3-haiku"     # Keep personal override
-temperature = "0.9"
-```
-
-#### Problem: Patch Not Applied
-
-**Symptoms**: Changes in patch don't appear in installed resource
-
-**Solution 1**: Verify patch alias matches dependency name
-```bash
-# Check installed resources
-agpm list
-
-# Ensure patch uses exact dependency name
-# agpm.toml
-[agents]
-rust-expert = { ... }       # Name is "rust-expert"
-
-[patch.agents.rust-expert]  # Must match exactly (not "rust_expert" or "rustexpert")
-model = "claude-3-opus"
-```
-
-**Solution 2**: Validate syntax
-```bash
-agpm validate
-```
-
-**Solution 3**: Check file location
-- `agpm.toml` should be in project root
-- `agpm.private.toml` should be next to `agpm.toml`
-
-#### Problem: Unknown Dependency Alias
-
-```text
-Error: Patch references unknown dependency 'my-agent' in section 'agents'
-```
-
-**Solution**: Add dependency to manifest first
-```toml
-# agpm.toml
-[agents]
-my-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-
-[patch.agents.my-agent]  # Now valid
-model = "claude-3-opus"
-```
-
-### Best Practices
-
-1. **Use Project Patches for Team Standards**
-   - Model selection for different use cases
-   - Organization-wide settings
-   - Compliance requirements
-   - Shared endpoint configuration
-
-2. **Use Private Patches for Personal Settings**
-   - API keys and credentials
-   - Personal model preferences
-   - Development debugging settings
-   - Local endpoint overrides
-
-3. **Document Required Patches**
-   ```markdown
-   # README.md
-   ## Setup
-
-   Some agents require additional configuration:
-
-   1. Copy `agpm.private.toml.example` to `agpm.private.toml`
-   2. Set your API key: `api_key = "${ANTHROPIC_API_KEY}"`
-   3. (Optional) Customize model preferences
-   ```
-
-4. **Validate Before Committing**
-   ```bash
-   agpm validate
-   agpm install --frozen  # Test locked install
-   ```
-
-5. **Use Environment Variables for Secrets**
-   ```toml
-   # Good: Uses environment variable
-   [patch.agents.assistant]
-   api_key = "${ANTHROPIC_API_KEY}"
-
-   # Bad: Hard-coded secret
-   [patch.agents.assistant]
-   api_key = "sk-ant-..."
-   ```
-
-6. **Keep Patches Simple**
-   - Override only what you need
-   - Don't duplicate upstream fields unless changing them
-   - Comment why each override is needed
-
-### Viewing Applied Patches
-
-Check which resources have patches applied:
-
-```bash
-# Table view shows "(patched)" indicator
-$ agpm list
-Name          Type    Version  Source     Installed At                    Status
-rust-expert   agent   v1.0.0   community  .claude/agents/rust-expert.md   (patched)
-helper        agent   v1.0.0   community  .claude/agents/helper.md
-
-# JSON view shows which fields were patched
-$ agpm list --format json
-{
-  "agents": [
-    {
-      "name": "rust-expert",
-      "version": "v1.0.0",
-      "patches": ["model", "temperature", "max_tokens", "api_key"]
-    }
-  ]
-}
-```
-
-## Resource Organization
-
-### Default Locations
-
-Resources are installed to these default locations. Directory structure preservation depends on the resource type's flatten setting:
-
-- Agents: `.claude/agents/` (flatten=true by default; e.g., `agents/ai/helper.md` → `.claude/agents/helper.md`)
-- Snippets: `.agpm/snippets/` (default to agpm tool; e.g., `snippets/react/hooks.md` → `.agpm/snippets/react/hooks.md`)
-- Commands: `.claude/commands/` (flatten=true by default; e.g., `commands/build/deploy.md` → `.claude/commands/deploy.md`)
-- Scripts: `.claude/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`)
-- Hooks: `.claude/hooks/`
-- MCP Servers: Merged into `.mcp.json` (no separate directory)
-
-**Flatten Behavior**: Whether directory structure is preserved depends on the resource type:
-- **Agents/Commands** (flatten=true): Only filename is used
-  - `agents/example.md` → `.claude/agents/example.md`
-  - `agents/ai/code-reviewer.md` → `.claude/agents/code-reviewer.md`
-  - `agents/specialized/rust/expert.md` → `.claude/agents/expert.md`
-- **Snippets/Scripts** (flatten=false): Full relative path is preserved
-  - `snippets/react/hooks.md` → `.agpm/snippets/react/hooks.md`
-  - `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`
-- **Override**: Set `flatten=false` on agents/commands or `flatten=true` on snippets/scripts to change behavior
-
-### Custom Locations
-
-Override defaults in `agpm.toml`:
-
-```toml
-[target]
-agents = "custom/agents"
-snippets = "resources/snippets"
-commands = "tools/commands"
-```
-
-### Version Control
-
-By default, installed files are gitignored. To commit them:
-
-```toml
-[target]
-gitignore = false  # Don't create .gitignore
-```
-
-## Performance Features
-
-AGPM v0.3.2+ includes significant performance optimizations:
-
-### Centralized Version Resolution
-- **Batch processing**: All version constraints resolved in a single operation per repository
-- **Automatic deduplication**: Identical version requirements processed only once
-- **Minimal Git operations**: Single fetch per repository per command
-
-### SHA-Based Worktree Optimization
-- **Maximum reuse**: Multiple dependencies with same commit SHA share one worktree
-- **Parallel safety**: Independent worktrees enable conflict-free concurrent operations
-- **Smart caching**: Command-instance caching prevents redundant network operations
+Pattern matching features:
+- `*` matches any characters except `/`
+- `**` matches any number of directories
+- Agents/commands flatten by default (only filename used)
+- Snippets/scripts preserve directory structure
+
+See [Dependencies Guide](dependencies.md#pattern-matching) for more details.
+
+## Performance
 
 ### Controlling Parallelism
+
 ```bash
-# Control number of parallel operations (default: max(10, 2 × CPU cores))
+# Default: max(10, 2 × CPU cores)
 agpm install --max-parallel 8
 
-# Use all available cores
-agpm install --max-parallel 0
-
-# Single-threaded execution for debugging
+# Single-threaded for debugging
 agpm install --max-parallel 1
 ```
 
 ### Cache Management
+
 ```bash
 # View cache statistics
 agpm cache info
@@ -883,40 +287,6 @@ agpm cache clean
 agpm install --no-cache
 ```
 
-### Automatic Artifact Cleanup
-
-AGPM automatically removes old resource files when:
-- A dependency is removed from the manifest
-- A resource's path changes in the manifest
-- A resource is renamed
-
-**Example:**
-```toml
-# Initial agpm.toml
-[agents]
-helper = { source = "community", path = "agents/helper.md", version = "v1.0.0" }
-# Installed as: .claude/agents/helper.md
-```
-
-After updating the path:
-```toml
-# Updated agpm.toml
-[agents]
-helper = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
-# Still installed as: .claude/agents/helper.md (agents flatten by default)
-# To preserve the ai/ subdirectory, add flatten=false
-```
-
-When you run `agpm install`:
-1. The old file at `.claude/agents/helper.md` is automatically removed (if path changed)
-2. The new file is installed based on the flatten setting
-3. Empty parent directories are cleaned up
-
-**Benefits:**
-- No manual cleanup required
-- Prevents stale files from accumulating
-- Maintains clean project structure
-
 ## Best Practices
 
 1. **Always commit agpm.lock** for reproducible builds
@@ -924,9 +294,7 @@ When you run `agpm install`:
 3. **Validate before committing**: Run `agpm validate`
 4. **Use --frozen in production**: `agpm install --frozen`
 5. **Keep secrets in global config**, never in `agpm.toml`
-6. **Document custom sources** with comments
-7. **Check for outdated dependencies** regularly: `agpm outdated`
-8. **Test updates locally** before committing
+6. **Check for outdated dependencies** regularly: `agpm outdated`
 
 ## Troubleshooting
 
@@ -935,9 +303,6 @@ When you run `agpm install`:
 **Manifest not found:**
 ```bash
 agpm init  # Create a new manifest
-
-# Or update existing manifest with defaults
-agpm init --defaults
 ```
 
 **Version conflicts:**
@@ -968,3 +333,4 @@ agpm install  # Regenerate lockfile
 - Learn about [resource types](resources.md)
 - Understand [versioning](versioning.md)
 - Configure [authentication](configuration.md)
+- See [example configurations](examples/)

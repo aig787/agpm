@@ -1,0 +1,161 @@
+# Advanced AGPM Configuration
+# This example demonstrates complex features and best practices
+
+[sources]
+# Multiple sources with different purposes
+community = "https://github.com/aig787/agpm-community.git"
+company = "https://github.com/mycompany/internal-resources.git"
+experimental = "https://github.com/labs/experimental-agents.git"
+local = "../local-resources"  # Local development resources
+
+# Configure default tools for your workflow
+[default-tools]
+snippets = "agpm"         # Share snippets across all tools
+agents = "claude-code"    # Primary tool for agents
+commands = "claude-code"  # Primary tool for commands
+
+# ===== AGENTS WITH TRANSITIVE DEPENDENCIES =====
+# These agents declare their own dependencies in their frontmatter
+
+[agents]
+# Agent with transitive dependencies (defined in the agent's YAML frontmatter)
+# This agent might depend on:
+# - agents/helper.md@v1.0.0
+# - snippets/utils.md@v2.0.0
+app-controller = { source = "company", path = "agents/app-controller.md", version = "^3.0.0" }
+
+# Agent with version constraint that allows updates
+ml-assistant = { source = "experimental", path = "agents/ml/assistant.md", version = "~2.1.0" }
+
+# Pattern with specific version for all matches
+testing-suite = { source = "community", path = "agents/testing/*.md", version = "v2.0.0", flatten = false }
+
+# Local agent with relative path (no versioning)
+custom-helper = { path = "../shared/agents/helper.md" }
+
+# Same agent for multiple tools with different configs
+data-analyst-cc = { source = "company", path = "agents/data-analyst.md", version = "v1.5.0" }
+data-analyst-oc = { source = "company", path = "agents/data-analyst.md", version = "v1.5.0", tool = "opencode" }
+
+# ===== SNIPPETS WITH COMPLEX PATTERNS =====
+
+[snippets]
+# Recursive pattern for all documentation snippets
+docs-all = { source = "community", path = "snippets/docs/**/*.md", version = "v1.0.0" }
+
+# Multiple related snippet collections
+frontend-react = { source = "company", path = "snippets/frontend/react/*.md", version = "^3.0.0" }
+frontend-vue = { source = "company", path = "snippets/frontend/vue/*.md", version = "^3.0.0" }
+frontend-shared = { source = "company", path = "snippets/frontend/shared/*.md", version = "^3.0.0" }
+
+# Local snippets with pattern
+local-utils = { path = "./snippets/utils/*.md" }
+
+# ===== COMMANDS WITH MIXED VERSIONING =====
+
+[commands]
+# Exact version for critical command
+deploy-production = { source = "company", path = "commands/deploy-prod.md", version = "v5.2.1" }
+
+# Track development branch for experimental command
+deploy-staging = { source = "company", path = "commands/deploy-staging.md", branch = "develop" }
+
+# Pin to specific commit for stability
+critical-fix = { source = "company", path = "commands/emergency-fix.md", rev = "abc123def456" }
+
+# Pattern for all database commands
+database-ops = { source = "company", path = "commands/db-*.md", version = "^2.0.0" }
+
+# ===== SCRIPTS WITH DIFFERENT SOURCES =====
+
+[scripts]
+# Production scripts from company repo
+build-prod = { source = "company", path = "scripts/build/production.sh", version = "v4.0.0" }
+test-suite = { source = "company", path = "scripts/test/*.sh", version = "v3.0.0" }
+
+# Development scripts from local
+dev-server = { path = "./scripts/dev-server.py" }
+watch-mode = { path = "./scripts/watch.js" }
+
+# ===== HOOKS WITH ENVIRONMENT-SPECIFIC CONFIG =====
+
+[hooks]
+# Different hooks for different purposes
+pre-commit-lint = { source = "community", path = "hooks/linting.json", version = "v2.0.0" }
+pre-commit-test = { source = "company", path = "hooks/testing.json", version = "v1.5.0" }
+session-start = { source = "company", path = "hooks/session.json", version = "v1.0.0" }
+
+# ===== MCP SERVERS FOR MULTIPLE TOOLS =====
+
+[mcp-servers]
+# Filesystem access for both tools
+filesystem-cc = { source = "community", path = "mcp/filesystem.json", version = "v2.0.0" }
+filesystem-oc = { source = "community", path = "mcp/filesystem.json", version = "v2.0.0", tool = "opencode" }
+
+# Database servers with different versions
+postgres-cc = { source = "company", path = "mcp/postgres.json", version = "v3.0.0" }
+postgres-oc = { source = "company", path = "mcp/postgres.json", version = "v3.0.0", tool = "opencode" }
+
+# Experimental MCP server tracking latest
+ai-bridge = { source = "experimental", path = "mcp/ai-bridge.json", version = "latest" }
+
+# ===== ADVANCED PATCHES =====
+
+[patch.agents.app-controller]
+# Complex nested configuration
+api_config.endpoint = "https://api.internal.com"
+api_config.timeout = "30"
+api_config.retry_count = "3"
+features.enable_caching = "true"
+features.enable_logging = "true"
+monitoring.service = "datadog"
+monitoring.api_key = "${DD_API_KEY}"
+
+[patch.agents.ml-assistant]
+# ML-specific configuration
+model_preferences.provider = "openai"
+model_preferences.model = "gpt-4"
+model_preferences.temperature = "0.7"
+training_data_path = "/data/ml/training"
+inference_batch_size = "32"
+
+[patch.commands.deploy-production]
+# Production deployment configuration
+aws.region = "us-west-2"
+aws.account_id = "123456789"
+kubernetes.cluster = "prod-cluster-1"
+kubernetes.namespace = "production"
+notifications.slack_channel = "#prod-deploys"
+notifications.email_list = "devops@company.com"
+
+[patch.mcp-servers.postgres-cc]
+# Database connection configuration
+connection.host = "db.internal.com"
+connection.port = "5432"
+connection.database = "app_production"
+connection.ssl_mode = "require"
+connection.pool_size = "20"
+
+# ===== NOTES =====
+# 1. Version constraints:
+#    - ^3.0.0 allows 3.x.x updates
+#    - ~2.1.0 allows 2.1.x updates only
+#    - v5.2.1 is exact version
+#    - latest gets newest stable tag
+#    - branch/rev for mutable/immutable refs
+#
+# 2. Transitive dependencies:
+#    - Resources can declare deps in their files
+#    - AGPM resolves the full dependency graph
+#    - Conflicts are auto-resolved (newest wins)
+#
+# 3. Pattern matching:
+#    - * matches any chars except /
+#    - ** matches any number of directories
+#    - Patterns can use version constraints
+#
+# 4. Patches:
+#    - Project patches in agpm.toml
+#    - Private patches in agpm.private.toml
+#    - Private patches override project patches
+#    - Support nested field paths with dots

@@ -1,0 +1,45 @@
+# ===== agpm.private.toml (NOT committed to git) =====
+# Personal overrides and sensitive configuration
+# Add this file to .gitignore
+
+# Private patches extend project patches
+# Same field in both files: private value wins
+# Different fields: both are applied
+
+[patch.agents.rust-expert]
+# Personal API configuration
+api_key = "${CLAUDE_API_KEY}"
+api_endpoint = "https://internal-proxy.company.com/claude"
+debug_mode = "true"
+log_level = "verbose"
+
+[patch.agents.python-helper]
+# Personal development preferences
+enable_profiling = "true"
+cache_responses = "true"
+personal_snippets_path = "/Users/me/my-snippets"
+
+[patch.agents.code-reviewer]
+# Skip certain checks during local development
+skip_license_check = "true"
+allow_todos = "true"
+custom_rules_path = "/Users/me/.config/agpm/review-rules.yaml"
+
+[patch.commands.deploy]
+# Personal deployment settings
+environment = "development"  # Override staging to development
+aws_profile = "personal-dev"
+ssh_key_path = "~/.ssh/id_ed25519_dev"
+skip_confirmation = "true"
+
+[patch.hooks.pre-commit]
+# Disable slow checks for rapid iteration
+run_tests = "false"  # Override project setting
+max_file_size_mb = "10"
+skip_large_files = "true"
+
+# You can also patch resources not defined in project patches
+[patch.snippets.test-utils]
+test_framework = "pytest"
+coverage_threshold = "80"
+parallel_execution = "true"
