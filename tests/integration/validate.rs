@@ -702,7 +702,7 @@ async fn test_validate_unsupported_resource_type() {
 
     // Check for enhanced error message components
     assert!(output.stdout.contains("Resource type 'snippets' is not supported by tool 'opencode'"));
-    assert!(output.stdout.contains("Tool 'opencode' supports:"));
+    assert!(output.stdout.contains("Tool 'opencode' properly supports:"));
     assert!(output.stdout.contains("💡 Suggestions:"));
     assert!(output.stdout.contains("Snippets work best with the 'agpm' tool"));
     assert!(output.stdout.contains("Add tool='agpm' to this dependency to use shared snippets"));
@@ -733,4 +733,100 @@ async fn test_validate_unsupported_shows_alternatives() {
     assert!(output.stdout.contains("This resource type is supported by tools:"));
     assert!(output.stdout.contains("'claude-code'"));
     assert!(output.stdout.contains("'opencode'"));
+}
+
+/// Test validating manifest with malformed merge target configuration
+#[tokio::test]
+async fn test_validate_malformed_merge_target_configuration() {
+    let test_project = TestProject::new().await.unwrap();
+
+    // Create manifest with malformed hooks configuration (path instead of merge_target)
+    let manifest = ManifestBuilder::new()
+        .add_source("test", "https://github.com/example/test.git")
+        .with_malformed_hooks_tool() // This creates hooks with path instead of merge_target
+        .add_hook("test-hook", |d| d.source("test").path("hooks/test.json").version("v1.0.0"))
+        .build();
+
+    test_project.write_manifest(&manifest).await.unwrap();
+
+    let output = test_project.run_agpm(&["validate"]).unwrap();
+    assert!(!output.success);
+
+    let stdout = &output.stdout;
+    assert!(stdout.contains("improperly configured"));
+    assert!(stdout.contains("merge_target"));
+    assert!(stdout.contains("claude-code"));
+}
+
+/// Test validating manifest with missing hooks configuration
+#[tokio::test]
+async fn test_validate_missing_merge_target_configuration() {
+    let test_project = TestProject::new().await.unwrap();
+
+    // Create manifest with missing hooks configuration
+    let manifest = ManifestBuilder::new()
+        .add_source("test", "https://github.com/example/test.git")
+        .with_missing_hooks_tool() // This creates tool config without hooks
+        .add_hook("test-hook", |d| d.source("test").path("hooks/test.json").version("v1.0.0"))
+        .build();
+
+    test_project.write_manifest(&manifest).await.unwrap();
+
+    let output = test_project.run_agpm(&["validate"]).unwrap();
+    assert!(!output.success);
+
+    let stdout = &output.stdout;
+    assert!(stdout.contains("not supported"));
+    assert!(!stdout.contains("improperly configured"));
+}
+
+/// Test validating manifest with properly configured merge targets
+#[tokio::test]
+async fn test_validate_properly_configured_merge_targets() {
+    let test_project = TestProject::new().await.unwrap();
+
+    // Create manifest with proper tool configuration
+    let manifest = ManifestBuilder::new()
+        .add_source("test", "https://github.com/example/test.git")
+        .with_claude_code_tool() // Proper configuration with merge targets
+        .add_hook("test-hook", |d| d.source("test").path("hooks/test.json").version("v1.0.0"))
+        .add_mcp_server("test-server", |d| d.source("test").path("mcp/test.json").version("v1.0.0"))
+        .build();
+
+    test_project.write_manifest(&manifest).await.unwrap();
+
+    let output = test_project.run_agpm(&["validate"]).unwrap();
+    assert!(output.success);
+
+    let stdout = &output.stdout;
+    assert!(stdout.contains("✓ Valid manifest"));
+}
+
+/// Test validating manifest with malformed MCP servers configuration
+#[tokio::test]
+async fn test_validate_malformed_mcp_servers_configuration() {
+    let test_project = TestProject::new().await.unwrap();
+
+    // Create manifest with malformed MCP servers configuration
+    let manifest = ManifestBuilder::new()
+        .add_source("test", "https://github.com/example/test.git")
+        .with_tools_config(|t| {
+            t.tool("claude-code", |c| {
+                c.path(".claude")
+                    .agents(crate::common::ResourceConfigBuilder::default().path("agents"))
+                    .mcp_servers(crate::common::ResourceConfigBuilder::default()) // Empty - no path or merge_target
+            })
+        })
+        .add_mcp_server("test-server", |d| d.source("test").path("mcp/test.json").version("v1.0.0"))
+        .build();
+
+    test_project.write_manifest(&manifest).await.unwrap();
+
+    let output = test_project.run_agpm(&["validate"]).unwrap();
+    assert!(!output.success);
+
+    let stdout = &output.stdout;
+    assert!(stdout.contains("improperly configured"));
+    assert!(stdout.contains("mcp-servers"));
+    assert!(stdout.contains("merge_target"));
 }

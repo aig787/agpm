@@ -106,7 +106,10 @@ use tokio::fs;
 // Manifest builder for type-safe test manifest creation
 mod manifest_builder;
 #[allow(unused_imports)] // Used by integration tests, not stress tests
-pub use manifest_builder::ManifestBuilder;
+pub use manifest_builder::{
+    DependencyBuilder, ManifestBuilder, ResourceConfigBuilder, TargetConfigBuilder,
+    ToolConfigBuilder, ToolsConfigBuilder,
+};
 
 /// Git command builder for tests
 pub struct TestGit {
