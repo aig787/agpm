@@ -649,17 +649,19 @@ mod backup_path_tests {
         let result = generate_backup_path(&config_path, "claude-code");
 
         // Should either succeed or give a clear error about path length
-        if result.is_ok() {
-            let backup_path = result.unwrap();
-            // generate_backup_path uses find_project_root which canonicalizes,
-            // so we need to canonicalize project_root for comparison
-            let canonical_root = std::fs::canonicalize(project_root)
-                .unwrap_or_else(|_| project_root.to_path_buf());
-            assert!(backup_path.starts_with(&canonical_root));
-        } else {
-            let error_msg = result.unwrap_err().to_string();
-            // Should give a meaningful error, not just "path too long"
-            assert!(error_msg.len() > 10);
+        match result {
+            Ok(backup_path) => {
+                // generate_backup_path uses find_project_root which canonicalizes,
+                // so we need to canonicalize project_root for comparison
+                let canonical_root = std::fs::canonicalize(project_root)
+                    .unwrap_or_else(|_| project_root.to_path_buf());
+                assert!(backup_path.starts_with(&canonical_root));
+            }
+            Err(err) => {
+                // Should give a meaningful error, not just "path too long"
+                let error_msg = err.to_string();
+                assert!(error_msg.len() > 10);
+            }
         }
     }
 }
