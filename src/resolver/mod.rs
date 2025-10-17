@@ -2644,11 +2644,30 @@ impl DependencyResolver {
                         .manifest
                         .get_artifact_resource_path(artifact_type, resource_type)
                         .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Resource type '{}' is not supported by tool '{}'",
-                                resource_type,
-                                artifact_type
-                            )
+                            // Provide helpful error message with context
+                            let base_msg = format!(
+                                "Resource type '{}' is not supported by tool '{}' for dependency '{}'",
+                                resource_type, artifact_type, name
+                            );
+
+                            // Check if this looks like a tool name was used as resource type
+                            let resource_type_str = resource_type.to_string();
+                            let hint = if ["claude-code", "opencode", "agpm"].contains(&resource_type_str.as_str()) {
+                                format!(
+                                    "\n\nIt looks like '{}' is a tool name, not a resource type.\n\
+                                    In transitive dependencies, use resource types (agents, snippets, commands)\n\
+                                    as section headers, then specify 'tool: {}' within each dependency.",
+                                    resource_type_str, resource_type_str
+                                )
+                            } else {
+                                format!(
+                                    "\n\nValid resource types: agent, command, snippet, hook, mcp-server, script\n\
+                                    Source file: {}",
+                                    dep.get_path()
+                                )
+                            };
+
+                            anyhow::anyhow!("{}{}", base_msg, hint)
                         })?;
 
                     // Determine flatten behavior: use explicit setting or tool config default
@@ -2807,11 +2826,30 @@ impl DependencyResolver {
                         .manifest
                         .get_artifact_resource_path(artifact_type, resource_type)
                         .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "Resource type '{}' is not supported by tool '{}'",
-                                resource_type,
-                                artifact_type
-                            )
+                            // Provide helpful error message with context
+                            let base_msg = format!(
+                                "Resource type '{}' is not supported by tool '{}' for dependency '{}'",
+                                resource_type, artifact_type, name
+                            );
+
+                            // Check if this looks like a tool name was used as resource type
+                            let resource_type_str = resource_type.to_string();
+                            let hint = if ["claude-code", "opencode", "agpm"].contains(&resource_type_str.as_str()) {
+                                format!(
+                                    "\n\nIt looks like '{}' is a tool name, not a resource type.\n\
+                                    In transitive dependencies, use resource types (agents, snippets, commands)\n\
+                                    as section headers, then specify 'tool: {}' within each dependency.",
+                                    resource_type_str, resource_type_str
+                                )
+                            } else {
+                                format!(
+                                    "\n\nValid resource types: agent, command, snippet, hook, mcp-server, script\n\
+                                    Source file: {}",
+                                    dep.get_path()
+                                )
+                            };
+
+                            anyhow::anyhow!("{}{}", base_msg, hint)
                         })?;
 
                     // Determine flatten behavior: use explicit setting or tool config default

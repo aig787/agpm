@@ -115,7 +115,11 @@ impl MetadataExtractor {
 
             // Parse YAML frontmatter
             match serde_yaml::from_str::<DependencyMetadata>(&templated_frontmatter) {
-                Ok(metadata) => Ok(metadata),
+                Ok(metadata) => {
+                    // Validate resource types (catch tool names used as types)
+                    Self::validate_resource_types(&metadata, path)?;
+                    Ok(metadata)
+                }
                 Err(e) => {
                     // Provide detailed error message for common issues
                     let error_msg = e.to_string();
@@ -183,9 +187,14 @@ impl MetadataExtractor {
             match serde_json::from_value::<HashMap<String, Vec<crate::manifest::DependencySpec>>>(
                 deps.clone(),
             ) {
-                Ok(dependencies) => Ok(DependencyMetadata {
-                    dependencies: Some(dependencies),
-                }),
+                Ok(dependencies) => {
+                    let metadata = DependencyMetadata {
+                        dependencies: Some(dependencies),
+                    };
+                    // Validate resource types (catch tool names used as types)
+                    Self::validate_resource_types(&metadata, path)?;
+                    Ok(metadata)
+                }
                 Err(e) => {
                     // Provide detailed error message for common issues
                     let error_msg = e.to_string();
@@ -360,6 +369,57 @@ impl MetadataExtractor {
             // Fallback: extract just the error kind
             "Template syntax error (see details above)".to_string()
         }
+    }
+
+    /// Validate that resource type names are correct (not tool names).
+    ///
+    /// Common mistake: using tool names (claude-code, opencode) as section headers
+    /// instead of resource types (agents, snippets, commands).
+    ///
+    /// # Arguments
+    /// * `metadata` - The metadata to validate
+    /// * `file_path` - Path to the file being validated (for error messages)
+    ///
+    /// # Returns
+    /// * `Ok(())` if validation passes
+    /// * `Err` with helpful error message if tool names detected
+    fn validate_resource_types(metadata: &DependencyMetadata, file_path: &Path) -> Result<()> {
+        const VALID_RESOURCE_TYPES: &[&str] =
+            &["agents", "commands", "snippets", "hooks", "mcp-servers", "scripts"];
+        const TOOL_NAMES: &[&str] = &["claude-code", "opencode", "agpm"];
+
+        if let Some(ref dependencies) = metadata.dependencies {
+            for resource_type in dependencies.keys() {
+                if !VALID_RESOURCE_TYPES.contains(&resource_type.as_str()) {
+                    if TOOL_NAMES.contains(&resource_type.as_str()) {
+                        // Specific error for tool name confusion
+                        anyhow::bail!(
+                            "Invalid resource type '{}' in dependencies section of '{}'.\n\n\
+                            You used a tool name ('{}') as a section header, but AGPM expects resource types.\n\n\
+                            ✗ Wrong:\n  dependencies:\n    {}:\n      - path: ...\n\n\
+                            ✓ Correct:\n  dependencies:\n    agents:  # or snippets, commands, etc.\n      - path: ...\n        tool: {}  # Specify tool here\n\n\
+                            Valid resource types: {}",
+                            resource_type,
+                            file_path.display(),
+                            resource_type,
+                            resource_type,
+                            resource_type,
+                            VALID_RESOURCE_TYPES.join(", ")
+                        );
+                    } else {
+                        // Generic error for unknown types
+                        anyhow::bail!(
+                            "Unknown resource type '{}' in dependencies section of '{}'.\n\
+                            Valid resource types: {}",
+                            resource_type,
+                            file_path.display(),
+                            VALID_RESOURCE_TYPES.join(", ")
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Extract metadata from file content without knowing the file type.
@@ -875,5 +935,84 @@ dependencies:
         // Template syntax should be preserved (not rendered)
         assert_eq!(deps["scripts"].len(), 1);
         assert_eq!(deps["scripts"][0].path, "scripts/{{ agpm.project.tool }}.js");
+    }
+
+    #[test]
+    fn test_validate_tool_name_as_resource_type_yaml() {
+        // YAML using tool name 'opencode' instead of resource type 'agents'
+        let content = r#"---
+dependencies:
+  opencode:
+    - path: agents/helper.md
+---
+# Command"#;
+
+        let path = Path::new("command.md");
+        let result = MetadataExtractor::extract(path, content, None);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Invalid resource type 'opencode'"));
+        assert!(err_msg.contains("tool name"));
+        assert!(err_msg.contains("agents:"));
+    }
+
+    #[test]
+    fn test_validate_tool_name_as_resource_type_json() {
+        // JSON using tool name 'claude-code' instead of resource type 'snippets'
+        let content = r#"{
+  "dependencies": {
+    "claude-code": [
+      { "path": "snippets/helper.md" }
+    ]
+  }
+}"#;
+
+        let path = Path::new("hook.json");
+        let result = MetadataExtractor::extract(path, content, None);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Invalid resource type 'claude-code'"));
+        assert!(err_msg.contains("tool name"));
+    }
+
+    #[test]
+    fn test_validate_unknown_resource_type() {
+        // Using a completely unknown resource type
+        let content = r#"---
+dependencies:
+  foobar:
+    - path: something/test.md
+---
+# Command"#;
+
+        let path = Path::new("command.md");
+        let result = MetadataExtractor::extract(path, content, None);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Unknown resource type 'foobar'"));
+        assert!(err_msg.contains("Valid resource types"));
+    }
+
+    #[test]
+    fn test_validate_correct_resource_types() {
+        // All valid resource types should pass
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/helper.md
+  snippets:
+    - path: snippets/util.md
+  commands:
+    - path: commands/deploy.md
+---
+# Command"#;
+
+        let path = Path::new("command.md");
+        let result = MetadataExtractor::extract(path, content, None);
+
+        assert!(result.is_ok());
     }
 }
