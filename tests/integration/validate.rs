@@ -799,7 +799,7 @@ async fn test_validate_properly_configured_merge_targets() {
     assert!(output.success);
 
     let stdout = &output.stdout;
-    assert!(stdout.contains("✓ Valid manifest"));
+    assert!(stdout.contains("✓ Valid agpm.toml"));
 }
 
 /// Test validating manifest with malformed MCP servers configuration

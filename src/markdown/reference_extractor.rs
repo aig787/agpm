@@ -143,9 +143,7 @@ pub fn extract_file_references(content: &str) -> Vec<String> {
 
     // Extract direct file paths with markdown extensions
     // Pattern: paths containing / with .md extension only
-    if let Ok(path_regex) = Regex::new(
-        r#"(?:^|\s|["'`])([./a-zA-Z_][\w./-]*\.md)(?:\s|["'`]|$)"#,
-    ) {
+    if let Ok(path_regex) = Regex::new(r#"(?:^|\s|["'`])([./a-zA-Z_][\w./-]*\.md)(?:\s|["'`]|$)"#) {
         for cap in path_regex.captures_iter(&content_without_code) {
             if let Some(path) = cap.get(1) {
                 let path_str = path.as_str();

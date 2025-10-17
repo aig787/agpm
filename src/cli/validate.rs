@@ -1170,9 +1170,7 @@ impl ValidateCommand {
                             println!("⚠ Warning: {warning}");
                         }
                     }
-                    if validation_results.valid {
-                        println!("✓ Valid manifest");
-                    }
+                    // Individual validation steps already printed their success messages
                 }
             }
         }

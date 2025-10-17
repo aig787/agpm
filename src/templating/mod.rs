@@ -558,21 +558,21 @@ impl TemplateRenderer {
         Self::log_context_as_kv(context);
 
         // Render the template
-        self.tera
-            .render_str(template_content, context)
-            .map_err(|e| {
-                // Extract detailed error information from Tera error
-                // The Tera error contains a chain of errors with the root cause
-                let error_msg = Self::format_tera_error(&e);
+        self.tera.render_str(template_content, context).map_err(|e| {
+            // Extract detailed error information from Tera error
+            // The Tera error contains a chain of errors with the root cause
+            let error_msg = Self::format_tera_error(&e);
 
-                // Output the detailed error to stderr for immediate visibility
-                eprintln!("Template rendering error:\n{}", error_msg);
+            // Output the detailed error to stderr for immediate visibility
+            eprintln!("Template rendering error:\n{}", error_msg);
 
-                // Include the context in the error message for user visibility
-                let context_str = Self::format_context_as_string(context);
-                anyhow::Error::new(e)
-                    .context(format!("Template rendering failed:\n{}\n\nTemplate context:\n{}", error_msg, context_str))
-            })
+            // Include the context in the error message for user visibility
+            let context_str = Self::format_context_as_string(context);
+            anyhow::Error::new(e).context(format!(
+                "Template rendering failed:\n{}\n\nTemplate context:\n{}",
+                error_msg, context_str
+            ))
+        })
     }
 
     /// Format a Tera error with detailed information about what went wrong.
@@ -613,7 +613,10 @@ impl TemplateRenderer {
                 .to_string();
 
             // Only keep non-empty, useful messages
-            if !cleaned.is_empty() && cleaned != "Template rendering failed" && cleaned != "Template syntax error" {
+            if !cleaned.is_empty()
+                && cleaned != "Template rendering failed"
+                && cleaned != "Template syntax error"
+            {
                 messages.push(cleaned);
             }
         }

@@ -1140,9 +1140,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
                 let msg = e.to_string();
                 if msg.contains("Failed to render template for") {
                     // Extract name between single quotes
-                    msg.split("'")
-                        .nth(1)
-                        .map(|s| s.to_string())
+                    msg.split("'").nth(1).map(|s| s.to_string())
                 } else {
                     None
                 }
@@ -1619,9 +1617,15 @@ mod tests {
         let ctx = user_friendly_error(error_with_context);
 
         match &ctx.error {
-            AgpmError::InvalidResource { name, reason } => {
+            AgpmError::InvalidResource {
+                name,
+                reason,
+            } => {
                 // Verify resource name was extracted instead of using "template"
-                assert_eq!(name, "my-awesome-agent", "Resource name should be extracted from error context");
+                assert_eq!(
+                    name, "my-awesome-agent",
+                    "Resource name should be extracted from error context"
+                );
                 assert!(reason.contains("Variable"), "Reason should contain the actual error");
             }
             _ => panic!("Expected InvalidResource, got {:?}", ctx.error),
@@ -1638,9 +1642,15 @@ mod tests {
         let ctx = user_friendly_error(template_error);
 
         match &ctx.error {
-            AgpmError::InvalidResource { name, reason } => {
+            AgpmError::InvalidResource {
+                name,
+                reason,
+            } => {
                 // Should fallback to "unknown resource" when name can't be extracted
-                assert_eq!(name, "unknown resource", "Should use fallback when resource name unavailable");
+                assert_eq!(
+                    name, "unknown resource",
+                    "Should use fallback when resource name unavailable"
+                );
                 assert!(reason.contains("Variable"), "Reason should contain the actual error");
             }
             _ => panic!("Expected InvalidResource, got {:?}", ctx.error),

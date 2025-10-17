@@ -345,7 +345,10 @@ impl MetadataExtractor {
                 .to_string();
 
             // Only keep non-empty, useful messages
-            if !cleaned.is_empty() && cleaned != "Template rendering failed" && cleaned != "Template syntax error" {
+            if !cleaned.is_empty()
+                && cleaned != "Template rendering failed"
+                && cleaned != "Template syntax error"
+            {
                 messages.push(cleaned);
             }
         }
