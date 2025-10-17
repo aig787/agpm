@@ -1,7 +1,6 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-expert-standard fails repeatedly. Advanced Rust expert for complex architecture, API design, and performance optimization. Handles the most challenging Rust development tasks."
 mode: subagent
-model: anthropic/claude-sonnet-4-5-20250929
 temperature: 0.3
 tools:
   read: true
@@ -11,7 +10,7 @@ tools:
   glob: true
 permission:
   edit: allow
-  bash: ask
+  bash: allow
 ---
 
 **IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:

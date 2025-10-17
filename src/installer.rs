@@ -3366,7 +3366,6 @@ mod tests {
         let gitignore_path = project_dir.join(".gitignore");
         let existing_content = "# User comment\n\
                                user-file.txt\n\
-                               *.backup\n\
                                # AGPM managed entries - do not edit below this line\n\
                                .claude/agents/old-entry.md\n\
                                # End of AGPM managed entries\n";
@@ -3385,7 +3384,6 @@ mod tests {
         // Check that user entries are preserved
         let updated_content = std::fs::read_to_string(&gitignore_path).unwrap();
         assert!(updated_content.contains("user-file.txt"));
-        assert!(updated_content.contains("*.backup"));
         assert!(updated_content.contains("# User comment"));
 
         // Check that new entries are added
@@ -3436,7 +3434,6 @@ mod tests {
         // Create a gitignore with legacy CCPM markers
         let gitignore_path = project_dir.join(".gitignore");
         let legacy_content = r#"# User's custom entries
-*.backup
 temp/
 
 # CCPM managed entries - do not edit below this line
@@ -3463,7 +3460,6 @@ local-config.json
         let updated_content = tokio::fs::read_to_string(&gitignore_path).await.unwrap();
 
         // User entries before CCPM section should be preserved
-        assert!(updated_content.contains("*.backup"));
         assert!(updated_content.contains("temp/"));
 
         // User entries after CCPM section should be preserved

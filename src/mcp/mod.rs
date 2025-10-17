@@ -12,7 +12,7 @@
 
 pub mod handlers;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -136,21 +136,18 @@ impl ClaudeSettings {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            // Put backup in .agpm/backups directory
-            let backup_dir = path
-                .parent()
-                .ok_or_else(|| anyhow!("Invalid settings path"))?
-                .join(".agpm")
-                .join("backups");
+            // Generate backup path at project root: .agpm/backups/claude-code/settings.local.json
+            let backup_path = crate::utils::generate_backup_path(path, "claude-code")?;
 
-            // Ensure .agpm/backups directory exists
-            if !backup_dir.exists() {
-                std::fs::create_dir_all(&backup_dir).with_context(|| {
-                    format!("Failed to create directory: {}", backup_dir.display())
-                })?;
+            // Ensure backup directory exists
+            if let Some(backup_dir) = backup_path.parent() {
+                if !backup_dir.exists() {
+                    std::fs::create_dir_all(backup_dir).with_context(|| {
+                        format!("Failed to create directory: {}", backup_dir.display())
+                    })?;
+                }
             }
 
-            let backup_path = backup_dir.join("settings.local.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!("Failed to create backup of settings at: {}", backup_path.display())
             })?;
@@ -239,21 +236,18 @@ impl McpConfig {
     pub fn save(&self, path: &Path) -> Result<()> {
         // Create a backup if the file exists
         if path.exists() {
-            // Put backup in .agpm/backups directory
-            let backup_dir = path
-                .parent()
-                .ok_or_else(|| anyhow!("Invalid MCP config path"))?
-                .join(".agpm")
-                .join("backups");
+            // Generate backup path at project root: .agpm/backups/claude-code/.mcp.json
+            let backup_path = crate::utils::generate_backup_path(path, "claude-code")?;
 
-            // Ensure .agpm/backups directory exists
-            if !backup_dir.exists() {
-                std::fs::create_dir_all(&backup_dir).with_context(|| {
-                    format!("Failed to create directory: {}", backup_dir.display())
-                })?;
+            // Ensure backup directory exists
+            if let Some(backup_dir) = backup_path.parent() {
+                if !backup_dir.exists() {
+                    std::fs::create_dir_all(backup_dir).with_context(|| {
+                        format!("Failed to create directory: {}", backup_dir.display())
+                    })?;
+                }
             }
 
-            let backup_path = backup_dir.join(".mcp.json.backup");
             std::fs::copy(path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of MCP configuration at: {}",
@@ -502,6 +496,11 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
+    /// Test helper: Creates agpm.toml in temp directory so find_project_root works
+    fn setup_project_root(temp_path: &std::path::Path) {
+        fs::write(temp_path.join("agpm.toml"), "[dependencies]\n").unwrap();
+    }
+
     #[test]
     fn test_claude_settings_load_save() {
         let temp = tempdir().unwrap();
@@ -557,9 +556,15 @@ mod tests {
     #[test]
     fn test_claude_settings_save_creates_backup() {
         let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+
         let settings_path = temp.path().join("settings.local.json");
-        let backup_path =
-            temp.path().join(".agpm").join("backups").join("settings.local.json.backup");
+        let backup_path = temp
+            .path()
+            .join(".agpm")
+            .join("backups")
+            .join("claude-code")
+            .join("settings.local.json");
 
         // Create initial file
         fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
@@ -567,7 +572,7 @@ mod tests {
         let settings = ClaudeSettings::default();
         settings.save(&settings_path).unwrap();
 
-        // Backup should be created in agpm directory
+        // Backup should be created in .agpm/backups/claude-code directory
         assert!(backup_path.exists());
         let backup_content = fs::read_to_string(backup_path).unwrap();
         assert_eq!(backup_content, r#"{"test": "value"}"#);
@@ -764,6 +769,8 @@ mod tests {
     #[test]
     fn test_settings_preserves_other_fields() {
         let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+
         let settings_path = temp.path().join("settings.local.json");
 
         // Create a settings file with various fields
@@ -853,8 +860,11 @@ mod tests {
     #[test]
     fn test_mcp_config_save_creates_backup() {
         let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+
         let config_path = temp.path().join("mcp.json");
-        let backup_path = temp.path().join(".agpm").join("backups").join(".mcp.json.backup");
+        let backup_path =
+            temp.path().join(".agpm").join("backups").join("claude-code").join("mcp.json");
 
         // Create initial file
         fs::write(&config_path, r#"{"mcpServers": {"old": {"command": "old"}}}"#).unwrap();
@@ -862,7 +872,7 @@ mod tests {
         let config = McpConfig::default();
         config.save(&config_path).unwrap();
 
-        // Backup should be created in .agpm/backups directory
+        // Backup should be created in .agpm/backups/claude-code directory
         assert!(backup_path.exists());
         let backup_content = fs::read_to_string(backup_path).unwrap();
         assert!(backup_content.contains("old"));
@@ -1405,6 +1415,8 @@ mod tests {
     #[test]
     fn test_clean_mcp_servers() {
         let temp = tempfile::TempDir::new().unwrap();
+        setup_project_root(temp.path());
+
         let project_root = temp.path();
         let claude_dir = project_root.join(".claude");
         let agpm_dir = claude_dir.join("agpm");
@@ -1619,9 +1631,15 @@ mod tests {
     #[test]
     fn test_claude_settings_save_backup() {
         let temp = tempfile::TempDir::new().unwrap();
+        setup_project_root(temp.path());
+
         let settings_path = temp.path().join("settings.local.json");
-        let backup_path =
-            temp.path().join(".agpm").join("backups").join("settings.local.json.backup");
+        let backup_path = temp
+            .path()
+            .join(".agpm")
+            .join("backups")
+            .join("claude-code")
+            .join("settings.local.json");
 
         // Create initial settings
         let settings1 = ClaudeSettings::default();
@@ -1651,8 +1669,11 @@ mod tests {
     #[test]
     fn test_mcp_config_save_backup() {
         let temp = tempfile::TempDir::new().unwrap();
+        setup_project_root(temp.path());
+
         let config_path = temp.path().join(".mcp.json");
-        let backup_path = temp.path().join(".agpm").join("backups").join(".mcp.json.backup");
+        let backup_path =
+            temp.path().join(".agpm").join("backups").join("claude-code").join(".mcp.json");
 
         // Create initial config
         let config1 = McpConfig::default();
@@ -1686,6 +1707,28 @@ mod tests {
         // Verify main file has new content
         let main_content: McpConfig = crate::utils::read_json_file(&config_path).unwrap();
         assert_eq!(main_content.mcp_servers.len(), 1);
+    }
+
+    #[test]
+    fn test_backup_fails_without_project_root() {
+        // Test that backup creation fails gracefully when no agpm.toml exists
+        let temp = tempfile::TempDir::new().unwrap();
+        // Deliberately NOT calling setup_project_root here
+
+        let settings_path = temp.path().join("settings.local.json");
+
+        // Create initial file
+        fs::write(&settings_path, r#"{"test": "value"}"#).unwrap();
+
+        let settings = ClaudeSettings::default();
+        let result = settings.save(&settings_path);
+
+        // Should fail with helpful error message about missing project root
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("Failed to find project root") || error_msg.contains("agpm.toml")
+        );
     }
 
     #[test]

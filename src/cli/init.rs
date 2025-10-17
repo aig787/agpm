@@ -85,13 +85,13 @@ const DEFAULT_MANIFEST_TEMPLATE: &str = r#"# AGPM Manifest
 # Tool type configurations (multi-tool support)
 [tools.claude-code]
 path = ".claude"
-resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = {}, mcp-servers = {} }
+resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" } }
 # Note: hooks and mcp-servers merge into configuration files (no file installation)
 
 [tools.opencode]
 enabled = false  # Enable if you want to use OpenCode resources
 path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = {} }
+resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = { merge-target = ".opencode/opencode.json" } }
 # Note: MCP servers merge into opencode.json (no file installation)
 
 [tools.agpm]

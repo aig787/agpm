@@ -126,7 +126,6 @@ async fn test_gitignore_preserves_user_entries() {
     // Create existing gitignore with user entries
     let gitignore_path = project.project_path().join(".gitignore");
     let user_content = r#"# User's custom comment
-*.backup
 user-file.txt
 temp/
 
@@ -145,7 +144,6 @@ temp/
     // Check that user entries are preserved
     let updated_content = fs::read_to_string(&gitignore_path).await.unwrap();
     assert!(updated_content.contains("# User's custom comment"));
-    assert!(updated_content.contains("*.backup"));
     assert!(updated_content.contains("user-file.txt"));
     assert!(updated_content.contains("temp/"));
 
@@ -170,7 +168,6 @@ async fn test_gitignore_preserves_content_after_agpm_section() {
     // Create existing gitignore with content after AGPM section
     let gitignore_path = project.project_path().join(".gitignore");
     let user_content = r#"# Project gitignore
-*.backup
 temp/
 
 # AGPM managed entries - do not edit below this line
@@ -195,7 +192,6 @@ debug/
 
     // Check content before AGPM section
     assert!(updated_content.contains("# Project gitignore"));
-    assert!(updated_content.contains("*.backup"));
     assert!(updated_content.contains("temp/"));
 
     // Check AGPM section is updated

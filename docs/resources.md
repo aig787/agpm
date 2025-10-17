@@ -271,6 +271,8 @@ merge-target = ".my-tool/hooks.json"
 merge-target = ".my-tool/servers.json"
 ```
 
+**Note**: Use `merge-target` (with a hyphen) in TOML, not `merge_target` (with underscore).
+
 **Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers. Custom merge targets work best by overriding defaults for built-in tools.
 
 ### Example: Merged .mcp.json

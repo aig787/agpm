@@ -185,7 +185,7 @@ pub struct UpdateCommand {
 
     /// Create a backup of the lockfile before updating.
     ///
-    /// The backup is saved as `agpm.lock.backup` and can be restored
+    /// The backup is saved in `.agpm/backups/agpm.lock` and can be restored
     /// manually if the update causes issues.
     #[arg(long)]
     pub backup: bool,
@@ -337,7 +337,17 @@ impl UpdateCommand {
 
         // Create backup if requested
         if self.backup {
-            let backup_path = lockfile_path.with_extension("lock.backup");
+            let backup_path = crate::utils::generate_backup_path(&lockfile_path, "agpm")?;
+
+            // Ensure backup directory exists
+            if let Some(backup_dir) = backup_path.parent() {
+                if !backup_dir.exists() {
+                    tokio::fs::create_dir_all(backup_dir).await.with_context(|| {
+                        format!("Failed to create directory: {}", backup_dir.display())
+                    })?;
+                }
+            }
+
             tokio::fs::copy(&lockfile_path, &backup_path)
                 .await
                 .with_context(|| format!("Failed to create backup at {}", backup_path.display()))?;
@@ -556,7 +566,8 @@ impl UpdateCommand {
                 Err(e) => {
                     if self.backup {
                         // Restore from backup
-                        let backup_path = lockfile_path.with_extension("lock.backup");
+                        let backup_path =
+                            crate::utils::generate_backup_path(&lockfile_path, "agpm")?;
                         if backup_path.exists() {
                             if let Err(restore_err) =
                                 tokio::fs::copy(&backup_path, &lockfile_path).await
@@ -765,7 +776,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         let lockfile_path = temp.path().join("agpm.lock");
-        let backup_path = temp.path().join("agpm.lock.backup");
+        let backup_path = temp.path().join(".agpm").join("backups").join("agpm").join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -972,7 +983,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let manifest_path = temp.path().join("agpm.toml");
         let lockfile_path = temp.path().join("agpm.lock");
-        let backup_path = temp.path().join("agpm.lock.backup");
+        let backup_path = temp.path().join(".agpm").join("backups").join("agpm").join("agpm.lock");
 
         // Create manifest and existing lockfile
         let manifest = create_test_manifest();
@@ -981,6 +992,9 @@ mod tests {
         lockfile.save(&lockfile_path).unwrap();
 
         // Create backup manually to test rollback logic
+        if let Some(backup_dir) = backup_path.parent() {
+            fs::create_dir_all(backup_dir).unwrap();
+        }
         fs::copy(&lockfile_path, &backup_path).unwrap();
 
         let mut cmd = create_update_command();
