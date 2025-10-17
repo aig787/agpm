@@ -1,22 +1,23 @@
 //! File reference extraction and validation for markdown documents.
 //!
-//! This module provides utilities to extract and validate file path references
+//! This module provides utilities to extract and validate markdown file references
 //! within markdown content. It helps catch broken cross-references before
 //! installation by checking that referenced files actually exist.
 //!
 //! # Supported Reference Types
 //!
-//! - **Markdown links**: `[text](path.md)`
-//! - **Direct file paths**: `.agpm/snippets/file.md`, `docs/guide.md`
+//! - **Markdown links**: `[text](path.md)` - only `.md` files
+//! - **Direct file paths**: `.agpm/snippets/file.md`, `docs/guide.md` - only `.md` files
 //!
 //! # Extraction Rules
 //!
 //! The extractor intelligently filters references to avoid false positives:
 //! - Skips absolute URLs (http://, https://, etc.)
 //! - Skips absolute filesystem paths (starting with /)
+//! - Skips content inside YAML frontmatter (--- delimited)
 //! - Skips content inside code blocks (``` delimited)
 //! - Skips content inside inline code (` delimited)
-//! - Only extracts relative file paths with common extensions
+//! - Only extracts relative markdown file paths (.md extension)
 //!
 //! # Usage
 //!
@@ -74,24 +75,26 @@ impl MissingReference {
     }
 }
 
-/// Extract file references from markdown content.
+/// Extract markdown file references from markdown content.
 ///
-/// This function scans markdown content for file path references and returns
-/// a deduplicated list of relative file paths. It intelligently filters out
-/// URLs, absolute paths, and references inside code blocks.
+/// This function scans markdown content for markdown file path references and returns
+/// a deduplicated list of relative markdown file paths. It intelligently filters out
+/// URLs, absolute paths, non-markdown files, and references inside code blocks.
 ///
 /// # Extracted Reference Types
 ///
-/// - Markdown links: `[text](path.md)` → extracts `path.md`
-/// - Direct file paths: `.agpm/snippets/file.md` → extracts `.agpm/snippets/file.md`
+/// - Markdown links: `[text](path.md)` → extracts `path.md` (only `.md` files)
+/// - Direct file paths: `.agpm/snippets/file.md` → extracts `.agpm/snippets/file.md` (only `.md` files)
 ///
 /// # Filtering Rules
 ///
 /// References are excluded if they:
 /// - Start with URL schemes (http://, https://, ftp://, etc.)
 /// - Are absolute paths (starting with /)
+/// - Appear inside YAML frontmatter (--- delimited at file start)
 /// - Appear inside code blocks (``` delimited)
 /// - Appear inside inline code (` delimited)
+/// - Don't have the .md extension
 /// - Contain URL-like patterns (://)
 ///
 /// # Arguments
@@ -121,25 +124,27 @@ impl MissingReference {
 pub fn extract_file_references(content: &str) -> Vec<String> {
     let mut references = Vec::new();
 
-    // Remove code blocks first to avoid extracting paths from code
-    let content_without_code = remove_code_blocks(content);
+    // Remove frontmatter and code blocks to avoid extracting paths from metadata
+    let content_without_frontmatter = remove_frontmatter(content);
+    let content_without_code = remove_code_blocks(&content_without_frontmatter);
 
-    // Extract markdown links: [text](path)
+    // Extract markdown links: [text](path.md) - only .md files
     if let Ok(link_regex) = Regex::new(r"\[([^\]]+)\]\(([^)]+)\)") {
         for cap in link_regex.captures_iter(&content_without_code) {
             if let Some(path) = cap.get(2) {
                 let path_str = path.as_str();
-                if is_valid_file_reference(path_str) {
+                // Only include markdown files
+                if path_str.ends_with(".md") && is_valid_file_reference(path_str) {
                     references.push(path_str.to_string());
                 }
             }
         }
     }
 
-    // Extract direct file paths with common extensions
-    // Pattern: paths containing / with file extensions
+    // Extract direct file paths with markdown extensions
+    // Pattern: paths containing / with .md extension only
     if let Ok(path_regex) = Regex::new(
-        r#"(?:^|\s|["'`])([./a-zA-Z_][\w./-]*\.(?:md|json|sh|js|py|toml|yaml|yml|rs|ts|tsx|jsx))(?:\s|["'`]|$)"#,
+        r#"(?:^|\s|["'`])([./a-zA-Z_][\w./-]*\.md)(?:\s|["'`]|$)"#,
     ) {
         for cap in path_regex.captures_iter(&content_without_code) {
             if let Some(path) = cap.get(1) {
@@ -156,6 +161,48 @@ pub fn extract_file_references(content: &str) -> Vec<String> {
     references.retain(|r| seen.insert(r.clone()));
 
     references
+}
+
+/// Remove YAML frontmatter from markdown content.
+///
+/// This prevents extracting dependency paths from frontmatter metadata,
+/// which are transitive dependencies rather than actual file references in
+/// the content.
+///
+/// # Arguments
+///
+/// * `content` - The markdown content
+///
+/// # Returns
+///
+/// Content with frontmatter removed (--- delimited at the start)
+fn remove_frontmatter(content: &str) -> String {
+    // Check if content starts with frontmatter delimiter
+    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
+        return content.to_string();
+    }
+
+    // Find the end of frontmatter
+    let search_start = if content.starts_with("---\n") {
+        4
+    } else {
+        5
+    };
+
+    let end_pattern = if content.contains("\r\n") {
+        "\r\n---\r\n"
+    } else {
+        "\n---\n"
+    };
+
+    if let Some(end_pos) = content[search_start..].find(end_pattern) {
+        // Return content after frontmatter, skipping the closing delimiter
+        let content_start = search_start + end_pos + end_pattern.len();
+        content[content_start..].to_string()
+    } else {
+        // No closing delimiter found, return original content
+        content.to_string()
+    }
 }
 
 /// Remove code blocks from markdown content.
@@ -351,13 +398,13 @@ Also see [examples](../examples/demo.md).
     fn test_extract_direct_file_paths() {
         let content = r#"
 See `.agpm/snippets/example.md` for the implementation.
-Check `./src/main.rs` and `.claude/agents/test.md`.
+Check `./docs/overview.md` and `.claude/agents/test.md`.
 "#;
 
         let refs = extract_file_references(content);
         assert!(refs.contains(&".agpm/snippets/example.md".to_string()));
         assert!(refs.contains(&".claude/agents/test.md".to_string()));
-        assert!(refs.contains(&"./src/main.rs".to_string()));
+        assert!(refs.contains(&"./docs/overview.md".to_string()));
     }
 
     #[test]
@@ -473,6 +520,59 @@ More normal text `.agpm/another.md`
             !cleaned.contains("in_code.md")
                 || cleaned.split_whitespace().all(|word| !word.contains("in_code.md"))
         );
+    }
+
+    #[test]
+    fn test_remove_frontmatter() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/helper.md
+  snippets:
+    - path: snippets/utils.md
+---
+
+# Main Content
+
+See [documentation](./docs/guide.md) for details.
+"#;
+
+        let cleaned = remove_frontmatter(content);
+        // Frontmatter should be removed
+        assert!(!cleaned.contains("dependencies:"));
+        assert!(!cleaned.contains("agents/helper.md"));
+        assert!(!cleaned.contains("snippets/utils.md"));
+        // Content should remain
+        assert!(cleaned.contains("# Main Content"));
+        assert!(cleaned.contains("./docs/guide.md"));
+    }
+
+    #[test]
+    fn test_extract_with_frontmatter_dependencies() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/helper.md
+      version: v1.0.0
+  snippets:
+    - path: .agpm/snippets/utils.md
+---
+
+# Command
+
+See [real reference](./docs/guide.md) for details.
+Check `.claude/agents/example.md` for the implementation.
+"#;
+
+        let refs = extract_file_references(content);
+
+        // Should extract content references
+        assert!(refs.contains(&"./docs/guide.md".to_string()));
+        assert!(refs.contains(&".claude/agents/example.md".to_string()));
+
+        // Should NOT extract frontmatter dependencies
+        assert!(!refs.contains(&"agents/helper.md".to_string()));
+        assert!(!refs.contains(&".agpm/snippets/utils.md".to_string()));
     }
 
     #[test]
