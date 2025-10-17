@@ -638,6 +638,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
 

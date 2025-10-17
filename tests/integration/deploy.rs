@@ -280,7 +280,7 @@ async fn test_install_local_dependencies() {
     let manifest = ManifestBuilder::new()
         .add_source("official", &official_url)
         .add_standard_agent("my-agent", "official", "agents/test-agent.md")
-        .add_local_agent("local-agent", "../local-agents/helper.md")
+        .add_agent("local-agent", |d| d.path("../local-agents/helper.md").flatten(false))
         .add_local_snippet("local-utils", "./snippets/local-utils.md")
         .build();
     project.write_manifest(&manifest).await.unwrap();

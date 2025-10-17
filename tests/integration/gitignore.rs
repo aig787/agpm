@@ -20,9 +20,13 @@ async fn create_test_manifest(gitignore: bool, _source_dir: &Path) -> String {
                 .commands(".claude/commands")
                 .gitignore(gitignore)
         })
-        .add_local_agent("test-agent", "../sources/source/agents/test.md")
-        .add_local_snippet("test-snippet", "../sources/source/snippets/test.md")
-        .add_local_command("test-command", "../sources/source/commands/test.md")
+        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
+        .add_snippet("test-snippet", |d| {
+            d.path("../sources/source/snippets/test.md").flatten(false)
+        })
+        .add_command("test-command", |d| {
+            d.path("../sources/source/commands/test.md").flatten(false)
+        })
         .build()
 }
 
@@ -33,7 +37,7 @@ async fn create_test_manifest_default(_source_dir: &Path) -> String {
         .with_target_config(|t| {
             t.agents(".claude/agents").snippets(".agpm/snippets").commands(".claude/commands")
         })
-        .add_local_agent("test-agent", "../sources/source/agents/test.md")
+        .add_agent("test-agent", |d| d.path("../sources/source/agents/test.md").flatten(false))
         .build()
 }
 

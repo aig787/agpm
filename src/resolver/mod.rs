@@ -1595,6 +1595,7 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
+                                flatten: None,
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -1688,15 +1689,16 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
+                                flatten: None,
                             }))
                         };
 
                         // Generate a name for the transitive dependency
                         // Use explicit name from DependencySpec if provided, otherwise derive from path
-                        let trans_name =
-                            dep_spec.name.clone().unwrap_or_else(|| {
-                                self.generate_dependency_name(trans_dep.get_path())
-                            });
+                        let trans_name = dep_spec
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| self.generate_dependency_name(trans_dep.get_path()));
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
@@ -2076,10 +2078,10 @@ impl DependencyResolver {
             let pattern_resolver = crate::pattern::PatternResolver::new();
             let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
 
-            // Get tool and target from parent pattern dependency
-            let (tool, target) = match dep {
-                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                _ => (None, None),
+            // Get tool, target, and flatten from parent pattern dependency
+            let (tool, target, flatten) = match dep {
+                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone(), d.flatten),
+                _ => (None, None, None),
             };
 
             let mut concrete_deps = Vec::new();
@@ -2089,7 +2091,7 @@ impl DependencyResolver {
                 let absolute_path = base_path.join(&matched_path);
                 let concrete_path = absolute_path.to_string_lossy().to_string();
 
-                // Create a non-pattern Detailed dependency, inheriting tool and target from parent
+                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
                 concrete_deps.push((
                     resource_name,
                     ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2104,6 +2106,7 @@ impl DependencyResolver {
                         filename: None,
                         dependencies: None,
                         tool: tool.clone(),
+                        flatten,
                     })),
                 ));
             }
@@ -2144,13 +2147,15 @@ impl DependencyResolver {
                 // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
                 let concrete_path = matched_path.to_string_lossy().to_string();
 
-                // Get tool type and target from parent
-                let (tool, target) = match dep {
-                    ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone()),
-                    _ => (None, None),
+                // Get tool, target, and flatten from parent
+                let (tool, target, flatten) = match dep {
+                    ResourceDependency::Detailed(d) => {
+                        (d.tool.clone(), d.target.clone(), d.flatten)
+                    }
+                    _ => (None, None, None),
                 };
 
-                // Create a non-pattern Detailed dependency, inheriting target from parent
+                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
                 concrete_deps.push((
                     resource_name,
                     ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -2165,6 +2170,7 @@ impl DependencyResolver {
                         filename: None,
                         dependencies: None,
                         tool,
+                        flatten,
                     })),
                 ));
             }
@@ -2639,19 +2645,37 @@ impl DependencyResolver {
                             )
                         })?;
 
+                    // Determine flatten behavior: use explicit setting or tool config default
+                    let flatten = dep
+                        .get_flatten()
+                        .or_else(|| {
+                            // Get flatten default from tool config
+                            self.manifest
+                                .get_tool_config(artifact_type)
+                                .and_then(|config| config.resources.get(resource_type.to_plural()))
+                                .and_then(|resource_config| resource_config.flatten)
+                        })
+                        .unwrap_or(false); // Default to false if not configured
+
                     let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
                         let base_target = PathBuf::from(artifact_path.display().to_string())
                             .join(custom_target.trim_start_matches('/'));
                         // For custom targets, still strip prefix based on the original artifact path
                         // (not the custom target), to avoid duplicate directories
-                        let relative_path =
-                            compute_relative_install_path(&artifact_path, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         base_target.join(relative_path)
                     } else {
                         // Use artifact configuration for default path
-                        let relative_path =
-                            compute_relative_install_path(&artifact_path, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         artifact_path.join(relative_path)
                     };
                     normalize_path_for_storage(normalize_path(&path))
@@ -2784,19 +2808,37 @@ impl DependencyResolver {
                             )
                         })?;
 
+                    // Determine flatten behavior: use explicit setting or tool config default
+                    let flatten = dep
+                        .get_flatten()
+                        .or_else(|| {
+                            // Get flatten default from tool config
+                            self.manifest
+                                .get_tool_config(artifact_type)
+                                .and_then(|config| config.resources.get(resource_type.to_plural()))
+                                .and_then(|resource_config| resource_config.flatten)
+                        })
+                        .unwrap_or(false); // Default to false if not configured
+
                     let path = if let Some(custom_target) = dep.get_target() {
                         // Custom target is relative to the artifact's resource directory
                         let base_target = PathBuf::from(artifact_path.display().to_string())
                             .join(custom_target.trim_start_matches('/'));
                         // For custom targets, still strip prefix based on the original artifact path
                         // (not the custom target), to avoid duplicate directories
-                        let relative_path =
-                            compute_relative_install_path(&artifact_path, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         base_target.join(relative_path)
                     } else {
                         // Use artifact configuration for default path
-                        let relative_path =
-                            compute_relative_install_path(&artifact_path, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &artifact_path,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         artifact_path.join(relative_path)
                     };
                     normalize_path_for_storage(normalize_path(&path))
@@ -2978,6 +3020,16 @@ impl DependencyResolver {
                                 )
                             })?;
 
+                        // Determine flatten behavior: use explicit setting or tool config default
+                        let dep_flatten = dep.get_flatten();
+                        let tool_flatten = self
+                            .manifest
+                            .get_tool_config(artifact_type)
+                            .and_then(|config| config.resources.get(resource_type.to_plural()))
+                            .and_then(|resource_config| resource_config.flatten);
+
+                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false); // Default to false if not configured
+
                         // Determine the base target directory
                         let base_target = if let Some(custom_target) = dep.get_target() {
                             // Custom target is relative to the artifact's resource directory
@@ -2999,8 +3051,11 @@ impl DependencyResolver {
                         };
 
                         // Use compute_relative_install_path to avoid redundant prefixes
-                        let relative_path =
-                            compute_relative_install_path(&base_target, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &base_target,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
                     }
                 };
@@ -3115,6 +3170,16 @@ impl DependencyResolver {
                                 )
                             })?;
 
+                        // Determine flatten behavior: use explicit setting or tool config default
+                        let dep_flatten = dep.get_flatten();
+                        let tool_flatten = self
+                            .manifest
+                            .get_tool_config(artifact_type)
+                            .and_then(|config| config.resources.get(resource_type.to_plural()))
+                            .and_then(|resource_config| resource_config.flatten);
+
+                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false); // Default to false if not configured
+
                         // Determine the base target directory
                         let base_target = if let Some(custom_target) = dep.get_target() {
                             // Custom target is relative to the artifact's resource directory
@@ -3174,8 +3239,11 @@ impl DependencyResolver {
                         };
 
                         // Use compute_relative_install_path to avoid redundant prefixes
-                        let relative_path =
-                            compute_relative_install_path(&base_target, Path::new(&filename));
+                        let relative_path = compute_relative_install_path(
+                            &base_target,
+                            Path::new(&filename),
+                            flatten,
+                        );
                         normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
                     }
                 };
@@ -3590,6 +3658,7 @@ impl DependencyResolver {
                     filename: None,
                     dependencies: None,
                     tool: Some("claude-code".to_string()), // Default tool
+                    flatten: None,
                 })))
             }
         }
@@ -4272,6 +4341,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4351,6 +4421,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4429,6 +4500,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4477,6 +4549,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4556,6 +4629,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4665,6 +4739,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4705,6 +4780,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4744,6 +4820,7 @@ mod tests {
                 filename: Some("ai-assistant.txt".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4782,6 +4859,7 @@ mod tests {
                 filename: Some("assistant.markdown".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -4821,6 +4899,7 @@ mod tests {
                 filename: Some("analyze.py".to_string()),
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             false, // script (not agent)
         );
@@ -4954,6 +5033,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true, // agents
         );
@@ -5000,6 +5080,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5109,6 +5190,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5126,6 +5208,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5156,6 +5239,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5173,6 +5257,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5474,6 +5559,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5536,6 +5622,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5627,6 +5714,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5710,6 +5798,7 @@ mod tests {
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
             true,
         );
@@ -5792,6 +5881,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5806,6 +5896,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver
@@ -5852,6 +5943,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5866,6 +5958,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result =
@@ -5906,6 +5999,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -5920,6 +6014,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver
@@ -5956,6 +6051,7 @@ mod tests {
             filename: None,
             dependencies: None,
             tool: Some("claude-code".to_string()),
+            flatten: None,
         }));
 
         let result = resolver

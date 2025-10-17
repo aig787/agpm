@@ -26,7 +26,11 @@ async fn test_opencode_agent_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_agent("opencode-helper", |d| {
-            d.source("test_repo").path("agents/helper.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("agents/helper.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 
@@ -71,7 +75,11 @@ async fn test_opencode_command_installation() -> Result<()> {
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
         .add_command("deploy", |d| {
-            d.source("test_repo").path("commands/deploy.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("commands/deploy.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 
@@ -187,21 +195,23 @@ async fn test_mixed_artifact_types() -> Result<()> {
         .add_source("test_repo", &repo_url)
         // Claude Code agents
         .add_standard_agent("claude-agent", "test_repo", "agents/claude-agent.md")
-        // OpenCode agents
+        // OpenCode agents (preserve directory structure for cross-tool path testing)
         .add_agent("opencode-agent", |d| {
             d.source("test_repo")
                 .path("agents/opencode-agent.md")
                 .version("v1.0.0")
                 .tool("opencode")
+                .flatten(false)
         })
         // Claude Code commands
         .add_standard_command("claude-cmd", "test_repo", "commands/claude-cmd.md")
-        // OpenCode commands
+        // OpenCode commands (preserve directory structure for cross-tool path testing)
         .add_command("opencode-cmd", |d| {
             d.source("test_repo")
                 .path("commands/opencode-cmd.md")
                 .version("v1.0.0")
                 .tool("opencode")
+                .flatten(false)
         })
         .build();
 
@@ -410,11 +420,17 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     // Test for both Claude Code and OpenCode
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
-        // Claude Code agent (preserves nested structure)
-        .add_standard_agent("claude-ai", "test_repo", "agents/ai/gpt.md")
-        // OpenCode agent (preserves nested structure)
+        // Claude Code agent (preserves nested structure with flatten=false)
+        .add_agent("claude-ai", |d| {
+            d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").flatten(false)
+        })
+        // OpenCode agent (preserves nested structure with flatten=false)
         .add_agent("opencode-ai", |d| {
-            d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").tool("opencode")
+            d.source("test_repo")
+                .path("agents/ai/gpt.md")
+                .version("v1.0.0")
+                .tool("opencode")
+                .flatten(false)
         })
         .build();
 

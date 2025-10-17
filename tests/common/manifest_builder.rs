@@ -161,6 +161,7 @@ struct DependencyEntry {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    flatten: Option<bool>,
 }
 
 /// Builder for configuring a single dependency
@@ -177,6 +178,7 @@ pub struct DependencyBuilder {
     rev: Option<String>,
     tool: Option<String>,
     target: Option<String>,
+    flatten: Option<bool>,
 }
 
 impl DependencyBuilder {
@@ -222,6 +224,12 @@ impl DependencyBuilder {
         self
     }
 
+    /// Control directory structure flattening
+    pub fn flatten(mut self, flatten: bool) -> Self {
+        self.flatten = Some(flatten);
+        self
+    }
+
     /// Build the dependency entry (internal use)
     fn build(self) -> DependencyEntry {
         DependencyEntry {
@@ -233,6 +241,7 @@ impl DependencyBuilder {
             rev: self.rev,
             tool: self.tool,
             target: self.target,
+            flatten: self.flatten,
         }
     }
 }
@@ -335,6 +344,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.agents.push(entry);
@@ -355,6 +365,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.snippets.push(entry);
@@ -375,6 +386,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.commands.push(entry);
@@ -395,6 +407,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.scripts.push(entry);
@@ -415,6 +428,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.hooks.push(entry);
@@ -435,6 +449,7 @@ impl ManifestBuilder {
             rev: None,
             tool: None,
             target: None,
+            flatten: None,
         };
         let entry = config(builder).build();
         self.mcp_servers.push(entry);
@@ -492,6 +507,10 @@ impl ManifestBuilder {
 
                     if let Some(target) = &dep.target {
                         toml.push_str(&format!(", target = \"{}\"", escape_toml_string(target)));
+                    }
+
+                    if let Some(flatten) = dep.flatten {
+                        toml.push_str(&format!(", flatten = {}", flatten));
                     }
 
                     toml.push_str(" }\n");

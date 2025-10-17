@@ -1848,9 +1848,9 @@ This agent depends on ../helper.md (parent directory).
     )
     .await?;
 
-    // Create manifest (path is agents/subfolder/local-agent.md)
+    // Create manifest (path is agents/subfolder/local-agent.md, preserving subdirectory)
     let manifest = ManifestBuilder::new()
-        .add_local_agent("local-agent", "agents/subfolder/local-agent.md")
+        .add_agent("local-agent", |d| d.path("agents/subfolder/local-agent.md").flatten(false))
         .build();
 
     project.write_manifest(&manifest).await?;

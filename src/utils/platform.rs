@@ -526,19 +526,25 @@ pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
 /// // Standard case: strip redundant prefix
 /// let tool_root = Path::new(".claude/agents");
 /// let dep_path = Path::new("agents/carrots/agent.md");
-/// let result = compute_relative_install_path(tool_root, dep_path);
+/// let result = compute_relative_install_path(tool_root, dep_path, false);
 /// assert_eq!(result, Path::new("carrots/agent.md"));
+///
+/// // Flatten: use only filename
+/// let tool_root = Path::new(".claude/agents");
+/// let dep_path = Path::new("agents/carrots/agent.md");
+/// let result = compute_relative_install_path(tool_root, dep_path, true);
+/// assert_eq!(result, Path::new("agent.md"));
 ///
 /// // No match: preserve full path
 /// let tool_root = Path::new(".claude/agents");
 /// let dep_path = Path::new("helpers/agent.md");
-/// let result = compute_relative_install_path(tool_root, dep_path);
+/// let result = compute_relative_install_path(tool_root, dep_path, false);
 /// assert_eq!(result, Path::new("helpers/agent.md"));
 ///
 /// // Custom target with different name
 /// let tool_root = Path::new(".custom/my-stuff");
 /// let dep_path = Path::new("agents/helper.md");
-/// let result = compute_relative_install_path(tool_root, dep_path);
+/// let result = compute_relative_install_path(tool_root, dep_path, false);
 /// assert_eq!(result, Path::new("agents/helper.md")); // No stripping
 /// ```
 ///
@@ -548,6 +554,7 @@ pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
 /// - Preventing `.claude/snippets/snippets/example.md` duplication
 /// - Working with custom installation targets
 /// - Preserving intentional directory structures
+/// - Flattening directory structures for agents and commands
 ///
 /// # Design Rationale
 ///
@@ -556,9 +563,19 @@ pub fn normalize_path_for_storage<P: AsRef<Path>>(path: P) -> String {
 /// - No dependency on resource type names
 /// - Handles edge cases like single-file dependencies
 /// - Respects intentional hierarchies (e.g., `helpers/agent.md` preserved)
+/// - Supports explicit flattening for resource types that don't need nested directories
 #[must_use]
-pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path) -> PathBuf {
+pub fn compute_relative_install_path(tool_root: &Path, dep_path: &Path, flatten: bool) -> PathBuf {
     use std::path::Component;
+
+    // If flatten is true, return just the filename
+    if flatten {
+        if let Some(filename) = dep_path.file_name() {
+            return PathBuf::from(filename);
+        }
+        // Fallback to the original path if no filename
+        return dep_path.to_path_buf();
+    }
 
     // Extract the last directory component from tool root
     let tool_dir_name = tool_root.file_name().and_then(|n| n.to_str());

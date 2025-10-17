@@ -196,6 +196,7 @@ async fn add_dependency_with_manifest_path(
                 filename: common.filename.clone(),
                 dependencies: None,
                 tool,
+                flatten: None,
             }));
         }
     }
@@ -494,6 +495,7 @@ fn parse_dependency_spec(
                 filename: None,
                 dependencies: None,
                 tool: None,
+                flatten: None,
             })),
         ))
     } else if is_local_path {

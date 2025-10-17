@@ -1131,6 +1131,7 @@ This is a test agent.",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1191,6 +1192,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1260,6 +1262,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1295,6 +1298,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1335,6 +1339,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1372,6 +1377,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1429,6 +1435,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.add_mcp_server(
@@ -1445,6 +1452,7 @@ Body",
                 filename: None,
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
+                flatten: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();

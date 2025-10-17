@@ -57,6 +57,18 @@ pub struct DependencySpec {
     /// - "agpm" - Install to `.agpm/` directories
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+
+    /// Optional flatten flag to control directory structure preservation.
+    ///
+    /// When `true`, only the filename is used for installation (e.g., `nested/dir/file.md` → `file.md`).
+    /// When `false` (default for most resources), the full relative path is preserved.
+    ///
+    /// Default values by resource type:
+    /// - `agents`: `true` (flatten by default)
+    /// - `commands`: `true` (flatten by default)
+    /// - All others: `false` (preserve directory structure)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flatten: Option<bool>,
 }
 
 /// Metadata extracted from resource files.
@@ -121,6 +133,7 @@ mod tests {
             name: None,
             version: Some("v1.0.0".to_string()),
             tool: None,
+            flatten: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -138,6 +151,7 @@ mod tests {
             name: None,
             version: Some("v1.0.0".to_string()),
             tool: Some("opencode".to_string()),
+            flatten: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -171,6 +185,7 @@ mod tests {
                 name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -188,6 +203,7 @@ mod tests {
                 name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -201,6 +217,7 @@ mod tests {
                 name: None,
                 version: None,
                 tool: None,
+                flatten: None,
             }],
         );
         deps2.insert(
@@ -210,6 +227,7 @@ mod tests {
                 name: None,
                 version: Some("v1.0.0".to_string()),
                 tool: None,
+                flatten: None,
             }],
         );
         metadata2.dependencies = Some(deps2);
