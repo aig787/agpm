@@ -39,6 +39,8 @@
 //! # }
 //! ```
 
+use std::path::{Path, PathBuf};
+
 pub mod fs;
 pub mod manifest_utils;
 pub mod path_validation;
@@ -65,6 +67,58 @@ pub use platform::{
     normalize_path_for_storage, resolve_path,
 };
 pub use progress::{InstallationPhase, MultiPhaseProgress, ProgressBar, collect_dependency_names};
+
+/// Generates a backup path for tool configuration files.
+///
+/// Creates backup paths in the format: `.agpm/backups/<tool>/<filename>`
+/// at the project root level, not inside tool-specific directories.
+///
+/// # Arguments
+///
+/// * `config_path` - Path to the configuration file being backed up
+/// * `tool_name` - Name of the tool (e.g., "claude-code", "opencode")
+///
+/// # Returns
+///
+/// Full path to the backup file at project root level
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// use agpm_cli::utils::generate_backup_path;
+///
+/// // For .claude/settings.local.json with claude-code tool
+/// let backup_path = generate_backup_path(
+///     Path::new("/project/.claude/settings.local.json"),
+///     "claude-code"
+/// );
+/// // Returns: /project/.agpm/backups/claude-code/settings.local.json
+///
+/// // For .mcp.json with claude-code tool  
+/// let backup_path = generate_backup_path(
+///     Path::new("/project/.mcp.json"),
+///     "claude-code"
+/// );
+/// // Returns: /project/.agpm/backups/claude-code/.mcp.json
+/// ```
+pub fn generate_backup_path(config_path: &Path, tool_name: &str) -> anyhow::Result<PathBuf> {
+    use anyhow::{Context, anyhow};
+
+    // Find project root by looking for agpm.toml
+    let project_root = find_project_root(config_path)
+        .with_context(|| format!("Failed to find project root from: {}", config_path.display()))?;
+
+    // Create backup path: .agpm/backups/<tool>/<filename>
+    let backup_dir = project_root.join(".agpm").join("backups").join(tool_name);
+
+    // Get just the filename from the original config path
+    let filename = config_path
+        .file_name()
+        .ok_or_else(|| anyhow!("Invalid config path: {}", config_path.display()))?;
+
+    Ok(backup_dir.join(filename))
+}
 
 /// Determines if a given URL/path is a local filesystem path (not a Git repository URL).
 ///
@@ -396,5 +450,195 @@ mod tests {
         let target = Path::new("/a/d/e/f.md");
         let result = compute_relative_path(base, target);
         assert_eq!(result, "../../d/e/f.md");
+    }
+}
+
+#[cfg(test)]
+mod backup_path_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_generate_backup_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+
+        // Create agpm.toml to establish project root
+        fs::write(project_root.join("agpm.toml"), "[sources]\n").unwrap();
+
+        // Create a config file
+        let config_dir = project_root.join(".claude");
+        fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("settings.local.json");
+        fs::write(&config_path, "{}").unwrap();
+
+        let backup_path = generate_backup_path(&config_path, "claude-code").unwrap();
+
+        // Convert both to absolute paths for comparison
+        let project_root = std::fs::canonicalize(project_root).unwrap();
+        assert!(backup_path.starts_with(project_root));
+        assert!(backup_path.to_str().unwrap().contains(".agpm/backups/claude-code/"));
+        assert!(backup_path.to_str().unwrap().ends_with("settings.local.json"));
+    }
+
+    #[test]
+    fn test_generate_backup_path_fails_when_no_project_root() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create config file WITHOUT agpm.toml in any parent directory
+        let config_path = temp_dir.path().join("orphan-config.json");
+        fs::write(&config_path, "{}").unwrap();
+
+        let result = generate_backup_path(&config_path, "claude-code");
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Failed to find project root"));
+        // The actual error from find_project_root mentions "No agpm.toml found"
+        assert!(error_msg.contains("agpm.toml") || error_msg.contains("project root"));
+    }
+
+    #[test]
+    fn test_generate_backup_path_with_nested_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+
+        fs::write(project_root.join("agpm.toml"), "[sources]\n").unwrap();
+
+        // Config in nested directory
+        let config_path = project_root.join(".claude/subdir/settings.local.json");
+        let backup_path = generate_backup_path(&config_path, "claude-code").unwrap();
+
+        // Backup should still go to project root, not relative to config
+        let project_root = std::fs::canonicalize(project_root).unwrap();
+        assert!(backup_path.starts_with(project_root));
+        assert!(backup_path.to_str().unwrap().contains(".agpm/backups/claude-code/"));
+        assert!(backup_path.to_str().unwrap().ends_with("settings.local.json"));
+
+        // Should NOT include "subdir" in backup path
+        assert!(!backup_path.to_str().unwrap().contains("subdir"));
+    }
+
+    #[test]
+    fn test_generate_backup_path_different_tools() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+
+        fs::write(project_root.join("agpm.toml"), "[sources]\n").unwrap();
+
+        let config_path = project_root.join(".mcp.json");
+
+        // Test different tools
+        let claude_backup = generate_backup_path(&config_path, "claude-code").unwrap();
+        let open_backup = generate_backup_path(&config_path, "opencode").unwrap();
+        let custom_backup = generate_backup_path(&config_path, "my-tool").unwrap();
+
+        assert!(claude_backup.to_str().unwrap().contains(".agpm/backups/claude-code/"));
+        assert!(open_backup.to_str().unwrap().contains(".agpm/backups/opencode/"));
+        assert!(custom_backup.to_str().unwrap().contains(".agpm/backups/my-tool/"));
+
+        // All should end with same filename
+        assert!(claude_backup.to_str().unwrap().ends_with("mcp.json"));
+        assert!(open_backup.to_str().unwrap().ends_with("mcp.json"));
+        assert!(custom_backup.to_str().unwrap().ends_with("mcp.json"));
+    }
+
+    #[test]
+    fn test_generate_backup_path_invalid_config_path() {
+        // Test with path that has no filename (root directory)
+        let invalid_path = Path::new("/");
+        let result = generate_backup_path(invalid_path, "claude-code");
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // The function checks project root first, then filename
+        assert!(
+            error_msg.contains("Failed to find project root")
+                || error_msg.contains("Invalid config path")
+        );
+    }
+
+    #[test]
+    fn test_backup_path_normalization_cross_platform() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("agpm.toml"), "[sources]\n").unwrap();
+
+        // Test both Unix and Windows style paths (should work on any platform)
+        let unix_style = temp_dir.path().join(".claude").join("settings.local.json");
+        let direct_path = temp_dir.path().join(".claude/settings.local.json");
+
+        let backup1 = generate_backup_path(&unix_style, "claude-code").unwrap();
+        let backup2 = generate_backup_path(&direct_path, "claude-code").unwrap();
+
+        // Both should produce the same normalized backup path
+        assert_eq!(backup1, backup2);
+
+        // Verify structure
+        let backup_str = backup1.to_str().unwrap();
+        assert!(backup_str.contains(".agpm/backups/claude-code/settings.local.json"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_backup_with_symlinked_config() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+
+        fs::write(project_root.join("agpm.toml"), "[sources]\n").unwrap();
+
+        // Create real config file
+        let real_config = project_root.join("real-settings.json");
+        fs::write(&real_config, r#"{"test": "value"}"#).unwrap();
+
+        // Create directory for symlink
+        fs::create_dir_all(project_root.join(".claude")).unwrap();
+
+        // Create symlink
+        let symlink_config = project_root.join(".claude/settings.local.json");
+        symlink(&real_config, &symlink_config).unwrap();
+
+        let backup_path = generate_backup_path(&symlink_config, "claude-code").unwrap();
+
+        // Convert to absolute path for comparison
+        let project_root = std::fs::canonicalize(project_root).unwrap();
+        assert!(backup_path.starts_with(project_root));
+        assert!(backup_path.to_str().unwrap().contains(".agpm/backups/claude-code/"));
+        assert!(backup_path.to_str().unwrap().ends_with("settings.local.json"));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_backup_with_long_windows_path() {
+        use std::path::PathBuf;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+
+        fs::write(project_root.join("agpm.toml"), "[sources]\n").unwrap();
+
+        // Create a very long path (Windows has 260 char limit traditionally)
+        let mut long_path = project_root.to_path_buf();
+        for _ in 0..10 {
+            long_path = long_path.join("very_long_directory_name_that_might_cause_issues");
+        }
+        fs::create_dir_all(&long_path).unwrap();
+
+        let config_path = long_path.join("settings.local.json");
+        fs::write(&config_path, "{}").unwrap();
+
+        let result = generate_backup_path(&config_path, "claude-code");
+
+        // Should either succeed or give a clear error about path length
+        if result.is_ok() {
+            let backup_path = result.unwrap();
+            assert!(backup_path.starts_with(project_root));
+        } else {
+            let error_msg = result.unwrap_err().to_string();
+            // Should give a meaningful error, not just "path too long"
+            assert!(error_msg.len() > 10);
+        }
     }
 }
