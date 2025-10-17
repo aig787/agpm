@@ -246,8 +246,13 @@ use self::version_resolver::VersionResolver;
 /// // Relative paths with parent navigation
 /// assert_eq!(extract_meaningful_path(Path::new("../../snippets/dir/file.md")), "snippets/dir/file.md");
 ///
-/// // Absolute paths (root stripped, .. resolved)
+/// // Absolute paths (root stripped, .. resolved) - Unix-style path
+/// #[cfg(unix)]
 /// assert_eq!(extract_meaningful_path(Path::new("/tmp/foo/../bar/agent.md")), "tmp/bar/agent.md");
+///
+/// // Absolute paths (root stripped, .. resolved) - Windows-style path
+/// #[cfg(windows)]
+/// assert_eq!(extract_meaningful_path(Path::new("C:\\tmp\\foo\\..\\bar\\agent.md")), "tmp/bar/agent.md");
 ///
 /// // Clean relative paths
 /// assert_eq!(extract_meaningful_path(Path::new("agents/test.md")), "agents/test.md");
