@@ -294,16 +294,32 @@ Override default directories or define custom tools:
 ```toml
 [tools.claude-code]
 path = ".claude"
-resources = { agents = { path = "agents" }, commands = { path = "commands" } }
+resources = { 
+  agents = { path = "agents" }, 
+  commands = { path = "commands" },
+  hooks = { merge-target = ".claude/settings.local.json" },
+  mcp-servers = { merge-target = ".mcp.json" }
+}
 
 [tools.opencode]
 path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" } }
+resources = { 
+  agents = { path = "agent" }, 
+  commands = { path = "command" },
+  mcp-servers = { merge-target = ".opencode/opencode.json" }
+}
 
 [tools.custom-tool]
 path = ".mytool"
-resources = { agents = { path = "agents" }, commands = { path = "cmds" } }
+resources = { 
+  agents = { path = "agents" }, 
+  commands = { path = "cmds" },
+  hooks = { merge-target = ".mytool/hooks.json" },
+  mcp-servers = { merge-target = ".mytool/servers.json" }
+}
 ```
+
+**Important**: Resource types that merge into configuration files (hooks, mcp-servers) must specify `merge-target` (with a hyphen). Resource types that install as files (agents, snippets, commands, scripts) must specify `path`.
 
 ### MCP Server Configuration
 
