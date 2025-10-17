@@ -10,7 +10,21 @@ This guide covers common AGPM workflows. See [Installation](installation.md) for
 agpm init
 ```
 
-This creates a basic `agpm.toml` file with example dependencies.
+This creates a basic `agpm.toml` file with example dependencies and default tool configurations.
+
+**Updating existing manifests:**
+
+If you have an old `agpm.toml` manifest (created before multi-tool support), you can update it with the latest default configurations:
+
+```bash
+agpm init --defaults
+```
+
+This will:
+- Add missing default sections ([tools.claude-code], [tools.opencode], [tools.agpm], etc.)
+- Preserve all your existing values, comments, and custom configurations
+- Be safe to run multiple times (idempotent operation)
+- Help ensure your manifest has all standard configurations
 
 2. **Install dependencies:**
 
@@ -911,6 +925,9 @@ When you run `agpm install`:
 **Manifest not found:**
 ```bash
 agpm init  # Create a new manifest
+
+# Or update existing manifest with defaults
+agpm init --defaults
 ```
 
 **Version conflicts:**
