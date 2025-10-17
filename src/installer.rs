@@ -497,8 +497,12 @@ pub async fn install_resource(
                 // Determine resource type from entry
                 let resource_type = entry.resource_type;
 
+                // Extract project config from manifest if available
+                let project_config = context.manifest.and_then(|m| m.project.clone());
+
                 // Build context
-                let template_context_builder = TemplateContextBuilder::new(lockfile.clone());
+                let template_context_builder =
+                    TemplateContextBuilder::new(lockfile.clone(), project_config);
 
                 // Compute context digest for cache invalidation
                 // This ensures that changes to dependency versions invalidate the cache

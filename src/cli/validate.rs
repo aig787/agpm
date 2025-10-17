@@ -909,7 +909,9 @@ impl ValidateCommand {
                     templates_found += 1;
 
                     // Build template context
-                    let context_builder = TemplateContextBuilder::new(Arc::clone(&lockfile));
+                    let project_config = manifest.project.clone();
+                    let context_builder =
+                        TemplateContextBuilder::new(Arc::clone(&lockfile), project_config);
                     let context = match context_builder.build_context($name, $resource_type) {
                         Ok(c) => c,
                         Err(e) => {

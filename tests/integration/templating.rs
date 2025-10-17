@@ -1065,3 +1065,223 @@ Install path: {{ agpm.resource.install_path }}
 
     Ok(())
 }
+
+/// Test project-specific template variables from manifest.
+#[tokio::test]
+async fn test_project_template_variables() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create an agent that uses project variables for AI coding guidance
+    test_repo
+        .add_resource(
+            "agents",
+            "project-agent",
+            r#"---
+title: Project Code Reviewer
+---
+# {{ agpm.project.name }} Code Reviewer
+
+I review code for {{ agpm.project.name }} (version {{ agpm.project.version }}).
+
+## Guidelines to Follow
+
+Please refer to our documentation:
+- Style Guide: {{ agpm.project.paths.style_guide }}
+- Architecture: {{ agpm.project.paths.architecture }}
+- Conventions: {{ agpm.project.paths.conventions }}
+
+## Code Standards
+
+When reviewing or generating code, enforce:
+- Max line length: {{ agpm.project.standards.max_line_length }} characters
+- Indentation: {{ agpm.project.standards.indent_size }} {{ agpm.project.standards.indent_style }}
+- Naming: {{ agpm.project.standards.naming_convention }}
+
+## Testing Requirements
+
+{% if agpm.project.custom.require_tests %}
+All code changes MUST include tests using {{ agpm.project.custom.test_framework }}.
+{% endif %}
+
+{% if agpm.project.custom.require_docstrings %}
+All functions require docstrings in {{ agpm.project.custom.docstring_style }} format.
+{% endif %}
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add project agent")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // Create complete manifest content directly
+    // Note: [project] can have any structure - it's just a map of arbitrary variables
+    let manifest_content = format!(
+        r#"[sources]
+test-repo = "{}"
+
+[agents]
+project-agent = {{ source = "test-repo", path = "agents/project-agent.md", version = "v1.0.0" }}
+
+[project]
+# Arbitrary variables - structure is completely flexible
+name = "TestProject"
+version = "2.1.0"
+
+# Nested sections for organization (optional, just convention)
+[project.paths]
+style_guide = "docs/STYLE_GUIDE.md"
+architecture = "docs/ARCHITECTURE.md"
+conventions = "docs/CONVENTIONS.md"
+
+[project.standards]
+max_line_length = 100
+indent_style = "spaces"
+indent_size = 4
+naming_convention = "snake_case"
+
+[project.custom]
+require_tests = true
+test_framework = "pytest"
+require_docstrings = true
+docstring_style = "google"
+"#,
+        repo_url
+    );
+
+    // Write manifest
+    let manifest_path = project.project_path().join("agpm.toml");
+    fs::write(&manifest_path, &manifest_content).await?;
+
+    // Install with templating enabled
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Installation should succeed");
+
+    // Read the installed file
+    let installed_path = project.project_path().join(".claude/agents/project-agent.md");
+    let content =
+        fs::read_to_string(&installed_path).await.context("Failed to read installed agent file")?;
+
+    // Verify project variables were substituted
+    assert!(
+        content.contains("# TestProject Code Reviewer"),
+        "Project name should be substituted in title. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("I review code for TestProject (version 2.1.0)"),
+        "Project name and version should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Style Guide: docs/STYLE_GUIDE.md"),
+        "Style guide path should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Architecture: docs/ARCHITECTURE.md"),
+        "Architecture path should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Conventions: docs/CONVENTIONS.md"),
+        "Conventions path should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Max line length: 100 characters"),
+        "Max line length standard should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Indentation: 4 spaces"),
+        "Indentation standard should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("Naming: snake_case"),
+        "Naming convention should be substituted. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("All code changes MUST include tests using pytest"),
+        "Testing requirement should be rendered. Content:\n{}",
+        content
+    );
+    assert!(
+        content.contains("All functions require docstrings in google format"),
+        "Docstring requirement should be rendered. Content:\n{}",
+        content
+    );
+
+    // Verify original template syntax is gone
+    assert!(
+        !content.contains("{{ agpm.project"),
+        "Template syntax should be replaced. Content:\n{}",
+        content
+    );
+    assert!(!content.contains("{% for"), "Loop syntax should be replaced. Content:\n{}", content);
+
+    Ok(())
+}
+
+/// Test that templates work without project variables (backward compatibility).
+#[tokio::test]
+async fn test_templates_without_project_variables() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create an agent without project variables
+    test_repo
+        .add_resource(
+            "agents",
+            "simple-agent",
+            r#"---
+title: Simple Agent
+---
+# {{ agpm.resource.name }}
+
+This agent is simple and doesn't use project variables.
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add simple agent")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // Create manifest WITHOUT project section
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_agent("simple-agent", |d| {
+            d.source("test-repo").path("agents/simple-agent.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Install should work without project variables
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Installation should succeed without project variables");
+
+    // Read the installed file
+    let installed_path = project.project_path().join(".claude/agents/simple-agent.md");
+    let content =
+        fs::read_to_string(&installed_path).await.context("Failed to read installed agent file")?;
+
+    // Verify resource variables still work
+    assert!(
+        content.contains("# simple-agent"),
+        "Resource name should be substituted. Content:\n{}",
+        content
+    );
+
+    Ok(())
+}

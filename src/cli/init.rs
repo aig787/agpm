@@ -231,6 +231,19 @@ impl InitCommand {
 # Add your Git repository sources here
 # Example: official = "https://github.com/aig787/agpm-community.git"
 
+# Project-specific template variables (optional)
+# Provides context to AI agents - use any structure you want!
+# [project]
+# style_guide = "docs/STYLE_GUIDE.md"
+# max_line_length = 100
+# test_framework = "pytest"
+#
+# [project.paths]
+# architecture = "docs/ARCHITECTURE.md"
+# conventions = "docs/CONVENTIONS.md"
+#
+# Access in templates: {{ agpm.project.style_guide }}
+
 # Tool type configurations (multi-tool support)
 [tools.claude-code]
 path = ".claude"

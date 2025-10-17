@@ -642,6 +642,7 @@ mod tests {
             private_patches: crate::manifest::patches::ManifestPatches::default(),
             manifest_dir: None,
             default_tools: HashMap::new(),
+            project: None,
         }
     }
 

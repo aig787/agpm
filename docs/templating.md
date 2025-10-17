@@ -82,6 +82,62 @@ Then access them in your template (note: hyphens in filenames become underscores
 
 The variable name comes from the filename (not the path), with hyphens converted to underscores.
 
+### Project Variables
+
+Project-specific template variables provide context to AI agents about your project's conventions, documentation, and standards. Define arbitrary variables in the `[project]` section of `agpm.toml` with any structure you want.
+
+| Variable Pattern | Type | Description | Example |
+|-----------------|------|-------------|---------|
+| `agpm.project.<name>` | any | User-defined project variable | `{{ agpm.project.style_guide }}` |
+| `agpm.project.<section>.<name>` | any | Nested project variables | `{{ agpm.project.paths.architecture }}` |
+
+**Configuration** (in `agpm.toml`):
+
+```toml
+[project]
+# Arbitrary structure - organize however makes sense for your project
+style_guide = "docs/STYLE_GUIDE.md"
+max_line_length = 100
+test_framework = "pytest"
+
+# Optional nested organization (just for clarity)
+[project.paths]
+architecture = "docs/ARCHITECTURE.md"
+conventions = "docs/CONVENTIONS.md"
+
+[project.standards]
+indent_style = "spaces"
+indent_size = 4
+```
+
+**Template Usage**:
+
+```markdown
+---
+name: code-reviewer
+---
+# Code Reviewer
+
+Follow our style guide at: {{ agpm.project.style_guide }}
+
+## Standards
+- Max line length: {{ agpm.project.max_line_length }}
+- Indentation: {{ agpm.project.standards.indent_size }} {{ agpm.project.standards.indent_style }}
+
+## Documentation
+Refer to:
+- Architecture: {{ agpm.project.paths.architecture }}
+- Conventions: {{ agpm.project.paths.conventions }}
+```
+
+**Key Features**:
+- **Completely flexible structure** - No predefined fields, organize variables however you want
+- **Nested sections supported** - Use dotted paths for organization (`project.paths.style_guide`)
+- **All TOML types work** - Strings, numbers, booleans, arrays, tables
+- **Optional** - Project section is entirely optional, templates work without it
+
+See the [Manifest Reference](manifest-reference.md#project-variables) for more details.
+
 ### Important Notes
 
 **Resource Name Sanitization**: Resource names containing hyphens are automatically converted to underscores in template variable names to avoid conflicts with Tera's minus operator. For example:

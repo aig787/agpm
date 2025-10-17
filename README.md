@@ -24,6 +24,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 - 📁 **Local and remote sources** - Support for both Git repositories and local filesystem paths
 - 🔄 **Transitive dependencies** - Resources declare dependencies in YAML/JSON, works for Git-backed and path-only deps with file-relative path support
 - 📝 **Markdown templating** - Optional dynamic content generation with access to installation metadata and dependency references (opt-in per resource via frontmatter)
+- 🎨 **Project template variables** - Define arbitrary project-specific variables for AI agents (style guides, conventions, coding standards)
 
 ## Requirements
 
