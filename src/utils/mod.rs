@@ -461,6 +461,8 @@ mod backup_path_tests {
 
     #[test]
     fn test_generate_backup_path() {
+        use crate::utils::platform::normalize_path_for_storage;
+
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
 
@@ -478,8 +480,11 @@ mod backup_path_tests {
         // Convert both to absolute paths for comparison
         let project_root = std::fs::canonicalize(project_root).unwrap();
         assert!(backup_path.starts_with(project_root));
-        assert!(backup_path.to_str().unwrap().contains(".agpm/backups/claude-code/"));
-        assert!(backup_path.to_str().unwrap().ends_with("settings.local.json"));
+
+        // Use normalized path for cross-platform comparison
+        let normalized_backup = normalize_path_for_storage(&backup_path);
+        assert!(normalized_backup.contains(".agpm/backups/claude-code/"));
+        assert!(normalized_backup.ends_with("settings.local.json"));
     }
 
     #[test]
@@ -501,6 +506,8 @@ mod backup_path_tests {
 
     #[test]
     fn test_generate_backup_path_with_nested_config() {
+        use crate::utils::platform::normalize_path_for_storage;
+
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
 
@@ -513,15 +520,20 @@ mod backup_path_tests {
         // Backup should still go to project root, not relative to config
         let project_root = std::fs::canonicalize(project_root).unwrap();
         assert!(backup_path.starts_with(project_root));
-        assert!(backup_path.to_str().unwrap().contains(".agpm/backups/claude-code/"));
-        assert!(backup_path.to_str().unwrap().ends_with("settings.local.json"));
+
+        // Use normalized path for cross-platform comparison
+        let normalized_backup = normalize_path_for_storage(&backup_path);
+        assert!(normalized_backup.contains(".agpm/backups/claude-code/"));
+        assert!(normalized_backup.ends_with("settings.local.json"));
 
         // Should NOT include "subdir" in backup path
-        assert!(!backup_path.to_str().unwrap().contains("subdir"));
+        assert!(!normalized_backup.contains("subdir"));
     }
 
     #[test]
     fn test_generate_backup_path_different_tools() {
+        use crate::utils::platform::normalize_path_for_storage;
+
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
 
@@ -534,14 +546,19 @@ mod backup_path_tests {
         let open_backup = generate_backup_path(&config_path, "opencode").unwrap();
         let custom_backup = generate_backup_path(&config_path, "my-tool").unwrap();
 
-        assert!(claude_backup.to_str().unwrap().contains(".agpm/backups/claude-code/"));
-        assert!(open_backup.to_str().unwrap().contains(".agpm/backups/opencode/"));
-        assert!(custom_backup.to_str().unwrap().contains(".agpm/backups/my-tool/"));
+        // Use normalized paths for cross-platform comparison
+        let normalized_claude = normalize_path_for_storage(&claude_backup);
+        let normalized_open = normalize_path_for_storage(&open_backup);
+        let normalized_custom = normalize_path_for_storage(&custom_backup);
+
+        assert!(normalized_claude.contains(".agpm/backups/claude-code/"));
+        assert!(normalized_open.contains(".agpm/backups/opencode/"));
+        assert!(normalized_custom.contains(".agpm/backups/my-tool/"));
 
         // All should end with same filename
-        assert!(claude_backup.to_str().unwrap().ends_with("mcp.json"));
-        assert!(open_backup.to_str().unwrap().ends_with("mcp.json"));
-        assert!(custom_backup.to_str().unwrap().ends_with("mcp.json"));
+        assert!(normalized_claude.ends_with("mcp.json"));
+        assert!(normalized_open.ends_with("mcp.json"));
+        assert!(normalized_custom.ends_with("mcp.json"));
     }
 
     #[test]
@@ -561,6 +578,8 @@ mod backup_path_tests {
 
     #[test]
     fn test_backup_path_normalization_cross_platform() {
+        use crate::utils::platform::normalize_path_for_storage;
+
         let temp_dir = TempDir::new().unwrap();
         fs::write(temp_dir.path().join("agpm.toml"), "[sources]\n").unwrap();
 
@@ -574,9 +593,9 @@ mod backup_path_tests {
         // Both should produce the same normalized backup path
         assert_eq!(backup1, backup2);
 
-        // Verify structure
-        let backup_str = backup1.to_str().unwrap();
-        assert!(backup_str.contains(".agpm/backups/claude-code/settings.local.json"));
+        // Verify structure using normalized path (cross-platform)
+        let backup_normalized = normalize_path_for_storage(&backup1);
+        assert!(backup_normalized.contains(".agpm/backups/claude-code/settings.local.json"));
     }
 
     #[test]
@@ -612,8 +631,6 @@ mod backup_path_tests {
     #[test]
     #[cfg(target_os = "windows")]
     fn test_backup_with_long_windows_path() {
-        use std::path::PathBuf;
-
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
 
@@ -634,7 +651,11 @@ mod backup_path_tests {
         // Should either succeed or give a clear error about path length
         if result.is_ok() {
             let backup_path = result.unwrap();
-            assert!(backup_path.starts_with(project_root));
+            // generate_backup_path uses find_project_root which canonicalizes,
+            // so we need to canonicalize project_root for comparison
+            let canonical_root = std::fs::canonicalize(project_root)
+                .unwrap_or_else(|_| project_root.to_path_buf());
+            assert!(backup_path.starts_with(&canonical_root));
         } else {
             let error_msg = result.unwrap_err().to_string();
             // Should give a meaningful error, not just "path too long"
