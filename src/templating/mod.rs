@@ -174,6 +174,8 @@ pub struct TemplateContextBuilder {
     /// The lockfile containing resolved resource information
     /// Shared via Arc to avoid expensive clones when building contexts for multiple resources
     lockfile: Arc<LockFile>,
+    /// Project-specific template variables from the manifest
+    project_config: Option<crate::manifest::ProjectConfig>,
 }
 
 /// Template renderer with Tera engine and custom functions.
@@ -228,9 +230,14 @@ impl TemplateContextBuilder {
     /// # Arguments
     ///
     /// * `lockfile` - The resolved lockfile, wrapped in Arc for efficient sharing
-    pub fn new(lockfile: Arc<LockFile>) -> Self {
+    /// * `project_config` - Optional project-specific template variables from the manifest
+    pub fn new(
+        lockfile: Arc<LockFile>,
+        project_config: Option<crate::manifest::ProjectConfig>,
+    ) -> Self {
         Self {
             lockfile,
+            project_config,
         }
     }
 
@@ -261,6 +268,12 @@ impl TemplateContextBuilder {
         // Build dependency data
         let deps_data = self.build_dependencies_data()?;
         agpm.insert("deps".to_string(), to_value(deps_data)?);
+
+        // Add project variables if available
+        if let Some(ref project_config) = self.project_config {
+            let project_json = project_config.to_json_value();
+            agpm.insert("project".to_string(), project_json);
+        }
 
         // Insert the complete agpm object
         context.insert("agpm", &agpm);
@@ -409,7 +422,7 @@ impl TemplateContextBuilder {
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// let builder = TemplateContextBuilder::new(Arc::new(lockfile));
+    /// let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
     ///
     /// let digest = builder.compute_context_digest()?;
     /// println!("Template context digest: {}", digest);
@@ -698,7 +711,7 @@ mod tests {
     fn test_template_context_builder() {
         let lockfile = create_test_lockfile();
 
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile));
+        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
 
         let _context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
@@ -789,7 +802,7 @@ mod tests {
             applied_patches: std::collections::HashMap::new(),
         });
 
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile));
+        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
         let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
         // Extract the agpm.resource.install_path from context

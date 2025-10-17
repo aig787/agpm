@@ -82,6 +82,132 @@ Then access them in your template (note: hyphens in filenames become underscores
 
 The variable name comes from the filename (not the path), with hyphens converted to underscores.
 
+### Project Variables
+
+Project-specific template variables provide context to AI agents about your project's conventions, documentation, and standards. Define arbitrary variables in the `[project]` section of `agpm.toml` with any structure you want.
+
+| Variable Pattern | Type | Description | Example |
+|-----------------|------|-------------|---------|
+| `agpm.project.<name>` | any | User-defined project variable | `{{ agpm.project.style_guide }}` |
+| `agpm.project.<section>.<name>` | any | Nested project variables | `{{ agpm.project.paths.architecture }}` |
+
+**Configuration** (in `agpm.toml`):
+
+```toml
+[project]
+# Arbitrary structure - organize however makes sense for your project
+style_guide = "docs/STYLE_GUIDE.md"
+max_line_length = 100
+test_framework = "pytest"
+
+# Optional nested organization (just for clarity)
+[project.paths]
+architecture = "docs/ARCHITECTURE.md"
+conventions = "docs/CONVENTIONS.md"
+
+[project.standards]
+indent_style = "spaces"
+indent_size = 4
+```
+
+**Template Usage**:
+
+```markdown
+---
+name: code-reviewer
+---
+# Code Reviewer
+
+Follow our style guide at: {{ agpm.project.style_guide }}
+
+## Standards
+- Max line length: {{ agpm.project.max_line_length }}
+- Indentation: {{ agpm.project.standards.indent_size }} {{ agpm.project.standards.indent_style }}
+
+## Documentation
+Refer to:
+- Architecture: {{ agpm.project.paths.architecture }}
+- Conventions: {{ agpm.project.paths.conventions }}
+```
+
+**Key Features**:
+- **Completely flexible structure** - No predefined fields, organize variables however you want
+- **Nested sections supported** - Use dotted paths for organization (`project.paths.style_guide`)
+- **All TOML types work** - Strings, numbers, booleans, arrays, tables
+- **Optional** - Project section is entirely optional, templates work without it
+
+See the [Manifest Reference](manifest-reference.md#project-variables) for more details.
+
+### Templating Dependency Paths
+
+Project variables can be used in **transitive dependency paths** within resource frontmatter. This enables dynamic dependency resolution based on project configuration.
+
+**Use Case**: Language-specific or framework-specific dependency paths.
+
+**Example** - Language-specific style guide:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: snippets/standards/{{ agpm.project.language }}-guide.md
+      version: v1.0.0
+---
+# Code Reviewer Agent
+
+Reviews code according to language-specific standards.
+```
+
+With `agpm.toml`:
+```toml
+[project]
+language = "rust"
+```
+
+The dependency path resolves to: `snippets/standards/rust-guide.md`
+
+**Example** - Framework-specific configuration:
+
+```yaml
+---
+dependencies:
+  commands:
+    - path: commands/{{ agpm.project.framework }}/deploy.md
+---
+# Deployment Agent
+```
+
+**Optional Variables**: Use the `default` filter for optional variables:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: configs/{{ agpm.project.env | default(value="development") }}-config.md
+---
+```
+
+**Opt-Out**: Disable templating for specific resources using `agpm.templating: false`:
+
+```yaml
+---
+agpm:
+  templating: false
+dependencies:
+  snippets:
+    # Template syntax preserved literally - not rendered
+    - path: examples/{{ literal_syntax }}.md
+---
+```
+
+**Key Features**:
+- ✅ Uses same `agpm.project.*` variables as content templates
+- ✅ Respects per-resource `agpm.templating` opt-out setting
+- ✅ Works in both YAML frontmatter and JSON dependencies
+- ✅ Errors on undefined variables (use `default` filter for optional vars)
+
+See [Transitive Dependencies](manifest-reference.md#transitive-dependencies) for more details on dependency declaration.
+
 ### Important Notes
 
 **Resource Name Sanitization**: Resource names containing hyphens are automatically converted to underscores in template variable names to avoid conflicts with Tera's minus operator. For example:

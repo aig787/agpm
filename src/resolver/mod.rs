@@ -1455,7 +1455,8 @@ impl DependencyResolver {
 
             // Extract metadata from the resource
             let path = PathBuf::from(dep.get_path());
-            let metadata = MetadataExtractor::extract(&path, &content)?;
+            let metadata =
+                MetadataExtractor::extract(&path, &content, self.manifest.project.as_ref())?;
 
             // Process transitive dependencies if present
             if let Some(deps_map) = metadata.dependencies {

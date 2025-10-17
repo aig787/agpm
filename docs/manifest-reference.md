@@ -6,6 +6,7 @@ This guide summarizes every field that appears in `agpm.toml` and how CLI inputs
 
 ```toml
 [sources]                 # Named Git or local repositories
+[project]                 # Optional: Project-specific template variables for AI agents
 [default-tools]           # Optional: Override default tool for resource types
 [tools.claude-code]       # Optional: Configure Claude Code tool
 [tools.opencode]          # Optional: Configure OpenCode tool
@@ -114,9 +115,45 @@ dependencies:
 
 ### Dependency Fields
 
-- **`path`** (required): Path to the dependency file within the same source repository
+- **`path`** (required): Path to the dependency file within the same source repository. **Supports templates** using `{{ agpm.project.* }}` variables
 - **`version`** (optional): Version constraint (e.g., `v1.0.0`, `^v2.1.0`). If omitted, inherits from parent resource
 - **`tool`** (optional): Target tool (`claude-code`, `opencode`, `agpm`). If omitted, inherits from parent if compatible, otherwise uses resource type default
+
+### Templated Dependency Paths
+
+Dependency paths support template variables from the `[project]` section, enabling dynamic dependency resolution based on project configuration.
+
+**Example** - Language-specific dependencies:
+
+```yaml
+---
+dependencies:
+  snippets:
+    - path: snippets/standards/{{ agpm.project.language }}-guide.md
+      version: v1.0.0
+  commands:
+    - path: commands/{{ agpm.project.framework }}/deploy.md
+---
+```
+
+With project configuration:
+```toml
+[project]
+language = "rust"
+framework = "tokio"
+```
+
+Resolves to:
+- `snippets/standards/rust-guide.md`
+- `commands/tokio/deploy.md`
+
+**Features**:
+- Uses same `agpm.project.*` context as content templating
+- Supports the `default` filter for optional variables: `{{ agpm.project.env | default(value="dev") }}`
+- Respects per-resource `agpm.templating: false` opt-out
+- Errors on undefined variables (use `default` filter for optional variables)
+
+See [Templating Guide](templating.md#templating-dependency-paths) for more details and examples.
 
 ### Resolution Rules
 
@@ -393,6 +430,88 @@ snippets = "agpm"        # Shared snippets (explicit, already default)
 agents = "claude-code"   # Claude Code agents
 commands = "opencode"    # OpenCode commands
 ```
+
+## Project Variables
+
+The `[project]` section defines arbitrary template variables that AI agents can reference when generating or reviewing code. This provides project-specific context about conventions, documentation locations, and coding standards.
+
+### Structure
+
+The `[project]` section has **no predefined structure** - you can organize variables however makes sense for your project. All TOML types are supported: strings, numbers, booleans, arrays, and nested tables.
+
+```toml
+[project]
+# Arbitrary variables - organize however you want
+style_guide = "docs/STYLE_GUIDE.md"
+max_line_length = 100
+test_framework = "pytest"
+require_tests = true
+
+# Nested sections for organization (optional)
+[project.paths]
+architecture = "docs/ARCHITECTURE.md"
+conventions = "docs/CONVENTIONS.md"
+test_data = "tests/fixtures"
+
+[project.standards]
+indent_style = "spaces"
+indent_size = 4
+naming_convention = "snake_case"
+
+[project.team]
+backend_lead = "alice"
+frontend_lead = "bob"
+deployment_envs = ["staging", "production"]
+```
+
+### Template Access
+
+All project variables are accessible in templates under the `agpm.project` namespace:
+
+```markdown
+---
+name: code-reviewer
+---
+# Code Reviewer
+
+Follow our style guide: {{ agpm.project.style_guide }}
+
+## Standards
+- Max line length: {{ agpm.project.max_line_length }}
+- Indentation: {{ agpm.project.standards.indent_size }} {{ agpm.project.standards.indent_style }}
+
+## Documentation
+Refer to:
+- Architecture: {{ agpm.project.paths.architecture }}
+- Test data: {{ agpm.project.paths.test_data }}
+
+{% if agpm.project.require_tests %}
+All code changes must include tests using {{ agpm.project.test_framework }}.
+{% endif %}
+```
+
+### Use Cases
+
+**For AI Agents:**
+- Reference project-specific style guides and conventions
+- Access documentation paths without hardcoding
+- Understand testing requirements and frameworks
+- Adapt to project-specific naming conventions
+
+**For Teams:**
+- Standardize AI agent guidance across the team
+- Version-control agent context alongside code
+- Share project conventions in a machine-readable format
+
+### Key Features
+
+- **Completely flexible** - No required fields, any TOML structure works
+- **Nested sections** - Use dotted paths for organization
+- **All types supported** - Strings, numbers, booleans, arrays, tables
+- **Optional** - Templates work without the `[project]` section
+- **Template-only** - Project variables are only available in templates, not used by AGPM itself
+
+See the [Templating Guide](templating.md#project-variables) for more examples and template syntax.
 
 ## Patches and Overrides
 

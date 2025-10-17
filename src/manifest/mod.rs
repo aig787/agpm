@@ -534,6 +534,116 @@ pub use patches::{ManifestPatches, PatchConflict, PatchData, PatchOrigin};
 ///     true  // is_agent = true
 /// );
 /// ```
+/// Project-specific template variables for AI coding assistants.
+///
+/// An arbitrary map of user-defined variables that can be referenced in resource templates.
+/// This provides maximum flexibility for teams to organize project context however they want,
+/// without imposing any predefined structure.
+///
+/// # Use Case: AI Agent Context
+///
+/// When AI agents work on your codebase, they need context about:
+/// - Where to find coding standards and style guides
+/// - What conventions to follow (formatting, naming, patterns)
+/// - Where architecture and design docs are located
+/// - Project-specific requirements (testing, security, performance)
+///
+/// # Template Access
+///
+/// All variables are accessible in templates under the `agpm.project` namespace.
+/// The structure is completely user-defined.
+///
+/// # Examples
+///
+/// ## Flexible Structure - Organize However You Want
+/// ```toml
+/// [project]
+/// # Top-level variables
+/// style_guide = "docs/STYLE_GUIDE.md"
+/// max_line_length = 100
+/// test_framework = "pytest"
+///
+/// # Nested sections (optional, just for organization)
+/// [project.paths]
+/// architecture = "docs/ARCHITECTURE.md"
+/// conventions = "docs/CONVENTIONS.md"
+///
+/// [project.standards]
+/// indent_style = "spaces"
+/// indent_size = 4
+/// ```
+///
+/// ## Template Usage
+/// ```markdown
+/// # Code Reviewer
+/// Follow guidelines at: {{ agpm.project.style_guide }}
+/// Max line length: {{ agpm.project.max_line_length }}
+/// Architecture: {{ agpm.project.paths.architecture }}
+/// ```
+///
+/// ## Any Structure Works
+/// ```toml
+/// [project]
+/// whatever = "you want"
+/// numbers = 42
+/// arrays = ["work", "too"]
+///
+/// [project.deeply.nested.structure]
+/// is_allowed = true
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProjectConfig(toml::map::Map<String, toml::Value>);
+
+impl ProjectConfig {
+    /// Convert this ProjectConfig to a serde_json::Value for template rendering.
+    ///
+    /// This method handles conversion of TOML values to JSON values, which is necessary
+    /// for proper Tera template rendering.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::ProjectConfig;
+    ///
+    /// let mut config_map = toml::map::Map::new();
+    /// config_map.insert("style_guide".to_string(), toml::Value::String("docs/STYLE.md".into()));
+    /// let config = ProjectConfig::from(config_map);
+    ///
+    /// let json = config.to_json_value();
+    /// // Use json in Tera template context
+    /// ```
+    pub fn to_json_value(&self) -> serde_json::Value {
+        toml_value_to_json(&toml::Value::Table(self.0.clone()))
+    }
+}
+
+impl From<toml::map::Map<String, toml::Value>> for ProjectConfig {
+    fn from(map: toml::map::Map<String, toml::Value>) -> Self {
+        Self(map)
+    }
+}
+
+/// Convert a toml::Value to serde_json::Value.
+fn toml_value_to_json(value: &toml::Value) -> serde_json::Value {
+    match value {
+        toml::Value::String(s) => serde_json::Value::String(s.clone()),
+        toml::Value::Integer(i) => serde_json::Value::Number((*i).into()),
+        toml::Value::Float(f) => serde_json::Number::from_f64(*f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
+        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+        toml::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(toml_value_to_json).collect())
+        }
+        toml::Value::Table(table) => {
+            let map: serde_json::Map<String, serde_json::Value> =
+                table.iter().map(|(k, v)| (k.clone(), toml_value_to_json(v))).collect();
+            serde_json::Value::Object(map)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     /// Named source repositories mapped to their Git URLs.
@@ -680,6 +790,28 @@ pub struct Manifest {
     /// - All other resource types → `"claude-code"`
     #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "default-tools")]
     pub default_tools: HashMap<String, String>,
+
+    /// Project-specific template variables.
+    ///
+    /// Custom project configuration that can be referenced in resource templates
+    /// via Tera template syntax. This allows teams to define project-specific
+    /// values like paths, standards, and conventions that are then available
+    /// throughout all installed resources.
+    ///
+    /// Template access: `{{ agpm.project.name }}`, `{{ agpm.project.paths.style_guide }}`
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [project]
+    /// name = "My Project"
+    /// version = "2.0.0"
+    ///
+    /// [project.paths]
+    /// style_guide = "docs/STYLE_GUIDE.md"
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<ProjectConfig>,
 
     /// Directory containing the manifest file (for resolving relative paths).
     ///
@@ -1551,6 +1683,7 @@ impl Manifest {
             project_patches: ManifestPatches::new(),
             private_patches: ManifestPatches::new(),
             default_tools: HashMap::new(),
+            project: None,
             manifest_dir: None,
         }
     }

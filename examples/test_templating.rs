@@ -29,7 +29,7 @@ fn create_test_lockfile() -> LockFile {
 fn main() {
     let lockfile = create_test_lockfile();
 
-    let builder = TemplateContextBuilder::new(Arc::new(lockfile));
+    let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
 
     let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
