@@ -561,6 +561,9 @@ impl TemplateRenderer {
         self.tera
             .render_str(template_content, context)
             .map_err(|e| {
+                // Output the actual Tera error to stderr for immediate visibility
+                eprintln!("Template rendering error: {}", e);
+
                 // Use Display format for more user-friendly error messages
                 // The Tera error already contains detailed information about:
                 // - Missing variables (e.g., "Variable `foo` not found")
