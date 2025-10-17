@@ -1164,13 +1164,12 @@ impl ValidateCommand {
                 println!("{}", serde_json::to_string_pretty(&validation_results)?);
             }
             OutputFormat::Text => {
-                if !self.quiet
-                    && !validation_results.warnings.is_empty() {
-                        for warning in &validation_results.warnings {
-                            println!("⚠ Warning: {warning}");
-                        }
+                if !self.quiet && !validation_results.warnings.is_empty() {
+                    for warning in &validation_results.warnings {
+                        println!("⚠ Warning: {warning}");
                     }
-                    // Individual validation steps already printed their success messages
+                }
+                // Individual validation steps already printed their success messages
             }
         }
 
