@@ -729,3 +729,74 @@ dependencies:
     assert!(worker_content.contains("repo2"), "Worker should be from repo2");
     assert!(utils_content.contains("repo2"), "Utils should be from repo2");
 }
+
+/// Test that commenting out a dependency removes it from the lockfile without conflicts.
+///
+/// This is a regression test for a bug where commented-out manifest items weren't being
+/// removed from the lockfile before resolution, causing conflicts.
+#[tokio::test]
+async fn test_commented_out_dependency_removed_from_lockfile() {
+    let project = TestProject::new().await.unwrap();
+
+    // Create a source repo with two agents
+    let source_repo = project.create_source_repo("source").await.unwrap();
+    source_repo.add_resource("agents", "agent-a", "# Agent A\nFirst agent").await.unwrap();
+    source_repo.add_resource("agents", "agent-b", "# Agent B\nSecond agent").await.unwrap();
+    source_repo.commit_all("Initial agents").unwrap();
+    source_repo.tag_version("v1.0.0").unwrap();
+
+    // Create initial manifest with both agents
+    let manifest = ManifestBuilder::new()
+        .add_source("source", &source_repo.file_url())
+        .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
+        .add_agent("agent-b", |d| d.source("source").path("agents/agent-b.md").version("v1.0.0"))
+        .build();
+    project.write_manifest(&manifest).await.unwrap();
+
+    // First install - should create lockfile with both agents
+    let output = project.run_agpm(&["install"]).unwrap();
+    assert!(output.success, "First install should succeed. stderr: {}", output.stderr);
+
+    // Verify lockfile contains both agents
+    let lockfile_content = project.read_lockfile().await.unwrap();
+    assert!(lockfile_content.contains("name = \"agent-a\""), "Lockfile should contain agent-a");
+    assert!(lockfile_content.contains("name = \"agent-b\""), "Lockfile should contain agent-b");
+
+    // Comment out agent-b in the manifest
+    let manifest2 = ManifestBuilder::new()
+        .add_source("source", &source_repo.file_url())
+        .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
+        .build();
+    project.write_manifest(&manifest2).await.unwrap();
+
+    // Second install - should remove agent-b from lockfile without conflicts
+    let output2 = project.run_agpm(&["install"]).unwrap();
+    assert!(
+        output2.success,
+        "Second install should succeed without conflicts. stderr: {}",
+        output2.stderr
+    );
+
+    // Verify lockfile no longer contains agent-b
+    let updated_lockfile = project.read_lockfile().await.unwrap();
+    assert!(
+        updated_lockfile.contains("name = \"agent-a\""),
+        "Lockfile should still contain agent-a"
+    );
+    assert!(
+        !updated_lockfile.contains("name = \"agent-b\""),
+        "Lockfile should NOT contain agent-b after commenting out. Lockfile:\n{}",
+        updated_lockfile
+    );
+
+    // Verify no conflict messages in output
+    assert!(
+        !output2.stderr.contains("conflict"),
+        "Should not have any conflicts. stderr: {}",
+        output2.stderr
+    );
+
+    // Verify agent-a file exists
+    let agent_a_path = project.project_path().join(".claude/agents/agent-a.md");
+    assert!(agent_a_path.exists(), "Agent A file should exist");
+}

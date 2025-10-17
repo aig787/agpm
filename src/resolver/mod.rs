@@ -583,6 +583,118 @@ impl DependencyResolver {
         }
     }
 
+    /// Removes stale lockfile entries that are no longer in the manifest.
+    ///
+    /// This method removes lockfile entries for direct manifest dependencies that have been
+    /// commented out or removed from the manifest. This must be called BEFORE
+    /// `remove_manifest_entries_for_update()` to ensure stale entries don't cause conflicts
+    /// during resolution.
+    ///
+    /// A manifest-level entry is identified by:
+    /// - `manifest_alias.is_none()` - Direct dependency with no pattern expansion
+    /// - `manifest_alias.is_some()` - Pattern-expanded dependency (alias must be in manifest)
+    ///
+    /// For each stale entry found, this also removes its transitive children to maintain
+    /// lockfile consistency.
+    ///
+    /// # Arguments
+    ///
+    /// * `lockfile` - The mutable lockfile to clean
+    ///
+    /// # Examples
+    ///
+    /// If a user comments out an agent in agpm.toml:
+    /// ```toml
+    /// # [agents]
+    /// # example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+    /// ```
+    ///
+    /// This function will remove the "example" agent from the lockfile and all its transitive
+    /// dependencies before the update process begins.
+    fn remove_stale_manifest_entries(&self, lockfile: &mut LockFile) {
+        use std::collections::HashSet;
+
+        // Collect all current manifest keys for each resource type
+        let manifest_agents: HashSet<String> =
+            self.manifest.agents.keys().map(|k| k.to_string()).collect();
+        let manifest_snippets: HashSet<String> =
+            self.manifest.snippets.keys().map(|k| k.to_string()).collect();
+        let manifest_commands: HashSet<String> =
+            self.manifest.commands.keys().map(|k| k.to_string()).collect();
+        let manifest_scripts: HashSet<String> =
+            self.manifest.scripts.keys().map(|k| k.to_string()).collect();
+        let manifest_hooks: HashSet<String> =
+            self.manifest.hooks.keys().map(|k| k.to_string()).collect();
+        let manifest_mcp_servers: HashSet<String> =
+            self.manifest.mcp_servers.keys().map(|k| k.to_string()).collect();
+
+        // Helper to get the right manifest keys for a resource type
+        let get_manifest_keys = |resource_type: crate::core::ResourceType| match resource_type {
+            crate::core::ResourceType::Agent => &manifest_agents,
+            crate::core::ResourceType::Snippet => &manifest_snippets,
+            crate::core::ResourceType::Command => &manifest_commands,
+            crate::core::ResourceType::Script => &manifest_scripts,
+            crate::core::ResourceType::Hook => &manifest_hooks,
+            crate::core::ResourceType::McpServer => &manifest_mcp_servers,
+        };
+
+        // Collect (name, source) pairs to remove
+        let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
+        let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
+
+        // Find all manifest-level entries that are no longer in the manifest
+        for resource_type in crate::core::ResourceType::all() {
+            let manifest_keys = get_manifest_keys(*resource_type);
+            let resources = lockfile.get_resources(*resource_type);
+
+            for entry in resources {
+                // Determine if this is a stale manifest-level entry (no longer in manifest)
+                let is_stale = if let Some(ref alias) = entry.manifest_alias {
+                    // Pattern-expanded entry: stale if alias is NOT in manifest
+                    !manifest_keys.contains(alias)
+                } else {
+                    // Direct entry: stale if name is NOT in manifest
+                    !manifest_keys.contains(&entry.name)
+                };
+
+                if is_stale {
+                    let key = (entry.name.clone(), entry.source.clone());
+                    entries_to_remove.insert(key.clone());
+                    direct_entries.push(key);
+                }
+            }
+        }
+
+        // For each stale entry, recursively collect its transitive children
+        for (parent_name, parent_source) in direct_entries {
+            for resource_type in crate::core::ResourceType::all() {
+                if let Some(parent_entry) = lockfile
+                    .get_resources(*resource_type)
+                    .iter()
+                    .find(|e| e.name == parent_name && e.source == parent_source)
+                {
+                    Self::collect_transitive_children(
+                        lockfile,
+                        parent_entry,
+                        &mut entries_to_remove,
+                    );
+                }
+            }
+        }
+
+        // Remove all marked entries
+        let should_remove = |entry: &crate::lockfile::LockedResource| {
+            entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
+        };
+
+        lockfile.agents.retain(|entry| !should_remove(entry));
+        lockfile.snippets.retain(|entry| !should_remove(entry));
+        lockfile.commands.retain(|entry| !should_remove(entry));
+        lockfile.scripts.retain(|entry| !should_remove(entry));
+        lockfile.hooks.retain(|entry| !should_remove(entry));
+        lockfile.mcp_servers.retain(|entry| !should_remove(entry));
+    }
+
     /// Removes lockfile entries for manifest dependencies that will be re-resolved.
     ///
     /// This method removes old entries for direct manifest dependencies before updating,
@@ -1442,10 +1554,9 @@ impl DependencyResolver {
             }
 
             // Get the resource content to extract metadata
-            let content = self.fetch_resource_content(&name, &dep).await
-                .with_context(|| format!(
-                    "Failed to fetch resource '{name}' for transitive dependency extraction"
-                ))?;
+            let content = self.fetch_resource_content(&name, &dep).await.with_context(|| {
+                format!("Failed to fetch resource '{name}' for transitive dependency extraction")
+            })?;
 
             // Extract metadata from the resource
             let path = PathBuf::from(dep.get_path());
@@ -1473,10 +1584,12 @@ impl DependencyResolver {
                         let parent_file_path = self
                             .get_canonical_path_for_dependency(&dep)
                             .await
-                            .with_context(|| format!(
+                            .with_context(|| {
+                            format!(
                                 "Failed to get parent path for transitive dependencies of '{}'",
                                 name
-                            ))?;
+                            )
+                        })?;
 
                         // Check if this is a glob pattern
                         let is_pattern = dep_spec.path.contains('*')
@@ -1514,10 +1627,12 @@ impl DependencyResolver {
                                 &parent_file_path,
                                 &dep_spec.path,
                             )
-                            .with_context(|| format!(
-                                "Failed to resolve transitive dependency '{}' for '{}'",
-                                dep_spec.path, name
-                            ))?
+                            .with_context(|| {
+                                format!(
+                                    "Failed to resolve transitive dependency '{}' for '{}'",
+                                    dep_spec.path, name
+                                )
+                            })?
                         };
 
                         // Create the transitive dependency based on whether parent is Git or path-only
@@ -3777,6 +3892,10 @@ impl DependencyResolver {
         let base_deps_for_prep: Vec<(String, ResourceDependency)> =
             base_deps.iter().map(|(name, dep, _)| (name.clone(), dep.clone())).collect();
         self.prepare_remote_groups(&base_deps_for_prep).await?;
+
+        // First, remove stale entries that are no longer in the manifest
+        // This prevents conflicts from commented-out or removed dependencies
+        self.remove_stale_manifest_entries(&mut lockfile);
 
         // Remove old entries for manifest dependencies being updated
         // This handles source changes (e.g., Git -> local path) and type changes

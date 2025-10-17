@@ -1346,13 +1346,16 @@ This is a local agent with transitive dependencies.
     // Run install - now FAILS because transitive dependency resolution errors are hard failures
     // The missing file "../snippets/helper.md" causes fetch_resource_content to fail
     let output = project.run_agpm(&["install"])?;
-    assert!(!output.success, "Install should fail when transitive dependency path resolution fails");
+    assert!(
+        !output.success,
+        "Install should fail when transitive dependency path resolution fails"
+    );
 
     // Verify the error message indicates transitive dependency failure
     assert!(
-        output.stderr.contains("Failed to resolve transitive dependency") ||
-        output.stderr.contains("Failed to fetch resource") ||
-        output.stderr.contains("file access"),
+        output.stderr.contains("Failed to resolve transitive dependency")
+            || output.stderr.contains("Failed to fetch resource")
+            || output.stderr.contains("file access"),
         "Error should indicate transitive dependency failure, got: {}",
         output.stderr
     );
@@ -1978,9 +1981,9 @@ This agent has a transitive dependency that doesn't exist.
 
     // Verify the error message indicates the failure
     assert!(
-        output.stderr.contains("Failed to resolve transitive dependency") ||
-        output.stderr.contains("Failed to fetch resource") ||
-        output.stderr.contains("file access"),
+        output.stderr.contains("Failed to resolve transitive dependency")
+            || output.stderr.contains("Failed to fetch resource")
+            || output.stderr.contains("file access"),
         "Error should indicate transitive dependency failure, got: {}",
         output.stderr
     );
@@ -2038,9 +2041,9 @@ This agent has an invalid transitive dependency path.
 
     // Verify the error message indicates the failure
     assert!(
-        output.stderr.contains("Failed to resolve transitive dependency") ||
-        output.stderr.contains("Failed to fetch resource") ||
-        output.stderr.contains("file access"),
+        output.stderr.contains("Failed to resolve transitive dependency")
+            || output.stderr.contains("Failed to fetch resource")
+            || output.stderr.contains("file access"),
         "Error should indicate transitive dependency failure, got: {}",
         output.stderr
     );
