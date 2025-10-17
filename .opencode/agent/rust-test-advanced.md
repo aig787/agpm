@@ -1,7 +1,6 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-test-standard fails repeatedly. Advanced test expert for Rust projects. Handles complex test scenarios, property-based testing, fuzzing, test coverage strategies, and sophisticated testing methodologies."
 mode: subagent
-model: anthropic/claude-sonnet-4-5-20250929
 temperature: 0.3
 tools:
   read: true
@@ -11,7 +10,7 @@ tools:
   glob: true
 permission:
   edit: allow
-  bash: ask
+  bash: allow
 ---
 
 **IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:

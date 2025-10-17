@@ -1,7 +1,6 @@
 ---
 description: "⚠️ ESCALATION ONLY: Use only after rust-doc-standard fails repeatedly. Advanced documentation expert for Rust projects. Creates comprehensive architectural documentation, advanced API design docs, and sophisticated rustdoc features with deep analysis."
 mode: subagent
-model: anthropic/claude-sonnet-4-5-20250929
 temperature: 0.3
 tools:
   read: true
@@ -11,7 +10,7 @@ tools:
   glob: true
 permission:
   edit: allow
-  bash: ask
+  bash: allow
 ---
 
 **IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:

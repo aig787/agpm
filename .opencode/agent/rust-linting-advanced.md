@@ -10,7 +10,7 @@ tools:
   glob: true
 permission:
   edit: allow
-  bash: ask
+  bash: allow
 ---
 
 **IMPORTANT**: This agent extends the shared base prompt. Read the complete prompt from:
