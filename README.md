@@ -40,7 +40,7 @@ pluggable system, allowing you to manage resources for different AI assistants f
 **Via Homebrew (macOS and Linux):**
 
 ```bash
-brew install aig787/agpm/agpm
+brew install aig787/homebrew-agpm/agpm-cli
 ```
 
 **Using installer script:**

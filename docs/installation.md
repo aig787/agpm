@@ -19,13 +19,13 @@ Homebrew provides automatic platform detection and easy updates:
 
 ```bash
 # Install (automatically detects Apple Silicon/Intel/Linux ARM/x86_64)
-brew install aig787/agpm/agpm
+brew install aig787/homebrew-agpm/agpm-cli
 
 # Update to latest version
-brew upgrade agpm
+brew upgrade agpm-cli
 
 # Uninstall
-brew uninstall agpm
+brew uninstall agpm-cli
 ```
 
 **Requirements**: Homebrew 2.0+ (macOS or Linux)
