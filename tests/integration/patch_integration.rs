@@ -608,7 +608,7 @@ async fn test_patch_nested_paths_windows() {
         r#"[sources]
 test = "{}"
 [agents]
-nested = {{ source = "test", path = "agents/category/subcategory/deep.md", version = "v1.0.0" }}
+nested = {{ source = "test", path = "agents/category/subcategory/deep.md", version = "v1.0.0", flatten = false }}
 [patch.agents.nested]
 model = "haiku"
 category = "deeply/nested/path"
