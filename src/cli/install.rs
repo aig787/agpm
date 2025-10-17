@@ -1251,7 +1251,13 @@ Body",
         manifest.save(&manifest_path).unwrap();
 
         let err = InstallCommand::new().execute_from_path(Some(&manifest_path)).await.unwrap_err();
-        assert!(err.to_string().contains("Local file"));
+        let err_string = err.to_string();
+        // After converting warnings to errors, missing local files fail with transitive dependency error
+        assert!(
+            err_string.contains("Failed to fetch resource") || err_string.contains("local file"),
+            "Error should indicate resource fetch failure, got: {}",
+            err_string
+        );
     }
 
     #[tokio::test]

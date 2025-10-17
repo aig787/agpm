@@ -1339,42 +1339,23 @@ This is a local agent with transitive dependencies.
     tokio::fs::write(&local_agent_path, local_agent_content).await?;
 
     // Create manifest with local file dependency (no source)
-    // Transitive dependencies are not supported for local file deps regardless of
-    // whether they're Simple strings or Detailed inline tables - the key is no source.
     let manifest = ManifestBuilder::new().add_local_agent("local-agent", "local-agent.md").build();
 
     project.write_manifest(&manifest).await?;
 
-    // Run install
-    project.run_agpm(&["install"])?.assert_success();
+    // Run install - now FAILS because transitive dependency resolution errors are hard failures
+    // The missing file "../snippets/helper.md" causes fetch_resource_content to fail
+    let output = project.run_agpm(&["install"])?;
+    assert!(!output.success, "Install should fail when transitive dependency path resolution fails");
 
-    // Verify local agent is installed
-    let installed_agent = project.project_path().join(".claude/agents/local-agent.md");
-    assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Local agent should be installed");
-
-    // Verify that transitive dependency (snippets/helper.md) is NOT installed
-    // because Simple dependencies don't support transitive resolution
-    // Note: If it were installed, it would be at .agpm/snippets/ (default for snippets)
-    let helper_path = project.project_path().join(".agpm/snippets/helper.md");
+    // Verify the error message indicates transitive dependency failure
     assert!(
-        tokio::fs::metadata(&helper_path).await.is_err(),
-        "Helper snippet should NOT be installed (Simple deps skip transitive)"
+        output.stderr.contains("Failed to resolve transitive dependency") ||
+        output.stderr.contains("Failed to fetch resource") ||
+        output.stderr.contains("file access"),
+        "Error should indicate transitive dependency failure, got: {}",
+        output.stderr
     );
-
-    // Verify lockfile only has the local agent, not the transitive dependency
-    let lockfile_content = project.read_lockfile().await?;
-    assert!(
-        lockfile_content.contains(r#"name = "local-agent""#),
-        "Lockfile should contain local-agent"
-    );
-    assert!(
-        !lockfile_content.contains(r#"name = "helper""#),
-        "Lockfile should NOT contain helper (transitive was skipped)"
-    );
-
-    // Note: We can't easily check for the warning message in the test output
-    // because the warning goes to stderr and is interleaved with other output.
-    // The key assertion is that the transitive dependency was NOT installed.
 
     Ok(())
 }
@@ -1991,25 +1972,18 @@ This agent has a transitive dependency that doesn't exist.
 
     project.write_manifest(&manifest).await?;
 
-    // Run install - should succeed but skip the missing transitive dep
+    // Run install - now FAILS because missing transitive dep is a hard failure
     let output = project.run_agpm(&["install"])?;
-    assert!(output.success, "Install should succeed despite missing transitive dep");
+    assert!(!output.success, "Install should fail when transitive dependency is missing");
 
-    // Verify main agent was installed
-    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
-    assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
-
-    // Verify missing transitive dep was NOT installed
-    let missing_path = project.project_path().join(".claude/agents/missing.md");
+    // Verify the error message indicates the failure
     assert!(
-        tokio::fs::metadata(&missing_path).await.is_err(),
-        "Missing transitive dependency should NOT be installed"
+        output.stderr.contains("Failed to resolve transitive dependency") ||
+        output.stderr.contains("Failed to fetch resource") ||
+        output.stderr.contains("file access"),
+        "Error should indicate transitive dependency failure, got: {}",
+        output.stderr
     );
-
-    // Verify lockfile only has the main agent
-    let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "local-agent""#));
-    assert!(!lockfile_content.contains(r#"name = "missing""#));
 
     Ok(())
 }
@@ -2058,19 +2032,17 @@ This agent has an invalid transitive dependency path.
 
     project.write_manifest(&manifest).await?;
 
-    // Run install - should succeed but skip the invalid transitive dep
+    // Run install - now FAILS because path resolution failures are hard failures
     let output = project.run_agpm(&["install"])?;
-    assert!(output.success, "Install should succeed despite invalid transitive path");
+    assert!(!output.success, "Install should fail when transitive dependency path is invalid");
 
-    // Verify main agent was installed
-    let installed_local = project.project_path().join(".claude/agents/local-agent.md");
-    assert!(tokio::fs::metadata(&installed_local).await.is_ok(), "Local agent should be installed");
-
-    // Verify invalid transitive dep was NOT installed
-    let helper_installed = project.project_path().join(".claude/agents/helper.md");
+    // Verify the error message indicates the failure
     assert!(
-        tokio::fs::metadata(&helper_installed).await.is_err(),
-        "Helper should NOT be installed due to invalid path format"
+        output.stderr.contains("Failed to resolve transitive dependency") ||
+        output.stderr.contains("Failed to fetch resource") ||
+        output.stderr.contains("file access"),
+        "Error should indicate transitive dependency failure, got: {}",
+        output.stderr
     );
 
     Ok(())

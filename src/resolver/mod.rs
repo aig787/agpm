@@ -1431,8 +1431,8 @@ impl DependencyResolver {
                         }
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to expand pattern '{}' for transitive dependency extraction: {}",
+                        anyhow::bail!(
+                            "Failed to expand pattern '{}' for transitive dependency extraction: {}",
                             dep.get_path(),
                             e
                         );
@@ -1442,16 +1442,10 @@ impl DependencyResolver {
             }
 
             // Get the resource content to extract metadata
-            let content = match self.fetch_resource_content(&name, &dep).await {
-                Ok(content) => content,
-                Err(e) => {
-                    // If we can't fetch the resource, skip its transitive deps
-                    eprintln!(
-                        "Warning: Failed to fetch resource '{name}' for transitive dependency extraction: {e}"
-                    );
-                    continue;
-                }
-            };
+            let content = self.fetch_resource_content(&name, &dep).await
+                .with_context(|| format!(
+                    "Failed to fetch resource '{name}' for transitive dependency extraction"
+                ))?;
 
             // Extract metadata from the resource
             let path = PathBuf::from(dep.get_path());
@@ -1476,19 +1470,13 @@ impl DependencyResolver {
                         // UNIFIED APPROACH: File-relative path resolution for all transitive dependencies
 
                         // Get the canonical path to the parent resource file
-                        let parent_file_path = match self
+                        let parent_file_path = self
                             .get_canonical_path_for_dependency(&dep)
                             .await
-                        {
-                            Ok(path) => path,
-                            Err(e) => {
-                                eprintln!(
-                                    "Warning: Skipping transitive dependencies for '{}': failed to get parent path: {}",
-                                    name, e
-                                );
-                                continue;
-                            }
-                        };
+                            .with_context(|| format!(
+                                "Failed to get parent path for transitive dependencies of '{}'",
+                                name
+                            ))?;
 
                         // Check if this is a glob pattern
                         let is_pattern = dep_spec.path.contains('*')
@@ -1497,16 +1485,11 @@ impl DependencyResolver {
 
                         let trans_canonical = if is_pattern {
                             // For patterns, normalize (resolve .. and .) but don't canonicalize
-                            let parent_dir = match parent_file_path.parent() {
-                                Some(dir) => dir,
-                                None => {
-                                    eprintln!(
-                                        "Warning: Skipping transitive dependency '{}' for '{}': parent file has no directory",
-                                        dep_spec.path, name
-                                    );
-                                    continue;
-                                }
-                            };
+                            let parent_dir = parent_file_path.parent()
+                                .ok_or_else(|| anyhow::anyhow!(
+                                    "Failed to resolve transitive dependency '{}' for '{}': parent file has no directory",
+                                    dep_spec.path, name
+                                ))?;
                             let resolved = parent_dir.join(&dep_spec.path);
                             // IMPORTANT: Preserve the root component when normalizing
                             let mut result = PathBuf::new();
@@ -1527,19 +1510,14 @@ impl DependencyResolver {
                             result
                         } else {
                             // For regular paths, fully resolve and canonicalize
-                            match crate::utils::resolve_file_relative_path(
+                            crate::utils::resolve_file_relative_path(
                                 &parent_file_path,
                                 &dep_spec.path,
-                            ) {
-                                Ok(path) => path,
-                                Err(e) => {
-                                    eprintln!(
-                                        "Warning: Skipping transitive dependency '{}' for '{}': {}",
-                                        dep_spec.path, name, e
-                                    );
-                                    continue;
-                                }
-                            }
+                            )
+                            .with_context(|| format!(
+                                "Failed to resolve transitive dependency '{}' for '{}'",
+                                dep_spec.path, name
+                            ))?
                         };
 
                         // Create the transitive dependency based on whether parent is Git or path-only
@@ -4294,14 +4272,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_local_dependency() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
         manifest.add_dependency(
             "local-agent".to_string(),
             ResourceDependency::Simple("../agents/local.md".to_string()),
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        let agents_dir = temp_dir.path().parent().unwrap().join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(agents_dir.join("local.md"), "# Local Agent").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4560,14 +4544,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_progress() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
         manifest.add_dependency(
             "local".to_string(),
             ResourceDependency::Simple("test.md".to_string()),
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().join("test.md"), "# Test").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4708,7 +4696,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_multiple_dependencies() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
         manifest.add_dependency(
             "agent1".to_string(),
             ResourceDependency::Simple("a1.md".to_string()),
@@ -4725,7 +4715,11 @@ mod tests {
             false,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy files to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().join("a1.md"), "# Agent 1").unwrap();
+        std::fs::write(temp_dir.path().join("a2.md"), "# Agent 2").unwrap();
+        std::fs::write(temp_dir.path().join("s1.md"), "# Snippet 1").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4766,7 +4760,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_custom_target() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add local dependency with custom target
         manifest.add_dependency(
@@ -4788,7 +4784,9 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4807,7 +4805,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_without_custom_target() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add local dependency without custom target
         manifest.add_dependency(
@@ -4829,7 +4829,9 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4847,7 +4849,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_custom_filename() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add local dependency with custom filename
         manifest.add_dependency(
@@ -4869,7 +4873,9 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4886,7 +4892,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_with_custom_filename_and_target() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add local dependency with both custom filename and target
         manifest.add_dependency(
@@ -4908,7 +4916,9 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy file to allow transitive dependency extraction
+        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4926,7 +4936,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_script_with_custom_filename() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add script with custom filename (different extension)
         manifest.add_dependency(
@@ -4948,7 +4960,11 @@ mod tests {
             false, // script (not agent)
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy script file to allow transitive dependency extraction
+        let scripts_dir = temp_dir.path().parent().unwrap().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(scripts_dir.join("data-analyzer-v3.py"), "#!/usr/bin/env python3").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -4985,6 +5001,7 @@ mod tests {
 
         // Create manifest with local pattern dependency
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(project_dir.to_path_buf());
         manifest.add_dependency(
             "local-agents".to_string(),
             ResourceDependency::Simple(format!("{}/agents/*.md", project_dir.display())),
@@ -5110,6 +5127,7 @@ mod tests {
 
         // Create manifest with local pattern dependency and custom target
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(project_dir.to_path_buf());
         manifest.add_dependency(
             "custom-agents".to_string(),
             ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
@@ -5331,7 +5349,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_all_dependencies() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
         manifest.add_dependency(
             "local1".to_string(),
             ResourceDependency::Simple("../a1.md".to_string()),
@@ -5343,7 +5363,11 @@ mod tests {
             true,
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy files to allow transitive dependency extraction
+        let parent = temp_dir.path().parent().unwrap();
+        std::fs::write(parent.join("a1.md"), "# Agent 1").unwrap();
+        std::fs::write(parent.join("a2.md"), "# Agent 2").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
 
@@ -5366,7 +5390,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_hooks_resource_type() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add hook dependencies
         manifest.hooks.insert(
@@ -5378,7 +5404,12 @@ mod tests {
             ResourceDependency::Simple("../hooks/post-commit.json".to_string()),
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy hook files to allow transitive dependency extraction
+        let hooks_dir = temp_dir.path().parent().unwrap().join("hooks");
+        std::fs::create_dir_all(&hooks_dir).unwrap();
+        std::fs::write(hooks_dir.join("pre-commit.json"), "{}").unwrap();
+        std::fs::write(hooks_dir.join("post-commit.json"), "{}").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -5396,7 +5427,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_scripts_resource_type() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add script dependencies
         manifest.scripts.insert(
@@ -5408,7 +5441,12 @@ mod tests {
             ResourceDependency::Simple("../scripts/test.py".to_string()),
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy script files to allow transitive dependency extraction
+        let scripts_dir = temp_dir.path().parent().unwrap().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        std::fs::write(scripts_dir.join("build.sh"), "#!/bin/bash").unwrap();
+        std::fs::write(scripts_dir.join("test.py"), "#!/usr/bin/env python3").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -5425,7 +5463,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_mcp_servers_resource_type() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add MCP server dependencies
         manifest.mcp_servers.insert(
@@ -5437,7 +5477,12 @@ mod tests {
             ResourceDependency::Simple("../mcp/database.json".to_string()),
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy MCP server files to allow transitive dependency extraction
+        let mcp_dir = temp_dir.path().parent().unwrap().join("mcp");
+        std::fs::create_dir_all(&mcp_dir).unwrap();
+        std::fs::write(mcp_dir.join("filesystem.json"), "{}").unwrap();
+        std::fs::write(mcp_dir.join("database.json"), "{}").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -5455,7 +5500,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_commands_resource_type() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add command dependencies
         manifest.commands.insert(
@@ -5467,7 +5514,12 @@ mod tests {
             ResourceDependency::Simple("../commands/lint.md".to_string()),
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy command files to allow transitive dependency extraction
+        let commands_dir = temp_dir.path().parent().unwrap().join("commands");
+        std::fs::create_dir_all(&commands_dir).unwrap();
+        std::fs::write(commands_dir.join("deploy.md"), "# Deploy").unwrap();
+        std::fs::write(commands_dir.join("lint.md"), "# Lint").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
@@ -5862,7 +5914,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_mixed_resource_types() {
+        let temp_dir = TempDir::new().unwrap();
         let mut manifest = Manifest::new();
+        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
 
         // Add various resource types
         manifest.add_dependency(
@@ -5891,7 +5945,19 @@ mod tests {
             ResourceDependency::Simple("../mcp/filesystem.json".to_string()),
         );
 
-        let temp_dir = TempDir::new().unwrap();
+        // Create dummy files for all resource types to allow transitive dependency extraction
+        let parent = temp_dir.path().parent().unwrap();
+        std::fs::create_dir_all(parent.join("agents")).unwrap();
+        std::fs::create_dir_all(parent.join("scripts")).unwrap();
+        std::fs::create_dir_all(parent.join("hooks")).unwrap();
+        std::fs::create_dir_all(parent.join("commands")).unwrap();
+        std::fs::create_dir_all(parent.join("mcp")).unwrap();
+        std::fs::write(parent.join("agents/a1.md"), "# Agent").unwrap();
+        std::fs::write(parent.join("scripts/build.sh"), "#!/bin/bash").unwrap();
+        std::fs::write(parent.join("hooks/pre-commit.json"), "{}").unwrap();
+        std::fs::write(parent.join("commands/deploy.md"), "# Deploy").unwrap();
+        std::fs::write(parent.join("mcp/filesystem.json"), "{}").unwrap();
+
         let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
         let mut resolver = DependencyResolver::with_cache(manifest, cache);
 
