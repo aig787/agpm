@@ -12,6 +12,7 @@
 //! - Preserves document structure during read/write operations
 //! - Provides utilities for file discovery and validation
 //! - Supports atomic file operations for safe installation
+//! - Extracts and validates file references within markdown content
 //!
 //! # Supported File Formats
 //!
@@ -201,6 +202,8 @@
 //! - `crate::core`: Provides core types and error handling
 //!
 //! See the respective module documentation for integration details.
+
+pub mod reference_extractor;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

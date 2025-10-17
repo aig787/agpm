@@ -336,7 +336,7 @@ Use `--format json` for programmatic access to dependency information, which inc
 
 ### `agpm validate`
 
-Validate `agpm.toml` syntax, dependency resolution, and patch configuration. Also validates `agpm.private.toml` if present.
+Validate `agpm.toml` syntax, dependency resolution, patch configuration, template rendering, and file references. Also validates `agpm.private.toml` if present.
 
 ```bash
 agpm validate [OPTIONS]
@@ -344,6 +344,13 @@ agpm validate [OPTIONS]
 Options:
       --check-lock            Also validate lockfile consistency
       --resolve               Perform full dependency resolution
+      --render                Validate template rendering and file references
+      --sources               Check if all sources are accessible
+      --paths                 Check if local file paths exist
+      --format <FORMAT>       Output format: text or json (default: text)
+      --strict                Treat warnings as errors
+      --quiet                 Suppress informational messages
+      --verbose               Enable verbose output
       --manifest-path <PATH>  Path to agpm.toml (default: ./agpm.toml)
   -h, --help                  Print help information
 ```
@@ -359,30 +366,58 @@ agpm validate --check-lock
 # Full validation with dependency resolution
 agpm validate --resolve
 
+# Validate template rendering and file references
+agpm validate --render
+
+# Comprehensive validation for CI/CD
+agpm validate --resolve --check-lock --render --strict
+
+# JSON output for automation
+agpm validate --format json
+
 # Validate custom manifest
 agpm validate --manifest-path ./configs/agpm.toml
 ```
 
 **Validation Checks:**
 
-Manifest validation includes:
+**Basic Manifest Validation** (always performed):
 - TOML syntax correctness
 - Source and dependency definitions
 - Patch syntax and structure
 - Patch aliases match manifest dependencies
 - No unknown patch references
 
-When `--check-lock` is used:
+**Lockfile Validation** (`--check-lock`):
 - Lockfile exists and is valid
 - Lockfile matches manifest (no staleness)
 - All dependencies are present
 - Applied patches tracked correctly
 
-When `--resolve` is used:
+**Dependency Resolution** (`--resolve`):
 - Full dependency resolution
 - Version constraint satisfaction
 - Transitive dependency resolution
 - Patch conflict detection between project and private patches
+
+**Template and File Reference Validation** (`--render`):
+- **Template Rendering**: Validates that all markdown resources with template syntax can be successfully rendered
+  - Checks `{{`, `{%`, `{#` template syntax
+  - Validates template variables and context
+  - Reports rendering errors with file location
+- **File Reference Auditing**: Checks that all file references within markdown content point to existing files
+  - Validates markdown links: `[text](path.md)`
+  - Validates direct file paths: `.agpm/snippets/file.md`, `docs/guide.md`
+  - Ignores URLs (http://, https://), code blocks (```), and absolute paths
+  - Reports broken references with clear error messages
+
+**Source Accessibility** (`--sources`):
+- Tests network connectivity to all source repositories
+- Verifies credentials and access permissions
+
+**Path Validation** (`--paths`):
+- Checks that local file dependencies exist on filesystem
+- Validates relative paths are within project boundaries
 
 ### `agpm add`
 
