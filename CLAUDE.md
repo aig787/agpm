@@ -99,9 +99,9 @@ src/
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
 - `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
 - `list` - List installed resources
-- `validate [--check-lock] [--resolve] [--render]` - Validate manifest, templates, and file references
-- `cache [clean|list]` - Manage cache
-- `config [get|set]` - Global config
+- `validate [--resolve] [--check-lock] [--sources] [--paths] [--render] [--format json] [--strict]` - Validate manifest and dependencies
+- `cache [clean|info]` - Manage cache
+- `config [show|edit|init|add-source|remove-source]` - Global config
 - `add [source|dep]` - Add to manifest
 - `remove [source|dep]` - Remove from manifest
 - `init [--path]` - Initialize project
@@ -116,9 +116,9 @@ src/
 
 ## Dependencies
 
-Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
-indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell,
-dashmap (v6.1)
+Main: clap, tokio, toml, toml_edit, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
+indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, dashmap (v6.1),
+reqwest, zip, petgraph, pubgrub, tokio-retry, tera
 
 Dev: assert_cmd, predicates
 
@@ -262,45 +262,14 @@ Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isol
 
 ## Cross-Platform Path Handling
 
-**CRITICAL**: AGPM must work identically on Windows, macOS, and Linux.
+**CRITICAL**: AGPM must work identically on Windows, macOS, Linux. Lockfiles use Unix-style forward slashes only for portability.
 
-### Path Separator Rules
-
-**CRITICAL**: Lockfiles (`agpm.lock`) MUST store manifest-relative paths only (no absolute paths) and use Unix-style forward slashes for every field. Team members on different machines must be able to share lockfiles without path rewriting.
-
-1. **Forward slashes ONLY** in these contexts:
-   - **Lockfile fields** (cross-platform portability):
-     - `name` field (e.g., `"agents/helper"`, not `'agents\helper'`)
-     - `path` field (e.g., `"snippets/utils.md"`, not `'snippets\utils.md'`)
-     - `installed_at` field (e.g., `".claude/agents/helper.md"`)
-   - `.gitignore` entries (Git requirement)
-   - TOML manifest files (platform-independent)
-   - Any serialized/stored path representation
-
-2. **Use `normalize_path_for_storage()` for ALL lockfile paths**:
-   - `Path::display()` produces platform-specific separators (backslashes on Windows)
-   - **ALWAYS** call `normalize_path_for_storage()` when creating `LockedResource` instances
-   - Example: `path: normalize_path_for_storage(dep.get_path())`
-   - Helper available at: `use crate::utils::normalize_path_for_storage;`
-
-3. **Runtime path operations**:
-   - Use `Path`/`PathBuf` for filesystem operations (automatic platform handling)
-   - Only convert to strings when storing/serializing
-   - Use `join()` instead of string concatenation
-
-### Testing Path Handling
-
-- **Integration tests must pass on Windows**: CI runs all tests on Windows, macOS, Linux
-- **Don't hardcode path separators in test assertions**: Use forward slashes in expected values
-- **TestProject helper handles paths correctly**: Always use `TestProject::new()` in tests
-- **Don't manually create lockfiles in tests**: Let `agpm install` generate them naturally
-
-### Windows-Specific Gotchas
-
-- Absolute paths: `C:\path` or `\\server\share`
-- file:// URLs use forward slashes (even on Windows)
-- Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
-- Test on real Windows (not WSL)
+**Path Rules**:
+1. **Forward slashes** in lockfiles, .gitignore, TOML manifests
+2. **`normalize_path_for_storage()`** for ALL lockfile paths (never `Path::display()` directly)
+3. **`Path`/`PathBuf`** for runtime operations
+4. **Windows gotchas**: `C:\path`, `\\server\share`, reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+5. **Tests**: Use `TestProject`, let `agpm install` generate lockfiles, no hardcoded separators
 
 ## Optimized Worktree Architecture
 
@@ -331,110 +300,22 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ## Multi-Tool Support
 
-AGPM supports multiple AI coding tools via configurable tools:
+AGPM supports multiple AI coding tools: **claude-code** (default), **opencode**, **agpm** (snippets), **custom**.
 
-### Supported Tools
+**Tool Configuration**: Each tool defines base directory, resource paths, MCP handling strategy.
 
-- **claude-code** (default): Claude Code resources (agents, commands, scripts, hooks, MCP servers)
-- **opencode**: OpenCode resources (agents, commands, MCP servers)
-- **agpm**: AGPM-specific resources (snippets for reusable templates)
-- **custom**: User-defined tools via configuration
-
-### Tool Configuration
-
-Each tool defines:
-- **Base directory**: Where resources are installed (e.g., `.claude`, `.opencode`)
-- **Resource paths**: Subdirectories for each resource type
-- **MCP handling**: Tool-specific MCP server configuration strategy
-
-### Dependency Tool Field
-
-Dependencies can specify their target tool:
-
+**Dependency Tool Field**:
 ```toml
 [agents]
-# Defaults to claude-code
-example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-
-# Explicit type for OpenCode
+example = { source = "community", path = "agents/example.md", version = "v1.0.0" }  # claude-code
 opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
 ```
 
-### Default Tool Configuration
+**Default Tools** via `[default-tools]`: Override per-resource-type defaults (snippets→agpm, others→claude-code).
 
-Override the default tool for resource types via the `[default-tools]` section:
+**Merge Targets**: Hooks/MCP servers merge into shared configs (`.claude/settings.local.json`, `.mcp.json`, `.opencode/opencode.json`). Custom tools can override via `[tools.my-tool.resources.hooks]` with `merge-target` field.
 
-```toml
-[default-tools]
-snippets = "claude-code"  # Claude-only users: install snippets to .claude/snippets/
-agents = "claude-code"    # Explicit (already the default)
-commands = "opencode"     # Default to OpenCode for commands
-```
-
-**Built-in Defaults**:
-- `snippets` → `agpm` (shared infrastructure)
-- All other resources → `claude-code`
-
-**Use Cases**:
-- Claude Code only users: `snippets = "claude-code"` to install to `.claude/snippets/`
-- OpenCode preferred: `agents = "opencode"` to default agents to `.opencode/agent/`
-- Mixed workflows: Configure per-resource-type defaults
-
-Dependencies with explicit `tool` fields override these defaults.
-
-### Merge Targets
-
-Some resource types (hooks, MCP servers) don't install as individual files but merge into shared configuration files. The `merge-target` field specifies these merge destinations.
-
-**Default Merge Targets**:
-- **Hooks** (claude-code): `.claude/settings.local.json`
-- **MCP Servers** (claude-code): `.mcp.json`
-- **MCP Servers** (opencode): `.opencode/opencode.json`
-
-**Custom Merge Targets**:
-
-Override merge targets for custom tools or alternative configurations:
-
-```toml
-# Define custom tool with custom merge target
-[tools.my-tool]
-path = ".my-tool"
-
-[tools.my-tool.resources.hooks]
-merge-target = ".my-tool/hooks.json"
-
-[tools.my-tool.resources.mcp-servers]
-merge-target = ".my-tool/servers.json"
-```
-
-**Path vs. Merge Target**:
-
-- **`path`**: Used for file-based resources (agents, snippets, commands, scripts) that install as individual `.md`, `.sh`, `.js`, or `.py` files in subdirectories
-- **`merge-target`**: Used for configuration-based resources (hooks, MCP servers) that merge into shared JSON configuration files
-- A resource type is supported if EITHER `path` OR `merge-target` is specified
-
-**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers. Custom merge targets work best by overriding defaults for built-in tools rather than creating wholly custom tools.
-
-### Resource Type Support Matrix
-
-| Resource      | claude-code | opencode | agpm | Default Type |
-|---------------|-------------|----------|------|--------------|
-| agents        | ✅ `.claude/agents/` | ✅ `.opencode/agent/` (singular) | ❌ | `claude-code` |
-| commands      | ✅ `.claude/commands/` | ✅ `.opencode/command/` (singular) | ❌ | `claude-code` |
-| scripts       | ✅ `.claude/scripts/` | ❌ | ❌ | `claude-code` |
-| hooks         | ✅ → `.claude/settings.local.json` | ❌ | ❌ | `claude-code` |
-| mcp-servers   | ✅ → `.mcp.json` | ✅ → `opencode.json` | ❌ | `claude-code` |
-| snippets      | ✅ `.claude/snippets/` | ❌ | ✅ `.agpm/snippets/` | **`agpm`** |
-
-**Note**: Snippets default to `agpm` tool (shared infrastructure). Use `tool = "claude-code"` to override.
-
-### MCP Handler System
-
-Pluggable handlers for tool-specific MCP configuration:
-
-- **ClaudeCodeMcpHandler**: Merges into `.mcp.json` (no file installation)
-- **OpenCodeMcpHandler**: Merges into `opencode.json` (no file installation)
-- **Tracking**: Uses `_agpm` metadata to distinguish managed vs user servers
+**Resource Support**: agents, commands (both tools), scripts (claude-code only), hooks (claude-code only), mcp-servers (both tools), snippets (agpm default). Pluggable MCP handlers: ClaudeCodeMcpHandler, OpenCodeMcpHandler.
 
 ## Key Requirements
 

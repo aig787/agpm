@@ -738,15 +738,6 @@ Options:
   -h, --help      Print help information
 ```
 
-#### List Cache
-
-```bash
-agpm cache list [OPTIONS]
-
-Options:
-  -h, --help    Print help information
-```
-
 **Examples:**
 ```bash
 # Show cache statistics
@@ -757,9 +748,6 @@ agpm cache clean
 
 # Remove all cached repositories
 agpm cache clean --all
-
-# List cached repositories
-agpm cache list
 ```
 
 ### `agpm migrate`

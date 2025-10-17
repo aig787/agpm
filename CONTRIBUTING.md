@@ -56,7 +56,7 @@ When creating an issue:
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.85.0 or later
 - Git 2.5 or later (required for worktree support)
 - A GitHub account
 - Your favorite code editor (we recommend VS Code with rust-analyzer)

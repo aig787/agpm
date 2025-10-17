@@ -55,12 +55,12 @@ The manifest defines your project's dependencies:
 community = "https://github.com/aig787/agpm-community.git"
 
 [agents]
-# Install AI agents - path preservation maintains directory structure
+# Install AI agents - agents flatten by default (only filename is used)
 example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
 # → Installed as: .claude/agents/example.md
 
 nested = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
-# → Installed as: .claude/agents/ai/helper.md (preserves ai/ subdirectory)
+# → Installed as: .claude/agents/helper.md (flatten=true is the default for agents)
 ```
 
 See the [Manifest Reference](manifest-reference.md) for a complete field-by-field breakdown and CLI mapping guidance.
@@ -375,19 +375,23 @@ When updating dependencies:
 
 ## Pattern Matching
 
-Install multiple resources using glob patterns. Each matched file preserves its source directory structure:
+Install multiple resources using glob patterns. Directory structure preservation depends on the resource type's `flatten` setting (agents/commands flatten by default, snippets/scripts preserve structure):
 
 ```toml
 [agents]
-# All markdown files in agents/ai/ - each preserves its path
-# agents/ai/assistant.md → .claude/agents/ai/assistant.md
-# agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
+# All markdown files in agents/ai/ - agents flatten by default (only filename)
+# agents/ai/assistant.md → .claude/agents/assistant.md
+# agents/ai/analyzer.md → .claude/agents/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
-# All review agents recursively - nested structure maintained
-# agents/code/review-expert.md → .claude/agents/code/review-expert.md
-# agents/security/review-scanner.md → .claude/agents/security/review-scanner.md
+# All review agents recursively - flatten removes directory structure
+# agents/code/review-expert.md → .claude/agents/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/review-scanner.md
 review-agents = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
+
+# To preserve directory structure for agents, set flatten=false explicitly
+# agents/code/review-expert.md → .claude/agents/code/review-expert.md
+structured-review = { source = "community", path = "agents/**/review*.md", version = "v1.0.0", flatten = false }
 
 [snippets]
 # All Python snippets - directory structure preserved
@@ -802,19 +806,24 @@ $ agpm list --format json
 
 ### Default Locations
 
-Resources are installed to these default locations, with source directory structure preserved:
+Resources are installed to these default locations. Directory structure preservation depends on the resource type's flatten setting:
 
-- Agents: `.claude/agents/` (e.g., `agents/ai/helper.md` → `.claude/agents/ai/helper.md`)
+- Agents: `.claude/agents/` (flatten=true by default; e.g., `agents/ai/helper.md` → `.claude/agents/helper.md`)
 - Snippets: `.agpm/snippets/` (default to agpm tool; e.g., `snippets/react/hooks.md` → `.agpm/snippets/react/hooks.md`)
-- Commands: `.claude/commands/` (e.g., `commands/build/deploy.md` → `.claude/commands/build/deploy.md`)
+- Commands: `.claude/commands/` (flatten=true by default; e.g., `commands/build/deploy.md` → `.claude/commands/deploy.md`)
 - Scripts: `.claude/scripts/` (e.g., `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`)
 - Hooks: `.claude/hooks/`
 - MCP Servers: Merged into `.mcp.json` (no separate directory)
 
-**Path Preservation**: The relative directory structure from the source repository is maintained during installation. This means:
-- `agents/example.md` → `.claude/agents/example.md`
-- `agents/ai/code-reviewer.md` → `.claude/agents/ai/code-reviewer.md`
-- `agents/specialized/rust/expert.md` → `.claude/agents/specialized/rust/expert.md`
+**Flatten Behavior**: Whether directory structure is preserved depends on the resource type:
+- **Agents/Commands** (flatten=true): Only filename is used
+  - `agents/example.md` → `.claude/agents/example.md`
+  - `agents/ai/code-reviewer.md` → `.claude/agents/code-reviewer.md`
+  - `agents/specialized/rust/expert.md` → `.claude/agents/expert.md`
+- **Snippets/Scripts** (flatten=false): Full relative path is preserved
+  - `snippets/react/hooks.md` → `.agpm/snippets/react/hooks.md`
+  - `scripts/ci/test.sh` → `.claude/scripts/ci/test.sh`
+- **Override**: Set `flatten=false` on agents/commands or `flatten=true` on snippets/scripts to change behavior
 
 ### Custom Locations
 
@@ -865,7 +874,7 @@ agpm install --max-parallel 1
 ### Cache Management
 ```bash
 # View cache statistics
-agpm cache list
+agpm cache info
 
 # Clean old cache entries
 agpm cache clean
@@ -894,13 +903,14 @@ After updating the path:
 # Updated agpm.toml
 [agents]
 helper = { source = "community", path = "agents/ai/helper.md", version = "v1.0.0" }
-# Now installed as: .claude/agents/ai/helper.md
+# Still installed as: .claude/agents/helper.md (agents flatten by default)
+# To preserve the ai/ subdirectory, add flatten=false
 ```
 
 When you run `agpm install`:
-1. The old file at `.claude/agents/helper.md` is automatically removed
-2. The new file is installed at `.claude/agents/ai/helper.md`
-3. Empty parent directories are cleaned up (`.claude/agents/` only if empty)
+1. The old file at `.claude/agents/helper.md` is automatically removed (if path changed)
+2. The new file is installed based on the flatten setting
+3. Empty parent directories are cleaned up
 
 **Benefits:**
 - No manual cleanup required

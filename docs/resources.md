@@ -67,17 +67,18 @@ rust-expert = { source = "community", path = "agents/rust-expert.md", version = 
 # OpenCode - installed as .opencode/agent/rust-expert.md (note: singular "agent")
 rust-expert-oc = { source = "community", path = "agents/rust-expert.md", version = "v1.0.0", tool = "opencode" }
 
-# Nested path - installed as .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
+# Nested path - installed as .claude/agents/code-reviewer.md (flatten=true by default)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0" }
 
-# OpenCode nested - installed as .opencode/agent/ai/code-reviewer.md
+# OpenCode nested - installed as .opencode/agent/code-reviewer.md (flatten=true by default)
 code-reviewer-oc = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", tool = "opencode" }
 
-# Deeply nested - installed as .claude/agents/specialized/rust/expert.md
-rust-specialist = { source = "community", path = "agents/specialized/rust/expert.md", version = "v1.0.0" }
+# Preserve directory structure with flatten=false
+nested-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", version = "v1.0.0", flatten = false }
+# → .claude/agents/ai/code-reviewer.md
 
-# Local path with structure - preserves relative path from source
-local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/ai/helper.md
+# Local path - still flattens by default
+local-agent = { path = "../local-agents/ai/helper.md" }  # → .claude/agents/helper.md
 ```
 
 **Directory Naming Note**: OpenCode uses singular directory names (`agent`, `command`) while Claude Code uses plural
@@ -308,33 +309,62 @@ After installation, `.mcp.json` contains both user and AGPM-managed servers:
 
 ### Path Preservation
 
-AGPM preserves the source directory structure during installation. Files are named based on their source path, maintaining the original organization:
+AGPM's path behavior depends on the resource type's `flatten` setting. By default, agents and commands flatten (use only filename), while snippets and scripts preserve directory structure:
 
 ```toml
 [agents]
 # Source file: agents/ai/code-reviewer.md
-# Installed as: .claude/agents/ai/code-reviewer.md (preserves ai/ subdirectory)
+# Installed as: .claude/agents/code-reviewer.md (flatten=true by default for agents)
 code-reviewer = { source = "community", path = "agents/ai/code-reviewer.md" }
+
+# To preserve directory structure for agents, set flatten=false
+# Installed as: .claude/agents/ai/code-reviewer.md
+nested-reviewer = { source = "community", path = "agents/ai/code-reviewer.md", flatten = false }
+
+[snippets]
+# Source file: snippets/python/utils.md
+# Installed as: .agpm/snippets/python/utils.md (flatten=false by default for snippets)
+python-utils = { source = "community", path = "snippets/python/utils.md" }
 ```
 
-### Benefits of Path Preservation
+### Flatten Behavior by Resource Type
 
-- **Maintains organization**: Source repository structure is preserved in your project
-- **Avoids conflicts**: Files with the same name in different directories won't collide
-- **Clear provenance**: Installation path reflects the original source location
-- **Pattern matching**: Glob patterns naturally preserve directory hierarchies
+| Resource Type | Default Flatten | Typical Use Case |
+|--------------|----------------|------------------|
+| agents | `true` | Single namespace for agent files |
+| commands | `true` | Single namespace for command files |
+| snippets | `false` | Preserve organizational structure |
+| scripts | `false` | Preserve directory hierarchy |
+| hooks | N/A | Merged into settings file |
+| mcp-servers | N/A | Merged into MCP config file |
+
+### Benefits of Flatten Control
+
+- **Flexibility**: Choose between flat namespaces or hierarchical organization
+- **Avoids conflicts**: Use `flatten=false` when files with the same name exist in different directories
+- **Clear defaults**: Sensible behavior for each resource type
+- **Pattern matching**: Control structure preservation for glob patterns
 
 ### Custom Filenames
 
-You can still use custom filenames with the `filename` option (the dependency name is no longer used):
+You can use custom filenames with the `filename` option. The flatten setting still applies:
 
 ```toml
 [agents]
-# Custom filename without changing path structure
+# Custom filename with default flatten behavior
 reviewer = {
     source = "community",
     path = "agents/ai/code-reviewer.md",
     filename = "my-reviewer.md"
+}
+# Installed as: .claude/agents/my-reviewer.md (flatten=true by default)
+
+# Custom filename with flatten=false to preserve directory structure
+structured-reviewer = {
+    source = "community",
+    path = "agents/ai/code-reviewer.md",
+    filename = "my-reviewer.md",
+    flatten = false
 }
 # Installed as: .claude/agents/ai/my-reviewer.md (preserves ai/ directory)
 ```
@@ -450,15 +480,19 @@ agents = "custom/agents"
 snippets = "resources/snippets"
 ```
 
-**Path preservation applies to custom base directories too:**
+**Flatten behavior applies to custom base directories too:**
 ```toml
 [target]
 agents = "my/agents"
 
 [agents]
 # Source: agents/ai/helper.md
-# Installed as: my/agents/ai/helper.md (preserves ai/ subdirectory)
+# Installed as: my/agents/helper.md (flatten=true by default)
 helper = { source = "community", path = "agents/ai/helper.md" }
+
+# With flatten=false to preserve structure
+# Installed as: my/agents/ai/helper.md
+nested-helper = { source = "community", path = "agents/ai/helper.md", flatten = false }
 ```
 
 ### Per-Resource Custom Targets
@@ -508,19 +542,24 @@ gitignore = false  # Don't create .gitignore
 
 ## Pattern-Based Dependencies
 
-Install multiple resources using glob patterns. Each matched file preserves its source directory structure.
+Install multiple resources using glob patterns. Directory structure preservation depends on the resource type's flatten setting.
 
 ```toml
 [agents]
-# Install all AI agents - each preserves its source path
-# agents/ai/assistant.md → .claude/agents/ai/assistant.md
-# agents/ai/analyzer.md → .claude/agents/ai/analyzer.md
+# Install all AI agents - agents flatten by default (only filename)
+# agents/ai/assistant.md → .claude/agents/assistant.md
+# agents/ai/analyzer.md → .claude/agents/analyzer.md
 ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }
 
-# Install all review tools recursively - maintains nested structure
+# Install all review tools recursively - flatten removes directory structure
+# agents/code/review-expert.md → .claude/agents/review-expert.md
+# agents/security/review-scanner.md → .claude/agents/review-scanner.md
+review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
+
+# Preserve structure with flatten=false
 # agents/code/review-expert.md → .claude/agents/code/review-expert.md
 # agents/security/review-scanner.md → .claude/agents/security/review-scanner.md
-review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }
+structured-review = { source = "community", path = "agents/**/review*.md", version = "v1.0.0", flatten = false }
 
 [snippets]
 # All Python snippets - directory structure preserved

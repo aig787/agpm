@@ -1,17 +1,15 @@
-# AGENTS.md - AGPM Project Context (Codex)
+# AGENTS.md - AGPM Project Context
 
 **IMPORTANT**: This file must remain under 20,000 characters.
 
-This document mirrors the AGPM context from `CLAUDE.md` but focuses on architecture, workflows, and guardrails that are
-especially relevant when contributing through Codex. AGPM is still the Claude Code Package Manager, so references to
-`.claude/...` paths and Claude-specific resource types remain accurate; Codex contributors should respect them when
-working in this repository.
+This document mirrors AGPM context from CLAUDE.md for Codex/OpenCode contributors. AGPM is the Claude Code Package Manager
+supporting multiple tools (Claude Code, OpenCode, custom) via pluggable artifacts.
 
 ## Overview
 
-AGPM (Claude Code Package Manager) is a Git-based package manager for Claude Code resources (agents, snippets, commands,
-scripts, hooks, MCP servers), written in Rust. It uses a lockfile model (agpm.toml + agpm.lock) like Cargo for
-reproducible installations from Git repositories.
+AGPM (Claude Code Package Manager) is a Git-based package manager for AI coding assistant resources (agents, snippets, commands,
+scripts, hooks, MCP servers), written in Rust. Supports multiple tools (Claude Code, OpenCode, custom) via pluggable artifacts.
+Uses lockfile model (agpm.toml + agpm.lock) like Cargo for reproducible installations from Git repositories.
 
 ## Architecture
 
@@ -27,31 +25,40 @@ reproducible installations from Git repositories.
 
 ```
 src/
-├── cli/         # Command implementations
+├── cli/         # Command implementations (install, update, outdated, upgrade, etc.)
 ├── cache/       # Instance-level caching + worktree management
 ├── config/      # Global/project config
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Hook integrations for Claude Code environments
-├── installer.rs # Parallel resource installation
-├── lockfile/    # agpm.lock management
+├── installer.rs # Parallel resource installation + artifact cleanup
+├── lockfile/    # agpm.lock management + staleness detection
 ├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
 ├── markdown/    # Markdown file operations
 ├── mcp/         # MCP server management
+│   └── handlers.rs  # Pluggable MCP handlers (ClaudeCode, OpenCode)
 ├── metadata/    # Metadata extraction from resource files
 │   └── extractor.rs  # YAML frontmatter and JSON field extraction
 ├── models/      # Data models
 ├── pattern.rs   # Glob pattern resolution
 ├── resolver/    # Dependency + version resolution
-│   ├── mod.rs                # Core dependency resolution logic with transitive support
+│   ├── mod.rs                # Core resolution logic with transitive support + relative path handling
 │   ├── dependency_graph.rs   # Graph-based transitive dependency resolution
 │   ├── version_resolution.rs # Version constraint handling
 │   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
 ├── test_utils/  # Test infrastructure
+├── upgrade/     # Self-update functionality
+│   ├── mod.rs          # Upgrade orchestration
+│   ├── self_updater.rs # Binary update logic
+│   ├── version_check.rs # Version comparison
+│   ├── backup.rs       # Backup management
+│   ├── config.rs       # Update configuration
+│   ├── verification.rs # Checksum verification
+│   └── tests.rs        # Upgrade tests
 ├── utils/       # Cross-platform utilities + progress management
-├── version/     # Version constraints
+├── version/     # Version constraints + semver parsing
 └── tests/       # Integration tests
 ```
 
@@ -62,88 +69,50 @@ src/
 - `outdated [--check] [--no-fetch] [--format json]` - Check for dependency updates
 - `upgrade [--check] [--status] [--force] [--rollback] [--no-backup] [VERSION]` - Self-update AGPM
 - `list` - List installed resources
-- `validate [--check-lock] [--resolve]` - Validate manifest
-- `cache [clean|list]` - Manage cache
-- `config [get|set]` - Global config
+- `validate [--resolve] [--check-lock] [--sources] [--paths] [--render] [--format json] [--strict]` - Validate manifest and dependencies
+- `cache [clean|info]` - Manage cache
+- `config [show|edit|init|add-source|remove-source]` - Global config
 - `add [source|dep]` - Add to manifest
 - `remove [source|dep]` - Remove from manifest
 - `init [--path]` - Initialize project
 
+## Rust Agents (OpenCode)
+
+### Standard (Fast)
+
+- `rust-expert-standard`: Implementation, refactoring, API design
+- `rust-linting-standard`: Formatting, clippy fixes
+- `rust-doc-standard`: Documentation
+- `rust-test-standard`: Test failure fixes
+- `rust-troubleshooter-standard`: Debugging, build issues
+
+### Advanced (Complex)
+
+- `rust-expert-advanced`: Architecture, optimization, complex features
+- `rust-linting-advanced`: Complex refactoring, advanced clippy
+- `rust-doc-advanced`: Architectural docs, comprehensive analysis
+- `rust-test-advanced`: Property testing, fuzzing, complex scenarios
+- `rust-troubleshooter-advanced`: Memory issues, UB, deep debugging
+
+**Note**: Agents extend shared base prompts from `.agpm/snippets/agents/`. Invoke specialized agents via suggestions (e.g., "Please invoke rust-troubleshooter-advanced agent").
+
 ## Development
 
-- Use `Result<T, E>` for errors
-- Test on Windows, macOS, Linux
-- `cargo fmt && cargo clippy && cargo nextest run && cargo test --doc`
-- Handle paths cross-platform
+- **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
+- **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile
 
-## Resource Authoring and Templating
+## Resource Templating
 
-When creating agents, snippets, or commands for AGPM, you can use Tera-based templating to create dynamic content that adapts during installation. **Templating is opt-in** - resources must enable it via frontmatter.
-
-### Quick Start
-
-Resources support template variables for metadata and dependencies. Enable templating with `agpm.templating: true`:
-
-```markdown
----
-title: {{ agpm.resource.name }}
-agpm:
-  templating: true
-dependencies:
-  snippets:
-    - path: snippets/utils.md
-      version: v1.0.0
----
-# {{ agpm.resource.name }}
-
-Version: {{ agpm.resource.version }}
-Install path: `{{ agpm.resource.install_path }}`
-
-{% if agpm.deps.snippets.utils %}
-Uses helper: `{{ agpm.deps.snippets.utils.install_path }}`
-{% endif %}
-```
-
-### Available Template Variables
-
-- **`agpm.resource.*`** - Current resource metadata (name, version, install_path, source, checksum, etc.)
-- **`agpm.deps.<category>.<name>.*`** - Dependency metadata for resources declared in frontmatter
-
-**Full Variable Reference**: See [docs/templating.md](../docs/templating.md#template-variables-reference) for the complete variable table.
-
-### Best Practices
-
-1. **Use descriptive variable names** - Resource names become template variables (sanitized with underscores)
-2. **Avoid hyphens in resource names** - Use underscores to prevent confusion (hyphens are converted to underscores in templates)
-3. **Test with different dependency combinations** - Ensure conditionals work when dependencies are missing
-4. **Keep templates simple** - Avoid complex logic for maintainability
-5. **Use `{% raw %}...{% endraw %}` for literal template syntax** - When documenting template syntax itself
-
-### Disabling Templating
-
-To include literal template syntax (e.g., in documentation or examples), disable templating via frontmatter:
-
-```markdown
----
-agpm:
-  templating: false
----
-# This {{ template.syntax }} won't be processed
-```
-
-### Documentation
-
-- **Complete Guide**: [docs/templating.md](../docs/templating.md) - Full syntax, examples, and troubleshooting
-- **Resource Formats**: [docs/resources.md](../docs/resources.md#resource-frontmatter-and-templating) - Frontmatter structure
+Resources support opt-in Tera templating with `agpm.templating: true` in frontmatter. Access resource metadata (`agpm.resource.*`) and dependencies (`agpm.deps.<category>.<name>.*`). See [docs/templating.md](../docs/templating.md) for details.
 
 ## Dependencies
 
-Main: clap, tokio, toml, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
-indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, once_cell,
-dashmap (v6.1), tera
+Main: clap, tokio, toml, toml_edit, serde, serde_json, serde_yaml, anyhow, thiserror, colored, dirs, tracing, tracing-subscriber,
+indicatif, tempfile, semver, shellexpand, which, uuid, chrono, walkdir, sha2, hex, regex, futures, fs4, glob, dashmap (v6.1),
+reqwest, zip, petgraph, pubgrub, tokio-retry, tera
 
 Dev: assert_cmd, predicates
 
@@ -162,7 +131,7 @@ Dev: assert_cmd, predicates
   Test both modes.
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
-- **CRITICAL**: Lockfiles (`agpm.lock`) must store manifest-relative paths only (no absolute paths) and always use Unix-style forward slashes so they remain portable across machines.
+- **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
 
 ## Build & CI
 
@@ -172,6 +141,8 @@ cargo fmt && cargo clippy -- -D warnings && cargo nextest run && cargo test --do
 ```
 
 GitHub Actions: Cross-platform tests, crates.io publish
+
+**cargo-dist**: Uses `dist` command (NOT `cargo dist`). The binary is named `dist` in `~/.cargo/bin/`.
 
 ## Key Design Decisions
 
@@ -187,8 +158,23 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Command-level parallelism** via --max-parallel (default: max(10, 2 × CPU cores))
 - **Single fetch per repo per command**: Command-instance fetch tracking
 - **Enhanced dependency parsing** with manifest context for better local vs Git detection
+- **Lockfile staleness detection** (v0.3.17): Automatic detection and handling of stale lockfiles
+- **Self-update capability** (v0.3.15+): Platform-specific binary updates with backup/rollback
+- **Relative path preservation** (v0.3.18+): Maintains source directory structure, uses basename from path not dependency name
+- **Automatic artifact cleanup** (v0.3.18+): Removes old files when paths change, cleans empty directories
+- **Custom target behavior** (v0.3.18+): BREAKING - Custom targets now relative to default resource directory
+- **Multi-tool support** (v0.4.0+): Pluggable tools (claude-code, opencode, agpm, custom)
+- **Tool-aware path resolution**: Resources install to tool-specific directories
+- **Pluggable MCP handlers**: Tool-specific MCP server configuration (ClaudeCode, OpenCode)
 - **Transitive dependencies**: Resources declare dependencies via YAML frontmatter or JSON
 - **Graph-based resolution**: Dependency graph with cycle detection and topological ordering
+- **Versioned prefixes** (v0.3.19+): Support for monorepo-style prefixed tags (e.g., `agents-v1.0.0`) with prefix-aware constraint matching
+- **Patch/Override System** (v0.4.x+): TOML-based field overrides without forking, private config layer, lockfile tracking
+- **Opt-in templating** (v0.4.5+): Markdown template rendering disabled by default, enabled per-resource via `agpm.templating: true` in frontmatter
+- **Flatten configuration** (v0.4.5+): Pattern dependencies support `flatten` field to control directory structure preservation (defaults: agents/commands flatten, others preserve)
+- **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
+- **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
+- **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
 
 ## Resolver Architecture
 
@@ -210,7 +196,8 @@ Key benefits:
 
 Resources can declare dependencies within their files:
 
-**Markdown files** (YAML frontmatter):
+**Markdown** (YAML): `dependencies.agents[].path`, `.version`, `.tool`
+**JSON** (top-level): `dependencies.commands[].path`, `.version`, `.tool`
 
 ```yaml
 ---
@@ -218,8 +205,12 @@ dependencies:
   agents:
     - path: agents/helper.md
       version: v1.0.0
+      tool: claude-code  # Optional: specify target tool
+      name: custom_helper  # Optional: custom template variable name
   snippets:
     - path: snippets/utils.md
+      flatten: true  # Optional: flatten directory structure
+    # version, tool, name, and flatten inherited from parent if not specified
 ---
 ```
 
@@ -231,38 +222,47 @@ dependencies:
     "commands": [
       {
         "path": "commands/deploy.md",
-        "version": "v2.0.0"
+        "version": "v2.0.0",
+        "tool": "opencode"
       }
     ]
   }
 }
 ```
 
+**Supported Fields**:
+
+- `path` (required): Path to the dependency file within the source repository
+- `version` (optional): Version constraint (inherits from parent if not specified)
+- `tool` (optional): Target tool (`claude-code`, `opencode`, `agpm`). If not specified:
+  - Inherits from parent if parent's tool supports this resource type
+  - Falls back to default tool for this resource type
+- `name` (optional): Custom name for template variable references (defaults to sanitized filename)
+- `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
+
 **Key Features**:
 
 - Graph-based resolution with topological ordering
 - Cycle detection prevents infinite loops
 - Version inheritance when not specified
+- Tool inheritance with automatic fallback
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
+- Unknown field detection with warnings (v0.4.5+)
 
-### Conflict Detection
+## Versioned Prefixes (v0.3.19+)
 
-Conflict detection is integrated into the core resolution logic (`resolver::mod.rs`):
+Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate version namespaces (`agents-^v1.0.0` matches only `agents-v*` tags).
 
-**Types Detected**:
+## Cross-Platform Path Handling
 
-- **Version conflicts**: Same resource with incompatible version constraints
-- **Duplicate resources**: Resources resolved to same installation path
+**CRITICAL**: AGPM must work identically on Windows, macOS, Linux. Lockfiles use Unix-style forward slashes only for portability.
 
-**Design**: Conflicts are detected during resolution phase and reported as errors, preventing ambiguous installations
-
-## Windows Path Gotchas
-
-- Absolute paths: `C:\\path` or `\\server\share`
-- file:// URLs use forward slashes
-- Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
-- Test on real Windows (not WSL)
+**Path Rules**:
+1. **Forward slashes** in lockfiles, .gitignore, TOML manifests
+2. **`normalize_path_for_storage()`** for ALL lockfile paths (never `Path::display()` directly)
+3. **`Path`/`PathBuf`** for runtime operations
+4. **Windows gotchas**: `C:\path`, `\\server\share`, reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
 
 ## Optimized Worktree Architecture
 
@@ -302,76 +302,59 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 - **Hooks**: Configure in .claude/settings.local.json
 - **MCP**: Configure in .mcp.json
 
-### Multi-Tool Support & Merge Targets
+## Multi-Tool Support
 
-AGPM supports multiple AI coding tools (claude-code, opencode, agpm, custom) via configurable tools. Some resource types (hooks, MCP servers) don't install as individual files but merge into shared configuration files.
+AGPM supports multiple AI coding tools: **claude-code** (default), **opencode**, **agpm** (snippets), **custom**.
 
-**Default Merge Targets**:
-- **Hooks** (claude-code): `.claude/settings.local.json`
-- **MCP Servers** (claude-code): `.mcp.json`
-- **MCP Servers** (opencode): `.opencode/opencode.json`
+**Tool Configuration**: Each tool defines base directory, resource paths, MCP handling strategy.
 
-**Custom Tool Configuration**:
-
+**Dependency Tool Field**:
 ```toml
-# Override merge targets for custom tools
-[tools.my-tool]
-path = ".my-tool"
-
-[tools.my-tool.resources.hooks]
-merge-target = ".my-tool/hooks.json"
-
-[tools.my-tool.resources.mcp-servers]
-merge-target = ".my-tool/servers.json"
-
-# Configure default tools per resource type
-[default-tools]
-snippets = "claude-code"  # Override default (agpm) for Claude-only users
-agents = "opencode"       # Default agents to OpenCode
+[agents]
+example = { source = "community", path = "agents/example.md", version = "v1.0.0" }  # claude-code
+opencode-agent = { source = "community", path = "agents/helper.md", tool = "opencode" }
 ```
 
-**Resource Configuration**:
-- **`path`**: File-based resources (agents, snippets, commands, scripts) install as individual files
-- **`merge-target`**: Config-based resources (hooks, MCP servers) merge into shared JSON files
-- A resource type is supported if EITHER `path` OR `merge-target` is specified
+**Default Tools** via `[default-tools]`: Override per-resource-type defaults (snippets→agpm, others→claude-code).
 
-**Note**: Custom tools require MCP handlers for hooks/MCP servers. Only built-in tools (claude-code, opencode) have handlers.
+**Merge Targets**: Hooks/MCP servers merge into shared configs (`.claude/settings.local.json`, `.mcp.json`, `.opencode/opencode.json`).
+
+**Resource Support**: agents, commands (both tools), scripts (claude-code only), hooks (claude-code only), mcp-servers (both tools), snippets (agpm default, can override). Pluggable MCP handlers: ClaudeCodeMcpHandler, OpenCodeMcpHandler.
 
 ## Example agpm.toml Format
 
 ```toml
 [sources]
 community = "https://github.com/aig787/agpm-community.git"
-local = "../my-local-resources"  # Local directory support
+local = "../my-local-resources"
+
+# Default tools per resource type (optional)
+[default-tools]
+snippets = "claude-code"  # Override default for Claude-only users
+agents = "claude-code"    # Explicit (already the default)
 
 [agents]
-# Single file dependency
-example-agent = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-local-agent = { path = "../local-agents/helper.md" }  # Direct local path
-
-# Pattern-based dependencies (glob patterns in path field)
-ai-agents = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # All AI agents
-review-tools = { source = "community", path = "agents/**/review*.md", version = "v1.0.0" }  # All review agents recursively
+example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
+ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }  # Preserves subdirs
+ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern support
+opencode = { source = "community", path = "agents/helper.md", tool = "opencode" }
 
 [snippets]
-example-snippet = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
-# Pattern for all Python snippets
-python-snippets = { source = "community", path = "snippets/python/*.md", version = "v1.0.0" }
+example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
 
 [commands]
-deployment = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
-
-[scripts]
-build-script = { source = "community", path = "scripts/build.sh", version = "v1.0.0" }
-test-runner = { source = "local", path = "scripts/test.js" }
+deploy = { source = "community", path = "commands/deploy.md", version = "v2.0.0" }
 
 [hooks]
 pre-commit = { source = "community", path = "hooks/pre-commit.json", version = "v1.0.0" }
-user-prompt-submit = { source = "local", path = "hooks/user-prompt-submit.json" }
 
 [mcp-servers]
 filesystem = { source = "community", path = "mcp-servers/filesystem.json", version = "v1.0.0" }
-postgres = { source = "local", path = "mcp-servers/postgres.json" }
+
+# Patches - override resource fields without forking
+[patch.agents.example]
+model = "claude-3-haiku"
+temperature = "0.8"
 ```
 
 ## Example agpm.lock
@@ -379,19 +362,35 @@ postgres = { source = "local", path = "mcp-servers/postgres.json" }
 ```toml
 # Auto-generated lockfile
 [[agents]]
-name = "example-agent"
+name = "example"
 source = "community"
 path = "agents/example.md"
 version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
-installed_at = ".claude/agents/example-agent.md"
-# Similar format for snippets, commands, scripts, hooks, mcp-servers
+installed_at = ".claude/agents/example.md"
+patches = ["model", "temperature"]  # Applied patches tracked
+
+[[agents]]
+name = "ai-helper"
+source = "community"
+path = "agents/ai/gpt.md"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirs
 ```
 
 ## Config Priority
 
 1. `~/.agpm/config.toml` - Global config with auth tokens (not in git)
 2. `agpm.toml` - Project manifest (in git)
+3. `agpm.private.toml` - User-level patches (not in git, add to .gitignore)
+
+**Patch Merging** (v0.4.x+):
+- Project patches (`agpm.toml`) define team-wide overrides
+- Private patches (`agpm.private.toml`) extend with personal settings
+- Different fields combine; same field in both - private silently overrides project
+- Applied patches tracked in lockfile `patches` field
 
 Keeps secrets out of version control.

@@ -390,7 +390,7 @@ agpm cache clean --all
 agpm install --no-cache
 
 # Verify repository integrity
-agpm cache list
+agpm cache info
 ```
 
 ### Worktree Deduplication Issues
