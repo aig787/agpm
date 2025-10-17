@@ -561,19 +561,70 @@ impl TemplateRenderer {
         self.tera
             .render_str(template_content, context)
             .map_err(|e| {
-                // Output the actual Tera error to stderr for immediate visibility
-                eprintln!("Template rendering error: {}", e);
+                // Extract detailed error information from Tera error
+                // The Tera error contains a chain of errors with the root cause
+                let error_msg = Self::format_tera_error(&e);
 
-                // Use Display format for more user-friendly error messages
-                // The Tera error already contains detailed information about:
-                // - Missing variables (e.g., "Variable `foo` not found")
-                // - Syntax errors (e.g., "Unexpected end of template")
-                // - Filter/function errors (e.g., "Filter `unknown` not found")
+                // Output the detailed error to stderr for immediate visibility
+                eprintln!("Template rendering error:\n{}", error_msg);
+
                 // Include the context in the error message for user visibility
                 let context_str = Self::format_context_as_string(context);
                 anyhow::Error::new(e)
-                    .context(format!("Template rendering failed - check syntax and variable names\n\nTemplate context:\n{}", context_str))
+                    .context(format!("Template rendering failed:\n{}\n\nTemplate context:\n{}", error_msg, context_str))
             })
+    }
+
+    /// Format a Tera error with detailed information about what went wrong.
+    ///
+    /// Tera errors can contain various types of issues:
+    /// - Missing variables (e.g., "Variable `foo` not found")
+    /// - Syntax errors (e.g., "Unexpected end of template")
+    /// - Filter/function errors (e.g., "Filter `unknown` not found")
+    ///
+    /// This function extracts the root cause and formats it in a user-friendly way,
+    /// filtering out unhelpful internal template names like '__tera_one_off'.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The Tera error to format
+    fn format_tera_error(error: &tera::Error) -> String {
+        use std::error::Error;
+
+        let mut messages = Vec::new();
+
+        // Walk the entire error chain and collect all messages
+        let mut all_messages = vec![error.to_string()];
+        let mut current_error: Option<&dyn Error> = error.source();
+        while let Some(err) = current_error {
+            all_messages.push(err.to_string());
+            current_error = err.source();
+        }
+
+        // Process messages to extract useful information
+        for msg in all_messages {
+            // Clean up the message by removing internal template names
+            let cleaned = msg
+                .replace("while rendering '__tera_one_off'", "")
+                .replace("Failed to render '__tera_one_off'", "Template rendering failed")
+                .replace("Failed to parse '__tera_one_off'", "Template syntax error")
+                .replace("'__tera_one_off'", "template")
+                .trim()
+                .to_string();
+
+            // Only keep non-empty, useful messages
+            if !cleaned.is_empty() && cleaned != "Template rendering failed" && cleaned != "Template syntax error" {
+                messages.push(cleaned);
+            }
+        }
+
+        // If we got useful messages, return them
+        if !messages.is_empty() {
+            messages.join("\n  → ")
+        } else {
+            // Fallback: extract just the error kind
+            "Template syntax error (see details above)".to_string()
+        }
     }
 
     /// Format the template context as a string for error messages.
@@ -748,6 +799,32 @@ mod tests {
         // Should return content as-is when disabled
         let result = renderer.render_template("# {{ test_var }}", &context).unwrap();
         assert_eq!(result, "# {{ test_var }}");
+    }
+
+    #[test]
+    fn test_template_error_formatting() {
+        let mut renderer = TemplateRenderer::new(true).unwrap();
+        let context = TeraContext::new();
+
+        // Test with missing variable - should produce detailed error
+        let result = renderer.render_template("# {{ missing_var }}", &context);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        let error_msg = format!("{}", error);
+
+        // Error should NOT contain "__tera_one_off"
+        assert!(
+            !error_msg.contains("__tera_one_off"),
+            "Error should not expose internal Tera template names"
+        );
+
+        // Error should contain useful information about the missing variable
+        assert!(
+            error_msg.contains("missing_var") || error_msg.contains("Variable"),
+            "Error should mention the problematic variable or that a variable is missing. Got: {}",
+            error_msg
+        );
     }
 
     #[test]

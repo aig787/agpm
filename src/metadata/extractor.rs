@@ -293,13 +293,70 @@ impl MetadataExtractor {
         context.insert("agpm", &agpm);
 
         // Render template - errors (including undefined vars) are returned to caller
-        tera.render_str(content, &context).with_context(|| {
-            format!(
-                "Failed to render frontmatter template in '{}'. \
+        tera.render_str(content, &context).map_err(|e| {
+            // Extract detailed error information from Tera error
+            let error_details = Self::format_tera_error(&e);
+
+            anyhow::Error::new(e).context(format!(
+                "Failed to render frontmatter template in '{}'.\n\
+                 Error details:\n{}\n\n\
                  Hint: Use {{{{ var | default(value=\"fallback\") }}}} for optional variables",
-                path.display()
-            )
+                path.display(),
+                error_details
+            ))
         })
+    }
+
+    /// Format a Tera error with detailed information about what went wrong.
+    ///
+    /// Tera errors can contain various types of issues:
+    /// - Missing variables (e.g., "Variable `foo` not found")
+    /// - Syntax errors (e.g., "Unexpected end of template")
+    /// - Filter/function errors (e.g., "Filter `unknown` not found")
+    ///
+    /// This function extracts the root cause and formats it in a user-friendly way,
+    /// filtering out unhelpful internal template names like '__tera_one_off'.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The Tera error to format
+    fn format_tera_error(error: &tera::Error) -> String {
+        use std::error::Error;
+
+        let mut messages = Vec::new();
+
+        // Walk the entire error chain and collect all messages
+        let mut all_messages = vec![error.to_string()];
+        let mut current_error: Option<&dyn Error> = error.source();
+        while let Some(err) = current_error {
+            all_messages.push(err.to_string());
+            current_error = err.source();
+        }
+
+        // Process messages to extract useful information
+        for msg in all_messages {
+            // Clean up the message by removing internal template names
+            let cleaned = msg
+                .replace("while rendering '__tera_one_off'", "")
+                .replace("Failed to render '__tera_one_off'", "Template rendering failed")
+                .replace("Failed to parse '__tera_one_off'", "Template syntax error")
+                .replace("'__tera_one_off'", "template")
+                .trim()
+                .to_string();
+
+            // Only keep non-empty, useful messages
+            if !cleaned.is_empty() && cleaned != "Template rendering failed" && cleaned != "Template syntax error" {
+                messages.push(cleaned);
+            }
+        }
+
+        // If we got useful messages, return them
+        if !messages.is_empty() {
+            messages.join("\n  → ")
+        } else {
+            // Fallback: extract just the error kind
+            "Template syntax error (see details above)".to_string()
+        }
     }
 
     /// Extract metadata from file content without knowing the file type.

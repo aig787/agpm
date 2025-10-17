@@ -1132,6 +1132,23 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         || error_msg.contains("tera");
 
     if is_template_error {
+        // Extract resource name from error chain
+        // Look for "Failed to render template for '{name}'" pattern
+        let resource_name = error
+            .chain()
+            .find_map(|e| {
+                let msg = e.to_string();
+                if msg.contains("Failed to render template for") {
+                    // Extract name between single quotes
+                    msg.split("'")
+                        .nth(1)
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "unknown resource".to_string());
+
         // Build full error chain for template errors
         let mut message = error.to_string();
         let chain: Vec<String> =
@@ -1145,7 +1162,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         }
 
         return ErrorContext::new(AgpmError::InvalidResource {
-            name: "template".to_string(),
+            name: resource_name,
             reason: message,
         })
         .with_suggestion(
@@ -1590,6 +1607,44 @@ mod tests {
         }
         assert!(ctx.suggestion.is_some());
         assert!(ctx.details.is_some());
+    }
+
+    #[test]
+    fn test_user_friendly_error_template_with_resource_name() {
+        // Simulate a template error with resource name in context
+        let template_error = anyhow::anyhow!("Variable `foo` not found in context");
+        let error_with_context = template_error
+            .context("Failed to render template for 'my-awesome-agent' (source: community, path: agents/awesome.md)");
+
+        let ctx = user_friendly_error(error_with_context);
+
+        match &ctx.error {
+            AgpmError::InvalidResource { name, reason } => {
+                // Verify resource name was extracted instead of using "template"
+                assert_eq!(name, "my-awesome-agent", "Resource name should be extracted from error context");
+                assert!(reason.contains("Variable"), "Reason should contain the actual error");
+            }
+            _ => panic!("Expected InvalidResource, got {:?}", ctx.error),
+        }
+        assert!(ctx.suggestion.is_some());
+        assert!(ctx.details.is_some());
+    }
+
+    #[test]
+    fn test_user_friendly_error_template_without_resource_name() {
+        // Simulate a template error without resource context
+        let template_error = anyhow::anyhow!("Variable `bar` not found in context");
+
+        let ctx = user_friendly_error(template_error);
+
+        match &ctx.error {
+            AgpmError::InvalidResource { name, reason } => {
+                // Should fallback to "unknown resource" when name can't be extracted
+                assert_eq!(name, "unknown resource", "Should use fallback when resource name unavailable");
+                assert!(reason.contains("Variable"), "Reason should contain the actual error");
+            }
+            _ => panic!("Expected InvalidResource, got {:?}", ctx.error),
+        }
     }
 
     #[test]
