@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "agpm-cli"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "agpm-cli",
  "anyhow",
