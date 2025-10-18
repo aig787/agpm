@@ -251,10 +251,7 @@ impl std::fmt::Debug for ResourceTemplateData {
             .field("resolved_commit", &self.resolved_commit)
             .field("checksum", &self.checksum)
             .field("path", &self.path)
-            .field(
-                "content",
-                &self.content.as_ref().map(|c| format!("<{} bytes>", c.len())),
-            )
+            .field("content", &self.content.as_ref().map(|c| format!("<{} bytes>", c.len())))
             .finish()
     }
 }
@@ -386,9 +383,8 @@ impl TemplateContextBuilder {
                 let (owner, repo) = crate::git::parse_git_url(url)
                     .unwrap_or(("direct".to_string(), "repo".to_string()));
                 let sha_short = &sha[..8.min(sha.len())];
-                let worktree_dir = cache_dir
-                    .join("worktrees")
-                    .join(format!("{}-{}-{}", owner, repo, sha_short));
+                let worktree_dir =
+                    cache_dir.join("worktrees").join(format!("{}-{}-{}", owner, repo, sha_short));
 
                 worktree_dir.join(&resource.path)
             }
@@ -571,7 +567,8 @@ impl TemplateContextBuilder {
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
-    /// let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
+    /// let cache = Arc::new(agpm_cli::cache::Cache::new()?);
+    /// let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, cache);
     ///
     /// let digest = builder.compute_context_digest()?;
     /// println!("Template context digest: {}", digest);

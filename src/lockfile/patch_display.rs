@@ -113,6 +113,7 @@ impl PatchDisplay {
 /// #   tool: Some("claude-code".to_string()),
 /// #   manifest_alias: None,
 /// #   applied_patches: std::collections::HashMap::new(),
+/// #   install: None,
 /// };
 ///
 /// let displays = extract_patch_displays(&resource, &cache).await;

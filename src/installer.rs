@@ -310,6 +310,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     tool: Some("claude-code".to_string()),
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
+///     install: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
@@ -706,6 +707,7 @@ pub async fn install_resource(
 ///     tool: Some("claude-code".to_string()),
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
+///     install: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
@@ -2906,7 +2908,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
-            install: None,
+                install: None,
             }
         } else {
             LockedResource {
@@ -2923,7 +2925,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
-            install: None,
+                install: None,
             }
         }
     }

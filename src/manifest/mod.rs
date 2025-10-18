@@ -2174,6 +2174,7 @@ impl Manifest {
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
+    ///         install: None,
     ///     })),
     ///     true
     /// );
@@ -3068,6 +3069,7 @@ impl Manifest {
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
+    ///         install: None,
     ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -3190,6 +3192,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -3233,6 +3236,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
@@ -3288,6 +3292,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     install: None,
     ///     flatten: None,
     /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
@@ -3379,6 +3384,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -3436,6 +3442,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -3464,6 +3471,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -3481,6 +3489,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -3535,6 +3544,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert!(!remote.is_local());
     ///
@@ -3552,6 +3562,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert!(local_detailed.is_local());
     /// ```
@@ -3900,7 +3911,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
             true,
         );
@@ -3941,7 +3952,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
             true,
         );
@@ -3974,7 +3985,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -4093,7 +4104,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
             crate::core::ResourceType::Command,
         );
@@ -4131,7 +4142,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -4182,7 +4193,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
@@ -4205,7 +4216,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert!(dep.get_target().is_none());
@@ -4244,7 +4255,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4276,7 +4287,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
@@ -4299,7 +4310,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert!(dep.get_filename().is_none());
@@ -4338,7 +4349,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4370,7 +4381,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert!(dep.is_pattern());
@@ -4401,7 +4412,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -4423,7 +4434,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -4454,7 +4465,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -4478,7 +4489,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));
