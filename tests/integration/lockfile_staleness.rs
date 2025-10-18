@@ -322,9 +322,6 @@ async fn test_install_allows_branch_references() -> Result<()> {
     source_repo.add_resource("agents", "test-agent", "# Test Agent v1").await?;
     source_repo.commit_all("Initial commit")?;
 
-    // Ensure we're on main branch (git's default branch name varies)
-    source_repo.git.ensure_branch("main")?;
-
     // Get the bare URL for stable file:// serving
     let bare_url = source_repo.bare_file_url(project.sources_path())?;
 

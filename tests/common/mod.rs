@@ -553,7 +553,16 @@ impl TestSourceRepo {
 
     /// Get a file:// URL for a bare clone of this repository
     /// Creates the bare repo in the parent's sources directory
+    ///
+    /// # Implementation Note
+    /// Automatically ensures the repository is on the 'main' branch before creating
+    /// the bare clone. This prevents "rev-parse: HEAD" errors in CI environments
+    /// where bare repositories need a valid default branch reference.
     pub fn bare_file_url(&self, sources_dir: &Path) -> Result<String> {
+        // Ensure we're on a proper branch before creating bare clone
+        // This is critical for bare repositories to have a valid HEAD reference
+        self.git.ensure_branch("main")?;
+
         let bare_name =
             format!("{}.git", self.path.file_name().and_then(|n| n.to_str()).unwrap_or("repo"));
         let bare_path = sources_dir.join(bare_name);
