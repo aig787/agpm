@@ -3,44 +3,60 @@
 //! These tests verify that the conflict detector properly identifies
 //! incompatible version requirements and prevents installation.
 
-use assert_cmd::Command;
-use predicates::prelude::*;
-use tempfile::TempDir;
-use tokio::fs;
-
 use crate::common::{ManifestBuilder, TestProject};
+use anyhow::Result;
 
 /// Test that conflicting exact versions are detected and installation fails.
 #[tokio::test]
-async fn test_exact_version_conflict_blocks_install() {
-    let temp_dir = TempDir::new().unwrap();
-    let manifest_path = temp_dir.path().join("agpm.toml");
+async fn test_exact_version_conflict_blocks_install() -> Result<()> {
+    let project = TestProject::new().await?;
+    let source_repo = project.create_source_repo("community").await?;
 
-    // Create manifest with two resources pointing to same source:path but different versions
-    fs::write(
-        &manifest_path,
-        r#"
-[sources]
-community = "https://github.com/aig787/agpm-community.git"
+    // Create two versions of the same agent
+    source_repo.add_resource("agents", "api-designer", "# API Designer v0.0.1").await?;
+    source_repo.commit_all("Add v0.0.1")?;
+    source_repo.tag_version("v0.0.1")?;
 
-[agents]
-# Same path, different versions - should conflict
-api-designer-v1 = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.1" }
-api-designer-v2 = { source = "community", path = "agents/awesome-claude-code-subagents/categories/01-core-development/api-designer.md", version = "v0.0.2" }
-"#,
-    )
-    .await
-    .unwrap();
+    // Update to v0.0.2
+    source_repo.add_resource("agents", "api-designer", "# API Designer v0.0.2").await?;
+    source_repo.commit_all("Update to v0.0.2")?;
+    source_repo.tag_version("v0.0.2")?;
 
-    let mut cmd = Command::cargo_bin("agpm").unwrap();
-    cmd.current_dir(temp_dir.path())
-        .arg("install")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Version conflicts detected"))
-        .stderr(predicate::str::contains("api-designer.md"))
-        .stderr(predicate::str::contains("v0.0.1"))
-        .stderr(predicate::str::contains("v0.0.2"));
+    // Create manifest with same path but different versions - should conflict
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_repo.bare_file_url(project.sources_path())?)
+        .add_agent("api-designer-v1", |d| {
+            d.source("community").path("agents/api-designer.md").version("v0.0.1")
+        })
+        .add_agent("api-designer-v2", |d| {
+            d.source("community").path("agents/api-designer.md").version("v0.0.2")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        !output.success,
+        "Install should fail with version conflict. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        output.stderr.contains("Version conflicts detected"),
+        "Should contain conflict message. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        output.stderr.contains("api-designer.md"),
+        "Should mention conflicting resource. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        output.stderr.contains("v0.0.1") && output.stderr.contains("v0.0.2"),
+        "Should mention both conflicting versions. Stderr: {}",
+        output.stderr
+    );
+    Ok(())
 }
 
 /// Test that identical exact versions do NOT conflict.
@@ -48,7 +64,7 @@ api-designer-v2 = { source = "community", path = "agents/awesome-claude-code-sub
 /// This is the most basic case - when multiple resources need the exact same
 /// version of the same file, there's no conflict.
 #[tokio::test]
-async fn test_identical_exact_versions_no_conflict() {
+async fn test_identical_exact_versions_no_conflict() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -59,7 +75,7 @@ async fn test_identical_exact_versions_no_conflict() {
 
     // Create manifest with two resources pointing to same source:path and IDENTICAL version
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_standard_agent("test-agent-1", "test-repo", "agents/test-agent.md")
         .add_standard_agent("test-agent-2", "test-repo", "agents/test-agent.md")
         .build();
@@ -72,6 +88,7 @@ async fn test_identical_exact_versions_no_conflict() {
         "Should not contain conflict message. Stderr: {}",
         output.stderr
     );
+    Ok(())
 }
 
 /// Test that mixing semver version with git branch is detected as a conflict.
@@ -79,7 +96,7 @@ async fn test_identical_exact_versions_no_conflict() {
 /// This verifies that the conflict detector properly identifies when the same
 /// resource is requested with both a semver version and a git branch reference.
 #[tokio::test]
-async fn test_semver_vs_branch_conflict_blocks_install() {
+async fn test_semver_vs_branch_conflict_blocks_install() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -104,7 +121,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
 
     // Create manifest with same resource using semver version and git branch
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_standard_agent("agent-stable", "test-repo", "agents/test-agent.md")
         .add_agent("agent-dev", |d| {
             d.source("test-repo").path("agents/test-agent.md").branch("main")
@@ -128,6 +145,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
+    Ok(())
 }
 
 /// Test that HEAD (unspecified version) mixed with a pinned version is detected as a conflict.
@@ -135,7 +153,7 @@ async fn test_semver_vs_branch_conflict_blocks_install() {
 /// This verifies the conflict detector identifies when the same resource is requested
 /// both with and without a version specification (HEAD means "use whatever is current").
 #[tokio::test]
-async fn test_head_vs_pinned_version_conflict_blocks_install() {
+async fn test_head_vs_pinned_version_conflict_blocks_install() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -146,7 +164,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() {
 
     // Create manifest with same resource, one unspecified (HEAD), one pinned
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_agent("agent-head", |d| d.source("test-repo").path("agents/test-agent.md"))
         .add_standard_agent("agent-pinned", "test-repo", "agents/test-agent.md")
         .build();
@@ -168,6 +186,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() {
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
+    Ok(())
 }
 
 /// Test that mixed git branch names are detected as conflicts.
@@ -175,7 +194,7 @@ async fn test_head_vs_pinned_version_conflict_blocks_install() {
 /// This verifies that different branch references (e.g., "main" vs "develop")
 /// for the same resource are properly identified as conflicts.
 #[tokio::test]
-async fn test_different_branches_conflict_blocks_install() {
+async fn test_different_branches_conflict_blocks_install() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -194,7 +213,7 @@ async fn test_different_branches_conflict_blocks_install() {
 
     // Create manifest with same resource using different branches
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_agent("agent-main", |d| {
             d.source("test-repo").path("agents/test-agent.md").branch("main")
         })
@@ -220,6 +239,7 @@ async fn test_different_branches_conflict_blocks_install() {
         "Should mention conflicting resource. Stderr: {}",
         output.stderr
     );
+    Ok(())
 }
 
 /// Test that case variations of the same branch name do NOT conflict.
@@ -228,7 +248,7 @@ async fn test_different_branches_conflict_blocks_install() {
 /// on case-insensitive filesystems (Windows, macOS default).
 /// On case-sensitive filesystems (Linux), we need to create both branches to test this.
 #[tokio::test]
-async fn test_same_branch_different_case_no_conflict() {
+async fn test_same_branch_different_case_no_conflict() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -252,7 +272,7 @@ async fn test_same_branch_different_case_no_conflict() {
 
     // Create manifest with same resource using different case for branch name
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_agent("agent-1", |d| d.source("test-repo").path("agents/test-agent.md").branch("main"))
         .add_agent("agent-2", |d| d.source("test-repo").path("agents/test-agent.md").branch("Main"))
         .build();
@@ -265,6 +285,7 @@ async fn test_same_branch_different_case_no_conflict() {
         "Should not contain conflict message. Stderr: {}",
         output.stderr
     );
+    Ok(())
 }
 
 /// Test that changing a dependency source doesn't leave stale entries in lockfile.
@@ -273,7 +294,7 @@ async fn test_same_branch_different_case_no_conflict() {
 /// with a local path dependency of the same name would cause the lockfile to have
 /// TWO entries with the same name but different sources, leading to false conflict errors.
 #[tokio::test]
-async fn test_changing_dependency_source_no_false_conflict() {
+async fn test_changing_dependency_source_no_false_conflict() -> Result<()> {
     let project = TestProject::new().await.unwrap();
     let source_repo = project.create_source_repo("test-repo").await.unwrap();
 
@@ -291,7 +312,7 @@ async fn test_changing_dependency_source_no_false_conflict() {
 
     // Step 1: Install with Git source
     let manifest = ManifestBuilder::new()
-        .add_source("test-repo", &source_repo.file_url())
+        .add_source("test-repo", &source_repo.bare_file_url(project.sources_path())?)
         .add_command("commit", |d| {
             d.source("test-repo").path("commands/commit.md").version("v1.0.0")
         })
@@ -335,6 +356,7 @@ async fn test_changing_dependency_source_no_false_conflict() {
         "Lockfile should have exactly one entry for 'commit', found {}: {}",
         commit_count, lockfile_content
     );
+    Ok(())
 }
 
 /// Test that changing a pattern dependency source doesn't leave stale entries in lockfile.
@@ -342,7 +364,7 @@ async fn test_changing_dependency_source_no_false_conflict() {
 /// This tests the scenario where a pattern dependency (e.g., "agents/*.md") changes source,
 /// ensuring that the old pattern-expanded entries are removed from the lockfile.
 #[tokio::test]
-async fn test_pattern_source_change_no_false_conflict() {
+async fn test_pattern_source_change_no_false_conflict() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
     let project = TestProject::new().await.unwrap();
 
@@ -361,7 +383,7 @@ async fn test_pattern_source_change_no_false_conflict() {
 
     // Step 1: Install with pattern from repo1
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &source_repo1.file_url())
+        .add_source("repo1", &source_repo1.bare_file_url(project.sources_path())?)
         .add_agent("all-agents", |d| d.source("repo1").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -379,7 +401,7 @@ async fn test_pattern_source_change_no_false_conflict() {
 
     // Step 2: Change pattern to repo2 with same manifest alias
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &source_repo2.file_url())
+        .add_source("repo2", &source_repo2.bare_file_url(project.sources_path())?)
         .add_agent("all-agents", |d| d.source("repo2").path("agents/*.md").version("v1.0.0"))
         .build();
     eprintln!("=== New manifest ===\n{}", manifest2);
@@ -441,6 +463,7 @@ async fn test_pattern_source_change_no_false_conflict() {
         "Lockfile should have exactly one 'worker' entry, found {}: {}",
         worker_count, updated_lockfile
     );
+    Ok(())
 }
 
 /// Test that changing a dependency's source also updates its transitive dependencies.
@@ -449,7 +472,7 @@ async fn test_pattern_source_change_no_false_conflict() {
 /// dependencies are also updated to the new source. This is critical for ensuring
 /// that the entire dependency tree remains consistent.
 #[tokio::test]
-async fn test_source_change_updates_transitive_deps() {
+async fn test_source_change_updates_transitive_deps() -> Result<()> {
     use crate::common::{ManifestBuilder, TestProject};
 
     agpm_cli::test_utils::init_test_logging(None);
@@ -487,7 +510,7 @@ dependencies:
 
     // Step 1: Install from repo1
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &repo1.file_url())
+        .add_source("repo1", &repo1.bare_file_url(project.sources_path())?)
         .add_agent("agent-a", |d| d.source("repo1").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -518,7 +541,7 @@ dependencies:
 
     // Step 2: Change source to repo2
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &repo2.file_url())
+        .add_source("repo2", &repo2.bare_file_url(project.sources_path())?)
         .add_agent("agent-a", |d| d.source("repo2").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest2).await.unwrap();
@@ -566,6 +589,7 @@ dependencies:
     // Verify files are updated
     let agent_content_updated = tokio::fs::read_to_string(&agent_path).await.unwrap();
     assert!(agent_content_updated.contains("repo2"), "Agent should now be from repo2");
+    Ok(())
 }
 
 /// Test that changing a pattern dependency's source updates both the pattern-expanded
@@ -575,7 +599,7 @@ dependencies:
 /// It verifies that when a pattern like "agents/*.md" changes source, all expanded
 /// resources (helper, worker) and their transitive dependencies (utils) are updated.
 #[tokio::test]
-async fn test_pattern_with_transitive_deps_source_change() {
+async fn test_pattern_with_transitive_deps_source_change() -> Result<()> {
     use crate::common::{ManifestBuilder, TestProject};
 
     agpm_cli::test_utils::init_test_logging(None);
@@ -629,7 +653,7 @@ dependencies:
 
     // Step 1: Install pattern from repo1
     let manifest = ManifestBuilder::new()
-        .add_source("repo1", &repo1.file_url())
+        .add_source("repo1", &repo1.bare_file_url(project.sources_path())?)
         .add_agent("all-agents", |d| d.source("repo1").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest).await.unwrap();
@@ -667,7 +691,7 @@ dependencies:
 
     // Step 2: Change pattern source to repo2
     let manifest2 = ManifestBuilder::new()
-        .add_source("repo2", &repo2.file_url())
+        .add_source("repo2", &repo2.bare_file_url(project.sources_path())?)
         .add_agent("all-agents", |d| d.source("repo2").path("agents/*.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest2).await.unwrap();
@@ -728,6 +752,7 @@ dependencies:
     assert!(helper_content.contains("repo2"), "Helper should be from repo2");
     assert!(worker_content.contains("repo2"), "Worker should be from repo2");
     assert!(utils_content.contains("repo2"), "Utils should be from repo2");
+    Ok(())
 }
 
 /// Test that commenting out a dependency removes it from the lockfile without conflicts.
@@ -735,7 +760,7 @@ dependencies:
 /// This is a regression test for a bug where commented-out manifest items weren't being
 /// removed from the lockfile before resolution, causing conflicts.
 #[tokio::test]
-async fn test_commented_out_dependency_removed_from_lockfile() {
+async fn test_commented_out_dependency_removed_from_lockfile() -> Result<()> {
     let project = TestProject::new().await.unwrap();
 
     // Create a source repo with two agents
@@ -745,9 +770,12 @@ async fn test_commented_out_dependency_removed_from_lockfile() {
     source_repo.commit_all("Initial agents").unwrap();
     source_repo.tag_version("v1.0.0").unwrap();
 
+    // Create bare URL once to avoid duplicate bare repo creation
+    let source_url = source_repo.bare_file_url(project.sources_path())?;
+
     // Create initial manifest with both agents
     let manifest = ManifestBuilder::new()
-        .add_source("source", &source_repo.file_url())
+        .add_source("source", &source_url)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
         .add_agent("agent-b", |d| d.source("source").path("agents/agent-b.md").version("v1.0.0"))
         .build();
@@ -764,7 +792,7 @@ async fn test_commented_out_dependency_removed_from_lockfile() {
 
     // Comment out agent-b in the manifest
     let manifest2 = ManifestBuilder::new()
-        .add_source("source", &source_repo.file_url())
+        .add_source("source", &source_url)
         .add_agent("agent-a", |d| d.source("source").path("agents/agent-a.md").version("v1.0.0"))
         .build();
     project.write_manifest(&manifest2).await.unwrap();
@@ -799,4 +827,5 @@ async fn test_commented_out_dependency_removed_from_lockfile() {
     // Verify agent-a file exists
     let agent_a_path = project.project_path().join(".claude/agents/agent-a.md");
     assert!(agent_a_path.exists(), "Agent A file should exist");
+    Ok(())
 }

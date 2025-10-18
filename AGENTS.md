@@ -100,6 +100,7 @@ src/
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
+- **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile
