@@ -230,6 +230,13 @@ use std::time::Duration;
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
 
+/// Key for identifying unique dependencies in maps and sets.
+///
+/// Combines resource type, name, source, and tool to uniquely identify a dependency.
+/// This prevents collisions between same-named resources from different sources or
+/// using different tools.
+type DependencyKey = (ResourceType, String, Option<String>, Option<String>);
+
 /// Extract meaningful path structure from a dependency path.
 ///
 /// This function handles three cases:
@@ -448,7 +455,7 @@ pub struct DependencyResolver {
     /// "`resource_type/name`". This is populated during transitive dependency
     /// resolution and used to fill the dependencies field in `LockedResource` entries.
     /// The source and tool are included to prevent cross-source and cross-tool dependency contamination.
-    dependency_map: HashMap<(crate::core::ResourceType, String, Option<String>, Option<String>), Vec<String>>,
+    dependency_map: HashMap<DependencyKey, Vec<String>>,
     /// Conflict detector for identifying version conflicts.
     ///
     /// Tracks version requirements across all dependencies (direct and transitive)
@@ -574,8 +581,9 @@ impl DependencyResolver {
         // Use (name, source, tool) matching for deduplication
         // This allows multiple entries with the same name from different sources or tools,
         // which will be caught by conflict detection if they map to the same path
-        if let Some(existing) =
-            resources.iter_mut().find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
+        if let Some(existing) = resources
+            .iter_mut()
+            .find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
         {
             *existing = entry;
         } else {
@@ -1479,8 +1487,12 @@ impl DependencyResolver {
             (crate::core::ResourceType, String, Option<String>, Option<String>),
             ResourceDependency,
         > = HashMap::new();
-        let mut processed: HashSet<(crate::core::ResourceType, String, Option<String>, Option<String>)> =
-            HashSet::new();
+        let mut processed: HashSet<(
+            crate::core::ResourceType,
+            String,
+            Option<String>,
+            Option<String>,
+        )> = HashSet::new();
         let mut queue: Vec<(String, ResourceDependency, Option<crate::core::ResourceType>)> =
             Vec::new();
 
@@ -1534,8 +1546,12 @@ impl DependencyResolver {
                                 concrete_dep.get_source().map(std::string::ToString::to_string);
                             let concrete_tool =
                                 concrete_dep.get_tool().map(std::string::ToString::to_string);
-                            let concrete_key =
-                                (resource_type, concrete_name.clone(), concrete_source, concrete_tool);
+                            let concrete_key = (
+                                resource_type,
+                                concrete_name.clone(),
+                                concrete_source,
+                                concrete_tool,
+                            );
 
                             // Only add if not already processed or queued
                             if let std::collections::hash_map::Entry::Vacant(e) =
@@ -1680,9 +1696,14 @@ impl DependencyResolver {
                             let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
                                 Some(explicit_tool.clone())
                             } else {
-                                let parent_tool = dep.get_tool().map(str::to_string)
-                                    .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
-                                if self.manifest.is_resource_supported(&parent_tool, dep_resource_type) {
+                                let parent_tool =
+                                    dep.get_tool().map(str::to_string).unwrap_or_else(|| {
+                                        self.manifest.get_default_tool(resource_type)
+                                    });
+                                if self
+                                    .manifest
+                                    .is_resource_supported(&parent_tool, dep_resource_type)
+                                {
                                     Some(parent_tool)
                                 } else {
                                     Some(self.manifest.get_default_tool(dep_resource_type))
@@ -1772,9 +1793,14 @@ impl DependencyResolver {
                             let trans_tool = if let Some(explicit_tool) = &dep_spec.tool {
                                 Some(explicit_tool.clone())
                             } else {
-                                let parent_tool = dep.get_tool().map(str::to_string)
-                                    .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
-                                if self.manifest.is_resource_supported(&parent_tool, dep_resource_type) {
+                                let parent_tool =
+                                    dep.get_tool().map(str::to_string).unwrap_or_else(|| {
+                                        self.manifest.get_default_tool(resource_type)
+                                    });
+                                if self
+                                    .manifest
+                                    .is_resource_supported(&parent_tool, dep_resource_type)
+                                {
                                     Some(parent_tool)
                                 } else {
                                     Some(self.manifest.get_default_tool(dep_resource_type))
@@ -1812,8 +1838,7 @@ impl DependencyResolver {
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
                             trans_dep.get_source().map(std::string::ToString::to_string);
-                        let trans_tool =
-                            trans_dep.get_tool().map(std::string::ToString::to_string);
+                        let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
                         let from_node =
                             DependencyNode::with_source(resource_type, &name, source.clone());
                         let to_node = DependencyNode::with_source(
@@ -1833,8 +1858,12 @@ impl DependencyResolver {
                         self.add_to_conflict_detector(&trans_name, &trans_dep, &name);
 
                         // Check for version conflicts and resolve them
-                        let trans_key =
-                            (dep_resource_type, trans_name.clone(), trans_source.clone(), trans_tool.clone());
+                        let trans_key = (
+                            dep_resource_type,
+                            trans_name.clone(),
+                            trans_source.clone(),
+                            trans_tool.clone(),
+                        );
 
                         if let Some(existing_dep) = all_deps.get(&trans_key) {
                             // Version conflict detected (same name and source, different version)
@@ -3003,7 +3032,12 @@ impl DependencyResolver {
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
-                dependencies: self.get_dependencies_for(name, Some(source_name), resource_type, dep.get_tool()),
+                dependencies: self.get_dependencies_for(
+                    name,
+                    Some(source_name),
+                    resource_type,
+                    dep.get_tool(),
+                ),
                 resource_type,
                 tool: Some(artifact_type_string),
                 manifest_alias: self
@@ -3031,7 +3065,12 @@ impl DependencyResolver {
     ) -> Vec<String> {
         // Use the threaded resource_type parameter from the manifest
         // This prevents type misclassification when same names exist across types
-        let key = (resource_type, name.to_string(), source.map(std::string::ToString::to_string), tool.map(std::string::ToString::to_string));
+        let key = (
+            resource_type,
+            name.to_string(),
+            source.map(std::string::ToString::to_string),
+            tool.map(std::string::ToString::to_string),
+        );
         self.dependency_map.get(&key).cloned().unwrap_or_default()
     }
 
@@ -3219,7 +3258,12 @@ impl DependencyResolver {
                     resolved_commit: None,
                     checksum: String::new(),
                     installed_at,
-                    dependencies: self.get_dependencies_for(&resource_name, None, resource_type, dep.get_tool()),
+                    dependencies: self.get_dependencies_for(
+                        &resource_name,
+                        None,
+                        resource_type,
+                        dep.get_tool(),
+                    ),
                     resource_type,
                     tool: Some(
                         dep.get_tool()

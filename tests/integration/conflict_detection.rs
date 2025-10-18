@@ -510,7 +510,7 @@ dependencies:
 
     // Verify files are installed
     let agent_path = project.project_path().join(".claude/agents/agent-a.md");
-    let utils_path = project.project_path().join(".agpm/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/utils.md");
     assert!(agent_path.exists(), "Agent should be installed");
     assert!(utils_path.exists(), "Transitive dep should be installed");
     let agent_content_installed = tokio::fs::read_to_string(&agent_path).await.unwrap();
@@ -660,7 +660,7 @@ dependencies:
     // Verify files are installed
     let helper_path = project.project_path().join(".claude/agents/helper.md");
     let worker_path = project.project_path().join(".claude/agents/worker.md");
-    let utils_path = project.project_path().join(".agpm/snippets/utils.md");
+    let utils_path = project.project_path().join(".claude/snippets/utils.md");
     assert!(helper_path.exists(), "Helper should be installed");
     assert!(worker_path.exists(), "Worker should be installed");
     assert!(utils_path.exists(), "Utils should be installed");

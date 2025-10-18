@@ -458,9 +458,9 @@ This command depends on both commit snippets.
     let output = project.run_agpm(&["install"])?;
     assert!(output.success, "Install should succeed, stderr: {}", output.stderr);
 
-    // Verify both snippets are installed at their respective paths
-    let commands_snippet_path = project.project_path().join(".agpm/snippets/commands/commit.md");
-    let logit_snippet_path = project.project_path().join(".agpm/snippets/logit/commit.md");
+    // Verify both snippets are installed at their respective paths (inheriting claude-code from command parent)
+    let commands_snippet_path = project.project_path().join(".claude/snippets/commands/commit.md");
+    let logit_snippet_path = project.project_path().join(".claude/snippets/logit/commit.md");
 
     assert!(
         tokio::fs::metadata(&commands_snippet_path).await.is_ok(),
@@ -971,8 +971,8 @@ This agent depends on both helper snippet and helper agent (same name, different
         && lockfile_content.contains(r#"path = "agents/helper.md""#);
     assert!(has_agent_helper, "Lockfile should have helper agent:\n{}", lockfile_content);
 
-    // Verify installed locations
-    let snippet_path = project.project_path().join(".agpm/snippets/helper.md");
+    // Verify installed locations (both inherit claude-code from parent agent)
+    let snippet_path = project.project_path().join(".claude/snippets/helper.md");
     let agent_path = project.project_path().join(".claude/agents/helper.md");
 
     assert!(
@@ -1130,7 +1130,8 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
     );
 
     // Verify shared snippet content is from v2.0.0 (content unchanged at v3.0.0)
-    let shared_path = project.project_path().join(".agpm/snippets/shared.md");
+    // Note: Transitive snippet inherits claude-code from parent agents
+    let shared_path = project.project_path().join(".claude/snippets/shared.md");
     let shared_content = tokio::fs::read_to_string(&shared_path).await?;
     assert!(
         shared_content.contains("Version 2 with new-dep"),
@@ -1140,17 +1141,15 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
     Ok(())
 }
 
-/// Test same-name resources from different sources with cross-source disambiguation
+/// Test same-name resources from different sources with different tools
 ///
-/// This test verifies that the (ResourceType, name, source) key properly disambiguates
-/// resources with the same name coming from different sources. Without source in the key,
-/// resources would overwrite each other even though they come from different repositories.
+/// This test verifies that resources with the same name from different sources can coexist
+/// when they use different tools (and thus install to different paths).
 ///
 /// Scenario:
-/// - community source has snippets/helper.md
-/// - local source has snippets/helper.md
-/// - Parent agent depends on both (cross-source transitive dependencies)
-/// - Both should be installed without collision
+/// - community/snippets/helper.md (transitive from agent) → inherits claude-code → .claude/snippets/
+/// - local/snippets/helper.md (direct snippet) → uses agpm default → .agpm/snippets/
+/// - Both install successfully to different paths without collision
 #[tokio::test]
 async fn test_cross_source_same_name_disambiguation() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
@@ -1202,21 +1201,40 @@ Depends on community helper.
 
     project.write_manifest(&manifest).await?;
 
-    // Run install - should now fail with path conflict
-    // With the fix for default-tools, both snippets now use "agpm" tool and install to the same path
+    // Run install - should succeed because snippets use different tools and install to different paths
+    // - community/helper (transitive from agent) uses claude-code → .claude/snippets/helper.md
+    // - local/helper (direct snippet) uses agpm → .agpm/snippets/helper.md
     let output = project.run_agpm(&["install"])?;
 
-    // Expected behavior: Should detect path conflict
+    // Expected behavior: Should succeed - different tools mean different installation paths
     assert!(
-        !output.success,
-        "Install should fail due to path conflict (both snippets use agpm tool)"
-    );
-    assert!(
-        output.stderr.contains("Target path conflicts")
-            || output.stderr.contains(".agpm/snippets/helper.md"),
-        "Should report path conflict for snippets using same tool, got: {}",
+        output.success,
+        "Install should succeed - snippets use different tools and paths. Stderr: {}",
         output.stderr
     );
+
+    // Verify both snippets are installed to their respective paths
+    let community_helper = project.project_path().join(".claude/snippets/helper.md");
+    let local_helper = project.project_path().join(".agpm/snippets/helper.md");
+
+    assert!(
+        tokio::fs::metadata(&community_helper).await.is_ok(),
+        "Community helper should be installed to .claude/snippets (inherited claude-code from agent)"
+    );
+    assert!(
+        tokio::fs::metadata(&local_helper).await.is_ok(),
+        "Local helper should be installed to .agpm/snippets (using snippet's default tool)"
+    );
+
+    // Verify content to ensure they're the correct files
+    let community_content = tokio::fs::read_to_string(&community_helper).await?;
+    let local_content = tokio::fs::read_to_string(&local_helper).await?;
+
+    assert!(
+        community_content.contains("Community Helper"),
+        "Community helper should have correct content"
+    );
+    assert!(local_content.contains("Local Helper"), "Local helper should have correct content");
 
     Ok(())
 }
@@ -1276,18 +1294,28 @@ Depends on shared snippet.
     // Run install
     project.run_agpm(&["install"])?.assert_success();
 
-    // Verify shared snippet is installed
-    // Note: Snippets default to tool="agpm", so they install to .agpm/snippets/
-    let shared_path = project.project_path().join(".agpm/snippets/shared.md");
-    assert!(tokio::fs::metadata(&shared_path).await.is_ok(), "Shared snippet should be installed");
+    // Verify shared snippet is installed (direct dependency uses agpm)
+    let shared_agpm_path = project.project_path().join(".agpm/snippets/shared.md");
+    assert!(
+        tokio::fs::metadata(&shared_agpm_path).await.is_ok(),
+        "Shared snippet (agpm) should be installed"
+    );
 
-    // Verify lockfile has only ONE entry for shared (deduplication)
+    // Also verify the transitive version (inherits claude-code from agent parent)
+    let shared_claude_path = project.project_path().join(".claude/snippets/shared.md");
+    assert!(
+        tokio::fs::metadata(&shared_claude_path).await.is_ok(),
+        "Shared snippet (claude-code) should be installed"
+    );
+
+    // Verify lockfile has TWO entries for shared (one per tool)
+    // This is expected behavior: same resource with different tools are treated as separate entries
     let lockfile_content = project.read_lockfile().await?;
     let shared_count = lockfile_content.matches(r#"name = "shared""#).count();
 
     assert_eq!(
-        shared_count, 1,
-        "Should have exactly one lockfile entry for shared, found {}",
+        shared_count, 2,
+        "Should have two lockfile entries for shared (one per tool), found {}",
         shared_count
     );
 
@@ -1455,9 +1483,9 @@ Each snippet has its own transitive dependencies.
     assert!(tokio::fs::metadata(&parent_path).await.is_ok(), "Parent agent should be installed");
 
     // Verify that the pattern-matched snippets ARE installed
-    // (pattern expansion should discover them as transitive deps)
-    let helper_one_path = project.project_path().join(".agpm/snippets/helper-one.md");
-    let helper_two_path = project.project_path().join(".agpm/snippets/helper-two.md");
+    // (pattern expansion should discover them as transitive deps, inheriting claude-code from parent agent)
+    let helper_one_path = project.project_path().join(".claude/snippets/helper-one.md");
+    let helper_two_path = project.project_path().join(".claude/snippets/helper-two.md");
 
     assert!(
         tokio::fs::metadata(&helper_one_path).await.is_ok(),
@@ -1681,8 +1709,8 @@ Depends on remote-helper from same Git source.
     );
 
     // Verify transitive remote helper is installed
-    // Note: Transitive snippets use their default tool (agpm)
-    let installed_remote_helper = project.project_path().join(".agpm/snippets/remote-helper.md");
+    // Note: Transitive snippets inherit parent agent's tool (claude-code)
+    let installed_remote_helper = project.project_path().join(".claude/snippets/remote-helper.md");
     assert!(
         tokio::fs::metadata(&installed_remote_helper).await.is_ok(),
         "Remote helper (transitive) should be installed"
@@ -1917,12 +1945,12 @@ This agent depends on a snippet in a different directory.
     let installed_agent = project.project_path().join(".claude/agents/local-agent.md");
     assert!(tokio::fs::metadata(&installed_agent).await.is_ok(), "Local agent should be installed");
 
-    // Verify snippet installed to .agpm/snippets (uses default tool for snippets)
-    // Note: Transitive snippets use their default tool (agpm)
-    let installed_snippet = project.project_path().join(".agpm/snippets/utils.md");
+    // Verify snippet installed to .claude/snippets (inherits parent agent's default tool)
+    // Note: Transitive snippets inherit parent's tool (claude-code from agent)
+    let installed_snippet = project.project_path().join(".claude/snippets/utils.md");
     assert!(
         tokio::fs::metadata(&installed_snippet).await.is_ok(),
-        "Utils snippet (transitive) should be installed to .agpm/snippets (using default tool)"
+        "Utils snippet (transitive) should be installed to .claude/snippets (inheriting parent's tool)"
     );
 
     // Verify lockfile
