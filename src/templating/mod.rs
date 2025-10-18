@@ -203,7 +203,7 @@ pub struct TemplateRenderer {
 /// This struct represents the information available about a resource
 /// in the template context. It includes both the resource's own metadata
 /// and its resolved installation information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ResourceTemplateData {
     /// Resource type (agent, snippet, command, etc.)
     #[serde(rename = "type")]
@@ -222,6 +222,38 @@ pub struct ResourceTemplateData {
     pub checksum: String,
     /// Source-relative path in repository
     pub path: String,
+    /// Processed content of the resource file.
+    ///
+    /// Contains the file content with metadata stripped:
+    /// - For Markdown: Content without YAML frontmatter
+    /// - For JSON: Content without metadata fields
+    ///
+    /// This field is available for all dependencies, enabling template
+    /// embedding via `{{ agpm.deps.<type>.<name>.content }}`.
+    ///
+    /// Note: This field is large and should not be printed in debug output.
+    /// Use the Debug impl which shows only the content length.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+}
+
+impl std::fmt::Debug for ResourceTemplateData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceTemplateData")
+            .field("resource_type", &self.resource_type)
+            .field("name", &self.name)
+            .field("install_path", &self.install_path)
+            .field("source", &self.source)
+            .field("version", &self.version)
+            .field("resolved_commit", &self.resolved_commit)
+            .field("checksum", &self.checksum)
+            .field("path", &self.path)
+            .field(
+                "content",
+                &self.content.as_ref().map(|c| format!("<{} bytes>", c.len())),
+            )
+            .finish()
+    }
 }
 
 impl TemplateContextBuilder {
@@ -309,6 +341,7 @@ impl TemplateContextBuilder {
             resolved_commit: entry.resolved_commit.clone(),
             checksum: entry.checksum.clone(),
             path: entry.path.clone(),
+            content: None, // Will be populated when content extraction is implemented
         })
     }
 
@@ -344,6 +377,7 @@ impl TemplateContextBuilder {
                     resolved_commit: resource.resolved_commit.clone(),
                     checksum: resource.checksum.clone(),
                     path: resource.path.clone(),
+                    content: None, // Will be populated when content extraction is implemented
                 };
 
                 // Use manifest_alias if available, otherwise use resource name
