@@ -51,7 +51,7 @@ async fn test_hooks_install_and_format() -> Result<()> {
     // Run install
     let output = project.run_agpm(&["install"])?;
     output.assert_success();
-    output.assert_stdout_contains("✓ Configured 2 hook(s)");
+    output.assert_stdout_contains("✓ Configured 2 hooks");
 
     // Check settings.local.json has correct format
     let settings_path = project.project_path().join(".claude/settings.local.json");
@@ -125,7 +125,7 @@ async fn test_hooks_deduplication() -> Result<()> {
     // Run install
     let output = project.run_agpm(&["install"])?;
     output.assert_success();
-    output.assert_stdout_contains("✓ Configured 1 hook(s)"); // Deduplicated count
+    output.assert_stdout_contains("✓ Configured 1 hook"); // Deduplicated count
 
     // Check that hooks are deduplicated
     let settings_path = project.project_path().join(".claude/settings.local.json");
@@ -180,7 +180,7 @@ async fn test_hooks_unknown_event_type() -> Result<()> {
     // Run install
     let output = project.run_agpm(&["install"])?;
     output.assert_success();
-    output.assert_stdout_contains("✓ Configured 1 hook(s)");
+    output.assert_stdout_contains("✓ Configured 1 hook");
 
     // Check settings.local.json has the unknown event type
     let settings_path = project.project_path().join(".claude/settings.local.json");
@@ -276,7 +276,7 @@ async fn test_hooks_no_change_no_message() -> Result<()> {
     // First install - should configure hooks and show message
     let output1 = project.run_agpm(&["install"])?;
     output1.assert_success();
-    output1.assert_stdout_contains("✓ Configured 1 hook(s)");
+    output1.assert_stdout_contains("✓ Configured 1 hook");
 
     // Second install with same hooks - should NOT show message (no changes)
     let output2 = project.run_agpm(&["install"])?;

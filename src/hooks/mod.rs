@@ -194,11 +194,13 @@ fn convert_to_claude_format(
             let event_name = event_to_string(event);
 
             // Create the hook object in Claude format
-            let hook_obj = json!({
-                "type": config.hook_type,
-                "command": config.command,
-                "timeout": config.timeout
-            });
+            let mut hook_obj = serde_json::Map::new();
+            hook_obj.insert("type".to_string(), json!(config.hook_type));
+            hook_obj.insert("command".to_string(), json!(config.command));
+            if let Some(timeout) = config.timeout {
+                hook_obj.insert("timeout".to_string(), json!(timeout));
+            }
+            let hook_obj = Value::Object(hook_obj);
 
             // Get or create the event array
             let event_array = events_map.entry(event_name).or_insert_with(|| json!([]));
@@ -386,7 +388,11 @@ pub async fn install_hooks(
         settings.save(&settings_path)?;
 
         if configured_count > 0 {
-            println!("✓ Configured {configured_count} hook(s) in .claude/settings.local.json");
+            if configured_count == 1 {
+                println!("✓ Configured 1 hook");
+            } else {
+                println!("✓ Configured {configured_count} hooks");
+            }
         }
     }
 
@@ -849,8 +855,7 @@ mod tests {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "echo 'before tool use'",
-                            "timeout": null
+                            "command": "echo 'before tool use'"
                         }
                     ]
                 }
@@ -1054,8 +1059,7 @@ mod tests {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "echo 'future event'",
-                            "timeout": null
+                            "command": "echo 'future event'"
                         }
                     ]
                 }
