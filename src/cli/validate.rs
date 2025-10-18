@@ -838,7 +838,7 @@ impl ValidateCommand {
             }
 
             let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
-            let cache = Cache::new()?;
+            let cache = Arc::new(Cache::new()?);
 
             // Collect all markdown resources from manifest
             let mut template_results = Vec::new();
@@ -915,8 +915,11 @@ impl ValidateCommand {
 
                     // Build template context
                     let project_config = manifest.project.clone();
-                    let context_builder =
-                        TemplateContextBuilder::new(Arc::clone(&lockfile), project_config);
+                    let context_builder = TemplateContextBuilder::new(
+                        Arc::clone(&lockfile),
+                        project_config,
+                        Arc::clone(&cache),
+                    );
                     let context = match context_builder.build_context($name, $resource_type) {
                         Ok(c) => c,
                         Err(e) => {

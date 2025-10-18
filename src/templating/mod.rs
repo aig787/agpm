@@ -176,6 +176,9 @@ pub struct TemplateContextBuilder {
     lockfile: Arc<LockFile>,
     /// Project-specific template variables from the manifest
     project_config: Option<crate::manifest::ProjectConfig>,
+    /// Cache instance for reading source files during content extraction
+    /// Shared via Arc to avoid expensive clones
+    cache: Arc<crate::cache::Cache>,
 }
 
 /// Template renderer with Tera engine and custom functions.
@@ -263,13 +266,16 @@ impl TemplateContextBuilder {
     ///
     /// * `lockfile` - The resolved lockfile, wrapped in Arc for efficient sharing
     /// * `project_config` - Optional project-specific template variables from the manifest
+    /// * `cache` - Cache instance for reading source files during content extraction
     pub fn new(
         lockfile: Arc<LockFile>,
         project_config: Option<crate::manifest::ProjectConfig>,
+        cache: Arc<crate::cache::Cache>,
     ) -> Self {
         Self {
             lockfile,
             project_config,
+            cache,
         }
     }
 
@@ -919,7 +925,8 @@ mod tests {
             applied_patches: std::collections::HashMap::new(),
         });
 
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
+        let cache = crate::cache::Cache::new().unwrap();
+        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache));
         let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
         // Extract the agpm.resource.install_path from context

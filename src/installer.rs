@@ -501,8 +501,11 @@ pub async fn install_resource(
                 let project_config = context.manifest.and_then(|m| m.project.clone());
 
                 // Build context
-                let template_context_builder =
-                    TemplateContextBuilder::new(lockfile.clone(), project_config);
+                let template_context_builder = TemplateContextBuilder::new(
+                    lockfile.clone(),
+                    project_config,
+                    Arc::new(context.cache.clone()),
+                );
 
                 // Compute context digest for cache invalidation
                 // This ensures that changes to dependency versions invalidate the cache
