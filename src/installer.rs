@@ -2906,6 +2906,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             }
         } else {
             LockedResource {
@@ -2922,6 +2923,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             }
         }
     }

@@ -1334,6 +1334,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -1408,6 +1409,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -1490,6 +1492,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1592,6 +1595,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -1668,6 +1672,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -1794,6 +1799,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1943,6 +1949,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2029,6 +2036,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2245,6 +2253,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -2332,6 +2341,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -2380,6 +2390,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -2429,6 +2440,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             true,
@@ -2449,6 +2461,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
             false,
@@ -2572,6 +2585,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
         );
@@ -2593,6 +2607,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
         );
@@ -2646,6 +2661,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                install: None,
                 },
             )),
         );
@@ -2796,6 +2812,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3295,6 +3312,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3367,6 +3385,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -3493,6 +3512,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3664,6 +3684,7 @@ See [helper](.agpm/snippets/helper.md) for details.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3729,6 +3750,7 @@ Also check `.claude/nonexistent.md`.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3796,6 +3818,7 @@ Visit http://example.com for more info.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3865,6 +3888,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3933,6 +3957,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -3948,6 +3973,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

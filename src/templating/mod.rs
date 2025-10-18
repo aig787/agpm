@@ -908,6 +908,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         lockfile
@@ -917,7 +918,8 @@ mod tests {
     fn test_template_context_builder() {
         let lockfile = create_test_lockfile();
 
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None);
+        let cache = crate::cache::Cache::new().unwrap();
+        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache));
 
         let _context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
@@ -1032,6 +1034,7 @@ mod tests {
             tool: Some("agpm".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();

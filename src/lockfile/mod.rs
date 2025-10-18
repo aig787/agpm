@@ -2486,6 +2486,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             true,
         );
@@ -2587,6 +2588,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             true, // is_agent
         );
@@ -2608,6 +2610,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             false, // is_agent
         );
@@ -2629,6 +2632,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             true, // is_agent
         );
@@ -2684,6 +2688,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2718,6 +2723,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             true,
         );
@@ -2739,6 +2745,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             false,
         );
@@ -2760,6 +2767,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2799,6 +2807,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2839,6 +2848,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             true,
         );
@@ -2860,6 +2870,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+            install: None,
             },
             crate::core::ResourceType::Command,
         );

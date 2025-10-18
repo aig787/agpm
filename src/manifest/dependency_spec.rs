@@ -155,6 +155,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: None,
             flatten: None,
+        install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -173,6 +174,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: Some("opencode".to_string()),
             flatten: None,
+        install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -207,6 +209,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+            install: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -225,6 +228,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+            install: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -239,6 +243,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+            install: None,
             }],
         );
         deps2.insert(
@@ -249,6 +254,7 @@ mod tests {
                 version: Some("v1.0.0".to_string()),
                 tool: None,
                 flatten: None,
+            install: None,
             }],
         );
         metadata2.dependencies = Some(deps2);
