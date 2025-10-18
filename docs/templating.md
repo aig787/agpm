@@ -57,6 +57,7 @@ Dependencies declared in YAML frontmatter are available in templates, organized 
 | `agpm.deps.<category>.<name>.checksum` | string | Dependency checksum | `sha256:...` |
 | `agpm.deps.<category>.<name>.source` | string \| null | Dependency source | `community` |
 | `agpm.deps.<category>.<name>.path` | string | Source-relative path | `snippets/utils.md` |
+| `agpm.deps.<category>.<name>.content` | string \| null | Processed file content (Markdown: frontmatter stripped, JSON: metadata removed) | `"# Example\n..."` |
 
 **Category Names** (plural forms): `agents`, `snippets`, `commands`, `scripts`, `hooks`, `mcp-servers`
 
@@ -324,6 +325,46 @@ This reviewer works with the [Documentation Helper]({{ agpm.deps.agents.document
 ```
 
 **Note**: The loop variable `name` will contain the sanitized filename with underscores (e.g., `style_guide`, `best_practices`), not the original filename with hyphens.
+
+### Embedding Content from Dependencies
+
+You can embed the actual content of dependencies directly into your templates. This is especially useful for including snippets, guidelines, or reusable documentation without creating separate files.
+
+First, declare a dependency with `install: false` to prevent file creation:
+
+```yaml
+---
+title: Code Review Agent
+dependencies:
+  snippets:
+    - path: snippets/coding-standards.md
+      version: v1.0.0
+      install: false  # Don't create a separate file
+      name: coding_standards
+---
+```
+
+Then embed the content directly in your template:
+
+```markdown
+# Code Review Agent
+
+## Coding Standards
+
+Below are the coding standards this agent enforces:
+
+{{ agpm.deps.snippets.coding_standards.content }}
+
+## Review Process
+
+When reviewing code, I will check compliance with the standards above...
+```
+
+**Key Points**:
+- `install: false` prevents creating `.agpm/snippets/coding-standards.md`
+- Content is automatically processed (YAML frontmatter stripped from Markdown)
+- The `content` field is available for ALL dependencies (not just `install: false`)
+- Returns `null` if content extraction fails (with warning logged)
 
 ### Conditional Content
 
