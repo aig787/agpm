@@ -619,17 +619,32 @@ pub async fn install_resource(
     };
 
     // Check if content has changed by comparing checksums
-    let actually_installed = existing_checksum.as_ref() != Some(&new_checksum);
+    let content_changed = existing_checksum.as_ref() != Some(&new_checksum);
 
-    if actually_installed {
-        // Only write if content is different or file doesn't exist
+    // Check if we should actually write the file to disk
+    let should_install = entry.install.unwrap_or(true);
+
+    let actually_installed = if should_install && content_changed {
+        // Only write if install=true and content is different or file doesn't exist
         if let Some(parent) = dest_path.parent() {
             ensure_dir(parent)?;
         }
 
         atomic_write(&dest_path, final_content.as_bytes())
             .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
-    }
+
+        true
+    } else if !should_install {
+        // install=false: content-only dependency, don't write file
+        tracing::debug!(
+            "Skipping file write for content-only dependency: {} (install=false)",
+            entry.name
+        );
+        false
+    } else {
+        // install=true but content unchanged
+        false
+    };
 
     Ok((actually_installed, new_checksum, applied_patches))
 }
