@@ -351,6 +351,112 @@ impl TemplateContextBuilder {
         })
     }
 
+    /// Extract and process content from a resource file.
+    ///
+    /// Reads the source file and processes it based on file type:
+    /// - Markdown (.md): Strips YAML frontmatter, returns content only
+    /// - JSON (.json): Removes metadata fields like `dependencies`
+    /// - Other files: Returns raw content
+    ///
+    /// # Arguments
+    ///
+    /// * `resource` - The locked resource to extract content from
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(content)` if extraction succeeded, `None` on error (with warning logged)
+    fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
+        // Determine source path
+        let source_path = if let Some(_source_name) = &resource.source {
+            let url = resource.url.as_ref()?;
+
+            // Check if this is a local directory source
+            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+            if is_local_source {
+                // Local directory source - use URL as path directly
+                std::path::PathBuf::from(url).join(&resource.path)
+            } else {
+                // Git-based source - get worktree path
+                let sha = resource.resolved_commit.as_deref()?;
+
+                // We need to get the worktree path, but we can't call async methods from sync context
+                // Construct the expected worktree path based on cache structure
+                let cache_dir = self.cache.cache_dir();
+                let (owner, repo) = crate::git::parse_git_url(url)
+                    .unwrap_or(("direct".to_string(), "repo".to_string()));
+                let sha_short = &sha[..8.min(sha.len())];
+                let worktree_dir = cache_dir
+                    .join("worktrees")
+                    .join(format!("{}-{}-{}", owner, repo, sha_short));
+
+                worktree_dir.join(&resource.path)
+            }
+        } else {
+            // Local file - path is relative to project or absolute
+            // We don't have project_dir in this context, so we can't resolve local files
+            tracing::warn!(
+                "Cannot extract content for local resource '{}' - no project directory context",
+                resource.name
+            );
+            return None;
+        };
+
+        // Read file content
+        let content = match std::fs::read_to_string(&source_path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to read content for resource '{}' from {}: {}",
+                    resource.name,
+                    source_path.display(),
+                    e
+                );
+                return None;
+            }
+        };
+
+        // Process based on file type
+        let processed_content = if resource.path.ends_with(".md") {
+            // Markdown: strip frontmatter
+            match crate::markdown::MarkdownDocument::parse(&content) {
+                Ok(doc) => doc.content,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse markdown for resource '{}': {}. Using raw content.",
+                        resource.name,
+                        e
+                    );
+                    content
+                }
+            }
+        } else if resource.path.ends_with(".json") {
+            // JSON: parse and remove metadata fields
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(mut json) => {
+                    if let Some(obj) = json.as_object_mut() {
+                        // Remove metadata fields that shouldn't be in embedded content
+                        obj.remove("dependencies");
+                    }
+                    serde_json::to_string_pretty(&json).unwrap_or(content)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse JSON for resource '{}': {}. Using raw content.",
+                        resource.name,
+                        e
+                    );
+                    content
+                }
+            }
+        } else {
+            // Other files: use raw content
+            content
+        };
+
+        Some(processed_content)
+    }
+
     /// Build dependency data for the template context.
     ///
     /// This creates a nested structure of all dependencies by resource type and name.
@@ -374,6 +480,9 @@ impl TemplateContextBuilder {
 
             let resources = self.lockfile.get_resources_by_type(resource_type);
             for resource in resources {
+                // Extract content from source file
+                let content = self.extract_content(resource);
+
                 let template_data = ResourceTemplateData {
                     resource_type: type_str_singular.clone(),
                     name: resource.name.clone(),
@@ -383,7 +492,7 @@ impl TemplateContextBuilder {
                     resolved_commit: resource.resolved_commit.clone(),
                     checksum: resource.checksum.clone(),
                     path: resource.path.clone(),
-                    content: None, // Will be populated when content extraction is implemented
+                    content,
                 };
 
                 // Use manifest_alias if available, otherwise use resource name
