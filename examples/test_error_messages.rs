@@ -11,7 +11,8 @@ fn main() {
 
     // Test 1: Missing variable
     println!("=== Test 1: Missing variable ===");
-    let mut renderer = TemplateRenderer::new(true).unwrap();
+    let project_dir = std::env::current_dir().unwrap();
+    let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
     let context = TeraContext::new();
 
     match renderer.render_template("Hello {{ name }}!", &context) {

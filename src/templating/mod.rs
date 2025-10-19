@@ -10,6 +10,7 @@
 //! - Reference other resources by name and type
 //! - Access resolved installation paths and versions
 //! - Use conditional logic and loops in templates
+//! - Read and embed project-specific files (style guides, best practices, etc.)
 //!
 //! # Template Context
 //!
@@ -17,13 +18,17 @@
 //! - `agpm.resource`: Current resource information (name, type, install path, etc.)
 //! - `agpm.deps`: Nested dependency information by resource type and name
 //!
+//! # Custom Filters
+//!
+//! - `content`: Read project-specific files (e.g., `{{ 'docs/guide.md' | content }}`)
+//!
 //! # Syntax Restrictions
 //!
 //! For security and safety, the following Tera features are disabled:
 //! - `{% include %}` tags (no file system access)
 //! - `{% extends %}` tags (no template inheritance)
 //! - `{% import %}` tags (no external template imports)
-//! - Custom functions that access the file system or network
+//! - Custom functions that access the file system or network (except content filter)
 //!
 //! # Supported Features
 //!
@@ -31,6 +36,7 @@
 //! - Conditional logic: `{% if agpm.resource.source %}...{% endif %}`
 //! - Loops: `{% for name, dep in agpm.deps.agents %}...{% endfor %}`
 //! - Standard Tera filters (string manipulation, formatting)
+//! - Project file embedding: `{{ 'path/to/file.md' | content }}`
 //!
 //! # Examples
 //!
@@ -41,6 +47,96 @@
 //!
 //! This agent is installed at: `{{ agpm.resource.install_path }}`
 //! Version: {{ agpm.resource.version }}
+//! ```
+//!
+//! ## Dependency Content Embedding (v0.4.7+)
+//!
+//! All dependencies automatically have `.content` field with processed content:
+//!
+//! ```markdown
+//! ---
+//! agpm.templating: true
+//! dependencies:
+//!   snippets:
+//!     - path: snippets/best-practices.md
+//!       name: best_practices
+//! ---
+//! # Code Reviewer
+//!
+//! ## Best Practices
+//! {{ agpm.deps.snippets.best_practices.content }}
+//! ```
+//!
+//! ## Project File Filter (v0.4.8+)
+//!
+//! Read project-specific files using the `content` filter:
+//!
+//! ```markdown
+//! ---
+//! agpm.templating: true
+//! ---
+//! # Team Agent
+//!
+//! ## Project Style Guide
+//! {{ 'project/styleguide.md' | content }}
+//!
+//! ## Team Conventions
+//! {{ 'docs/conventions.txt' | content }}
+//! ```
+//!
+//! ## Combining Dependency Content + Project Files
+//!
+//! Use both features together for maximum flexibility:
+//!
+//! ```markdown
+//! ---
+//! agpm.templating: true
+//! dependencies:
+//!   snippets:
+//!     - path: snippets/rust-patterns.md
+//!       name: rust_patterns
+//!     - path: snippets/error-handling.md
+//!       name: error_handling
+//! ---
+//! # Rust Code Reviewer
+//!
+//! ## Shared Patterns (from AGPM repository)
+//! {{ agpm.deps.snippets.rust_patterns.content }}
+//!
+//! ## Project-Specific Style Guide
+//! {{ 'project/rust-style.md' | content }}
+//!
+//! ## Error Handling Best Practices
+//! {{ agpm.deps.snippets.error_handling.content }}
+//!
+//! ## Team Conventions
+//! {{ 'docs/team-conventions.txt' | content }}
+//! ```
+//!
+//! **When to use each**:
+//! - **Dependency content**: Versioned, shared resources from AGPM repos
+//! - **Project files**: Team-specific, project-local documentation
+//!
+//! ## Recursive Project Files
+//!
+//! Project files can reference other project files (up to 10 levels):
+//!
+//! **Main agent** (`.claude/agents/reviewer.md`):
+//! ```markdown
+//! ---
+//! agpm.templating: true
+//! ---
+//! # Code Reviewer
+//!
+//! {{ 'project/styleguide.md' | content }}
+//! ```
+//!
+//! **Style guide** (`project/styleguide.md`):
+//! ```markdown
+//! # Coding Standards
+//!
+//! ## Rust-Specific Rules
+//! {{ 'project/rust-style.md' | content }}
 //! ```
 //!
 //! ## Dependency References
@@ -86,7 +182,9 @@
 //! {% endif %}
 //! ```
 
-use anyhow::{Context, Result};
+pub mod filters;
+
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, to_string, to_value};
 use std::collections::HashMap;
@@ -193,10 +291,11 @@ pub struct TemplateContextBuilder {
 /// # Security
 ///
 /// The renderer is configured with security restrictions:
-/// - No file system access via includes/extends
+/// - No file system access via includes/extends (except content filter)
 /// - No network access
 /// - Sandboxed template execution
 /// - Custom functions are carefully vetted
+/// - Project file access restricted to project directory with validation
 pub struct TemplateRenderer {
     /// The underlying Tera template engine
     tera: Tera,
@@ -699,20 +798,33 @@ impl TemplateRenderer {
     /// # Arguments
     ///
     /// * `enabled` - Whether templating is enabled globally
+    /// * `project_dir` - Project root directory for content filter validation
     ///
     /// # Returns
     ///
-    /// Returns a configured `TemplateRenderer` instance.
-    pub fn new(enabled: bool) -> Result<Self> {
-        let tera = Tera::default();
+    /// Returns a configured `TemplateRenderer` instance with custom filters registered.
+    ///
+    /// # Filters
+    ///
+    /// The following custom filters are registered:
+    /// - `content`: Read project-specific files with path validation
+    pub fn new(enabled: bool, project_dir: PathBuf) -> Result<Self> {
+        let mut tera = Tera::default();
 
-        Ok(Self {
-            tera,
-            enabled,
-        })
+        // Register custom filters
+        tera.register_filter(
+            "content",
+            filters::create_content_filter(project_dir.clone()),
+        );
+
+        Ok(Self { tera, enabled })
     }
 
     /// Render a Markdown template with the given context.
+    ///
+    /// This method supports recursive template rendering where project files
+    /// can reference other project files using the `content` filter.
+    /// Rendering continues up to [`filters::MAX_RENDER_DEPTH`] levels deep.
     ///
     /// # Arguments
     ///
@@ -729,6 +841,29 @@ impl TemplateRenderer {
     /// - Template syntax is invalid
     /// - Context variables are missing
     /// - Custom functions/filters fail
+    /// - Recursive rendering exceeds maximum depth (10 levels)
+    ///
+    /// # Recursive Rendering
+    ///
+    /// When a template contains `content` filter references, those files
+    /// may themselves contain template syntax. The renderer automatically
+    /// detects this and performs multiple rendering passes until either:
+    /// - No template syntax remains in the output
+    /// - Maximum depth is reached (error)
+    ///
+    /// Example recursive template chain:
+    /// ```markdown
+    /// # Main Agent
+    /// {{ 'docs/guide.md' | content }}
+    /// ```
+    ///
+    /// Where `docs/guide.md` contains:
+    /// ```markdown
+    /// # Guide
+    /// {{ 'docs/common.md' | content }}
+    /// ```
+    ///
+    /// This will render up to 10 levels deep.
     pub fn render_template(
         &mut self,
         template_content: &str,
@@ -753,22 +888,63 @@ impl TemplateRenderer {
         tracing::debug!("Rendering template with context");
         Self::log_context_as_kv(context);
 
-        // Render the template
-        self.tera.render_str(template_content, context).map_err(|e| {
-            // Extract detailed error information from Tera error
-            // The Tera error contains a chain of errors with the root cause
-            let error_msg = Self::format_tera_error(&e);
+        // Multi-pass rendering for recursive templates
+        // This allows project files to reference other project files
+        let mut current_content = template_content.to_string();
+        let mut depth = 0;
+        let max_depth = filters::MAX_RENDER_DEPTH;
 
-            // Output the detailed error to stderr for immediate visibility
-            eprintln!("Template rendering error:\n{}", error_msg);
+        loop {
+            depth += 1;
 
-            // Include the context in the error message for user visibility
-            let context_str = Self::format_context_as_string(context);
-            anyhow::Error::new(e).context(format!(
-                "Template rendering failed:\n{}\n\nTemplate context:\n{}",
-                error_msg, context_str
-            ))
-        })
+            // Check depth limit
+            if depth > max_depth {
+                bail!(
+                    "Template rendering exceeded maximum recursion depth of {}. \
+                     This usually indicates circular dependencies between project files. \
+                     Please check your content filter references for cycles.",
+                    max_depth
+                );
+            }
+
+            tracing::debug!("Rendering pass {} of max {}", depth, max_depth);
+
+            // Render the current content
+            let rendered = self
+                .tera
+                .render_str(&current_content, context)
+                .map_err(|e| {
+                    // Extract detailed error information from Tera error
+                    let error_msg = Self::format_tera_error(&e);
+
+                    // Output the detailed error to stderr for immediate visibility
+                    eprintln!("Template rendering error:\n{}", error_msg);
+
+                    // Include the context in the error message for user visibility
+                    let context_str = Self::format_context_as_string(context);
+                    anyhow::Error::new(e).context(format!(
+                        "Template rendering failed at depth {}:\n{}\n\nTemplate context:\n{}",
+                        depth, error_msg, context_str
+                    ))
+                })?;
+
+            // Check if the rendered output still contains template syntax
+            if !self.contains_template_syntax(&rendered) {
+                // No more template syntax - we're done
+                tracing::debug!(
+                    "Template rendering complete after {} pass(es)",
+                    depth
+                );
+                return Ok(rendered);
+            }
+
+            // More template syntax found - prepare for next iteration
+            tracing::debug!(
+                "Template syntax detected in output, continuing to pass {}",
+                depth + 1
+            );
+            current_content = rendered;
+        }
     }
 
     /// Format a Tera error with detailed information about what went wrong.
@@ -982,7 +1158,8 @@ mod tests {
 
     #[test]
     fn test_template_renderer() {
-        let mut renderer = TemplateRenderer::new(true).unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
 
         // Test rendering without template syntax
         let result = renderer.render_template("# Plain Markdown", &TeraContext::new()).unwrap();
@@ -998,7 +1175,8 @@ mod tests {
 
     #[test]
     fn test_template_renderer_disabled() {
-        let mut renderer = TemplateRenderer::new(false).unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(false, project_dir).unwrap();
 
         let mut context = TeraContext::new();
         context.insert("test_var", "test_value");
@@ -1010,7 +1188,8 @@ mod tests {
 
     #[test]
     fn test_template_error_formatting() {
-        let mut renderer = TemplateRenderer::new(true).unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
         let context = TeraContext::new();
 
         // Test with missing variable - should produce detailed error

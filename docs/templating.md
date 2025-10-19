@@ -7,6 +7,7 @@ AGPM supports powerful Tera-based templating for Markdown resources, enabling dy
 - [Overview](#overview)
 - [Template Variables Reference](#template-variables-reference)
 - [Syntax and Features](#syntax-and-features)
+  - [Custom Filters](#custom-filters)
 - [Examples](#examples)
 - [Controlling Templating](#controlling-templating)
 - [Security and Sandboxing](#security-and-sandboxing)
@@ -265,6 +266,104 @@ Use `{# #}` for template comments (not included in output):
 {# This comment won't appear in the installed file #}
 # {{ agpm.resource.name }}
 ```
+
+### Custom Filters
+
+#### `content` Filter
+
+Read and embed project-specific files (style guides, architecture docs, team conventions) directly into your templates:
+
+```markdown
+{{ 'path/to/file.md' | content }}
+```
+
+**Use Cases**:
+- Embed company coding standards
+- Include team-specific conventions
+- Reference architecture documentation
+- Pull in project-specific guidelines
+
+**Security**:
+- Path validation prevents directory traversal attacks
+- Only text files allowed: `.md`, `.txt`, `.json`, `.toml`, `.yaml`
+- Absolute paths rejected
+- Files must exist in project root
+
+**Content Processing**:
+- **Markdown (.md)**: YAML/TOML frontmatter automatically stripped
+- **JSON (.json)**: Parsed and pretty-printed
+- **Other files**: Raw text content
+
+**Recursive Rendering**: Project files can reference other project files using template syntax, up to 10 levels deep. The template engine automatically re-renders until no template syntax remains or the depth limit is reached.
+
+**Example - Basic Usage**:
+
+```markdown
+---
+agpm.templating: true
+---
+# Code Review Agent
+
+## Company Style Guide
+{{ 'project/styleguide.md' | content }}
+
+## Team Conventions
+{{ 'docs/conventions.txt' | content }}
+```
+
+**Example - Recursive Project Files**:
+
+Main agent (`.claude/agents/reviewer.md`):
+```markdown
+---
+agpm.templating: true
+---
+# Code Reviewer
+
+{{ 'project/styleguide.md' | content }}
+```
+
+Style guide (`project/styleguide.md`):
+```markdown
+# Coding Standards
+
+## Language-Specific Rules
+{{ 'project/rust-style.md' | content }}
+{{ 'project/python-style.md' | content }}
+```
+
+**Combining with Dependency Content**:
+
+Use both `content` filter (for local files) and dependency `.content` fields (for versioned AGPM resources) together:
+
+```markdown
+---
+agpm.templating: true
+dependencies:
+  snippets:
+    - path: snippets/rust-patterns.md
+      name: rust_patterns
+    - path: snippets/error-handling.md
+      name: error_handling
+---
+# Rust Code Reviewer
+
+## Shared Rust Patterns (versioned, from AGPM)
+{{ agpm.deps.snippets.rust_patterns.content }}
+
+## Project-Specific Style Guide (local)
+{{ 'project/rust-style.md' | content }}
+
+## Error Handling Best Practices (versioned, from AGPM)
+{{ agpm.deps.snippets.error_handling.content }}
+
+## Team Conventions (local)
+{{ 'docs/team-conventions.txt' | content }}
+```
+
+**When to Use Each**:
+- **`agpm.deps.<type>.<name>.content`**: Versioned content from AGPM repositories (shared patterns, reusable snippets)
+- **`content` filter**: Project-local files (team docs, company standards, living documentation)
 
 ## Examples
 

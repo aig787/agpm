@@ -545,8 +545,9 @@ pub async fn install_resource(
                 }
 
                 // Create renderer and render template
-                let mut renderer = TemplateRenderer::new(true)
-                    .with_context(|| "Failed to create template renderer")?;
+                let mut renderer =
+                    TemplateRenderer::new(true, context.project_dir.to_path_buf())
+                        .with_context(|| "Failed to create template renderer")?;
 
                 let rendered = renderer
                     .render_template(&patched_content, &template_context)

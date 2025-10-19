@@ -930,7 +930,7 @@ impl ValidateCommand {
                     };
 
                     // Try to render
-                    let mut renderer = match TemplateRenderer::new(true) {
+                    let mut renderer = match TemplateRenderer::new(true, project_dir.to_path_buf()) {
                         Ok(r) => r,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));

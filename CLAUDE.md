@@ -45,6 +45,9 @@ src/
 │   ├── version_resolution.rs # Version constraint handling
 │   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
+├── templating/  # Template rendering engine
+│   ├── mod.rs   # Template context and renderer
+│   └── filters.rs  # Custom filters (content)
 ├── test_utils/  # Test infrastructure
 ├── upgrade/     # Self-update functionality
 │   ├── mod.rs          # Upgrade orchestration
@@ -261,6 +264,27 @@ dependencies:
 - Parallel resolution for maximum efficiency
 - Unknown field detection with warnings (v0.4.5+)
 - **Content embedding** (v0.4.7+): All dependencies have `content` field in templates with processed file content (frontmatter stripped from Markdown, metadata removed from JSON)
+
+## Template Features (v0.4.8+)
+
+**Embed content** via dependency `.content` (versioned) or `content` filter (project-local):
+
+```markdown
+---
+agpm.templating: true
+dependencies:
+  snippets:
+    - path: snippets/rust-patterns.md
+      name: rust_patterns
+---
+## Shared Patterns (versioned)
+{{ agpm.deps.snippets.rust_patterns.content }}
+
+## Project Style (local)
+{{ 'project/rust-style.md' | content }}
+```
+
+**Content Filter**: `{{ 'path' | content }}` reads text files with path validation, recursive (10 levels). Markdown: frontmatter stripped. JSON: pretty-printed. Security: no traversal, text only (.md/.txt/.json/.toml/.yaml).
 
 ## Versioned Prefixes (v0.3.19+)
 

@@ -48,6 +48,9 @@ src/
 │   ├── version_resolution.rs # Version constraint handling
 │   └── version_resolver.rs   # Centralized SHA resolution
 ├── source/      # Source repository management
+├── templating/  # Template rendering engine
+│   ├── mod.rs   # Template context and renderer
+│   └── filters.rs  # Custom filters (content)
 ├── test_utils/  # Test infrastructure
 ├── upgrade/     # Self-update functionality
 │   ├── mod.rs          # Upgrade orchestration
@@ -105,9 +108,27 @@ src/
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile
 
-## Resource Templating
+## Template Features (v0.4.8+)
 
-Resources support opt-in Tera templating with `agpm.templating: true` in frontmatter. Access resource metadata (`agpm.resource.*`) and dependencies (`agpm.deps.<category>.<name>.*`). See [docs/templating.md](../docs/templating.md) for details.
+**Embed content** via dependency `.content` (versioned) or `content` filter (project-local):
+
+**Example**:
+```markdown
+---
+agpm.templating: true
+dependencies:
+  snippets:
+    - path: snippets/rust-patterns.md
+      name: rust_patterns
+---
+## Shared Patterns (versioned)
+{{ agpm.deps.snippets.rust_patterns.content }}
+
+## Project Style (local)
+{{ 'project/rust-style.md' | content }}
+```
+
+**Content Filter**: `{{ 'path' | content }}` reads text files with path validation, recursive (10 levels). See [docs/templating.md](../docs/templating.md).
 
 ## Dependencies
 
@@ -176,6 +197,8 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
 - **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
 - **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
+- **Content embedding** (v0.4.7+): All dependencies have `content` field in templates with processed file content (frontmatter stripped from Markdown, metadata removed from JSON)
+- **Content filter** (v0.4.8+): `{{ 'path' | content }}` filter for reading project-specific files with path validation, recursive rendering (10-level depth)
 
 ## Resolver Architecture
 
@@ -211,7 +234,10 @@ dependencies:
   snippets:
     - path: snippets/utils.md
       flatten: true  # Optional: flatten directory structure
-    # version, tool, name, and flatten inherited from parent if not specified
+    - path: snippets/best-practices.md
+      install: false  # Don't create file, only make content available in templates
+      name: best_practices
+    # version, tool, name, flatten, and install inherited from parent if not specified
 ---
 ```
 
@@ -240,6 +266,7 @@ dependencies:
   - Falls back to default tool for this resource type
 - `name` (optional): Custom name for template variable references (defaults to sanitized filename)
 - `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
+- `install` (optional): Whether to write file to disk (default: `true`). When `false`, content is only available in templates via `{{ agpm.deps.<type>.<name>.content }}`
 
 **Key Features**:
 
@@ -250,6 +277,7 @@ dependencies:
 - Same-source dependency model (inherits parent's source)
 - Parallel resolution for maximum efficiency
 - Unknown field detection with warnings (v0.4.5+)
+- **Content embedding** (v0.4.7+): All dependencies have `content` field in templates with processed file content (frontmatter stripped from Markdown, metadata removed from JSON)
 
 ## Versioned Prefixes (v0.3.19+)
 

@@ -36,12 +36,12 @@ fn main() {
         Arc::new(lockfile),
         None,
         Arc::new(cache),
-        project_dir,
+        project_dir.clone(),
     );
 
     let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
-    let mut renderer = TemplateRenderer::new(true).unwrap();
+    let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
 
     let template_content = r#"---
 title: Test Agent
