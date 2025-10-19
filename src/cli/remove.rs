@@ -902,7 +902,7 @@ test-agent = "../test/agent.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -1042,7 +1042,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1061,7 +1061,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1150,7 +1150,7 @@ test-hook = "../test/hook.json"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1167,7 +1167,7 @@ test-hook = "../test/hook.json"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1241,7 +1241,7 @@ test-snippet = "../local/snippet.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1258,7 +1258,7 @@ test-snippet = "../local/snippet.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1441,7 +1441,7 @@ test-script = "../test/script.sh"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

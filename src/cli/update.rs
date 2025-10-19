@@ -636,7 +636,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -683,7 +683,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
-            install: None,
+                install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

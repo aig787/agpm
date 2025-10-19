@@ -506,6 +506,7 @@ pub async fn install_resource(
                     lockfile.clone(),
                     project_config,
                     Arc::new(context.cache.clone()),
+                    context.project_dir.to_path_buf(),
                 );
 
                 // Compute context digest for cache invalidation
@@ -858,6 +859,15 @@ pub async fn install_resources_parallel(
     // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
+        tracing::debug!(
+            "Checking entry '{}' (type: {:?}): source={:?}, url={:?}, sha={:?}",
+            entry.name,
+            entry.resource_type,
+            entry.source,
+            entry.url.as_deref().map(|u| &u[..60.min(u.len())]),
+            entry.resolved_commit.as_deref().map(|s| &s[..8.min(s.len())])
+        );
+
         if let Some(source_name) = &entry.source
             && let Some(url) = &entry.url
         {
@@ -865,10 +875,22 @@ pub async fn install_resources_parallel(
             if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
                 commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
             }) {
+                tracing::info!(
+                    "Adding worktree to pre-warm set: source={}, sha={}",
+                    source_name,
+                    &sha[..8]
+                );
                 unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+            } else {
+                tracing::warn!(
+                    "Skipping worktree pre-warm for '{}': invalid or missing SHA",
+                    entry.name
+                );
             }
         }
     }
+
+    tracing::info!("Pre-warming {} unique worktrees", unique_worktrees.len());
 
     // Pre-create all worktrees in parallel
     if !unique_worktrees.is_empty() {
@@ -880,13 +902,21 @@ pub async fn install_resources_parallel(
                     cache
                         .get_or_create_worktree_for_sha(&source, &url, &sha, Some("pre-warm"))
                         .await
-                        .ok(); // Ignore errors during pre-warming
+                        .map_err(|e| {
+                            tracing::error!(
+                                "Failed to create worktree for {}/{}: {}",
+                                source,
+                                &sha[..8.min(sha.len())],
+                                e
+                            );
+                            e
+                        })
                 }
             })
             .collect();
 
-        // Execute all worktree creations in parallel
-        future::join_all(worktree_futures).await;
+        // Execute all worktree creations in parallel - fail fast on first error
+        future::try_join_all(worktree_futures).await.context("Failed to pre-warm worktrees")?;
     }
 
     // Create thread-safe progress tracking

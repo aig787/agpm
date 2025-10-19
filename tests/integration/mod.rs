@@ -24,6 +24,7 @@
 //! - **gitignore**: .gitignore management
 //! - **hooks**: Claude Code hooks integration
 //! - **incremental_add**: Incremental dependency addition
+//! - **install_field**: Install field and content embedding functionality
 //! - **list**: List command functionality
 //! - **lockfile_staleness**: Lockfile staleness detection
 //! - **max_parallel_flag**: --max-parallel flag behavior
@@ -59,6 +60,7 @@ mod file_url;
 mod gitignore;
 mod hooks;
 mod incremental_add;
+mod install_field;
 mod list;
 mod lockfile_staleness;
 mod max_parallel_flag;

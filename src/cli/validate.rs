@@ -678,11 +678,11 @@ impl ValidateCommand {
                     validation_results.errors = errors;
                     validation_results.warnings = warnings;
                     println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                    return Err(anyhow::anyhow!("Local paths not found"));
+                    return Err(anyhow::anyhow!("{}", error_msg));
                 } else if !self.quiet {
                     println!("{} {}", "✗".red(), error_msg);
                 }
-                return Err(anyhow::anyhow!("Local paths not found"));
+                return Err(anyhow::anyhow!("{}", error_msg));
             }
         }
 
@@ -919,6 +919,7 @@ impl ValidateCommand {
                         Arc::clone(&lockfile),
                         project_config,
                         Arc::clone(&cache),
+                        project_dir.to_path_buf(),
                     );
                     let context = match context_builder.build_context($name, $resource_type) {
                         Ok(c) => c,
@@ -1334,7 +1335,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -1409,7 +1410,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -1595,7 +1596,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -1672,7 +1673,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -1799,7 +1800,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
-            install: None,
+                install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2253,7 +2254,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -2341,7 +2342,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -2390,7 +2391,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -2440,7 +2441,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             true,
@@ -2461,7 +2462,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
             false,
@@ -2585,7 +2586,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
         );
@@ -2607,7 +2608,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
         );
@@ -2661,7 +2662,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
-                install: None,
+                    install: None,
                 },
             )),
         );

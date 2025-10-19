@@ -90,6 +90,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, to_string, to_value};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tera::{Context as TeraContext, Tera};
 
@@ -179,6 +180,8 @@ pub struct TemplateContextBuilder {
     /// Cache instance for reading source files during content extraction
     /// Shared via Arc to avoid expensive clones
     cache: Arc<crate::cache::Cache>,
+    /// Project root directory for resolving local file paths
+    project_dir: PathBuf,
 }
 
 /// Template renderer with Tera engine and custom functions.
@@ -264,15 +267,18 @@ impl TemplateContextBuilder {
     /// * `lockfile` - The resolved lockfile, wrapped in Arc for efficient sharing
     /// * `project_config` - Optional project-specific template variables from the manifest
     /// * `cache` - Cache instance for reading source files during content extraction
+    /// * `project_dir` - Project root directory for resolving local file paths
     pub fn new(
         lockfile: Arc<LockFile>,
         project_config: Option<crate::manifest::ProjectConfig>,
         cache: Arc<crate::cache::Cache>,
+        project_dir: PathBuf,
     ) -> Self {
         Self {
             lockfile,
             project_config,
             cache,
+            project_dir,
         }
     }
 
@@ -363,39 +369,83 @@ impl TemplateContextBuilder {
     ///
     /// Returns `Some(content)` if extraction succeeded, `None` on error (with warning logged)
     fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
+        tracing::debug!(
+            "Attempting to extract content for resource '{}' (type: {:?})",
+            resource.name,
+            resource.resource_type
+        );
+
         // Determine source path
-        let source_path = if let Some(_source_name) = &resource.source {
+        let source_path = if let Some(source_name) = &resource.source {
             let url = resource.url.as_ref()?;
 
             // Check if this is a local directory source
             let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
 
+            tracing::debug!(
+                "Resource '{}': source='{}', url='{}', is_local={}",
+                resource.name,
+                source_name,
+                url,
+                is_local_source
+            );
+
             if is_local_source {
                 // Local directory source - use URL as path directly
-                std::path::PathBuf::from(url).join(&resource.path)
+                let path = std::path::PathBuf::from(url).join(&resource.path);
+                tracing::debug!("Using local source path: {}", path.display());
+                path
             } else {
                 // Git-based source - get worktree path
                 let sha = resource.resolved_commit.as_deref()?;
 
-                // We need to get the worktree path, but we can't call async methods from sync context
-                // Construct the expected worktree path based on cache structure
-                let cache_dir = self.cache.cache_dir();
-                let (owner, repo) = crate::git::parse_git_url(url)
-                    .unwrap_or(("direct".to_string(), "repo".to_string()));
-                let sha_short = &sha[..8.min(sha.len())];
-                let worktree_dir =
-                    cache_dir.join("worktrees").join(format!("{}-{}-{}", owner, repo, sha_short));
+                tracing::debug!(
+                    "Resource '{}': Getting worktree for SHA {}...",
+                    resource.name,
+                    &sha[..8.min(sha.len())]
+                );
 
-                worktree_dir.join(&resource.path)
+                // Use centralized worktree path construction
+                let worktree_dir = match self.cache.get_worktree_path(url, sha) {
+                    Ok(path) => {
+                        tracing::debug!("Worktree path: {}", path.display());
+                        path
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to construct worktree path for resource '{}': {}",
+                            resource.name,
+                            e
+                        );
+                        return None;
+                    }
+                };
+
+                let full_path = worktree_dir.join(&resource.path);
+                tracing::debug!(
+                    "Full source path for '{}': {} (worktree exists: {})",
+                    resource.name,
+                    full_path.display(),
+                    worktree_dir.exists()
+                );
+                full_path
             }
         } else {
             // Local file - path is relative to project or absolute
-            // We don't have project_dir in this context, so we can't resolve local files
-            tracing::warn!(
-                "Cannot extract content for local resource '{}' - no project directory context",
-                resource.name
+            let local_path = std::path::Path::new(&resource.path);
+            let resolved_path = if local_path.is_absolute() {
+                local_path.to_path_buf()
+            } else {
+                self.project_dir.join(local_path)
+            };
+
+            tracing::debug!(
+                "Resource '{}': Using local file path: {}",
+                resource.name,
+                resolved_path.display()
             );
-            return None;
+
+            resolved_path
         };
 
         // Read file content
@@ -916,7 +966,13 @@ mod tests {
         let lockfile = create_test_lockfile();
 
         let cache = crate::cache::Cache::new().unwrap();
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache));
+        let project_dir = std::env::current_dir().unwrap();
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            None,
+            Arc::new(cache),
+            project_dir,
+        );
 
         let _context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
@@ -1035,7 +1091,13 @@ mod tests {
         });
 
         let cache = crate::cache::Cache::new().unwrap();
-        let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache));
+        let project_dir = std::env::current_dir().unwrap();
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            None,
+            Arc::new(cache),
+            project_dir,
+        );
         let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
         // Extract the agpm.resource.install_path from context

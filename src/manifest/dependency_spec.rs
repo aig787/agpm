@@ -77,6 +77,9 @@ pub struct DependencySpec {
     /// written to the project directory. This is useful for snippet embedding use cases where
     /// you want to include content inline rather than as a separate file.
     ///
+    /// See [`crate::templating::ResourceTemplateData`] for details on how content is accessed
+    /// in templates.
+    ///
     /// Default: `true` (install the file)
     ///
     /// Example:
@@ -155,7 +158,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: None,
             flatten: None,
-        install: None,
+            install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -174,7 +177,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: Some("opencode".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -209,7 +212,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
-            install: None,
+                install: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -228,7 +231,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
-            install: None,
+                install: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -243,7 +246,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
-            install: None,
+                install: None,
             }],
         );
         deps2.insert(
@@ -254,7 +257,7 @@ mod tests {
                 version: Some("v1.0.0".to_string()),
                 tool: None,
                 flatten: None,
-            install: None,
+                install: None,
             }],
         );
         metadata2.dependencies = Some(deps2);

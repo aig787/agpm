@@ -1113,7 +1113,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -1138,7 +1138,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             })),
         );
 
@@ -1182,7 +1182,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
 
         lockfile.agents.push(LockedResource {
@@ -1200,7 +1200,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
 
         // Add snippets
@@ -1219,7 +1219,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         });
 
         lockfile
@@ -1546,7 +1546,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
-        install: None,
+            install: None,
         }));
 
         let dep_with_different_source =
@@ -1563,7 +1563,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
-            install: None,
+                install: None,
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
@@ -1607,7 +1607,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         };
 
         let entry_with_different_source = LockedResource {
@@ -1625,7 +1625,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         };
 
         let entry_without_source = LockedResource {
@@ -1643,7 +1643,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1673,7 +1673,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1869,7 +1869,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
-        install: None,
+            install: None,
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

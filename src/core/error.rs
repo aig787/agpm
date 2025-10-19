@@ -1076,11 +1076,52 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     }
 
     if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+        // Try to extract path from the error chain context
+        let extracted_path = error
+            .chain()
+            .find_map(|e| {
+                let msg = e.to_string();
+                // Look for common patterns in our context messages:
+                // "Failed to read file: /path/to/file"
+                // "Failed to read local file: /path/to/file"
+                // "Failed to read resource file: /path/to/file"
+                // "Transitive dependency does not exist: /path (resolved from ...)"
+                if let Some(idx) = msg.find(": /") {
+                    // Extract path starting after ": "
+                    let path_part = &msg[idx + 2..]; // Skip ": " to keep the leading /
+                    // Take until end or until we hit " (" for additional context
+                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
+                    let mut path = path_part[..end_idx].to_string();
+                    // Clean up double slashes and normalize ./ segments
+                    path = path.replace("//", "/").replace("/./", "/");
+                    Some(path)
+                } else if let Some(idx) = msg.find(": ./") {
+                    // Relative path starting with "./"
+                    let path_part = &msg[idx + 2..];
+                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
+                    let mut path = path_part[..end_idx].to_string();
+                    // Clean up double slashes and normalize ./ segments
+                    path = path.replace("//", "/").replace("/./", "/");
+                    Some(path)
+                } else if let Some(idx) = msg.find(": ../") {
+                    // Relative path starting with "../"
+                    let path_part = &msg[idx + 2..];
+                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
+                    let mut path = path_part[..end_idx].to_string();
+                    // Clean up double slashes
+                    path = path.replace("//", "/");
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
         match io_error.kind() {
             std::io::ErrorKind::PermissionDenied => {
                 return ErrorContext::new(AgpmError::PermissionDenied {
                     operation: "file access".to_string(),
-                    path: "unknown".to_string(),
+                    path: extracted_path,
                 })
                 .with_suggestion("Try running with elevated permissions (sudo/Administrator) or check file ownership")
                 .with_details("This error occurs when AGPM doesn't have permission to read or write files");
@@ -1088,9 +1129,12 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
             std::io::ErrorKind::NotFound => {
                 return ErrorContext::new(AgpmError::FileSystemError {
                     operation: "file access".to_string(),
-                    path: "unknown".to_string(),
+                    path: extracted_path.clone(),
                 })
-                .with_suggestion("Check that the file or directory exists and the path is correct")
+                .with_suggestion(format!(
+                    "Check that the file '{}' exists and the path is correct",
+                    extracted_path
+                ))
                 .with_details(
                     "This error occurs when a required file or directory cannot be found",
                 );
@@ -1098,14 +1142,14 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
             std::io::ErrorKind::AlreadyExists => {
                 return ErrorContext::new(AgpmError::FileSystemError {
                     operation: "file creation".to_string(),
-                    path: "unknown".to_string(),
+                    path: extracted_path,
                 })
                 .with_suggestion("Remove the existing file or use --force to overwrite")
                 .with_details("The target file or directory already exists");
             }
             std::io::ErrorKind::InvalidData => {
                 return ErrorContext::new(AgpmError::InvalidResource {
-                    name: "unknown".to_string(),
+                    name: extracted_path,
                     reason: "invalid file format".to_string(),
                 })
                 .with_suggestion("Check the file format and ensure it's a valid resource file")
@@ -1396,6 +1440,56 @@ mod tests {
         }
         assert!(ctx.suggestion.is_some());
         assert!(ctx.details.is_some());
+    }
+
+    #[test]
+    fn test_user_friendly_error_not_found_with_path() {
+        use std::io::{Error, ErrorKind};
+
+        let io_error = Error::new(ErrorKind::NotFound, "file not found");
+        let anyhow_error =
+            anyhow::Error::from(io_error).context("Failed to read local file: /path/to/missing.md");
+
+        let ctx = user_friendly_error(anyhow_error);
+        match &ctx.error {
+            AgpmError::FileSystemError {
+                path,
+                ..
+            } => {
+                assert_eq!(
+                    path, "/path/to/missing.md",
+                    "Path should be extracted from error context"
+                );
+            }
+            _ => panic!("Expected FileSystemError, got: {:?}", ctx.error),
+        }
+        assert!(ctx.suggestion.is_some());
+        assert!(ctx.suggestion.as_ref().unwrap().contains("/path/to/missing.md"));
+    }
+
+    #[test]
+    fn test_user_friendly_error_not_found_with_malformed_path() {
+        use std::io::{Error, ErrorKind};
+
+        // Test that we clean up double slashes and ./ segments
+        let io_error = Error::new(ErrorKind::NotFound, "file not found");
+        let anyhow_error =
+            anyhow::Error::from(io_error).context("Failed to read: //Users/test/./foo/./bar.md");
+
+        let ctx = user_friendly_error(anyhow_error);
+        match &ctx.error {
+            AgpmError::FileSystemError {
+                path,
+                ..
+            } => {
+                assert_eq!(
+                    path, "/Users/test/foo/bar.md",
+                    "Path should be normalized (double slashes and ./ removed)"
+                );
+            }
+            _ => panic!("Expected FileSystemError, got: {:?}", ctx.error),
+        }
+        assert!(ctx.suggestion.as_ref().unwrap().contains("/Users/test/foo/bar.md"));
     }
 
     #[test]

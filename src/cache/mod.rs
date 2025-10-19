@@ -727,6 +727,43 @@ impl Cache {
         &self.cache_dir
     }
 
+    /// Get the worktree path for a specific URL and commit SHA.
+    ///
+    /// This method constructs the expected worktree directory path based on the cache's
+    /// naming scheme. It does NOT check if the worktree exists or create it - use
+    /// `get_or_create_worktree_for_sha` for that.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - Git repository URL
+    /// * `sha` - Full commit SHA (will be shortened to first 8 characters)
+    ///
+    /// # Returns
+    ///
+    /// Path to the worktree directory (may not exist yet)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::cache::Cache;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let cache = Cache::new()?;
+    /// let path = cache.get_worktree_path(
+    ///     "https://github.com/owner/repo.git",
+    ///     "abc1234567890def"
+    /// )?;
+    /// println!("Worktree path: {}", path.display());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_worktree_path(&self, url: &str, sha: &str) -> Result<PathBuf> {
+        let (owner, repo) = crate::git::parse_git_url(url)
+            .map_err(|e| anyhow::anyhow!("Invalid Git URL: {}", e))?;
+        let sha_short = &sha[..8.min(sha.len())];
+        Ok(self.cache_dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}")))
+    }
+
     /// Gets or clones a source repository, ensuring it's available in the cache.
     ///
     /// This is the primary method for source repository management. It handles both
