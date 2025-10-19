@@ -184,7 +184,7 @@
 
 pub mod filters;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, to_string, to_value};
 use std::collections::HashMap;
@@ -711,13 +711,19 @@ impl TemplateContextBuilder {
     /// ```rust,no_run
     /// use agpm_cli::templating::TemplateContextBuilder;
     /// use agpm_cli::lockfile::LockFile;
-    /// use std::path::Path;
+    /// use std::path::{Path, PathBuf};
     /// use std::sync::Arc;
     ///
     /// # fn example() -> anyhow::Result<()> {
     /// let lockfile = LockFile::load(Path::new("agpm.lock"))?;
     /// let cache = Arc::new(agpm_cli::cache::Cache::new()?);
-    /// let builder = TemplateContextBuilder::new(Arc::new(lockfile), None, cache);
+    /// let project_dir = std::env::current_dir()?;
+    /// let builder = TemplateContextBuilder::new(
+    ///     Arc::new(lockfile),
+    ///     None,
+    ///     cache,
+    ///     project_dir
+    /// );
     ///
     /// let digest = builder.compute_context_digest()?;
     /// println!("Template context digest: {}", digest);
@@ -812,12 +818,12 @@ impl TemplateRenderer {
         let mut tera = Tera::default();
 
         // Register custom filters
-        tera.register_filter(
-            "content",
-            filters::create_content_filter(project_dir.clone()),
-        );
+        tera.register_filter("content", filters::create_content_filter(project_dir.clone()));
 
-        Ok(Self { tera, enabled })
+        Ok(Self {
+            tera,
+            enabled,
+        })
     }
 
     /// Render a Markdown template with the given context.
@@ -910,39 +916,30 @@ impl TemplateRenderer {
             tracing::debug!("Rendering pass {} of max {}", depth, max_depth);
 
             // Render the current content
-            let rendered = self
-                .tera
-                .render_str(&current_content, context)
-                .map_err(|e| {
-                    // Extract detailed error information from Tera error
-                    let error_msg = Self::format_tera_error(&e);
+            let rendered = self.tera.render_str(&current_content, context).map_err(|e| {
+                // Extract detailed error information from Tera error
+                let error_msg = Self::format_tera_error(&e);
 
-                    // Output the detailed error to stderr for immediate visibility
-                    eprintln!("Template rendering error:\n{}", error_msg);
+                // Output the detailed error to stderr for immediate visibility
+                eprintln!("Template rendering error:\n{}", error_msg);
 
-                    // Include the context in the error message for user visibility
-                    let context_str = Self::format_context_as_string(context);
-                    anyhow::Error::new(e).context(format!(
-                        "Template rendering failed at depth {}:\n{}\n\nTemplate context:\n{}",
-                        depth, error_msg, context_str
-                    ))
-                })?;
+                // Include the context in the error message for user visibility
+                let context_str = Self::format_context_as_string(context);
+                anyhow::Error::new(e).context(format!(
+                    "Template rendering failed at depth {}:\n{}\n\nTemplate context:\n{}",
+                    depth, error_msg, context_str
+                ))
+            })?;
 
             // Check if the rendered output still contains template syntax
             if !self.contains_template_syntax(&rendered) {
                 // No more template syntax - we're done
-                tracing::debug!(
-                    "Template rendering complete after {} pass(es)",
-                    depth
-                );
+                tracing::debug!("Template rendering complete after {} pass(es)", depth);
                 return Ok(rendered);
             }
 
             // More template syntax found - prepare for next iteration
-            tracing::debug!(
-                "Template syntax detected in output, continuing to pass {}",
-                depth + 1
-            );
+            tracing::debug!("Template syntax detected in output, continuing to pass {}", depth + 1);
             current_content = rendered;
         }
     }
@@ -1143,12 +1140,8 @@ mod tests {
 
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
-        let builder = TemplateContextBuilder::new(
-            Arc::new(lockfile),
-            None,
-            Arc::new(cache),
-            project_dir,
-        );
+        let builder =
+            TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
         let _context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
@@ -1271,12 +1264,8 @@ mod tests {
 
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
-        let builder = TemplateContextBuilder::new(
-            Arc::new(lockfile),
-            None,
-            Arc::new(cache),
-            project_dir,
-        );
+        let builder =
+            TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
         let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
         // Extract the agpm.resource.install_path from context

@@ -79,7 +79,7 @@
 //!
 //! The template system will render up to 10 levels of nested references.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
@@ -186,25 +186,19 @@ pub fn validate_content_path(path_str: &str, project_dir: &Path) -> Result<PathB
             }
             _ => {
                 // Prefix, RootDir shouldn't appear in relative paths
-                bail!(
-                    "Invalid path component in '{}'. Only relative paths are allowed.",
-                    path_str
-                );
+                bail!("Invalid path component in '{}'. Only relative paths are allowed.", path_str);
             }
         }
     }
 
     // Validate file extension
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "File '{}' has no extension. Allowed extensions: {}",
-                path_str,
-                ALLOWED_EXTENSIONS.join(", ")
-            )
-        })?;
+    let extension = path.extension().and_then(|ext| ext.to_str()).ok_or_else(|| {
+        anyhow::anyhow!(
+            "File '{}' has no extension. Allowed extensions: {}",
+            path_str,
+            ALLOWED_EXTENSIONS.join(", ")
+        )
+    })?;
 
     let extension_lower = extension.to_lowercase();
     if !ALLOWED_EXTENSIONS.contains(&extension_lower.as_str()) {
@@ -247,10 +241,7 @@ pub fn validate_content_path(path_str: &str, project_dir: &Path) -> Result<PathB
         .with_context(|| format!("Failed to canonicalize path: {}", full_path.display()))?;
 
     let canonical_project = project_dir.canonicalize().with_context(|| {
-        format!(
-            "Failed to canonicalize project directory: {}",
-            project_dir.display()
-        )
+        format!("Failed to canonicalize project directory: {}", project_dir.display())
     })?;
 
     // Final security check: ensure canonical path is within project directory
@@ -399,9 +390,7 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 /// # Ok(())
 /// # }
 /// ```
-pub fn create_content_filter(
-    project_dir: PathBuf,
-) -> impl tera::Filter + Send + Sync + 'static {
+pub fn create_content_filter(project_dir: PathBuf) -> impl tera::Filter + 'static {
     move |value: &tera::Value, _args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
         // Extract path string from filter input
         let path_str = value
@@ -437,11 +426,7 @@ mod tests {
         // Create test files
         fs::write(project_dir.join("docs/guide.md"), "# Guide\n\nContent here").unwrap();
         fs::write(project_dir.join("docs/notes.txt"), "Plain text notes").unwrap();
-        fs::write(
-            project_dir.join("project/config.json"),
-            r#"{"key": "value"}"#,
-        )
-        .unwrap();
+        fs::write(project_dir.join("project/config.json"), r#"{"key": "value"}"#).unwrap();
 
         // Create markdown with frontmatter
         fs::write(
@@ -650,17 +635,11 @@ mod recursive_tests {
         fs::create_dir_all(project_dir.join("docs")).unwrap();
 
         // Level 1 → Level 2 → Level 3
-        fs::write(
-            project_dir.join("docs/level1.md"),
-            "L1: {{ 'docs/level2.md' | content }}",
-        )
-        .unwrap();
+        fs::write(project_dir.join("docs/level1.md"), "L1: {{ 'docs/level2.md' | content }}")
+            .unwrap();
 
-        fs::write(
-            project_dir.join("docs/level2.md"),
-            "L2: {{ 'docs/level3.md' | content }}",
-        )
-        .unwrap();
+        fs::write(project_dir.join("docs/level2.md"), "L2: {{ 'docs/level3.md' | content }}")
+            .unwrap();
 
         fs::write(project_dir.join("docs/level3.md"), "L3: Final").unwrap();
 
@@ -689,11 +668,8 @@ mod recursive_tests {
         fs::create_dir_all(project_dir.join("docs")).unwrap();
 
         // Create a file that references itself (infinite loop)
-        fs::write(
-            project_dir.join("docs/loop.md"),
-            "Loop: {{ 'docs/loop.md' | content }}",
-        )
-        .unwrap();
+        fs::write(project_dir.join("docs/loop.md"), "Loop: {{ 'docs/loop.md' | content }}")
+            .unwrap();
 
         let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf()).unwrap();
         let context = Context::new();
@@ -737,10 +713,7 @@ mod recursive_tests {
         let template = "{{ 'docs/main.md' | content }}";
         let result = renderer.render_template(template, &context);
 
-        assert!(
-            result.is_ok(),
-            "Multiple file references should succeed"
-        );
+        assert!(result.is_ok(), "Multiple file references should succeed");
         let content = result.unwrap();
         assert!(content.contains("# Main"));
         assert!(content.contains("Part 1 content"));

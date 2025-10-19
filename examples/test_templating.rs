@@ -32,12 +32,8 @@ fn main() {
 
     let cache = agpm_cli::cache::Cache::new().unwrap();
     let project_dir = std::env::current_dir().unwrap();
-    let builder = TemplateContextBuilder::new(
-        Arc::new(lockfile),
-        None,
-        Arc::new(cache),
-        project_dir.clone(),
-    );
+    let builder =
+        TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir.clone());
 
     let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 

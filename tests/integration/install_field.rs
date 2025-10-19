@@ -365,9 +365,7 @@ title: Local Helper
 - `validate_input()` - Input validation
 - `log_error()` - Error logging
 "#;
-    test_repo
-        .add_resource("snippets", "local-helper", local_snippet_content)
-        .await?;
+    test_repo.add_resource("snippets", "local-helper", local_snippet_content).await?;
 
     // Create another local file that will be used as a dependency
     let utils_content = r#"---
@@ -379,9 +377,7 @@ title: Utilities
 - `trim()` - Remove whitespace
 - `uppercase()` - Convert to uppercase
 "#;
-    test_repo
-        .add_resource("snippets", "utils", utils_content)
-        .await?;
+    test_repo.add_resource("snippets", "utils", utils_content).await?;
 
     // Create an agent that depends on the snippets and embeds their content
     test_repo
@@ -438,8 +434,7 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
     assert!(
         output.success,
         "Install should succeed. Stdout: {}\nStderr: {}",
-        output.stdout,
-        output.stderr
+        output.stdout, output.stderr
     );
 
     // Read the installed agent file
@@ -455,16 +450,10 @@ local-content-agent = {{ source = "test-repo", path = "agents/local-content-agen
         content.contains("`format_date()`"),
         "Helper snippet content should include function details"
     );
-    assert!(
-        content.contains("`validate_input()`"),
-        "All helper functions should be included"
-    );
+    assert!(content.contains("`validate_input()`"), "All helper functions should be included");
 
     // Verify utils content was also embedded
-    assert!(
-        content.contains("# Utility Functions"),
-        "Utils content should be embedded in agent"
-    );
+    assert!(content.contains("# Utility Functions"), "Utils content should be embedded in agent");
     assert!(content.contains("`trim()`"), "Utils functions should be included");
 
     // Verify frontmatter was stripped from embedded content
