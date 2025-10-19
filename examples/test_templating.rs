@@ -37,7 +37,7 @@ fn main() {
 
     let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
 
-    let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
+    let mut renderer = TemplateRenderer::new(true, project_dir, Some(1024 * 1024)).unwrap();
 
     let template_content = r#"---
 title: Test Agent

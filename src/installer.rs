@@ -166,6 +166,8 @@ pub struct InstallContext<'a> {
     pub lockfile: Option<&'a Arc<LockFile>>,
     pub project_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
+    pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
+    pub max_content_file_size: Option<u64>,
 }
 
 impl<'a> InstallContext<'a> {
@@ -180,6 +182,8 @@ impl<'a> InstallContext<'a> {
         lockfile: Option<&'a Arc<LockFile>>,
         project_patches: Option<&'a crate::manifest::ManifestPatches>,
         private_patches: Option<&'a crate::manifest::ManifestPatches>,
+        gitignore_lock: Option<&'a Arc<Mutex<()>>>,
+        max_content_file_size: Option<u64>,
     ) -> Self {
         Self {
             project_dir,
@@ -190,6 +194,8 @@ impl<'a> InstallContext<'a> {
             lockfile,
             project_patches,
             private_patches,
+            gitignore_lock,
+            max_content_file_size,
         }
     }
 }
@@ -313,7 +319,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
@@ -545,7 +551,7 @@ pub async fn install_resource(
                 }
 
                 // Create renderer and render template
-                let mut renderer = TemplateRenderer::new(true, context.project_dir.to_path_buf())
+                let mut renderer = TemplateRenderer::new(true, context.project_dir.to_path_buf(), context.max_content_file_size)
                     .with_context(|| "Failed to create template renderer")?;
 
                 let rendered = renderer
@@ -635,6 +641,20 @@ pub async fn install_resource(
             ensure_dir(parent)?;
         }
 
+        // Add to .gitignore BEFORE writing file to prevent accidental commits
+        if let Some(lock) = context.gitignore_lock {
+            // Calculate relative path for gitignore
+            let relative_path = dest_path
+                .strip_prefix(context.project_dir)
+                .unwrap_or(&dest_path)
+                .to_string_lossy()
+                .to_string();
+
+            add_path_to_gitignore(context.project_dir, &relative_path, lock)
+                .await
+                .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
+        }
+
         atomic_write(&dest_path, final_content.as_bytes())
             .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
 
@@ -711,7 +731,7 @@ pub async fn install_resource(
 ///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
@@ -807,7 +827,7 @@ pub async fn install_resource_with_progress(
 ///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
 /// let pb = ProgressBar::new(total as u64);
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
 /// let count = install_resources_parallel(
 ///     &lockfile,
 ///     &manifest,
@@ -948,6 +968,8 @@ pub async fn install_resources_parallel(
                     Some(lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -1349,6 +1371,8 @@ pub async fn install_resources_parallel_with_progress(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -1714,6 +1738,9 @@ pub async fn install_resources(
     let installed_count = Arc::new(Mutex::new(0));
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
 
+    // Create gitignore lock for thread-safe gitignore updates
+    let gitignore_lock = Arc::new(Mutex::new(()));
+
     // Update initial progress message
     if let Some(ref pm) = progress {
         pm.update_current_message(&format!("Installing 0/{total} resources"));
@@ -1726,6 +1753,7 @@ pub async fn install_resources(
             let installed_count = Arc::clone(&installed_count);
             let cache = cache.clone();
             let progress = progress.clone();
+            let gitignore_lock = Arc::clone(&gitignore_lock);
 
             async move {
                 // Update progress message for current resource
@@ -1742,6 +1770,8 @@ pub async fn install_resources(
                     Some(lockfile),
                     Some(&manifest.project_patches),
                     Some(&manifest.private_patches),
+                    Some(&gitignore_lock),
+                    None, // max_content_file_size - not available in install_resources context
                 );
 
                 let res =
@@ -1867,7 +1897,7 @@ pub async fn install_resources(
 /// // Create dynamic progress manager
 /// let progress_bar = Arc::new(ProgressBar::new(100));
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
 /// let count = install_resources_with_dynamic_progress(
 ///     &lockfile,
 ///     &manifest,
@@ -1989,6 +2019,8 @@ pub async fn install_resources_with_dynamic_progress(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -2110,7 +2142,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -2269,6 +2301,8 @@ pub async fn install_updated_resources(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 install_resource_for_parallel(&entry, &resource_dir, &context).await?;
 
@@ -2295,6 +2329,124 @@ pub async fn install_updated_resources(
 
     let final_count = *installed_count.lock().await;
     Ok(final_count)
+}
+
+/// Add a single path to .gitignore atomically
+///
+/// This function adds a single path to the AGPM-managed section of `.gitignore`,
+/// ensuring the file is protected from accidental commits even if subsequent
+/// operations fail. Thread-safe via mutex locking.
+///
+/// # Arguments
+///
+/// * `project_dir` - Project root directory containing `.gitignore`
+/// * `path` - Path to add (relative to project root, forward slashes)
+/// * `lock` - Mutex to synchronize concurrent gitignore updates
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the path was added successfully or was already present.
+pub async fn add_path_to_gitignore(
+    project_dir: &Path,
+    path: &str,
+    lock: &Arc<Mutex<()>>,
+) -> Result<()> {
+    // Acquire lock to ensure thread-safe updates
+    let _guard = lock.lock().await;
+
+    let gitignore_path = project_dir.join(".gitignore");
+
+    // Read existing .gitignore content
+    let mut before_agpm = Vec::new();
+    let mut agpm_paths = std::collections::HashSet::new();
+    let mut after_agpm = Vec::new();
+
+    if gitignore_path.exists() {
+        let content = tokio::fs::read_to_string(&gitignore_path)
+            .await
+            .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
+
+        let mut in_agpm_section = false;
+        let mut past_agpm_section = false;
+
+        for line in content.lines() {
+            if line == "# AGPM managed entries - do not edit below this line"
+                || line == "# CCPM managed entries - do not edit below this line"
+            {
+                in_agpm_section = true;
+            } else if line == "# End of AGPM managed entries"
+                || line == "# End of CCPM managed entries"
+            {
+                in_agpm_section = false;
+                past_agpm_section = true;
+            } else if in_agpm_section {
+                // Collect existing AGPM paths
+                if !line.is_empty() && !line.starts_with('#') {
+                    agpm_paths.insert(line.to_string());
+                }
+            } else if !past_agpm_section {
+                before_agpm.push(line.to_string());
+            } else {
+                after_agpm.push(line.to_string());
+            }
+        }
+    }
+
+    // Add the new path if not already present
+    let normalized_path = normalize_path_for_storage(path);
+    if agpm_paths.contains(&normalized_path) {
+        // Path already exists, no update needed
+        return Ok(());
+    }
+    agpm_paths.insert(normalized_path);
+
+    // Always include private config files
+    agpm_paths.insert("agpm.private.toml".to_string());
+    agpm_paths.insert("agpm.private.lock".to_string());
+
+    // Build new content
+    let mut new_content = String::new();
+
+    // Add header for new files
+    if before_agpm.is_empty() && after_agpm.is_empty() {
+        new_content.push_str("# .gitignore - AGPM managed entries\n");
+        new_content.push_str("# AGPM entries are automatically generated\n");
+        new_content.push('\n');
+    } else {
+        // Preserve content before AGPM section
+        for line in &before_agpm {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+        if !before_agpm.is_empty() && !before_agpm.last().unwrap().trim().is_empty() {
+            new_content.push('\n');
+        }
+    }
+
+    // Add AGPM section
+    new_content.push_str("# AGPM managed entries - do not edit below this line\n");
+    let mut sorted_paths: Vec<_> = agpm_paths.into_iter().collect();
+    sorted_paths.sort();
+    for p in sorted_paths {
+        new_content.push_str(&p);
+        new_content.push('\n');
+    }
+    new_content.push_str("# End of AGPM managed entries\n");
+
+    // Preserve content after AGPM section
+    if !after_agpm.is_empty() {
+        new_content.push('\n');
+        for line in &after_agpm {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+
+    // Write atomically
+    atomic_write(&gitignore_path, new_content.as_bytes())
+        .with_context(|| format!("Failed to update {}", gitignore_path.display()))?;
+
+    Ok(())
 }
 
 /// Update .gitignore with installed file paths
@@ -2976,7 +3128,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3012,7 +3164,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3037,7 +3189,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Try to install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3062,7 +3214,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
@@ -3098,7 +3250,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install with progress
         let result = install_resource_with_progress(&entry, "agents", &context, &pb).await;
@@ -3237,6 +3389,8 @@ mod tests {
             Some(&lockfile),
             None,
             None,
+            None,
+            None,
         );
 
         let count = install_updated_resources(
@@ -3287,6 +3441,8 @@ mod tests {
             Some(&lockfile),
             None,
             None,
+            None,
+            None,
         );
 
         let count = install_updated_resources(
@@ -3315,7 +3471,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install using the parallel function
         let result = install_resource_for_parallel(&entry, "agents", &context).await;
@@ -3343,7 +3499,7 @@ mod tests {
 
         // Create install context
         let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3558,6 +3714,8 @@ local-config.json
             false,
             Some(&manifest),
             Some(&lockfile),
+            None,
+            None,
             None,
             None,
         );

@@ -102,11 +102,13 @@ pub const MAX_RENDER_DEPTH: usize = 10;
 /// 2. The path doesn't traverse outside the project directory using `..`
 /// 3. The file extension is in the allowed list
 /// 4. The file exists and is readable
+/// 5. The file size doesn't exceed the maximum allowed
 ///
 /// # Arguments
 ///
 /// * `path_str` - The path string from the template
 /// * `project_dir` - The project root directory
+/// * `max_size` - Maximum file size in bytes (None for no limit)
 ///
 /// # Returns
 ///
@@ -120,6 +122,7 @@ pub const MAX_RENDER_DEPTH: usize = 10;
 /// - File extension is not in the allowed list
 /// - File doesn't exist
 /// - File is not accessible (permissions, etc.)
+/// - File size exceeds the maximum allowed
 ///
 /// # Security
 ///
@@ -134,24 +137,27 @@ pub const MAX_RENDER_DEPTH: usize = 10;
 /// # fn example() -> anyhow::Result<()> {
 /// let project_dir = Path::new("/home/user/project");
 ///
-/// // Valid relative path
-/// let path = validate_content_path("docs/guide.md", project_dir)?;
+/// // Valid relative path with no size limit
+/// let path = validate_content_path("docs/guide.md", project_dir, None)?;
+///
+/// // With size limit (1 MB)
+/// let path = validate_content_path("docs/guide.md", project_dir, Some(1024 * 1024))?;
 ///
 /// // Invalid: absolute path
-/// let result = validate_content_path("/etc/passwd", project_dir);
+/// let result = validate_content_path("/etc/passwd", project_dir, None);
 /// assert!(result.is_err());
 ///
 /// // Invalid: directory traversal
-/// let result = validate_content_path("../../etc/passwd", project_dir);
+/// let result = validate_content_path("../../etc/passwd", project_dir, None);
 /// assert!(result.is_err());
 ///
 /// // Invalid: wrong extension
-/// let result = validate_content_path("script.sh", project_dir);
+/// let result = validate_content_path("script.sh", project_dir, None);
 /// assert!(result.is_err());
 /// # Ok(())
 /// # }
 /// ```
-pub fn validate_content_path(path_str: &str, project_dir: &Path) -> Result<PathBuf> {
+pub fn validate_content_path(path_str: &str, project_dir: &Path, max_size: Option<u64>) -> Result<PathBuf> {
     // Parse the path
     let path = Path::new(path_str);
 
@@ -252,6 +258,25 @@ pub fn validate_content_path(path_str: &str, project_dir: &Path) -> Result<PathB
             canonical_path.display(),
             canonical_project.display()
         );
+    }
+
+    // Check file size if limit is specified
+    if let Some(max_bytes) = max_size {
+        let metadata = canonical_path
+            .metadata()
+            .with_context(|| format!("Failed to read file metadata: {}", canonical_path.display()))?;
+
+        let file_size = metadata.len();
+        if file_size > max_bytes {
+            bail!(
+                "File '{}' is too large ({} bytes). Maximum allowed size: {} bytes ({:.2} MB vs {:.2} MB limit).",
+                path_str,
+                file_size,
+                max_bytes,
+                file_size as f64 / (1024.0 * 1024.0),
+                max_bytes as f64 / (1024.0 * 1024.0)
+            );
+        }
     }
 
     Ok(canonical_path)
@@ -390,7 +415,7 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 /// # Ok(())
 /// # }
 /// ```
-pub fn create_content_filter(project_dir: PathBuf) -> impl tera::Filter + 'static {
+pub fn create_content_filter(project_dir: PathBuf, max_size: Option<u64>) -> impl tera::Filter + 'static {
     move |value: &tera::Value, _args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
         // Extract path string from filter input
         let path_str = value
@@ -398,7 +423,7 @@ pub fn create_content_filter(project_dir: PathBuf) -> impl tera::Filter + 'stati
             .ok_or_else(|| tera::Error::msg("content filter requires a string path"))?;
 
         // Validate and read the file
-        let file_path = validate_content_path(path_str, &project_dir)
+        let file_path = validate_content_path(path_str, &project_dir, max_size)
             .map_err(|e| tera::Error::msg(format!("content filter error: {}", e)))?;
 
         let content = read_and_process_content(&file_path)
@@ -443,7 +468,7 @@ mod tests {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("docs/guide.md", project_dir);
+        let result = validate_content_path("docs/guide.md", project_dir, None);
         assert!(result.is_ok());
 
         let path = result.unwrap();
@@ -456,7 +481,7 @@ mod tests {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("/etc/passwd", project_dir);
+        let result = validate_content_path("/etc/passwd", project_dir, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Absolute paths"));
     }
@@ -466,7 +491,7 @@ mod tests {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("../../etc/passwd", project_dir);
+        let result = validate_content_path("../../etc/passwd", project_dir, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("traversal"));
     }
@@ -479,7 +504,7 @@ mod tests {
         // Create a .sh file
         fs::write(project_dir.join("script.sh"), "#!/bin/bash").unwrap();
 
-        let result = validate_content_path("script.sh", project_dir);
+        let result = validate_content_path("script.sh", project_dir, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not allowed"));
     }
@@ -489,9 +514,31 @@ mod tests {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("docs/missing.md", project_dir);
+        let result = validate_content_path("docs/missing.md", project_dir, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_validate_rejects_file_too_large() {
+        let temp = create_test_project();
+        let project_dir = temp.path();
+
+        // Create a file with known size (1000 bytes)
+        let large_file = project_dir.join("large.md");
+        fs::write(&large_file, "a".repeat(1000)).unwrap();
+
+        // Should succeed with larger limit
+        let result = validate_content_path("large.md", project_dir, Some(1001));
+        assert!(result.is_ok());
+
+        // Should fail with smaller limit
+        let result = validate_content_path("large.md", project_dir, Some(999));
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("too large"));
+        assert!(err_msg.contains("1000 bytes"));
+        assert!(err_msg.contains("999 bytes"));
     }
 
     #[test]
@@ -541,7 +588,7 @@ mod tests {
 
         // Register the filter in a Tera instance
         let mut tera = Tera::default();
-        tera.register_filter("content", create_content_filter(project_dir));
+        tera.register_filter("content", create_content_filter(project_dir, None));
 
         // Test with valid path using Tera's template rendering
         let template = r#"{{ 'docs/guide.md' | content }}"#;
@@ -564,7 +611,7 @@ mod tests {
 
         // Register the filter in a Tera instance
         let mut tera = Tera::default();
-        tera.register_filter("content", create_content_filter(project_dir));
+        tera.register_filter("content", create_content_filter(project_dir, None));
 
         // Test with number instead of string (this will be caught at template render time)
         let template = r#"{{ 42 | content }}"#;
@@ -610,7 +657,7 @@ mod recursive_tests {
         fs::write(project_dir.join("docs/level2.md"), "Content from level 2").unwrap();
 
         // Create renderer and render
-        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf()).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf(), None).unwrap();
         let context = Context::new();
 
         let template = "{{ 'docs/level1.md' | content }}";
@@ -643,7 +690,7 @@ mod recursive_tests {
 
         fs::write(project_dir.join("docs/level3.md"), "L3: Final").unwrap();
 
-        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf()).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf(), None).unwrap();
         let context = Context::new();
 
         let template = "{{ 'docs/level1.md' | content }}";
@@ -671,7 +718,7 @@ mod recursive_tests {
         fs::write(project_dir.join("docs/loop.md"), "Loop: {{ 'docs/loop.md' | content }}")
             .unwrap();
 
-        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf()).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf(), None).unwrap();
         let context = Context::new();
 
         let template = "{{ 'docs/loop.md' | content }}";
@@ -707,7 +754,7 @@ mod recursive_tests {
         fs::write(project_dir.join("docs/part1.md"), "Part 1 content").unwrap();
         fs::write(project_dir.join("docs/part2.md"), "Part 2 content").unwrap();
 
-        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf()).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir.to_path_buf(), None).unwrap();
         let context = Context::new();
 
         let template = "{{ 'docs/main.md' | content }}";

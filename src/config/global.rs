@@ -129,6 +129,21 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+/// Default maximum file size for operations that read/embed files.
+///
+/// Default: 1 MB (1,048,576 bytes)
+///
+/// This limit prevents memory exhaustion when reading files. Currently used by:
+/// - Template content filter for embedding project files
+///
+/// Future uses may include:
+/// - General file reading operations
+/// - Resource validation
+/// - Content processing
+const fn default_max_content_file_size() -> u64 {
+    1024 * 1024 // 1 MB
+}
+
 /// Global configuration structure for AGPM.
 ///
 /// This structure represents the global user configuration file stored at `~/.agpm/config.toml`.
@@ -195,6 +210,26 @@ pub struct GlobalConfig {
     /// update checks, backup preferences, and verification settings.
     #[serde(default, skip_serializing_if = "is_default_upgrade_config")]
     pub upgrade: UpgradeConfig,
+
+    /// Maximum file size in bytes for file operations.
+    ///
+    /// Default: 1 MB (1,048,576 bytes)
+    ///
+    /// This limit prevents memory exhaustion when reading or embedding files.
+    /// Currently used by template content filter, may be used by other operations in the future.
+    ///
+    /// # Configuration
+    ///
+    /// Set in `~/.agpm/config.toml`:
+    /// ```toml
+    /// max_content_file_size = 2097152  # 2 MB
+    /// ```
+    #[serde(default = "default_max_content_file_size", skip_serializing_if = "is_default_max_content_file_size")]
+    pub max_content_file_size: u64,
+}
+
+fn is_default_max_content_file_size(size: &u64) -> bool {
+    *size == default_max_content_file_size()
 }
 
 const fn is_default_upgrade_config(config: &UpgradeConfig) -> bool {
@@ -688,6 +723,7 @@ impl GlobalConfig {
         Self {
             sources,
             upgrade: UpgradeConfig::default(),
+            max_content_file_size: default_max_content_file_size(),
         }
     }
 }

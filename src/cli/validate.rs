@@ -840,6 +840,10 @@ impl ValidateCommand {
             let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
             let cache = Arc::new(Cache::new()?);
 
+            // Load global config for template rendering settings
+            let global_config = crate::config::GlobalConfig::load().await.unwrap_or_default();
+            let max_content_file_size = Some(global_config.max_content_file_size);
+
             // Collect all markdown resources from manifest
             let mut template_results = Vec::new();
             let mut templates_found = 0;
@@ -930,7 +934,7 @@ impl ValidateCommand {
                     };
 
                     // Try to render
-                    let mut renderer = match TemplateRenderer::new(true, project_dir.to_path_buf())
+                    let mut renderer = match TemplateRenderer::new(true, project_dir.to_path_buf(), max_content_file_size)
                     {
                         Ok(r) => r,
                         Err(e) => {

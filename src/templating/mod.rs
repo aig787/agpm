@@ -805,6 +805,7 @@ impl TemplateRenderer {
     ///
     /// * `enabled` - Whether templating is enabled globally
     /// * `project_dir` - Project root directory for content filter validation
+    /// * `max_content_file_size` - Maximum file size in bytes for content filter (None for no limit)
     ///
     /// # Returns
     ///
@@ -813,12 +814,12 @@ impl TemplateRenderer {
     /// # Filters
     ///
     /// The following custom filters are registered:
-    /// - `content`: Read project-specific files with path validation
-    pub fn new(enabled: bool, project_dir: PathBuf) -> Result<Self> {
+    /// - `content`: Read project-specific files with path validation and size limits
+    pub fn new(enabled: bool, project_dir: PathBuf, max_content_file_size: Option<u64>) -> Result<Self> {
         let mut tera = Tera::default();
 
         // Register custom filters
-        tera.register_filter("content", filters::create_content_filter(project_dir.clone()));
+        tera.register_filter("content", filters::create_content_filter(project_dir.clone(), max_content_file_size));
 
         Ok(Self {
             tera,
@@ -1152,7 +1153,7 @@ mod tests {
     #[test]
     fn test_template_renderer() {
         let project_dir = std::env::current_dir().unwrap();
-        let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
 
         // Test rendering without template syntax
         let result = renderer.render_template("# Plain Markdown", &TeraContext::new()).unwrap();
@@ -1169,7 +1170,7 @@ mod tests {
     #[test]
     fn test_template_renderer_disabled() {
         let project_dir = std::env::current_dir().unwrap();
-        let mut renderer = TemplateRenderer::new(false, project_dir).unwrap();
+        let mut renderer = TemplateRenderer::new(false, project_dir, None).unwrap();
 
         let mut context = TeraContext::new();
         context.insert("test_var", "test_value");
@@ -1182,7 +1183,7 @@ mod tests {
     #[test]
     fn test_template_error_formatting() {
         let project_dir = std::env::current_dir().unwrap();
-        let mut renderer = TemplateRenderer::new(true, project_dir).unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
         let context = TeraContext::new();
 
         // Test with missing variable - should produce detailed error

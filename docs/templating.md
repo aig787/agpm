@@ -288,6 +288,7 @@ Read and embed project-specific files (style guides, architecture docs, team con
 - Only text files allowed: `.md`, `.txt`, `.json`, `.toml`, `.yaml`
 - Absolute paths rejected
 - Files must exist in project root
+- File size limit: 1 MB by default (configurable in `~/.agpm/config.toml`)
 
 **Content Processing**:
 - **Markdown (.md)**: YAML/TOML frontmatter automatically stripped
@@ -731,6 +732,28 @@ Will render differently based on platform:
 - **Unix/macOS**: `This agent is installed at: .claude/agents/example.md`
 
 This means the **installed content will differ by platform**, but the lockfile remains consistent.
+
+## Configuration
+
+### File Size Limit
+
+The `content` filter enforces a file size limit to prevent memory exhaustion when embedding large files. By default, the limit is **1 MB (1,048,576 bytes)**.
+
+You can customize this limit in your global AGPM configuration (`~/.agpm/config.toml`):
+
+```toml
+# Global file size limit (applies to template content filter and other operations)
+max_content_file_size = 2097152  # 2 MB in bytes
+```
+
+**Common Size Values**:
+- 512 KB: `524288`
+- 1 MB (default): `1048576`
+- 2 MB: `2097152`
+- 5 MB: `5242880`
+- 10 MB: `10485760`
+
+If a file exceeds the configured limit, the template rendering will fail with a clear error message showing both the file size and the limit.
 
 ## Troubleshooting
 
