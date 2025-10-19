@@ -408,7 +408,8 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 /// # use agpm_cli::templating::filters::create_content_filter;
 /// # fn example() -> anyhow::Result<()> {
 /// let project_dir = Path::new("/home/user/project");
-/// let filter = create_content_filter(project_dir.to_path_buf());
+/// let max_size = Some(10 * 1024 * 1024); // 10 MB limit
+/// let filter = create_content_filter(project_dir.to_path_buf(), max_size);
 ///
 /// // Filter is registered in Tera:
 /// // tera.register_filter("content", filter);
