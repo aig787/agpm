@@ -415,6 +415,7 @@ async fn add_dependency_with_manifest_path(
 ///     Some(&manifest)
 /// ).unwrap();
 /// ```
+#[allow(clippy::ref_option)]
 fn parse_dependency_spec(
     spec: &str,
     custom_name: &Option<String>,
@@ -544,7 +545,7 @@ async fn install_single_dependency(
     // 3. Update the lockfile with proper dependency tracking
     install_cmd.execute_with_manifest_path(Some(manifest_path.to_path_buf())).await?;
 
-    println!("{}", format!("✓ Installed {} '{}' successfully", resource_type, name).green());
+    println!("{}", format!("✓ Installed {resource_type} '{name}' successfully").green());
 
     Ok(())
 }

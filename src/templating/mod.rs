@@ -1004,7 +1004,7 @@ impl TemplateRenderer {
                 in_literal_block = true;
                 current_block.clear();
                 tracing::debug!("Found start of literal block");
-                continue; // Skip the fence line
+                // Skip the fence line
             } else if in_literal_block && line.trim().starts_with("```") {
                 // End of literal block
                 in_literal_block = false;
@@ -1027,7 +1027,7 @@ impl TemplateRenderer {
                 );
 
                 current_block.clear();
-                continue; // Skip the fence line
+                // Skip the fence line
             } else if in_literal_block {
                 // Inside literal block - accumulate content
                 if !current_block.is_empty() {

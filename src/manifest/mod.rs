@@ -4354,9 +4354,9 @@ claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" 
     }
 
     #[test]
-    fn test_opencode_disabled_by_default() {
+    fn test_opencode_enabled_by_default() {
         // Create a manifest with OpenCode without explicit enabled field
-        // OpenCode should default to disabled (false)
+        // OpenCode should default to enabled (true)
         let toml = r#"
 [sources]
 test = "https://example.com/repo.git"
@@ -4371,15 +4371,15 @@ opencode-agent = { source = "test", path = "agents/opencode.md", version = "v1.0
 
         let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
 
-        // Check that OpenCode is disabled by default
+        // Check that OpenCode is enabled by default
         let tool_config = manifest.get_tools_config();
         let opencode_config = tool_config.types.get("opencode");
         assert!(opencode_config.is_some());
-        assert!(!opencode_config.unwrap().enabled, "OpenCode should be disabled by default");
+        assert!(opencode_config.unwrap().enabled, "OpenCode should be enabled by default");
 
-        // Get all dependencies - should be empty because OpenCode is disabled
+        // Get all dependencies - should include the agent because OpenCode is enabled
         let deps = manifest.all_dependencies_with_types();
-        assert_eq!(deps.len(), 0, "Should have 0 dependencies (OpenCode disabled by default)");
+        assert_eq!(deps.len(), 1, "Should have 1 dependency (OpenCode enabled by default)");
     }
 
     #[test]

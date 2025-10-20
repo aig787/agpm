@@ -38,7 +38,7 @@ mod well_known_tool {
     #[test]
     fn test_default_enabled_values() {
         assert!(WellKnownTool::ClaudeCode.default_enabled());
-        assert!(!WellKnownTool::OpenCode.default_enabled());
+        assert!(WellKnownTool::OpenCode.default_enabled());
         assert!(WellKnownTool::Agpm.default_enabled());
         assert!(WellKnownTool::Generic.default_enabled());
     }
@@ -153,9 +153,9 @@ opencode = { path = ".opencode", resources = { agents = { path = "agent" } } }
         let claude_config = config.types.get("claude-code").unwrap();
         assert!(claude_config.enabled);
 
-        // opencode should default to enabled = false
+        // opencode should default to enabled = true
         let opencode_config = config.types.get("opencode").unwrap();
-        assert!(!opencode_config.enabled);
+        assert!(opencode_config.enabled);
     }
 
     #[test]
@@ -337,7 +337,7 @@ mod tools_config_default {
         let opencode = config.types.get("opencode").unwrap();
 
         assert_eq!(opencode.path, PathBuf::from(".opencode"));
-        assert!(!opencode.enabled); // Disabled by default
+        assert!(opencode.enabled); // Enabled by default
 
         // OpenCode only supports agents, commands, and mcp-servers
         assert!(opencode.resources.contains_key("agents"));

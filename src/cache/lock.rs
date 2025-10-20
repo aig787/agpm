@@ -108,77 +108,36 @@ impl CacheLock {
     /// # Ok(())
     /// # }
     /// ```
-    ///
-    /// Error handling for lock acquisition:
-    ///
-    /// ```rust,no_run
-    /// use agpm_cli::cache::lock::CacheLock;
-    /// use std::path::PathBuf;
-    ///
-    /// # async fn example() -> anyhow::Result<()> {
-    /// let cache_dir = PathBuf::from("/tmp/cache");
-    ///
-    /// match CacheLock::acquire(&cache_dir, "problematic-source").await {
-    ///     Ok(lock) => {
-    ///         println!("Lock acquired, proceeding with operations");
-    ///         // Use lock...
-    ///     }
-    ///     Err(e) => {
-    ///         eprintln!("Failed to acquire lock: {}", e);
-    ///         eprintln!("Another process may be using this source");
-    ///         return Err(e);
-    ///     }
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn acquire(cache_dir: &Path, source_name: &str) -> Result<Self> {
-        // Create lock file path: ~/.agpm/cache/.locks/source_name.lock
+        use tokio::fs;
+        use tokio::task::spawn_blocking;
+
+        // Create locks directory if it doesn't exist
         let locks_dir = cache_dir.join(".locks");
-        tokio::fs::create_dir_all(&locks_dir).await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotADirectory {
-                anyhow::anyhow!(
-                    "Cannot create directory: cache path is not a directory ({})",
-                    cache_dir.display()
-                )
-            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
-                anyhow::anyhow!(
-                    "Permission denied: cannot create locks directory at {}",
-                    locks_dir.display()
-                )
-            } else if e.raw_os_error() == Some(28) {
-                // ENOSPC on Unix
-                anyhow::anyhow!("No space left on device to create locks directory")
-            } else {
-                anyhow::anyhow!("Failed to create directory {}: {}", locks_dir.display(), e)
-            }
+        fs::create_dir_all(&locks_dir).await.with_context(|| {
+            format!("Failed to create locks directory: {}", locks_dir.display())
         })?;
 
+        // Create lock file path
         let lock_path = locks_dir.join(format!("{source_name}.lock"));
-        let lock_path_clone = lock_path.clone();
-        let source_name = source_name.to_string();
 
-        // Use spawn_blocking to perform blocking file lock operations
-        // This prevents blocking the tokio runtime
-        let file = tokio::task::spawn_blocking(move || -> Result<File> {
-            // Open or create the lock file
+        // Open/create lock file
+        let file = spawn_blocking(move || -> Result<File> {
             let file = OpenOptions::new()
                 .create(true)
                 .write(true)
-                .truncate(true)
-                .open(&lock_path_clone)
-                .with_context(|| {
-                    format!("Failed to open lock file: {}", lock_path_clone.display())
-                })?;
+                .truncate(false)
+                .open(&lock_path)
+                .with_context(|| format!("Failed to open lock file: {}", lock_path.display()))?;
 
-            // Try to acquire exclusive lock (blocking)
+            // Acquire exclusive lock
             file.lock_exclusive()
-                .with_context(|| format!("Failed to acquire lock for: {source_name}"))?;
+                .with_context(|| format!("Failed to acquire lock: {}", lock_path.display()))?;
 
             Ok(file)
         })
         .await
-        .context("Failed to spawn blocking task for lock acquisition")??;
+        .with_context(|| "Failed to spawn blocking task for lock acquisition")??;
 
         Ok(Self {
             _file: file,
@@ -188,33 +147,22 @@ impl CacheLock {
 
 /// Cleans up stale lock files in the cache directory.
 ///
-/// This function removes lock files that are older than the specified TTL (time-to-live)
-/// in seconds. Lock files can become stale if a process crashes without properly releasing
-/// its locks. This cleanup helps prevent lock file accumulation over time.
+/// This function removes lock files that are older than the specified TTL.
+/// It's useful for cleaning up after crashes or processes that didn't
+/// properly release their locks.
 ///
 /// # Parameters
 ///
-/// * `cache_dir` - Root cache directory containing the `.locks/` subdirectory
-/// * `ttl_seconds` - Maximum age in seconds for lock files (e.g., 3600 for 1 hour)
+/// * `cache_dir` - The cache directory containing the .locks subdirectory
+/// * `ttl_seconds` - Time-to-live in seconds for lock files
 ///
 /// # Returns
 ///
-/// Returns the number of stale lock files that were removed.
+/// Returns the number of lock files that were removed.
 ///
-/// # Example
+/// # Errors
 ///
-/// ```rust,no_run
-/// use agpm_cli::cache::lock::cleanup_stale_locks;
-/// use std::path::PathBuf;
-///
-/// # async fn example() -> anyhow::Result<()> {
-/// let cache_dir = PathBuf::from("/home/user/.agpm/cache");
-/// // Clean up lock files older than 1 hour
-/// let removed = cleanup_stale_locks(&cache_dir, 3600).await?;
-/// println!("Removed {} stale lock files", removed);
-/// # Ok(())
-/// # }
-/// ```
+/// Returns an error if unable to read the locks directory or access lock file metadata
 pub async fn cleanup_stale_locks(cache_dir: &Path, ttl_seconds: u64) -> Result<usize> {
     use std::time::{Duration, SystemTime};
     use tokio::fs;
@@ -239,14 +187,12 @@ pub async fn cleanup_stale_locks(cache_dir: &Path, ttl_seconds: u64) -> Result<u
         }
 
         // Check file age
-        let metadata = match fs::metadata(&path).await {
-            Ok(m) => m,
-            Err(_) => continue, // Skip if we can't read metadata
+        let Ok(metadata) = fs::metadata(&path).await else {
+            continue; // Skip if we can't read metadata
         };
 
-        let modified = match metadata.modified() {
-            Ok(t) => t,
-            Err(_) => continue, // Skip if we can't get modification time
+        let Ok(modified) = metadata.modified() else {
+            continue; // Skip if we can't get modification time
         };
 
         // Remove if older than TTL

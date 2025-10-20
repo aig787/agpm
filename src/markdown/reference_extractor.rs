@@ -240,13 +240,12 @@ fn remove_code_blocks(content: &str) -> String {
                     result.push(' ');
                 }
                 continue;
-            } else {
-                // It's inline code (1-2 backticks), preserve it
-                for _ in 0..backtick_count {
-                    result.push('`');
-                }
-                continue;
             }
+            // It's inline code (1-2 backticks), preserve it
+            for _ in 0..backtick_count {
+                result.push('`');
+            }
+            continue;
         }
 
         // Skip content inside code blocks

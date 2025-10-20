@@ -695,7 +695,7 @@ impl MarkdownDocument {
                 4
             };
             let frontmatter = &input[skip_size..end_idx];
-            let content = input[end_idx..].trim_start_matches("---").trim_start();
+            let document_content = input[end_idx..].trim_start_matches("---").trim_start();
 
             // Try to parse YAML frontmatter with standard parser first
             match serde_yaml::from_str::<MarkdownMetadata>(frontmatter) {
@@ -703,7 +703,7 @@ impl MarkdownDocument {
                     // Standard parsing succeeded
                     return Ok(Self {
                         metadata: Some(metadata),
-                        content: content.to_string(),
+                        content: document_content.to_string(),
                         raw: input.to_string(),
                     });
                 }
@@ -731,14 +731,14 @@ impl MarkdownDocument {
                 4
             };
             let frontmatter = &input[skip_size..end_idx];
-            let content = input[end_idx..].trim_start_matches("+++").trim_start();
+            let document_content = input[end_idx..].trim_start_matches("+++").trim_start();
 
             // Try to parse TOML frontmatter
             match toml::from_str::<MarkdownMetadata>(frontmatter) {
                 Ok(metadata) => {
                     return Ok(Self {
                         metadata: Some(metadata),
-                        content: content.to_string(),
+                        content: document_content.to_string(),
                         raw: input.to_string(),
                     });
                 }

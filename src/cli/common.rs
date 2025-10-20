@@ -57,6 +57,9 @@ pub struct CommandContext {
 
 impl CommandContext {
     /// Create a new command context from a manifest path
+    ///
+    /// # Errors
+    /// Returns an error if the manifest file doesn't exist or cannot be read
     pub fn from_manifest_path(manifest_path: impl AsRef<Path>) -> Result<Self> {
         let manifest_path = manifest_path.as_ref();
 
@@ -84,6 +87,9 @@ impl CommandContext {
     }
 
     /// Load an existing lockfile if it exists
+    ///
+    /// # Errors
+    /// Returns an error if the lockfile exists but cannot be parsed
     pub fn load_lockfile(&self) -> Result<Option<crate::lockfile::LockFile>> {
         if self.lockfile_path.exists() {
             let lockfile =
@@ -97,6 +103,9 @@ impl CommandContext {
     }
 
     /// Save a lockfile to the project directory
+    ///
+    /// # Errors
+    /// Returns an error if the lockfile cannot be written
     pub fn save_lockfile(&self, lockfile: &crate::lockfile::LockFile) -> Result<()> {
         lockfile
             .save(&self.lockfile_path)
@@ -136,6 +145,12 @@ impl CommandContext {
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Unable to access current directory
+/// - Unable to perform migration operations
 pub async fn handle_legacy_ccpm_migration() -> Result<Option<PathBuf>> {
     let current_dir = std::env::current_dir()?;
     let legacy_dir = find_legacy_ccpm_directory(&current_dir);
@@ -216,6 +231,7 @@ pub async fn handle_legacy_ccpm_migration() -> Result<Option<PathBuf>> {
 ///
 /// - `Some(String)` with migration instructions if legacy files are found
 /// - `None` if no legacy files are detected
+#[must_use]
 pub fn check_for_legacy_ccpm_files() -> Option<String> {
     check_for_legacy_ccpm_files_from(std::env::current_dir().ok()?)
 }

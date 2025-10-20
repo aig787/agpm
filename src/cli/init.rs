@@ -72,7 +72,7 @@ use crate::manifest::tool_config::ToolsConfig;
 /// - Header comment
 /// - Empty `[sources]` section with comments
 /// - Commented project variables example
-/// - `[tools.*]` sections for claude-code, opencode, and agpm with their resource configs (from ToolsConfig::default())
+/// - `[tools.*]` sections for claude-code, opencode, and agpm with their resource configs (from `ToolsConfig::default()`)
 /// - Empty resource sections (agents, snippets, commands, scripts, hooks, mcp-servers) with examples
 ///
 /// # Examples
@@ -81,6 +81,7 @@ use crate::manifest::tool_config::ToolsConfig;
 /// let manifest = build_default_manifest();
 /// std::fs::write("agpm.toml", manifest)?;
 /// ```
+#[allow(clippy::too_many_lines)]
 fn build_default_manifest() -> String {
     let mut doc = DocumentMut::new();
 
@@ -118,26 +119,26 @@ fn build_default_manifest() -> String {
     // Build tool configurations compactly using inline tables
     let tools_config = ToolsConfig::default();
 
-    let mut tools_table = Table::new();
-    tools_table.set_implicit(false);
-    tools_table.decor_mut().set_prefix(project_comment);
+    let mut tools_config_table = Table::new();
+    tools_config_table.set_implicit(false);
+    tools_config_table.decor_mut().set_prefix(project_comment);
 
     // Process each tool in order: claude-code, opencode, agpm
     for tool_name in &["claude-code", "opencode", "agpm"] {
         if let Some(tool_config) = tools_config.types.get(*tool_name) {
-            let mut tool_table = Table::new();
-            tool_table.set_implicit(false);
+            let mut current_tool_table = Table::new();
+            current_tool_table.set_implicit(false);
 
             // Add 'enabled' field for opencode (disabled by default)
             if *tool_name == "opencode" {
-                tool_table.insert("enabled", toml_edit::value(false));
-                if let Some(Item::Value(v)) = tool_table.get_mut("enabled") {
+                current_tool_table.insert("enabled", toml_edit::value(false));
+                if let Some(Item::Value(v)) = current_tool_table.get_mut("enabled") {
                     v.decor_mut().set_suffix("  # Enable if you want to use OpenCode resources");
                 }
             }
 
             // Add 'path' field
-            tool_table
+            current_tool_table
                 .insert("path", toml_edit::value(tool_config.path.to_string_lossy().as_ref()));
 
             // Build resources as inline table for compact output
@@ -149,26 +150,27 @@ fn build_default_manifest() -> String {
 
             for resource_key in resource_keys {
                 if let Some(resource_config) = tool_config.resources.get(resource_key.as_str()) {
-                    let mut resource_inline = toml_edit::InlineTable::new();
+                    let mut current_resource_inline = toml_edit::InlineTable::new();
 
                     if let Some(path) = &resource_config.path {
-                        resource_inline.insert("path", path.as_str().into());
+                        current_resource_inline.insert("path", path.as_str().into());
                     }
 
                     if let Some(merge_target) = &resource_config.merge_target {
-                        resource_inline.insert("merge-target", merge_target.as_str().into());
+                        current_resource_inline
+                            .insert("merge-target", merge_target.as_str().into());
                     }
 
                     // Only include flatten if explicitly set (not None)
                     if let Some(flatten) = resource_config.flatten {
-                        resource_inline.insert("flatten", flatten.into());
+                        current_resource_inline.insert("flatten", flatten.into());
                     }
 
-                    resources_inline.insert(resource_key, resource_inline.into());
+                    resources_inline.insert(resource_key, current_resource_inline.into());
                 }
             }
 
-            tool_table.insert("resources", Item::Value(resources_inline.into()));
+            current_tool_table.insert("resources", Item::Value(resources_inline.into()));
 
             // Add tool-specific comment after path
             let comment = match *tool_name {
@@ -181,15 +183,15 @@ fn build_default_manifest() -> String {
                 _ => "\n",
             };
 
-            if let Some(Item::Value(path)) = tool_table.get_mut("path") {
+            if let Some(Item::Value(path)) = current_tool_table.get_mut("path") {
                 path.decor_mut().set_suffix(comment);
             }
 
-            tools_table.insert(tool_name, Item::Table(tool_table));
+            tools_config_table.insert(tool_name, Item::Table(current_tool_table));
         }
     }
 
-    doc.insert("tools", Item::Table(tools_table));
+    doc.insert("tools", Item::Table(tools_config_table));
 
     // Add default-tools section (commented out - optional configuration)
     let default_tools_comment = "\n\
@@ -212,7 +214,7 @@ fn build_default_manifest() -> String {
         \n";
 
     // Combine comments and add as prefix to first resource section
-    let combined_comment = format!("{}{}", default_tools_comment, patch_comment);
+    let combined_comment = format!("{default_tools_comment}{patch_comment}");
 
     // Add resource sections with examples
     let resource_examples = [
@@ -255,9 +257,9 @@ fn build_default_manifest() -> String {
 
         // Add the default-tools and patch comments before the first resource section
         let prefix = if i == 0 {
-            format!("{}{}", combined_comment, comment)
+            format!("{combined_comment}{comment}")
         } else {
-            format!("\n{}", comment)
+            format!("\n{comment}")
         };
 
         section.decor_mut().set_prefix(prefix);
@@ -505,13 +507,13 @@ impl InitCommand {
         let default_manifest = build_default_manifest();
         let default_doc = default_manifest
             .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| anyhow!("Failed to parse default template: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse default template: {e}"))?;
 
         // Load existing manifest as Document (preserves comments!)
         let existing_content = fs::read_to_string(&manifest_path)?;
         let mut existing_doc = existing_content
             .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| anyhow!("Failed to parse existing manifest: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse existing manifest: {e}"))?;
 
         // Merge: add missing keys from defaults, preserve existing
         Self::merge_toml_documents(&mut existing_doc, &default_doc);
@@ -556,7 +558,7 @@ impl InitCommand {
     /// * `existing` - The existing table (modified in place)
     /// * `defaults` - The defaults table (read-only)
     fn merge_toml_tables(existing: &mut toml_edit::Table, defaults: &toml_edit::Table) {
-        for (key, default_value) in defaults.iter() {
+        for (key, default_value) in defaults {
             if !existing.contains_key(key) {
                 // Key missing in existing - add from defaults
                 existing.insert(key, default_value.clone());
@@ -577,7 +579,7 @@ impl InitCommand {
                         toml_edit::Item::Value(toml_edit::Value::InlineTable(default_inline)),
                     ) => {
                         // Both are inline tables - merge keys
-                        for (inline_key, inline_default_value) in default_inline.iter() {
+                        for (inline_key, inline_default_value) in default_inline {
                             if !existing_inline.contains_key(inline_key) {
                                 existing_inline.insert(inline_key, inline_default_value.clone());
                             }

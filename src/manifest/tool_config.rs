@@ -7,7 +7,7 @@
 //!
 //! AGPM supports multiple AI coding tools through a flexible configuration system:
 //! - **Claude Code**: The primary AI coding assistant (enabled by default)
-//! - **OpenCode**: Alternative AI coding assistant (opt-in, disabled by default)
+//! - **OpenCode**: Alternative AI coding assistant (enabled by default for consistency)
 //! - **AGPM**: Internal tool for shared infrastructure like snippets (enabled by default)
 //! - **Custom Tools**: User-defined tools with custom configurations (enabled by default)
 //!
@@ -40,7 +40,7 @@
 //!
 //! [tools.opencode]
 //! path = ".opencode"
-//! enabled = false  # Opt-in
+//! enabled = true   # Enabled by default
 //!
 //! [tools.opencode.resources.agents]
 //! path = "agent"  # Singular in OpenCode
@@ -103,7 +103,7 @@ pub enum WellKnownTool {
     ClaudeCode,
 
     /// OpenCode - an alternative AI coding assistant tool.
-    /// Disabled by default as it's opt-in for users who need it.
+    /// Enabled by default for consistency with other tools.
     OpenCode,
 
     /// AGPM - internal tool for shared infrastructure (snippets).
@@ -139,13 +139,13 @@ impl WellKnownTool {
     /// # Default Values
     ///
     /// - **Claude Code**: `true` (most users rely on it)
-    /// - **OpenCode**: `false` (opt-in for users who need it)
+    /// - **OpenCode**: `true` (enabled by default for consistency)
     /// - **AGPM**: `true` (shared infrastructure)
     /// - **Generic**: `true` (backward compatibility)
     pub const fn default_enabled(self) -> bool {
         match self {
             WellKnownTool::ClaudeCode => true,
-            WellKnownTool::OpenCode => false,
+            WellKnownTool::OpenCode => true,
             WellKnownTool::Agpm => true,
             WellKnownTool::Generic => true,
         }
@@ -193,7 +193,7 @@ pub struct ArtifactTypeConfig {
     /// # Defaults
     ///
     /// - **claude-code**: `true` (most users rely on it)
-    /// - **opencode**: `false` (opt-in for users who need it)
+    /// - **opencode**: `true` (enabled by default for consistency)
     /// - **agpm**: `true` (shared infrastructure)
     /// - **custom tools**: `true` (backward compatibility)
     pub enabled: bool,
@@ -371,5 +371,3 @@ impl Default for ToolsConfig {
         }
     }
 }
-
-

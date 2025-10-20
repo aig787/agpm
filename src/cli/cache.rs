@@ -534,6 +534,7 @@ fn format_size(bytes: u64) -> String {
         return "0 B".to_string();
     }
 
+    #[allow(clippy::cast_precision_loss)]
     let mut size = bytes as f64;
     let mut unit_index = 0;
 

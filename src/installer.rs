@@ -404,12 +404,12 @@ pub async fn install_resource(
 
         // Read the content from the source (with cache coherency retry)
         let source_path = cache_dir.join(&entry.path);
-        let content = read_with_cache_retry(&source_path).await?;
+        let file_content = read_with_cache_retry(&source_path).await?;
 
         // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
-        MarkdownFile::parse_with_context(&content, Some(&source_path.display().to_string()))?;
+        MarkdownFile::parse_with_context(&file_content, Some(&source_path.display().to_string()))?;
 
-        content
+        file_content
     } else {
         // Local resource - copy directly from project directory or absolute path
         let source_path = {
@@ -429,14 +429,14 @@ pub async fn install_resource(
             ));
         }
 
-        let content = tokio::fs::read_to_string(&source_path)
+        let local_content = tokio::fs::read_to_string(&source_path)
             .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
         // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
-        MarkdownFile::parse_with_context(&content, Some(&source_path.display().to_string()))?;
+        MarkdownFile::parse_with_context(&local_content, Some(&source_path.display().to_string()))?;
 
-        content
+        local_content
     };
 
     // Apply patches if provided (before templating)
@@ -559,7 +559,7 @@ pub async fn install_resource(
                 )
                 .with_context(|| "Failed to create template renderer")?;
 
-                let rendered = renderer
+                let rendered_content = renderer
                     .render_template(&patched_content, &template_context)
                     .map_err(|e| {
                         // Log detailed error with full error chain
@@ -588,7 +588,7 @@ pub async fn install_resource(
 
                 // Show verbose output after rendering
                 if context.verbose {
-                    let size_bytes = rendered.len();
+                    let size_bytes = rendered_content.len();
                     let size_str = if size_bytes < 1024 {
                         format!("{} B", size_bytes)
                     } else if size_bytes < 1024 * 1024 {
@@ -600,7 +600,7 @@ pub async fn install_resource(
                     tracing::info!("✅ Template rendered successfully");
                 }
 
-                (rendered, Some(context_digest))
+                (rendered_content, Some(context_digest))
             } else {
                 tracing::warn!(
                     "Template syntax found in {} but manifest/lockfile not available, skipping templating",
@@ -2514,7 +2514,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
                 before_agpm_section.push(line.to_string());
             } else if in_agpm_section {
                 // Skip existing AGPM/CCPM entries (they'll be replaced)
-                continue;
+                // Continue to next line
             } else {
                 // Preserve everything after AGPM section exactly as-is
                 after_agpm_section.push(line.to_string());

@@ -997,6 +997,10 @@ impl ConstraintSet {
                     VersionConstraint::Exact {
                         prefix: p1,
                         ..
+                    }
+                    | VersionConstraint::Requirement {
+                        prefix: p1,
+                        ..
                     },
                     VersionConstraint::Requirement {
                         prefix: p2,
@@ -1012,20 +1016,10 @@ impl ConstraintSet {
                         prefix: p2,
                         ..
                     },
-                )
-                | (
-                    VersionConstraint::Requirement {
-                        prefix: p1,
-                        ..
-                    },
-                    VersionConstraint::Requirement {
-                        prefix: p2,
-                        ..
-                    },
                 ) => {
                     // Different prefixes = different namespaces, no conflict
                     if p1 != p2 {
-                        continue;
+                        // Continue to next pair
                     }
                     // Same prefix - could do more sophisticated conflict detection here
                 }
