@@ -478,6 +478,10 @@
 
 pub mod dependency_spec;
 pub mod patches;
+pub mod tool_config;
+
+#[cfg(test)]
+mod tool_config_tests;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -486,6 +490,7 @@ use std::path::{Path, PathBuf};
 
 pub use dependency_spec::{DependencyMetadata, DependencySpec};
 pub use patches::{ManifestPatches, PatchConflict, PatchData, PatchOrigin};
+pub use tool_config::{ArtifactTypeConfig, ResourceConfig, ToolsConfig, WellKnownTool};
 
 /// The main manifest file structure representing a complete `agpm.toml` file.
 ///
@@ -822,370 +827,6 @@ pub struct Manifest {
     /// This field is not serialized and only exists at runtime.
     #[serde(skip)]
     pub manifest_dir: Option<std::path::PathBuf>,
-}
-
-/// Resource configuration within a tool.
-///
-/// Defines the installation path for a specific resource type within a tool.
-/// Resources can either:
-/// - Install to a subdirectory (via `path`)
-/// - Merge into a configuration file (via `merge_target`)
-///
-/// At least one of `path` or `merge_target` should be set for a resource type
-/// to be considered supported by a tool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ResourceConfig {
-    /// Subdirectory path for this resource type relative to the tool's base directory.
-    ///
-    /// Used for resources that install as separate files (agents, snippets, commands, scripts).
-    /// When None, this resource type either uses merge_target or is not supported.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-
-    /// Target configuration file for merging this resource type.
-    ///
-    /// Used for resources that merge into configuration files (hooks, MCP servers).
-    /// The path is relative to the project root.
-    ///
-    /// # Examples
-    ///
-    /// - Hooks: `.claude/settings.local.json`
-    /// - MCP servers: `.mcp.json` or `.opencode/opencode.json`
-    #[serde(skip_serializing_if = "Option::is_none", rename = "merge-target")]
-    pub merge_target: Option<String>,
-
-    /// Default flatten behavior for this resource type.
-    ///
-    /// When `true`: Only the filename is used for installation (e.g., `nested/dir/file.md` → `file.md`)
-    /// When `false`: Full relative path is preserved (e.g., `nested/dir/file.md` → `nested/dir/file.md`)
-    ///
-    /// This default can be overridden per-dependency using the `flatten` field.
-    /// If not specified, defaults to `false` (preserve directory structure).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flatten: Option<bool>,
-}
-
-/// Tool configuration.
-///
-/// Defines how a specific tool (e.g., claude-code, opencode, agpm)
-/// organizes its resources. Each tool has a base directory and
-/// a map of resource types to their subdirectory configurations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArtifactTypeConfig {
-    /// Base directory for this tool (e.g., ".claude", ".opencode", ".agpm")
-    pub path: PathBuf,
-
-    /// Map of resource type -> configuration
-    pub resources: HashMap<String, ResourceConfig>,
-
-    /// Whether this tool is enabled (default: true)
-    ///
-    /// When disabled, dependencies for this tool will not be resolved,
-    /// installed, or included in the lockfile.
-    #[serde(default = "default_tool_enabled")]
-    pub enabled: bool,
-}
-
-/// Default value for tool enabled field (true for backward compatibility)
-const fn default_tool_enabled() -> bool {
-    true
-}
-
-/// Top-level tools configuration.
-///
-/// Maps tool type names to their configurations. This replaces the old
-/// `[target]` section and enables multi-tool support.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolsConfig {
-    /// Map of tool type name -> configuration
-    #[serde(flatten)]
-    pub types: HashMap<String, ArtifactTypeConfig>,
-}
-
-impl Default for ToolsConfig {
-    fn default() -> Self {
-        use crate::core::ResourceType;
-        let mut types = HashMap::new();
-
-        // Claude Code configuration
-        let mut claude_resources = HashMap::new();
-        claude_resources.insert(
-            ResourceType::Agent.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("agents".to_string()),
-                merge_target: None,
-                flatten: Some(true), // Agents flatten by default
-            },
-        );
-        claude_resources.insert(
-            ResourceType::Snippet.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("snippets".to_string()),
-                merge_target: None,
-                flatten: Some(false), // Snippets preserve directory structure
-            },
-        );
-        claude_resources.insert(
-            ResourceType::Command.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("commands".to_string()),
-                merge_target: None,
-                flatten: Some(true), // Commands flatten by default
-            },
-        );
-        claude_resources.insert(
-            ResourceType::Script.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("scripts".to_string()),
-                merge_target: None,
-                flatten: Some(false), // Scripts preserve directory structure
-            },
-        );
-        claude_resources.insert(
-            ResourceType::Hook.to_plural().to_string(),
-            ResourceConfig {
-                path: None, // Hooks are merged into configuration file
-                merge_target: Some(".claude/settings.local.json".to_string()),
-                flatten: None, // N/A for merge targets
-            },
-        );
-        claude_resources.insert(
-            ResourceType::McpServer.to_plural().to_string(),
-            ResourceConfig {
-                path: None, // MCP servers are merged into configuration file
-                merge_target: Some(".mcp.json".to_string()),
-                flatten: None, // N/A for merge targets
-            },
-        );
-
-        types.insert(
-            "claude-code".to_string(),
-            ArtifactTypeConfig {
-                path: PathBuf::from(".claude"),
-                resources: claude_resources,
-                enabled: true,
-            },
-        );
-
-        // OpenCode configuration
-        let mut opencode_resources = HashMap::new();
-        opencode_resources.insert(
-            ResourceType::Agent.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("agent".to_string()), // Singular
-                merge_target: None,
-                flatten: Some(true), // Agents flatten by default
-            },
-        );
-        opencode_resources.insert(
-            ResourceType::Command.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("command".to_string()), // Singular
-                merge_target: None,
-                flatten: Some(true), // Commands flatten by default
-            },
-        );
-        opencode_resources.insert(
-            ResourceType::McpServer.to_plural().to_string(),
-            ResourceConfig {
-                path: None, // MCP servers are merged into configuration file
-                merge_target: Some(".opencode/opencode.json".to_string()),
-                flatten: None, // N/A for merge targets
-            },
-        );
-
-        types.insert(
-            "opencode".to_string(),
-            ArtifactTypeConfig {
-                path: PathBuf::from(".opencode"),
-                resources: opencode_resources,
-                enabled: true,
-            },
-        );
-
-        // AGPM configuration (snippets only)
-        let mut agpm_resources = HashMap::new();
-        agpm_resources.insert(
-            ResourceType::Snippet.to_plural().to_string(),
-            ResourceConfig {
-                path: Some("snippets".to_string()),
-                merge_target: None,
-                flatten: Some(false), // Snippets preserve directory structure
-            },
-        );
-
-        types.insert(
-            "agpm".to_string(),
-            ArtifactTypeConfig {
-                path: PathBuf::from(".agpm"),
-                resources: agpm_resources,
-                enabled: true,
-            },
-        );
-
-        Self {
-            types,
-        }
-    }
-}
-
-/// Target directories configuration specifying where resources are installed.
-///
-/// This struct defines the installation destinations for different resource types
-/// within a AGPM project. All paths are relative to the project root (where
-/// `agpm.toml` is located) unless they are absolute paths.
-///
-/// # Default Values
-///
-/// - **Agents**: `.claude/agents` - Following Claude Code conventions
-/// - **Snippets**: `.agpm/snippets` - AGPM-specific infrastructure (shared across tools)
-/// - **Commands**: `.claude/commands` - Following Claude Code conventions
-///
-/// # Path Resolution
-///
-/// - Relative paths are resolved from the manifest directory
-/// - Absolute paths are used as-is (not recommended for portability)
-/// - Path separators are automatically normalized for the target platform
-/// - Directories are created automatically during installation if they don't exist
-///
-/// # Examples
-///
-/// ```toml
-/// # Default configuration (can be omitted)
-/// [target]
-/// agents = ".claude/agents"
-/// snippets = ".agpm/snippets"
-/// commands = ".claude/commands"
-///
-/// # Custom configuration
-/// [target]
-/// agents = "resources/ai-agents"
-/// snippets = "templates/code-snippets"
-/// commands = "resources/commands"
-///
-/// # Absolute paths (use with caution)
-/// [target]
-/// agents = "/opt/claude/agents"
-/// snippets = "/opt/claude/snippets"
-/// commands = "/opt/claude/commands"
-/// ```
-///
-/// # Cross-Platform Considerations
-///
-/// AGPM automatically handles platform differences:
-/// - Forward slashes work on all platforms (Windows, macOS, Linux)
-/// - Path separators are normalized during installation
-/// - Long path support on Windows is handled automatically
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TargetConfig {
-    /// Directory where agent `.md` files should be installed.
-    ///
-    /// Agents are AI model definitions, prompts, or behavioral specifications.
-    /// This directory will contain copies of agent files from dependencies.
-    ///
-    /// **Default**: `.claude/agents` (following Claude Code conventions)
-    #[serde(default = "default_agents_dir")]
-    pub agents: String,
-
-    /// Directory where snippet `.md` files should be installed.
-    ///
-    /// Snippets are reusable code templates, examples, or documentation.
-    /// This directory will contain copies of snippet files from dependencies.
-    ///
-    /// **Default**: `.agpm/snippets` (AGPM-specific infrastructure)
-    #[serde(default = "default_snippets_dir")]
-    pub snippets: String,
-
-    /// Directory where command `.md` files should be installed.
-    ///
-    /// Commands are Claude Code slash commands that provide custom functionality.
-    /// This directory will contain copies of command files from dependencies.
-    ///
-    /// **Default**: `.claude/commands` (following Claude Code conventions)
-    #[serde(default = "default_commands_dir")]
-    pub commands: String,
-
-    /// Directory where MCP server configurations should be tracked.
-    ///
-    /// Note: MCP servers are configured in `.mcp.json` at the project root,
-    /// not installed to this directory. This directory is used for tracking
-    /// metadata about installed servers.
-    ///
-    /// **Note**: MCP servers are merged into `.mcp.json` - no separate directory
-    #[serde(default = "default_mcp_servers_dir", rename = "mcp-servers")]
-    pub mcp_servers: String,
-
-    /// Directory where script files should be installed.
-    ///
-    /// Scripts are executable files (.sh, .js, .py, etc.) that can be referenced
-    /// by hooks or run independently.
-    ///
-    /// **Default**: `.claude/scripts` (Claude Code resource directory)
-    #[serde(default = "default_scripts_dir")]
-    pub scripts: String,
-
-    /// Directory where hook configuration files should be installed.
-    ///
-    /// Hooks are JSON configuration files that define event-based automation
-    /// in Claude Code.
-    ///
-    /// **Note**: Hooks are merged into `.claude/settings.local.json` - no separate directory
-    #[serde(default = "default_hooks_dir")]
-    pub hooks: String,
-
-    /// Whether to automatically add installed files to `.gitignore`.
-    ///
-    /// When enabled (default), AGPM will create or update `.gitignore`
-    /// to exclude all installed files from version control. This prevents
-    /// installed dependencies from being committed to your repository.
-    ///
-    /// Set to `false` if you want to commit installed resources to version control.
-    ///
-    /// **Default**: `true`
-    #[serde(default = "default_gitignore")]
-    pub gitignore: bool,
-}
-
-impl Default for TargetConfig {
-    fn default() -> Self {
-        Self {
-            agents: default_agents_dir(),
-            snippets: default_snippets_dir(),
-            commands: default_commands_dir(),
-            mcp_servers: default_mcp_servers_dir(),
-            scripts: default_scripts_dir(),
-            hooks: default_hooks_dir(),
-            gitignore: default_gitignore(),
-        }
-    }
-}
-
-fn default_agents_dir() -> String {
-    ".claude/agents".to_string()
-}
-
-fn default_snippets_dir() -> String {
-    ".agpm/snippets".to_string()
-}
-
-fn default_commands_dir() -> String {
-    ".claude/commands".to_string()
-}
-
-fn default_mcp_servers_dir() -> String {
-    ".mcp.json".to_string()
-}
-
-fn default_scripts_dir() -> String {
-    ".claude/scripts".to_string()
-}
-
-fn default_hooks_dir() -> String {
-    ".claude/settings.local.json".to_string()
-}
-
-const fn default_gitignore() -> bool {
-    true
 }
 
 /// A resource dependency specification supporting multiple formats.
@@ -4710,6 +4351,64 @@ claude-agent = { source = "test", path = "agents/claude.md", version = "v1.0.0" 
         // Get all dependencies - should include the agent
         let deps = manifest.all_dependencies_with_types();
         assert_eq!(deps.len(), 1, "Should have 1 dependency (enabled by default)");
+    }
+
+    #[test]
+    fn test_opencode_enabled_by_default() {
+        // Create a manifest with OpenCode without explicit enabled field
+        // OpenCode should default to enabled (true)
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.opencode]
+path = ".opencode"
+resources = { agents = { path = "agent" } }
+
+[agents]
+opencode-agent = { source = "test", path = "agents/opencode.md", version = "v1.0.0", tool = "opencode" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Check that OpenCode is enabled by default
+        let tool_config = manifest.get_tools_config();
+        let opencode_config = tool_config.types.get("opencode");
+        assert!(opencode_config.is_some());
+        assert!(opencode_config.unwrap().enabled, "OpenCode should be enabled by default");
+
+        // Get all dependencies - should include the agent because OpenCode is enabled
+        let deps = manifest.all_dependencies_with_types();
+        assert_eq!(deps.len(), 1, "Should have 1 dependency (OpenCode enabled by default)");
+    }
+
+    #[test]
+    fn test_opencode_can_be_explicitly_enabled() {
+        // Verify that OpenCode can be explicitly enabled via TOML
+        let toml = r#"
+[sources]
+test = "https://example.com/repo.git"
+
+[tools.opencode]
+path = ".opencode"
+enabled = true
+resources = { agents = { path = "agent" } }
+
+[agents]
+opencode-agent = { source = "test", path = "agents/opencode.md", version = "v1.0.0", tool = "opencode" }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).expect("Failed to parse manifest");
+
+        // Check that OpenCode is enabled
+        let tool_config = manifest.get_tools_config();
+        let opencode_config = tool_config.types.get("opencode");
+        assert!(opencode_config.is_some());
+        assert!(opencode_config.unwrap().enabled, "OpenCode should be enabled when explicitly set");
+
+        // Get all dependencies - should include the agent
+        let deps = manifest.all_dependencies_with_types();
+        assert_eq!(deps.len(), 1, "Should have 1 dependency when enabled");
     }
 
     #[test]

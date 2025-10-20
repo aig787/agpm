@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::fs as sync_fs;
 use tokio::fs;
 
-use crate::common::{ManifestBuilder, TestProject};
+use crate::common::{ManifestBuilder, ResourceConfigBuilder, TestProject};
 
 #[tokio::test]
 async fn test_opencode_agent_installation() -> Result<()> {
@@ -25,6 +25,13 @@ async fn test_opencode_agent_installation() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("opencode", |tc| {
+                tc.path(".opencode")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agent"))
+            })
+        })
         .add_agent("opencode-helper", |d| {
             d.source("test_repo")
                 .path("agents/helper.md")
@@ -74,6 +81,13 @@ async fn test_opencode_command_installation() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("opencode", |tc| {
+                tc.path(".opencode")
+                    .enabled(true)
+                    .commands(ResourceConfigBuilder::default().path("command"))
+            })
+        })
         .add_command("deploy", |d| {
             d.source("test_repo")
                 .path("commands/deploy.md")
@@ -121,6 +135,13 @@ async fn test_opencode_mcp_server_merge() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("opencode", |tc| {
+                tc.path(".opencode").enabled(true).mcp_servers(
+                    ResourceConfigBuilder::default().merge_target(".opencode/opencode.json"),
+                )
+            })
+        })
         .add_mcp_server("filesystem", |d| {
             d.source("test_repo")
                 .path("mcp-servers/filesystem.json")
@@ -193,6 +214,21 @@ async fn test_mixed_artifact_types() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        // Configure both Claude Code and OpenCode tools
+        .with_tools_config(|t| {
+            t.tool("claude-code", |tc| {
+                tc.path(".claude")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agents"))
+                    .commands(ResourceConfigBuilder::default().path("commands"))
+            })
+            .tool("opencode", |tc| {
+                tc.path(".opencode")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agent"))
+                    .commands(ResourceConfigBuilder::default().path("command"))
+            })
+        })
         // Claude Code agents
         .add_standard_agent("claude-agent", "test_repo", "agents/claude-agent.md")
         // OpenCode agents (preserve directory structure for cross-tool path testing)
@@ -255,6 +291,12 @@ async fn test_artifact_type_validation() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("opencode", |tc| {
+                tc.path(".opencode").enabled(true)
+                // Intentionally don't configure snippets - we're testing that it's unsupported
+            })
+        })
         .add_snippet("example", |d| {
             d.source("test_repo").path("snippets/example.md").version("v1.0.0").tool("opencode")
         })
@@ -270,7 +312,9 @@ async fn test_artifact_type_validation() -> Result<()> {
     let combined_output = format!("{}{}", output.stdout, output.stderr);
     assert!(
         combined_output.contains("snippets") || combined_output.contains("opencode"),
-        "Error should mention unsupported resource type"
+        "Error should mention unsupported resource type. Got:\nSTDOUT:\n{}\nSTDERR:\n{}",
+        output.stdout,
+        output.stderr
     );
 
     Ok(())
@@ -369,6 +413,13 @@ async fn test_opencode_mcp_preserves_user_servers() -> Result<()> {
     let repo_url = source_repo.bare_file_url(project.sources_path())?;
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("opencode", |tc| {
+                tc.path(".opencode").enabled(true).mcp_servers(
+                    ResourceConfigBuilder::default().merge_target(".opencode/opencode.json"),
+                )
+            })
+        })
         .add_mcp_server("agpm-server", |d| {
             d.source("test_repo")
                 .path("mcp-servers/agpm-server.json")
@@ -420,6 +471,18 @@ async fn test_nested_paths_preserve_structure() -> Result<()> {
     // Test for both Claude Code and OpenCode
     let manifest = ManifestBuilder::new()
         .add_source("test_repo", &repo_url)
+        .with_tools_config(|t| {
+            t.tool("claude-code", |tc| {
+                tc.path(".claude")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agents"))
+            })
+            .tool("opencode", |tc| {
+                tc.path(".opencode")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agent"))
+            })
+        })
         // Claude Code agent (preserves nested structure with flatten=false)
         .add_agent("claude-ai", |d| {
             d.source("test_repo").path("agents/ai/gpt.md").version("v1.0.0").flatten(false)

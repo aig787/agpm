@@ -112,6 +112,7 @@ src/
 ## Development
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
+- **File Size**: Keep source code files under 1,000 lines (including comments and docstrings). Files exceeding this limit should be refactored into smaller, focused modules.
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
@@ -142,6 +143,8 @@ Dev: assert_cmd, predicates
 - **CRITICAL**: Never include "update" in integration test filenames (triggers Windows UAC elevation)
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
 - **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
+- **Test File Size**: Keep colocated module tests (e.g., `{module}_tests.rs` files in `src/`) under 250 lines. Standalone integration test files in `tests/` directory are subject to the 1,000 line limit. Tests exceeding their respective limits should be broken out into separate files with descriptive names (e.g., `test_install_basic.rs`, `test_install_transitive.rs`).
+- **Test File Naming**: For module-specific tests, use `{module}_tests.rs` naming convention (e.g., `tool_config_tests.rs`) instead of placing `tests.rs` files within subdirectories. This keeps test files at the same level as the modules they test and follows Rust conventions.
 
 ## Build & CI
 

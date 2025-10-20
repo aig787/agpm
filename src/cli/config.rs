@@ -378,7 +378,10 @@ impl ConfigCommand {
                 name,
             }) => Self::remove_source_with_path(name, config_path).await,
             Some(ConfigSubcommands::ListSources) => Self::list_sources_with_path(config_path).await,
-            Some(ConfigSubcommands::Path) => Self::show_path(config_path),
+            Some(ConfigSubcommands::Path) => {
+                Self::show_path(config_path);
+                Ok(())
+            }
         }
     }
 
@@ -585,12 +588,11 @@ impl ConfigCommand {
         Ok(())
     }
 
-    fn show_path(config_path: Option<PathBuf>) -> Result<()> {
+    fn show_path(config_path: Option<PathBuf>) {
         let config_path = config_path.unwrap_or_else(|| {
             GlobalConfig::default_path().unwrap_or_else(|_| PathBuf::from("~/.agpm/config.toml"))
         });
         println!("{}", config_path.display());
-        Ok(())
     }
 }
 
@@ -601,8 +603,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_path() {
-        let result = ConfigCommand::show_path(None);
-        assert!(result.is_ok());
+        // show_path returns () and prints to stdout, so we just verify it doesn't panic
+        ConfigCommand::show_path(None);
     }
 
     #[tokio::test]
@@ -813,7 +815,7 @@ mod tests {
 
         // We can't easily test show without affecting global state
         // but we can verify the individual methods work
-        assert!(ConfigCommand::show_path(None).is_ok());
+        ConfigCommand::show_path(None); // Returns (), just verify it doesn't panic
     }
 
     #[tokio::test]

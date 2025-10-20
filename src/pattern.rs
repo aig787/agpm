@@ -427,20 +427,20 @@ impl PatternResolver {
     /// ```
     pub fn resolve(&self, pattern: &str, base_path: &Path) -> Result<Vec<PathBuf>> {
         let matcher = PatternMatcher::new(pattern)?;
-        let mut matches = matcher.find_matches(base_path)?;
+        let mut matched_paths = matcher.find_matches(base_path)?;
 
         // Apply exclusions
         if !self.exclude_patterns.is_empty() {
-            matches.retain(|path| {
+            matched_paths.retain(|path| {
                 let path_str = path.to_string_lossy();
                 !self.exclude_patterns.iter().any(|exclude| exclude.matches(&path_str))
             });
         }
 
         // Sort for deterministic ordering
-        matches.sort();
+        matched_paths.sort();
 
-        Ok(matches)
+        Ok(matched_paths)
     }
 
     /// Resolves multiple patterns and returns unique results.

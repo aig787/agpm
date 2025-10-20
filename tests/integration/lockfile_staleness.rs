@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::common::{ManifestBuilder, TestProject};
+use crate::common::{ManifestBuilder, ResourceConfigBuilder, TestProject};
 
 /// Test that install auto-updates lockfile when dependency is missing (Cargo-style behavior)
 #[tokio::test]
@@ -382,8 +382,22 @@ async fn test_install_detects_tool_field_change() -> Result<()> {
     );
 
     // Create new manifest with opencode tool explicitly (will be visible in lockfile)
+    // OpenCode is disabled by default, so we must explicitly enable it
+    // We also need to configure claude-code since we'll be switching between them
     let manifest_opencode = ManifestBuilder::new()
         .add_source("test-source", &source_repo.file_url())
+        .with_tools_config(|t| {
+            t.tool("claude-code", |tc| {
+                tc.path(".claude")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agents"))
+            })
+            .tool("opencode", |tc| {
+                tc.path(".opencode")
+                    .enabled(true)
+                    .agents(ResourceConfigBuilder::default().path("agent"))
+            })
+        })
         .add_agent("test-agent", |d| {
             d.source("test-source").path("agents/test-agent.md").version("v1.0.0").tool("opencode")
         })

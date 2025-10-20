@@ -389,7 +389,7 @@ pub use lock::CacheLock;
 /// ```
 pub struct Cache {
     /// The root directory where all cached repositories are stored
-    cache_dir: PathBuf,
+    dir: PathBuf,
 
     /// Instance-level cache for worktrees to avoid redundant checkouts.
     ///
@@ -426,7 +426,7 @@ pub struct Cache {
 impl Clone for Cache {
     fn clone(&self) -> Self {
         Self {
-            cache_dir: self.cache_dir.clone(),
+            dir: self.dir.clone(),
             worktree_cache: Arc::clone(&self.worktree_cache),
             fetch_locks: Arc::clone(&self.fetch_locks),
             fetched_repos: Arc::clone(&self.fetched_repos),
@@ -441,7 +441,7 @@ impl Cache {
     }
 
     fn registry_path(&self) -> PathBuf {
-        Self::registry_path_for(&self.cache_dir)
+        Self::registry_path_for(&self.dir)
     }
 
     /// Verify that a worktree directory is fully accessible with actual content.
@@ -602,11 +602,11 @@ impl Cache {
     /// # }
     /// ```
     pub fn new() -> Result<Self> {
-        let cache_dir = crate::config::get_cache_dir()?;
-        let registry_path = Self::registry_path_for(&cache_dir);
+        let dir = crate::config::get_cache_dir()?;
+        let registry_path = Self::registry_path_for(&dir);
         let registry = WorktreeRegistry::load(&registry_path);
         Ok(Self {
-            cache_dir,
+            dir,
             worktree_cache: Arc::new(RwLock::new(HashMap::new())),
             fetch_locks: Arc::new(DashMap::new()),
             fetched_repos: Arc::new(RwLock::new(HashSet::new())),
@@ -631,6 +631,11 @@ impl Cache {
     ///
     /// * `cache_dir` - The absolute path where cache data should be stored
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Unable to load worktree registry from cache directory
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -649,11 +654,11 @@ impl Cache {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn with_dir(cache_dir: PathBuf) -> Result<Self> {
-        let registry_path = Self::registry_path_for(&cache_dir);
+    pub fn with_dir(dir: PathBuf) -> Result<Self> {
+        let registry_path = Self::registry_path_for(&dir);
         let registry = WorktreeRegistry::load(&registry_path);
         Ok(Self {
-            cache_dir,
+            dir,
             worktree_cache: Arc::new(RwLock::new(HashMap::new())),
             fetch_locks: Arc::new(DashMap::new()),
             fetched_repos: Arc::new(RwLock::new(HashSet::new())),
@@ -698,9 +703,9 @@ impl Cache {
     /// # }
     /// ```
     pub async fn ensure_cache_dir(&self) -> Result<()> {
-        if !self.cache_dir.exists() {
-            async_fs::create_dir_all(&self.cache_dir).await.with_context(|| {
-                format!("Failed to create cache directory at {}", self.cache_dir.display())
+        if !self.dir.exists() {
+            async_fs::create_dir_all(&self.dir).await.with_context(|| {
+                format!("Failed to create cache directory at {}", self.dir.display())
             })?;
         }
         Ok(())
@@ -723,8 +728,9 @@ impl Cache {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn cache_dir(&self) -> &Path {
-        &self.cache_dir
+        &self.dir
     }
 
     /// Get the worktree path for a specific URL and commit SHA.
@@ -742,6 +748,11 @@ impl Cache {
     ///
     /// Path to the worktree directory (may not exist yet)
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Invalid Git URL format
+    ///
     /// # Example
     ///
     /// ```rust,no_run
@@ -758,10 +769,10 @@ impl Cache {
     /// # }
     /// ```
     pub fn get_worktree_path(&self, url: &str, sha: &str) -> Result<PathBuf> {
-        let (owner, repo) = crate::git::parse_git_url(url)
-            .map_err(|e| anyhow::anyhow!("Invalid Git URL: {}", e))?;
+        let (owner, repo) =
+            crate::git::parse_git_url(url).map_err(|e| anyhow::anyhow!("Invalid Git URL: {e}"))?;
         let sha_short = &sha[..8.min(sha.len())];
-        Ok(self.cache_dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}")))
+        Ok(self.dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}")))
     }
 
     /// Gets or clones a source repository, ensuring it's available in the cache.
@@ -891,12 +902,18 @@ impl Cache {
     /// # Parameters
     ///
     /// * `worktree_path` - The path to the worktree to clean up
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Unable to remove worktree directory
+    /// - Unable to update worktree registry
     pub async fn cleanup_worktree(&self, worktree_path: &Path) -> Result<()> {
         // Just remove the directory - don't call git worktree remove
         // This is much faster and git will clean up its references later
         if worktree_path.exists() {
             tokio::fs::remove_dir_all(worktree_path).await.with_context(|| {
-                format!("Failed to remove worktree directory: {worktree_path:?}")
+                format!("Failed to remove worktree directory: {}", worktree_path.display())
             })?;
             self.remove_worktree_record_by_path(worktree_path).await?;
         }
@@ -906,8 +923,15 @@ impl Cache {
     /// Clean up all worktrees in the cache.
     ///
     /// This is useful for cleaning up after batch operations or on cache clear.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Unable to remove worktrees directory
+    /// - Unable to prune worktree references from bare repositories
+    /// - Unable to update worktree registry
     pub async fn cleanup_all_worktrees(&self) -> Result<()> {
-        let worktrees_dir = self.cache_dir.join("worktrees");
+        let worktrees_dir = self.dir.join("worktrees");
 
         if !worktrees_dir.exists() {
             return Ok(());
@@ -919,7 +943,7 @@ impl Cache {
             .with_context(|| "Failed to clean up worktrees")?;
 
         // Also prune worktree references from all bare repos
-        let sources_dir = self.cache_dir.join("sources");
+        let sources_dir = self.dir.join("sources");
         if sources_dir.exists() {
             let mut entries = tokio::fs::read_dir(&sources_dir).await?;
             while let Some(entry) = entries.next_entry().await? {
@@ -987,6 +1011,7 @@ impl Cache {
     /// # Ok(())
     /// # }
     /// ```
+    #[allow(clippy::too_many_lines)]
     pub async fn get_or_create_worktree_for_sha(
         &self,
         name: &str,
@@ -1021,7 +1046,7 @@ impl Cache {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
             let mut hasher = DefaultHasher::new();
-            self.cache_dir.hash(&mut hasher);
+            self.dir.hash(&mut hasher);
             format!("{:x}", hasher.finish())[..8].to_string()
         };
         let cache_key = format!("{cache_dir_hash}:{owner}_{repo}:{sha}");
@@ -1092,14 +1117,14 @@ impl Cache {
         }
 
         // Get bare repository (fetches if needed)
-        let bare_repo_dir = self.cache_dir.join("sources").join(format!("{owner}_{repo}.git"));
+        let bare_repo_dir = self.dir.join("sources").join(format!("{owner}_{repo}.git"));
 
         if bare_repo_dir.exists() {
             // Fetch to ensure we have the SHA
             self.fetch_with_hybrid_lock(&bare_repo_dir, context).await?;
         } else {
             let lock_name = format!("{owner}_{repo}");
-            let _lock = CacheLock::acquire(&self.cache_dir, &lock_name).await?;
+            let _lock = CacheLock::acquire(&self.dir, &lock_name).await?;
 
             if let Some(parent) = bare_repo_dir.parent() {
                 tokio::fs::create_dir_all(parent).await?;
@@ -1120,12 +1145,11 @@ impl Cache {
         let bare_repo = GitRepo::new(&bare_repo_dir);
 
         // Create worktree path using SHA
-        let worktree_path =
-            self.cache_dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}"));
+        let worktree_path = self.dir.join("worktrees").join(format!("{owner}_{repo}_{sha_short}"));
 
         // Acquire worktree creation lock
         let worktree_lock_name = format!("worktree-{owner}-{repo}-{sha_short}");
-        let _worktree_lock = CacheLock::acquire(&self.cache_dir, &worktree_lock_name).await?;
+        let _worktree_lock = CacheLock::acquire(&self.dir, &worktree_lock_name).await?;
 
         // Re-check after lock
         if worktree_path.exists() {
@@ -1155,7 +1179,7 @@ impl Cache {
         // Hold the lock through cache update to prevent git state corruption
         // when multiple worktrees are created concurrently for the same repo
         let bare_repo_lock_name = format!("bare-repo-{owner}_{repo}");
-        let _bare_repo_lock = CacheLock::acquire(&self.cache_dir, &bare_repo_lock_name).await?;
+        let _bare_repo_lock = CacheLock::acquire(&self.dir, &bare_repo_lock_name).await?;
 
         // Create worktree using SHA directly
         let worktree_result =
@@ -1236,7 +1260,7 @@ impl Cache {
         self.ensure_cache_dir().await?;
 
         // Acquire lock for this source to prevent concurrent access
-        let _lock = CacheLock::acquire(&self.cache_dir, name)
+        let _lock = CacheLock::acquire(&self.dir, name)
             .await
             .with_context(|| format!("Failed to acquire lock for source: {name}"))?;
 
@@ -1244,13 +1268,13 @@ impl Cache {
         // This ensures we have ONE repository that's shared by all operations
         let (owner, repo) =
             crate::git::parse_git_url(url).unwrap_or(("direct".to_string(), "repo".to_string()));
-        let source_dir = self.cache_dir.join("sources").join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
+        let source_dir = self.dir.join("sources").join(format!("{owner}_{repo}.git")); // Always use .git suffix for bare repos
 
         // Ensure parent directory exists
         if let Some(parent) = source_dir.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .with_context(|| format!("Failed to create cache directory: {parent:?}"))?;
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
+                format!("Failed to create cache directory: {}", parent.display())
+            })?;
         }
 
         if source_dir.exists() {
@@ -1677,7 +1701,7 @@ impl Cache {
         self.ensure_cache_dir().await?;
 
         let mut removed_count = 0;
-        let mut entries = async_fs::read_dir(&self.cache_dir)
+        let mut entries = async_fs::read_dir(&self.dir)
             .await
             .with_context(|| "Failed to read cache directory")?;
 
@@ -1772,11 +1796,11 @@ impl Cache {
     /// # }
     /// ```
     pub async fn get_cache_size(&self) -> Result<u64> {
-        if !self.cache_dir.exists() {
+        if !self.dir.exists() {
             return Ok(0);
         }
 
-        let size = fs::get_directory_size(&self.cache_dir).await?;
+        let size = fs::get_directory_size(&self.dir).await?;
         Ok(size)
     }
 
@@ -1832,7 +1856,7 @@ impl Cache {
     /// [`ensure_cache_dir`]: Cache::ensure_cache_dir
     #[must_use]
     pub fn get_cache_location(&self) -> &Path {
-        &self.cache_dir
+        &self.dir
     }
 
     /// Completely removes the entire cache directory and all its contents.
@@ -1921,10 +1945,8 @@ impl Cache {
     /// # }
     /// ```
     pub async fn clear_all(&self) -> Result<()> {
-        if self.cache_dir.exists() {
-            async_fs::remove_dir_all(&self.cache_dir)
-                .await
-                .with_context(|| "Failed to clear cache")?;
+        if self.dir.exists() {
+            async_fs::remove_dir_all(&self.dir).await.with_context(|| "Failed to clear cache")?;
             println!("🗑️  Cleared all cache");
         }
         Ok(())
@@ -1951,6 +1973,8 @@ impl Cache {
         bare_repo_path: &Path,
         context: Option<&str>,
     ) -> Result<()> {
+        use fs4::fs_std::FileExt;
+
         // Level 1: In-process lock (fast path)
         let memory_lock = self
             .fetch_locks
@@ -1966,7 +1990,7 @@ impl Cache {
             .unwrap_or("unknown")
             .replace(['/', '\\', ':'], "_");
 
-        let lock_path = self.cache_dir.join(".locks").join(format!("{safe_name}.fetch.lock"));
+        let lock_path = self.dir.join(".locks").join(format!("{safe_name}.fetch.lock"));
 
         // Ensure lock directory exists
         if let Some(parent) = lock_path.parent() {
@@ -1985,7 +2009,6 @@ impl Cache {
         let std_file = lock_file.into_std().await;
 
         // Acquire exclusive lock (blocks until available)
-        use fs4::fs_std::FileExt;
         if let Some(ctx) = context {
             tracing::debug!(
                 target: "agpm::git",

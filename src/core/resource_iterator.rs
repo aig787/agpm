@@ -21,7 +21,7 @@
 
 use crate::core::ResourceType;
 use crate::lockfile::{LockFile, LockedResource};
-use crate::manifest::{Manifest, ResourceDependency, TargetConfig};
+use crate::manifest::{Manifest, ResourceDependency};
 use std::collections::HashMap;
 
 /// Extension trait for `ResourceType` that adds lockfile and manifest operations
@@ -74,21 +74,6 @@ pub trait ResourceTypeExt {
         lockfile: &'a mut LockFile,
     ) -> &'a mut Vec<LockedResource>;
 
-    /// Get target directory for this resource type
-    ///
-    /// Retrieves the target installation directory for this resource type from
-    /// the manifest's target configuration. This determines where resources of
-    /// this type will be installed in the project.
-    ///
-    /// # Arguments
-    ///
-    /// * `targets` - The target configuration from the manifest
-    ///
-    /// # Returns
-    ///
-    /// The target directory path as a string reference
-    fn get_target_dir<'a>(&self, targets: &'a TargetConfig) -> &'a str;
-
     /// Get manifest entries for this resource type
     fn get_manifest_entries<'a>(
         &self,
@@ -123,17 +108,6 @@ impl ResourceTypeExt for ResourceType {
             Self::Script => &mut lockfile.scripts,
             Self::Hook => &mut lockfile.hooks,
             Self::McpServer => &mut lockfile.mcp_servers,
-        }
-    }
-
-    fn get_target_dir<'a>(&self, targets: &'a TargetConfig) -> &'a str {
-        match self {
-            Self::Agent => targets.agents.as_str(),
-            Self::Snippet => targets.snippets.as_str(),
-            Self::Command => targets.commands.as_str(),
-            Self::Script => targets.scripts.as_str(),
-            Self::Hook => targets.hooks.as_str(),
-            Self::McpServer => targets.mcp_servers.as_str(),
         }
     }
 

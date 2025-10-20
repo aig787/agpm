@@ -294,15 +294,15 @@ impl MetadataExtractor {
         let mut tera = Tera::default();
         tera.autoescape_on(vec![]); // Disable autoescaping for raw content
 
-        let mut context = TeraContext::new();
+        let mut template_context = TeraContext::new();
 
         // Build agpm.project context (same structure as content templates)
         let mut agpm = Map::new();
         agpm.insert("project".to_string(), project_config.to_json_value());
-        context.insert("agpm", &agpm);
+        template_context.insert("agpm", &agpm);
 
         // Render template - errors (including undefined vars) are returned to caller
-        tera.render_str(content, &context).map_err(|e| {
+        tera.render_str(content, &template_context).map_err(|e| {
             // Extract detailed error information from Tera error
             let error_details = Self::format_tera_error(&e);
 
@@ -406,16 +406,15 @@ impl MetadataExtractor {
                             resource_type,
                             VALID_RESOURCE_TYPES.join(", ")
                         );
-                    } else {
-                        // Generic error for unknown types
-                        anyhow::bail!(
-                            "Unknown resource type '{}' in dependencies section of '{}'.\n\
-                            Valid resource types: {}",
-                            resource_type,
-                            file_path.display(),
-                            VALID_RESOURCE_TYPES.join(", ")
-                        );
                     }
+                    // Generic error for unknown types
+                    anyhow::bail!(
+                        "Unknown resource type '{}' in dependencies section of '{}'.\n\
+                        Valid resource types: {}",
+                        resource_type,
+                        file_path.display(),
+                        VALID_RESOURCE_TYPES.join(", ")
+                    );
                 }
             }
         }

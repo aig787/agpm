@@ -137,7 +137,7 @@ fn validate_path_components(path: &Path, base_dir: &Path) -> Result<PathBuf> {
             }
             std::path::Component::CurDir => {
                 // Skip current directory references
-                continue;
+                // Continue to next component
             }
             std::path::Component::ParentDir => {
                 bail!("Parent directory traversal not allowed");
