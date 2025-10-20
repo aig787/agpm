@@ -56,73 +56,216 @@ use clap::Args;
 use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
+use toml_edit::{DocumentMut, Item, Table};
 
-/// Default manifest template used for fresh initialization.
+use crate::manifest::tool_config::ToolsConfig;
+
+/// Builds the default manifest template programmatically from the actual default configurations.
 ///
-/// This template includes all standard tool configurations (claude-code, opencode, agpm)
-/// with their default resource paths and settings. It's also used by the `--defaults`
-/// flag to merge missing configurations into existing manifests.
-const DEFAULT_MANIFEST_TEMPLATE: &str = r#"# AGPM Manifest
-# This file defines your Claude Code resource dependencies
+/// This function constructs the initial `agpm.toml` manifest by serializing the default tool
+/// configurations from `ToolsConfig::default()`, ensuring a single source of truth for defaults.
+/// All comments and structure are added programmatically to match the expected manifest format.
+///
+/// # Returns
+///
+/// A formatted TOML string containing:
+/// - Header comment
+/// - Empty `[sources]` section with comments
+/// - Commented project variables example
+/// - `[tools.*]` sections for claude-code, opencode, and agpm with their resource configs (from ToolsConfig::default())
+/// - Empty resource sections (agents, snippets, commands, scripts, hooks, mcp-servers) with examples
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let manifest = build_default_manifest();
+/// std::fs::write("agpm.toml", manifest)?;
+/// ```
+fn build_default_manifest() -> String {
+    let mut doc = DocumentMut::new();
 
-[sources]
-# Add your Git repository sources here
-# Example: official = "https://github.com/aig787/agpm-community.git"
+    // Add leading comment
+    doc.as_table_mut().decor_mut().set_prefix(
+        "# AGPM Manifest\n# This file defines your Claude Code resource dependencies\n\n",
+    );
 
-# Project-specific template variables (optional)
-# Provides context to AI agents - use any structure you want!
-# [project]
-# style_guide = "docs/STYLE_GUIDE.md"
-# max_line_length = 100
-# test_framework = "pytest"
-#
-# [project.paths]
-# architecture = "docs/ARCHITECTURE.md"
-# conventions = "docs/CONVENTIONS.md"
-#
-# Access in templates: {{ agpm.project.style_guide }}
+    // [sources] section
+    let mut sources = Table::new();
+    sources.set_implicit(false);
+    sources.decor_mut().set_prefix(
+        "# Add your Git repository sources here\n\
+         # Example: official = \"https://github.com/aig787/agpm-community.git\"\n",
+    );
+    doc.insert("sources", Item::Table(sources));
 
-# Tool type configurations (multi-tool support)
-[tools.claude-code]
-path = ".claude"
-resources = { agents = { path = "agents", flatten = true }, snippets = { path = "snippets" }, commands = { path = "commands", flatten = true }, scripts = { path = "scripts" }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" } }
-# Note: hooks and mcp-servers merge into configuration files (no file installation)
+    // Add comment about project variables (as a comment block between sources and tools)
+    let project_comment = "\n\
+        # Project-specific template variables (optional)\n\
+        # Provides context to AI agents - use any structure you want!\n\
+        # [project]\n\
+        # style_guide = \"docs/STYLE_GUIDE.md\"\n\
+        # max_line_length = 100\n\
+        # test_framework = \"pytest\"\n\
+        #\n\
+        # [project.paths]\n\
+        # architecture = \"docs/ARCHITECTURE.md\"\n\
+        # conventions = \"docs/CONVENTIONS.md\"\n\
+        #\n\
+        # Access in templates: {{ agpm.project.style_guide }}\n\
+        \n\
+        # Tool type configurations (multi-tool support)\n";
 
-[tools.opencode]
-path = ".opencode"
-enabled = false
-resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" } }
-# Note: MCP servers merge into opencode.json (no file installation)
+    // Build tool configurations compactly using inline tables
+    let tools_config = ToolsConfig::default();
 
-[tools.agpm]
-path = ".agpm"
-resources = { snippets = { path = "snippets" } }
+    let mut tools_table = Table::new();
+    tools_table.set_implicit(false);
+    tools_table.decor_mut().set_prefix(project_comment);
 
-[agents]
-# Add your agent dependencies here
-# Example: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0" }
-# For OpenCode: my-agent = { source = "official", path = "agents/my-agent.md", version = "v1.0.0", tool = "opencode" }
+    // Process each tool in order: claude-code, opencode, agpm
+    for tool_name in &["claude-code", "opencode", "agpm"] {
+        if let Some(tool_config) = tools_config.types.get(*tool_name) {
+            let mut tool_table = Table::new();
+            tool_table.set_implicit(false);
 
-[snippets]
-# Add your snippet dependencies here
-# Example: utils = { source = "official", path = "snippets/utils.md", tool = "agpm" }
+            // Add 'enabled' field for opencode (disabled by default)
+            if *tool_name == "opencode" {
+                tool_table.insert("enabled", toml_edit::value(false));
+                if let Some(Item::Value(v)) = tool_table.get_mut("enabled") {
+                    v.decor_mut().set_suffix("  # Enable if you want to use OpenCode resources");
+                }
+            }
 
-[commands]
-# Add your command dependencies here
-# Example: deploy = { source = "official", path = "commands/deploy.md" }
+            // Add 'path' field
+            tool_table
+                .insert("path", toml_edit::value(tool_config.path.to_string_lossy().as_ref()));
 
-[scripts]
-# Add your script dependencies here
-# Example: build = { source = "official", path = "scripts/build.sh" }
+            // Build resources as inline table for compact output
+            let mut resources_inline = toml_edit::InlineTable::new();
 
-[hooks]
-# Add your hook dependencies here
-# Example: pre-commit = { source = "official", path = "hooks/pre-commit.json" }
+            // Sort resource keys for consistent output
+            let mut resource_keys: Vec<_> = tool_config.resources.keys().collect();
+            resource_keys.sort();
 
-[mcp-servers]
-# Add your MCP server dependencies here
-# Example: filesystem = { source = "official", path = "mcp-servers/filesystem.json" }
-"#;
+            for resource_key in resource_keys {
+                if let Some(resource_config) = tool_config.resources.get(resource_key.as_str()) {
+                    let mut resource_inline = toml_edit::InlineTable::new();
+
+                    if let Some(path) = &resource_config.path {
+                        resource_inline.insert("path", path.as_str().into());
+                    }
+
+                    if let Some(merge_target) = &resource_config.merge_target {
+                        resource_inline.insert("merge-target", merge_target.as_str().into());
+                    }
+
+                    // Only include flatten if explicitly set (not None)
+                    if let Some(flatten) = resource_config.flatten {
+                        resource_inline.insert("flatten", flatten.into());
+                    }
+
+                    resources_inline.insert(resource_key, resource_inline.into());
+                }
+            }
+
+            tool_table.insert("resources", Item::Value(resources_inline.into()));
+
+            // Add tool-specific comment after path
+            let comment = match *tool_name {
+                "claude-code" => {
+                    "\n# Note: hooks and mcp-servers merge into configuration files (no file installation)\n"
+                }
+                "opencode" => {
+                    "\n# Note: MCP servers merge into opencode.json (no file installation)\n"
+                }
+                _ => "\n",
+            };
+
+            if let Some(Item::Value(path)) = tool_table.get_mut("path") {
+                path.decor_mut().set_suffix(comment);
+            }
+
+            tools_table.insert(tool_name, Item::Table(tool_table));
+        }
+    }
+
+    doc.insert("tools", Item::Table(tools_table));
+
+    // Add default-tools section (commented out - optional configuration)
+    let default_tools_comment = "\n\
+        # Default tool overrides (optional)\n\
+        # Override which tool is used by default for each resource type\n\
+        # [default-tools]\n\
+        # snippets = \"claude-code\"  # Override default (agpm) for Claude-only users\n\
+        # agents = \"opencode\"        # Use OpenCode by default for agents\n\
+        \n";
+
+    // Add patch section (commented out - optional configuration)
+    let patch_comment = "\
+        # Patches - override resource fields without forking (optional)\n\
+        # [patch.agents.my-agent]\n\
+        # model = \"claude-3-haiku\"\n\
+        # temperature = \"0.7\"\n\
+        #\n\
+        # [patch.commands.deploy]\n\
+        # timeout = \"300\"\n\
+        \n";
+
+    // Combine comments and add as prefix to first resource section
+    let combined_comment = format!("{}{}", default_tools_comment, patch_comment);
+
+    // Add resource sections with examples
+    let resource_examples = [
+        (
+            "agents",
+            "# Add your agent dependencies here\n\
+             # Example: my-agent = { source = \"official\", path = \"agents/my-agent.md\", version = \"v1.0.0\" }\n\
+             # For OpenCode: my-agent = { source = \"official\", path = \"agents/my-agent.md\", version = \"v1.0.0\", tool = \"opencode\" }\n",
+        ),
+        (
+            "snippets",
+            "# Add your snippet dependencies here\n\
+             # Example: utils = { source = \"official\", path = \"snippets/utils.md\", tool = \"agpm\" }\n",
+        ),
+        (
+            "commands",
+            "# Add your command dependencies here\n\
+             # Example: deploy = { source = \"official\", path = \"commands/deploy.md\" }\n",
+        ),
+        (
+            "scripts",
+            "# Add your script dependencies here\n\
+             # Example: build = { source = \"official\", path = \"scripts/build.sh\" }\n",
+        ),
+        (
+            "hooks",
+            "# Add your hook dependencies here\n\
+             # Example: pre-commit = { source = \"official\", path = \"hooks/pre-commit.json\" }\n",
+        ),
+        (
+            "mcp-servers",
+            "# Add your MCP server dependencies here\n\
+             # Example: filesystem = { source = \"official\", path = \"mcp-servers/filesystem.json\" }\n",
+        ),
+    ];
+
+    for (i, (section_name, comment)) in resource_examples.iter().enumerate() {
+        let mut section = Table::new();
+        section.set_implicit(false);
+
+        // Add the default-tools and patch comments before the first resource section
+        let prefix = if i == 0 {
+            format!("{}{}", combined_comment, comment)
+        } else {
+            format!("\n{}", comment)
+        };
+
+        section.decor_mut().set_prefix(prefix);
+        doc.insert(section_name, Item::Table(section));
+    }
+
+    doc.to_string()
+}
 
 /// Command to initialize a new AGPM project with a manifest file.
 ///
@@ -315,8 +458,8 @@ impl InitCommand {
             fs::create_dir_all(&target_dir)?;
         }
 
-        // Write the default template
-        fs::write(&manifest_path, DEFAULT_MANIFEST_TEMPLATE)?;
+        // Write the default template (built programmatically from ToolsConfig::default())
+        fs::write(&manifest_path, build_default_manifest())?;
 
         // Add .agpm/backups/ to .gitignore
         Self::update_gitignore(&target_dir)?;
@@ -358,8 +501,9 @@ impl InitCommand {
             ));
         }
 
-        // Parse default template as Document
-        let default_doc = DEFAULT_MANIFEST_TEMPLATE
+        // Parse default template as Document (built programmatically from ToolsConfig::default())
+        let default_manifest = build_default_manifest();
+        let default_doc = default_manifest
             .parse::<toml_edit::DocumentMut>()
             .map_err(|e| anyhow!("Failed to parse default template: {}", e))?;
 
@@ -869,8 +1013,8 @@ my-agent = { source = "community", path = "agents/my-agent.md" }
         let temp_dir = TempDir::new().unwrap();
         let manifest_path = temp_dir.path().join("agpm.toml");
 
-        // Write the default template
-        fs::write(&manifest_path, DEFAULT_MANIFEST_TEMPLATE).unwrap();
+        // Write the default template (built programmatically)
+        fs::write(&manifest_path, build_default_manifest()).unwrap();
 
         // Run --defaults on already complete manifest
         let cmd = InitCommand {

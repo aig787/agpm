@@ -2541,10 +2541,6 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
     // Add AGPM managed section
     new_content.push_str("# AGPM managed entries - do not edit below this line\n");
 
-    // Always include private config files
-    new_content.push_str("agpm.private.toml\n");
-    new_content.push_str("agpm.private.lock\n");
-
     // Convert paths to gitignore format (relative to project root)
     // Sort paths for consistent output
     let mut sorted_paths: Vec<_> = paths_to_ignore.into_iter().collect();
@@ -2584,10 +2580,6 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
         default_content.push_str("# AGPM entries are automatically generated\n");
         default_content.push('\n');
         default_content.push_str("# AGPM managed entries - do not edit below this line\n");
-
-        // Always include private config files
-        default_content.push_str("agpm.private.toml\n");
-        default_content.push_str("agpm.private.lock\n");
 
         // Add the AGPM paths
         for path in &sorted_paths {
