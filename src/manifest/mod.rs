@@ -480,6 +480,9 @@ pub mod dependency_spec;
 pub mod patches;
 pub mod tool_config;
 
+#[cfg(test)]
+mod tool_config_tests;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

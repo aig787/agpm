@@ -372,5 +372,4 @@ impl Default for ToolsConfig {
     }
 }
 
-#[cfg(test)]
-mod tests;
+

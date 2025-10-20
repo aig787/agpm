@@ -5,6 +5,7 @@
 //! default value handling.
 
 use super::*;
+use crate::manifest::tool_config::*;
 use serde_json;
 use std::collections::HashMap;
 use toml;
@@ -36,10 +37,10 @@ mod well_known_tool {
 
     #[test]
     fn test_default_enabled_values() {
-        assert_eq!(WellKnownTool::ClaudeCode.default_enabled(), true);
-        assert_eq!(WellKnownTool::OpenCode.default_enabled(), false);
-        assert_eq!(WellKnownTool::Agpm.default_enabled(), true);
-        assert_eq!(WellKnownTool::Generic.default_enabled(), true);
+        assert!(WellKnownTool::ClaudeCode.default_enabled());
+        assert!(!WellKnownTool::OpenCode.default_enabled());
+        assert!(WellKnownTool::Agpm.default_enabled());
+        assert!(WellKnownTool::Generic.default_enabled());
     }
 
     #[test]
@@ -127,7 +128,7 @@ opencode = { path = ".opencode", enabled = false, resources = { agents = { path 
         // Check claude-code config
         let claude_config = config.types.get("claude-code").unwrap();
         assert_eq!(claude_config.path, PathBuf::from(".claude"));
-        assert_eq!(claude_config.enabled, true);
+        assert!(claude_config.enabled);
 
         let claude_agents = claude_config.resources.get("agents").unwrap();
         assert_eq!(claude_agents.path, Some("agents".to_string()));
@@ -136,7 +137,7 @@ opencode = { path = ".opencode", enabled = false, resources = { agents = { path 
         // Check opencode config
         let opencode_config = config.types.get("opencode").unwrap();
         assert_eq!(opencode_config.path, PathBuf::from(".opencode"));
-        assert_eq!(opencode_config.enabled, false);
+        assert!(!opencode_config.enabled);
     }
 
     #[test]
@@ -150,11 +151,11 @@ opencode = { path = ".opencode", resources = { agents = { path = "agent" } } }
 
         // claude-code should default to enabled = true
         let claude_config = config.types.get("claude-code").unwrap();
-        assert_eq!(claude_config.enabled, true);
+        assert!(claude_config.enabled);
 
         // opencode should default to enabled = false
         let opencode_config = config.types.get("opencode").unwrap();
-        assert_eq!(opencode_config.enabled, false);
+        assert!(!opencode_config.enabled);
     }
 
     #[test]
@@ -168,11 +169,11 @@ opencode = { path = ".opencode", enabled = true, resources = { agents = { path =
 
         // claude-code should be explicitly disabled
         let claude_config = config.types.get("claude-code").unwrap();
-        assert_eq!(claude_config.enabled, false);
+        assert!(!claude_config.enabled);
 
         // opencode should be explicitly enabled
         let opencode_config = config.types.get("opencode").unwrap();
-        assert_eq!(opencode_config.enabled, true);
+        assert!(opencode_config.enabled);
     }
 
     #[test]
@@ -186,7 +187,7 @@ my-custom-tool = { path = ".my-tool", enabled = true, resources = { agents = { p
         let custom_config = config.types.get("my-custom-tool").unwrap();
         assert_eq!(custom_config.path, PathBuf::from(".my-tool"));
         // Custom tools should default to enabled = true
-        assert_eq!(custom_config.enabled, true);
+        assert!(custom_config.enabled);
     }
 
     #[test]
@@ -259,7 +260,7 @@ mod artifact_type_config {
         };
 
         assert_eq!(config.path, PathBuf::from(".claude"));
-        assert_eq!(config.enabled, true);
+        assert!(config.enabled);
         assert_eq!(config.resources.len(), 1);
     }
 
@@ -310,7 +311,7 @@ mod tools_config_default {
         let claude = config.types.get("claude-code").unwrap();
 
         assert_eq!(claude.path, PathBuf::from(".claude"));
-        assert_eq!(claude.enabled, true);
+        assert!(claude.enabled);
 
         // Check all expected resource types
         assert!(claude.resources.contains_key("agents"));
@@ -336,7 +337,7 @@ mod tools_config_default {
         let opencode = config.types.get("opencode").unwrap();
 
         assert_eq!(opencode.path, PathBuf::from(".opencode"));
-        assert_eq!(opencode.enabled, false); // Disabled by default
+        assert!(!opencode.enabled); // Disabled by default
 
         // OpenCode only supports agents, commands, and mcp-servers
         assert!(opencode.resources.contains_key("agents"));
@@ -357,7 +358,7 @@ mod tools_config_default {
         let agpm = config.types.get("agpm").unwrap();
 
         assert_eq!(agpm.path, PathBuf::from(".agpm"));
-        assert_eq!(agpm.enabled, true);
+        assert!(agpm.enabled);
 
         // AGPM only supports snippets
         assert!(agpm.resources.contains_key("snippets"));
@@ -415,7 +416,7 @@ my-agent = { source = "community", path = "agents/helper.md", version = "v1.0.0"
         assert!(tools.types.contains_key("claude-code"));
 
         let claude = tools.types.get("claude-code").unwrap();
-        assert_eq!(claude.enabled, true);
+        assert!(claude.enabled);
     }
 
     #[test]

@@ -144,6 +144,7 @@ Dev: assert_cmd, predicates
 - **CRITICAL**: Always use `TestProject` and `TestGit` helpers from `tests/common/mod.rs` for integration tests. Never manually configure git repos with raw `std::process::Command`. TestProject provides `sources_path()` for creating test git repos.
 - **CRITICAL**: Don't manually create lockfiles in tests with hardcoded paths. Let `agpm install` generate them from the manifest. Manual lockfiles break on Windows due to path separator mismatches.
 - **Test File Size**: Keep test files under 250 lines. Tests exceeding this limit should be broken out into separate files with descriptive names (e.g., `test_install_basic.rs`, `test_install_transitive.rs`).
+- **Test File Naming**: For module-specific tests, use `{module}_tests.rs` naming convention (e.g., `tool_config_tests.rs`) instead of placing `tests.rs` files within subdirectories. This keeps test files at the same level as the modules they test and follows Rust conventions.
 
 ## Build & CI
 
