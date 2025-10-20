@@ -489,7 +489,13 @@ mod tests {
         let temp = create_test_project();
         let project_dir = temp.path();
 
-        let result = validate_content_path("/etc/passwd", project_dir, None);
+        // Use platform-specific absolute paths
+        #[cfg(windows)]
+        let absolute_path = "C:\\Windows\\System32\\config";
+        #[cfg(not(windows))]
+        let absolute_path = "/etc/passwd";
+
+        let result = validate_content_path(absolute_path, project_dir, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Absolute paths"));
     }
