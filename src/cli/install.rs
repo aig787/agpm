@@ -456,11 +456,11 @@ impl InstallCommand {
                 multi_phase.start_phase(InstallationPhase::SyncingSources, None);
             }
 
-            // Get all dependencies for pre-syncing
+            // Get all dependencies for pre-syncing (filtering out disabled tools)
             let deps: Vec<(String, ResourceDependency)> = manifest
-                .all_dependencies_with_mcp()
+                .all_dependencies_with_types()
                 .into_iter()
-                .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+                .map(|(name, dep, _resource_type)| (name.to_string(), dep.into_owned()))
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)

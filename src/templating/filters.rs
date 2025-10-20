@@ -157,7 +157,11 @@ pub const MAX_RENDER_DEPTH: usize = 10;
 /// # Ok(())
 /// # }
 /// ```
-pub fn validate_content_path(path_str: &str, project_dir: &Path, max_size: Option<u64>) -> Result<PathBuf> {
+pub fn validate_content_path(
+    path_str: &str,
+    project_dir: &Path,
+    max_size: Option<u64>,
+) -> Result<PathBuf> {
     // Parse the path
     let path = Path::new(path_str);
 
@@ -262,9 +266,9 @@ pub fn validate_content_path(path_str: &str, project_dir: &Path, max_size: Optio
 
     // Check file size if limit is specified
     if let Some(max_bytes) = max_size {
-        let metadata = canonical_path
-            .metadata()
-            .with_context(|| format!("Failed to read file metadata: {}", canonical_path.display()))?;
+        let metadata = canonical_path.metadata().with_context(|| {
+            format!("Failed to read file metadata: {}", canonical_path.display())
+        })?;
 
         let file_size = metadata.len();
         if file_size > max_bytes {
@@ -416,7 +420,10 @@ pub fn read_and_process_content(file_path: &Path) -> Result<String> {
 /// # Ok(())
 /// # }
 /// ```
-pub fn create_content_filter(project_dir: PathBuf, max_size: Option<u64>) -> impl tera::Filter + 'static {
+pub fn create_content_filter(
+    project_dir: PathBuf,
+    max_size: Option<u64>,
+) -> impl tera::Filter + 'static {
     move |value: &tera::Value, _args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
         // Extract path string from filter input
         let path_str = value

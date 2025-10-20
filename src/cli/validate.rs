@@ -925,7 +925,7 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
-                    let context = match context_builder.build_context($name, $resource_type) {
+                    let context = match context_builder.build_context($name, $resource_type).await {
                         Ok(c) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
@@ -934,8 +934,11 @@ impl ValidateCommand {
                     };
 
                     // Try to render
-                    let mut renderer = match TemplateRenderer::new(true, project_dir.to_path_buf(), max_content_file_size)
-                    {
+                    let mut renderer = match TemplateRenderer::new(
+                        true,
+                        project_dir.to_path_buf(),
+                        max_content_file_size,
+                    ) {
                         Ok(r) => r,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));

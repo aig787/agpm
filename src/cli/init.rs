@@ -85,13 +85,13 @@ const DEFAULT_MANIFEST_TEMPLATE: &str = r#"# AGPM Manifest
 # Tool type configurations (multi-tool support)
 [tools.claude-code]
 path = ".claude"
-resources = { agents = { path = "agents" }, snippets = { path = "snippets" }, commands = { path = "commands" }, scripts = { path = "scripts" }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" } }
+resources = { agents = { path = "agents", flatten = true }, snippets = { path = "snippets" }, commands = { path = "commands", flatten = true }, scripts = { path = "scripts" }, hooks = { merge-target = ".claude/settings.local.json" }, mcp-servers = { merge-target = ".mcp.json" } }
 # Note: hooks and mcp-servers merge into configuration files (no file installation)
 
 [tools.opencode]
-enabled = false  # Enable if you want to use OpenCode resources
 path = ".opencode"
-resources = { agents = { path = "agent" }, commands = { path = "command" }, mcp-servers = { merge-target = ".opencode/opencode.json" } }
+enabled = false
+resources = { agents = { path = "agent", flatten = true }, commands = { path = "command", flatten = true }, mcp-servers = { merge-target = ".opencode/opencode.json" } }
 # Note: MCP servers merge into opencode.json (no file installation)
 
 [tools.agpm]
@@ -570,10 +570,12 @@ mod tests {
         assert!(content.contains("# Add your snippet dependencies here"));
         assert!(content.contains("# Example: utils ="));
 
-        // Verify opencode is disabled by default
+        // Verify opencode is enabled by default with flatten settings
         assert!(content.contains("[tools.opencode]"));
-        assert!(content.contains("enabled = false"));
-        assert!(content.contains("# Enable if you want to use OpenCode resources"));
+        assert!(content.contains("flatten = true"));
+        assert!(
+            content.contains("# Note: MCP servers merge into opencode.json (no file installation)")
+        );
     }
 
     #[tokio::test]

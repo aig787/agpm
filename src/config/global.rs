@@ -224,7 +224,10 @@ pub struct GlobalConfig {
     /// ```toml
     /// max_content_file_size = 2097152  # 2 MB
     /// ```
-    #[serde(default = "default_max_content_file_size", skip_serializing_if = "is_default_max_content_file_size")]
+    #[serde(
+        default = "default_max_content_file_size",
+        skip_serializing_if = "is_default_max_content_file_size"
+    )]
     pub max_content_file_size: u64,
 }
 

@@ -16,6 +16,7 @@
 //! Tests are organized by functionality area:
 //! - **cache_behavior**: Cache and worktree management
 //! - **conflict_detection**: Version conflict detection
+//! - **content_filter**: Content filter (`{{ 'path' | content }}`) functionality
 //! - **cross_platform**: Cross-platform compatibility (Windows, macOS, Linux)
 //! - **deploy**: Deployment and installation workflows
 //! - **deps_refresh**: Dependency refresh and update logic
@@ -52,6 +53,7 @@ mod test_config;
 // Integration tests
 mod cache_behavior;
 mod conflict_detection;
+mod content_filter;
 mod cross_platform;
 mod deploy;
 mod deps_refresh;
@@ -72,6 +74,7 @@ mod pattern;
 mod prefixed_versions;
 mod project_template_vars;
 mod templating;
+mod tool_enable_disable;
 mod transitive;
 mod tree;
 mod upd_progress;

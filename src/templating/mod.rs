@@ -261,6 +261,12 @@ use tera::{Context as TeraContext, Tera};
 use crate::core::ResourceType;
 use crate::lockfile::LockFile;
 
+/// Sentinel markers used to guard non-templated dependency content.
+/// Content enclosed between these markers should be treated as literal text
+/// and never passed through the templating engine.
+const NON_TEMPLATED_LITERAL_GUARD_START: &str = "__AGPM_LITERAL_RAW_START__";
+const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
+
 /// Convert Unix-style path (from lockfile) to platform-native format for display in templates.
 ///
 /// Lockfiles always use Unix-style forward slashes for cross-platform compatibility,
@@ -457,7 +463,7 @@ impl TemplateContextBuilder {
     /// # Returns
     ///
     /// Returns a Tera `Context` containing all available template variables.
-    pub fn build_context(
+    pub async fn build_context(
         &self,
         resource_name: &str,
         resource_type: ResourceType,
@@ -472,7 +478,7 @@ impl TemplateContextBuilder {
         agpm.insert("resource".to_string(), to_value(resource_data)?);
 
         // Build dependency data
-        let deps_data = self.build_dependencies_data()?;
+        let deps_data = self.build_dependencies_data().await?;
         agpm.insert("deps".to_string(), to_value(deps_data)?);
 
         // Add project variables if available
@@ -533,7 +539,7 @@ impl TemplateContextBuilder {
     /// # Returns
     ///
     /// Returns `Some(content)` if extraction succeeded, `None` on error (with warning logged)
-    fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
+    async fn extract_content(&self, resource: &crate::lockfile::LockedResource) -> Option<String> {
         tracing::debug!(
             "Attempting to extract content for resource '{}' (type: {:?})",
             resource.name,
@@ -614,7 +620,7 @@ impl TemplateContextBuilder {
         };
 
         // Read file content
-        let content = match std::fs::read_to_string(&source_path) {
+        let content = match tokio::fs::read_to_string(&source_path).await {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
@@ -629,9 +635,25 @@ impl TemplateContextBuilder {
 
         // Process based on file type
         let processed_content = if resource.path.ends_with(".md") {
-            // Markdown: strip frontmatter
+            // Markdown: strip frontmatter and guard non-templated content that contains template syntax
             match crate::markdown::MarkdownDocument::parse(&content) {
-                Ok(doc) => doc.content,
+                Ok(doc) => {
+                    let templating_enabled =
+                        Self::is_markdown_templating_enabled(doc.metadata.as_ref());
+                    let mut stripped_content = doc.content;
+
+                    if !templating_enabled
+                        && Self::content_contains_template_syntax(&stripped_content)
+                    {
+                        tracing::debug!(
+                            "Protecting non-templated markdown content for '{}'",
+                            resource.name
+                        );
+                        stripped_content = Self::wrap_content_in_literal_guard(stripped_content);
+                    }
+
+                    stripped_content
+                }
                 Err(e) => {
                     tracing::warn!(
                         "Failed to parse markdown for resource '{}': {}. Using raw content.",
@@ -668,10 +690,47 @@ impl TemplateContextBuilder {
         Some(processed_content)
     }
 
+    /// Determine whether templating is explicitly enabled in Markdown frontmatter.
+    fn is_markdown_templating_enabled(
+        metadata: Option<&crate::markdown::MarkdownMetadata>,
+    ) -> bool {
+        metadata
+            .and_then(|md| md.extra.get("agpm"))
+            .and_then(|agpm| agpm.as_object())
+            .and_then(|agpm_obj| agpm_obj.get("templating"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    }
+
+    /// Detect if content contains Tera template syntax markers.
+    fn content_contains_template_syntax(content: &str) -> bool {
+        content.contains("{{") || content.contains("{%") || content.contains("{#")
+    }
+
+    /// Wrap non-templated content in a literal fence so it renders safely without being evaluated.
+    fn wrap_content_in_literal_guard(content: String) -> String {
+        let mut wrapped = String::with_capacity(
+            content.len()
+                + NON_TEMPLATED_LITERAL_GUARD_START.len()
+                + NON_TEMPLATED_LITERAL_GUARD_END.len()
+                + 2, // newline separators
+        );
+
+        wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
+        wrapped.push('\n');
+        wrapped.push_str(&content);
+        if !content.ends_with('\n') {
+            wrapped.push('\n');
+        }
+        wrapped.push_str(NON_TEMPLATED_LITERAL_GUARD_END);
+
+        wrapped
+    }
+
     /// Build dependency data for the template context.
     ///
     /// This creates a nested structure of all dependencies by resource type and name.
-    fn build_dependencies_data(
+    async fn build_dependencies_data(
         &self,
     ) -> Result<HashMap<String, HashMap<String, ResourceTemplateData>>> {
         let mut deps = HashMap::new();
@@ -692,7 +751,7 @@ impl TemplateContextBuilder {
             let resources = self.lockfile.get_resources_by_type(resource_type);
             for resource in resources {
                 // Extract content from source file
-                let content = self.extract_content(resource);
+                let content = self.extract_content(resource).await;
 
                 let template_data = ResourceTemplateData {
                     resource_type: type_str_singular.clone(),
@@ -881,11 +940,18 @@ impl TemplateRenderer {
     ///
     /// The following custom filters are registered:
     /// - `content`: Read project-specific files with path validation and size limits
-    pub fn new(enabled: bool, project_dir: PathBuf, max_content_file_size: Option<u64>) -> Result<Self> {
+    pub fn new(
+        enabled: bool,
+        project_dir: PathBuf,
+        max_content_file_size: Option<u64>,
+    ) -> Result<Self> {
         let mut tera = Tera::default();
 
         // Register custom filters
-        tera.register_filter("content", filters::create_content_filter(project_dir.clone(), max_content_file_size));
+        tera.register_filter(
+            "content",
+            filters::create_content_filter(project_dir.clone(), max_content_file_size),
+        );
 
         Ok(Self {
             tera,
@@ -930,9 +996,9 @@ impl TemplateRenderer {
         // Split content by triple backticks to find code blocks
         let mut in_literal_block = false;
         let mut current_block = String::new();
-        let mut lines = content.lines().peekable();
+        let lines = content.lines();
 
-        while let Some(line) = lines.next() {
+        for line in lines {
             if line.trim().starts_with("```literal") {
                 // Start of literal block
                 in_literal_block = true;
@@ -1005,19 +1071,59 @@ impl TemplateRenderer {
     ///
     /// Returns the content with placeholders replaced by original literal blocks,
     /// wrapped in markdown code fences for proper display.
-    fn restore_literal_blocks(&self, content: &str, placeholders: HashMap<String, String>) -> String {
+    fn restore_literal_blocks(
+        &self,
+        content: &str,
+        placeholders: HashMap<String, String>,
+    ) -> String {
         let mut result = content.to_string();
 
         for (placeholder_id, original_content) in placeholders {
-            // Wrap in markdown code fence for display
-            let restored = format!("```\n{}\n```", original_content);
-            result = result.replace(&placeholder_id, &restored);
+            if original_content.starts_with(NON_TEMPLATED_LITERAL_GUARD_START) {
+                result = result.replace(&placeholder_id, &original_content);
+            } else {
+                // Wrap in markdown code fence for display
+                let replacement = format!("```\n{}\n```", original_content);
+                result = result.replace(&placeholder_id, &replacement);
+            }
 
             tracing::debug!(
                 "Restored literal block {} ({} bytes)",
                 placeholder_id,
                 original_content.len()
             );
+        }
+
+        result
+    }
+
+    /// Collapse literal fences that were injected to protect non-templated dependency content.
+    ///
+    /// Any block that starts with ```literal, contains the sentinel marker on its first line,
+    /// and ends with ``` will be replaced by the inner content without the sentinel or fences.
+    fn collapse_non_templated_literal_guards(content: String) -> String {
+        let mut result = String::with_capacity(content.len());
+        let mut in_guard = false;
+
+        for chunk in content.split_inclusive('\n') {
+            let trimmed = chunk.trim_end_matches(['\r', '\n']);
+
+            if !in_guard {
+                if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
+                    in_guard = true;
+                } else {
+                    result.push_str(chunk);
+                }
+            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
+                in_guard = false;
+            } else {
+                result.push_str(chunk);
+            }
+        }
+
+        // If guard never closed, re-append the start marker and captured content to avoid dropping data.
+        if in_guard {
+            result.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
         }
 
         result
@@ -1099,7 +1205,9 @@ impl TemplateRenderer {
         // Check if content contains template syntax (after protecting literals)
         if !self.contains_template_syntax(&protected_content) {
             // No template syntax found, restore literals and return
-            tracing::debug!("No template syntax found after protecting literals, returning content");
+            tracing::debug!(
+                "No template syntax found after protecting literals, returning content"
+            );
             return Ok(self.restore_literal_blocks(&protected_content, placeholders));
         }
 
@@ -1158,7 +1266,10 @@ impl TemplateRenderer {
         };
 
         // Step 3: Restore literal blocks after all rendering is complete
-        Ok(self.restore_literal_blocks(&rendered, placeholders))
+        let restored = self.restore_literal_blocks(&rendered, placeholders);
+
+        // Step 4: Collapse any literal guards that were added for non-templated dependencies
+        Ok(Self::collapse_non_templated_literal_guards(restored))
     }
 
     /// Format a Tera error with detailed information about what went wrong.
@@ -1328,9 +1439,22 @@ impl TemplateRenderer {
     /// content that has already been processed (like embedded dependency content).
     fn contains_template_syntax_outside_fences(&self, content: &str) -> bool {
         let mut in_code_fence = false;
+        let mut in_guard = 0usize;
 
         for line in content.lines() {
             let trimmed = line.trim();
+
+            if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
+                in_guard = in_guard.saturating_add(1);
+                continue;
+            } else if trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
+                in_guard = in_guard.saturating_sub(1);
+                continue;
+            }
+
+            if in_guard > 0 {
+                continue;
+            }
 
             // Track code fence boundaries
             if trimmed.starts_with("```") {
@@ -1387,8 +1511,8 @@ mod tests {
         lockfile
     }
 
-    #[test]
-    fn test_template_context_builder() {
+    #[tokio::test]
+    async fn test_template_context_builder() {
         let lockfile = create_test_lockfile();
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -1396,7 +1520,7 @@ mod tests {
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
-        let _context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
+        let _context = builder.build_context("test-agent", ResourceType::Agent).await.unwrap();
 
         // If we got here without panicking, context building succeeded
         // The actual context structure is tested implicitly by the renderer tests
@@ -1493,8 +1617,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_template_context_uses_native_paths() {
+    #[tokio::test]
+    async fn test_template_context_uses_native_paths() {
         let mut lockfile = create_test_lockfile();
 
         // Add another resource with a nested path
@@ -1519,7 +1643,7 @@ mod tests {
         let project_dir = std::env::current_dir().unwrap();
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
-        let context = builder.build_context("test-agent", ResourceType::Agent).unwrap();
+        let context = builder.build_context("test-agent", ResourceType::Agent).await.unwrap();
 
         // Extract the agpm.resource.install_path from context
         let agpm_value = context.get("agpm").expect("agpm context should exist");
@@ -1822,7 +1946,8 @@ This should appear literally."#;
 
         // Render the parent (with templating enabled)
         let mut parent_renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
-        let final_output = parent_renderer.render_template(parent_template, &parent_context).unwrap();
+        let final_output =
+            parent_renderer.render_template(parent_template, &parent_context).unwrap();
 
         // Verify the final output contains the template syntax literally
         assert!(
@@ -1881,5 +2006,99 @@ The agent uses templating."#;
 
         // It should be in a code fence
         assert!(result.contains("```\n{{ agpm.deps.snippets.example.content }}"));
+    }
+
+    #[tokio::test]
+    async fn test_non_templated_dependency_content_is_guarded() {
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        let snippets_dir = project_dir.join("snippets");
+        fs::create_dir_all(&snippets_dir).await.unwrap();
+        let snippet_path = snippets_dir.join("non-templated.md");
+        fs::write(
+            &snippet_path,
+            r#"---
+agpm:
+  templating: false
+---
+# Example Snippet
+
+This should show {{ agpm.deps.some.content }} literally.
+"#,
+        )
+        .await
+        .unwrap();
+
+        let mut lockfile = LockFile::default();
+        lockfile.commands.push(LockedResource {
+            name: "test-command".to_string(),
+            source: None,
+            url: None,
+            path: "commands/test.md".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:test-command".to_string(),
+            installed_at: ".claude/commands/test.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Command,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+        });
+        lockfile.snippets.push(LockedResource {
+            name: "non_templated".to_string(),
+            source: None,
+            url: None,
+            path: "snippets/non-templated.md".to_string(),
+            version: None,
+            resolved_commit: None,
+            checksum: "sha256:test-snippet".to_string(),
+            installed_at: ".agpm/snippets/non-templated.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Snippet,
+            tool: Some("agpm".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+        });
+
+        let cache = crate::cache::Cache::new().unwrap();
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            None,
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+        let context = builder.build_context("test-command", ResourceType::Command).await.unwrap();
+
+        let mut renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
+        let template = r#"# Combined Output
+
+{{ agpm.deps.snippets.non_templated.content }}
+"#;
+        let rendered = renderer.render_template(template, &context).unwrap();
+
+        assert!(
+            rendered.contains("# Example Snippet"),
+            "Rendered output should include the snippet heading"
+        );
+        assert!(
+            rendered.contains("{{ agpm.deps.some.content }}"),
+            "Template syntax inside non-templated dependency should remain literal"
+        );
+        assert!(
+            !rendered.contains(NON_TEMPLATED_LITERAL_GUARD_START)
+                && !rendered.contains(NON_TEMPLATED_LITERAL_GUARD_END),
+            "Internal literal guard markers should not leak into rendered output"
+        );
+        assert!(
+            !rendered.contains("```literal"),
+            "Synthetic literal fences should be removed after rendering"
+        );
     }
 }

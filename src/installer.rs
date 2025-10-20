@@ -319,7 +319,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
@@ -524,6 +524,7 @@ pub async fn install_resource(
 
                 let template_context = template_context_builder
                     .build_context(&entry.name, resource_type)
+                    .await
                     .with_context(|| {
                         format!("Failed to build template context for {}", entry.name)
                     })?;
@@ -551,8 +552,12 @@ pub async fn install_resource(
                 }
 
                 // Create renderer and render template
-                let mut renderer = TemplateRenderer::new(true, context.project_dir.to_path_buf(), context.max_content_file_size)
-                    .with_context(|| "Failed to create template renderer")?;
+                let mut renderer = TemplateRenderer::new(
+                    true,
+                    context.project_dir.to_path_buf(),
+                    context.max_content_file_size,
+                )
+                .with_context(|| "Failed to create template renderer")?;
 
                 let rendered = renderer
                     .render_template(&patched_content, &template_context)
@@ -731,7 +736,7 @@ pub async fn install_resource(
 ///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
@@ -827,7 +832,7 @@ pub async fn install_resource_with_progress(
 ///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
 /// let pb = ProgressBar::new(total as u64);
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_resources_parallel(
 ///     &lockfile,
 ///     &manifest,
@@ -1897,7 +1902,7 @@ pub async fn install_resources(
 /// // Create dynamic progress manager
 /// let progress_bar = Arc::new(ProgressBar::new(100));
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_resources_with_dynamic_progress(
 ///     &lockfile,
 ///     &manifest,
@@ -2142,7 +2147,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -3127,8 +3132,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3163,8 +3178,18 @@ mod tests {
         entry.installed_at = "custom/location/resource.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3188,8 +3213,18 @@ mod tests {
         entry.path = "/non/existent/file.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Try to install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3213,8 +3248,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
@@ -3249,8 +3294,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install with progress
         let result = install_resource_with_progress(&entry, "agents", &context, &pb).await;
@@ -3470,8 +3525,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install using the parallel function
         let result = install_resource_for_parallel(&entry, "agents", &context).await;
@@ -3498,8 +3563,18 @@ mod tests {
         entry.installed_at = "very/deeply/nested/path/resource.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
