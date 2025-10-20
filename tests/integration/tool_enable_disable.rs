@@ -4,6 +4,7 @@
 //! when tools are enabled or disabled in the manifest.
 
 use crate::common::TestProject;
+use agpm_cli::utils::platform::normalize_path_for_storage;
 use anyhow::Result;
 use tokio::fs;
 
@@ -57,7 +58,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
@@ -133,7 +134,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
@@ -195,7 +196,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 [agents]
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
@@ -265,7 +266,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v1.0.0" }}
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
@@ -320,7 +321,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v2.0.0" }}
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v2.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), updated_manifest_content).await?;
@@ -354,7 +355,7 @@ resources = {{ agents = {{ path = "agent" }} }}
 claude-agent = {{ source = "test", path = "agents/claude-agent.md", version = "v2.0.0" }}
 opencode-agent = {{ source = "test", path = "agent/opencode-agent.md", version = "v2.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), enabled_manifest_content).await?;
@@ -421,7 +422,7 @@ my-agent = {{ source = "test", path = "agent/subdir/my-agent.md", version = "v1.
 [commands]
 my-command = {{ source = "test", path = "command/commands/my-command.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
@@ -567,7 +568,7 @@ my-agent = {{ source = "test", path = "agent/subdir/my-agent.md", version = "v1.
 [commands]
 my-command = {{ source = "test", path = "command/commands/my-command.md", version = "v1.0.0", tool = "opencode" }}
 "#,
-        source_repo.path.display()
+        normalize_path_for_storage(&source_repo.path)
     );
 
     fs::write(project.project_path().join("agpm.toml"), manifest_content).await?;
