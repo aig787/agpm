@@ -2618,6 +2618,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// This function performs automatic cleanup of obsolete resource files by comparing
 /// the old and new lockfiles. It identifies and removes artifacts that have been:
 /// - **Removed from manifest**: Dependencies deleted from `agpm.toml`
+/// - **Changed to content-only**: Dependencies that changed from `install: true` to `install: false`
 /// - **Relocated**: Files with changed `installed_at` paths due to:
 ///   - Relative path preservation (v0.3.18+)
 ///   - Custom target changes
@@ -2631,6 +2632,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 ///
 /// The function uses a **set-based difference algorithm**:
 /// 1. Collects all `installed_at` paths from the new lockfile into a `HashSet`
+///    (excluding resources with `install: false` which should not have files)
 /// 2. Iterates through old lockfile resources
 /// 3. For each old path not in the new set:
 ///    - Removes the file if it exists
@@ -2810,9 +2812,14 @@ pub async fn cleanup_removed_artifacts(
 
     let mut removed = Vec::new();
 
-    // Collect all installed paths from new lockfile
-    let new_paths: HashSet<String> =
-        new_lockfile.all_resources().into_iter().map(|r| r.installed_at.clone()).collect();
+    // Collect installed paths from new lockfile (only resources that should have files on disk)
+    // Resources with install=false are content-only and should not have files
+    let new_paths: HashSet<String> = new_lockfile
+        .all_resources()
+        .into_iter()
+        .filter(|r| r.install != Some(false))
+        .map(|r| r.installed_at.clone())
+        .collect();
 
     // Check each old resource
     for old_resource in old_lockfile.all_resources() {

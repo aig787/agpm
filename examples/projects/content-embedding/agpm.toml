@@ -1,0 +1,13 @@
+# Content Embedding Example Project
+#
+# This example demonstrates AGPM's content embedding features:
+# 1. Dependency content embedding - versioned content from git repos
+# 2. Content filter - project-local file inclusion
+
+[sources]
+# Point to the local examples/deps directory
+examples = "../../deps"
+
+[agents]
+# This agent demonstrates content embedding with three snippet dependencies
+code-reviewer-with-standards = { source = "examples", path = "agents/code-reviewer-with-standards.md" }

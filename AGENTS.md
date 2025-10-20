@@ -115,7 +115,8 @@ src/
 **Example**:
 ```markdown
 ---
-agpm.templating: true
+agpm:
+  templating: true
 dependencies:
   snippets:
     - path: snippets/rust-patterns.md

@@ -38,7 +38,8 @@ cobertura.xml
 *.dSYM/
 
 # Examples
-examples/projects/
+examples/projects/*
+!examples/projects/content-embedding/
 
 # Claude
 **/.claude/settings.local.json

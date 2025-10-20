@@ -5,6 +5,7 @@
 //! - Content is still available in template context when `install=false`
 //! - Lockfile correctly tracks the `install` field
 //! - Combined `install=false` + `content` embedding works end-to-end
+//! - Files are cleaned up when `install` changes from `true` to `false`
 
 use anyhow::Result;
 use tokio::fs;
@@ -615,6 +616,125 @@ Config:
         !content.contains("\"dependencies\""),
         "Dependencies metadata should be stripped from JSON content. Content:\n{}",
         content
+    );
+
+    Ok(())
+}
+
+/// Test that files are cleaned up when install changes from true to false
+#[tokio::test]
+async fn test_cleanup_when_install_changes_to_false() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create two snippets
+    test_repo
+        .add_resource(
+            "snippets",
+            "toggleable",
+            r#"---
+title: Toggleable Snippet
+---
+# Toggleable Content
+"#,
+        )
+        .await?;
+
+    test_repo
+        .add_resource(
+            "snippets",
+            "permanent",
+            r#"---
+title: Permanent Snippet
+---
+# Permanent Content
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Initial version")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // First install: both snippets with default install=true
+    let manifest = format!(
+        r#"[sources]
+test-repo = "{}"
+
+[snippets]
+toggleable = {{ source = "test-repo", path = "snippets/toggleable.md", version = "v1.0.0", tool = "claude-code" }}
+permanent = {{ source = "test-repo", path = "snippets/permanent.md", version = "v1.0.0", tool = "claude-code" }}
+"#,
+        repo_url
+    );
+
+    project.write_manifest(&manifest).await?;
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Initial install should succeed. Stderr: {}", output.stderr);
+
+    // Verify both files exist
+    let toggleable_path = project.project_path().join(".claude/snippets/toggleable.md");
+    let permanent_path = project.project_path().join(".claude/snippets/permanent.md");
+
+    assert!(
+        fs::metadata(&toggleable_path).await.is_ok(),
+        "Toggleable should be installed at {:?}",
+        toggleable_path
+    );
+    assert!(
+        fs::metadata(&permanent_path).await.is_ok(),
+        "Permanent should be installed at {:?}",
+        permanent_path
+    );
+
+    // Second install: change toggleable to install=false
+    let manifest = format!(
+        r#"[sources]
+test-repo = "{}"
+
+[snippets]
+toggleable = {{ source = "test-repo", path = "snippets/toggleable.md", version = "v1.0.0", tool = "claude-code", install = false }}
+permanent = {{ source = "test-repo", path = "snippets/permanent.md", version = "v1.0.0", tool = "claude-code" }}
+"#,
+        repo_url
+    );
+
+    project.write_manifest(&manifest).await?;
+    let output = project.run_agpm(&["install"])?;
+    assert!(output.success, "Second install should succeed. Stderr: {}", output.stderr);
+
+    // Verify cleanup message
+    assert!(
+        output.stdout.contains("Cleaned up") || output.stdout.contains("moved or removed"),
+        "Should report cleanup. Output: {}",
+        output.stdout
+    );
+
+    // Verify toggleable was removed
+    assert!(
+        fs::metadata(&toggleable_path).await.is_err(),
+        "Toggleable should be removed after install=false at {:?}",
+        toggleable_path
+    );
+
+    // Verify permanent still exists
+    assert!(
+        fs::metadata(&permanent_path).await.is_ok(),
+        "Permanent should still exist at {:?}",
+        permanent_path
+    );
+
+    // Verify lockfile
+    let lockfile_content = project.read_lockfile().await?;
+    assert!(lockfile_content.contains("toggleable"), "Lockfile should contain toggleable");
+    assert!(lockfile_content.contains("permanent"), "Lockfile should contain permanent");
+    assert!(
+        lockfile_content.contains("install = false"),
+        "Lockfile should track install=false. Lockfile:\n{}",
+        lockfile_content
     );
 
     Ok(())
