@@ -7,6 +7,7 @@ AGPM supports powerful Tera-based templating for Markdown resources, enabling dy
 - [Overview](#overview)
 - [Template Variables Reference](#template-variables-reference)
 - [Syntax and Features](#syntax-and-features)
+  - [Custom Filters](#custom-filters)
 - [Examples](#examples)
 - [Controlling Templating](#controlling-templating)
 - [Security and Sandboxing](#security-and-sandboxing)
@@ -57,6 +58,7 @@ Dependencies declared in YAML frontmatter are available in templates, organized 
 | `agpm.deps.<category>.<name>.checksum` | string | Dependency checksum | `sha256:...` |
 | `agpm.deps.<category>.<name>.source` | string \| null | Dependency source | `community` |
 | `agpm.deps.<category>.<name>.path` | string | Source-relative path | `snippets/utils.md` |
+| `agpm.deps.<category>.<name>.content` | string \| null | Processed file content (Markdown: frontmatter stripped, JSON: metadata removed) | `"# Example\n..."` |
 
 **Category Names** (plural forms): `agents`, `snippets`, `commands`, `scripts`, `hooks`, `mcp-servers`
 
@@ -265,6 +267,105 @@ Use `{# #}` for template comments (not included in output):
 # {{ agpm.resource.name }}
 ```
 
+### Custom Filters
+
+#### `content` Filter
+
+Read and embed project-specific files (style guides, architecture docs, team conventions) directly into your templates:
+
+```markdown
+{{ 'path/to/file.md' | content }}
+```
+
+**Use Cases**:
+- Embed company coding standards
+- Include team-specific conventions
+- Reference architecture documentation
+- Pull in project-specific guidelines
+
+**Security**:
+- Path validation prevents directory traversal attacks
+- Only text files allowed: `.md`, `.txt`, `.json`, `.toml`, `.yaml`
+- Absolute paths rejected
+- Files must exist in project root
+- File size limit: 1 MB by default (configurable in `~/.agpm/config.toml`)
+
+**Content Processing**:
+- **Markdown (.md)**: YAML/TOML frontmatter automatically stripped
+- **JSON (.json)**: Parsed and pretty-printed
+- **Other files**: Raw text content
+
+**Recursive Rendering**: Project files can reference other project files using template syntax, up to 10 levels deep. The template engine automatically re-renders until no template syntax remains or the depth limit is reached.
+
+**Example - Basic Usage**:
+
+```markdown
+---
+agpm.templating: true
+---
+# Code Review Agent
+
+## Company Style Guide
+{{ 'project/styleguide.md' | content }}
+
+## Team Conventions
+{{ 'docs/conventions.txt' | content }}
+```
+
+**Example - Recursive Project Files**:
+
+Main agent (`.claude/agents/reviewer.md`):
+```markdown
+---
+agpm.templating: true
+---
+# Code Reviewer
+
+{{ 'project/styleguide.md' | content }}
+```
+
+Style guide (`project/styleguide.md`):
+```markdown
+# Coding Standards
+
+## Language-Specific Rules
+{{ 'project/rust-style.md' | content }}
+{{ 'project/python-style.md' | content }}
+```
+
+**Combining with Dependency Content**:
+
+Use both `content` filter (for local files) and dependency `.content` fields (for versioned AGPM resources) together:
+
+```markdown
+---
+agpm.templating: true
+dependencies:
+  snippets:
+    - path: snippets/rust-patterns.md
+      name: rust_patterns
+    - path: snippets/error-handling.md
+      name: error_handling
+---
+# Rust Code Reviewer
+
+## Shared Rust Patterns (versioned, from AGPM)
+{{ agpm.deps.snippets.rust_patterns.content }}
+
+## Project-Specific Style Guide (local)
+{{ 'project/rust-style.md' | content }}
+
+## Error Handling Best Practices (versioned, from AGPM)
+{{ agpm.deps.snippets.error_handling.content }}
+
+## Team Conventions (local)
+{{ 'docs/team-conventions.txt' | content }}
+```
+
+**When to Use Each**:
+- **`agpm.deps.<type>.<name>.content`**: Versioned content from AGPM repositories (shared patterns, reusable snippets)
+- **`content` filter**: Project-local files (team docs, company standards, living documentation)
+
 ## Examples
 
 ### Basic Agent with Metadata
@@ -324,6 +425,46 @@ This reviewer works with the [Documentation Helper]({{ agpm.deps.agents.document
 ```
 
 **Note**: The loop variable `name` will contain the sanitized filename with underscores (e.g., `style_guide`, `best_practices`), not the original filename with hyphens.
+
+### Embedding Content from Dependencies
+
+You can embed the actual content of dependencies directly into your templates. This is especially useful for including snippets, guidelines, or reusable documentation without creating separate files.
+
+First, declare a dependency with `install: false` to prevent file creation:
+
+```yaml
+---
+title: Code Review Agent
+dependencies:
+  snippets:
+    - path: snippets/coding-standards.md
+      version: v1.0.0
+      install: false  # Don't create a separate file
+      name: coding_standards
+---
+```
+
+Then embed the content directly in your template:
+
+```markdown
+# Code Review Agent
+
+## Coding Standards
+
+Below are the coding standards this agent enforces:
+
+{{ agpm.deps.snippets.coding_standards.content }}
+
+## Review Process
+
+When reviewing code, I will check compliance with the standards above...
+```
+
+**Key Points**:
+- `install: false` prevents creating `.agpm/snippets/coding-standards.md`
+- Content is automatically processed (YAML frontmatter stripped from Markdown)
+- The `content` field is available for ALL dependencies (not just `install: false`)
+- Returns `null` if content extraction fails (with warning logged)
 
 ### Conditional Content
 
@@ -591,6 +732,28 @@ Will render differently based on platform:
 - **Unix/macOS**: `This agent is installed at: .claude/agents/example.md`
 
 This means the **installed content will differ by platform**, but the lockfile remains consistent.
+
+## Configuration
+
+### File Size Limit
+
+The `content` filter enforces a file size limit to prevent memory exhaustion when embedding large files. By default, the limit is **1 MB (1,048,576 bytes)**.
+
+You can customize this limit in your global AGPM configuration (`~/.agpm/config.toml`):
+
+```toml
+# Global file size limit (applies to template content filter and other operations)
+max_content_file_size = 2097152  # 2 MB in bytes
+```
+
+**Common Size Values**:
+- 512 KB: `524288`
+- 1 MB (default): `1048576`
+- 2 MB: `2097152`
+- 5 MB: `5242880`
+- 10 MB: `10485760`
+
+If a file exceeds the configured limit, the template rendering will fail with a clear error message showing both the file size and the limit.
 
 ## Troubleshooting
 

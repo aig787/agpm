@@ -678,11 +678,11 @@ impl ValidateCommand {
                     validation_results.errors = errors;
                     validation_results.warnings = warnings;
                     println!("{}", serde_json::to_string_pretty(&validation_results)?);
-                    return Err(anyhow::anyhow!("Local paths not found"));
+                    return Err(anyhow::anyhow!("{}", error_msg));
                 } else if !self.quiet {
                     println!("{} {}", "✗".red(), error_msg);
                 }
-                return Err(anyhow::anyhow!("Local paths not found"));
+                return Err(anyhow::anyhow!("{}", error_msg));
             }
         }
 
@@ -838,7 +838,11 @@ impl ValidateCommand {
             }
 
             let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
-            let cache = Cache::new()?;
+            let cache = Arc::new(Cache::new()?);
+
+            // Load global config for template rendering settings
+            let global_config = crate::config::GlobalConfig::load().await.unwrap_or_default();
+            let max_content_file_size = Some(global_config.max_content_file_size);
 
             // Collect all markdown resources from manifest
             let mut template_results = Vec::new();
@@ -915,9 +919,13 @@ impl ValidateCommand {
 
                     // Build template context
                     let project_config = manifest.project.clone();
-                    let context_builder =
-                        TemplateContextBuilder::new(Arc::clone(&lockfile), project_config);
-                    let context = match context_builder.build_context($name, $resource_type) {
+                    let context_builder = TemplateContextBuilder::new(
+                        Arc::clone(&lockfile),
+                        project_config,
+                        Arc::clone(&cache),
+                        project_dir.to_path_buf(),
+                    );
+                    let context = match context_builder.build_context($name, $resource_type).await {
                         Ok(c) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
@@ -926,7 +934,11 @@ impl ValidateCommand {
                     };
 
                     // Try to render
-                    let mut renderer = match TemplateRenderer::new(true) {
+                    let mut renderer = match TemplateRenderer::new(
+                        true,
+                        project_dir.to_path_buf(),
+                        max_content_file_size,
+                    ) {
                         Ok(r) => r,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
@@ -1331,6 +1343,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -1405,6 +1418,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -1487,6 +1501,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1589,6 +1604,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -1665,6 +1681,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -1791,6 +1808,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1940,6 +1958,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2026,6 +2045,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2242,6 +2262,7 @@ mod tests {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -2329,6 +2350,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -2377,6 +2399,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -2426,6 +2449,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             true,
@@ -2446,6 +2470,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
             false,
@@ -2569,6 +2594,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
         );
@@ -2590,6 +2616,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
         );
@@ -2643,6 +2670,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 },
             )),
         );
@@ -2793,6 +2821,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3292,6 +3321,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3364,6 +3394,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -3490,6 +3521,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3661,6 +3693,7 @@ See [helper](.agpm/snippets/helper.md) for details.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3726,6 +3759,7 @@ Also check `.claude/nonexistent.md`.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3793,6 +3827,7 @@ Visit http://example.com for more info.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3862,6 +3897,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3930,6 +3966,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -3945,6 +3982,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

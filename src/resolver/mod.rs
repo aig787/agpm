@@ -1641,8 +1641,10 @@ impl DependencyResolver {
                                 }
                             }
                             result
-                        } else {
-                            // For regular paths, fully resolve and canonicalize
+                        } else if dep_spec.path.starts_with("./")
+                            || dep_spec.path.starts_with("../")
+                        {
+                            // File-relative path (used in Markdown YAML frontmatter)
                             crate::utils::resolve_file_relative_path(
                                 &parent_file_path,
                                 &dep_spec.path,
@@ -1651,6 +1653,41 @@ impl DependencyResolver {
                                 format!(
                                     "Failed to resolve transitive dependency '{}' for '{}'",
                                     dep_spec.path, name
+                                )
+                            })?
+                        } else {
+                            // Repo-relative path (used in JSON dependencies field)
+                            // Get the repository root (worktree path for Git sources, source path for local)
+                            let repo_root = if dep.get_source().is_some() {
+                                // For Git sources, the parent_file_path is inside a worktree
+                                // Find the worktree root by going up until we find it
+                                parent_file_path.ancestors()
+                                    .find(|p| {
+                                        // Worktree directories have format: owner_repo_sha8
+                                        p.file_name()
+                                            .and_then(|n| n.to_str())
+                                            .map(|s| s.contains('_'))
+                                            .unwrap_or(false)
+                                    })
+                                    .ok_or_else(|| anyhow::anyhow!(
+                                        "Failed to find worktree root for transitive dependency '{}'",
+                                        dep_spec.path
+                                    ))?
+                            } else {
+                                // For local sources, go up to the source root
+                                parent_file_path.ancestors()
+                                    .nth(2) // Go up 2 levels from the file (e.g., from commands/file.json to repo root)
+                                    .ok_or_else(|| anyhow::anyhow!(
+                                        "Failed to find source root for transitive dependency '{}'",
+                                        dep_spec.path
+                                    ))?
+                            };
+
+                            let full_path = repo_root.join(&dep_spec.path);
+                            full_path.canonicalize().with_context(|| {
+                                format!(
+                                    "Failed to resolve repo-relative transitive dependency '{}' for '{}': {} (repo root: {})",
+                                    dep_spec.path, name, full_path.display(), repo_root.display()
                                 )
                             })?
                         };
@@ -1723,6 +1760,7 @@ impl DependencyResolver {
                                 dependencies: None,
                                 tool: trans_tool,
                                 flatten: None,
+                                install: dep_spec.install.or(Some(true)),
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -1825,6 +1863,7 @@ impl DependencyResolver {
                                 dependencies: None,
                                 tool: trans_tool,
                                 flatten: None,
+                                install: dep_spec.install.or(Some(true)),
                             }))
                         };
 
@@ -2247,6 +2286,7 @@ impl DependencyResolver {
                         dependencies: None,
                         tool: tool.clone(),
                         flatten,
+                        install: None,
                     })),
                 ));
             }
@@ -2311,6 +2351,7 @@ impl DependencyResolver {
                         dependencies: None,
                         tool,
                         flatten,
+                        install: None,
                     })),
                 ));
             }
@@ -2862,6 +2903,7 @@ impl DependencyResolver {
                     .get(&(resource_type, name.to_string()))
                     .cloned(), // Check if this came from a pattern expansion
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
+                install: dep.get_install(),
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -3045,6 +3087,7 @@ impl DependencyResolver {
                     .get(&(resource_type, name.to_string()))
                     .cloned(), // Check if this came from a pattern expansion
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
+                install: dep.get_install(),
             })
         }
     }
@@ -3272,6 +3315,7 @@ impl DependencyResolver {
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
+                    install: dep.get_install(),
                 });
             }
 
@@ -3465,6 +3509,7 @@ impl DependencyResolver {
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
+                    install: dep.get_install(),
                 });
             }
 
@@ -3854,6 +3899,7 @@ impl DependencyResolver {
                     dependencies: None,
                     tool: Some("claude-code".to_string()), // Default tool
                     flatten: None,
+                    install: None,
                 })))
             }
         }
@@ -4547,6 +4593,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -4627,6 +4674,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -4706,6 +4754,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -4759,6 +4808,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -4839,6 +4889,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -4957,6 +5008,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5002,6 +5054,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5046,6 +5099,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5089,6 +5143,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5133,6 +5188,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             false, // script (not agent)
         );
@@ -5272,6 +5328,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true, // agents
         );
@@ -5320,6 +5377,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5430,6 +5488,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5448,6 +5507,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5479,6 +5539,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5497,6 +5558,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5833,6 +5895,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5896,6 +5959,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -5988,6 +6052,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -6072,6 +6137,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -6169,6 +6235,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6184,6 +6251,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let result = resolver
@@ -6231,6 +6299,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6246,6 +6315,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let result =
@@ -6287,6 +6357,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6302,6 +6373,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let result = resolver
@@ -6339,6 +6411,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         let result = resolver

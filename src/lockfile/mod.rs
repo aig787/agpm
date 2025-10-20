@@ -818,6 +818,21 @@ pub struct LockedResource {
     /// Omitted from TOML serialization when empty.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub applied_patches: HashMap<String, toml::Value>,
+
+    /// Whether this dependency should be installed to disk.
+    ///
+    /// When `false`, the dependency is resolved, fetched, and tracked in the lockfile,
+    /// but the file is not written to the project directory. Instead, its content is
+    /// made available in template context via `agpm.deps.<type>.<name>.content`.
+    ///
+    /// This is useful for snippet embedding use cases where you want to include
+    /// content inline rather than as a separate file.
+    ///
+    /// Defaults to `true` (install the file) for backwards compatibility.
+    ///
+    /// Omitted from TOML serialization when `None` or `true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install: Option<bool>,
 }
 
 fn is_default_tool(tool: &Option<String>) -> bool {
@@ -1244,6 +1259,7 @@ impl LockFile {
     ///     tool: Some("claude-code".to_string()),
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
+    ///     install: None,
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1270,6 +1286,7 @@ impl LockFile {
     ///     tool: Some("claude-code".to_string()),
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
+    ///     install: None,
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1319,6 +1336,7 @@ impl LockFile {
     ///     tool: Some("claude-code".to_string()),
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
+    ///     install: None,
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -2191,6 +2209,7 @@ impl LockFile {
     /// #     tool: Some("claude-code".to_string()),
     /// #     manifest_alias: None,
     /// #     applied_patches: std::collections::HashMap::new(),
+    /// #     install: None,
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2471,6 +2490,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             true,
         );
@@ -2572,6 +2592,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             true, // is_agent
         );
@@ -2593,6 +2614,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             false, // is_agent
         );
@@ -2614,6 +2636,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             true, // is_agent
         );
@@ -2669,6 +2692,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2703,6 +2727,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             true,
         );
@@ -2724,6 +2749,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             false,
         );
@@ -2745,6 +2771,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2784,6 +2811,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2824,6 +2852,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             true,
         );
@@ -2845,6 +2874,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             },
             crate::core::ResourceType::Command,
         );

@@ -383,9 +383,9 @@ impl UpdateCommand {
         // Get all dependencies for pre-syncing (only if we have remote deps)
         if has_remote_deps {
             let all_deps: Vec<(String, ResourceDependency)> = manifest
-                .all_dependencies_with_mcp()
+                .all_dependencies_with_types()
                 .into_iter()
-                .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+                .map(|(name, dep, _resource_type)| (name.to_string(), dep.into_owned()))
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
@@ -636,6 +636,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
 
@@ -682,6 +683,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

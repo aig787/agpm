@@ -1642,6 +1642,37 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flatten: Option<bool>,
+
+    /// Control whether the dependency should be installed to disk.
+    ///
+    /// When `false`, the dependency is resolved, fetched, and tracked in the lockfile,
+    /// but the file is not written to the project directory. Instead, its content is
+    /// made available in template context via `agpm.deps.<type>.<name>.content`.
+    ///
+    /// This is useful for snippet embedding use cases where you want to include
+    /// content inline rather than as a separate file.
+    ///
+    /// Defaults to `true` (install the file).
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [snippets]
+    /// # Embed content directly without creating a file
+    /// best_practices = {
+    ///     source = "repo",
+    ///     path = "snippets/rust-best-practices.md",
+    ///     version = "v1.0.0",
+    ///     install = false
+    /// }
+    /// ```
+    ///
+    /// Then use in template:
+    /// ```markdown
+    /// {{ agpm.deps.snippets.best_practices.content }}
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install: Option<bool>,
 }
 
 impl Manifest {
@@ -2143,6 +2174,7 @@ impl Manifest {
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
+    ///         install: None,
     ///     })),
     ///     true
     /// );
@@ -3037,6 +3069,7 @@ impl Manifest {
     ///         dependencies: None,
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
+    ///         install: None,
     ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -3159,6 +3192,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
@@ -3202,6 +3236,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
@@ -3257,6 +3292,7 @@ impl ResourceDependency {
     ///     target: None,
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
+    ///     install: None,
     ///     flatten: None,
     /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
@@ -3294,6 +3330,29 @@ impl ResourceDependency {
         }
     }
 
+    /// Get the install flag for this dependency.
+    ///
+    /// Returns the install setting if explicitly specified, or `None` to use the
+    /// default behavior (install = true).
+    ///
+    /// When `install = false`: Dependency is resolved and content made available in
+    /// template context, but file is not written to disk.
+    ///
+    /// When `install = true` (or `None`): Dependency is installed as a file.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(false)` - Do not install the file, only make content available
+    /// - `Some(true)` - Install the file normally
+    /// - `None` - Use default behavior (install = true)
+    #[must_use]
+    pub fn get_install(&self) -> Option<bool> {
+        match self {
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.install,
+        }
+    }
+
     /// Get the path to the resource file.
     ///
     /// Returns the path component of the dependency, which is interpreted
@@ -3325,6 +3384,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -3382,6 +3442,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -3410,6 +3471,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -3427,6 +3489,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -3481,6 +3544,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert!(!remote.is_local());
     ///
@@ -3498,6 +3562,7 @@ impl ResourceDependency {
     ///     dependencies: None,
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
+    ///     install: None,
     /// }));
     /// assert!(local_detailed.is_local());
     /// ```
@@ -3846,6 +3911,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -3886,6 +3952,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             true,
         );
@@ -3918,6 +3985,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -4036,6 +4104,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             crate::core::ResourceType::Command,
         );
@@ -4073,6 +4142,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
 
@@ -4123,6 +4193,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
@@ -4145,6 +4216,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert!(dep.get_target().is_none());
@@ -4183,6 +4255,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4214,6 +4287,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
@@ -4236,6 +4310,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert!(dep.get_filename().is_none());
@@ -4274,6 +4349,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4305,6 +4381,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert!(dep.is_pattern());
@@ -4335,6 +4412,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
 
@@ -4356,6 +4434,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
 
@@ -4386,6 +4465,7 @@ mod tests {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
 
@@ -4409,6 +4489,7 @@ mod tests {
             dependencies: None,
             tool: Some("claude-code".to_string()),
             flatten: None,
+            install: None,
         }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));

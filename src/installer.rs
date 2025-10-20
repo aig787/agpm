@@ -166,6 +166,8 @@ pub struct InstallContext<'a> {
     pub lockfile: Option<&'a Arc<LockFile>>,
     pub project_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
+    pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
+    pub max_content_file_size: Option<u64>,
 }
 
 impl<'a> InstallContext<'a> {
@@ -180,6 +182,8 @@ impl<'a> InstallContext<'a> {
         lockfile: Option<&'a Arc<LockFile>>,
         project_patches: Option<&'a crate::manifest::ManifestPatches>,
         private_patches: Option<&'a crate::manifest::ManifestPatches>,
+        gitignore_lock: Option<&'a Arc<Mutex<()>>>,
+        max_content_file_size: Option<u64>,
     ) -> Self {
         Self {
             project_dir,
@@ -190,6 +194,8 @@ impl<'a> InstallContext<'a> {
             lockfile,
             project_patches,
             private_patches,
+            gitignore_lock,
+            max_content_file_size,
         }
     }
 }
@@ -310,9 +316,10 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     tool: Some("claude-code".to_string()),
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
+///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
@@ -501,8 +508,12 @@ pub async fn install_resource(
                 let project_config = context.manifest.and_then(|m| m.project.clone());
 
                 // Build context
-                let template_context_builder =
-                    TemplateContextBuilder::new(lockfile.clone(), project_config);
+                let template_context_builder = TemplateContextBuilder::new(
+                    lockfile.clone(),
+                    project_config,
+                    Arc::new(context.cache.clone()),
+                    context.project_dir.to_path_buf(),
+                );
 
                 // Compute context digest for cache invalidation
                 // This ensures that changes to dependency versions invalidate the cache
@@ -513,6 +524,7 @@ pub async fn install_resource(
 
                 let template_context = template_context_builder
                     .build_context(&entry.name, resource_type)
+                    .await
                     .with_context(|| {
                         format!("Failed to build template context for {}", entry.name)
                     })?;
@@ -540,8 +552,12 @@ pub async fn install_resource(
                 }
 
                 // Create renderer and render template
-                let mut renderer = TemplateRenderer::new(true)
-                    .with_context(|| "Failed to create template renderer")?;
+                let mut renderer = TemplateRenderer::new(
+                    true,
+                    context.project_dir.to_path_buf(),
+                    context.max_content_file_size,
+                )
+                .with_context(|| "Failed to create template renderer")?;
 
                 let rendered = renderer
                     .render_template(&patched_content, &template_context)
@@ -619,17 +635,46 @@ pub async fn install_resource(
     };
 
     // Check if content has changed by comparing checksums
-    let actually_installed = existing_checksum.as_ref() != Some(&new_checksum);
+    let content_changed = existing_checksum.as_ref() != Some(&new_checksum);
 
-    if actually_installed {
-        // Only write if content is different or file doesn't exist
+    // Check if we should actually write the file to disk
+    let should_install = entry.install.unwrap_or(true);
+
+    let actually_installed = if should_install && content_changed {
+        // Only write if install=true and content is different or file doesn't exist
         if let Some(parent) = dest_path.parent() {
             ensure_dir(parent)?;
         }
 
+        // Add to .gitignore BEFORE writing file to prevent accidental commits
+        if let Some(lock) = context.gitignore_lock {
+            // Calculate relative path for gitignore
+            let relative_path = dest_path
+                .strip_prefix(context.project_dir)
+                .unwrap_or(&dest_path)
+                .to_string_lossy()
+                .to_string();
+
+            add_path_to_gitignore(context.project_dir, &relative_path, lock)
+                .await
+                .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
+        }
+
         atomic_write(&dest_path, final_content.as_bytes())
             .with_context(|| format!("Failed to install resource to {}", dest_path.display()))?;
-    }
+
+        true
+    } else if !should_install {
+        // install=false: content-only dependency, don't write file
+        tracing::debug!(
+            "Skipping file write for content-only dependency: {} (install=false)",
+            entry.name
+        );
+        false
+    } else {
+        // install=true but content unchanged
+        false
+    };
 
     Ok((actually_installed, new_checksum, applied_patches))
 }
@@ -688,9 +733,10 @@ pub async fn install_resource(
 ///     tool: Some("claude-code".to_string()),
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
+///     install: None,
 /// };
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
 /// let (installed, checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
@@ -786,7 +832,7 @@ pub async fn install_resource_with_progress(
 ///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
 /// let pb = ProgressBar::new(total as u64);
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_resources_parallel(
 ///     &lockfile,
 ///     &manifest,
@@ -838,6 +884,15 @@ pub async fn install_resources_parallel(
     // Collect unique (source, url, sha) triples to pre-create worktrees
     let mut unique_worktrees = HashSet::new();
     for (entry, _) in &all_entries {
+        tracing::debug!(
+            "Checking entry '{}' (type: {:?}): source={:?}, url={:?}, sha={:?}",
+            entry.name,
+            entry.resource_type,
+            entry.source,
+            entry.url.as_deref().map(|u| &u[..60.min(u.len())]),
+            entry.resolved_commit.as_deref().map(|s| &s[..8.min(s.len())])
+        );
+
         if let Some(source_name) = &entry.source
             && let Some(url) = &entry.url
         {
@@ -845,10 +900,22 @@ pub async fn install_resources_parallel(
             if let Some(sha) = entry.resolved_commit.as_ref().filter(|commit| {
                 commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit())
             }) {
+                tracing::info!(
+                    "Adding worktree to pre-warm set: source={}, sha={}",
+                    source_name,
+                    &sha[..8]
+                );
                 unique_worktrees.insert((source_name.clone(), url.clone(), sha.clone()));
+            } else {
+                tracing::warn!(
+                    "Skipping worktree pre-warm for '{}': invalid or missing SHA",
+                    entry.name
+                );
             }
         }
     }
+
+    tracing::info!("Pre-warming {} unique worktrees", unique_worktrees.len());
 
     // Pre-create all worktrees in parallel
     if !unique_worktrees.is_empty() {
@@ -860,13 +927,21 @@ pub async fn install_resources_parallel(
                     cache
                         .get_or_create_worktree_for_sha(&source, &url, &sha, Some("pre-warm"))
                         .await
-                        .ok(); // Ignore errors during pre-warming
+                        .map_err(|e| {
+                            tracing::error!(
+                                "Failed to create worktree for {}/{}: {}",
+                                source,
+                                &sha[..8.min(sha.len())],
+                                e
+                            );
+                            e
+                        })
                 }
             })
             .collect();
 
-        // Execute all worktree creations in parallel
-        future::join_all(worktree_futures).await;
+        // Execute all worktree creations in parallel - fail fast on first error
+        future::try_join_all(worktree_futures).await.context("Failed to pre-warm worktrees")?;
     }
 
     // Create thread-safe progress tracking
@@ -898,6 +973,8 @@ pub async fn install_resources_parallel(
                     Some(lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -1299,6 +1376,8 @@ pub async fn install_resources_parallel_with_progress(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -1664,6 +1743,9 @@ pub async fn install_resources(
     let installed_count = Arc::new(Mutex::new(0));
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
 
+    // Create gitignore lock for thread-safe gitignore updates
+    let gitignore_lock = Arc::new(Mutex::new(()));
+
     // Update initial progress message
     if let Some(ref pm) = progress {
         pm.update_current_message(&format!("Installing 0/{total} resources"));
@@ -1676,6 +1758,7 @@ pub async fn install_resources(
             let installed_count = Arc::clone(&installed_count);
             let cache = cache.clone();
             let progress = progress.clone();
+            let gitignore_lock = Arc::clone(&gitignore_lock);
 
             async move {
                 // Update progress message for current resource
@@ -1692,6 +1775,8 @@ pub async fn install_resources(
                     Some(lockfile),
                     Some(&manifest.project_patches),
                     Some(&manifest.private_patches),
+                    Some(&gitignore_lock),
+                    None, // max_content_file_size - not available in install_resources context
                 );
 
                 let res =
@@ -1817,7 +1902,7 @@ pub async fn install_resources(
 /// // Create dynamic progress manager
 /// let progress_bar = Arc::new(ProgressBar::new(100));
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_resources_with_dynamic_progress(
 ///     &lockfile,
 ///     &manifest,
@@ -1939,6 +2024,8 @@ pub async fn install_resources_with_dynamic_progress(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
@@ -2060,7 +2147,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -2219,6 +2306,8 @@ pub async fn install_updated_resources(
                     Some(&lockfile),
                     install_ctx.project_patches,
                     install_ctx.private_patches,
+                    install_ctx.gitignore_lock,
+                    install_ctx.max_content_file_size,
                 );
                 install_resource_for_parallel(&entry, &resource_dir, &context).await?;
 
@@ -2245,6 +2334,124 @@ pub async fn install_updated_resources(
 
     let final_count = *installed_count.lock().await;
     Ok(final_count)
+}
+
+/// Add a single path to .gitignore atomically
+///
+/// This function adds a single path to the AGPM-managed section of `.gitignore`,
+/// ensuring the file is protected from accidental commits even if subsequent
+/// operations fail. Thread-safe via mutex locking.
+///
+/// # Arguments
+///
+/// * `project_dir` - Project root directory containing `.gitignore`
+/// * `path` - Path to add (relative to project root, forward slashes)
+/// * `lock` - Mutex to synchronize concurrent gitignore updates
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the path was added successfully or was already present.
+pub async fn add_path_to_gitignore(
+    project_dir: &Path,
+    path: &str,
+    lock: &Arc<Mutex<()>>,
+) -> Result<()> {
+    // Acquire lock to ensure thread-safe updates
+    let _guard = lock.lock().await;
+
+    let gitignore_path = project_dir.join(".gitignore");
+
+    // Read existing .gitignore content
+    let mut before_agpm = Vec::new();
+    let mut agpm_paths = std::collections::HashSet::new();
+    let mut after_agpm = Vec::new();
+
+    if gitignore_path.exists() {
+        let content = tokio::fs::read_to_string(&gitignore_path)
+            .await
+            .with_context(|| format!("Failed to read {}", gitignore_path.display()))?;
+
+        let mut in_agpm_section = false;
+        let mut past_agpm_section = false;
+
+        for line in content.lines() {
+            if line == "# AGPM managed entries - do not edit below this line"
+                || line == "# CCPM managed entries - do not edit below this line"
+            {
+                in_agpm_section = true;
+            } else if line == "# End of AGPM managed entries"
+                || line == "# End of CCPM managed entries"
+            {
+                in_agpm_section = false;
+                past_agpm_section = true;
+            } else if in_agpm_section {
+                // Collect existing AGPM paths
+                if !line.is_empty() && !line.starts_with('#') {
+                    agpm_paths.insert(line.to_string());
+                }
+            } else if !past_agpm_section {
+                before_agpm.push(line.to_string());
+            } else {
+                after_agpm.push(line.to_string());
+            }
+        }
+    }
+
+    // Add the new path if not already present
+    let normalized_path = normalize_path_for_storage(path);
+    if agpm_paths.contains(&normalized_path) {
+        // Path already exists, no update needed
+        return Ok(());
+    }
+    agpm_paths.insert(normalized_path);
+
+    // Always include private config files
+    agpm_paths.insert("agpm.private.toml".to_string());
+    agpm_paths.insert("agpm.private.lock".to_string());
+
+    // Build new content
+    let mut new_content = String::new();
+
+    // Add header for new files
+    if before_agpm.is_empty() && after_agpm.is_empty() {
+        new_content.push_str("# .gitignore - AGPM managed entries\n");
+        new_content.push_str("# AGPM entries are automatically generated\n");
+        new_content.push('\n');
+    } else {
+        // Preserve content before AGPM section
+        for line in &before_agpm {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+        if !before_agpm.is_empty() && !before_agpm.last().unwrap().trim().is_empty() {
+            new_content.push('\n');
+        }
+    }
+
+    // Add AGPM section
+    new_content.push_str("# AGPM managed entries - do not edit below this line\n");
+    let mut sorted_paths: Vec<_> = agpm_paths.into_iter().collect();
+    sorted_paths.sort();
+    for p in sorted_paths {
+        new_content.push_str(&p);
+        new_content.push('\n');
+    }
+    new_content.push_str("# End of AGPM managed entries\n");
+
+    // Preserve content after AGPM section
+    if !after_agpm.is_empty() {
+        new_content.push('\n');
+        for line in &after_agpm {
+            new_content.push_str(line);
+            new_content.push('\n');
+        }
+    }
+
+    // Write atomically
+    atomic_write(&gitignore_path, new_content.as_bytes())
+        .with_context(|| format!("Failed to update {}", gitignore_path.display()))?;
+
+    Ok(())
 }
 
 /// Update .gitignore with installed file paths
@@ -2411,6 +2618,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 /// This function performs automatic cleanup of obsolete resource files by comparing
 /// the old and new lockfiles. It identifies and removes artifacts that have been:
 /// - **Removed from manifest**: Dependencies deleted from `agpm.toml`
+/// - **Changed to content-only**: Dependencies that changed from `install: true` to `install: false`
 /// - **Relocated**: Files with changed `installed_at` paths due to:
 ///   - Relative path preservation (v0.3.18+)
 ///   - Custom target changes
@@ -2424,6 +2632,7 @@ pub fn update_gitignore(lockfile: &LockFile, project_dir: &Path, enabled: bool) 
 ///
 /// The function uses a **set-based difference algorithm**:
 /// 1. Collects all `installed_at` paths from the new lockfile into a `HashSet`
+///    (excluding resources with `install: false` which should not have files)
 /// 2. Iterates through old lockfile resources
 /// 3. For each old path not in the new set:
 ///    - Removes the file if it exists
@@ -2603,9 +2812,14 @@ pub async fn cleanup_removed_artifacts(
 
     let mut removed = Vec::new();
 
-    // Collect all installed paths from new lockfile
-    let new_paths: HashSet<String> =
-        new_lockfile.all_resources().into_iter().map(|r| r.installed_at.clone()).collect();
+    // Collect installed paths from new lockfile (only resources that should have files on disk)
+    // Resources with install=false are content-only and should not have files
+    let new_paths: HashSet<String> = new_lockfile
+        .all_resources()
+        .into_iter()
+        .filter(|r| r.install != Some(false))
+        .map(|r| r.installed_at.clone())
+        .collect();
 
     // Check each old resource
     for old_resource in old_lockfile.all_resources() {
@@ -2888,6 +3102,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             }
         } else {
             LockedResource {
@@ -2904,6 +3119,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             }
         }
     }
@@ -2923,8 +3139,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -2959,8 +3185,18 @@ mod tests {
         entry.installed_at = "custom/location/resource.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -2984,8 +3220,18 @@ mod tests {
         entry.path = "/non/existent/file.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Try to install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3009,8 +3255,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
@@ -3045,8 +3301,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install with progress
         let result = install_resource_with_progress(&entry, "agents", &context, &pb).await;
@@ -3185,6 +3451,8 @@ mod tests {
             Some(&lockfile),
             None,
             None,
+            None,
+            None,
         );
 
         let count = install_updated_resources(
@@ -3235,6 +3503,8 @@ mod tests {
             Some(&lockfile),
             None,
             None,
+            None,
+            None,
         );
 
         let count = install_updated_resources(
@@ -3262,8 +3532,18 @@ mod tests {
         entry.path = local_file.to_string_lossy().to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install using the parallel function
         let result = install_resource_for_parallel(&entry, "agents", &context).await;
@@ -3290,8 +3570,18 @@ mod tests {
         entry.installed_at = "very/deeply/nested/path/resource.md".to_string();
 
         // Create install context
-        let context =
-            InstallContext::new(project_dir, &cache, false, false, None, None, None, None);
+        let context = InstallContext::new(
+            project_dir,
+            &cache,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
@@ -3506,6 +3796,8 @@ local-config.json
             false,
             Some(&manifest),
             Some(&lockfile),
+            None,
+            None,
             None,
             None,
         );

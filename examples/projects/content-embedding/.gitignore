@@ -1,0 +1,28 @@
+# AGPM installed resources
+.claude/
+.agpm/
+.opencode/
+.mcp.json
+
+# Lockfile (optional - you may want to commit this)
+agpm.lock
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# AGPM managed entries - do not edit below this line
+agpm.private.toml
+agpm.private.lock
+.claude/agents/code-reviewer-with-standards.md
+.claude/snippets/api-design-principles.md
+.claude/snippets/code-quality-checklist.md
+.claude/snippets/rust-patterns.md
+# End of AGPM managed entries

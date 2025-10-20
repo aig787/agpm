@@ -69,6 +69,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 })),
             );
             total_agents += 1;
@@ -307,6 +308,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 })),
             );
             total_agents += 1;
@@ -367,6 +369,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 })),
             );
         }
@@ -498,6 +501,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                     dependencies: None,
                     tool: Some("claude-code".to_string()),
                     flatten: None,
+                    install: None,
                 })),
             );
             total_resources += 1;
@@ -534,6 +538,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         total_resources += 1;
@@ -689,6 +694,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
     }
@@ -861,6 +867,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
     }

@@ -416,6 +416,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         lockfile.snippets.push(LockedResource {
@@ -433,6 +434,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         lockfile
@@ -461,6 +463,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         lockfile.agents.push(LockedResource {
@@ -478,6 +481,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Add commands from source1
@@ -496,6 +500,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Add scripts
@@ -514,6 +519,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Add hooks
@@ -532,6 +538,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Add MCP servers
@@ -550,6 +557,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Add resource without source
@@ -568,6 +576,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         lockfile
@@ -612,6 +621,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         // Verify the agent was added
@@ -1065,6 +1075,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
+            install: None,
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

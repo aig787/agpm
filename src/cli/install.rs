@@ -456,11 +456,11 @@ impl InstallCommand {
                 multi_phase.start_phase(InstallationPhase::SyncingSources, None);
             }
 
-            // Get all dependencies for pre-syncing
+            // Get all dependencies for pre-syncing (filtering out disabled tools)
             let deps: Vec<(String, ResourceDependency)> = manifest
-                .all_dependencies_with_mcp()
+                .all_dependencies_with_types()
                 .into_iter()
-                .map(|(name, dep)| (name.to_string(), dep.into_owned()))
+                .map(|(name, dep, _resource_type)| (name.to_string(), dep.into_owned()))
                 .collect();
 
             // Pre-sync all required sources (performs actual Git operations)
@@ -1116,6 +1116,7 @@ This is a test agent.",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1177,6 +1178,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1199,6 +1201,7 @@ Body",
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
+                install: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1246,6 +1249,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1288,6 +1292,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1329,6 +1334,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1367,6 +1373,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1424,6 +1431,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.add_mcp_server(
@@ -1441,6 +1449,7 @@ Body",
                 dependencies: None,
                 tool: Some("claude-code".to_string()),
                 flatten: None,
+                install: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();

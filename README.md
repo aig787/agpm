@@ -15,7 +15,7 @@ installations using lockfile-based dependency management, similar to Cargo.
 - 🎯 **Pattern-based dependencies** - Bulk installation with glob patterns
 - 🖥️ **Cross-platform** - Windows, macOS, and Linux support
 - 🔄 **Transitive dependencies** - Automatic dependency resolution
-- 📝 **Markdown templating** - Dynamic content generation (opt-in)
+- 📝 **Markdown templating** - Dynamic content generation with dependency embedding and project file filter (opt-in)
 
 ## Quick Start
 
@@ -107,6 +107,53 @@ AGPM manages six types of resources:
 - **MCP Servers** - Model Context Protocol servers (→ `.mcp.json`, `opencode.json`)
 
 See the [Resources Guide](docs/resources.md) for detailed information.
+
+## Templating Features
+
+AGPM provides powerful template features for dynamic content generation in Markdown resources:
+
+### Dependency Content Embedding
+
+Embed versioned content from AGPM dependencies:
+
+```markdown
+---
+agpm.templating: true
+dependencies:
+  snippets:
+    - path: snippets/rust-patterns.md
+      name: rust_patterns
+---
+# Rust Code Reviewer
+
+## Shared Patterns
+{{ agpm.deps.snippets.rust_patterns.content }}
+```
+
+### Project File Filter
+
+Read and embed project-specific files (team docs, company standards):
+
+```markdown
+---
+agpm.templating: true
+---
+# Team Agent
+
+## Company Style Guide
+{{ 'project/styleguide.md' | content }}
+
+## Team Conventions
+{{ 'docs/conventions.txt' | content }}
+```
+
+**Key Features**:
+- 🔒 **Secure**: Path validation prevents traversal attacks
+- 📁 **Text files only**: `.md`, `.txt`, `.json`, `.toml`, `.yaml`
+- 🔄 **Recursive**: Project files can reference other project files (10-level depth)
+- 🎯 **Combine both**: Use dependency content + project files together
+
+See the [Templating Guide](docs/templating.md) for complete documentation and examples.
 
 ## Documentation
 

@@ -69,6 +69,30 @@ pub struct DependencySpec {
     /// - All others: `false` (preserve directory structure)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flatten: Option<bool>,
+
+    /// Optional flag to control whether the dependency should be installed to disk.
+    ///
+    /// When `false`, the dependency will be resolved, fetched, and its content made available
+    /// in template context via `agpm.deps.<type>.<name>.content`, but the file will not be
+    /// written to the project directory. This is useful for snippet embedding use cases where
+    /// you want to include content inline rather than as a separate file.
+    ///
+    /// See [`crate::templating::ResourceTemplateData`] for details on how content is accessed
+    /// in templates.
+    ///
+    /// Default: `true` (install the file)
+    ///
+    /// Example:
+    /// ```yaml
+    /// dependencies:
+    ///   snippets:
+    ///     - path: "snippets/rust-best-practices.md"
+    ///       install: false  # Don't create a separate file
+    ///       name: "best_practices"
+    /// ```
+    /// Then use in template: `{{ agpm.deps.snippets.best_practices.content }}`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install: Option<bool>,
 }
 
 /// Metadata extracted from resource files.
@@ -134,6 +158,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: None,
             flatten: None,
+            install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -152,6 +177,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: Some("opencode".to_string()),
             flatten: None,
+            install: None,
         };
 
         let yaml = serde_yaml::to_string(&spec).unwrap();
@@ -186,6 +212,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+                install: None,
             }],
         );
         metadata.dependencies = Some(deps);
@@ -204,6 +231,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+                install: None,
             }],
         );
         metadata1.dependencies = Some(deps1);
@@ -218,6 +246,7 @@ mod tests {
                 version: None,
                 tool: None,
                 flatten: None,
+                install: None,
             }],
         );
         deps2.insert(
@@ -228,6 +257,7 @@ mod tests {
                 version: Some("v1.0.0".to_string()),
                 tool: None,
                 flatten: None,
+                install: None,
             }],
         );
         metadata2.dependencies = Some(deps2);
