@@ -684,6 +684,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],

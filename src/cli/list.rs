@@ -1183,6 +1183,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         lockfile.agents.push(LockedResource {
@@ -1201,6 +1202,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         // Add snippets
@@ -1220,6 +1222,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         lockfile
@@ -1608,6 +1611,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         };
 
         let entry_with_different_source = LockedResource {
@@ -1626,6 +1630,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         };
 
         let entry_without_source = LockedResource {
@@ -1644,6 +1649,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1674,6 +1680,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1870,6 +1877,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

@@ -252,7 +252,7 @@ pub mod filters;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, to_string, to_value};
+use serde_json::{Map, Value as JsonValue, to_string, to_value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -266,6 +266,59 @@ use crate::lockfile::LockFile;
 /// and never passed through the templating engine.
 const NON_TEMPLATED_LITERAL_GUARD_START: &str = "__AGPM_LITERAL_RAW_START__";
 const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
+
+/// Perform a deep merge of two JSON values.
+///
+/// Recursively merges `overrides` into `base`. For objects, fields from `overrides`
+/// are added or replace fields in `base`. For arrays and primitives, `overrides`
+/// completely replaces `base`.
+///
+/// # Arguments
+///
+/// * `base` - The base JSON value
+/// * `overrides` - The override values to merge into base
+///
+/// # Returns
+///
+/// Returns the merged JSON value.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use serde_json::json;
+/// use agpm_cli::templating::deep_merge_json;
+///
+/// let base = json!({ "project": { "name": "agpm", "language": "rust" } });
+/// let overrides = json!({ "project": { "language": "python", "framework": "fastapi" } });
+///
+/// let result = deep_merge_json(base, &overrides);
+/// // result: { "project": { "name": "agpm", "language": "python", "framework": "fastapi" } }
+/// ```
+pub fn deep_merge_json(mut base: JsonValue, overrides: &JsonValue) -> JsonValue {
+    match (base.as_object_mut(), overrides.as_object()) {
+        (Some(base_obj), Some(override_obj)) => {
+            // Both are objects - recursively merge
+            for (key, override_value) in override_obj {
+                match base_obj.get_mut(key) {
+                    Some(base_value) if base_value.is_object() && override_value.is_object() => {
+                        // Recursively merge nested objects
+                        let merged = deep_merge_json(base_value.clone(), override_value);
+                        base_obj.insert(key.clone(), merged);
+                    }
+                    _ => {
+                        // For non-objects or missing keys, override completely
+                        base_obj.insert(key.clone(), override_value.clone());
+                    }
+                }
+            }
+            base
+        }
+        (_, _) => {
+            // If override is not an object, or base is not an object, override replaces base
+            overrides.clone()
+        }
+    }
+}
 
 /// Convert Unix-style path (from lockfile) to platform-native format for display in templates.
 ///
@@ -459,14 +512,53 @@ impl TemplateContextBuilder {
     ///
     /// * `resource_name` - Name of the resource being rendered
     /// * `resource_type` - Type of the resource (agents, snippets, etc.)
+    /// * `template_vars_override` - Optional template variable overrides for this specific resource.
+    ///   Overrides are deep-merged into the base context, preserving unmodified fields.
     ///
     /// # Returns
     ///
     /// Returns a Tera `Context` containing all available template variables.
+    ///
+    /// # Template Variable Override Behavior
+    ///
+    /// When `template_vars_override` is provided, it is deep-merged into the base template context:
+    ///
+    /// - **Objects**: Recursively merged, preserving fields not present in override
+    /// - **Primitives/Arrays**: Completely replaced by override value
+    /// - **Null values**: Replace existing value with JSON null (may cause template errors)
+    /// - **Empty objects**: No-op (no changes applied)
+    ///
+    /// Special handling for `project` namespace: Updates both `agpm.project` (canonical)
+    /// and top-level `project` (convenience alias) to maintain consistency.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use serde_json::json;
+    /// # use agpm_cli::templating::TemplateContextBuilder;
+    /// # use agpm_cli::core::ResourceType;
+    /// # async fn example(builder: TemplateContextBuilder) -> anyhow::Result<()> {
+    /// // Base context has project.name = "agpm" and project.language = "rust"
+    /// let overrides = json!({
+    ///     "project": {
+    ///         "language": "python",  // Replaces existing value
+    ///         "framework": "fastapi" // Adds new field
+    ///     }
+    /// });
+    ///
+    /// let context = builder
+    ///     .build_context("agent", ResourceType::Agent, Some(&overrides))
+    ///     .await?;
+    ///
+    /// // Result: project.name preserved, language replaced, framework added
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn build_context(
         &self,
         resource_name: &str,
         resource_type: ResourceType,
+        template_vars_override: Option<&JsonValue>,
     ) -> Result<TeraContext> {
         let mut context = TeraContext::new();
 
@@ -484,11 +576,72 @@ impl TemplateContextBuilder {
         // Add project variables if available
         if let Some(ref project_config) = self.project_config {
             let project_json = project_config.to_json_value();
-            agpm.insert("project".to_string(), project_json);
+            agpm.insert("project".to_string(), project_json.clone());
+
+            // Also add at top level for convenience (will be overridden by template_vars if provided)
+            context.insert("project", &project_json);
         }
 
         // Insert the complete agpm object
         context.insert("agpm", &agpm);
+
+        // Apply template variable overrides if provided
+        if let Some(overrides) = template_vars_override {
+            tracing::debug!(
+                "Applying template variable overrides for resource '{}'",
+                resource_name
+            );
+
+            // Convert context to JSON for merging
+            let mut context_json = context.clone().into_json();
+
+            // Special handling for 'project' overrides:
+            // 1. Deep merge override.project with agpm.project
+            // 2. Place merged result at BOTH agpm.project AND top-level project
+            if let Some(project_override) = overrides.get("project") {
+                if let Some(agpm_obj) = context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
+                {
+                    if let Some(original_project) = agpm_obj.get("project") {
+                        // Deep merge override into original
+                        let merged_project =
+                            deep_merge_json(original_project.clone(), project_override);
+
+                        // Update agpm.project with merged result
+                        agpm_obj.insert("project".to_string(), merged_project.clone());
+
+                        // Also add merged result at top-level for convenience
+                        // SAFETY: context.into_json() always produces an object at the top level
+                        context_json
+                            .as_object_mut()
+                            .expect("context JSON must be an object")
+                            .insert("project".to_string(), merged_project);
+                    } else {
+                        // No original project, just use override
+                        // SAFETY: context.into_json() always produces an object at the top level
+                        context_json
+                            .as_object_mut()
+                            .expect("context JSON must be an object")
+                            .insert("project".to_string(), project_override.clone());
+                    }
+                }
+            }
+
+            // Deep merge any other overrides into context (excluding 'project' which we handled above)
+            let mut other_overrides = overrides.clone();
+            if let Some(obj) = other_overrides.as_object_mut() {
+                obj.remove("project");
+            }
+            context_json = deep_merge_json(context_json, &other_overrides);
+
+            // Replace context with merged result
+            context = TeraContext::from_serialize(&context_json)
+                .context("Failed to create context from merged template variables")?;
+
+            tracing::debug!(
+                "Applied template overrides: {}",
+                serde_json::to_string_pretty(overrides).unwrap_or_else(|_| "{}".to_string())
+            );
+        }
 
         Ok(context)
     }
@@ -1506,6 +1659,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         lockfile
@@ -1520,7 +1674,8 @@ mod tests {
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
-        let _context = builder.build_context("test-agent", ResourceType::Agent).await.unwrap();
+        let _context =
+            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
 
         // If we got here without panicking, context building succeeded
         // The actual context structure is tested implicitly by the renderer tests
@@ -1637,13 +1792,14 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
-        let context = builder.build_context("test-agent", ResourceType::Agent).await.unwrap();
+        let context = builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
 
         // Extract the agpm.resource.install_path from context
         let agpm_value = context.get("agpm").expect("agpm context should exist");
@@ -2049,6 +2205,7 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "non_templated".to_string(),
@@ -2065,6 +2222,7 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -2074,7 +2232,8 @@ This should show {{ agpm.deps.some.content }} literally.
             Arc::new(cache),
             project_dir.clone(),
         );
-        let context = builder.build_context("test-command", ResourceType::Command).await.unwrap();
+        let context =
+            builder.build_context("test-command", ResourceType::Command, None).await.unwrap();
 
         let mut renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
         let template = r#"# Combined Output
@@ -2100,5 +2259,137 @@ This should show {{ agpm.deps.some.content }} literally.
             !rendered.contains("```literal"),
             "Synthetic literal fences should be removed after rendering"
         );
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_override() {
+        use serde_json::json;
+
+        let lockfile = create_test_lockfile();
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            map.insert("framework".to_string(), toml::Value::String("tokio".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        // Build context without overrides
+        let context_without_override =
+            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+
+        // Build context with template_vars overrides
+        let template_vars = json!({
+            "project": {
+                "language": "python",
+                "framework": "fastapi"
+            },
+            "custom": {
+                "style": "functional"
+            }
+        });
+
+        let context_with_override = builder
+            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
+            .await
+            .unwrap();
+
+        // Test without overrides - should use project defaults
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+
+        let template = "Language: {{ project.language }}, Framework: {{ project.framework }}";
+
+        let rendered_without =
+            renderer.render_template(template, &context_without_override).unwrap();
+        assert_eq!(rendered_without, "Language: rust, Framework: tokio");
+
+        // Test with overrides - should use overridden values
+        let rendered_with = renderer.render_template(template, &context_with_override).unwrap();
+        assert_eq!(rendered_with, "Language: python, Framework: fastapi");
+
+        // Test new namespace from overrides
+        let custom_template = "Style: {{ custom.style }}";
+        let rendered_custom =
+            renderer.render_template(custom_template, &context_with_override).unwrap();
+        assert_eq!(rendered_custom, "Style: functional");
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_deep_merge() {
+        use serde_json::json;
+
+        let lockfile = create_test_lockfile();
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with nested project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            let mut db_table = toml::map::Map::new();
+            db_table.insert("type".to_string(), toml::Value::String("postgres".into()));
+            db_table.insert("host".to_string(), toml::Value::String("localhost".into()));
+            db_table.insert("port".to_string(), toml::Value::Integer(5432));
+            map.insert("database".to_string(), toml::Value::Table(db_table));
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        // Override only some database fields, leaving others unchanged
+        let template_vars = json!({
+            "project": {
+                "database": {
+                    "host": "db.example.com",
+                    "ssl": true
+                }
+            }
+        });
+
+        let context = builder
+            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
+            .await
+            .unwrap();
+
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+
+        // Test that merge kept original values and added new ones
+        let template = r#"
+DB Type: {{ project.database.type }}
+DB Host: {{ project.database.host }}
+DB Port: {{ project.database.port }}
+DB SSL: {{ project.database.ssl }}
+Language: {{ project.language }}
+"#;
+
+        let rendered = renderer.render_template(template, &context).unwrap();
+
+        // Original values should be preserved
+        assert!(rendered.contains("DB Type: postgres"));
+        assert!(rendered.contains("DB Port: 5432"));
+        assert!(rendered.contains("Language: rust"));
+
+        // Overridden value should be used
+        assert!(rendered.contains("DB Host: db.example.com"));
+
+        // New value should be added
+        assert!(rendered.contains("DB SSL: true"));
     }
 }

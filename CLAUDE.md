@@ -256,6 +256,7 @@ dependencies:
 - `name` (optional): Custom name for template variable references (defaults to sanitized filename)
 - `flatten` (optional): For pattern dependencies, controls directory structure preservation (defaults: agents/commands true, others false)
 - `install` (optional): Whether to write file to disk (default: `true`). When `false`, content is only available in templates via `{{ agpm.deps.<type>.<name>.content }}`
+- `template_vars` (optional): Template variable overrides for rendering this dependency (v0.4.9+)
 
 **Key Features**:
 
@@ -289,6 +290,36 @@ dependencies:
 ```
 
 **Content Filter**: `{{ 'path' | content }}` reads text files with path validation, recursive (10 levels). Markdown: frontmatter stripped. JSON: pretty-printed. Security: no traversal, text only (.md/.txt/.json/.toml/.yaml).
+
+**Template Variable Overrides** (v0.4.9+): Override template context variables per-dependency for reusable generic templates:
+
+```toml
+[agents]
+# Use same generic template with different languages
+python-helper = {
+  source = "community",
+  path = "agents/generic-helper.md",
+  version = "v1.0.0",
+  template_vars = { project = { language = "python", framework = "fastapi" } }
+}
+
+rust-helper = {
+  source = "community",
+  path = "agents/generic-helper.md",
+  version = "v1.0.0",
+  template_vars = { project = { language = "rust", framework = "tokio" } }
+}
+```
+
+Template uses `{{ project.language }}` - renders as "python" for first, "rust" for second.
+
+**Merge Behavior**: Overrides deep merge with base context:
+- Objects: Recursively merged, preserving unmodified fields
+- Primitives/Arrays: Completely replaced
+- Null values: Replace with JSON null (may cause template errors)
+- Empty objects `{}`: No-op (no changes)
+
+Supports arbitrary namespaces. Both `agpm.project` and `project` updated for consistency.
 
 ## Versioned Prefixes (v0.3.19+)
 
@@ -379,6 +410,13 @@ example = { source = "community", path = "agents/example.md", version = "v1.0.0"
 ai-helper = { source = "community", path = "agents/ai/gpt.md", version = "v1.0.0" }  # Preserves subdirs
 ai-all = { source = "community", path = "agents/ai/*.md", version = "v1.0.0" }  # Pattern support
 opencode = { source = "community", path = "agents/helper.md", tool = "opencode" }
+# Template variable overrides for reusable templates
+python-dev = {
+  source = "community",
+  path = "agents/generic-dev.md",
+  version = "v1.0.0",
+  template_vars = { project = { language = "python" } }
+}
 
 [snippets]
 example = { source = "community", path = "snippets/example.md", version = "v1.2.0" }
@@ -420,6 +458,16 @@ version = "v1.0.0"
 resolved_commit = "abc123..."
 checksum = "sha256:..."
 installed_at = ".claude/agents/ai/gpt.md"  # Preserves subdirs
+
+[[agents]]
+name = "python-dev"
+source = "community"
+path = "agents/generic-dev.md"
+version = "v1.0.0"
+resolved_commit = "abc123..."
+checksum = "sha256:..."
+installed_at = ".claude/agents/python-dev.md"
+template_vars = { project = { language = "python" } }  # Template overrides tracked
 ```
 
 ## Config Priority

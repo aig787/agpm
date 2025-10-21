@@ -317,6 +317,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
 ///     install: None,
+///     template_vars: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
@@ -523,7 +524,7 @@ pub async fn install_resource(
                     })?;
 
                 let template_context = template_context_builder
-                    .build_context(&entry.name, resource_type)
+                    .build_context(&entry.name, resource_type, entry.template_vars.as_ref())
                     .await
                     .with_context(|| {
                         format!("Failed to build template context for {}", entry.name)
@@ -734,6 +735,7 @@ pub async fn install_resource(
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
 ///     install: None,
+///     template_vars: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
@@ -3095,6 +3097,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             }
         } else {
             LockedResource {
@@ -3112,6 +3115,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             }
         }
     }
