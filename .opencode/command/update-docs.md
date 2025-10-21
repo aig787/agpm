@@ -1,30 +1,189 @@
 ---
 description: Review changes and update README.md to stay current with implementation
+agpm:
+  templating: true
+dependencies:
+  snippets:
+      - name: base
+        install: false
+        path: ../../snippets/commands/update-docs.md
 ---
-
-## Your task
-
-Review changes and update README.md to stay current with implementation.
-
-**IMPORTANT**: You are being asked to directly update the README.md file - examine the codebase and ensure the documentation accurately reflects the current state.
-
-**IMPORTANT**: This command extends the shared base prompt. Read the complete command logic from:
-- `.agpm/snippets/commands/update-docs.md`
 
 ## Argument Parsing
 
 Parse the arguments from the command invocation:
 - Arguments received: $ARGUMENTS
 - Parse for flags: `--check-only`, `--auto-update`
-- Pass parsed arguments to the sub-logic in `.agpm/snippets/commands/update-docs.md`
 
-## Execution
+## Documentation Update Implementation
 
-Based on the parsed arguments:
-- `--check-only`: Report what needs updating without making changes
-- `--auto-update`: Make necessary updates to README.md (default)
-- Focus on user-facing changes and installation instructions
-- Use Task tool for comprehensive documentation updates
+Review the current changes and ensure README.md, all documentation files, and Claude Code saved prompts accurately reflect the project's current state.
+
+**CRITICAL**: When comprehensive documentation updates are needed, use the Task tool to delegate to specialized agents instead of making extensive edits directly.
+
+### Argument Semantics
+
+- **Flags**:
+  - `--check-only`: Only report what needs updating without making changes
+  - `--auto-update`: Make necessary updates to README.md (default)
+
+### Analysis Focus Areas
+
+Analyze git diff for documentation-relevant changes:
+- New features or commands added
+- Changed CLI options or arguments
+- Modified behavior or functionality
+- Removed features or deprecated options
+- New resource types or configuration options
+- Changes to installation or usage instructions
+- Performance improvements or architecture changes
+
+### Documentation Files to Check
+
+- **README.md**: Main landing page and overview
+- **docs/installation.md**: Installation methods and requirements
+- **docs/user-guide.md**: Getting started and workflows
+- **docs/versioning.md**: Version constraints and Git references
+- **docs/resources.md**: Resource types and configuration
+- **docs/configuration.md**: Global config and authentication
+- **docs/architecture.md**: Technical details and design
+
+2. Analyze the git diff to understand what has changed:
+   - New features or commands added
+   - Changed CLI options or arguments
+   - Modified behavior or functionality
+   - Removed features or deprecated options
+   - New resource types or configuration options
+   - Changes to installation or usage instructions
+   - Performance improvements or architecture changes
+
+3. Read the current README.md, related documentation files, and Claude Code saved prompts:
+
+   **Files to check**:
+   - **README.md**: Main landing page and overview
+   - **docs/installation.md**: Installation methods and requirements
+   - **docs/user-guide.md**: Getting started and workflows
+   - **docs/versioning.md**: Version constraints and Git references
+   - **docs/resources.md**: Resource types and configuration
+   - **docs/configuration.md**: Global config and authentication
+   - **docs/architecture.md**: Technical details and design
+   - **docs/troubleshooting.md**: Common issues and solutions
+   - **docs/faq.md**: Frequently asked questions
+   - **docs/command-reference.md**: Command reference
+   - **CONTRIBUTING.md**: Development guidelines
+   - **CLAUDE.md**: AI context and project overview
+
+   **Claude Code saved prompts to check**:
+   - **.claude/*.md**: Saved custom prompts (agents, snippets, commands, scripts)
+   - Check if prompts reference outdated commands or features
+   - Verify prompt metadata and frontmatter is accurate
+   - Ensure tool allowlists match current capabilities
+
+   **Critical sections to check**:
+   - **Features list**: New capabilities or removed features
+   - **Resource Types**: New resource types (agents, snippets, scripts, hooks, MCP servers)
+   - **Installation**: Changes to installation process or requirements
+   - **Quick Start**: Changes to manifest format or basic usage
+   - **Commands**: New commands, changed syntax, or new options
+   - **Configuration**: New configuration options or format changes
+   - **Error Messages**: Updated error handling or new error types
+   - **Platform Support**: Changes to cross-platform behavior
+   - **Dependencies**: New or removed dependencies
+
+4. Based on the changes, determine what documentation and prompt updates are needed:
+
+   **Types of updates to make**:
+   - Add documentation for new features or commands
+   - Update command syntax and options
+   - Correct outdated information
+   - Add new examples for new functionality
+   - Update manifest format examples if schema changed
+   - Add or update resource type descriptions
+   - Update performance claims if improvements were made
+   - Fix any inaccuracies introduced by recent changes
+   - Update saved prompts that reference changed functionality
+   - Adjust prompt tool allowlists if tools have changed
+   - Fix prompt metadata or frontmatter if format has changed
+   
+   **For comprehensive documentation improvements, delegate to specialized agents using Task:**
+   - Use Task with subagent_type="rust-doc-standard" or "rust-doc-advanced":
+     ```
+     Task(description="Update project documentation",
+          prompt="Review changes and update README.md and docs/ files to match current implementation...",
+          subagent_type="rust-doc-standard")
+     ```
+   - The agent will handle:
+     * Creating detailed feature documentation
+     * Writing comprehensive usage examples
+     * Generating architectural explanations
+     * Ensuring consistent documentation style
+   - The agent will handle complex documentation patterns and ensure quality
+   
+   **Where to apply updates**:
+   - **README.md**: Overview, quick start, feature list
+   - **docs/installation.md**: Installation methods, requirements, platform notes
+   - **docs/user-guide.md**: Workflows, examples, getting started
+   - **docs/versioning.md**: Version syntax, constraints, resolution
+   - **docs/resources.md**: Resource types, hooks, MCP servers
+   - **docs/configuration.md**: Global config, authentication, security
+   - **docs/architecture.md**: Design decisions, technical details
+   - **docs/troubleshooting.md**: Error solutions, platform issues
+   - **docs/faq.md**: Common questions and answers
+   - **docs/command-reference.md**: Command syntax and options
+   - **.claude/*.md**: Custom saved prompts that may need updating
+
+5. Apply updates based on mode:
+
+   **Check-only mode (--check-only)**:
+   - Report all discrepancies found
+   - List specific sections needing updates
+   - Show what information is missing or incorrect
+   - Provide suggested changes without applying them
+
+   **Auto-update mode (--auto-update or default)**:
+   - Make minimal, targeted edits to fix discrepancies
+   - Preserve existing README structure and style
+   - Add new sections only if necessary for new features
+   - Update examples to match current implementation
+   - Ensure all code snippets are valid
+
+6. Focus on accuracy and completeness:
+   - Verify all command examples work with current implementation
+   - Ensure manifest examples are valid TOML
+   - Check that installation instructions are current
+   - Validate that feature descriptions match actual behavior
+   - Confirm resource type descriptions are complete
+
+7. Maintain documentation quality:
+   - Keep language clear and concise
+   - Preserve existing formatting conventions
+   - Ensure examples are practical and helpful
+   - Maintain consistent terminology throughout
+   - Don't remove useful existing content
+   - Keep README.md as a concise landing page (~200 lines)
+   - Put detailed content in appropriate docs/ files
+   - Ensure cross-references between docs are accurate
+
+8. Special considerations for AGPM:
+   - Lockfile behavior (agpm.lock) must be accurately described
+   - Git-based distribution model should be clear
+   - Cross-platform support claims must be accurate
+   - Security considerations should be mentioned where relevant
+   - Resource installation paths should match implementation
+
+Examples of changes that require README updates:
+- Adding a new CLI command → Document in Commands section
+- Changing manifest format → Update examples in Quick Start
+- Adding new resource type → Add to Resource Types section
+- Modifying installation paths → Update in relevant sections
+- Improving performance → Update performance claims if made
+- Adding new dependencies → Update installation requirements
+- Changing error messages → Update troubleshooting if present
+
+Examples of usage:
+- `/update-docs` - automatically update documentation based on changes
+- `/update-docs --check-only` - report what needs updating without changes
+- `/update-docs --auto-update` - explicitly update documentation (same as default)
 
 ## Tool-Specific Notes
 

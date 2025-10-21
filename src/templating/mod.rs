@@ -252,7 +252,7 @@ pub mod filters;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, to_string, to_value};
+use serde_json::{Map, Value, to_string, to_value};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -294,7 +294,7 @@ const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
 /// let result = deep_merge_json(base, &overrides);
 /// // result: { "project": { "name": "agpm", "language": "python", "framework": "fastapi" } }
 /// ```
-pub fn deep_merge_json(mut base: JsonValue, overrides: &JsonValue) -> JsonValue {
+pub fn deep_merge_json(mut base: Value, overrides: &Value) -> Value {
     match (base.as_object_mut(), overrides.as_object()) {
         (Some(base_obj), Some(override_obj)) => {
             // Both are objects - recursively merge
@@ -558,7 +558,7 @@ impl TemplateContextBuilder {
         &self,
         resource_name: &str,
         resource_type: ResourceType,
-        template_vars_override: Option<&JsonValue>,
+        template_vars_override: Option<&Value>,
     ) -> Result<TeraContext> {
         let mut context = TeraContext::new();
 
