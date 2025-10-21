@@ -649,6 +649,7 @@ mod tests {
             mcp_servers: HashMap::new(),
             scripts: HashMap::new(),
             hooks: HashMap::new(),
+            skills: HashMap::new(),
             patches: crate::manifest::patches::ManifestPatches::default(),
             project_patches: crate::manifest::patches::ManifestPatches::default(),
             private_patches: crate::manifest::patches::ManifestPatches::default(),
@@ -684,11 +685,13 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            skills: vec![],
         }
     }
 

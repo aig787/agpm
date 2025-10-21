@@ -317,6 +317,7 @@ async fn read_with_cache_retry(path: &Path) -> Result<String> {
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
 ///     install: None,
+///     files: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
@@ -343,6 +344,11 @@ pub async fn install_resource(
     resource_dir: &str,
     context: &InstallContext<'_>,
 ) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+    // Skills are directory-based, handle them specially
+    if entry.resource_type == crate::core::ResourceType::Skill {
+        return install_skill_directory(entry, resource_dir, context).await;
+    }
+
     // Determine destination path
     let dest_path = if entry.installed_at.is_empty() {
         context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
@@ -679,6 +685,331 @@ pub async fn install_resource(
     Ok((actually_installed, new_checksum, applied_patches))
 }
 
+/// Install a skill directory (multi-file resource) to the project.
+///
+/// Skills are directories containing SKILL.md and optional supporting files.
+/// This function handles:
+/// - Directory traversal and file collection
+/// - Combined checksum calculation for all files
+/// - Atomic directory installation (temp + rename)
+/// - File permission preservation
+/// - Symlink handling
+///
+/// # Parameters
+///
+/// * `entry` - The locked resource entry for the skill
+/// * `resource_dir` - Base directory for skills (e.g., ".claude/skills")
+/// * `context` - Installation context with cache and project info
+///
+/// # Returns
+///
+/// Returns a tuple of:
+/// - `bool` - Whether the skill was actually installed (true) or already up-to-date (false)
+/// - `String` - Combined SHA-256 checksum of all files
+/// - `AppliedPatches` - Information about patches that were applied
+async fn install_skill_directory(
+    entry: &LockedResource,
+    _resource_dir: &str,
+    context: &InstallContext<'_>,
+) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+    use crate::skills::validate_skill_frontmatter;
+    use sha2::Digest;
+    use std::collections::HashMap;
+    use tokio::fs;
+
+    // Resource limits for skills to prevent DoS
+    const MAX_SKILL_SIZE_BYTES: u64 = 100 * 1024 * 1024; // 100MB
+    const MAX_SKILL_FILES: usize = 1000;
+
+    // Validate and determine the skill installation path
+    let skill_dest_dir = crate::utils::path_validation::validate_skill_installation_path(
+        &entry.installed_at,
+        &entry.name,
+        context.project_dir,
+    )?;
+
+    // Create a temporary directory for atomic installation
+    let temp_dir = skill_dest_dir.with_extension("tmp");
+
+    // Clean up any existing temporary directory
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).await.with_context(|| {
+            format!("Failed to remove existing temporary directory: {}", temp_dir.display())
+        })?;
+    }
+
+    // Get the source directory
+    let source_dir = if let Some(source_name) = &entry.source {
+        let url =
+            entry.url.as_ref().ok_or_else(|| anyhow::anyhow!("Skill {} has no URL", entry.name))?;
+
+        // Check if this is a local directory source (no SHA or empty SHA)
+        let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+        if is_local_source {
+            // Local directory source - use the URL as the path directly
+            PathBuf::from(url).join(&entry.path)
+        } else {
+            // Git-based resource - use SHA-based worktree
+            let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("Skill {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.", entry.name)
+            })?;
+
+            // Validate SHA format
+            if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow::anyhow!(
+                    "Invalid SHA '{}' for skill {}. Expected 40 hex characters.",
+                    sha,
+                    entry.name
+                ));
+            }
+
+            let cache_dir = context
+                .cache
+                .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
+                .await?;
+
+            cache_dir.join(&entry.path)
+        }
+    } else {
+        // Local resource
+        let candidate = Path::new(&entry.path);
+        if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            context.project_dir.join(candidate)
+        }
+    };
+
+    // Verify source directory exists
+    if !source_dir.exists() {
+        return Err(anyhow::anyhow!(
+            "Skill directory '{}' not found. Expected at: {}",
+            entry.name,
+            source_dir.display()
+        ));
+    }
+
+    // Verify source directory is actually a directory
+    if !source_dir.is_dir() {
+        return Err(anyhow::anyhow!(
+            "Skill path '{}' is not a directory: {}",
+            entry.name,
+            source_dir.display()
+        ));
+    }
+
+    // Collect all files in the skill directory with size tracking
+    let mut files_to_install = Vec::new();
+    let mut total_size = 0u64;
+    let mut entries = fs::read_dir(&source_dir)
+        .await
+        .with_context(|| format!("Failed to read skill directory: {}", source_dir.display()))?;
+
+    while let Some(dir_entry) = entries
+        .next_entry()
+        .await
+        .with_context(|| format!("Failed to read directory entry in: {}", source_dir.display()))?
+    {
+        let path = dir_entry.path();
+        if path.is_file() {
+            // Check file count limit
+            if files_to_install.len() >= MAX_SKILL_FILES {
+                return Err(anyhow::anyhow!(
+                    "Skill '{}' exceeds maximum file count: {} files (max: {})",
+                    entry.name, // This refers to the lockfile entry from outer scope
+                    files_to_install.len() + 1,
+                    MAX_SKILL_FILES
+                ));
+            }
+
+            // Get file size and check total size limit
+            let metadata = fs::metadata(&path)
+                .await
+                .with_context(|| format!("Failed to read metadata for file: {}", path.display()))?;
+            let file_size = metadata.len();
+
+            if total_size + file_size > MAX_SKILL_SIZE_BYTES {
+                return Err(anyhow::anyhow!(
+                    "Skill '{}' exceeds maximum size limit: {}MB (max: {}MB)",
+                    entry.name, // This refers to the lockfile entry from outer scope
+                    (total_size + file_size) / (1024 * 1024),
+                    MAX_SKILL_SIZE_BYTES / (1024 * 1024)
+                ));
+            }
+
+            total_size += file_size;
+            files_to_install.push(path);
+        }
+    }
+
+    // Verify SKILL.md exists
+    let skill_md_path = source_dir.join("SKILL.md");
+    if !skill_md_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Skill directory '{}' must contain a SKILL.md file. Missing at: {}",
+            entry.name,
+            skill_md_path.display()
+        ));
+    }
+
+    // Ensure SKILL.md is processed first
+    files_to_install.sort_by(|a, b| {
+        match (a.file_name().and_then(|n| n.to_str()), b.file_name().and_then(|n| n.to_str())) {
+            (Some("SKILL.md"), _) => std::cmp::Ordering::Less,
+            (_, Some("SKILL.md")) => std::cmp::Ordering::Greater,
+            _ => a.cmp(b),
+        }
+    });
+
+    // Validate SKILL.md frontmatter
+    let skill_content = fs::read_to_string(&skill_md_path)
+        .await
+        .with_context(|| format!("Failed to read SKILL.md: {}", skill_md_path.display()))?;
+
+    let _frontmatter = validate_skill_frontmatter(&skill_content)
+        .with_context(|| format!("Invalid SKILL.md frontmatter in: {}", skill_md_path.display()))?;
+
+    // Calculate combined checksum for all files
+    let mut combined_hash = sha2::Sha256::new();
+
+    for file_path in &files_to_install {
+        let content = fs::read(file_path)
+            .await
+            .with_context(|| format!("Failed to read file: {}", file_path.display()))?;
+        combined_hash.update(&content);
+    }
+
+    let new_checksum = format!("sha256:{}", hex::encode(combined_hash.finalize()));
+
+    // Check if skill is already up-to-date
+    let checksum_file = skill_dest_dir.join(".agpm_checksum");
+    let existing_checksum = if checksum_file.exists() {
+        fs::read_to_string(&checksum_file).await.ok()
+    } else {
+        None
+    };
+
+    // Check if any files have been modified
+    let needs_install = if let Some(ref existing) = existing_checksum {
+        existing != &new_checksum
+    } else {
+        true
+    };
+
+    if !needs_install {
+        tracing::debug!("Skill '{}' is already up-to-date", entry.name);
+        return Ok((false, new_checksum, crate::manifest::patches::AppliedPatches::default()));
+    }
+
+    // Create temporary directory and copy files
+    fs::create_dir_all(&temp_dir)
+        .await
+        .with_context(|| format!("Failed to create temporary directory: {}", temp_dir.display()))?;
+
+    // Apply patches to SKILL.md if needed
+    let empty_patches = HashMap::new();
+    let applied_patches = if context.project_patches.is_some() || context.private_patches.is_some()
+    {
+        use crate::manifest::patches::apply_patches_to_content_with_origin;
+
+        let resource_type = entry.resource_type.to_plural();
+        let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+
+        let project_patch_data = context
+            .project_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
+
+        let private_patch_data = context
+            .private_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
+
+        // Only apply patches to SKILL.md
+        let (patched_content, applied_patches) = apply_patches_to_content_with_origin(
+            &skill_content,
+            "SKILL.md",
+            project_patch_data,
+            private_patch_data,
+        )
+        .with_context(|| format!("Failed to apply patches to skill {}", entry.name))?;
+
+        // Write patched SKILL.md to temp directory
+        let dest_skill_md = temp_dir.join("SKILL.md");
+        fs::write(&dest_skill_md, patched_content).await.with_context(|| {
+            format!("Failed to write patched SKILL.md: {}", dest_skill_md.display())
+        })?;
+
+        applied_patches
+    } else {
+        // Copy SKILL.md as-is
+        let dest_skill_md = temp_dir.join("SKILL.md");
+        fs::copy(&skill_md_path, &dest_skill_md).await.with_context(|| {
+            format!(
+                "Failed to copy SKILL.md: {} -> {}",
+                skill_md_path.display(),
+                dest_skill_md.display()
+            )
+        })?;
+
+        crate::manifest::patches::AppliedPatches::default()
+    };
+
+    // Copy other files (excluding SKILL.md which is already handled)
+    for file_path in &files_to_install {
+        let file_name = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| anyhow::anyhow!("Invalid file name: {}", file_path.display()))?;
+
+        if file_name == "SKILL.md" {
+            continue; // Already handled
+        }
+
+        let dest_path = temp_dir.join(file_name);
+        fs::copy(file_path, &dest_path).await.with_context(|| {
+            format!("Failed to copy file: {} -> {}", file_path.display(), dest_path.display())
+        })?;
+    }
+
+    // Atomic move: remove existing directory and move temp to final location
+    if skill_dest_dir.exists() {
+        fs::remove_dir_all(&skill_dest_dir).await.with_context(|| {
+            format!("Failed to remove existing skill directory: {}", skill_dest_dir.display())
+        })?;
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = skill_dest_dir.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("Failed to create parent directory: {}", parent.display()))?;
+    }
+
+    fs::rename(&temp_dir, &skill_dest_dir).await.with_context(|| {
+        format!(
+            "Failed to move skill directory from {} to {}",
+            temp_dir.display(),
+            skill_dest_dir.display()
+        )
+    })?;
+
+    // Write checksum file after successful move
+    fs::write(&checksum_file, &new_checksum)
+        .await
+        .with_context(|| format!("Failed to write checksum file: {}", checksum_file.display()))?;
+
+    tracing::info!(
+        "✅ Installed skill '{}' with {} files ({} MB)",
+        entry.name,
+        files_to_install.len(),
+        total_size as f64 / (1024.0 * 1024.0)
+    );
+
+    Ok((true, new_checksum, applied_patches))
+}
+
 /// Install a single resource with progress bar updates for user feedback.
 ///
 /// This function wraps [`install_resource`] with progress bar integration to provide
@@ -734,6 +1065,7 @@ pub async fn install_resource(
 ///     manifest_alias: None,
 ///     applied_patches: std::collections::HashMap::new(),
 ///     install: None,
+///     files: None,
 /// };
 ///
 /// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
@@ -3095,6 +3427,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             }
         } else {
             LockedResource {
@@ -3112,6 +3445,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             }
         }
     }

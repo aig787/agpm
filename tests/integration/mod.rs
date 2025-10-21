@@ -73,6 +73,7 @@ mod patch_integration;
 mod pattern;
 mod prefixed_versions;
 mod project_template_vars;
+mod skills;
 mod templating;
 mod tool_enable_disable;
 mod transitive;

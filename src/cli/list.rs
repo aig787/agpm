@@ -189,6 +189,13 @@ pub struct ListCommand {
     #[arg(long)]
     commands: bool,
 
+    /// Show only skills
+    ///
+    /// When specified, filters the output to show only skill resources,
+    /// excluding other resource types.
+    #[arg(long)]
+    skills: bool,
+
     /// Output format (table, json, yaml, compact, simple)
     ///
     /// Controls how the resource information is displayed:
@@ -545,12 +552,17 @@ impl ListCommand {
 
         // Check individual flags
         match resource_type {
-            ResourceType::Agent => !self.snippets && !self.commands,
-            ResourceType::Snippet => !self.agents && !self.commands,
-            ResourceType::Command => !self.agents && !self.snippets,
-            ResourceType::Script => !self.agents && !self.snippets && !self.commands,
-            ResourceType::Hook => !self.agents && !self.snippets && !self.commands,
-            ResourceType::McpServer => !self.agents && !self.snippets && !self.commands,
+            ResourceType::Agent => !self.snippets && !self.commands && !self.skills,
+            ResourceType::Snippet => !self.agents && !self.commands && !self.skills,
+            ResourceType::Command => !self.agents && !self.snippets && !self.skills,
+            ResourceType::Script => {
+                !self.agents && !self.snippets && !self.commands && !self.skills
+            }
+            ResourceType::Hook => !self.agents && !self.snippets && !self.commands && !self.skills,
+            ResourceType::McpServer => {
+                !self.agents && !self.commands && !self.snippets && !self.skills
+            }
+            ResourceType::Skill => !self.agents && !self.snippets && !self.commands,
         }
     }
 
@@ -1073,6 +1085,7 @@ mod tests {
             agents: false,
             snippets: false,
             commands: false,
+            skills: false,
             format: "table".to_string(),
             manifest: false,
             r#type: None,
@@ -1183,6 +1196,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         lockfile.agents.push(LockedResource {
@@ -1201,6 +1215,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         // Add snippets
@@ -1220,6 +1235,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         lockfile
@@ -1608,6 +1624,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         };
 
         let entry_with_different_source = LockedResource {
@@ -1626,6 +1643,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         };
 
         let entry_without_source = LockedResource {
@@ -1644,6 +1662,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1674,6 +1693,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1870,6 +1890,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

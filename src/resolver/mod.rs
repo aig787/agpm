@@ -210,6 +210,7 @@
 //! ```
 
 pub mod dependency_graph;
+pub mod skills;
 pub mod version_resolution;
 pub mod version_resolver;
 
@@ -635,6 +636,8 @@ impl DependencyResolver {
             self.manifest.hooks.keys().map(|k| k.to_string()).collect();
         let manifest_mcp_servers: HashSet<String> =
             self.manifest.mcp_servers.keys().map(|k| k.to_string()).collect();
+        let manifest_skills: HashSet<String> =
+            self.manifest.skills.keys().map(|k| k.to_string()).collect();
 
         // Helper to get the right manifest keys for a resource type
         let get_manifest_keys = |resource_type: crate::core::ResourceType| match resource_type {
@@ -644,6 +647,7 @@ impl DependencyResolver {
             crate::core::ResourceType::Script => &manifest_scripts,
             crate::core::ResourceType::Hook => &manifest_hooks,
             crate::core::ResourceType::McpServer => &manifest_mcp_servers,
+            crate::core::ResourceType::Skill => &manifest_skills,
         };
 
         // Collect (name, source) pairs to remove
@@ -1579,7 +1583,13 @@ impl DependencyResolver {
             })?;
 
             // Extract metadata from the resource
-            let path = PathBuf::from(dep.get_path());
+            let mut path = PathBuf::from(dep.get_path());
+
+            // For skills, ensure we're using the SKILL.md file for metadata extraction
+            if resource_type == crate::core::ResourceType::Skill {
+                path = path.join("SKILL.md");
+            }
+
             let metadata =
                 MetadataExtractor::extract(&path, &content, self.manifest.project.as_ref())?;
 
@@ -1611,6 +1621,35 @@ impl DependencyResolver {
                             )
                         })?;
 
+                        // For skills, we need to resolve transitive dependencies relative to the repository root
+                        // not the skill directory, since skill dependency paths are typically relative to the repo root
+                        let parent_file_path = if resource_type == crate::core::ResourceType::Skill
+                        {
+                            // Get the repository root by going up from skills/complex-skill/SKILL.md to the repo root
+                            // This should be something like: /path/to/worktree/repo-name/
+                            if let Some(skills_dir) = parent_file_path.parent() {
+                                if let Some(repo_root) = skills_dir.parent() {
+                                    repo_root.to_path_buf()
+                                } else {
+                                    skills_dir.to_path_buf()
+                                }
+                            } else {
+                                parent_file_path.clone()
+                            }
+                        } else {
+                            parent_file_path
+                        };
+
+                        // For skills, the parent_file_path is the repository root directory, but we need a file path
+                        // so that parent_file_path.parent() gives us the correct directory
+                        let parent_file_path = if resource_type == crate::core::ResourceType::Skill
+                        {
+                            // Use a dummy file name to ensure parent() works correctly
+                            parent_file_path.join("DUMMY_FILE.md")
+                        } else {
+                            parent_file_path
+                        };
+
                         // Check if this is a glob pattern
                         let is_pattern = dep_spec.path.contains('*')
                             || dep_spec.path.contains('?')
@@ -1624,6 +1663,12 @@ impl DependencyResolver {
                                     dep_spec.path, name
                                 ))?;
                             let resolved = parent_dir.join(&dep_spec.path);
+                            tracing::debug!(
+                                "Pattern resolution: parent_dir={}, dep_spec.path={}, resolved={}",
+                                parent_dir.display(),
+                                dep_spec.path,
+                                resolved.display()
+                            );
                             // IMPORTANT: Preserve the root component when normalizing
                             let mut result = PathBuf::new();
                             for component in resolved.components() {
@@ -1641,11 +1686,9 @@ impl DependencyResolver {
                                 }
                             }
                             result
-                        } else if dep_spec.path.starts_with("./")
-                            || dep_spec.path.starts_with("../")
-                        {
-                            // File-relative path (used in Markdown YAML frontmatter)
-                            crate::utils::resolve_file_relative_path(
+                        } else {
+                            // For non-patterns, resolve file-relative path and canonicalize
+                            let resolved = crate::utils::resolve_file_relative_path(
                                 &parent_file_path,
                                 &dep_spec.path,
                             )
@@ -1654,42 +1697,14 @@ impl DependencyResolver {
                                     "Failed to resolve transitive dependency '{}' for '{}'",
                                     dep_spec.path, name
                                 )
-                            })?
-                        } else {
-                            // Repo-relative path (used in JSON dependencies field)
-                            // Get the repository root (worktree path for Git sources, source path for local)
-                            let repo_root = if dep.get_source().is_some() {
-                                // For Git sources, the parent_file_path is inside a worktree
-                                // Find the worktree root by going up until we find it
-                                parent_file_path.ancestors()
-                                    .find(|p| {
-                                        // Worktree directories have format: owner_repo_sha8
-                                        p.file_name()
-                                            .and_then(|n| n.to_str())
-                                            .map(|s| s.contains('_'))
-                                            .unwrap_or(false)
-                                    })
-                                    .ok_or_else(|| anyhow::anyhow!(
-                                        "Failed to find worktree root for transitive dependency '{}'",
-                                        dep_spec.path
-                                    ))?
-                            } else {
-                                // For local sources, go up to the source root
-                                parent_file_path.ancestors()
-                                    .nth(2) // Go up 2 levels from the file (e.g., from commands/file.json to repo root)
-                                    .ok_or_else(|| anyhow::anyhow!(
-                                        "Failed to find source root for transitive dependency '{}'",
-                                        dep_spec.path
-                                    ))?
-                            };
-
-                            let full_path = repo_root.join(&dep_spec.path);
-                            full_path.canonicalize().with_context(|| {
-                                format!(
-                                    "Failed to resolve repo-relative transitive dependency '{}' for '{}': {} (repo root: {})",
-                                    dep_spec.path, name, full_path.display(), repo_root.display()
-                                )
-                            })?
+                            })?;
+                            tracing::debug!(
+                                "File-relative resolution: parent_file_path={}, dep_spec.path={}, resolved={}",
+                                parent_file_path.display(),
+                                dep_spec.path,
+                                resolved.display()
+                            );
+                            resolved
                         };
 
                         // Create the transitive dependency based on whether parent is Git or path-only
@@ -1759,8 +1774,8 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
-                                flatten: None,
-                                install: dep_spec.install.or(Some(true)),
+                                flatten: dep_spec.flatten,
+                                install: dep_spec.install,
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -1862,8 +1877,8 @@ impl DependencyResolver {
                                 filename: None,
                                 dependencies: None,
                                 tool: trans_tool,
-                                flatten: None,
-                                install: dep_spec.install.or(Some(true)),
+                                flatten: dep_spec.flatten,
+                                install: dep_spec.install,
                             }))
                         };
 
@@ -2020,9 +2035,13 @@ impl DependencyResolver {
     /// Fetch the content of a resource for metadata extraction.
     async fn fetch_resource_content(
         &mut self,
-        _name: &str,
+        name: &str,
         dep: &ResourceDependency,
     ) -> Result<String> {
+        // Check if this is a skill resource by looking up the resource type
+        let resource_type = self.get_resource_type_for_dependency(name, dep).await?;
+        let is_skill = resource_type == crate::core::ResourceType::Skill;
+
         match dep {
             ResourceDependency::Simple(path) => {
                 // Local file - resolve relative to manifest directory
@@ -2031,8 +2050,22 @@ impl DependencyResolver {
                 })?;
                 let full_path =
                     crate::utils::resolve_path_relative_to_manifest(manifest_dir, path)?;
-                std::fs::read_to_string(&full_path)
-                    .with_context(|| format!("Failed to read local file: {}", full_path.display()))
+
+                // For skills, read the SKILL.md file inside the directory
+                let target_path = if is_skill {
+                    // Check if the path already ends with SKILL.md
+                    if full_path.ends_with("SKILL.md") {
+                        full_path.clone()
+                    } else {
+                        full_path.join("SKILL.md")
+                    }
+                } else {
+                    full_path
+                };
+
+                std::fs::read_to_string(&target_path).with_context(|| {
+                    format!("Failed to read local file: {}", target_path.display())
+                })
             }
             ResourceDependency::Detailed(detailed) => {
                 if let Some(source_name) = &detailed.source {
@@ -2044,9 +2077,22 @@ impl DependencyResolver {
                     // Check if this is a local directory source
                     if crate::utils::is_local_path(&source_url) {
                         // Local directory source - read directly from path
-                        let file_path = PathBuf::from(&source_url).join(&detailed.path);
-                        std::fs::read_to_string(&file_path).with_context(|| {
-                            format!("Failed to read local file: {}", file_path.display())
+                        let base_path = PathBuf::from(&source_url).join(&detailed.path);
+
+                        // For skills, read the SKILL.md file inside the directory
+                        let target_path = if is_skill {
+                            // Check if the path already ends with SKILL.md
+                            if base_path.ends_with("SKILL.md") {
+                                base_path.clone()
+                            } else {
+                                base_path.join("SKILL.md")
+                            }
+                        } else {
+                            base_path
+                        };
+
+                        std::fs::read_to_string(&target_path).with_context(|| {
+                            format!("Failed to read local file: {}", target_path.display())
                         })
                     } else {
                         // Git-based remote dependency - need to checkout and read
@@ -2097,8 +2143,21 @@ impl DependencyResolver {
                             .await?;
 
                         // Read the file from worktree (with cache coherency retry)
-                        let file_path = worktree_path.join(&detailed.path);
-                        read_with_cache_retry_sync(&file_path)
+                        let base_path = worktree_path.join(&detailed.path);
+
+                        // For skills, read the SKILL.md file inside the directory
+                        let target_path = if is_skill {
+                            // Check if the path already ends with SKILL.md
+                            if base_path.ends_with("SKILL.md") {
+                                base_path.clone()
+                            } else {
+                                base_path.join("SKILL.md")
+                            }
+                        } else {
+                            base_path
+                        };
+
+                        read_with_cache_retry_sync(&target_path)
                     }
                 } else {
                     // Local dependency with detailed spec - resolve relative to manifest directory
@@ -2111,9 +2170,133 @@ impl DependencyResolver {
                         manifest_dir,
                         &detailed.path,
                     )?;
-                    std::fs::read_to_string(&full_path).with_context(|| {
-                        format!("Failed to read local file: {}", full_path.display())
+
+                    // For skills, read the SKILL.md file inside the directory
+                    let target_path = if is_skill {
+                        // Check if the path already ends with SKILL.md
+                        if full_path.ends_with("SKILL.md") {
+                            full_path.clone()
+                        } else {
+                            full_path.join("SKILL.md")
+                        }
+                    } else {
+                        full_path
+                    };
+
+                    std::fs::read_to_string(&target_path).with_context(|| {
+                        format!("Failed to read local file: {}", target_path.display())
                     })
+                }
+            }
+        }
+    }
+
+    /// Get the resource type for a dependency by checking the file system
+    async fn get_resource_type_for_dependency(
+        &mut self,
+        name: &str,
+        dep: &ResourceDependency,
+    ) -> Result<crate::core::ResourceType> {
+        // Get the actual path to the resource
+        let path = if let Some(source_name) = dep.get_source() {
+            let source_url = self
+                .source_manager
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            if crate::utils::is_local_path(&source_url) {
+                // Local directory source
+                PathBuf::from(&source_url).join(dep.get_path())
+            } else {
+                // Git-based source - need to get worktree
+                let version = dep.get_version().unwrap_or("main");
+                let sha = if let Some(prepared) =
+                    self.prepared_versions.get(&Self::group_key(source_name, version))
+                {
+                    prepared.resolved_commit.clone()
+                } else {
+                    // Need to resolve this version
+                    self.version_resolver.add_version(source_name, &source_url, Some(version));
+                    self.version_resolver.resolve_all().await?;
+
+                    self.version_resolver.get_resolved_sha(source_name, version).ok_or_else(
+                        || {
+                            anyhow::anyhow!(
+                                "Failed to resolve version for {} @ {}",
+                                source_name,
+                                version
+                            )
+                        },
+                    )?
+                };
+
+                let worktree_path = self
+                    .cache
+                    .get_or_create_worktree_for_sha(source_name, &source_url, &sha, None)
+                    .await?;
+
+                worktree_path.join(dep.get_path())
+            }
+        } else {
+            // Local dependency - resolve relative to manifest directory
+            let manifest_dir = self.manifest.manifest_dir.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Manifest directory not available for local dependency")
+            })?;
+            crate::utils::resolve_path_relative_to_manifest(manifest_dir, dep.get_path())?
+        };
+
+        // Check if this is a skill directory (contains SKILL.md)
+        if path.is_dir() && path.join("SKILL.md").exists() {
+            return Ok(crate::core::ResourceType::Skill);
+        }
+
+        // For other resource types, try to determine from the manifest first
+        // This section was for Git-backed dependencies, but we handle path-based detection below
+        // so we don't need this check anymore
+
+        // Fall back to checking file extension or default
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            // Could be hook, mcp-server, or script - check manifest
+            if self.manifest.hooks.contains_key(name) {
+                Ok(crate::core::ResourceType::Hook)
+            } else if self.manifest.mcp_servers.contains_key(name) {
+                Ok(crate::core::ResourceType::McpServer)
+            } else if self.manifest.scripts.contains_key(name) {
+                Ok(crate::core::ResourceType::Script)
+            } else {
+                // Default JSON resource type based on path or context
+                if dep.get_path().contains("hooks") {
+                    Ok(crate::core::ResourceType::Hook)
+                } else if dep.get_path().contains("mcp-servers") {
+                    Ok(crate::core::ResourceType::McpServer)
+                } else if dep.get_path().contains("scripts") {
+                    Ok(crate::core::ResourceType::Script)
+                } else {
+                    Ok(crate::core::ResourceType::Hook) // Default for JSON
+                }
+            }
+        } else {
+            // Markdown file - could be agent, snippet, command, or skill
+            if self.manifest.agents.contains_key(name) {
+                Ok(crate::core::ResourceType::Agent)
+            } else if self.manifest.skills.contains_key(name) {
+                Ok(crate::core::ResourceType::Skill)
+            } else if self.manifest.snippets.contains_key(name) {
+                Ok(crate::core::ResourceType::Snippet)
+            } else if self.manifest.commands.contains_key(name) {
+                Ok(crate::core::ResourceType::Command)
+            } else {
+                // Fall back to path-based detection
+                if dep.get_path().contains("agents") {
+                    Ok(crate::core::ResourceType::Agent)
+                } else if dep.get_path().contains("skills") {
+                    Ok(crate::core::ResourceType::Skill)
+                } else if dep.get_path().contains("snippets") {
+                    Ok(crate::core::ResourceType::Snippet)
+                } else if dep.get_path().contains("commands") {
+                    Ok(crate::core::ResourceType::Command)
+                } else {
+                    Ok(crate::core::ResourceType::Snippet) // Default for markdown
                 }
             }
         }
@@ -2264,31 +2447,62 @@ impl DependencyResolver {
             };
 
             let mut concrete_deps = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
-                // Convert matched path to absolute by joining with base_path
-                let absolute_path = base_path.join(&matched_path);
-                let concrete_path = absolute_path.to_string_lossy().to_string();
 
-                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
-                concrete_deps.push((
-                    resource_name,
-                    ResourceDependency::Detailed(Box::new(DetailedDependency {
-                        source: None,
-                        path: concrete_path,
-                        version: None,
-                        branch: None,
-                        rev: None,
-                        command: None,
-                        args: None,
-                        target: target.clone(),
-                        filename: None,
-                        dependencies: None,
-                        tool: tool.clone(),
-                        flatten,
-                        install: None,
-                    })),
-                ));
+            // Special handling for skills - we need to match directories, not files
+            if _resource_type == crate::core::ResourceType::Skill {
+                tracing::debug!("Using skill-specific pattern handling for pattern: {}", pattern);
+
+                let matches = self::skills::match_skill_directories(&base_path, pattern, None)?;
+                for (resource_name, concrete_path) in matches {
+                    concrete_deps.push((
+                        resource_name,
+                        ResourceDependency::Detailed(Box::new(DetailedDependency {
+                            source: None,
+                            path: concrete_path,
+                            version: None,
+                            branch: None,
+                            rev: None,
+                            command: None,
+                            args: None,
+                            target: target.clone(),
+                            filename: None,
+                            dependencies: None,
+                            tool: tool.clone(),
+                            flatten,
+                            install: None,
+                        })),
+                    ));
+                }
+            } else {
+                // Non-skill pattern handling - use the generic pattern matcher
+                tracing::debug!("Using generic pattern handling for pattern: {}", pattern);
+                for matched_path in &matches {
+                    tracing::debug!("Pattern matched: {}", matched_path.display());
+                    let resource_name = crate::pattern::extract_resource_name(matched_path);
+                    // Convert matched path to absolute by joining with base_path
+                    let absolute_path = base_path.join(matched_path);
+                    let concrete_path = absolute_path.to_string_lossy().to_string();
+
+                    // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
+                    concrete_deps.push((
+                        resource_name,
+                        ResourceDependency::Detailed(Box::new(DetailedDependency {
+                            source: None,
+                            path: concrete_path,
+                            version: None,
+                            branch: None,
+                            rev: None,
+                            command: None,
+                            args: None,
+                            target: target.clone(),
+                            filename: None,
+                            dependencies: None,
+                            tool: tool.clone(),
+                            flatten,
+                            install: None,
+                        })),
+                    ));
+                }
             }
 
             Ok(concrete_deps)
@@ -2320,40 +2534,81 @@ impl DependencyResolver {
 
             // Create concrete dependencies for each match
             let mut concrete_deps = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
 
-                // Use the matched path as-is (it's already relative to repo root)
-                // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
-                let concrete_path = matched_path.to_string_lossy().to_string();
+            // Special handling for skills - we need to match directories, not files
+            if _resource_type == crate::core::ResourceType::Skill {
+                let repo_path_buf = Path::new(repo_path);
+                let matches = self::skills::match_skill_directories(
+                    repo_path_buf,
+                    pattern,
+                    Some(repo_path_buf),
+                )?;
 
-                // Get tool, target, and flatten from parent
-                let (tool, target, flatten) = match dep {
-                    ResourceDependency::Detailed(d) => {
-                        (d.tool.clone(), d.target.clone(), d.flatten)
-                    }
-                    _ => (None, None, None),
-                };
+                for (resource_name, concrete_path) in matches {
+                    // Get tool, target, and flatten from parent
+                    let (tool, target, flatten) = match dep {
+                        ResourceDependency::Detailed(d) => {
+                            (d.tool.clone(), d.target.clone(), d.flatten)
+                        }
+                        _ => (None, None, None),
+                    };
 
-                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
-                concrete_deps.push((
-                    resource_name,
-                    ResourceDependency::Detailed(Box::new(DetailedDependency {
-                        source: Some(source_name.to_string()),
-                        path: concrete_path,
-                        version: dep.get_version().map(std::string::ToString::to_string),
-                        branch: None,
-                        rev: None,
-                        command: None,
-                        args: None,
-                        target, // Inherit custom target from parent pattern
-                        filename: None,
-                        dependencies: None,
-                        tool,
-                        flatten,
-                        install: None,
-                    })),
-                ));
+                    concrete_deps.push((
+                        resource_name,
+                        ResourceDependency::Detailed(Box::new(DetailedDependency {
+                            source: Some(source_name.to_string()),
+                            path: concrete_path,
+                            version: dep.get_version().map(std::string::ToString::to_string),
+                            branch: None,
+                            rev: None,
+                            command: None,
+                            args: None,
+                            target, // Inherit custom target from parent pattern
+                            filename: None,
+                            dependencies: None,
+                            tool,
+                            flatten,
+                            install: None,
+                        })),
+                    ));
+                }
+            } else {
+                // Non-skill pattern handling - use the generic pattern matcher
+                for matched_path in matches {
+                    let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+                    // Use the matched path as-is (it's already relative to repo root)
+                    // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
+                    let concrete_path = matched_path.to_string_lossy().to_string();
+
+                    // Get tool, target, and flatten from parent
+                    let (tool, target, flatten) = match dep {
+                        ResourceDependency::Detailed(d) => {
+                            (d.tool.clone(), d.target.clone(), d.flatten)
+                        }
+                        _ => (None, None, None),
+                    };
+
+                    // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
+                    concrete_deps.push((
+                        resource_name,
+                        ResourceDependency::Detailed(Box::new(DetailedDependency {
+                            source: Some(source_name.to_string()),
+                            path: concrete_path,
+                            version: dep.get_version().map(std::string::ToString::to_string),
+                            branch: None,
+                            rev: None,
+                            command: None,
+                            args: None,
+                            target, // Inherit custom target from parent pattern
+                            filename: None,
+                            dependencies: None,
+                            tool,
+                            flatten,
+                            install: None,
+                        })),
+                    ));
+                }
             }
 
             Ok(concrete_deps)
@@ -2660,6 +2915,17 @@ impl DependencyResolver {
                                 lockfile.mcp_servers.push(entry);
                             }
                         }
+                        crate::core::ResourceType::Skill => {
+                            if let Some(existing) = lockfile
+                                .skills
+                                .iter_mut()
+                                .find(|e| e.name == entry.name && e.source == entry.source)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.skills.push(entry);
+                            }
+                        }
                     }
                 }
             } else {
@@ -2891,6 +3157,7 @@ impl DependencyResolver {
                 resolved_commit: None,
                 checksum: String::new(),
                 installed_at,
+                files: None, // Single file resources don't have files list
                 dependencies: self.get_dependencies_for(name, None, resource_type, dep.get_tool()),
                 resource_type,
                 tool: Some(
@@ -3074,6 +3341,7 @@ impl DependencyResolver {
                 resolved_commit: Some(resolved_commit),
                 checksum: String::new(), // Will be calculated during installation
                 installed_at,
+                files: None, // Single file resources don't have files list
                 dependencies: self.get_dependencies_for(
                     name,
                     Some(source_name),
@@ -3190,7 +3458,79 @@ impl DependencyResolver {
             let mut resources = Vec::new();
 
             for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                // For skills, we need special handling to ensure we're matching directories containing SKILL.md
+                let (resource_name, full_relative_path, files) = if resource_type
+                    == crate::core::ResourceType::Skill
+                {
+                    // Skills are directories - verify this directory contains SKILL.md
+                    let skill_md_path = if base_path == Path::new(".") {
+                        matched_path.join("SKILL.md")
+                    } else {
+                        base_path.join(&matched_path).join("SKILL.md")
+                    };
+
+                    if !skill_md_path.exists() {
+                        tracing::warn!(
+                            "Skipping skill directory '{}' - missing SKILL.md file",
+                            matched_path.display()
+                        );
+                        continue;
+                    }
+
+                    // Use directory name as resource identifier
+                    let resource_name = matched_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&matched_path.to_string_lossy())
+                        .to_string();
+
+                    // Construct full relative path for the skill directory
+                    let full_relative_path = if base_path == Path::new(".") {
+                        crate::utils::normalize_path_for_storage(
+                            matched_path.to_string_lossy().to_string(),
+                        )
+                    } else {
+                        crate::utils::normalize_path_for_storage(format!(
+                            "{}/{}",
+                            base_path.display(),
+                            matched_path.display()
+                        ))
+                    };
+
+                    // Collect all files in the skill directory
+                    let mut files = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir(&matched_path) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    files.push(file_name.to_string());
+                                }
+                            }
+                        }
+                        files.sort(); // Sort for deterministic ordering
+                    }
+
+                    (resource_name, full_relative_path, Some(files))
+                } else {
+                    // For non-skill resources, use the standard logic
+                    let resource_name = crate::pattern::extract_resource_name(&matched_path);
+
+                    // Construct full relative path from base_path and matched_path
+                    let full_relative_path = if base_path == Path::new(".") {
+                        crate::utils::normalize_path_for_storage(
+                            matched_path.to_string_lossy().to_string(),
+                        )
+                    } else {
+                        crate::utils::normalize_path_for_storage(format!(
+                            "{}/{}",
+                            base_path.display(),
+                            matched_path.display()
+                        ))
+                    };
+
+                    (resource_name, full_relative_path, None)
+                };
 
                 // Determine artifact type - use get_tool() method, then apply defaults
                 let artifact_type_string = dep
@@ -3198,19 +3538,6 @@ impl DependencyResolver {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
                 let artifact_type = artifact_type_string.as_str();
-
-                // Construct full relative path from base_path and matched_path
-                let full_relative_path = if base_path == Path::new(".") {
-                    crate::utils::normalize_path_for_storage(
-                        matched_path.to_string_lossy().to_string(),
-                    )
-                } else {
-                    crate::utils::normalize_path_for_storage(format!(
-                        "{}/{}",
-                        base_path.display(),
-                        matched_path.display()
-                    ))
-                };
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
 
@@ -3301,6 +3628,7 @@ impl DependencyResolver {
                     resolved_commit: None,
                     checksum: String::new(),
                     installed_at,
+                    files, // Skills have files list, other resources have None
                     dependencies: self.get_dependencies_for(
                         &resource_name,
                         None,
@@ -3359,7 +3687,46 @@ impl DependencyResolver {
             let mut resources = Vec::new();
 
             for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                // For skills, we need special handling to ensure we're matching directories containing SKILL.md
+                let (resource_name, files) = if resource_type == crate::core::ResourceType::Skill {
+                    // Skills are directories - verify this directory contains SKILL.md
+                    let skill_md_path = matched_path.join("SKILL.md");
+
+                    if !skill_md_path.exists() {
+                        tracing::warn!(
+                            "Skipping skill directory '{}' - missing SKILL.md file",
+                            matched_path.display()
+                        );
+                        continue;
+                    }
+
+                    // Use directory name as resource identifier
+                    let resource_name = matched_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&matched_path.to_string_lossy())
+                        .to_string();
+
+                    // Collect all files in the skill directory
+                    let mut files = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir(&matched_path) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    files.push(file_name.to_string());
+                                }
+                            }
+                        }
+                        files.sort(); // Sort for deterministic ordering
+                    }
+
+                    (resource_name, Some(files))
+                } else {
+                    // For non-skill resources, use the standard logic
+                    let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                    (resource_name, None)
+                };
 
                 // Determine artifact type - use get_tool() method, then apply defaults
                 let artifact_type_string = dep
@@ -3495,6 +3862,7 @@ impl DependencyResolver {
                     resolved_commit: Some(resolved_commit.clone()),
                     checksum: String::new(),
                     installed_at,
+                    files, // Skills have files list, other resources have None
                     dependencies: self.get_dependencies_for(
                         &resource_name,
                         Some(source_name),
@@ -4102,6 +4470,17 @@ impl DependencyResolver {
                                 *existing = entry;
                             } else {
                                 lockfile.mcp_servers.push(entry);
+                            }
+                        }
+                        crate::core::ResourceType::Skill => {
+                            if let Some(existing) = lockfile
+                                .skills
+                                .iter_mut()
+                                .find(|e| e.name == entry.name && e.source == entry.source)
+                            {
+                                *existing = entry;
+                            } else {
+                                lockfile.skills.push(entry);
                             }
                         }
                     }
