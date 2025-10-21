@@ -437,8 +437,8 @@ dependencies:
             let first_contents = &all_contents[0];
             let current_contents = &all_contents[i];
 
-            for (_j, ((name1, content1), (_name2, content2))) in
-                first_contents.iter().zip(current_contents.iter()).enumerate()
+            for ((name1, content1), (_name2, content2)) in
+                first_contents.iter().zip(current_contents.iter())
             {
                 if content1 != content2 {
                     panic!(
@@ -459,6 +459,124 @@ dependencies:
                 i + 1
             );
         }
+    }
+
+    Ok(())
+}
+
+/// Test stability with nested transitive custom names
+///
+/// This tests the case where:
+/// - Command depends on Snippet A (with custom name "base")
+/// - Snippet A depends on Snippet B (with custom name "helper")
+/// - Command can reference both via `agpm.deps.snippets.base` and `agpm.deps.snippets.helper`
+///
+/// This is a regression test for non-deterministic HashMap ordering when extracting
+/// custom names from frontmatter across the dependency tree.
+#[tokio::test]
+async fn test_nested_transitive_custom_names_stability() -> Result<()> {
+    let project = TestProject::new().await?;
+
+    // Create source repo with nested dependencies
+    let source_repo = project.create_source_repo("test-source").await?;
+
+    // Create the deepest snippet (no dependencies)
+    source_repo
+        .add_resource(
+            "snippets",
+            "helper",
+            "---\nagpm:\n  templating: false\n---\n# Helper Content\nThis is helper content",
+        )
+        .await?;
+
+    // Create an intermediate snippet that depends on helper
+    source_repo
+        .add_resource(
+            "snippets",
+            "base",
+            r#"---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - name: helper
+      install: false
+      path: ../snippets/helper.md
+---
+# Base Content
+
+{{ agpm.deps.snippets.helper.content }}
+"#,
+        )
+        .await?;
+
+    // Create a command that depends on base (which transitively depends on helper)
+    source_repo
+        .add_resource(
+            "commands",
+            "my-command",
+            r#"---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - name: base
+      install: false
+      path: ../snippets/base.md
+---
+# My Command
+
+Base: {{ agpm.deps.snippets.base.content }}
+
+Helper: {{ agpm.deps.snippets.helper.content }}
+"#,
+        )
+        .await?;
+
+    source_repo.commit_all("Add nested dependencies")?;
+    source_repo.tag_version("v1.0.0")?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_source("test-source", &source_repo.file_url())
+        .add_standard_command("my-command", "test-source", "commands/my-command.md")
+        .build();
+    project.write_manifest(&manifest).await?;
+
+    // Run install 10 times and verify content stability
+    let mut all_hashes = Vec::new();
+    for i in 0..10 {
+        let output = project.run_agpm(&["install", "--quiet"])?;
+        assert!(
+            output.success,
+            "Install #{} with nested transitive custom names failed: {}",
+            i + 1,
+            output.stderr
+        );
+
+        // Verify both custom names are accessible in the template
+        let command_path = project.project_path().join(".claude/commands/my-command.md");
+        let command_content = tokio::fs::read_to_string(&command_path).await?;
+        assert!(
+            command_content.contains("Helper Content"),
+            "Nested transitive custom name 'helper' was not accessible in install #{}",
+            i + 1
+        );
+
+        let hashes = collect_installed_hashes(project.project_path())?;
+        all_hashes.push(hashes);
+    }
+
+    // Verify all runs produced identical content
+    let first_hashes = &all_hashes[0];
+    for (i, hashes) in all_hashes.iter().enumerate().skip(1) {
+        assert_eq!(
+            first_hashes,
+            hashes,
+            "Install #{} with nested transitive custom names produced different content than install #1.\n\
+             This indicates a template rendering stability issue with custom name extraction.",
+            i + 1
+        );
     }
 
     Ok(())

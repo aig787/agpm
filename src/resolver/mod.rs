@@ -3028,16 +3028,10 @@ impl DependencyResolver {
                     tool_value.clone()
                 }),
                 manifest_alias: {
-                    // Check transitive custom names first, then pattern alias map
-                    // IMPORTANT: Use the actual tool value (after applying defaults) for the key
-                    let actual_tool = dep
-                        .get_tool()
-                        .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
-                    let key = (resource_type, name.to_string(), None, Some(actual_tool));
-                    self.transitive_custom_names.get(&key).cloned().or_else(|| {
-                        self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
-                    })
+                    // Only use pattern alias map - NOT transitive custom names
+                    // Transitive custom names (from YAML frontmatter) should be extracted
+                    // during template rendering, not stored in lockfile
+                    self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
                 },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
@@ -3221,16 +3215,10 @@ impl DependencyResolver {
                 resource_type,
                 tool: Some(artifact_type_string.clone()),
                 manifest_alias: {
-                    // Check transitive custom names first, then pattern alias map
-                    let key = (
-                        resource_type,
-                        name.to_string(),
-                        Some(source_name.to_string()),
-                        Some(artifact_type_string.clone()),
-                    );
-                    self.transitive_custom_names.get(&key).cloned().or_else(|| {
-                        self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
-                    })
+                    // Only use pattern alias map - NOT transitive custom names
+                    // Transitive custom names (from YAML frontmatter) should be extracted
+                    // during template rendering, not stored in lockfile
+                    self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
                 },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
