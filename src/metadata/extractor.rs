@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use tera::{Context as TeraContext, Tera};
 
+use crate::core::OperationContext;
 use crate::manifest::{DependencyMetadata, ProjectConfig};
 
 /// Metadata extractor for resource files.
@@ -34,10 +35,13 @@ pub struct MetadataExtractor;
 impl MetadataExtractor {
     /// Extract dependency metadata from a file's content.
     ///
+    /// Uses operation-scoped context for warning deduplication when provided.
+    ///
     /// # Arguments
     /// * `path` - Path to the file (used to determine file type)
     /// * `content` - Content of the file
     /// * `project_config` - Optional project configuration for template rendering
+    /// * `context` - Optional operation context for warning deduplication
     ///
     /// # Returns
     /// * `DependencyMetadata` - Extracted metadata (may be empty)
@@ -47,16 +51,36 @@ impl MetadataExtractor {
     /// If `project_config` is provided, frontmatter is rendered as a Tera template
     /// before parsing, allowing references to project variables like:
     /// `{{ agpm.project.language }}`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::core::OperationContext;
+    /// use agpm_cli::metadata::MetadataExtractor;
+    /// use std::path::Path;
+    ///
+    /// let ctx = OperationContext::new();
+    /// let path = Path::new("agent.md");
+    /// let content = "---\ndependencies:\n  agents:\n    - path: helper.md\n---\n# Agent";
+    ///
+    /// let metadata = MetadataExtractor::extract(
+    ///     path,
+    ///     content,
+    ///     None,
+    ///     Some(&ctx)
+    /// ).unwrap();
+    /// ```
     pub fn extract(
         path: &Path,
         content: &str,
         project_config: Option<&ProjectConfig>,
+        context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         match extension {
-            "md" => Self::extract_markdown_frontmatter(content, project_config, path),
-            "json" => Self::extract_json_field(content, project_config, path),
+            "md" => Self::extract_markdown_frontmatter(content, project_config, path, context),
+            "json" => Self::extract_json_field(content, project_config, path, context),
             _ => {
                 // Scripts and other files don't support embedded dependencies
                 Ok(DependencyMetadata::default())
@@ -72,6 +96,7 @@ impl MetadataExtractor {
         content: &str,
         project_config: Option<&ProjectConfig>,
         path: &Path,
+        context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         // Check if content starts with frontmatter delimiter
         if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
@@ -121,26 +146,23 @@ impl MetadataExtractor {
                     Ok(metadata)
                 }
                 Err(e) => {
-                    // Provide detailed error message for common issues
-                    let error_msg = e.to_string();
-                    if error_msg.contains("unknown field") {
-                        tracing::warn!(
-                            "Warning: YAML frontmatter contains unknown field(s): {}. \
-                            Supported fields are: path, version, tool",
-                            e
-                        );
-                        eprintln!(
-                            "Warning: YAML frontmatter contains unknown field(s).\n\
-                            Supported fields in dependencies are:\n\
-                            - path: Path to the dependency file (required)\n\
-                            - version: Version constraint (optional)\n\
-                            - tool: Target tool (optional: claude-code, opencode, agpm)\n\
-                            \nError: {}",
-                            e
-                        );
-                    } else {
-                        tracing::warn!("Warning: Unable to parse YAML frontmatter: {}", e);
-                        eprintln!("Warning: Unable to parse YAML frontmatter: {}", e);
+                    // Only warn once per file to avoid spam during transitive dependency resolution
+                    if let Some(ctx) = context {
+                        if ctx.should_warn_file(path) {
+                            eprintln!(
+                                "Warning: Unable to parse YAML frontmatter in '{}'.
+
+The document will be processed without metadata, and any declared dependencies
+will NOT be resolved or installed.
+
+Parse error: {}
+
+For the correct dependency format, see:
+https://github.com/aig787/agpm#transitive-dependencies",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
                     Ok(DependencyMetadata::default())
                 }
@@ -159,6 +181,7 @@ impl MetadataExtractor {
         content: &str,
         project_config: Option<&ProjectConfig>,
         path: &Path,
+        context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         // Phase 1: Check if templating is disabled via agpm.templating field
         let templating_disabled = if let Some(_config) = project_config {
@@ -196,26 +219,23 @@ impl MetadataExtractor {
                     Ok(metadata)
                 }
                 Err(e) => {
-                    // Provide detailed error message for common issues
-                    let error_msg = e.to_string();
-                    if error_msg.contains("unknown field") {
-                        tracing::warn!(
-                            "Warning: JSON dependencies contain unknown field(s): {}. \
-                            Supported fields are: path, version, tool",
-                            e
-                        );
-                        eprintln!(
-                            "Warning: JSON dependencies contain unknown field(s).\n\
-                            Supported fields in dependencies are:\n\
-                            - path: Path to the dependency file (required)\n\
-                            - version: Version constraint (optional)\n\
-                            - tool: Target tool (optional: claude-code, opencode, agpm)\n\
-                            \nError: {}",
-                            e
-                        );
-                    } else {
-                        tracing::warn!("Warning: Unable to parse dependencies field: {}", e);
-                        eprintln!("Warning: Unable to parse dependencies field: {}", e);
+                    // Only warn once per file to avoid spam during transitive dependency resolution
+                    if let Some(ctx) = context {
+                        if ctx.should_warn_file(path) {
+                            eprintln!(
+                                "Warning: Unable to parse dependencies field in '{}'.
+
+The document will be processed without metadata, and any declared dependencies
+will NOT be resolved or installed.
+
+Parse error: {}
+
+For the correct dependency format, see:
+https://github.com/aig787/agpm#transitive-dependencies",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
                     Ok(DependencyMetadata::default())
                 }
@@ -429,8 +449,12 @@ impl MetadataExtractor {
 
         // Try YAML frontmatter first (for Markdown)
         if (content.starts_with("---\n") || content.starts_with("---\r\n"))
-            && let Ok(metadata) =
-                Self::extract_markdown_frontmatter(content, None, &PathBuf::from("unknown.md"))
+            && let Ok(metadata) = Self::extract_markdown_frontmatter(
+                content,
+                None,
+                &PathBuf::from("unknown.md"),
+                None,
+            )
             && metadata.has_dependencies()
         {
             return Ok(metadata);
@@ -439,7 +463,7 @@ impl MetadataExtractor {
         // Try JSON format
         if content.trim_start().starts_with('{')
             && let Ok(metadata) =
-                Self::extract_json_field(content, None, &PathBuf::from("unknown.json"))
+                Self::extract_json_field(content, None, &PathBuf::from("unknown.json"), None)
             && metadata.has_dependencies()
         {
             return Ok(metadata);
@@ -471,7 +495,7 @@ dependencies:
 This is the command documentation."#;
 
         let path = Path::new("command.md");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -488,7 +512,7 @@ This is the command documentation."#;
 This is a command without frontmatter."#;
 
         let path = Path::new("command.md");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(!metadata.has_dependencies());
     }
@@ -511,7 +535,7 @@ This is a command without frontmatter."#;
 }"#;
 
         let path = Path::new("hook.json");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -529,7 +553,7 @@ This is a command without frontmatter."#;
 }"#;
 
         let path = Path::new("mcp.json");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(!metadata.has_dependencies());
     }
@@ -541,7 +565,7 @@ echo "This is a script file"
 # Scripts don't support dependencies"#;
 
         let path = Path::new("script.sh");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(!metadata.has_dependencies());
     }
@@ -581,7 +605,7 @@ dependencies:
         let content = "---\r\ndependencies:\r\n  agents:\r\n    - path: agents/test.md\r\n---\r\n\r\n# Content";
 
         let path = Path::new("command.md");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -598,7 +622,7 @@ dependencies:
 # Content"#;
 
         let path = Path::new("command.md");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         // Should parse successfully but have no dependencies
         assert!(!metadata.has_dependencies());
@@ -616,7 +640,7 @@ dependencies:
 # Content"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         // Should succeed but return empty metadata (with warning logged)
         assert!(result.is_ok());
@@ -639,7 +663,7 @@ dependencies:
 # Command with multi-tool dependencies"#;
 
         let path = Path::new("command.md");
-        let metadata = MetadataExtractor::extract(path, content, None).unwrap();
+        let metadata = MetadataExtractor::extract(path, content, None, None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -666,7 +690,7 @@ dependencies:
 # Content"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         // Should succeed but return empty metadata due to unknown field
         assert!(result.is_ok());
@@ -698,7 +722,8 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -730,7 +755,7 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let result = MetadataExtractor::extract(path, content, Some(&project_config));
+        let result = MetadataExtractor::extract(path, content, Some(&project_config), None);
 
         // Should error on undefined variable
         assert!(result.is_err());
@@ -758,7 +783,8 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -790,7 +816,8 @@ dependencies:
 }"#;
 
         let path = Path::new("hook.json");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -817,7 +844,8 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -846,7 +874,8 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -878,7 +907,7 @@ dependencies:
         let config = ProjectConfig::from(config_map);
 
         let path = PathBuf::from("agents/main.md");
-        let result = MetadataExtractor::extract(&path, content, Some(&config));
+        let result = MetadataExtractor::extract(&path, content, Some(&config), None);
 
         assert!(result.is_ok(), "Should extract metadata: {:?}", result.err());
         let metadata = result.unwrap();
@@ -926,7 +955,8 @@ dependencies:
 }"#;
 
         let path = Path::new("hook.json");
-        let metadata = MetadataExtractor::extract(path, content, Some(&project_config)).unwrap();
+        let metadata =
+            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -947,7 +977,7 @@ dependencies:
 # Command"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -968,7 +998,7 @@ dependencies:
 }"#;
 
         let path = Path::new("hook.json");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -987,7 +1017,7 @@ dependencies:
 # Command"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -1010,8 +1040,49 @@ dependencies:
 # Command"#;
 
         let path = Path::new("command.md");
-        let result = MetadataExtractor::extract(path, content, None);
+        let result = MetadataExtractor::extract(path, content, None, None);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_warning_deduplication_with_context() {
+        use std::path::PathBuf;
+
+        // Create an operation context
+        let ctx = OperationContext::new();
+
+        let path = PathBuf::from("test-file.md");
+        let different_path = PathBuf::from("different-file.md");
+
+        // First call should return true (first warning)
+        assert!(ctx.should_warn_file(&path));
+
+        // Second call should return false (already warned)
+        assert!(!ctx.should_warn_file(&path));
+
+        // Third call should also return false
+        assert!(!ctx.should_warn_file(&path));
+
+        // Different file should still warn
+        assert!(ctx.should_warn_file(&different_path));
+    }
+
+    #[test]
+    fn test_context_isolation() {
+        use std::path::PathBuf;
+
+        // Two separate contexts should be isolated
+        let ctx1 = OperationContext::new();
+        let ctx2 = OperationContext::new();
+        let path = PathBuf::from("test-isolation.md");
+
+        // Both contexts should warn the first time
+        assert!(ctx1.should_warn_file(&path));
+        assert!(ctx2.should_warn_file(&path));
+
+        // Both should deduplicate independently
+        assert!(!ctx1.should_warn_file(&path));
+        assert!(!ctx2.should_warn_file(&path));
     }
 }

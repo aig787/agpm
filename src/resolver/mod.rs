@@ -214,7 +214,7 @@ pub mod version_resolution;
 pub mod version_resolver;
 
 use crate::cache::Cache;
-use crate::core::{AgpmError, ResourceType};
+use crate::core::{AgpmError, OperationContext, ResourceType};
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
@@ -225,6 +225,7 @@ use crate::version::conflict::ConflictDetector;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use self::dependency_graph::{DependencyGraph, DependencyNode};
@@ -475,6 +476,15 @@ pub struct DependencyResolver {
     /// The key includes ResourceType to prevent collisions when different resource types
     /// have the same concrete name (e.g., agents/deploy.md and commands/deploy.md).
     pattern_alias_map: HashMap<(ResourceType, String), String>,
+    /// Optional operation context for warning deduplication.
+    ///
+    /// When provided, this context is used to deduplicate warning messages
+    /// during dependency resolution and transitive dependency extraction.
+    /// This prevents duplicate warnings when the same file is processed
+    /// multiple times (e.g., during transitive dependency resolution).
+    ///
+    /// Uses `Arc` for efficient sharing across async operations without cloning the entire context.
+    operation_context: Option<Arc<OperationContext>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1302,6 +1312,47 @@ impl DependencyResolver {
     ///
     /// [`new_with_global()`]: DependencyResolver::new_with_global
     pub fn new(manifest: Manifest, cache: Cache) -> Result<Self> {
+        Self::with_context(manifest, cache, None)
+    }
+
+    /// Creates a new dependency resolver with optional operation context.
+    ///
+    /// This is the preferred constructor for new code that wants to use
+    /// operation-scoped warning deduplication.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest` - The AGPM manifest containing dependency specifications
+    /// * `cache` - The cache for Git repositories and worktrees
+    /// * `context` - Optional operation context for warning deduplication
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::core::OperationContext;
+    /// use agpm_cli::resolver::DependencyResolver;
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::cache::Cache;
+    /// use std::sync::Arc;
+    ///
+    /// # fn example() -> anyhow::Result<()> {
+    /// let manifest = Manifest::default();
+    /// let cache = Cache::new()?;
+    /// let ctx = Arc::new(OperationContext::new());
+    ///
+    /// let resolver = DependencyResolver::with_context(
+    ///     manifest,
+    ///     cache,
+    ///     Some(ctx)
+    /// )?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_context(
+        manifest: Manifest,
+        cache: Cache,
+        context: Option<Arc<OperationContext>>,
+    ) -> Result<Self> {
         let source_manager = SourceManager::from_manifest(&manifest)?;
         let version_resolver = VersionResolver::new(cache.clone());
 
@@ -1314,6 +1365,7 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            operation_context: context,
         })
     }
 
@@ -1351,6 +1403,7 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            operation_context: None,
         })
     }
 
@@ -1388,7 +1441,37 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            operation_context: None,
         }
+    }
+
+    /// Set the operation context for warning deduplication.
+    ///
+    /// This allows setting the context after resolver creation, which is useful
+    /// when using constructors like `new_with_global()` that don't accept a context parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The operation context to use for warning deduplication
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::core::OperationContext;
+    /// use agpm_cli::resolver::DependencyResolver;
+    /// use std::sync::Arc;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// # let manifest = agpm_cli::manifest::Manifest::default();
+    /// # let cache = agpm_cli::cache::Cache::new()?;
+    /// let ctx = Arc::new(OperationContext::new());
+    /// let mut resolver = DependencyResolver::new_with_global(manifest, cache).await?;
+    /// resolver.set_operation_context(ctx);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_operation_context(&mut self, context: Arc<OperationContext>) {
+        self.operation_context = Some(context);
     }
 
     /// Resolves all dependencies and generates a complete lockfile.
@@ -1580,8 +1663,12 @@ impl DependencyResolver {
 
             // Extract metadata from the resource
             let path = PathBuf::from(dep.get_path());
-            let metadata =
-                MetadataExtractor::extract(&path, &content, self.manifest.project.as_ref())?;
+            let metadata = MetadataExtractor::extract(
+                &path,
+                &content,
+                self.manifest.project.as_ref(),
+                self.operation_context.as_deref(),
+            )?;
 
             // Process transitive dependencies if present
             if let Some(deps_map) = metadata.dependencies {

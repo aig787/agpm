@@ -152,9 +152,11 @@ use clap::Args;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::cache::Cache;
+use crate::core::OperationContext;
 use crate::git::parse_git_url;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, find_manifest_with_optional};
@@ -652,6 +654,10 @@ impl OutdatedCommand {
         // 3. Create resolver for version resolution
         let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())
             .context("Failed to create dependency resolver")?;
+
+        // Create operation context for warning deduplication
+        let operation_context = Arc::new(OperationContext::new());
+        resolver.set_operation_context(operation_context);
 
         // 4. Pre-sync sources if not skipped
         let progress = if self.no_progress {

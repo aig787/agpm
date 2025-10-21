@@ -461,7 +461,7 @@ pub enum AgpmError {
     },
 
     /// File system error
-    #[error("File system error: {operation}")]
+    #[error("File system error: {operation}: {path}")]
     FileSystemError {
         /// The file system operation that failed
         operation: String,
@@ -470,7 +470,7 @@ pub enum AgpmError {
     },
 
     /// Permission denied
-    #[error("Permission denied: {operation}")]
+    #[error("Permission denied: {operation}: {path}")]
     PermissionDenied {
         /// The operation that was denied due to insufficient permissions
         operation: String,
@@ -1119,33 +1119,22 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
 
         match io_error.kind() {
             std::io::ErrorKind::PermissionDenied => {
-                return ErrorContext::new(AgpmError::PermissionDenied {
+                return create_error_context(AgpmError::PermissionDenied {
                     operation: "file access".to_string(),
                     path: extracted_path,
-                })
-                .with_suggestion("Try running with elevated permissions (sudo/Administrator) or check file ownership")
-                .with_details("This error occurs when AGPM doesn't have permission to read or write files");
+                });
             }
             std::io::ErrorKind::NotFound => {
-                return ErrorContext::new(AgpmError::FileSystemError {
+                return create_error_context(AgpmError::FileSystemError {
                     operation: "file access".to_string(),
-                    path: extracted_path.clone(),
-                })
-                .with_suggestion(format!(
-                    "Check that the file '{}' exists and the path is correct",
-                    extracted_path
-                ))
-                .with_details(
-                    "This error occurs when a required file or directory cannot be found",
-                );
+                    path: extracted_path,
+                });
             }
             std::io::ErrorKind::AlreadyExists => {
-                return ErrorContext::new(AgpmError::FileSystemError {
+                return create_error_context(AgpmError::FileSystemError {
                     operation: "file creation".to_string(),
                     path: extracted_path,
-                })
-                .with_suggestion("Remove the existing file or use --force to overwrite")
-                .with_details("The target file or directory already exists");
+                });
             }
             std::io::ErrorKind::InvalidData => {
                 return ErrorContext::new(AgpmError::InvalidResource {
@@ -1374,6 +1363,22 @@ fn create_error_context(error: AgpmError) -> ErrorContext {
             .with_details(format!(
                 "Resource '{name}' has checksum {actual} but expected {expected}. This indicates file corruption or tampering"
             )),
+
+        AgpmError::FileSystemError { operation, path } => {
+            let suggestion = if operation.contains("creation") {
+                format!("The file already exists at {path}. Use --force to overwrite it")
+            } else {
+                format!("Check that the path exists and is accessible: {path}")
+            };
+            ErrorContext::new(AgpmError::FileSystemError {
+                operation: operation.clone(),
+                path: path.clone(),
+            })
+            .with_suggestion(suggestion)
+            .with_details(format!(
+                "Failed to {operation} at path: {path}"
+            ))
+        }
 
         _ => ErrorContext::new(error.clone()),
     }

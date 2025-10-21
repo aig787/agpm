@@ -406,8 +406,8 @@ pub async fn install_resource(
         let source_path = cache_dir.join(&entry.path);
         let file_content = read_with_cache_retry(&source_path).await?;
 
-        // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
-        MarkdownFile::parse_with_context(&file_content, Some(&source_path.display().to_string()))?;
+        // Validate markdown - silently accepts invalid frontmatter (warnings handled by MetadataExtractor)
+        MarkdownFile::parse(&file_content)?;
 
         file_content
     } else {
@@ -433,8 +433,8 @@ pub async fn install_resource(
             .await
             .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
 
-        // Validate markdown - this will emit a warning if frontmatter is invalid but won't fail
-        MarkdownFile::parse_with_context(&local_content, Some(&source_path.display().to_string()))?;
+        // Validate markdown - silently accepts invalid frontmatter (warnings handled by MetadataExtractor)
+        MarkdownFile::parse(&local_content)?;
 
         local_content
     };

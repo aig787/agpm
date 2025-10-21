@@ -175,12 +175,12 @@ fn build_default_manifest() -> String {
             // Add tool-specific comment after path
             let comment = match *tool_name {
                 "claude-code" => {
-                    "\n# Note: hooks and mcp-servers merge into configuration files (no file installation)\n"
+                    "\n# Note: hooks and mcp-servers merge into configuration files (no file installation)"
                 }
                 "opencode" => {
-                    "\n# Note: MCP servers merge into opencode.json (no file installation)\n"
+                    "\n# Note: MCP servers merge into opencode.json (no file installation)"
                 }
-                _ => "\n",
+                _ => "",
             };
 
             if let Some(Item::Value(path)) = current_tool_table.get_mut("path") {

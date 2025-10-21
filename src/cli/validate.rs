@@ -92,7 +92,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::cache::Cache;
-use crate::core::ResourceType;
+use crate::core::{OperationContext, ResourceType};
 use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::markdown::reference_extractor::{extract_file_references, validate_file_references};
@@ -556,6 +556,10 @@ impl ValidateCommand {
                 }
             };
 
+            // Create operation context for warning deduplication
+            let operation_context = Arc::new(OperationContext::new());
+            resolver.set_operation_context(operation_context);
+
             match resolver.verify() {
                 Ok(()) => {
                     validation_results.dependencies_resolvable = true;
@@ -593,7 +597,7 @@ impl ValidateCommand {
 
             let cache = Cache::new()?;
             let resolver_result = DependencyResolver::new(manifest.clone(), cache);
-            let resolver = match resolver_result {
+            let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
                     let error_msg = "Source not accessible: official, community".to_string();
@@ -611,6 +615,10 @@ impl ValidateCommand {
                     return Err(anyhow::anyhow!("Source not accessible: {e}"));
                 }
             };
+
+            // Create operation context for warning deduplication
+            let operation_context = Arc::new(OperationContext::new());
+            resolver.set_operation_context(operation_context);
 
             let result = resolver.source_manager.verify_all().await;
 

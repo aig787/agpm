@@ -340,7 +340,7 @@ pub fn apply_patches_to_content(
         std::path::Path::new(file_path).extension().and_then(|s| s.to_str()).unwrap_or("");
 
     match file_ext {
-        "md" => apply_patches_to_markdown(content, patch_data),
+        "md" => apply_patches_to_markdown(content, file_path, patch_data),
         "json" => apply_patches_to_json(content, patch_data),
         _ => {
             // For other file types, we can't apply patches
@@ -443,12 +443,17 @@ pub fn apply_patches_to_content_with_origin(
 /// Apply patches to Markdown file with YAML frontmatter.
 fn apply_patches_to_markdown(
     content: &str,
+    file_path: &str,
     patch_data: &PatchData,
 ) -> anyhow::Result<(String, HashMap<String, toml::Value>)> {
     use crate::markdown::MarkdownDocument;
 
-    // Parse the markdown file
-    let mut md_doc = MarkdownDocument::parse(content)?;
+    // Parse the markdown file (pass file_path for warning deduplication)
+    let mut md_doc = MarkdownDocument::parse_with_operation_context(
+        content,
+        Some(file_path),
+        None, // No operation context available here, but file path helps deduplication
+    )?;
 
     let mut applied_patches = HashMap::new();
 
