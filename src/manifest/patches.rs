@@ -67,6 +67,10 @@ pub struct ManifestPatches {
     /// Patches for hook resources.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub hooks: HashMap<String, PatchData>,
+
+    /// Patches for skill resources.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub skills: HashMap<String, PatchData>,
 }
 
 /// Arbitrary key-value pairs to override in a resource's metadata.
@@ -170,6 +174,7 @@ impl ManifestPatches {
             && self.scripts.is_empty()
             && self.mcp_servers.is_empty()
             && self.hooks.is_empty()
+            && self.skills.is_empty()
     }
 
     /// Gets the patch data for a specific resource type and alias.
@@ -183,6 +188,7 @@ impl ManifestPatches {
             "scripts" => self.scripts.get(alias),
             "mcp-servers" => self.mcp_servers.get(alias),
             "hooks" => self.hooks.get(alias),
+            "skills" => self.skills.get(alias),
             _ => None,
         }
     }
@@ -230,6 +236,7 @@ impl ManifestPatches {
             &mut conflicts,
         );
         Self::merge_resource_patches(&mut merged.hooks, &other.hooks, "hooks", &mut conflicts);
+        Self::merge_resource_patches(&mut merged.skills, &other.skills, "skills", &mut conflicts);
 
         (merged, conflicts)
     }
@@ -281,6 +288,7 @@ impl ManifestPatches {
             "scripts" => Some(&self.scripts),
             "mcp-servers" => Some(&self.mcp_servers),
             "hooks" => Some(&self.hooks),
+            "skills" => Some(&self.skills),
             _ => None,
         }
     }

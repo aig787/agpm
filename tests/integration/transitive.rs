@@ -2042,14 +2042,14 @@ async fn test_local_transitive_invalid_path_format() -> Result<()> {
     let helper_path = agents_dir.join("helper.md");
     tokio::fs::write(&helper_path, "# Helper\n").await?;
 
-    // Create agent with invalid transitive dep path (doesn't start with ./ or ../)
+    // Create agent with invalid transitive dep path (absolute path)
     let local_agent_path = agents_dir.join("local-agent.md");
     tokio::fs::write(
         &local_agent_path,
         r#"---
 dependencies:
   agents:
-    - path: helper.md
+    - path: /absolute/path/helper.md
 ---
 # Local Agent
 This agent has an invalid transitive dependency path.

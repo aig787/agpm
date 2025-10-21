@@ -578,6 +578,16 @@ pub struct LockFile {
     /// This field is omitted from TOML serialization if empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<LockedResource>,
+    /// Locked skill resources with their exact versions and checksums.
+    ///
+    /// Contains all resolved skill dependencies from the manifest, with exact
+    /// commit hashes, installation paths, and SHA-256 checksums for integrity
+    /// verification. Skills are directory-based resources containing a SKILL.md
+    /// file and optional supporting files.
+    ///
+    /// This field is omitted from TOML serialization if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<LockedResource>,
 }
 
 /// A locked source repository with resolved commit information.
@@ -740,8 +750,20 @@ pub struct LockedResource {
     /// This path is always relative to the project root and uses forward
     /// slashes as separators for cross-platform compatibility.
     ///
-    /// Examples: "agents/example-agent.md", "snippets/util-snippet.md"
+    /// For single-file resources: "agents/example-agent.md", "snippets/util-snippet.md"
+    /// For directory resources (skills): "skills/my-skill/"
     pub installed_at: String,
+    /// List of files included in this resource (for directory-based resources).
+    ///
+    /// For skills and other directory-based resources, this field contains
+    /// a list of all files installed relative to the resource directory.
+    /// For single-file resources, this field is None.
+    ///
+    /// Examples for skills: ["SKILL.md", "REFERENCE.md", "scripts/helper.py"]
+    ///
+    /// Omitted from TOML serialization when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<String>>,
 
     /// Dependencies of this resource.
     ///
@@ -831,13 +853,18 @@ pub struct LockedResource {
     /// Defaults to `true` (install the file) for backwards compatibility.
     ///
     /// Omitted from TOML serialization when `None` or `true`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "is_install_true_or_none")]
     pub install: Option<bool>,
 }
 
 fn is_default_tool(tool: &Option<String>) -> bool {
     // Default tool is claude-code, so always skip serializing when it's Some("claude-code")
     matches!(tool, Some(t) if t == "claude-code")
+}
+
+fn is_install_true_or_none(install: &Option<bool>) -> bool {
+    // Skip serialization when install is None or Some(true) since true is the default
+    install.is_none() || install == &Some(true)
 }
 
 /// Convert lockfile to TOML string with inline tables for `applied_patches`.
@@ -922,6 +949,7 @@ impl LockFile {
             mcp_servers: Vec::new(),
             scripts: Vec::new(),
             hooks: Vec::new(),
+            skills: Vec::new(),
         }
     }
 
@@ -1260,6 +1288,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     files: None,
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1287,6 +1316,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     files: None,
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1337,6 +1367,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     files: None,
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -1359,6 +1390,7 @@ impl LockFile {
             }
             crate::core::ResourceType::Script => &mut self.scripts,
             crate::core::ResourceType::Hook => &mut self.hooks,
+            crate::core::ResourceType::Skill => &mut self.skills,
         };
 
         // Remove existing entry if present
@@ -1583,6 +1615,7 @@ impl LockFile {
             ResourceType::Script => &self.scripts,
             ResourceType::Hook => &self.hooks,
             ResourceType::McpServer => &self.mcp_servers,
+            ResourceType::Skill => &self.skills,
         }
     }
 
@@ -1601,6 +1634,7 @@ impl LockFile {
             ResourceType::Script => &mut self.scripts,
             ResourceType::Hook => &mut self.hooks,
             ResourceType::McpServer => &mut self.mcp_servers,
+            ResourceType::Skill => &mut self.skills,
         }
     }
 
@@ -2210,6 +2244,7 @@ impl LockFile {
     /// #     manifest_alias: None,
     /// #     applied_patches: std::collections::HashMap::new(),
     /// #     install: None,
+    /// #     files: None,
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2491,6 +2526,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             true,
         );
@@ -2593,6 +2629,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             true, // is_agent
         );
@@ -2615,6 +2652,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             false, // is_agent
         );
@@ -2637,6 +2675,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             true, // is_agent
         );
@@ -2693,6 +2732,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2728,6 +2768,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             true,
         );
@@ -2750,6 +2791,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             false,
         );
@@ -2772,6 +2814,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2812,6 +2855,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2853,6 +2897,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             true,
         );
@@ -2875,6 +2920,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             },
             crate::core::ResourceType::Command,
         );

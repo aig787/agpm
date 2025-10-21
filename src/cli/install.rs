@@ -1202,11 +1202,13 @@ Body",
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                files: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
             scripts: vec![],
             hooks: vec![],
+            skills: vec![],
         }
         .save(&lockfile_path)
         .unwrap();

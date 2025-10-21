@@ -105,6 +105,12 @@ enum RemoveDependencySubcommand {
         /// Name of the hook to remove
         name: String,
     },
+
+    /// Remove a skill dependency
+    Skill {
+        /// Name of the skill to remove
+        name: String,
+    },
 }
 
 /// Helper function to get dependencies for a specific resource type
@@ -119,6 +125,7 @@ const fn get_dependencies_for_type(
         ResourceType::McpServer => &manifest.mcp_servers,
         ResourceType::Script => &manifest.scripts,
         ResourceType::Hook => &manifest.hooks,
+        ResourceType::Skill => &manifest.skills,
     }
 }
 
@@ -134,6 +141,7 @@ const fn get_dependencies_for_type_mut(
         ResourceType::McpServer => &mut manifest.mcp_servers,
         ResourceType::Script => &mut manifest.scripts,
         ResourceType::Hook => &mut manifest.hooks,
+        ResourceType::Skill => &mut manifest.skills,
     }
 }
 
@@ -176,6 +184,11 @@ fn get_installed_path_from_lockfile(
             .iter()
             .find(|h| h.name == name)
             .map(|h| project_root.join(&h.installed_at)),
+        ResourceType::Skill => lockfile
+            .skills
+            .iter()
+            .find(|s| s.name == name)
+            .map(|s| project_root.join(&s.installed_at)),
     }
 }
 
@@ -188,6 +201,7 @@ fn remove_from_lockfile(lockfile: &mut LockFile, name: &str, resource_type: Reso
         ResourceType::McpServer => lockfile.mcp_servers.retain(|m| m.name != name),
         ResourceType::Script => lockfile.scripts.retain(|s| s.name != name),
         ResourceType::Hook => lockfile.hooks.retain(|h| h.name != name),
+        ResourceType::Skill => lockfile.skills.retain(|s| s.name != name),
     }
 }
 
@@ -247,6 +261,9 @@ impl RemoveCommand {
                 RemoveDependencySubcommand::Hook {
                     name,
                 } => remove_dependency_with_manifest_path(&name, "hook", manifest_path).await,
+                RemoveDependencySubcommand::Skill {
+                    name,
+                } => remove_dependency_with_manifest_path(&name, "skill", manifest_path).await,
             },
         }
     }
@@ -493,6 +510,9 @@ async fn remove_dependency_with_manifest_path(
                 }
                 ResourceType::Hook => {
                     private_lock.hooks.retain(|r| r.name != name);
+                }
+                ResourceType::Skill => {
+                    private_lock.skills.retain(|r| r.name != name);
                 }
             }
             // Save (will delete if empty)
@@ -903,6 +923,7 @@ test-agent = "../test/agent.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -1043,6 +1064,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1062,6 +1084,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1151,6 +1174,7 @@ test-hook = "../test/hook.json"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1168,6 +1192,7 @@ test-hook = "../test/hook.json"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1242,6 +1267,7 @@ test-snippet = "../local/snippet.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1259,6 +1285,7 @@ test-snippet = "../local/snippet.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1442,6 +1469,7 @@ test-script = "../test/script.sh"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

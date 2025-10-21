@@ -743,6 +743,7 @@ impl TemplateContextBuilder {
             ResourceType::Script,
             ResourceType::Hook,
             ResourceType::McpServer,
+            ResourceType::Skill,
         ] {
             let type_str_plural = resource_type.to_plural().to_string();
             let type_str_singular = resource_type.to_string();
@@ -872,6 +873,7 @@ impl TemplateContextBuilder {
             ResourceType::Script,
             ResourceType::Hook,
             ResourceType::McpServer,
+            ResourceType::Skill,
         ] {
             let resources = self.lockfile.get_resources_by_type(resource_type);
             if resources.is_empty() {
@@ -1506,6 +1508,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         lockfile
@@ -1637,6 +1640,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -2049,6 +2053,7 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "non_templated".to_string(),
@@ -2065,6 +2070,7 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            files: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
