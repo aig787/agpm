@@ -211,47 +211,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use crate::core::OperationContext;
 use crate::manifest::DependencySpec;
-
-/// Emits a warning when frontmatter parsing fails.
-///
-/// This helper function provides consistent, helpful error messages when
-/// YAML or TOML frontmatter cannot be parsed. It explains the consequences
-/// and provides guidance on fixing common issues.
-///
-/// # Arguments
-///
-/// * `format_type` - The frontmatter format ("YAML" or "TOML")
-/// * `context` - Optional context string (e.g., file path) for the warning
-/// * `error` - The parsing error to display
-fn emit_frontmatter_parse_warning(
-    format_type: &str,
-    context: Option<&str>,
-    error: &impl std::fmt::Display,
-) {
-    let location = context.map(|c| format!(" in '{c}'")).unwrap_or_default();
-
-    let field_term = match format_type {
-        "YAML" => "objects",
-        "TOML" => "tables",
-        _ => "structures",
-    };
-
-    eprintln!("⚠️  Warning: Unable to parse {format_type} frontmatter{location}.");
-    eprintln!();
-    eprintln!("The document will be processed without metadata, and any declared dependencies");
-    eprintln!("will NOT be resolved or installed.");
-    eprintln!();
-    eprintln!("Parse error: {error}");
-    eprintln!();
-    eprintln!("If you're declaring dependencies, ensure they use the correct structured format.");
-    eprintln!(
-        "Dependencies must be {field_term} with 'path' and optional 'version' fields, not plain strings."
-    );
-    eprintln!();
-    eprintln!("For the correct dependency format, see:");
-    eprintln!("https://github.com/aig787/agpm#transitive-dependencies");
-}
 
 /// Type alias for [`MarkdownDocument`] for backward compatibility.
 ///
@@ -672,19 +633,45 @@ impl MarkdownDocument {
 
     /// Parse a Markdown string that may contain frontmatter with context for warnings.
     ///
-    /// This is similar to [`parse`](Self::parse) but accepts an optional context string
-    /// that will be included in warning messages when preprocessing is required.
+    /// Parse a Markdown string with operation context for warning deduplication.
+    ///
+    /// This is the preferred method for new code as it uses operation-scoped
+    /// context for warning deduplication.
     ///
     /// # Arguments
     ///
     /// * `input` - The complete Markdown document as a string
-    /// * `context` - Optional context (e.g., file path) for warning messages
+    /// * `file_context` - Optional file path for warning messages (unused, kept for API compatibility)
+    /// * `operation_context` - Optional operation context for deduplication (unused, kept for API compatibility)
     ///
     /// # Returns
     ///
     /// Returns a parsed `MarkdownDocument`. If frontmatter parsing fails,
-    /// a warning is emitted and the entire document is treated as content.
-    pub fn parse_with_context(input: &str, context: Option<&str>) -> Result<Self> {
+    /// NO warning is emitted (warnings are handled by MetadataExtractor for dependency resolution).
+    /// The entire document is treated as content.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::core::OperationContext;
+    /// use agpm_cli::markdown::MarkdownDocument;
+    ///
+    /// let ctx = OperationContext::new();
+    /// let markdown = "---\ntitle: Example\n---\n# Content";
+    ///
+    /// let doc = MarkdownDocument::parse_with_operation_context(
+    ///     markdown,
+    ///     Some("example.md"),
+    ///     Some(&ctx)
+    /// ).unwrap();
+    ///
+    /// assert!(doc.metadata.is_some());
+    /// ```
+    pub fn parse_with_operation_context(
+        input: &str,
+        _file_context: Option<&str>,
+        _operation_context: Option<&OperationContext>,
+    ) -> Result<Self> {
         // Check for YAML frontmatter (starts with ---)
         if (input.starts_with("---\n") || input.starts_with("---\r\n"))
             && let Some(end_idx) = find_frontmatter_end(input)
@@ -707,11 +694,9 @@ impl MarkdownDocument {
                         raw: input.to_string(),
                     });
                 }
-                Err(err) => {
-                    // Parsing failed - emit helpful warning and treat entire document as content
-                    emit_frontmatter_parse_warning("YAML", context, &err);
-
-                    // Treat the entire document as content (including the invalid frontmatter)
+                Err(_err) => {
+                    // Parsing failed - treat entire document as content
+                    // NOTE: No warning here - MetadataExtractor handles warnings for dependency resolution
                     return Ok(Self {
                         metadata: None,
                         content: input.to_string(),
@@ -742,11 +727,9 @@ impl MarkdownDocument {
                         raw: input.to_string(),
                     });
                 }
-                Err(err) => {
-                    // TOML parsing failed - emit helpful warning and treat entire document as content
-                    emit_frontmatter_parse_warning("TOML", context, &err);
-
-                    // Treat the entire document as content (including the invalid frontmatter)
+                Err(_err) => {
+                    // TOML parsing failed - treat entire document as content
+                    // NOTE: No warning here - MetadataExtractor handles warnings for dependency resolution
                     return Ok(Self {
                         metadata: None,
                         content: input.to_string(),
@@ -821,7 +804,7 @@ impl MarkdownDocument {
     /// assert!(doc.metadata.is_none());
     /// ```
     pub fn parse(input: &str) -> Result<Self> {
-        Self::parse_with_context(input, None)
+        Self::parse_with_operation_context(input, None, None)
     }
 
     /// Format a document with YAML frontmatter

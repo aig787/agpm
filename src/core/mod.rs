@@ -19,9 +19,15 @@
 //! ## Resource Abstractions
 //! Resources are the core entities managed by AGPM:
 //! - **Resource types** ([`ResourceType`]) define categories (agents, snippets)
-//! - **Resource trait** provides common interface for all resource types  
+//! - **Resource trait** provides common interface for all resource types
 //! - **Type detection** automatically identifies resources
 //! - **Extensible design** allows future resource types to be added easily
+//!
+//! ## Operation Context
+//! Operation-scoped state management without global variables:
+//! - **Warning deduplication** prevents duplicate error messages during operations
+//! - **Test isolation** each operation gets its own context
+//! - **Clean architecture** no global state, context flows through call chain
 //!
 //! # Modules
 //!
@@ -39,6 +45,13 @@
 //! - [`ResourceType`] - Enumeration of supported resource types
 //! - `Resource` - Trait interface for all resource implementations
 //! - Type detection functions - Automatic resource type detection
+//!
+//! ## `operation_context` - Operation-Scoped State
+//!
+//! The operation_context module provides:
+//! - [`OperationContext`] - Context object for CLI operations
+//! - Warning deduplication across module boundaries
+//! - Test-friendly architecture without global state
 //!
 //! # Design Principles
 //!
@@ -206,6 +219,7 @@
 pub mod error;
 pub mod error_builders;
 pub mod error_helpers;
+pub mod operation_context;
 mod resource;
 pub mod resource_iterator;
 
@@ -217,6 +231,7 @@ pub use error_helpers::{
     FileOperations, FileOps, JsonOperations, JsonOps, LockfileOperations, LockfileOps,
     ManifestOperations, ManifestOps, MarkdownOperations, MarkdownOps,
 };
+pub use operation_context::OperationContext;
 pub use resource::{Resource, ResourceType};
 pub use resource_iterator::{ResourceIterator, ResourceTypeExt};
 

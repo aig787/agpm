@@ -95,7 +95,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::cache::Cache;
-use crate::core::ResourceIterator;
+use crate::core::{OperationContext, ResourceIterator};
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{ResourceDependency, find_manifest_with_optional};
@@ -445,6 +445,10 @@ impl InstallCommand {
         // Resolution phase
         let mut resolver =
             DependencyResolver::new_with_global(manifest.clone(), cache.clone()).await?;
+
+        // Create operation context for warning deduplication
+        let operation_context = Arc::new(OperationContext::new());
+        resolver.set_operation_context(operation_context);
 
         // Pre-sync sources phase (if not frozen and we have remote deps)
         let has_remote_deps =

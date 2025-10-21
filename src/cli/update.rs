@@ -79,7 +79,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::cache::Cache;
-use crate::core::ResourceIterator;
+use crate::core::{OperationContext, ResourceIterator};
 use crate::installer::update_gitignore;
 use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, ResourceDependency, find_manifest_with_optional};
@@ -379,6 +379,10 @@ impl UpdateCommand {
 
         // Resolve updated dependencies
         let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())?;
+
+        // Create operation context for warning deduplication
+        let operation_context = Arc::new(OperationContext::new());
+        resolver.set_operation_context(operation_context);
 
         // Get all dependencies for pre-syncing (only if we have remote deps)
         if has_remote_deps {

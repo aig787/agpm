@@ -188,6 +188,7 @@ GitHub Actions: Cross-platform tests, crates.io publish
 - **Custom dependency names** (v0.4.5+): Transitive dependencies can specify `name` field for custom template variable names
 - **Duplicate path elimination** (v0.4.5+): Automatic removal of redundant directory prefixes (e.g., prevents `.claude/agents/agents/file.md`)
 - **File reference validation** (v0.4.6+): Automatic auditing of markdown file references to detect broken cross-references during validation
+- **Operation-scoped context**: Warning deduplication via OperationContext (CLI→Resolver→Extractor), no global state
 
 ## Resolver Architecture
 
@@ -270,40 +271,17 @@ dependencies:
 
 ## Template Features (v0.4.8+)
 
-**Embed content** via dependency `.content` (versioned) or `content` filter (project-local):
-
-```markdown
----
-agpm:
-  templating: true
-dependencies:
-  snippets:
-    - path: snippets/rust-patterns.md
-      name: rust_patterns
----
-## Shared Patterns (versioned)
-{{ agpm.deps.snippets.rust_patterns.content }}
-
-## Project Style (local)
-{{ 'project/rust-style.md' | content }}
-```
-
-**Content Filter**: `{{ 'path' | content }}` reads text files with path validation, recursive (10 levels). Markdown: frontmatter stripped. JSON: pretty-printed. Security: no traversal, text only (.md/.txt/.json/.toml/.yaml).
+**Embed content**: Dependency `.content` (versioned) or `content` filter (local). Example: `{{ agpm.deps.snippets.name.content }}` or `{{ 'path.md' | content }}`. Markdown: frontmatter stripped. JSON: pretty-printed. Security: no traversal, text only.
 
 ## Versioned Prefixes (v0.3.19+)
 
-Monorepo-style prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate version namespaces (`agents-^v1.0.0` matches only `agents-v*` tags).
+Monorepo prefixed tags: `agents-v1.0.0`, `snippets-^v2.0.0`. Prefixes isolate namespaces (`agents-^v1.0.0` matches only `agents-v*`).
 
 ## Cross-Platform Path Handling
 
-**CRITICAL**: AGPM must work identically on Windows, macOS, Linux. Lockfiles use Unix-style forward slashes only for portability.
+**CRITICAL**: AGPM must work identically on Windows, macOS, Linux. Lockfiles use Unix-style forward slashes.
 
-**Path Rules**:
-1. **Forward slashes** in lockfiles, .gitignore, TOML manifests
-2. **`normalize_path_for_storage()`** for ALL lockfile paths (never `Path::display()` directly)
-3. **`Path`/`PathBuf`** for runtime operations
-4. **Windows gotchas**: `C:\path`, `\\server\share`, reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
-5. **Tests**: Use `TestProject`, let `agpm install` generate lockfiles, no hardcoded separators
+**Rules**: Forward slashes in lockfiles/manifests; `normalize_path_for_storage()` for lockfile paths; `Path`/`PathBuf` for runtime; Windows gotchas: reserved names (CON, PRN, AUX, NUL, COM1-9, LPT1-9); Tests: use `TestProject`, let `agpm install` generate lockfiles.
 
 ## Optimized Worktree Architecture
 
@@ -320,17 +298,7 @@ Cache uses Git worktrees with SHA-based resolution for maximum efficiency:
 
 ### SHA-Based Resolution (v0.3.2+)
 
-- **Centralized `VersionResolver`**: Batch resolves all versions to SHAs upfront
-- **Two-phase resolution**: Collection phase → Resolution phase for efficiency
-- **Single clone per repo**: Bare repository shared by all operations
-- **Single fetch per command**: Command-instance fetch caching prevents redundant network ops
-- **SHA resolution upfront**: All versions resolved to commits before any checkout
-- **SHA-keyed worktrees**: One worktree per unique commit (not per version)
-- **Maximum reuse**: Tags/branches pointing to same commit share one worktree
-- **Instance-level cache**: WorktreeState (Pending/Ready) tracks creation status
-- **Per-worktree locks**: Fine-grained locking for parallel operations
-- **Version constraint resolution**: Supports semver constraints like "^1.0", "~2.1"
-- **Automatic deduplication**: Multiple refs to same commit automatically share resources
+Centralized `VersionResolver` batch-resolves versions to SHAs upfront. Two-phase: collection → resolution. Single bare repo per source, single fetch per command. SHA-keyed worktrees (one per unique commit). Per-worktree locks for parallelism. Semver constraint support ("^1.0", "~2.1"). Auto-deduplication: refs → same commit share worktree.
 
 ## Multi-Tool Support
 
