@@ -565,12 +565,21 @@ impl TemplateContextBuilder {
         // Build the nested agpm structure
         let mut agpm = Map::new();
 
+        // Get the current resource to access its declared dependencies
+        let current_resource =
+            self.lockfile.find_resource(resource_name, resource_type).with_context(|| {
+                format!(
+                    "Resource '{}' of type {:?} not found in lockfile",
+                    resource_name, resource_type
+                )
+            })?;
+
         // Build current resource data
         let resource_data = self.build_resource_data(resource_name, resource_type)?;
         agpm.insert("resource".to_string(), to_value(resource_data)?);
 
-        // Build dependency data
-        let deps_data = self.build_dependencies_data().await?;
+        // Build dependency data from ALL lockfile resources + current resource's declared dependencies
+        let deps_data = self.build_dependencies_data(current_resource).await?;
         agpm.insert("deps".to_string(), to_value(deps_data)?);
 
         // Add project variables if available
@@ -880,34 +889,204 @@ impl TemplateContextBuilder {
         wrapped
     }
 
+    /// Extract custom dependency names from a resource's frontmatter.
+    ///
+    /// Parses the resource file to extract the `dependencies` declaration and maps
+    /// dependency references to their custom names.
+    ///
+    /// # Returns
+    ///
+    /// A HashMap mapping dependency references (e.g., "snippet/content-1") to custom
+    /// names (e.g., "base") as declared in the resource's frontmatter.
+    async fn extract_dependency_custom_names(
+        &self,
+        resource: &crate::lockfile::LockedResource,
+    ) -> HashMap<String, String> {
+        let mut custom_names = HashMap::new();
+
+        // Determine source path (same logic as extract_content)
+        let source_path = if let Some(_source_name) = &resource.source {
+            // Has source - check if local or Git
+            let url = match resource.url.as_ref() {
+                Some(u) => u,
+                None => return custom_names,
+            };
+
+            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+            if is_local_source {
+                // Local source
+                std::path::PathBuf::from(url).join(&resource.path)
+            } else {
+                // Git source
+                let sha = match resource.resolved_commit.as_deref() {
+                    Some(s) => s,
+                    None => return custom_names,
+                };
+                match self.cache.get_worktree_path(url, sha) {
+                    Ok(worktree_dir) => worktree_dir.join(&resource.path),
+                    Err(_) => return custom_names,
+                }
+            }
+        } else {
+            // Local file
+            let local_path = std::path::Path::new(&resource.path);
+            if local_path.is_absolute() {
+                local_path.to_path_buf()
+            } else {
+                self.project_dir.join(local_path)
+            }
+        };
+
+        // Read and parse the file based on type
+        if resource.path.ends_with(".md") {
+            // Parse markdown frontmatter
+            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
+                if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
+                    if let Some(metadata) = doc.metadata {
+                        // Extract dependencies from frontmatter (they're in metadata.dependencies, not extra)
+                        if let Some(deps_map) = metadata.dependencies {
+                            // Process each resource type (agents, snippets, commands, etc.)
+                            for (resource_type_str, deps_array) in deps_map {
+                                // Convert to ResourceType enum immediately (frontmatter uses plural)
+                                let dep_resource_type = match resource_type_str.as_str() {
+                                    "agents" | "agent" => ResourceType::Agent,
+                                    "snippets" | "snippet" => ResourceType::Snippet,
+                                    "commands" | "command" => ResourceType::Command,
+                                    "scripts" | "script" => ResourceType::Script,
+                                    "hooks" | "hook" => ResourceType::Hook,
+                                    "mcp-servers" | "mcp-server" => ResourceType::McpServer,
+                                    _ => continue, // Skip unknown types
+                                };
+
+                                // deps_array is Vec<DependencySpec>
+                                for dep_spec in deps_array {
+                                    // Get path and name fields from DependencySpec
+                                    let path = &dep_spec.path;
+                                    if let Some(name) = &dep_spec.name {
+                                        // Resolve the dependency path and create a reference
+                                        // The path in the frontmatter is relative to the resource file
+                                        let resource_dir =
+                                            std::path::Path::new(&resource.path).parent();
+                                        let dep_path = if let Some(dir) = resource_dir {
+                                            std::path::Path::new(dir).join(path)
+                                        } else {
+                                            std::path::PathBuf::from(path)
+                                        };
+                                        // Normalize the path to resolve .. components
+                                        let normalized_path = {
+                                            let mut stack: Vec<&str> = Vec::new();
+                                            for component in dep_path.components() {
+                                                match component {
+                                                    std::path::Component::Normal(s) => {
+                                                        if let Some(s_str) = s.to_str() {
+                                                            stack.push(s_str);
+                                                        }
+                                                    }
+                                                    std::path::Component::ParentDir => {
+                                                        stack.pop(); // Remove last component for ..
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            stack.join("/")
+                                        };
+
+                                        // Generate the dependency name (path-based, matching resolver logic)
+                                        let dep_name = self
+                                            .generate_dependency_name_from_path(&normalized_path);
+
+                                        // Create dependency reference (using enum's string form)
+                                        let dep_ref = format!("{}/{}", dep_resource_type, dep_name);
+                                        custom_names.insert(dep_ref, name.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // TODO: Add JSON support if needed
+
+        custom_names
+    }
+
+    /// Generate dependency name from a path (matching resolver logic).
+    fn generate_dependency_name_from_path(&self, path: &str) -> String {
+        // Strip file extension and extract base name
+        let path_without_ext =
+            path.strip_suffix(".md").or_else(|| path.strip_suffix(".json")).unwrap_or(path);
+
+        // Split into components
+        let components: Vec<&str> =
+            path_without_ext.split(&['/', '\\'][..]).filter(|s| !s.is_empty()).collect();
+
+        // Resource type directories
+        let resource_type_dirs =
+            ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+
+        // Find and skip the resource type directory
+        if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
+            components[idx + 1..].join("/")
+        } else if !components.is_empty() {
+            components[components.len() - 1].to_string()
+        } else {
+            path_without_ext.to_string()
+        }
+    }
+
     /// Build dependency data for the template context.
     ///
-    /// This creates a nested structure of all dependencies by resource type and name.
+    /// This creates a nested structure containing:
+    /// 1. ALL resources from the lockfile (path-based names) - for universal access
+    /// 2. Current resource's declared dependencies (custom alias names) - for scoped access
+    ///
+    /// This dual approach ensures:
+    /// - Any resource can access any other resource via path-based names
+    /// - Resources can use custom aliases for their dependencies without collisions
+    ///
+    /// # Arguments
+    ///
+    /// * `current_resource` - The resource being rendered (for scoped alias mapping)
     async fn build_dependencies_data(
         &self,
+        current_resource: &crate::lockfile::LockedResource,
     ) -> Result<HashMap<String, HashMap<String, ResourceTemplateData>>> {
         let mut deps = HashMap::new();
 
-        // Process each resource type
-        for resource_type in [
-            ResourceType::Agent,
-            ResourceType::Snippet,
-            ResourceType::Command,
-            ResourceType::Script,
-            ResourceType::Hook,
-            ResourceType::McpServer,
-        ] {
-            let type_str_plural = resource_type.to_plural().to_string();
-            let type_str_singular = resource_type.to_string();
-            let mut type_deps = HashMap::new();
+        // Helper closure to process a single resource
+        let process_resource = |resource: &crate::lockfile::LockedResource,
+                                dep_type: ResourceType|
+         -> (String, String, ResourceTemplateData) {
+            let type_str_plural = dep_type.to_plural().to_string();
+            let type_str_singular = dep_type.to_string();
 
-            let resources = self.lockfile.get_resources_by_type(resource_type);
-            for resource in resources {
-                // Extract content from source file
-                let content = self.extract_content(resource).await;
+            // Use path-based naming for universal access (never use manifest_alias here)
+            // manifest_alias is only used for scoped custom aliases from frontmatter
+            // For path-like names (containing / or \), extract just the basename
+            // This ensures clean keys like "ai_attribution" instead of full paths
+            let key_name = if resource.name.contains('/') || resource.name.contains('\\') {
+                // Name looks like a path - extract basename without extension
+                std::path::Path::new(&resource.name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&resource.name)
+                    .to_string()
+            } else {
+                // Use name as-is
+                resource.name.clone()
+            };
 
-                let template_data = ResourceTemplateData {
-                    resource_type: type_str_singular.clone(),
+            // Sanitize the key name by replacing hyphens with underscores
+            // to avoid Tera interpreting them as minus operators
+            let sanitized_key = key_name.replace('-', "_");
+
+            (
+                type_str_plural,
+                sanitized_key,
+                ResourceTemplateData {
+                    resource_type: type_str_singular,
                     name: resource.name.clone(),
                     install_path: to_native_path_display(&resource.installed_at),
                     source: resource.source.clone(),
@@ -915,39 +1094,130 @@ impl TemplateContextBuilder {
                     resolved_commit: resource.resolved_commit.clone(),
                     checksum: resource.checksum.clone(),
                     path: resource.path.clone(),
-                    content,
-                };
+                    content: None, // Will be filled in asynchronously
+                },
+            )
+        };
 
-                // Use manifest_alias if available, otherwise use resource name
-                // For path-like names (containing / or \), extract just the basename
-                // This ensures clean keys like "ai_attribution" instead of full paths
-                let key_name = if let Some(alias) = &resource.manifest_alias {
-                    alias.clone()
-                } else if resource.name.contains('/') || resource.name.contains('\\') {
-                    // Name looks like a path - extract basename without extension
-                    std::path::Path::new(&resource.name)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or(&resource.name)
-                        .to_string()
-                } else {
-                    // Use name as-is
-                    resource.name.clone()
-                };
+        // Collect all resources from lockfile
+        let mut resources_to_process = Vec::new();
 
-                // Sanitize the key name by replacing hyphens with underscores
-                // to avoid Tera interpreting them as minus operators
-                let sanitized_key = key_name.replace('-', "_");
-                type_deps.insert(sanitized_key, template_data);
+        for resource in &self.lockfile.agents {
+            resources_to_process.push((resource, ResourceType::Agent));
+        }
+        for resource in &self.lockfile.commands {
+            resources_to_process.push((resource, ResourceType::Command));
+        }
+        for resource in &self.lockfile.snippets {
+            resources_to_process.push((resource, ResourceType::Snippet));
+        }
+        for resource in &self.lockfile.scripts {
+            resources_to_process.push((resource, ResourceType::Script));
+        }
+        for resource in &self.lockfile.hooks {
+            resources_to_process.push((resource, ResourceType::Hook));
+        }
+        for resource in &self.lockfile.mcp_servers {
+            resources_to_process.push((resource, ResourceType::McpServer));
+        }
+
+        tracing::debug!(
+            "Building dependencies data with {} total resources from lockfile",
+            resources_to_process.len()
+        );
+
+        // Process each resource
+        for (resource, dep_type) in resources_to_process {
+            tracing::debug!("  Processing resource: {} ({})", resource.name, dep_type);
+
+            let (type_str_plural, sanitized_key, mut template_data) =
+                process_resource(resource, dep_type);
+
+            // Extract content from source file
+            template_data.content = self.extract_content(resource).await;
+
+            // Insert into the nested structure
+            let type_deps = deps.entry(type_str_plural.clone()).or_insert_with(HashMap::new);
+            type_deps.insert(sanitized_key.clone(), template_data);
+
+            tracing::debug!(
+                "  Added resource: {}[{}] -> {}",
+                type_str_plural,
+                sanitized_key,
+                resource.path
+            );
+        }
+
+        // Now add custom alias mappings for the current resource's declared dependencies
+        // by re-parsing the resource's frontmatter to get custom dependency names
+        tracing::debug!(
+            "Adding alias mappings for {} declared dependencies of '{}'",
+            current_resource.dependencies.len(),
+            current_resource.name
+        );
+
+        // Extract custom dependency names from the current resource's frontmatter
+        let custom_names = self.extract_dependency_custom_names(current_resource).await;
+
+        for (dep_ref, custom_name) in custom_names {
+            // Parse dependency reference format: "type/name"
+            let parts: Vec<&str> = dep_ref.splitn(2, '/').collect();
+            if parts.len() != 2 {
+                continue;
             }
 
-            if !type_deps.is_empty() {
-                deps.insert(type_str_plural, type_deps);
+            let dep_type_str = parts[0];
+            let dep_name = parts[1];
+
+            // Convert to ResourceType enum immediately
+            let dep_type = match dep_type_str {
+                "agent" => ResourceType::Agent,
+                "snippet" => ResourceType::Snippet,
+                "command" => ResourceType::Command,
+                "script" => ResourceType::Script,
+                "hook" => ResourceType::Hook,
+                "mcp-server" => ResourceType::McpServer,
+                _ => continue, // Should not happen since we created these refs
+            };
+
+            // Find the dependency resource in the lockfile
+            let dep_resource = match self.lockfile.find_resource(dep_name, dep_type) {
+                Some(res) => res,
+                None => continue,
+            };
+
+            let type_str_plural = dep_type.to_plural().to_string();
+
+            // Get the existing template data (already added with path-based name)
+            if let Some(type_deps) = deps.get_mut(&type_str_plural) {
+                // Find the existing entry by matching the resource
+                let existing_data = type_deps
+                    .values()
+                    .find(|data| data.name == dep_resource.name && data.path == dep_resource.path);
+
+                if let Some(data) = existing_data {
+                    // Sanitize the custom name
+                    let sanitized_alias = custom_name.replace('-', "_");
+
+                    // Add an alias entry pointing to the same data
+                    // This allows the template to use the custom name
+                    type_deps.insert(sanitized_alias.clone(), data.clone());
+                    tracing::debug!(
+                        "  Added alias: {}[{}] -> {} (from frontmatter)",
+                        type_str_plural,
+                        sanitized_alias,
+                        dep_resource.path
+                    );
+                }
             }
         }
 
-        // Debug: Print what we're building
-        tracing::debug!("Built dependencies data with {} resource types", deps.len());
+        // Debug: Print what we built
+        tracing::debug!(
+            "Built dependencies data with {} resource types for '{}'",
+            deps.len(),
+            current_resource.name
+        );
         for (resource_type, resources) in &deps {
             tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
             for name in resources.keys() {

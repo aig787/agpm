@@ -476,6 +476,17 @@ pub struct DependencyResolver {
     /// The key includes ResourceType to prevent collisions when different resource types
     /// have the same concrete name (e.g., agents/deploy.md and commands/deploy.md).
     pattern_alias_map: HashMap<(ResourceType, String), String>,
+    /// Maps transitive dependency keys to their custom names from DependencySpec.name field.
+    ///
+    /// When a transitive dependency has an explicit `name` field in the parent resource's
+    /// dependency declaration, this map stores that custom name. It's used as the
+    /// manifest_alias when creating the LockedResource entry, allowing template variables
+    /// to use the custom name (e.g., `{{ agpm.deps.snippets.base.content }}`) even though
+    /// the internal resource name is path-based for uniqueness.
+    ///
+    /// Key: (ResourceType, internal_name, source, tool)
+    /// Value: custom name from DependencySpec.name
+    transitive_custom_names: HashMap<DependencyKey, String>,
     /// Optional operation context for warning deduplication.
     ///
     /// When provided, this context is used to deduplicate warning messages
@@ -1365,6 +1376,7 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            transitive_custom_names: HashMap::new(),
             operation_context: context,
         })
     }
@@ -1403,6 +1415,7 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            transitive_custom_names: HashMap::new(),
             operation_context: None,
         })
     }
@@ -1441,6 +1454,7 @@ impl DependencyResolver {
             dependency_map: HashMap::new(),
             conflict_detector: ConflictDetector::new(),
             pattern_alias_map: HashMap::new(),
+            transitive_custom_names: HashMap::new(),
             operation_context: None,
         }
     }
@@ -1955,16 +1969,31 @@ impl DependencyResolver {
                         };
 
                         // Generate a name for the transitive dependency
-                        // Use explicit name from DependencySpec if provided, otherwise derive from path
-                        let trans_name = dep_spec
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| self.generate_dependency_name(trans_dep.get_path()));
+                        // ALWAYS derive from path to ensure uniqueness and avoid collisions
+                        // The `name` field can be stored as manifest_alias for template variable names
+                        let trans_name = self.generate_dependency_name(trans_dep.get_path());
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
                             trans_dep.get_source().map(std::string::ToString::to_string);
                         let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
+
+                        // Store custom name if provided, for use as manifest_alias
+                        if let Some(custom_name) = &dep_spec.name {
+                            let trans_key = (
+                                dep_resource_type,
+                                trans_name.clone(),
+                                trans_source.clone(),
+                                trans_tool.clone(),
+                            );
+                            self.transitive_custom_names.insert(trans_key, custom_name.clone());
+                            tracing::debug!(
+                                "Storing custom name '{}' for transitive dependency '{}'",
+                                custom_name,
+                                trans_name
+                            );
+                        }
+
                         let from_node =
                             DependencyNode::with_source(resource_type, &name, source.clone());
                         let to_node = DependencyNode::with_source(
@@ -2485,8 +2514,19 @@ impl DependencyResolver {
             // Keep all components to avoid collisions
             path_str.to_string()
         } else if components.len() > 1 {
-            // Regular relative path: skip the first component (e.g., "agents", "snippets") and join the rest
-            components[1..].join("/")
+            // Find and skip the resource type directory to get a clean name
+            // Resource type directories: agents, snippets, commands, scripts, hooks, mcp-servers
+            let resource_type_dirs =
+                ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+
+            // Find the index of the first resource type directory
+            if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
+                // Skip everything up to and including the resource type directory
+                components[idx + 1..].join("/")
+            } else {
+                // No resource type directory found, skip just the first component as before
+                components[1..].join("/")
+            }
         } else {
             // Single component, just return it
             components[0].to_string()
@@ -2980,15 +3020,25 @@ impl DependencyResolver {
                 installed_at,
                 dependencies: self.get_dependencies_for(name, None, resource_type, dep.get_tool()),
                 resource_type,
-                tool: Some(
-                    dep.get_tool()
+                tool: Some({
+                    let tool_value = dep
+                        .get_tool()
                         .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
-                ),
-                manifest_alias: self
-                    .pattern_alias_map
-                    .get(&(resource_type, name.to_string()))
-                    .cloned(), // Check if this came from a pattern expansion
+                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+                    tool_value.clone()
+                }),
+                manifest_alias: {
+                    // Check transitive custom names first, then pattern alias map
+                    // IMPORTANT: Use the actual tool value (after applying defaults) for the key
+                    let actual_tool = dep
+                        .get_tool()
+                        .map(std::string::ToString::to_string)
+                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+                    let key = (resource_type, name.to_string(), None, Some(actual_tool));
+                    self.transitive_custom_names.get(&key).cloned().or_else(|| {
+                        self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
+                    })
+                },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
                 template_vars: None,
@@ -3169,11 +3219,19 @@ impl DependencyResolver {
                     dep.get_tool(),
                 ),
                 resource_type,
-                tool: Some(artifact_type_string),
-                manifest_alias: self
-                    .pattern_alias_map
-                    .get(&(resource_type, name.to_string()))
-                    .cloned(), // Check if this came from a pattern expansion
+                tool: Some(artifact_type_string.clone()),
+                manifest_alias: {
+                    // Check transitive custom names first, then pattern alias map
+                    let key = (
+                        resource_type,
+                        name.to_string(),
+                        Some(source_name.to_string()),
+                        Some(artifact_type_string.clone()),
+                    );
+                    self.transitive_custom_names.get(&key).cloned().or_else(|| {
+                        self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
+                    })
+                },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
                 template_vars: None,

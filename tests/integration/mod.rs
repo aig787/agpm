@@ -64,6 +64,7 @@ mod hooks;
 mod incremental_add;
 mod install_field;
 mod list;
+mod lockfile_stability;
 mod lockfile_staleness;
 mod max_parallel_flag;
 mod multi_artifact;
