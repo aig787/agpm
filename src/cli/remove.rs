@@ -903,6 +903,7 @@ test-agent = "../test/agent.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove an agent (should update lockfile)
@@ -1043,6 +1044,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         // Add snippet with installed path (relative to project directory)
@@ -1062,6 +1064,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
 
         lockfile.save(&lockfile_path).unwrap();
@@ -1151,6 +1154,7 @@ test-hook = "../test/hook.json"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.hooks.push(LockedResource {
             name: "test-hook".to_string(),
@@ -1168,6 +1172,7 @@ test-hook = "../test/hook.json"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove script
@@ -1242,6 +1247,7 @@ test-snippet = "../local/snippet.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.snippets.push(LockedResource {
             name: "test-snippet".to_string(),
@@ -1259,6 +1265,7 @@ test-snippet = "../local/snippet.md"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
         // Remove a snippet
@@ -1442,6 +1449,7 @@ test-script = "../test/script.sh"
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

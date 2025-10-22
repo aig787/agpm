@@ -2991,6 +2991,7 @@ impl DependencyResolver {
                     .cloned(), // Check if this came from a pattern expansion
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
+                template_vars: None,
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -3175,6 +3176,7 @@ impl DependencyResolver {
                     .cloned(), // Check if this came from a pattern expansion
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
+                template_vars: None,
             })
         }
     }
@@ -3403,6 +3405,7 @@ impl DependencyResolver {
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
                     install: dep.get_install(),
+                    template_vars: None,
                 });
             }
 
@@ -3597,6 +3600,7 @@ impl DependencyResolver {
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
                     applied_patches: HashMap::new(), // Populated during installation, not resolution
                     install: dep.get_install(),
+                    template_vars: None,
                 });
             }
 

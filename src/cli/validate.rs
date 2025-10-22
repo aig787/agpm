@@ -933,7 +933,10 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
-                    let context = match context_builder.build_context($name, $resource_type).await {
+                    let context = match context_builder
+                        .build_context($name, $resource_type, $entry.template_vars.as_ref())
+                        .await
+                    {
                         Ok(c) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
@@ -1510,6 +1513,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1817,6 +1821,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2830,6 +2835,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3330,6 +3336,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3530,6 +3537,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3702,6 +3710,7 @@ See [helper](.agpm/snippets/helper.md) for details.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3768,6 +3777,7 @@ Also check `.claude/nonexistent.md`.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3836,6 +3846,7 @@ Visit http://example.com for more info.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3906,6 +3917,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3975,6 +3987,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -3991,6 +4004,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
+            template_vars: None,
         });
         lockfile.save(&lockfile_path).unwrap();
 

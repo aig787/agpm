@@ -833,6 +833,19 @@ pub struct LockedResource {
     /// Omitted from TOML serialization when `None` or `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install: Option<bool>,
+
+    /// Template variable overrides applied to this dependency.
+    ///
+    /// Stores the template variable overrides that were specified in the manifest
+    /// for this dependency. These overrides are applied when rendering templates
+    /// to allow customization of generic templates for specific use cases.
+    ///
+    /// The structure matches the template namespace hierarchy
+    /// (e.g., `{ "project": { "language": "python" } }`).
+    ///
+    /// Omitted from TOML serialization when not specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_vars: Option<serde_json::Value>,
 }
 
 fn is_default_tool(tool: &Option<String>) -> bool {
@@ -1260,6 +1273,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     template_vars: None,
     /// };
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
@@ -1287,6 +1301,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     template_vars: None,
     /// };
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
@@ -1337,6 +1352,7 @@ impl LockFile {
     ///     manifest_alias: None,
     ///     applied_patches: std::collections::HashMap::new(),
     ///     install: None,
+    ///     template_vars: None,
     /// };
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
@@ -2210,6 +2226,7 @@ impl LockFile {
     /// #     manifest_alias: None,
     /// #     applied_patches: std::collections::HashMap::new(),
     /// #     install: None,
+    /// #     template_vars: None,
     /// # }, ResourceType::Agent);
     /// let updated = lockfile.update_resource_checksum(
     ///     "my-agent",
@@ -2491,6 +2508,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             true,
         );
@@ -2593,6 +2611,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             true, // is_agent
         );
@@ -2615,6 +2634,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             false, // is_agent
         );
@@ -2637,6 +2657,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             true, // is_agent
         );
@@ -2693,6 +2714,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2728,6 +2750,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             true,
         );
@@ -2750,6 +2773,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             false,
         );
@@ -2772,6 +2796,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2812,6 +2837,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             crate::core::ResourceType::Command,
         );
@@ -2853,6 +2879,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             true,
         );
@@ -2875,6 +2902,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
+                template_vars: None,
             },
             crate::core::ResourceType::Command,
         );

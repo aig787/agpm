@@ -114,6 +114,7 @@ impl PatchDisplay {
 /// #   manifest_alias: None,
 /// #   applied_patches: std::collections::HashMap::new(),
 /// #   install: None,
+/// #   template_vars: None,
 /// };
 ///
 /// let displays = extract_patch_displays(&resource, &cache).await;
