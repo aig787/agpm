@@ -581,13 +581,13 @@ impl InstallCommand {
             {
                 Ok((count, checksums, applied_patches_list)) => {
                     // Update lockfile with checksums
-                    for (name, checksum) in checksums {
-                        lockfile.update_resource_checksum(&name, &checksum);
+                    for (id, checksum) in checksums {
+                        lockfile.update_resource_checksum(&id, &checksum);
                     }
 
                     // Update lockfile with applied patches
-                    for (name, applied_patches) in applied_patches_list {
-                        lockfile.update_resource_applied_patches(&name, &applied_patches);
+                    for (id, applied_patches) in applied_patches_list {
+                        lockfile.update_resource_applied_patches(&id.name, &applied_patches);
                     }
 
                     // Complete installation phase
@@ -1121,6 +1121,8 @@ This is a test agent.",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1183,6 +1185,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1255,6 +1259,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1298,6 +1304,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1340,6 +1348,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1379,6 +1389,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1437,6 +1449,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.add_mcp_server(
@@ -1455,6 +1469,8 @@ Body",
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();

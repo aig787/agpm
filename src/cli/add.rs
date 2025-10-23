@@ -198,6 +198,8 @@ async fn add_dependency_with_manifest_path(
                 tool,
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             }));
         }
     }
@@ -499,6 +501,8 @@ fn parse_dependency_spec(
                 tool: None,
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         ))
     } else if is_local_path {

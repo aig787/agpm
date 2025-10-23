@@ -1166,13 +1166,13 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
 
     if is_template_error {
         // Extract resource name from error chain
-        // Look for "Failed to render template for '{name}'" pattern
+        // Look for "Failed to render template for '{name}'" or "Failed to render frontmatter template in '{path}'" patterns
         let resource_name = error
             .chain()
             .find_map(|e| {
                 let msg = e.to_string();
-                if msg.contains("Failed to render template for") {
-                    // Extract name between single quotes
+                if msg.contains("Failed to render template for") || msg.contains("Failed to render frontmatter template in") {
+                    // Extract name/path between single quotes
                     msg.split("'").nth(1).map(|s| s.to_string())
                 } else {
                     None

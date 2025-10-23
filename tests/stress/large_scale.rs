@@ -70,6 +70,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: None,
                 })),
             );
             total_agents += 1;
@@ -309,6 +310,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: None,
                 })),
             );
             total_agents += 1;
@@ -370,6 +372,7 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: None,
                 })),
             );
         }
@@ -502,6 +505,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+                    template_vars: None,
                 })),
             );
             total_resources += 1;
@@ -539,6 +543,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: None,
             })),
         );
         total_resources += 1;
@@ -695,6 +700,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: None,
             })),
         );
     }
@@ -868,6 +874,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+                template_vars: None,
             })),
         );
     }

@@ -374,11 +374,11 @@ async fn test_install_detects_tool_field_change() -> Result<()> {
     let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
-    // Verify the lockfile does NOT have tool field (claude-code is default, omitted)
+    // Verify the lockfile has tool field explicitly set to claude-code
     let lockfile = project.read_lockfile().await?;
     assert!(
-        !lockfile.contains("tool ="),
-        "Lockfile should omit tool field when using claude-code default"
+        lockfile.contains("tool = \"claude-code\""),
+        "Lockfile should include tool field for clarity"
     );
 
     // Create new manifest with opencode tool explicitly (will be visible in lockfile)

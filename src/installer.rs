@@ -118,8 +118,8 @@ use std::time::Duration;
 /// - **Error context**: Preserves resource name context when installation fails
 /// - **Batch processing**: Enables efficient collection and processing of parallel results
 type InstallResult = Result<
-    (String, bool, String, crate::manifest::patches::AppliedPatches),
-    (String, anyhow::Error),
+    (crate::lockfile::ResourceId, bool, String, crate::manifest::patches::AppliedPatches),
+    (crate::lockfile::ResourceId, anyhow::Error),
 >;
 
 use futures::{
@@ -168,6 +168,8 @@ pub struct InstallContext<'a> {
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
     pub max_content_file_size: Option<u64>,
+    /// Shared template context builder for all resources (optional, created if lockfile available)
+    pub template_context_builder: Option<Arc<crate::templating::TemplateContextBuilder>>,
 }
 
 impl<'a> InstallContext<'a> {
@@ -185,6 +187,19 @@ impl<'a> InstallContext<'a> {
         gitignore_lock: Option<&'a Arc<Mutex<()>>>,
         max_content_file_size: Option<u64>,
     ) -> Self {
+        // Create shared template context builder if lockfile is available
+        let template_context_builder = if let Some(lockfile) = lockfile {
+            let project_config = manifest.and_then(|m| m.project.clone());
+            Some(Arc::new(crate::templating::TemplateContextBuilder::new(
+                lockfile.clone(),
+                project_config,
+                Arc::new(cache.clone()),
+                project_dir.to_path_buf(),
+            )))
+        } else {
+            None
+        };
+
         Self {
             project_dir,
             cache,
@@ -196,6 +211,7 @@ impl<'a> InstallContext<'a> {
             private_patches,
             gitignore_lock,
             max_content_file_size,
+            template_context_builder,
         }
     }
 }
@@ -498,23 +514,12 @@ pub async fn install_resource(
             // Check if content contains template syntax
             tracing::debug!("Template syntax detected in {}, rendering...", entry.name);
 
-            // Build template context if we have lockfile
-            if let Some(lockfile) = context.lockfile {
-                use crate::templating::{TemplateContextBuilder, TemplateRenderer};
+            // Build template context if we have a shared builder
+            if let Some(template_context_builder) = &context.template_context_builder {
+                use crate::templating::TemplateRenderer;
 
                 // Determine resource type from entry
                 let resource_type = entry.resource_type;
-
-                // Extract project config from manifest if available
-                let project_config = context.manifest.and_then(|m| m.project.clone());
-
-                // Build context
-                let template_context_builder = TemplateContextBuilder::new(
-                    lockfile.clone(),
-                    project_config,
-                    Arc::new(context.cache.clone()),
-                    context.project_dir.to_path_buf(),
-                );
 
                 // Compute context digest for cache invalidation
                 // This ensures that changes to dependency versions invalidate the cache
@@ -523,11 +528,18 @@ pub async fn install_resource(
                         format!("Failed to compute template context digest for {}", entry.name)
                     })?;
 
+                let resource_id = crate::lockfile::ResourceId {
+                    name: entry.name.clone(),
+                    source: entry.source.clone(),
+                    tool: entry.tool.clone(),
+                    template_vars: entry.template_vars.clone(),
+                };
                 let template_context = template_context_builder
-                    .build_context(&entry.name, resource_type, entry.template_vars.as_ref())
+                    .build_context(&resource_id, resource_type)
                     .await
-                    .with_context(|| {
-                        format!("Failed to build template context for {}", entry.name)
+                    .map_err(|e| {
+                        // Preserve the full error chain for debugging
+                        anyhow::anyhow!("Failed to build template context for {}: {:#}", entry.name, e)
                     })?;
 
                 // Show verbose output before rendering
@@ -989,9 +1001,9 @@ pub async fn install_resources_parallel(
                         let count = *installed_count.lock().await;
                         pb.set_message(format!("Installing {count}/{total} resources"));
                         pb.inc(1);
-                        Ok((entry.name.clone(), actually_installed, checksum, applied_patches))
+                        Ok((entry.id(), actually_installed, checksum, applied_patches))
                     }
-                    Err(err) => Err((entry.name.clone(), err)),
+                    Err(err) => Err((entry.id(), err)),
                 }
             }
         })
@@ -1002,23 +1014,39 @@ pub async fn install_resources_parallel(
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum, _applied_patches)) => {
+            Ok((_id, _installed, _checksum, _applied_patches)) => {
                 // Old function doesn't return checksums or patches
             }
-            Err((name, error)) => {
-                errors.push((name, error));
+            Err((id, error)) => {
+                errors.push((id, error));
             }
         }
     }
 
     if !errors.is_empty() {
         let error_msgs: Vec<String> =
-            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
+            errors.into_iter().map(|(id, error)| format!("  {}: {error}", id.name)).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
             error_msgs.join("\n")
         ));
+    }
+
+    // Clear render cache and log statistics
+    if let Some(builder) = &install_ctx.template_context_builder {
+        if let Some((hits, misses, hit_rate)) = builder.render_cache_stats() {
+            let total = hits + misses;
+            if total > 0 {
+                tracing::info!(
+                    "Render cache: {} hits, {} misses ({:.1}% hit rate)",
+                    hits,
+                    misses,
+                    hit_rate
+                );
+            }
+        }
+        builder.clear_render_cache();
     }
 
     let final_count = *installed_count.lock().await;
@@ -1407,9 +1435,9 @@ pub async fn install_resources_parallel_with_progress(
 
                 match res {
                     Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                        Ok((entry.id(), installed, checksum, applied_patches))
                     }
-                    Err(err) => Err((entry.name.clone(), err)),
+                    Err(err) => Err((entry.id(), err)),
                 }
             }
         })
@@ -1420,23 +1448,39 @@ pub async fn install_resources_parallel_with_progress(
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum, _applied_patches)) => {
+            Ok((_id, _installed, _checksum, _applied_patches)) => {
                 // Old function doesn't return checksums or patches
             }
-            Err((name, error)) => {
-                errors.push((name, error));
+            Err((id, error)) => {
+                errors.push((id, error));
             }
         }
     }
 
     if !errors.is_empty() {
         let error_msgs: Vec<String> =
-            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
+            errors.into_iter().map(|(id, error)| format!("  {}: {error}", id.name)).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
             error_msgs.join("\n")
         ));
+    }
+
+    // Clear render cache and log statistics
+    if let Some(builder) = &install_ctx.template_context_builder {
+        if let Some((hits, misses, hit_rate)) = builder.render_cache_stats() {
+            let total = hits + misses;
+            if total > 0 {
+                tracing::info!(
+                    "Render cache: {} hits, {} misses ({:.1}% hit rate)",
+                    hits,
+                    misses,
+                    hit_rate
+                );
+            }
+        }
+        builder.clear_render_cache();
     }
 
     let final_count = *installed_count.lock().await;
@@ -1657,8 +1701,11 @@ pub async fn install_resources(
     max_concurrency: Option<usize>,
     progress: Option<Arc<MultiPhaseProgress>>,
     verbose: bool,
-) -> Result<(usize, Vec<(String, String)>, Vec<(String, crate::manifest::patches::AppliedPatches)>)>
-{
+) -> Result<(
+    usize,
+    Vec<(crate::lockfile::ResourceId, String)>,
+    Vec<(crate::lockfile::ResourceId, crate::manifest::patches::AppliedPatches)>,
+)> {
     // Collect entries to install based on filter
     let all_entries: Vec<(LockedResource, String)> = match filter {
         ResourceFilter::All => {
@@ -1800,9 +1847,9 @@ pub async fn install_resources(
 
                 match res {
                     Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                        Ok((entry.id(), installed, checksum, applied_patches))
                     }
-                    Err(err) => Err((entry.name.clone(), err)),
+                    Err(err) => Err((entry.id(), err)),
                 }
             }
         })
@@ -1816,12 +1863,12 @@ pub async fn install_resources(
     let mut applied_patches_list = Vec::new();
     for result in results {
         match result {
-            Ok((name, _installed, checksum, applied_patches)) => {
-                checksums.push((name.clone(), checksum));
-                applied_patches_list.push((name, applied_patches));
+            Ok((id, _installed, checksum, applied_patches)) => {
+                checksums.push((id.clone(), checksum));
+                applied_patches_list.push((id, applied_patches));
             }
-            Err((name, error)) => {
-                errors.push((name, error));
+            Err((id, error)) => {
+                errors.push((id, error));
             }
         }
     }
@@ -1833,7 +1880,7 @@ pub async fn install_resources(
         }
 
         let error_msgs: Vec<String> =
-            errors.into_iter().map(|(name, error)| format!("  {name}: {error}")).collect();
+            errors.into_iter().map(|(id, error)| format!("  {}: {error}", id.name)).collect();
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
@@ -2045,9 +2092,9 @@ pub async fn install_resources_with_dynamic_progress(
 
                 match res {
                     Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.name.clone(), installed, checksum, applied_patches))
+                        Ok((entry.id(), installed, checksum, applied_patches))
                     }
-                    Err(err) => Err((entry.name.clone(), err)),
+                    Err(err) => Err((entry.id(), err)),
                 }
             }
         })

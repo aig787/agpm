@@ -933,8 +933,14 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
+                    let resource_id = crate::lockfile::ResourceId {
+                        name: $name.to_string(),
+                        source: $entry.source.clone(),
+                        tool: $entry.tool.clone(),
+                        template_vars: $entry.template_vars.clone(),
+                    };
                     let context = match context_builder
-                        .build_context($name, $resource_type, $entry.template_vars.as_ref())
+                        .build_context(&resource_id, $resource_type)
                         .await
                     {
                         Ok(c) => c,
@@ -1355,6 +1361,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -1430,6 +1438,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -1617,6 +1627,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -1694,6 +1706,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -1972,6 +1986,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2059,6 +2075,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2276,6 +2294,8 @@ mod tests {
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -2364,6 +2384,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -2413,6 +2435,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -2463,6 +2487,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             true,
@@ -2484,6 +2510,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
             false,
@@ -2608,6 +2636,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
         );
@@ -2630,6 +2660,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
         );
@@ -2684,6 +2716,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     tool: Some("claude-code".to_string()),
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 },
             )),
         );
@@ -3410,6 +3444,8 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
         manifest.save(&manifest_path).unwrap();

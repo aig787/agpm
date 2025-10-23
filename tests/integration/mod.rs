@@ -34,6 +34,8 @@
 //! - **outdated**: Outdated dependency detection
 //! - **patch_integration**: Patch/override functionality
 //! - **pattern**: Pattern-based dependency installation
+//! - **project_template_vars**: Project-level template variables in transitive dependencies
+//! - **resource_template_vars**: Resource-specific template variables with transitive dependencies
 //! - **transitive**: Transitive dependency resolution
 //! - **tree**: Dependency tree visualization
 //! - **upd_progress**: Update progress reporting
@@ -74,7 +76,9 @@ mod patch_integration;
 mod pattern;
 mod prefixed_versions;
 mod project_template_vars;
+mod resource_template_vars;
 mod templating;
+mod test_transitive_deps_complex;
 mod tool_enable_disable;
 mod transitive;
 mod tree;

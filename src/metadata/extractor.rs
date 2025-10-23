@@ -213,6 +213,7 @@ https://github.com/aig787/agpm#transitive-dependencies",
                 Ok(dependencies) => {
                     let metadata = DependencyMetadata {
                         dependencies: Some(dependencies),
+                        agpm: None,
                     };
                     // Validate resource types (catch tool names used as types)
                     Self::validate_resource_types(&metadata, path)?;
@@ -408,7 +409,8 @@ https://github.com/aig787/agpm#transitive-dependencies",
             &["agents", "commands", "snippets", "hooks", "mcp-servers", "scripts"];
         const TOOL_NAMES: &[&str] = &["claude-code", "opencode", "agpm"];
 
-        if let Some(ref dependencies) = metadata.dependencies {
+        // Check both root-level and nested dependencies
+        if let Some(dependencies) = metadata.get_dependencies() {
             for resource_type in dependencies.keys() {
                 if !VALID_RESOURCE_TYPES.contains(&resource_type.as_str()) {
                     if TOOL_NAMES.contains(&resource_type.as_str()) {

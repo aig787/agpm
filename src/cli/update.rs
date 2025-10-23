@@ -500,13 +500,13 @@ impl UpdateCommand {
             .await?;
 
             // Update lockfile with checksums in-memory
-            for (name, checksum) in checksums {
-                new_lockfile.update_resource_checksum(&name, &checksum);
+            for (id, checksum) in checksums {
+                new_lockfile.update_resource_checksum(&id, &checksum);
             }
 
             // Update lockfile with applied patches
-            for (name, applied_patches) in applied_patches_list {
-                new_lockfile.update_resource_applied_patches(&name, &applied_patches);
+            for (id, applied_patches) in applied_patches_list {
+                new_lockfile.update_resource_applied_patches(&id.name, &applied_patches);
             }
 
             // Complete installation phase
@@ -641,6 +641,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 

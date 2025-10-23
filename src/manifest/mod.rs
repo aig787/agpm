@@ -649,6 +649,39 @@ fn toml_value_to_json(value: &toml::Value) -> serde_json::Value {
     }
 }
 
+/// Convert a JSON value to a TOML value.
+///
+/// This is the reverse of `toml_value_to_json` and is used when merging
+/// template_vars (which are stored as JSON) with project config (which uses TOML).
+pub(crate) fn json_value_to_toml(value: &serde_json::Value) -> toml::Value {
+    match value {
+        serde_json::Value::String(s) => toml::Value::String(s.clone()),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                toml::Value::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                toml::Value::Float(f)
+            } else {
+                // Fallback for numbers that don't fit i64 or f64
+                toml::Value::String(n.to_string())
+            }
+        }
+        serde_json::Value::Bool(b) => toml::Value::Boolean(*b),
+        serde_json::Value::Null => {
+            // TOML doesn't have a null type - represent as empty string
+            toml::Value::String(String::new())
+        }
+        serde_json::Value::Array(arr) => {
+            toml::Value::Array(arr.iter().map(json_value_to_toml).collect())
+        }
+        serde_json::Value::Object(obj) => {
+            let table: toml::map::Map<String, toml::Value> =
+                obj.iter().map(|(k, v)| (k.clone(), json_value_to_toml(v))).collect();
+            toml::Value::Table(table)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     /// Named source repositories mapped to their Git URLs.
@@ -1314,6 +1347,58 @@ pub struct DetailedDependency {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install: Option<bool>,
+
+    /// Template variable overrides for this specific resource.
+    ///
+    /// Allows specializing generic resources for different use cases by overriding
+    /// template variables. These variables are merged with (and take precedence over)
+    /// the global `[project]` configuration when rendering this resource and resolving
+    /// its transitive dependencies.
+    ///
+    /// This enables creating multiple variants of the same resource without duplication.
+    /// For example, a single `backend-engineer.md` agent can be specialized for different
+    /// languages by providing different `template_vars` for each variant.
+    ///
+    /// The structure matches the template namespace hierarchy (e.g., `{ "project": { "language": "golang" } }`).
+    ///
+    /// # Examples
+    ///
+    /// ```toml
+    /// [agents]
+    /// # Generic backend engineer agent specialized for different languages
+    /// backend-engineer-golang = {
+    ///     source = "community",
+    ///     path = "agents/backend-engineer.md",
+    ///     version = "v1.0.0",
+    ///     filename = "backend-engineer-golang.md",
+    ///     template_vars = { project = { language = "golang" } }
+    /// }
+    ///
+    /// backend-engineer-python = {
+    ///     source = "community",
+    ///     path = "agents/backend-engineer.md",
+    ///     version = "v1.0.0",
+    ///     filename = "backend-engineer-python.md",
+    ///     template_vars = { project = { language = "python", framework = "fastapi" } }
+    /// }
+    /// ```
+    ///
+    /// The agent at `agents/backend-engineer.md` can use templates like:
+    /// ```markdown
+    /// # Backend Engineer for {{ agpm.project.language }}
+    ///
+    /// ---
+    /// dependencies:
+    ///   snippets:
+    ///     - path: ../best-practices/{{ agpm.project.language }}-best-practices.md
+    /// ---
+    /// ```
+    ///
+    /// Each variant will resolve its transitive dependencies using its specific `template_vars`,
+    /// so the golang variant resolves `golang-best-practices.md` while python resolves
+    /// `python-best-practices.md`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_vars: Option<serde_json::Value>,
 }
 
 impl Manifest {
@@ -1816,6 +1901,7 @@ impl Manifest {
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
     ///         install: None,
+    ///         template_vars: None,
     ///     })),
     ///     true
     /// );
@@ -2711,6 +2797,7 @@ impl Manifest {
     ///         tool: Some("claude-code".to_string()),
     ///         flatten: None,
     ///         install: None,
+    ///         template_vars: None,
     ///     })),
     ///     false  // is_agent = false (snippet)
     /// );
@@ -2834,7 +2921,9 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///     template_vars: None,
     /// }));
+    /// assert_eq!(remote.get_source(), Some("official"));
     /// assert_eq!(remote.get_source(), Some("official"));
     /// ```
     ///
@@ -2878,6 +2967,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     /// assert_eq!(custom.get_target(), Some("custom/tools"));
     ///
@@ -2935,6 +3025,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     install: None,
     ///     flatten: None,
+    ///     template_vars: None,
     /// }));
     /// assert_eq!(custom.get_filename(), Some("ai-assistant.md"));
     ///
@@ -2994,6 +3085,48 @@ impl ResourceDependency {
         }
     }
 
+    /// Get the template variable overrides for this resource.
+    ///
+    /// Returns the resource-specific template variables that override the global
+    /// `[project]` configuration. These variables are used when:
+    /// - Rendering the resource file itself
+    /// - Resolving the resource's transitive dependencies
+    ///
+    /// This allows creating specialized variants of generic resources without duplication.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+    /// use serde_json::json;
+    ///
+    /// // Resource with template variable overrides
+    /// let resource = ResourceDependency::Detailed(Box::new(DetailedDependency {
+    ///     source: Some("community".to_string()),
+    ///     path: "agents/backend-engineer.md".to_string(),
+    ///     version: Some("v1.0.0".to_string()),
+    ///     branch: None,
+    ///     rev: None,
+    ///     command: None,
+    ///     args: None,
+    ///     target: None,
+    ///     filename: Some("backend-engineer-golang.md".to_string()),
+    ///     dependencies: None,
+    ///     tool: Some("claude-code".to_string()),
+    ///     flatten: None,
+    ///     install: None,
+    ///     template_vars: Some(json!({ "project": { "language": "golang" } })),
+    /// }));
+    ///
+    /// assert!(resource.get_template_vars().is_some());
+    /// ```
+    pub fn get_template_vars(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::Simple(_) => None,
+            Self::Detailed(d) => d.template_vars.as_ref(),
+        }
+    }
+
     /// Get the path to the resource file.
     ///
     /// Returns the path component of the dependency, which is interpreted
@@ -3026,6 +3159,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///     template_vars: None,
     /// }));
     /// assert_eq!(remote.get_path(), "agents/code-reviewer.md");
     /// ```
@@ -3084,6 +3218,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     ///
     /// assert_eq!(dep.get_version(), Some("develop"));
@@ -3113,6 +3248,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     /// assert_eq!(versioned.get_version(), Some("v1.0.0"));
     ///
@@ -3131,6 +3267,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     /// assert_eq!(branch_ref.get_version(), Some("main"));
     /// ```
@@ -3186,6 +3323,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     /// assert!(!remote.is_local());
     ///
@@ -3204,6 +3342,7 @@ impl ResourceDependency {
     ///     tool: Some("claude-code".to_string()),
     ///     flatten: None,
     ///     install: None,
+    ///         template_vars: None,
     /// }));
     /// assert!(local_detailed.is_local());
     /// ```
@@ -3553,6 +3692,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -3594,6 +3735,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -3627,6 +3770,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
         assert_eq!(detailed_dep.get_path(), "agents/test.md");
         assert_eq!(detailed_dep.get_source(), Some("official"));
@@ -3746,6 +3891,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             crate::core::ResourceType::Command,
         );
@@ -3784,6 +3931,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -3835,6 +3984,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert_eq!(dep.get_target(), Some("custom/tools"));
@@ -3858,6 +4009,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert!(dep.get_target().is_none());
@@ -3897,6 +4050,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -3929,6 +4084,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert_eq!(dep.get_filename(), Some("ai-assistant.md"));
@@ -3952,6 +4109,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert!(dep.get_filename().is_none());
@@ -3991,6 +4150,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             crate::core::ResourceType::Agent,
         );
@@ -4023,6 +4184,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert!(dep.is_pattern());
@@ -4054,6 +4217,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -4076,6 +4241,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -4107,6 +4274,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -4131,6 +4300,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         assert_eq!(dep.get_target(), Some("tools/ai"));
@@ -4926,5 +5097,103 @@ test-snippet = { source = "test", path = "snippets/test.md", version = "v1.0.0",
 
         // This should pass - merge_target is valid for any resource type
         assert!(result.is_ok());
+    }
+}
+
+#[cfg(test)]
+mod template_vars_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_template_vars_from_detailed_dependency() {
+        // Test that template_vars field is correctly parsed from TOML
+        let toml = r#"
+[sources]
+community = "https://github.com/example/community.git"
+
+[agents]
+backend-engineer-golang = { source = "community", path = "agents/backend-engineer.md", version = "v1.0.0", template_vars = { project = { language = "golang" } } }
+backend-engineer-python = { source = "community", path = "agents/backend-engineer.md", version = "v1.0.0", template_vars = { project = { language = "python", framework = "fastapi" } } }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).unwrap();
+
+        // Check golang variant
+        let golang_dep = manifest.agents.get("backend-engineer-golang").unwrap();
+        match golang_dep {
+            ResourceDependency::Detailed(detailed) => {
+                assert!(
+                    detailed.template_vars.is_some(),
+                    "template_vars should be parsed from TOML"
+                );
+                let vars = detailed.template_vars.as_ref().unwrap();
+
+                // Verify structure
+                assert!(vars.is_object(), "template_vars should be a JSON object");
+                let obj = vars.as_object().unwrap();
+                assert!(obj.contains_key("project"), "Should have 'project' key");
+
+                let project = obj.get("project").unwrap().as_object().unwrap();
+                assert_eq!(
+                    project.get("language").unwrap().as_str().unwrap(),
+                    "golang",
+                    "Should have language=golang"
+                );
+            }
+            _ => panic!("Should be DetailedDependency"),
+        }
+
+        // Check python variant
+        let python_dep = manifest.agents.get("backend-engineer-python").unwrap();
+        match python_dep {
+            ResourceDependency::Detailed(detailed) => {
+                let vars = detailed.template_vars.as_ref().unwrap();
+                let project =
+                    vars.as_object().unwrap().get("project").unwrap().as_object().unwrap();
+
+                assert_eq!(project.get("language").unwrap().as_str().unwrap(), "python");
+                assert_eq!(project.get("framework").unwrap().as_str().unwrap(), "fastapi");
+            }
+            _ => panic!("Should be DetailedDependency"),
+        }
+    }
+
+    #[test]
+    fn test_template_vars_optional() {
+        // Test that template_vars is optional - dependencies without it should still parse
+        let toml = r#"
+[sources]
+community = "https://github.com/example/community.git"
+
+[agents]
+without-vars = { source = "community", path = "agents/simple.md", version = "v1.0.0" }
+with-vars = { source = "community", path = "agents/advanced.md", version = "v1.0.0", template_vars = { project = { language = "rust" } } }
+"#;
+
+        let manifest: Manifest = toml::from_str(toml).unwrap();
+
+        // Without template_vars
+        let without = manifest.agents.get("without-vars").unwrap();
+        match without {
+            ResourceDependency::Detailed(detailed) => {
+                assert!(
+                    detailed.template_vars.is_none(),
+                    "template_vars should be None when not specified"
+                );
+            }
+            _ => panic!("Should be DetailedDependency"),
+        }
+
+        // With template_vars
+        let with = manifest.agents.get("with-vars").unwrap();
+        match with {
+            ResourceDependency::Detailed(detailed) => {
+                assert!(
+                    detailed.template_vars.is_some(),
+                    "template_vars should be Some when specified"
+                );
+            }
+            _ => panic!("Should be DetailedDependency"),
+        }
     }
 }

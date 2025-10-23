@@ -118,19 +118,72 @@ pub struct DependencyMetadata {
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
+
+    /// AGPM-specific metadata wrapper.
+    ///
+    /// Supports AGPM-specific fields like templating:
+    /// ```yaml
+    /// agpm:
+    ///   templating: true
+    /// dependencies:
+    ///   snippets:
+    ///     - path: snippets/utils.md
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agpm: Option<AgpmMetadata>,
+}
+
+/// AGPM-specific metadata section.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgpmMetadata {
+    /// Whether templating is enabled for this resource.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub templating: Option<bool>,
+
+    /// Nested dependencies under agpm section.
+    ///
+    /// Supports the nested structure:
+    /// ```yaml
+    /// agpm:
+    ///   templating: true
+    ///   dependencies:
+    ///     snippets:
+    ///       - path: snippets/utils.md
+    /// ```
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
 }
 
 impl DependencyMetadata {
+    /// Get the effective dependencies, checking both root-level and nested locations.
+    ///
+    /// Prefers nested `agpm.dependencies` if present, otherwise uses root-level `dependencies`.
+    /// If both exist, nested takes precedence (more specific).
+    pub fn get_dependencies(&self) -> Option<&HashMap<String, Vec<DependencySpec>>> {
+        // Check nested dependencies first (more specific)
+        if let Some(agpm) = &self.agpm {
+            if let Some(deps) = &agpm.dependencies {
+                return Some(deps);
+            }
+        }
+        // Fall back to root-level dependencies
+        self.dependencies.as_ref()
+    }
+
     /// Check if this metadata contains any dependencies.
+    ///
+    /// Checks both root-level and nested `agpm.dependencies`.
     pub fn has_dependencies(&self) -> bool {
-        self.dependencies
-            .as_ref()
+        self.get_dependencies()
             .is_some_and(|deps| !deps.is_empty() && deps.values().any(|v| !v.is_empty()))
     }
 
     /// Get the total count of dependencies.
+    ///
+    /// Counts dependencies from the effective location (nested or root-level).
     pub fn dependency_count(&self) -> usize {
-        self.dependencies.as_ref().map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
+        self.get_dependencies()
+            .map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
     }
 
     /// Merge another metadata into this one.

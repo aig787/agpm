@@ -1114,6 +1114,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -1139,6 +1141,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
         );
 
@@ -1550,6 +1554,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let dep_with_different_source =
@@ -1567,6 +1573,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());

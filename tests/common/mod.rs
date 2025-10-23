@@ -448,6 +448,12 @@ impl TestSourceRepo {
         fs::create_dir_all(&resource_dir).await?;
 
         let file_path = resource_dir.join(format!("{}.md", name));
+
+        // Create parent directories if the name contains slashes
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
         fs::write(&file_path, content).await?;
         Ok(())
     }

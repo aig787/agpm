@@ -459,6 +459,92 @@ impl std::fmt::Display for StalenessReason {
 
 impl std::error::Error for StalenessReason {}
 
+/// Unique identifier for a resource in the lockfile.
+///
+/// This struct ensures type-safe identification of lockfile entries by combining
+/// the resource name, source, and tool. Resources are considered unique when they
+/// have distinct combinations of these fields:
+///
+/// - Same name, different sources: Different repositories providing same-named resources
+/// - Same name, different tools: Resources used by different tools (e.g., Claude Code vs OpenCode)
+/// - Same name and source, different tools: Transitive dependencies inherited from different parent tools
+///
+/// # Examples
+///
+/// ```rust
+/// use agpm_cli::lockfile::ResourceId;
+///
+/// // Local resource (no source)
+/// let local = ResourceId::new("my-agent", None::<String>, Some("claude-code"), None);
+///
+/// // Git resource from a source
+/// let git = ResourceId::new("shared-agent", Some("community"), Some("claude-code"), None);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResourceId {
+    /// The name of the resource
+    pub name: String,
+    /// The source repository name (None for local resources)
+    pub source: Option<String>,
+    /// The tool identifier (e.g., "claude-code", "opencode", "agpm")
+    pub tool: Option<String>,
+    /// The complete merged template variable context
+    ///
+    /// This contains the full template context that was used during dependency
+    /// resolution, including both global project config and resource-specific overrides.
+    /// Two resources with different template_vars are considered distinct, even if
+    /// they have the same name, source, and tool.
+    pub template_vars: Option<serde_json::Value>,
+}
+
+impl ResourceId {
+    /// Create a new ResourceId
+    pub fn new(
+        name: impl Into<String>,
+        source: Option<impl Into<String>>,
+        tool: Option<impl Into<String>>,
+        template_vars: Option<serde_json::Value>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            source: source.map(|s| s.into()),
+            tool: tool.map(|t| t.into()),
+            template_vars,
+        }
+    }
+
+    /// Create a ResourceId from a LockedResource
+    pub fn from_resource(resource: &LockedResource) -> Self {
+        Self {
+            name: resource.name.clone(),
+            source: resource.source.clone(),
+            tool: resource.tool.clone(),
+            template_vars: resource.template_vars.clone(),
+        }
+    }
+}
+
+impl std::fmt::Display for ResourceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(ref source) = self.source {
+            write!(f, " (source: {})", source)?;
+        }
+        if let Some(ref tool) = self.tool {
+            write!(f, " [{}]", tool)?;
+        }
+        if let Some(ref vars) = self.template_vars {
+            // Show compact representation of template_vars
+            if let Some(obj) = vars.as_object() {
+                if !obj.is_empty() {
+                    write!(f, " <vars: {} keys>", obj.len())?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The main lockfile structure representing a complete `agpm.lock` file.
 ///
 /// This structure contains all resolved dependencies, source repositories, and their
@@ -776,8 +862,8 @@ pub struct LockedResource {
     /// When None during deserialization, will be set based on resource type's default
     /// (e.g., snippets default to "agpm", others to "claude-code").
     ///
-    /// Always serialized (even if Some) to avoid ambiguity.
-    #[serde(skip_serializing_if = "is_default_tool")]
+    /// Always serialized for clarity and to avoid ambiguity.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
 
     /// Original manifest alias for pattern-expanded dependencies.
@@ -848,6 +934,38 @@ pub struct LockedResource {
     pub template_vars: Option<serde_json::Value>,
 }
 
+impl LockedResource {
+    /// Get the unique identifier for this resource.
+    ///
+    /// Returns a ResourceId that uniquely identifies this resource by combining
+    /// its name, source, tool, and template_vars. This is the canonical way to identify
+    /// a resource for operations like checksum updates and lookups.
+    #[must_use]
+    pub fn id(&self) -> ResourceId {
+        ResourceId {
+            name: self.name.clone(),
+            source: self.source.clone(),
+            tool: self.tool.clone(),
+            template_vars: self.template_vars.clone(),
+        }
+    }
+
+    /// Check if this resource matches the given ResourceId.
+    ///
+    /// This compares all identifying fields: name, source, tool, and template_vars.
+    /// Template_vars are part of the identity for reproducibility - the same resource
+    /// with different template_vars produces different artifacts, so they must be
+    /// tracked in the lockfile as separate entries.
+    #[must_use]
+    pub fn matches_id(&self, id: &ResourceId) -> bool {
+        self.name == id.name
+            && self.source == id.source
+            && self.tool == id.tool
+            && self.template_vars == id.template_vars
+    }
+}
+
+#[allow(dead_code)]
 fn is_default_tool(tool: &Option<String>) -> bool {
     // Default tool is claude-code, so always skip serializing when it's Some("claude-code")
     matches!(tool, Some(t) if t == "claude-code")
@@ -1382,50 +1500,17 @@ impl LockFile {
         resources.push(resource);
     }
 
-    /// Get a locked resource by name, searching across all resource types.
+    /// Internal helper for name-based resource lookup.
     ///
-    /// Searches for a resource with the given name in the agents, snippets, commands,
-    /// scripts, hooks, and mcp-servers collections. This method returns the first match found,
-    /// which is suitable when resource names are unique or when the source doesn't matter.
+    /// Searches across all resource types for a resource with the given name.
+    /// Returns the first match found.
     ///
-    /// **Note**: When multiple resources have the same name from different sources (common with
-    /// transitive dependencies), this method returns the first match based on search order.
-    /// For precise lookups that distinguish between sources, use [`Self::get_resource_by_source`].
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to search for
-    ///
-    /// # Returns
-    ///
-    /// * `Some(&LockedResource)` - Reference to the first matching resource
-    /// * `None` - No resource with that name exists
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// // Simple lookup when resource names are unique
-    /// if let Some(resource) = lockfile.get_resource("example-agent") {
-    ///     println!("Found resource: {}", resource.installed_at);
-    /// } else {
-    ///     println!("Resource not found");
-    /// }
-    /// ```
-    ///
-    /// # Search Order
-    ///
-    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
-    /// If multiple resource types or sources have the same name, the first match will be returned.
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Precise lookup with source filtering for handling same-named resources from different sources
+    /// **Note**: This is an internal method used by `has_resource` and `validate_against_manifest`.
+    /// External callers should use `find_resource_by_id(&ResourceId)` for proper ResourceId-based lookup.
     #[must_use]
-    pub fn get_resource(&self, name: &str) -> Option<&LockedResource> {
+    pub(crate) fn get_resource(&self, name: &str) -> Option<&LockedResource> {
         // Simple name matching - may return first of multiple resources with same name
-        // For precise matching when duplicates exist, use get_resource_by_source()
+        // For precise matching when duplicates exist, use find_resource_by_id()
         self.agents
             .iter()
             .find(|r| r.name == name)
@@ -1436,66 +1521,6 @@ impl LockFile {
             .or_else(|| self.mcp_servers.iter().find(|r| r.name == name))
     }
 
-    /// Get a locked resource by name and source.
-    ///
-    /// This method provides precise resource lookup when multiple resources share the same name
-    /// but come from different sources. This commonly occurs with transitive dependencies where
-    /// different dependency chains pull in the same resource name from different repositories.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Resource name to search for
-    /// * `source` - Optional source name to match (None matches resources without a source, e.g., local resources)
-    ///
-    /// # Returns
-    ///
-    /// First matching resource with the specified name and source, or None if not found.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use agpm_cli::lockfile::LockFile;
-    /// # let lockfile = LockFile::new();
-    /// // When multiple resources have the same name from different sources
-    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("community")) {
-    ///     println!("Found helper from community source: {}", resource.installed_at);
-    /// }
-    ///
-    /// if let Some(resource) = lockfile.get_resource_by_source("helper", Some("internal")) {
-    ///     println!("Found helper from internal source: {}", resource.installed_at);
-    /// }
-    ///
-    /// // Match local resources (no source)
-    /// if let Some(resource) = lockfile.get_resource_by_source("local-helper", None) {
-    ///     println!("Found local resource: {}", resource.installed_at);
-    /// }
-    /// ```
-    ///
-    /// # Search Order
-    ///
-    /// The method searches in order: agents, snippets, commands, scripts, hooks, mcp-servers.
-    /// Only resources matching both the name AND source are returned.
-    ///
-    /// # See Also
-    ///
-    /// * [`get_resource`](Self::get_resource) - Simple name-based lookup without source filtering
-    #[must_use]
-    pub fn get_resource_by_source(
-        &self,
-        name: &str,
-        source: Option<&str>,
-    ) -> Option<&LockedResource> {
-        let matches = |r: &&LockedResource| r.name == name && r.source.as_deref() == source;
-
-        self.agents
-            .iter()
-            .find(matches)
-            .or_else(|| self.snippets.iter().find(matches))
-            .or_else(|| self.commands.iter().find(matches))
-            .or_else(|| self.scripts.iter().find(matches))
-            .or_else(|| self.hooks.iter().find(matches))
-            .or_else(|| self.mcp_servers.iter().find(matches))
-    }
 
     /// Get a locked source repository by name.
     ///
@@ -2134,10 +2159,7 @@ impl LockFile {
     /// }
     /// ```
     ///
-    /// # See Also
-    ///
-    /// * [`get_resource`](Self::get_resource) - Search across all resource types
-    /// * [`get_resource_by_source`](Self::get_resource_by_source) - Search with source filtering
+    /// **Note**: External callers should prefer `find_resource_by_id(&ResourceId)` for ResourceId-based lookup.
     #[must_use]
     pub fn find_resource(
         &self,
@@ -2145,6 +2167,84 @@ impl LockFile {
         resource_type: crate::core::ResourceType,
     ) -> Option<&LockedResource> {
         self.get_resources(resource_type).iter().find(|r| r.name == name)
+    }
+
+    /// Find a resource by its complete ResourceId.
+    ///
+    /// This is THE canonical way to look up resources in the lockfile.
+    /// It ensures proper identification by checking all fields: name, source, tool,
+    /// and template_vars.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The complete ResourceId to search for
+    ///
+    /// # Returns
+    ///
+    /// * `Some(&LockedResource)` - Reference to the matching resource
+    /// * `None` - No resource with that exact ID exists
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::{LockFile, ResourceId};
+    /// # use serde_json::json;
+    /// # let lockfile = LockFile::new();
+    /// // Find resource with specific template_vars
+    /// let id = ResourceId::new(
+    ///     "backend-engineer",
+    ///     Some("community"),
+    ///     Some("claude-code"),
+    ///     Some(json!({"project": {"language": "python"}}))
+    /// );
+    ///
+    /// if let Some(resource) = lockfile.find_resource_by_id(&id) {
+    ///     println!("Found: {}", resource.installed_at);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn find_resource_by_id(&self, id: &ResourceId) -> Option<&LockedResource> {
+        // Search all resource types for exact ResourceId match
+        self.agents.iter().find(|r| r.matches_id(id))
+            .or_else(|| self.snippets.iter().find(|r| r.matches_id(id)))
+            .or_else(|| self.commands.iter().find(|r| r.matches_id(id)))
+            .or_else(|| self.scripts.iter().find(|r| r.matches_id(id)))
+            .or_else(|| self.hooks.iter().find(|r| r.matches_id(id)))
+            .or_else(|| self.mcp_servers.iter().find(|r| r.matches_id(id)))
+    }
+
+    /// Find a mutable resource reference by its complete ResourceId.
+    ///
+    /// This is the mutable version of `find_resource_by_id`. Use this when you need
+    /// to modify the resource (e.g., update checksums, applied_patches, etc.).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The complete ResourceId to search for
+    ///
+    /// # Returns
+    ///
+    /// * `Some(&mut LockedResource)` - Mutable reference to the matching resource
+    /// * `None` - No resource with that exact ID exists
+    #[must_use]
+    pub fn find_resource_by_id_mut(&mut self, id: &ResourceId) -> Option<&mut LockedResource> {
+        // Search all resource types for exact ResourceId match (mutable)
+        if let Some(r) = self.agents.iter_mut().find(|r| r.matches_id(id)) {
+            return Some(r);
+        }
+        if let Some(r) = self.snippets.iter_mut().find(|r| r.matches_id(id)) {
+            return Some(r);
+        }
+        if let Some(r) = self.commands.iter_mut().find(|r| r.matches_id(id)) {
+            return Some(r);
+        }
+        if let Some(r) = self.scripts.iter_mut().find(|r| r.matches_id(id)) {
+            return Some(r);
+        }
+        if let Some(r) = self.hooks.iter_mut().find(|r| r.matches_id(id)) {
+            return Some(r);
+        }
+        self.mcp_servers.iter_mut().find(|r| r.matches_id(id))
     }
 
     /// Get all resources of a specific type for templating.
@@ -2192,12 +2292,15 @@ impl LockFile {
 
     /// Update the checksum for a specific resource in the lockfile.
     ///
-    /// This method finds a resource by name across all resource types and updates
-    /// its checksum value. Used after installation to record the actual file checksum.
+    /// This method finds a resource by its unique identifier and updates its checksum value.
+    /// Used after installation to record the actual file checksum.
+    ///
+    /// The ResourceId ensures type-safe identification by combining name, source, and tool,
+    /// which uniquely identifies a lockfile entry even when multiple resources share the same name.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the resource to update
+    /// * `id` - The unique identifier for the resource
     /// * `checksum` - The new SHA-256 checksum in "sha256:hex" format
     ///
     /// # Returns
@@ -2207,7 +2310,7 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// # use agpm_cli::lockfile::{LockFile, LockedResource, ResourceId};
     /// # use agpm_cli::core::ResourceType;
     /// # let mut lockfile = LockFile::default();
     /// # // First add a resource to update
@@ -2228,51 +2331,49 @@ impl LockFile {
     /// #     install: None,
     /// #     template_vars: None,
     /// # }, ResourceType::Agent);
-    /// let updated = lockfile.update_resource_checksum(
-    ///     "my-agent",
-    ///     "sha256:abcdef123456..."
-    /// );
+    /// let id = ResourceId::new("my-agent", None::<String>, Some("claude-code"), None);
+    /// let updated = lockfile.update_resource_checksum(&id, "sha256:abcdef123456...");
     /// assert!(updated);
     /// ```
-    pub fn update_resource_checksum(&mut self, name: &str, checksum: &str) -> bool {
-        // Try each resource type until we find a match
+    pub fn update_resource_checksum(&mut self, id: &ResourceId, checksum: &str) -> bool {
+        // Try each resource type until we find a match by comparing ResourceIds
         for resource in &mut self.agents {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
         }
 
         for resource in &mut self.snippets {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
         }
 
         for resource in &mut self.commands {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
         }
 
         for resource in &mut self.scripts {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
         }
 
         for resource in &mut self.hooks {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
         }
 
         for resource in &mut self.mcp_servers {
-            if resource.name == name {
+            if resource.id() == *id {
                 resource.checksum = checksum.to_string();
                 return true;
             }
@@ -2910,5 +3011,375 @@ mod tests {
         // get_resource should return agent (higher precedence)
         let resource = lockfile.get_resource("helper").unwrap();
         assert_eq!(resource.installed_at, "agents/helper.md");
+    }
+
+    // ========== ResourceId Tests ==========
+
+    #[test]
+    fn test_resource_id_with_template_vars_distinct() {
+        use serde_json::json;
+
+        let mut lockfile = LockFile::new();
+
+        // Add same resource with different template_vars
+        let template_vars_python = json!({
+            "project": {
+                "language": "python"
+            }
+        });
+
+        let template_vars_rust = json!({
+            "project": {
+                "language": "rust"
+            }
+        });
+
+        lockfile.add_resource(
+            "python-agent".to_string(),
+            LockedResource {
+                name: "python-agent".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/generic-dev.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:python".to_string(),
+                installed_at: ".claude/agents/python-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: Some(template_vars_python.clone()),
+            },
+            true,
+        );
+
+        lockfile.add_resource(
+            "rust-agent".to_string(),
+            LockedResource {
+                name: "rust-agent".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/generic-dev.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:rust".to_string(),
+                installed_at: ".claude/agents/rust-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: Some(template_vars_rust.clone()),
+            },
+            true,
+        );
+
+        // Both should exist as distinct resources
+        assert_eq!(lockfile.agents.len(), 2);
+
+        // Test find_resource_by_id matches correctly
+        let python_id = ResourceId {
+            name: "python-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars_python.clone()),
+        };
+
+        let rust_id = ResourceId {
+            name: "rust-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars_rust.clone()),
+        };
+
+        let python_resource = lockfile.find_resource_by_id(&python_id).unwrap();
+        assert_eq!(python_resource.checksum, "sha256:python");
+        assert_eq!(python_resource.template_vars, Some(template_vars_python));
+
+        let rust_resource = lockfile.find_resource_by_id(&rust_id).unwrap();
+        assert_eq!(rust_resource.checksum, "sha256:rust");
+        assert_eq!(rust_resource.template_vars, Some(template_vars_rust));
+    }
+
+    #[test]
+    fn test_find_resource_by_id_matches_all_fields() {
+        use serde_json::json;
+
+        let mut lockfile = LockFile::new();
+
+        let template_vars = json!({"lang": "python"});
+
+        lockfile.add_resource(
+            "test".to_string(),
+            LockedResource {
+                name: "test".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:test".to_string(),
+                installed_at: ".claude/agents/test.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: Some(template_vars.clone()),
+            },
+            true,
+        );
+
+        // Match all fields - should find
+        let id_exact = ResourceId {
+            name: "test".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+        assert!(lockfile.find_resource_by_id(&id_exact).is_some());
+
+        // Different name - should not find
+        let id_different_name = ResourceId {
+            name: "other".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+        assert!(lockfile.find_resource_by_id(&id_different_name).is_none());
+
+        // Different source - should not find
+        let id_different_source = ResourceId {
+            name: "test".to_string(),
+            source: Some("other".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+        assert!(lockfile.find_resource_by_id(&id_different_source).is_none());
+
+        // Different tool - should not find
+        let id_different_tool = ResourceId {
+            name: "test".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("opencode".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+        assert!(lockfile.find_resource_by_id(&id_different_tool).is_none());
+
+        // Different template_vars - should not find
+        let id_different_vars = ResourceId {
+            name: "test".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(json!({"lang": "rust"})),
+        };
+        assert!(lockfile.find_resource_by_id(&id_different_vars).is_none());
+
+        // None template_vars - should not find
+        let id_no_vars = ResourceId {
+            name: "test".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
+        assert!(lockfile.find_resource_by_id(&id_no_vars).is_none());
+    }
+
+    #[test]
+    fn test_template_vars_serialization() {
+        use serde_json::json;
+
+        let temp = tempdir().unwrap();
+        let lockfile_path = temp.path().join("agpm.lock");
+
+        let mut lockfile = LockFile::new();
+
+        let template_vars = json!({
+            "project": {
+                "language": "python",
+                "framework": "fastapi"
+            },
+            "custom": {
+                "style": "functional"
+            }
+        });
+
+        lockfile.add_resource(
+            "python-agent".to_string(),
+            LockedResource {
+                name: "python-agent".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/generic.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:python".to_string(),
+                installed_at: ".claude/agents/python-agent.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: Some(template_vars.clone()),
+            },
+            true,
+        );
+
+        // Save
+        lockfile.save(&lockfile_path).unwrap();
+
+        // Load
+        let loaded = LockFile::load(&lockfile_path).unwrap();
+
+        // Verify template_vars survived the round-trip
+        let resource_id = ResourceId {
+            name: "python-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+
+        let loaded_resource = loaded.find_resource_by_id(&resource_id).unwrap();
+        assert_eq!(loaded_resource.template_vars, Some(template_vars));
+
+        // Verify the JSON structure is intact
+        let vars = loaded_resource.template_vars.as_ref().unwrap();
+        assert_eq!(vars["project"]["language"], "python");
+        assert_eq!(vars["project"]["framework"], "fastapi");
+        assert_eq!(vars["custom"]["style"], "functional");
+    }
+
+    #[test]
+    fn test_empty_vs_missing_template_vars() {
+        use serde_json::json;
+
+        let mut lockfile = LockFile::new();
+
+        // Resource with None template_vars
+        lockfile.add_resource(
+            "agent-none".to_string(),
+            LockedResource {
+                name: "agent-none".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:none".to_string(),
+                installed_at: ".claude/agents/agent-none.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: None,
+            },
+            true,
+        );
+
+        // Resource with empty object template_vars
+        lockfile.add_resource(
+            "agent-empty".to_string(),
+            LockedResource {
+                name: "agent-empty".to_string(),
+                source: Some("community".to_string()),
+                url: Some("https://github.com/example/community.git".to_string()),
+                path: "agents/test.md".to_string(),
+                version: Some("v1.0.0".to_string()),
+                resolved_commit: Some("abc123".to_string()),
+                checksum: "sha256:empty".to_string(),
+                installed_at: ".claude/agents/agent-empty.md".to_string(),
+                dependencies: vec![],
+                resource_type: crate::core::ResourceType::Agent,
+                tool: Some("claude-code".to_string()),
+                manifest_alias: None,
+                applied_patches: std::collections::HashMap::new(),
+                install: None,
+                template_vars: Some(json!({})),
+            },
+            true,
+        );
+
+        // These should be distinct resources
+        let id_none = ResourceId {
+            name: "agent-none".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
+
+        let id_empty = ResourceId {
+            name: "agent-empty".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(json!({})),
+        };
+
+        // Find each by its exact ID
+        let resource_none = lockfile.find_resource_by_id(&id_none).unwrap();
+        assert_eq!(resource_none.checksum, "sha256:none");
+        assert_eq!(resource_none.template_vars, None);
+
+        let resource_empty = lockfile.find_resource_by_id(&id_empty).unwrap();
+        assert_eq!(resource_empty.checksum, "sha256:empty");
+        assert_eq!(resource_empty.template_vars, Some(json!({})));
+
+        // Cross-matching should fail (they are distinct)
+        assert!(lockfile.find_resource_by_id(&ResourceId {
+            name: "agent-none".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(json!({})),
+        }).is_none());
+
+        assert!(lockfile.find_resource_by_id(&ResourceId {
+            name: "agent-empty".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        }).is_none());
+    }
+
+    #[test]
+    fn test_resource_id_to_id_conversion() {
+        use serde_json::json;
+
+        let template_vars = json!({"lang": "python"});
+
+        let resource = LockedResource {
+            name: "test-agent".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123".to_string()),
+            checksum: "sha256:test".to_string(),
+            installed_at: ".claude/agents/test.md".to_string(),
+            dependencies: vec![],
+            resource_type: crate::core::ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            template_vars: Some(template_vars.clone()),
+        };
+
+        // Test id() method
+        let id = resource.id();
+
+        assert_eq!(id.name, "test-agent");
+        assert_eq!(id.source, Some("community".to_string()));
+        assert_eq!(id.tool, Some("claude-code".to_string()));
+        assert_eq!(id.template_vars, Some(template_vars));
+
+        // Verify the resource matches its own ID
+        assert!(resource.matches_id(&id));
     }
 }

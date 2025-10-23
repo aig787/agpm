@@ -252,10 +252,10 @@ pub mod filters;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, to_string, to_value};
+use serde_json::{Map, Value, to_string, to_value};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tera::{Context as TeraContext, Tera};
 
 use crate::core::ResourceType;
@@ -294,7 +294,7 @@ const NON_TEMPLATED_LITERAL_GUARD_END: &str = "__AGPM_LITERAL_RAW_END__";
 /// let result = deep_merge_json(base, &overrides);
 /// // result: { "project": { "name": "agpm", "language": "python", "framework": "fastapi" } }
 /// ```
-pub fn deep_merge_json(mut base: JsonValue, overrides: &JsonValue) -> JsonValue {
+pub fn deep_merge_json(mut base: Value, overrides: &Value) -> Value {
     match (base.as_object_mut(), overrides.as_object()) {
         (Some(base_obj), Some(override_obj)) => {
             // Both are objects - recursively merge
@@ -355,6 +355,127 @@ pub fn to_native_path_display(unix_path: &str) -> String {
     }
 }
 
+/// Cache key for rendered template content.
+///
+/// Uniquely identifies a rendered version of a resource based on:
+/// - The source file path (canonical path to the resource)
+/// - The resource type (Agent, Snippet, Command, etc.)
+/// - Template variable overrides (hashed for efficient comparison)
+///
+/// This ensures that the same resource with different template_vars
+/// produces different cache entries, while identical resources share
+/// cached content across multiple parent resources.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RenderCacheKey {
+    /// Canonical path to the resource file in the source repository
+    resource_path: String,
+    /// Resource type (Agent, Snippet, etc.)
+    resource_type: ResourceType,
+    /// Hash of template_vars JSON (None for resources without overrides)
+    template_vars_hash: Option<u64>,
+}
+
+impl RenderCacheKey {
+    /// Create a new cache key with template variable hash
+    fn new(
+        resource_path: String,
+        resource_type: ResourceType,
+        template_vars: Option<&Value>,
+    ) -> Self {
+        let template_vars_hash = template_vars.map(|vars| {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            // Serialize to stable JSON string for hashing
+            let json_str = serde_json::to_string(vars).unwrap_or_default();
+            let mut hasher = DefaultHasher::new();
+            json_str.hash(&mut hasher);
+            hasher.finish()
+        });
+
+        Self {
+            resource_path,
+            resource_type,
+            template_vars_hash,
+        }
+    }
+}
+
+/// Cache for rendered template content during installation.
+///
+/// This cache stores rendered content to avoid re-rendering the same
+/// dependencies multiple times. It lives for the duration of a single
+/// install operation and is cleared afterward.
+///
+/// # Performance Impact
+///
+/// For installations with many transitive dependencies (e.g., 145+ resources),
+/// this cache prevents O(N²) rendering complexity by ensuring each unique
+/// resource is rendered only once, regardless of how many parents depend on it.
+///
+/// # Cache Invalidation
+///
+/// The cache is cleared after each installation completes. It does not
+/// persist across operations, ensuring that file changes are always reflected
+/// in subsequent installations.
+#[derive(Debug, Default)]
+struct RenderCache {
+    /// Map from cache key to rendered content
+    cache: HashMap<RenderCacheKey, String>,
+    /// Cache statistics
+    hits: usize,
+    misses: usize,
+}
+
+impl RenderCache {
+    /// Create a new empty render cache
+    fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+            hits: 0,
+            misses: 0,
+        }
+    }
+
+    /// Get cached rendered content if available
+    fn get(&mut self, key: &RenderCacheKey) -> Option<&String> {
+        if let Some(content) = self.cache.get(key) {
+            self.hits += 1;
+            Some(content)
+        } else {
+            self.misses += 1;
+            None
+        }
+    }
+
+    /// Insert rendered content into the cache
+    fn insert(&mut self, key: RenderCacheKey, content: String) {
+        self.cache.insert(key, content);
+    }
+
+    /// Clear all cached content
+    fn clear(&mut self) {
+        self.cache.clear();
+        self.hits = 0;
+        self.misses = 0;
+    }
+
+    /// Get cache statistics
+    fn stats(&self) -> (usize, usize) {
+        (self.hits, self.misses)
+    }
+
+    /// Calculate hit rate as a percentage
+    fn hit_rate(&self) -> f64 {
+        let total = self.hits + self.misses;
+        if total == 0 {
+            0.0
+        } else {
+            (self.hits as f64 / total as f64) * 100.0
+        }
+    }
+}
+
 /// Template context builder for AGPM resource installation.
 ///
 /// This struct is responsible for building the template context that will be
@@ -405,6 +526,9 @@ pub struct TemplateContextBuilder {
     cache: Arc<crate::cache::Cache>,
     /// Project root directory for resolving local file paths
     project_dir: PathBuf,
+    /// Cache of rendered content to avoid re-rendering same dependencies
+    /// Shared via Arc<Mutex> for safe concurrent access during template rendering
+    render_cache: Arc<Mutex<RenderCache>>,
 }
 
 /// Template renderer with Tera engine and custom functions.
@@ -503,7 +627,29 @@ impl TemplateContextBuilder {
             project_config,
             cache,
             project_dir,
+            render_cache: Arc::new(Mutex::new(RenderCache::new())),
         }
+    }
+
+    /// Clear the render cache.
+    ///
+    /// Should be called after installation completes to free memory
+    /// and ensure next installation starts with a fresh cache.
+    pub fn clear_render_cache(&self) {
+        if let Ok(mut cache) = self.render_cache.lock() {
+            cache.clear();
+        }
+    }
+
+    /// Get render cache statistics.
+    ///
+    /// Returns (hits, misses, hit_rate) where hit_rate is a percentage.
+    pub fn render_cache_stats(&self) -> Option<(usize, usize, f64)> {
+        self.render_cache.lock().ok().map(|cache| {
+            let (hits, misses) = cache.stats();
+            let hit_rate = cache.hit_rate();
+            (hits, misses, hit_rate)
+        })
     }
 
     /// Build the complete template context for a specific resource.
@@ -556,30 +702,69 @@ impl TemplateContextBuilder {
     /// ```
     pub async fn build_context(
         &self,
-        resource_name: &str,
+        resource_id: &crate::lockfile::ResourceId,
         resource_type: ResourceType,
-        template_vars_override: Option<&JsonValue>,
     ) -> Result<TeraContext> {
+        self.build_context_with_visited(
+            resource_id,
+            resource_type,
+            &mut std::collections::HashSet::new(),
+        )
+        .await
+    }
+
+    async fn build_context_with_visited(
+        &self,
+        resource_id: &crate::lockfile::ResourceId,
+        resource_type: ResourceType,
+        rendering_stack: &mut std::collections::HashSet<String>,
+    ) -> Result<TeraContext> {
+        tracing::info!(
+            "[BUILD_CONTEXT] Starting context build for '{}' (type: {:?})",
+            resource_id.name,
+            resource_type
+        );
+
         let mut context = TeraContext::new();
 
         // Build the nested agpm structure
         let mut agpm = Map::new();
 
         // Get the current resource to access its declared dependencies
-        let current_resource =
-            self.lockfile.find_resource(resource_name, resource_type).with_context(|| {
-                format!(
-                    "Resource '{}' of type {:?} not found in lockfile",
-                    resource_name, resource_type
-                )
-            })?;
+        let current_resource = self.lockfile.find_resource_by_id(resource_id).with_context(|| {
+            format!(
+                "Resource '{}' of type {:?} not found in lockfile (source: {:?}, tool: {:?})",
+                resource_id.name, resource_type, resource_id.source, resource_id.tool
+            )
+        })?;
+
+        tracing::info!(
+            "[BUILD_CONTEXT] Found resource '{}' with {} dependencies",
+            resource_id.name,
+            current_resource.dependencies.len()
+        );
 
         // Build current resource data
-        let resource_data = self.build_resource_data(resource_name, resource_type)?;
+        let resource_data = self.build_resource_data(&resource_id.name, resource_type)?;
         agpm.insert("resource".to_string(), to_value(resource_data)?);
 
         // Build dependency data from ALL lockfile resources + current resource's declared dependencies
-        let deps_data = self.build_dependencies_data(current_resource).await?;
+        tracing::info!(
+            "[BUILD_CONTEXT] Building dependencies data for '{}'...",
+            resource_id.name
+        );
+        let deps_data = self.build_dependencies_data(current_resource, rendering_stack).await
+            .with_context(|| {
+                format!(
+                    "Failed to build dependencies data for resource '{}' (type: {:?})",
+                    resource_id.name,
+                    resource_type
+                )
+            })?;
+        tracing::info!(
+            "[BUILD_CONTEXT] Successfully built dependencies data with {} types",
+            deps_data.len()
+        );
         agpm.insert("deps".to_string(), to_value(deps_data)?);
 
         // Add project variables if available
@@ -595,52 +780,56 @@ impl TemplateContextBuilder {
         context.insert("agpm", &agpm);
 
         // Apply template variable overrides if provided
-        if let Some(overrides) = template_vars_override {
+        if let Some(overrides) = &resource_id.template_vars {
             tracing::debug!(
                 "Applying template variable overrides for resource '{}'",
-                resource_name
+                resource_id.name
             );
 
             // Convert context to JSON for merging
             let mut context_json = context.clone().into_json();
 
-            // Special handling for 'project' overrides:
-            // 1. Deep merge override.project with agpm.project
-            // 2. Place merged result at BOTH agpm.project AND top-level project
-            if let Some(project_override) = overrides.get("project") {
-                if let Some(agpm_obj) = context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
-                {
-                    if let Some(original_project) = agpm_obj.get("project") {
-                        // Deep merge override into original
-                        let merged_project =
-                            deep_merge_json(original_project.clone(), project_override);
+            // Iterate through all keys in template_vars and merge them
+            for (key, value) in overrides.as_object().unwrap_or(&serde_json::Map::new()) {
+                if key == "project" {
+                    // Project vars need to be in both agpm.project and top-level project
+                    let original_project = context_json
+                        .get("agpm")
+                        .and_then(|v| v.as_object())
+                        .and_then(|o| o.get("project"))
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-                        // Update agpm.project with merged result
+                    let merged_project = deep_merge_json(original_project, value);
+
+                    // Update agpm.project
+                    if let Some(agpm_obj) =
+                        context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
+                    {
                         agpm_obj.insert("project".to_string(), merged_project.clone());
-
-                        // Also add merged result at top-level for convenience
-                        // SAFETY: context.into_json() always produces an object at the top level
-                        context_json
-                            .as_object_mut()
-                            .expect("context JSON must be an object")
-                            .insert("project".to_string(), merged_project);
-                    } else {
-                        // No original project, just use override
-                        // SAFETY: context.into_json() always produces an object at the top level
-                        context_json
-                            .as_object_mut()
-                            .expect("context JSON must be an object")
-                            .insert("project".to_string(), project_override.clone());
                     }
+
+                    // Update top-level project
+                    // SAFETY: context.into_json() always produces an object at the top level
+                    context_json
+                        .as_object_mut()
+                        .expect("context JSON must be an object")
+                        .insert("project".to_string(), merged_project);
+                } else {
+                    // Other vars go to top-level context only
+                    let original = context_json
+                        .get(key)
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                    let merged = deep_merge_json(original, value);
+
+                    // SAFETY: context.into_json() always produces an object at the top level
+                    context_json
+                        .as_object_mut()
+                        .expect("context JSON must be an object")
+                        .insert(key.clone(), merged);
                 }
             }
-
-            // Deep merge any other overrides into context (excluding 'project' which we handled above)
-            let mut other_overrides = overrides.clone();
-            if let Some(obj) = other_overrides.as_object_mut() {
-                obj.remove("project");
-            }
-            context_json = deep_merge_json(context_json, &other_overrides);
 
             // Replace context with merged result
             context = TeraContext::from_serialize(&context_json)
@@ -904,6 +1093,51 @@ impl TemplateContextBuilder {
     ) -> HashMap<String, String> {
         let mut custom_names = HashMap::new();
 
+        // Get the resolved dependencies from the lockfile
+        // These are in the format "type/name" where name is the resolved path
+        let lockfile_deps = &resource.dependencies;
+
+        // Debug: log ALL resources to understand what's being processed
+        if !lockfile_deps.is_empty() {
+            tracing::info!(
+                "[EXTRACT_CUSTOM] Processing resource '{}' (type: {:?}) with {} lockfile dependencies",
+                resource.name,
+                resource.resource_type,
+                lockfile_deps.len()
+            );
+            for dep in lockfile_deps {
+                tracing::info!("  [EXTRACT_CUSTOM] Lockfile dep: '{}'", dep);
+            }
+        }
+
+        // Build a lookup structure upfront to avoid O(n³) nested loops
+        // Map: type -> Vec<(basename, full_dep_ref)>
+        let mut lockfile_lookup: HashMap<&str, Vec<(String, String)>> = HashMap::new();
+
+        for lockfile_dep_ref in lockfile_deps {
+            // Parse lockfile dependency ref: "type/name" or "type/name@version"
+            let parts: Vec<&str> = lockfile_dep_ref.splitn(2, '/').collect();
+            if parts.len() != 2 {
+                continue;
+            }
+
+            let lockfile_type = parts[0];
+            // Strip version suffix if present (format: name@version)
+            let lockfile_name = parts[1].split('@').next().unwrap_or(parts[1]);
+
+            // Extract basename from lockfile name
+            let lockfile_basename = std::path::Path::new(lockfile_name)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(lockfile_name)
+                .to_string();
+
+            lockfile_lookup
+                .entry(lockfile_type)
+                .or_insert_with(Vec::new)
+                .push((lockfile_basename, lockfile_dep_ref.to_string()));
+        }
+
         // Determine source path (same logic as extract_content)
         let source_path = if let Some(_source_name) = &resource.source {
             // Has source - check if local or Git
@@ -948,57 +1182,69 @@ impl TemplateContextBuilder {
                         if let Some(deps_map) = metadata.dependencies {
                             // Process each resource type (agents, snippets, commands, etc.)
                             for (resource_type_str, deps_array) in deps_map {
-                                // Convert to ResourceType enum (frontmatter uses plural)
-                                let dep_resource_type = match resource_type_str.as_str() {
-                                    "agents" | "agent" => ResourceType::Agent,
-                                    "snippets" | "snippet" => ResourceType::Snippet,
-                                    "commands" | "command" => ResourceType::Command,
-                                    "scripts" | "script" => ResourceType::Script,
-                                    "hooks" | "hook" => ResourceType::Hook,
-                                    "mcp-servers" | "mcp-server" => ResourceType::McpServer,
+                                // Convert frontmatter type to lockfile type (singular)
+                                let lockfile_type = match resource_type_str.as_str() {
+                                    "agents" | "agent" => "agent",
+                                    "snippets" | "snippet" => "snippet",
+                                    "commands" | "command" => "command",
+                                    "scripts" | "script" => "script",
+                                    "hooks" | "hook" => "hook",
+                                    "mcp-servers" | "mcp-server" => "mcp-server",
                                     _ => continue, // Skip unknown types
+                                };
+
+                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                                let type_entries = match lockfile_lookup.get(lockfile_type) {
+                                    Some(entries) => entries,
+                                    None => continue, // No lockfile deps of this type
                                 };
 
                                 // deps_array is Vec<DependencySpec>
                                 for dep_spec in deps_array {
-                                    // Get path and custom name fields from DependencySpec
                                     let path = &dep_spec.path;
-                                    if let Some(name) = &dep_spec.name {
-                                        // Resolve the dependency path relative to resource file
-                                        let resource_dir =
-                                            std::path::Path::new(&resource.path).parent();
-                                        let dep_path = if let Some(dir) = resource_dir {
-                                            std::path::Path::new(dir).join(path)
-                                        } else {
-                                            std::path::PathBuf::from(path)
-                                        };
+                                    if let Some(custom_name) = &dep_spec.name {
+                                        // Extract basename from the path (without extension)
+                                        let basename = std::path::Path::new(path)
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(path);
 
-                                        // Normalize the path to resolve .. components
-                                        let normalized_path = {
-                                            let mut stack: Vec<&str> = Vec::new();
-                                            for component in dep_path.components() {
-                                                match component {
-                                                    std::path::Component::Normal(s) => {
-                                                        if let Some(s_str) = s.to_str() {
-                                                            stack.push(s_str);
-                                                        }
+                                        tracing::info!(
+                                            "[EXTRACT_CUSTOM] Found custom name '{}' for path '{}' (basename: '{}')",
+                                            custom_name,
+                                            path,
+                                            basename
+                                        );
+
+                                        // Check if basename has template variables
+                                        if basename.contains("{{") {
+                                            // Template variable in basename - try suffix matching
+                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                            if let Some(static_suffix_start) = basename.find("}}") {
+                                                let static_suffix = &basename[static_suffix_start + 2..];
+
+                                                // Search for any lockfile basename ending with this suffix
+                                                for (lockfile_basename, lockfile_dep_ref) in type_entries {
+                                                    if lockfile_basename.ends_with(static_suffix) {
+                                                        custom_names.insert(
+                                                            lockfile_dep_ref.clone(),
+                                                            custom_name.to_string(),
+                                                        );
                                                     }
-                                                    std::path::Component::ParentDir => {
-                                                        stack.pop(); // Remove last component for ..
-                                                    }
-                                                    _ => {}
                                                 }
                                             }
-                                            stack.join("/")
-                                        };
-
-                                        // Generate the dependency name (path-based, matching resolver logic)
-                                        let dep_name = self
-                                            .generate_dependency_name_from_path(&normalized_path);
-
-                                        // Create dependency reference (using enum's string form)
-                                        let dep_ref = format!("{}/{}", dep_resource_type, dep_name);
-                                        custom_names.insert(dep_ref, name.to_string());
+                                        } else {
+                                            // No template variables - exact basename match (O(n) but only within type)
+                                            for (lockfile_basename, lockfile_dep_ref) in type_entries {
+                                                if lockfile_basename == basename {
+                                                    custom_names.insert(
+                                                        lockfile_dep_ref.clone(),
+                                                        custom_name.to_string(),
+                                                    );
+                                                    break; // Found exact match, no need to continue
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1013,26 +1259,111 @@ impl TemplateContextBuilder {
     }
 
     /// Generate dependency name from a path (matching resolver logic).
+    ///
+    /// For local transitive dependencies, the resolver uses the full relative path
+    /// (without extension) as the resource name to maintain uniqueness.
+    #[allow(dead_code)]
     fn generate_dependency_name_from_path(&self, path: &str) -> String {
-        // Strip file extension and extract base name
-        let path_without_ext =
-            path.strip_suffix(".md").or_else(|| path.strip_suffix(".json")).unwrap_or(path);
+        // Strip file extension - this matches what the resolver stores as the name
+        path.strip_suffix(".md").or_else(|| path.strip_suffix(".json")).unwrap_or(path).to_string()
+    }
 
-        // Split into components
-        let components: Vec<&str> =
-            path_without_ext.split(&['/', '\\'][..]).filter(|s| !s.is_empty()).collect();
+    /// Helper function to add a custom name alias to the dependencies map.
+    ///
+    /// This function searches for an already-processed resource in the `deps` map and creates
+    /// an alias entry with the custom name. The resource should have already been added to
+    /// `deps` with its path-based key during the main processing loop.
+    ///
+    /// Note: This function doesn't need to do lockfile lookups with ResourceId because it
+    /// searches within the already-built `deps` map. The deps map was built from the lockfile
+    /// with all the correct template_vars and content.
+    fn add_custom_alias(
+        deps: &mut BTreeMap<String, BTreeMap<String, ResourceTemplateData>>,
+        dep_ref: &str,
+        custom_name: &str,
+    ) {
+        // Parse dependency reference format: "type/name" or "type/name@version"
+        let parts: Vec<&str> = dep_ref.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            tracing::debug!(
+                "Skipping invalid dep_ref format '{}' for custom name '{}'",
+                dep_ref,
+                custom_name
+            );
+            return;
+        }
 
-        // Resource type directories
-        let resource_type_dirs =
-            ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+        let dep_type_str = parts[0];
+        // Strip version suffix if present (format: name@version)
+        let dep_name = parts[1].split('@').next().unwrap_or(parts[1]);
 
-        // Find and skip the resource type directory
-        if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
-            components[idx + 1..].join("/")
-        } else if !components.is_empty() {
-            components[components.len() - 1].to_string()
+        // Convert to ResourceType enum to get plural form
+        let dep_type = match dep_type_str {
+            "agent" => ResourceType::Agent,
+            "snippet" => ResourceType::Snippet,
+            "command" => ResourceType::Command,
+            "script" => ResourceType::Script,
+            "hook" => ResourceType::Hook,
+            "mcp-server" => ResourceType::McpServer,
+            _ => {
+                tracing::debug!(
+                    "Skipping unknown resource type '{}' in dep_ref '{}' for custom name '{}'",
+                    dep_type_str,
+                    dep_ref,
+                    custom_name
+                );
+                return;
+            }
+        };
+
+        let type_str_plural = dep_type.to_plural().to_string();
+
+        // Search for the resource in the deps map (already populated from lockfile)
+        if let Some(type_deps) = deps.get_mut(&type_str_plural) {
+            // The resource should already exist in the map with its path-based key
+            // Find it by matching the ResourceTemplateData.name field (which is the lockfile name)
+            let existing_data = type_deps
+                .values()
+                .find(|data| {
+                    // Match by the actual lockfile resource name
+                    data.name == dep_name
+                })
+                .cloned();
+
+            if let Some(data) = existing_data {
+                // Sanitize the alias (replace hyphens with underscores for Tera)
+                let sanitized_alias = custom_name.replace('-', "_");
+
+                tracing::info!(
+                    "[ADD_ALIAS] ✓ Added {} alias '{}' -> resource '{}' (path: {})",
+                    type_str_plural,
+                    sanitized_alias,
+                    dep_name,
+                    data.path
+                );
+
+                // Add an alias entry pointing to the same data
+                type_deps.insert(sanitized_alias.clone(), data);
+            } else {
+                tracing::error!(
+                    "[ADD_ALIAS] ❌ NOT FOUND: {} resource '{}' for alias '{}'.\n  \
+                    Dep ref: '{}'\n  \
+                    Available {} (first 5): {}",
+                    type_str_plural,
+                    dep_name,
+                    custom_name,
+                    dep_ref,
+                    type_deps.len(),
+                    type_deps.iter().take(5).map(|(k, v)| format!("'{}' (name='{}')", k, v.name)).collect::<Vec<_>>().join(", ")
+                );
+            }
         } else {
-            path_without_ext.to_string()
+            tracing::debug!(
+                "Resource type '{}' not found in deps map when adding custom alias '{}' for '{}'",
+                type_str_plural,
+                custom_name,
+                dep_ref
+            );
         }
     }
 
@@ -1052,6 +1383,7 @@ impl TemplateContextBuilder {
     async fn build_dependencies_data(
         &self,
         current_resource: &crate::lockfile::LockedResource,
+        rendering_stack: &mut std::collections::HashSet<String>,
     ) -> Result<BTreeMap<String, BTreeMap<String, ResourceTemplateData>>> {
         let mut deps = BTreeMap::new();
 
@@ -1098,26 +1430,119 @@ impl TemplateContextBuilder {
             )
         };
 
-        // Collect all resources from lockfile
-        let mut resources_to_process = Vec::new();
+        // Collect ALL transitive dependencies (not just direct dependencies!)
+        // Use a set to track which dependencies we've already added to avoid duplicates
+        let mut resources_to_process: Vec<(&crate::lockfile::LockedResource, ResourceType, bool)> = Vec::new();
+        let mut visited_dep_ids = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<String> =
+            current_resource.dependencies.iter().cloned().collect();
+
+        while let Some(dep_id) = queue.pop_front() {
+            // Skip if we've already processed this dependency
+            if !visited_dep_ids.insert(dep_id.clone()) {
+                continue;
+            }
+
+            // Parse dependency ID format: "type/name" or "type/name@version"
+            // (e.g., "snippet/helper", "agent/foo@v1.0.0")
+            if let Some((type_str, name_with_version)) = dep_id.split_once('/') {
+                // Strip the version suffix if present (format: "name@version")
+                let name = if let Some((base_name, _version)) = name_with_version.split_once('@') {
+                    base_name
+                } else {
+                    name_with_version
+                };
+                // Convert type string to ResourceType
+                let resource_type = match type_str {
+                    "agent" => ResourceType::Agent,
+                    "snippet" => ResourceType::Snippet,
+                    "command" => ResourceType::Command,
+                    "script" => ResourceType::Script,
+                    "hook" => ResourceType::Hook,
+                    "mcp-server" => ResourceType::McpServer,
+                    _ => {
+                        tracing::warn!(
+                            "Unknown resource type '{}' in dependency '{}' for resource '{}'",
+                            type_str,
+                            dep_id,
+                            current_resource.name
+                        );
+                        continue;
+                    }
+                };
+
+                // Look up the dependency in the lockfile
+                if let Some(dep_resource) = self.lockfile.find_resource(name, resource_type) {
+                    // Add this dependency to resources to process (true = declared dependency)
+                    resources_to_process.push((dep_resource, resource_type, true));
+
+                    tracing::debug!(
+                        "  [TRANSITIVE] Found dependency '{}' with {} dependencies: {:?}",
+                        name,
+                        dep_resource.dependencies.len(),
+                        dep_resource.dependencies
+                    );
+
+                    // Add its dependencies to the queue for recursive processing
+                    for transitive_dep in &dep_resource.dependencies {
+                        queue.push_back(transitive_dep.clone());
+                    }
+                } else {
+                    tracing::warn!(
+                        "Dependency '{}' (type: {:?}) not found in lockfile for resource '{}'",
+                        name,
+                        resource_type,
+                        current_resource.name
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    "Invalid dependency ID format '{}' for resource '{}' (expected 'type/name')",
+                    dep_id,
+                    current_resource.name
+                );
+            }
+        }
+
+        // Add ALL lockfile resources (not just transitive dependencies)
+        // This ensures templates can reference any resource in the lockfile
+        // These are added with is_dependency=false so they don't get rendered recursively
+
+        // Track which resources we've already added to avoid duplicates
+        let mut already_added: std::collections::HashSet<(String, ResourceType)> =
+            resources_to_process.iter()
+                .map(|(r, rt, _)| (r.name.clone(), *rt))
+                .collect();
 
         for resource in &self.lockfile.agents {
-            resources_to_process.push((resource, ResourceType::Agent));
+            if already_added.insert((resource.name.clone(), ResourceType::Agent)) {
+                resources_to_process.push((resource, ResourceType::Agent, false));
+            }
         }
         for resource in &self.lockfile.commands {
-            resources_to_process.push((resource, ResourceType::Command));
+            if already_added.insert((resource.name.clone(), ResourceType::Command)) {
+                resources_to_process.push((resource, ResourceType::Command, false));
+            }
         }
         for resource in &self.lockfile.snippets {
-            resources_to_process.push((resource, ResourceType::Snippet));
+            if already_added.insert((resource.name.clone(), ResourceType::Snippet)) {
+                resources_to_process.push((resource, ResourceType::Snippet, false));
+            }
         }
         for resource in &self.lockfile.scripts {
-            resources_to_process.push((resource, ResourceType::Script));
+            if already_added.insert((resource.name.clone(), ResourceType::Script)) {
+                resources_to_process.push((resource, ResourceType::Script, false));
+            }
         }
         for resource in &self.lockfile.hooks {
-            resources_to_process.push((resource, ResourceType::Hook));
+            if already_added.insert((resource.name.clone(), ResourceType::Hook)) {
+                resources_to_process.push((resource, ResourceType::Hook, false));
+            }
         }
         for resource in &self.lockfile.mcp_servers {
-            resources_to_process.push((resource, ResourceType::McpServer));
+            if already_added.insert((resource.name.clone(), ResourceType::McpServer)) {
+                resources_to_process.push((resource, ResourceType::McpServer, false));
+            }
         }
 
         tracing::debug!(
@@ -1125,15 +1550,202 @@ impl TemplateContextBuilder {
             resources_to_process.len()
         );
 
-        // Process each resource
-        for (resource, dep_type) in &resources_to_process {
+        // Debug: log all resources being processed
+        for (resource, dep_type, is_dep) in &resources_to_process {
+            tracing::debug!(
+                "  [LOCKFILE] Resource: {} (type: {:?}, install: {:?}, is_dependency: {})",
+                resource.name,
+                dep_type,
+                resource.install,
+                is_dep
+            );
+        }
+
+        // Get current resource ID for filtering
+        let current_resource_id =
+            format!("{}::{:?}", current_resource.name, current_resource.resource_type);
+
+        // Process each resource (excluding the current resource to prevent self-reference)
+        for (resource, dep_type, is_dependency) in &resources_to_process {
+            let resource_id = format!("{}::{:?}", resource.name, dep_type);
+
+            // Skip if this is the current resource (prevent self-dependency)
+            if resource_id == current_resource_id {
+                tracing::debug!(
+                    "  Skipping current resource: {} (preventing self-reference)",
+                    resource.name
+                );
+                continue;
+            }
+
             tracing::debug!("  Processing resource: {} ({})", resource.name, dep_type);
 
             let (type_str_plural, sanitized_key, mut template_data) =
                 process_resource(resource, *dep_type);
 
-            // Extract content from source file
-            template_data.content = self.extract_content(resource).await;
+            // Extract and render content from source file
+            // Declared dependencies should be rendered with their own context before being made available
+            // Non-dependencies just get raw content extraction (to avoid circular dependency issues)
+            let raw_content = self.extract_content(resource).await;
+
+            // Check if the dependency should be rendered
+            // Only render if this is a declared dependency AND content has template syntax
+            let should_render = if *is_dependency {
+                if let Some(content) = &raw_content {
+                    // Don't render if content has literal guards (from templating: false)
+                    if content.contains(NON_TEMPLATED_LITERAL_GUARD_START) {
+                        false
+                    } else {
+                        // Only render if the content has template syntax
+                        Self::content_contains_template_syntax(content)
+                    }
+                } else {
+                    false
+                }
+            } else {
+                // Not a declared dependency - don't render to avoid circular deps
+                false
+            };
+
+            if should_render {
+                // Build cache key to check if we've already rendered this exact resource
+                let cache_key = RenderCacheKey::new(
+                    resource.path.clone(),
+                    *dep_type,
+                    resource.template_vars.as_ref(),
+                );
+
+                // Check cache first
+                if let Ok(mut cache) = self.render_cache.lock() {
+                    if let Some(cached_content) = cache.get(&cache_key) {
+                        tracing::debug!(
+                            "Render cache hit for '{}' ({})",
+                            resource.name,
+                            dep_type
+                        );
+                        template_data.content = Some(cached_content.clone());
+
+                        // Insert into the nested structure and continue to next resource
+                        let type_deps = deps.entry(type_str_plural.clone()).or_insert_with(BTreeMap::new);
+                        type_deps.insert(sanitized_key.clone(), template_data);
+
+                        tracing::debug!(
+                            "  Added cached resource: {}[{}] -> {}",
+                            type_str_plural,
+                            sanitized_key,
+                            resource.path
+                        );
+                        continue;
+                    }
+                }
+
+                tracing::debug!(
+                    "Render cache miss for '{}' ({}), rendering...",
+                    resource.name,
+                    dep_type
+                );
+
+                // Check if we're already rendering this dependency (cycle detection)
+                let dep_id = format!("{}::{:?}", resource.name, dep_type);
+                if rendering_stack.contains(&dep_id) {
+                    let chain: Vec<String> = rendering_stack.iter().cloned().collect();
+                    anyhow::bail!(
+                        "Circular dependency detected while rendering '{}'. \
+                        Dependency chain: {} -> {}",
+                        resource.name,
+                        chain.join(" -> "),
+                        dep_id
+                    );
+                }
+
+                // Add to rendering stack
+                rendering_stack.insert(dep_id.clone());
+
+                // Build a template context for this dependency so it can be rendered with its own dependencies
+                let dep_resource_id = crate::lockfile::ResourceId {
+                    name: resource.name.clone(),
+                    source: resource.source.clone(),
+                    tool: resource.tool.clone(),
+                    template_vars: resource.template_vars.clone(),
+                };
+                let render_result = Box::pin(self.build_context_with_visited(
+                    &dep_resource_id,
+                    *dep_type,
+                    rendering_stack,
+                ))
+                .await;
+
+                // Remove from stack after rendering (whether success or failure)
+                rendering_stack.remove(&dep_id);
+
+                match render_result {
+                    Ok(dep_context) => {
+                        // Render the dependency's content
+                        if let Some(content) = raw_content {
+                            let mut renderer = TemplateRenderer::new(
+                                true,
+                                self.project_dir.clone(),
+                                None,
+                            ).with_context(|| {
+                                format!(
+                                    "Failed to create template renderer for dependency '{}' (type: {:?})",
+                                    resource.name,
+                                    dep_type
+                                )
+                            })?;
+
+                            let rendered = renderer.render_template(&content, &dep_context)
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to render dependency '{}' (type: {:?}). \
+                                        This is a HARD FAILURE - dependency content MUST render successfully.\n\
+                                        Resource: {} (source: {}, path: {})",
+                                        resource.name,
+                                        dep_type,
+                                        resource.name,
+                                        resource.source.as_deref().unwrap_or("local"),
+                                        resource.path
+                                    )
+                                })?;
+
+                            tracing::debug!(
+                                "Successfully rendered dependency content for '{}'",
+                                resource.name
+                            );
+
+                            // Store in cache for future use
+                            if let Ok(mut cache) = self.render_cache.lock() {
+                                cache.insert(cache_key.clone(), rendered.clone());
+                                tracing::debug!(
+                                    "Stored rendered content in cache for '{}'",
+                                    resource.name
+                                );
+                            }
+
+                            template_data.content = Some(rendered);
+                        } else {
+                            // No content extracted - set to None explicitly
+                            template_data.content = None;
+                        }
+                    }
+                    Err(e) => {
+                        // Hard failure - context building must succeed for dependency rendering
+                        return Err(e.context(format!(
+                            "Failed to build template context for dependency '{}' (type: {:?}). \
+                            This is a HARD FAILURE - all dependencies must have valid contexts.\n\
+                            Resource: {} (source: {}, path: {})",
+                            resource.name,
+                            dep_type,
+                            resource.name,
+                            resource.source.as_deref().unwrap_or("local"),
+                            resource.path
+                        )));
+                    }
+                }
+            } else {
+                // No rendering needed, use raw content (guards will be collapsed after parent renders)
+                template_data.content = raw_content;
+            }
 
             // Insert into the nested structure
             let type_deps = deps.entry(type_str_plural.clone()).or_insert_with(BTreeMap::new);
@@ -1147,31 +1759,37 @@ impl TemplateContextBuilder {
             );
         }
 
-        // Now add custom alias mappings for ALL resources that declare custom names
-        // This handles nested transitive dependencies where custom names are defined
-        // at intermediate levels (e.g., snippets/commands/pr-self-review.md defines
-        // "best_practices" for rust-best-practices.md)
+        // Add custom alias mappings for the entire dependency tree
+        // Each resource in the tree defines custom names for its own dependencies,
+        // and we need all of them available when rendering (because embedded content
+        // from transitive dependencies may reference their own named dependencies).
         tracing::debug!(
-            "Extracting custom names from all resources to support nested transitive dependencies"
+            "Extracting custom dependency names from entire dependency tree for: '{}'",
+            current_resource.name
         );
 
-        // Build a global map of custom names by parsing ALL resource frontmatter
-        let mut all_custom_names = HashMap::new();
-        for (resource, _) in &resources_to_process {
-            let resource_custom_names = self.extract_dependency_custom_names(resource).await;
-            all_custom_names.extend(resource_custom_names);
-        }
-
-        tracing::debug!(
-            "Found {} custom name mappings across all resources",
-            all_custom_names.len()
-        );
-
-        // Add aliases for ALL transitive dependencies of the CURRENT resource
-        // We need to recursively walk the dependency tree
+        // Walk the dependency tree and collect custom names from each resource
         let mut to_process: Vec<String> = current_resource.dependencies.clone();
         let mut processed = std::collections::HashSet::new();
 
+        // Also process the current resource itself
+        let current_custom_names = self.extract_dependency_custom_names(current_resource).await;
+        if !current_custom_names.is_empty() || current_resource.name.contains("golang") {
+            tracing::info!(
+                "[CUSTOM_NAMES] Extracted {} custom names from current resource '{}' (type: {:?})",
+                current_custom_names.len(),
+                current_resource.name,
+                current_resource.resource_type
+            );
+            for (dep_ref, custom_name) in &current_custom_names {
+                tracing::info!("  [CUSTOM_NAMES] Will add alias: '{}' -> '{}'", dep_ref, custom_name);
+            }
+        }
+        for (dep_ref, custom_name) in current_custom_names {
+            Self::add_custom_alias(&mut deps, &dep_ref, &custom_name);
+        }
+
+        // Process all transitive dependencies
         while let Some(dep_ref) = to_process.pop() {
             if !processed.insert(dep_ref.clone()) {
                 continue; // Already processed
@@ -1198,11 +1816,14 @@ impl TemplateContextBuilder {
             };
 
             // Find the dependency resource in the lockfile
+            // Note: We search by name only since dep_ref doesn't include template_vars.
+            // The first match should be correct for extracting transitive custom names,
+            // as custom names apply to all variants of a resource.
             let dep_resource = match self.lockfile.find_resource(dep_name, dep_type) {
                 Some(res) => res,
                 None => {
                     tracing::warn!(
-                        "Dependency '{}' of '{}' not found in lockfile",
+                        "Dependency '{}' not found in lockfile for '{}'",
                         dep_ref,
                         current_resource.name
                     );
@@ -1210,40 +1831,14 @@ impl TemplateContextBuilder {
                 }
             };
 
-            // Add this dependency's own dependencies to the queue (for transitive resolution)
-            to_process.extend(dep_resource.dependencies.clone());
-
-            // Check if this dependency has a custom name defined anywhere in the tree
-            if let Some(custom_name) = all_custom_names.get(&dep_ref) {
-                let type_str_plural = dep_type.to_plural().to_string();
-
-                // Get the existing template data (already added with path-based name)
-                if let Some(type_deps) = deps.get_mut(&type_str_plural) {
-                    // Find the existing entry by matching the resource
-                    let existing_data = type_deps
-                        .values()
-                        .find(|data| {
-                            data.name == dep_resource.name && data.path == dep_resource.path
-                        })
-                        .cloned();
-
-                    if let Some(data) = existing_data {
-                        // Sanitize the alias
-                        let sanitized_alias = custom_name.replace('-', "_");
-
-                        // Add an alias entry pointing to the same data
-                        // This allows the template to use the custom name FROM FRONTMATTER
-                        type_deps.insert(sanitized_alias.clone(), data);
-                        tracing::debug!(
-                            "  Added scoped alias: {}[{}] -> {} (for '{}' from frontmatter)",
-                            type_str_plural,
-                            sanitized_alias,
-                            dep_resource.path,
-                            current_resource.name
-                        );
-                    }
-                }
+            // Extract custom names from this dependency (for ITS dependencies)
+            let dep_custom_names = self.extract_dependency_custom_names(dep_resource).await;
+            for (child_dep_ref, custom_name) in dep_custom_names {
+                Self::add_custom_alias(&mut deps, &child_dep_ref, &custom_name);
             }
+
+            // Add this dependency's own dependencies to the queue
+            to_process.extend(dep_resource.dependencies.clone());
         }
 
         // Debug: Print what we built
@@ -1254,8 +1849,14 @@ impl TemplateContextBuilder {
         );
         for (resource_type, resources) in &deps {
             tracing::debug!("  Type {}: {} resources", resource_type, resources.len());
-            for name in resources.keys() {
-                tracing::debug!("    - {}", name);
+            if resource_type == "snippets" {
+                for (key, data) in resources {
+                    tracing::debug!("    - key='{}', name='{}', path='{}'", key, data.name, data.path);
+                }
+            } else {
+                for name in resources.keys() {
+                    tracing::debug!("    - {}", name);
+                }
             }
         }
 
@@ -1450,21 +2051,65 @@ impl TemplateRenderer {
         let mut counter = 0;
         let mut result = String::with_capacity(content.len());
 
-        // Split content by triple backticks to find code blocks
-        let mut in_literal_block = false;
+        // Split content by lines to find both ```literal fences and RAW guards
+        let mut in_literal_fence = false;
+        let mut in_raw_guard = false;
         let mut current_block = String::new();
         let lines = content.lines();
 
         for line in lines {
-            if line.trim().starts_with("```literal") {
-                // Start of literal block
-                in_literal_block = true;
+            let trimmed = line.trim();
+
+            if trimmed == NON_TEMPLATED_LITERAL_GUARD_START {
+                // Start of RAW guard block
+                in_raw_guard = true;
                 current_block.clear();
-                tracing::debug!("Found start of literal block");
+                tracing::debug!("Found start of RAW guard block");
+                // Skip the guard line
+            } else if in_raw_guard && trimmed == NON_TEMPLATED_LITERAL_GUARD_END {
+                // End of RAW guard block
+                in_raw_guard = false;
+
+                // Generate unique placeholder
+                let placeholder_id = format!("__AGPM_LITERAL_BLOCK_{}__", counter);
+                counter += 1;
+
+                // Store original content (keep the guards for later processing)
+                let guarded_content = format!(
+                    "{}\n{}\n{}",
+                    NON_TEMPLATED_LITERAL_GUARD_START,
+                    current_block,
+                    NON_TEMPLATED_LITERAL_GUARD_END
+                );
+                placeholders.insert(placeholder_id.clone(), guarded_content);
+
+                // Insert placeholder
+                result.push_str(&placeholder_id);
+                result.push('\n');
+
+                tracing::debug!(
+                    "Protected RAW guard block with placeholder {} ({} bytes)",
+                    placeholder_id,
+                    current_block.len()
+                );
+
+                current_block.clear();
+                // Skip the guard line
+            } else if in_raw_guard {
+                // Inside RAW guard - accumulate content
+                if !current_block.is_empty() {
+                    current_block.push('\n');
+                }
+                current_block.push_str(line);
+            } else if trimmed.starts_with("```literal") {
+                // Start of ```literal fence
+                in_literal_fence = true;
+                current_block.clear();
+                tracing::debug!("Found start of literal fence");
                 // Skip the fence line
-            } else if in_literal_block && line.trim().starts_with("```") {
-                // End of literal block
-                in_literal_block = false;
+            } else if in_literal_fence && trimmed.starts_with("```") {
+                // End of ```literal fence
+                in_literal_fence = false;
 
                 // Generate unique placeholder
                 let placeholder_id = format!("__AGPM_LITERAL_BLOCK_{}__", counter);
@@ -1478,15 +2123,15 @@ impl TemplateRenderer {
                 result.push('\n');
 
                 tracing::debug!(
-                    "Protected literal block with placeholder {} ({} bytes)",
+                    "Protected literal fence with placeholder {} ({} bytes)",
                     placeholder_id,
                     current_block.len()
                 );
 
                 current_block.clear();
                 // Skip the fence line
-            } else if in_literal_block {
-                // Inside literal block - accumulate content
+            } else if in_literal_fence {
+                // Inside ```literal fence - accumulate content
                 if !current_block.is_empty() {
                     current_block.push('\n');
                 }
@@ -1498,10 +2143,16 @@ impl TemplateRenderer {
             }
         }
 
-        // Handle unclosed literal block (add back as-is)
-        if in_literal_block {
-            tracing::warn!("Unclosed literal block found - treating as regular content");
+        // Handle unclosed blocks (add back as-is)
+        if in_literal_fence {
+            tracing::warn!("Unclosed literal fence found - treating as regular content");
             result.push_str("```literal\n");
+            result.push_str(&current_block);
+        }
+        if in_raw_guard {
+            tracing::warn!("Unclosed RAW guard found - treating as regular content");
+            result.push_str(NON_TEMPLATED_LITERAL_GUARD_START);
+            result.push('\n');
             result.push_str(&current_block);
         }
 
@@ -1978,8 +2629,13 @@ mod tests {
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
-        let _context =
-            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
+        let _context = builder.build_context(&resource_id, ResourceType::Agent).await.unwrap();
 
         // If we got here without panicking, context building succeeded
         // The actual context structure is tested implicitly by the renderer tests
@@ -2099,11 +2755,22 @@ mod tests {
             template_vars: None,
         });
 
+        // Add the snippet as a dependency of the test-agent
+        if let Some(agent) = lockfile.agents.first_mut() {
+            agent.dependencies.push("snippet/test-snippet".to_string());
+        }
+
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
-        let context = builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
+        let context = builder.build_context(&resource_id, ResourceType::Agent).await.unwrap();
 
         // Extract the agpm.resource.install_path from context
         let agpm_value = context.get("agpm").expect("agpm context should exist");
@@ -2503,7 +3170,7 @@ This should show {{ agpm.deps.some.content }} literally.
             resolved_commit: None,
             checksum: "sha256:test-command".to_string(),
             installed_at: ".claude/commands/test.md".to_string(),
-            dependencies: vec![],
+            dependencies: vec!["snippet/non_templated".to_string()],
             resource_type: ResourceType::Command,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
@@ -2536,8 +3203,13 @@ This should show {{ agpm.deps.some.content }} literally.
             Arc::new(cache),
             project_dir.clone(),
         );
-        let context =
-            builder.build_context("test-command", ResourceType::Command, None).await.unwrap();
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-command".to_string(),
+            source: None,
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
+        let context = builder.build_context(&resource_id, ResourceType::Command).await.unwrap();
 
         let mut renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
         let template = r#"# Combined Output
@@ -2569,7 +3241,37 @@ This should show {{ agpm.deps.some.content }} literally.
     async fn test_template_vars_override() {
         use serde_json::json;
 
-        let lockfile = create_test_lockfile();
+        let mut lockfile = create_test_lockfile();
+
+        // Add a second agent with template_vars to test overrides
+        let template_vars = json!({
+            "project": {
+                "language": "python",
+                "framework": "fastapi"
+            },
+            "custom": {
+                "style": "functional"
+            }
+        });
+
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-python".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:testchecksum2".to_string(),
+            installed_at: ".claude/agents/test-agent-python.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            template_vars: Some(template_vars.clone()),
+        });
+
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
 
@@ -2588,23 +3290,25 @@ This should show {{ agpm.deps.some.content }} literally.
             project_dir.clone(),
         );
 
-        // Build context without overrides
+        // Build context without template_vars
+        let resource_id_no_override = crate::lockfile::ResourceId {
+            name: "test-agent".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: None,
+        };
         let context_without_override =
-            builder.build_context("test-agent", ResourceType::Agent, None).await.unwrap();
+            builder.build_context(&resource_id_no_override, ResourceType::Agent).await.unwrap();
 
-        // Build context with template_vars overrides
-        let template_vars = json!({
-            "project": {
-                "language": "python",
-                "framework": "fastapi"
-            },
-            "custom": {
-                "style": "functional"
-            }
-        });
-
+        // Build context WITH template_vars (different lockfile entry)
+        let resource_id_with_override = crate::lockfile::ResourceId {
+            name: "test-agent-python".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
         let context_with_override = builder
-            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
+            .build_context(&resource_id_with_override, ResourceType::Agent)
             .await
             .unwrap();
 
@@ -2633,7 +3337,37 @@ This should show {{ agpm.deps.some.content }} literally.
     async fn test_template_vars_deep_merge() {
         use serde_json::json;
 
-        let lockfile = create_test_lockfile();
+        let mut lockfile = create_test_lockfile();
+
+        // Override only some database fields, leaving others unchanged
+        let template_vars = json!({
+            "project": {
+                "database": {
+                    "host": "db.example.com",
+                    "ssl": true
+                }
+            }
+        });
+
+        // Add a second agent with template_vars for deep merge testing
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-merged".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:testchecksum3".to_string(),
+            installed_at: ".claude/agents/test-agent-merged.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            template_vars: Some(template_vars.clone()),
+        });
+
         let cache = crate::cache::Cache::new().unwrap();
         let project_dir = std::env::current_dir().unwrap();
 
@@ -2656,18 +3390,14 @@ This should show {{ agpm.deps.some.content }} literally.
             project_dir.clone(),
         );
 
-        // Override only some database fields, leaving others unchanged
-        let template_vars = json!({
-            "project": {
-                "database": {
-                    "host": "db.example.com",
-                    "ssl": true
-                }
-            }
-        });
-
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-agent-merged".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
         let context = builder
-            .build_context("test-agent", ResourceType::Agent, Some(&template_vars))
+            .build_context(&resource_id, ResourceType::Agent)
             .await
             .unwrap();
 
@@ -2695,5 +3425,148 @@ Language: {{ project.language }}
 
         // New value should be added
         assert!(rendered.contains("DB SSL: true"));
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_empty_object_noop() {
+        use serde_json::json;
+
+        let mut lockfile = create_test_lockfile();
+
+        // Empty object should be a no-op
+        let template_vars = json!({});
+
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-empty".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:empty".to_string(),
+            installed_at: ".claude/agents/test-agent-empty.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            template_vars: Some(template_vars.clone()),
+        });
+
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            map.insert("version".to_string(), toml::Value::String("1.0".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-agent-empty".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+
+        let context = builder
+            .build_context(&resource_id, ResourceType::Agent)
+            .await
+            .unwrap();
+
+        let project_dir = std::env::current_dir().unwrap();
+        let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
+
+        // Empty template_vars should not change project config
+        let template = "Language: {{ project.language }}, Version: {{ project.version }}";
+        let rendered = renderer.render_template(template, &context).unwrap();
+        assert_eq!(rendered, "Language: rust, Version: 1.0");
+    }
+
+    #[tokio::test]
+    async fn test_template_vars_null_values() {
+        use serde_json::json;
+
+        let mut lockfile = create_test_lockfile();
+
+        // Null value should replace field with JSON null
+        let template_vars = json!({
+            "project": {
+                "optional_field": null
+            }
+        });
+
+        lockfile.agents.push(LockedResource {
+            name: "test-agent-null".to_string(),
+            source: Some("community".to_string()),
+            url: Some("https://github.com/example/community.git".to_string()),
+            path: "agents/test-agent.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123def456".to_string()),
+            checksum: "sha256:null".to_string(),
+            installed_at: ".claude/agents/test-agent-null.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            manifest_alias: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            template_vars: Some(template_vars.clone()),
+        });
+
+        let cache = crate::cache::Cache::new().unwrap();
+        let project_dir = std::env::current_dir().unwrap();
+
+        // Create manifest with project config
+        let project_config = {
+            let mut map = toml::map::Map::new();
+            map.insert("language".to_string(), toml::Value::String("rust".into()));
+            crate::manifest::ProjectConfig::from(map)
+        };
+
+        let builder = TemplateContextBuilder::new(
+            Arc::new(lockfile),
+            Some(project_config),
+            Arc::new(cache),
+            project_dir.clone(),
+        );
+
+        let resource_id = crate::lockfile::ResourceId {
+            name: "test-agent-null".to_string(),
+            source: Some("community".to_string()),
+            tool: Some("claude-code".to_string()),
+            template_vars: Some(template_vars.clone()),
+        };
+
+        let context = builder
+            .build_context(&resource_id, ResourceType::Agent)
+            .await
+            .unwrap();
+
+        // Verify null is present in context
+        let agpm_value = context.get("agpm").expect("agpm should exist");
+        let agpm_obj = agpm_value.as_object().expect("agpm should be an object");
+
+        // Check both agpm.project and project namespaces
+        let project_value = agpm_obj.get("project").expect("project should exist");
+        let project_obj = project_value.as_object().expect("project should be an object");
+        assert!(project_obj.get("optional_field").is_some());
+        assert!(project_obj["optional_field"].is_null());
+
+        // Also verify in top-level project namespace
+        let top_project = context.get("project").expect("top-level project should exist");
+        let top_project_obj = top_project.as_object().expect("should be object");
+        assert!(top_project_obj.get("optional_field").is_some());
+        assert!(top_project_obj["optional_field"].is_null());
     }
 }

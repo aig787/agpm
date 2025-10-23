@@ -217,7 +217,7 @@ use crate::cache::Cache;
 use crate::core::{AgpmError, OperationContext, ResourceType};
 use crate::git::GitRepo;
 use crate::lockfile::{LockFile, LockedResource};
-use crate::manifest::{Manifest, ResourceDependency};
+use crate::manifest::{Manifest, ResourceDependency, json_value_to_toml};
 use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
 use crate::utils::{compute_relative_install_path, normalize_path, normalize_path_for_storage};
@@ -517,6 +517,68 @@ struct PreparedGroupDescriptor {
 impl DependencyResolver {
     fn group_key(source: &str, version: &str) -> String {
         format!("{source}::{version}")
+    }
+
+    /// Build the complete merged template variable context for a dependency.
+    ///
+    /// This creates the full template_vars that should be stored in the lockfile,
+    /// combining both the global project configuration and any dependency-specific
+    /// template_vars overrides.
+    ///
+    /// This ensures lockfile entries contain the exact template context that was
+    /// used during dependency resolution, enabling reproducible builds.
+    ///
+    /// # Arguments
+    ///
+    /// * `dep` - The dependency to build template_vars for
+    ///
+    /// # Returns
+    ///
+    /// Complete merged template_vars, or None if there are no template variables
+    fn build_merged_template_vars(
+        &self,
+        dep: &crate::manifest::ResourceDependency,
+    ) -> Option<serde_json::Value> {
+        use crate::templating::deep_merge_json;
+
+        // Start with dependency-level template_vars (if any)
+        let dep_vars = dep.get_template_vars();
+
+        // Get global project config as JSON
+        let global_project = self
+            .manifest
+            .project
+            .as_ref()
+            .map(|p| p.to_json_value())
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        // Build complete context
+        let mut merged_map = serde_json::Map::new();
+
+        // If dependency has template_vars, start with those
+        if let Some(vars) = dep_vars {
+            if let Some(obj) = vars.as_object() {
+                merged_map.extend(obj.clone());
+            }
+        }
+
+        // Extract project overrides from dependency template_vars (if present)
+        let project_overrides = dep_vars
+            .and_then(|v| v.get("project").cloned())
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+        // Deep merge global project config with dependency-specific overrides
+        let merged_project = deep_merge_json(global_project, &project_overrides);
+
+        // Add merged project config to the template_vars
+        merged_map.insert("project".to_string(), merged_project);
+
+        // If the map is empty, return None
+        if merged_map.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(merged_map))
+        }
     }
 
     /// Adds or updates a resource entry in the lockfile based on resource type.
@@ -1609,6 +1671,14 @@ impl DependencyResolver {
                 resource_type.expect("resource_type should always be threaded through queue");
             let key = (resource_type, name.clone(), source.clone(), tool.clone());
 
+            tracing::debug!(
+                "[QUEUE_POP] Popped from queue: '{}' (type: {:?}, source: {:?}, tool: {:?})",
+                name,
+                resource_type,
+                source,
+                tool
+            );
+
             // Check if this queue entry is stale (superseded by conflict resolution)
             // IMPORTANT: This must come BEFORE the processed check so that conflict-resolved
             // entries can be reprocessed even if an older version was already processed.
@@ -1616,18 +1686,34 @@ impl DependencyResolver {
             if let Some(current_dep) = all_deps.get(&key) {
                 if current_dep.get_version() != dep.get_version() {
                     // This entry was superseded by conflict resolution, skip it
+                    tracing::debug!(
+                        "[QUEUE_POP] SKIPPED (stale): '{}' - version mismatch",
+                        name
+                    );
                     continue;
                 }
             }
 
             if processed.contains(&key) {
+                tracing::debug!(
+                    "[QUEUE_POP] SKIPPED (already processed): '{}'",
+                    name
+                );
                 continue;
             }
 
+            tracing::debug!(
+                "[QUEUE_POP] PROCESSING: '{}'",
+                name
+            );
             processed.insert(key.clone());
 
             // Handle pattern dependencies by expanding them to concrete files
             if dep.is_pattern() {
+                tracing::debug!(
+                    "[QUEUE_POP] '{}' is a PATTERN, expanding to concrete deps",
+                    name
+                );
                 // Expand the pattern to get all matching files
                 match self.expand_pattern_to_concrete_deps(&name, &dep, resource_type).await {
                     Ok(concrete_deps) => {
@@ -1670,22 +1756,70 @@ impl DependencyResolver {
                 continue; // Skip to next queue item
             }
 
+            tracing::debug!(
+                "[QUEUE_POP] '{}' is NOT a pattern, fetching content for metadata extraction",
+                name
+            );
+
             // Get the resource content to extract metadata
             let content = self.fetch_resource_content(&name, &dep).await.with_context(|| {
                 format!("Failed to fetch resource '{name}' for transitive dependency extraction")
             })?;
 
-            // Extract metadata from the resource
+            tracing::debug!(
+                "[QUEUE_POP] '{}' content fetched ({} bytes), extracting metadata",
+                name,
+                content.len()
+            );
+
+            // Merge resource-specific template_vars with global project config
+            // This ensures transitive dependencies are resolved using the resource's context
+            let project_config = if let Some(template_vars) = dep.get_template_vars() {
+                // Resource has template_vars - extract "project" key and deep merge with global config
+                use crate::manifest::ProjectConfig;
+                use crate::templating::deep_merge_json;
+
+                // Extract the "project" key from template_vars (if it exists)
+                let project_overrides = template_vars
+                    .get("project")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+                let global_json = self
+                    .manifest
+                    .project
+                    .as_ref()
+                    .map(|p| p.to_json_value())
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+                // Deep merge: global config + resource-specific project overrides
+                let merged_json = deep_merge_json(global_json, &project_overrides);
+
+                // Convert merged JSON back to TOML for ProjectConfig
+                let mut config_map = toml::map::Map::new();
+                if let Some(merged_obj) = merged_json.as_object() {
+                    for (key, value) in merged_obj {
+                        config_map.insert(key.clone(), json_value_to_toml(value));
+                    }
+                }
+
+                Some(ProjectConfig::from(config_map))
+            } else {
+                // No template_vars - use global config
+                self.manifest.project.clone()
+            };
+
+            // Extract metadata from the resource with merged config
             let path = PathBuf::from(dep.get_path());
             let metadata = MetadataExtractor::extract(
                 &path,
                 &content,
-                self.manifest.project.as_ref(),
+                project_config.as_ref(),
                 self.operation_context.as_deref(),
             )?;
 
-            // Process transitive dependencies if present
-            if let Some(deps_map) = metadata.dependencies {
+            // Process transitive dependencies if present (checks both root-level and nested)
+            if let Some(deps_map) = metadata.get_dependencies() {
                 tracing::debug!(
                     "Processing transitive deps for: {} (has source: {:?})",
                     name,
@@ -1862,6 +1996,7 @@ impl DependencyResolver {
                                 tool: trans_tool,
                                 flatten: None,
                                 install: dep_spec.install.or(Some(true)),
+                                template_vars: self.build_merged_template_vars(&dep),
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -1965,6 +2100,7 @@ impl DependencyResolver {
                                 tool: trans_tool,
                                 flatten: None,
                                 install: dep_spec.install.or(Some(true)),
+                                template_vars: self.build_merged_template_vars(&dep),
                             }))
                         };
 
@@ -2403,6 +2539,8 @@ impl DependencyResolver {
                         tool: tool.clone(),
                         flatten,
                         install: None,
+
+                        template_vars: None,
                     })),
                 ));
             }
@@ -2468,6 +2606,8 @@ impl DependencyResolver {
                         tool,
                         flatten,
                         install: None,
+
+                        template_vars: None,
                     })),
                 ));
             }
@@ -3035,7 +3175,7 @@ impl DependencyResolver {
                 },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
-                template_vars: None,
+                template_vars: self.build_merged_template_vars(&dep),
             })
         } else {
             // Remote dependency - need to sync and resolve
@@ -3222,7 +3362,7 @@ impl DependencyResolver {
                 },
                 applied_patches: HashMap::new(), // Populated during installation, not resolution
                 install: dep.get_install(),
-                template_vars: None,
+                template_vars: self.build_merged_template_vars(&dep),
             })
         }
     }
@@ -4037,6 +4177,8 @@ impl DependencyResolver {
                     tool: Some("claude-code".to_string()), // Default tool
                     flatten: None,
                     install: None,
+
+                    template_vars: None,
                 })))
             }
         }
@@ -4320,6 +4462,24 @@ impl DependencyResolver {
             path.split('/').next_back().map(std::string::ToString::to_string)
         };
 
+        // Helper to strip resource type directory from path (mimics generate_dependency_name logic)
+        // This allows lookups to work with dependency names from dependency_map
+        let strip_type_directory = |path: &str| -> Option<String> {
+            let components: Vec<&str> = path.split('/').collect();
+            if components.len() > 1 {
+                // Resource type directories: agents, snippets, commands, scripts, hooks, mcp-servers
+                let resource_type_dirs =
+                    ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
+
+                // Find the index of the first resource type directory
+                if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
+                    // Skip everything up to and including the resource type directory
+                    return Some(components[idx + 1..].join("/"));
+                }
+            }
+            None
+        };
+
         // Build lookup map from all lockfile entries
         for entry in &lockfile.agents {
             let normalized_path = normalize_path(&entry.path);
@@ -4332,6 +4492,13 @@ impl DependencyResolver {
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Agent, filename, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
+            // Also store by type-stripped path (for nested resources like agents/helpers/foo.md -> helpers/foo)
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::Agent, stripped, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -4348,6 +4515,12 @@ impl DependencyResolver {
                     entry.name.clone(),
                 );
             }
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::Snippet, stripped, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
         }
         for entry in &lockfile.commands {
             let normalized_path = normalize_path(&entry.path);
@@ -4358,6 +4531,12 @@ impl DependencyResolver {
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Command, filename, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::Command, stripped, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -4374,6 +4553,12 @@ impl DependencyResolver {
                     entry.name.clone(),
                 );
             }
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::Script, stripped, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
         }
         for entry in &lockfile.hooks {
             let normalized_path = normalize_path(&entry.path);
@@ -4384,6 +4569,12 @@ impl DependencyResolver {
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Hook, filename, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::Hook, stripped, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -4401,6 +4592,12 @@ impl DependencyResolver {
             if let Some(filename) = extract_filename(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::McpServer, filename, entry.source.clone()),
+                    entry.name.clone(),
+                );
+            }
+            if let Some(stripped) = strip_type_directory(&normalized_path) {
+                lookup_map.insert(
+                    (crate::core::ResourceType::McpServer, stripped, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
@@ -4472,7 +4669,17 @@ impl DependencyResolver {
                                         dep_filename.clone(),
                                         parent_source.clone(),
                                     )) {
-                                        // Found resource in same source - use singular form from enum
+                                        // Found resource in same source - add version metadata
+                                        if let Some((_source, version)) = resource_info_map.get(&(
+                                            resource_type,
+                                            dep_name.clone(),
+                                            parent_source.clone(),
+                                        )) {
+                                            if let Some(ver) = version {
+                                                return format!("{resource_type}/{dep_name}@{ver}");
+                                            }
+                                        }
+                                        // Fallback without version if not found in resource_info_map
                                         return format!("{resource_type}/{dep_name}");
                                     }
 
@@ -4483,6 +4690,17 @@ impl DependencyResolver {
                                         dep_filename_with_ext.clone(),
                                         parent_source.clone(),
                                     )) {
+                                        // Found resource in same source - add version metadata
+                                        if let Some((_source, version)) = resource_info_map.get(&(
+                                            resource_type,
+                                            dep_name.clone(),
+                                            parent_source.clone(),
+                                        )) {
+                                            if let Some(ver) = version {
+                                                return format!("{resource_type}/{dep_name}@{ver}");
+                                            }
+                                        }
+                                        // Fallback without version if not found in resource_info_map
                                         return format!("{resource_type}/{dep_name}");
                                     }
 
@@ -4731,6 +4949,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -4812,6 +5032,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -4892,6 +5114,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -4946,6 +5170,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5027,6 +5253,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5146,6 +5374,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5192,6 +5422,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5237,6 +5469,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5281,6 +5515,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5326,6 +5562,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             false, // script (not agent)
         );
@@ -5466,6 +5704,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true, // agents
         );
@@ -5515,6 +5755,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5626,6 +5868,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5645,6 +5889,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5677,6 +5923,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -5696,6 +5944,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -6033,6 +6283,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -6097,6 +6349,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -6190,6 +6444,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -6275,6 +6531,8 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 flatten: None,
                 install: None,
+
+                template_vars: None,
             })),
             true,
         );
@@ -6373,6 +6631,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6389,6 +6649,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let result = resolver
@@ -6437,6 +6699,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6453,6 +6717,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let result =
@@ -6495,6 +6761,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -6511,6 +6779,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let result = resolver
@@ -6549,6 +6819,8 @@ mod tests {
             tool: Some("claude-code".to_string()),
             flatten: None,
             install: None,
+
+            template_vars: None,
         }));
 
         let result = resolver
