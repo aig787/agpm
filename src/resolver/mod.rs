@@ -3570,137 +3570,31 @@ impl DependencyResolver {
             HashMap::new();
 
         // Build lookup map from all lockfile entries
-        for entry in &lockfile.agents {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            // Store by full path
-            lookup_map.insert(
-                (crate::core::ResourceType::Agent, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            // Also store by filename for backward compatibility
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
+        for resource_type in crate::core::ResourceType::all() {
+            for entry in lockfile.get_resources(*resource_type) {
+                let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
+                // Store by full path
                 lookup_map.insert(
-                    (crate::core::ResourceType::Agent, filename, entry.source.clone()),
+                    (*resource_type, normalized_path.clone(), entry.source.clone()),
                     entry.name.clone(),
                 );
-            }
-            // Also store by type-stripped path (for nested resources like agents/helpers/foo.md -> helpers/foo)
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Agent, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-        }
-        for entry in &lockfile.snippets {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            lookup_map.insert(
-                (crate::core::ResourceType::Snippet, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Snippet, filename, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Snippet, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-        }
-        for entry in &lockfile.commands {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            lookup_map.insert(
-                (crate::core::ResourceType::Command, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Command, filename, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Command, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-        }
-        for entry in &lockfile.scripts {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            lookup_map.insert(
-                (crate::core::ResourceType::Script, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Script, filename, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Script, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-        }
-        for entry in &lockfile.hooks {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            lookup_map.insert(
-                (crate::core::ResourceType::Hook, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Hook, filename, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::Hook, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-        }
-        for entry in &lockfile.mcp_servers {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            lookup_map.insert(
-                (
-                    crate::core::ResourceType::McpServer,
-                    normalized_path.clone(),
-                    entry.source.clone(),
-                ),
-                entry.name.clone(),
-            );
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map.insert(
-                    (crate::core::ResourceType::McpServer, filename, entry.source.clone()),
-                    entry.name.clone(),
-                );
-            }
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
-            {
-                lookup_map.insert(
-                    (crate::core::ResourceType::McpServer, stripped, entry.source.clone()),
-                    entry.name.clone(),
-                );
+                // Also store by filename for backward compatibility
+                if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path)
+                {
+                    lookup_map.insert(
+                        (*resource_type, filename, entry.source.clone()),
+                        entry.name.clone(),
+                    );
+                }
+                // Also store by type-stripped path (for nested resources like agents/helpers/foo.md -> helpers/foo)
+                if let Some(stripped) =
+                    dependency_helpers::strip_resource_type_directory(&normalized_path)
+                {
+                    lookup_map.insert(
+                        (*resource_type, stripped, entry.source.clone()),
+                        entry.name.clone(),
+                    );
+                }
             }
         }
 
@@ -3708,41 +3602,13 @@ impl DependencyResolver {
         // This needs to be done before we start mutating entries
         let mut resource_info_map: HashMap<ResourceKey, ResourceInfo> = HashMap::new();
 
-        for entry in &lockfile.agents {
-            resource_info_map.insert(
-                (crate::core::ResourceType::Agent, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-        for entry in &lockfile.snippets {
-            resource_info_map.insert(
-                (crate::core::ResourceType::Snippet, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-        for entry in &lockfile.commands {
-            resource_info_map.insert(
-                (crate::core::ResourceType::Command, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-        for entry in &lockfile.scripts {
-            resource_info_map.insert(
-                (crate::core::ResourceType::Script, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-        for entry in &lockfile.hooks {
-            resource_info_map.insert(
-                (crate::core::ResourceType::Hook, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-        for entry in &lockfile.mcp_servers {
-            resource_info_map.insert(
-                (crate::core::ResourceType::McpServer, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
+        for resource_type in crate::core::ResourceType::all() {
+            for entry in lockfile.get_resources(*resource_type) {
+                resource_info_map.insert(
+                    (*resource_type, entry.name.clone(), entry.source.clone()),
+                    (entry.source.clone(), entry.version.clone()),
+                );
+            }
         }
 
         // Helper function to update dependencies in a vector of entries
@@ -3802,7 +3668,7 @@ impl DependencyResolver {
                                 }
 
                                 // Try looking for resource from ANY source (cross-source dependency)
-                                // Format: source:type/name:version
+                                // Format: source:type/name@version
                                 for ((rt, filename, src), name) in &lookup_map {
                                     if *rt == resource_type
                                         && (filename == &dep_filename
@@ -3815,7 +3681,7 @@ impl DependencyResolver {
                                             name.clone(),
                                             src.clone(),
                                         )) {
-                                            // Build full reference: source:type/name:version
+                                            // Build full reference: source:type/name@version
                                             let mut dep_ref = String::new();
                                             if let Some(src) = source {
                                                 dep_ref.push_str(src);
@@ -3825,7 +3691,7 @@ impl DependencyResolver {
                                             dep_ref.push('/');
                                             dep_ref.push_str(name);
                                             if let Some(ver) = version {
-                                                dep_ref.push(':');
+                                                dep_ref.push('@');
                                                 dep_ref.push_str(ver);
                                             }
                                             return dep_ref;

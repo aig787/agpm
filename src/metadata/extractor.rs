@@ -119,21 +119,13 @@ impl MetadataExtractor {
         if let Some(end_pos) = content[search_start..].find(end_pattern) {
             let frontmatter = &content[search_start..search_start + end_pos];
 
-            // Phase 1: Check if templating is disabled via agpm.templating field
-            let templating_disabled = if let Some(_config) = project_config {
-                Self::is_templating_disabled_yaml(frontmatter)
-            } else {
-                false
-            };
+            // Phase 1: Check if templating should be enabled
+            let should_template =
+                project_config.is_some() && Self::should_template_frontmatter(frontmatter);
 
-            // Phase 2: Template the frontmatter if config available and not disabled
-            let templated_frontmatter = if let Some(config) = project_config {
-                if templating_disabled {
-                    tracing::debug!("Templating disabled via agpm.templating field in frontmatter");
-                    frontmatter.to_string()
-                } else {
-                    Self::template_content(frontmatter, config, path)?
-                }
+            // Phase 2: Template the frontmatter if templating should be enabled
+            let templated_frontmatter = if should_template {
+                Self::template_content(frontmatter, project_config.unwrap(), path)?
             } else {
                 frontmatter.to_string()
             };
@@ -183,21 +175,12 @@ https://github.com/aig787/agpm#transitive-dependencies",
         path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
-        // Phase 1: Check if templating is disabled via agpm.templating field
-        let templating_disabled = if let Some(_config) = project_config {
-            Self::is_templating_disabled_json(content)
-        } else {
-            false
-        };
+        // Phase 1: Check if templating should be enabled
+        let should_template = project_config.is_some() && Self::should_template_json(content);
 
-        // Phase 2: Template the content if config available and not disabled
-        let templated_content = if let Some(config) = project_config {
-            if templating_disabled {
-                tracing::debug!("Templating disabled via agpm.templating field in JSON");
-                content.to_string()
-            } else {
-                Self::template_content(content, config, path)?
-            }
+        // Phase 2: Template the content if templating should be enabled
+        let templated_content = if should_template {
+            Self::template_content(content, project_config.unwrap(), path)?
         } else {
             content.to_string()
         };
@@ -246,39 +229,59 @@ https://github.com/aig787/agpm#transitive-dependencies",
         }
     }
 
-    /// Check if templating is disabled in YAML frontmatter.
+    /// Check if templating should be enabled in YAML frontmatter.
     ///
-    /// Parses the YAML to check for `agpm.templating: false` field.
-    /// Templating is opt-in: disabled by default unless explicitly set to true.
-    fn is_templating_disabled_yaml(frontmatter: &str) -> bool {
+    /// First tries to parse the YAML and honor explicit `agpm.templating` boolean.
+    /// If parsing fails, falls back to textual scan for template syntax.
+    fn should_template_frontmatter(frontmatter: &str) -> bool {
         // Try to parse as raw YAML value to check agpm.templating field
         if let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(frontmatter) {
-            value
-                .get("agpm")
-                .and_then(|agpm| agpm.get("templating"))
-                .and_then(|v| v.as_bool())
-                .map(|b| !b)
-                .unwrap_or(true) // Opt-in: disabled by default
-        } else {
-            true // Opt-in: disabled by default
+            // Honor explicit boolean if present
+            if let Some(templating) =
+                value.get("agpm").and_then(|agpm| agpm.get("templating")).and_then(|v| v.as_bool())
+            {
+                return templating;
+            }
         }
+
+        // Fallback: textual scan
+        // Look for explicit false first (higher priority)
+        if frontmatter.contains("templating: false")
+            || frontmatter.contains("\"templating\": false")
+        {
+            return false;
+        }
+
+        // Look for explicit true or template syntax
+        frontmatter.contains("templating: true")
+            || frontmatter.contains("\"templating\": true")
+            || frontmatter.contains("{{")
+            || frontmatter.contains("{%")
     }
 
-    /// Check if templating is disabled in JSON content.
+    /// Check if templating should be enabled in JSON content.
     ///
-    /// Parses the JSON to check for `agpm.templating: false` field.
-    /// Templating is opt-in: disabled by default unless explicitly set to true.
-    fn is_templating_disabled_json(content: &str) -> bool {
+    /// First tries to parse the JSON and honor explicit `agpm.templating` boolean.
+    /// If parsing fails, falls back to textual scan for template syntax.
+    fn should_template_json(content: &str) -> bool {
         // Try to parse JSON to check agpm.templating field
         if let Ok(json) = serde_json::from_str::<JsonValue>(content) {
-            json.get("agpm")
-                .and_then(|agpm| agpm.get("templating"))
-                .and_then(|v| v.as_bool())
-                .map(|b| !b)
-                .unwrap_or(true) // Opt-in: disabled by default
-        } else {
-            true // Opt-in: disabled by default
+            // Honor explicit boolean if present
+            if let Some(templating) =
+                json.get("agpm").and_then(|agpm| agpm.get("templating")).and_then(|v| v.as_bool())
+            {
+                return templating;
+            }
         }
+
+        // Fallback: textual scan
+        // Look for explicit false first (higher priority)
+        if content.contains("\"templating\": false") {
+            return false;
+        }
+
+        // Look for explicit true or template syntax
+        content.contains("\"templating\": true") || content.contains("{{") || content.contains("{%")
     }
 
     /// Template content using project variables.
@@ -1086,5 +1089,173 @@ dependencies:
         // Both should deduplicate independently
         assert!(!ctx1.should_warn_file(&path));
         assert!(!ctx2.should_warn_file(&path));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_explicit_true() {
+        let content = r#"---
+agpm:
+  templating: true
+dependencies:
+  agents:
+    - path: helper.md
+---"#;
+
+        assert!(MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_explicit_false() {
+        let content = r#"---
+agpm:
+  templating: false
+dependencies:
+  agents:
+    - path: {{ template }}.md
+---"#;
+
+        assert!(!MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_with_template_syntax() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/{{ agpm.project.language }}-helper.md
+---"#;
+
+        assert!(MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_malformed_with_template_syntax() {
+        let content = r#"---
+agpm:
+  templating: not-a-boolean
+dependencies:
+  agents:
+    - path: agents/{{ agpm.project.language }}-helper.md
+  invalid_yaml: [unclosed array
+---"#;
+
+        assert!(MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_malformed_no_template_syntax() {
+        let content = r#"---
+agpm:
+  templating: not-a-boolean
+dependencies:
+  agents:
+    - path: agents/helper.md
+  invalid_yaml: [unclosed array
+---"#;
+
+        assert!(!MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_frontmatter_no_agpm_section() {
+        let content = r#"---
+dependencies:
+  agents:
+    - path: agents/helper.md
+---"#;
+
+        assert!(!MetadataExtractor::should_template_frontmatter(content));
+    }
+
+    #[test]
+    fn test_should_template_json_explicit_true() {
+        let content = r#"{
+  "agpm": {
+    "templating": true
+  },
+  "dependencies": {
+    "agents": [
+      { "path": "helper.md" }
+    ]
+  }
+}"#;
+
+        assert!(MetadataExtractor::should_template_json(content));
+    }
+
+    #[test]
+    fn test_should_template_json_explicit_false() {
+        let content = r#"{
+  "agpm": {
+    "templating": false
+  },
+  "dependencies": {
+    "agents": [
+      { "path": "{{ template }}.md" }
+    ]
+  }
+}"#;
+
+        assert!(!MetadataExtractor::should_template_json(content));
+    }
+
+    #[test]
+    fn test_should_template_json_with_template_syntax() {
+        let content = r#"{
+  "dependencies": {
+    "agents": [
+      { "path": "agents/{{ agpm.project.language }}-helper.md" }
+    ]
+  }
+}"#;
+
+        assert!(MetadataExtractor::should_template_json(content));
+    }
+
+    #[test]
+    fn test_should_template_json_malformed_with_template_syntax() {
+        let content = r#"{
+  "agpm": {
+    "templating": not-a-boolean
+  },
+  "dependencies": {
+    "agents": [
+      { "path": "agents/{{ agpm.project.language }}-helper.md" }
+    ]
+  },
+  "invalid_json": "unclosed string
+}"#;
+
+        assert!(MetadataExtractor::should_template_json(content));
+    }
+
+    #[test]
+    fn test_should_template_json_malformed_no_template_syntax() {
+        let content = r#"{
+  "agpm": {
+    "templating": not-a-boolean
+  },
+  "dependencies": {
+    "agents": [
+      { "path": "agents/helper.md" }
+    ]
+  },
+  "invalid_json": "unclosed string
+}"#;
+
+        assert!(!MetadataExtractor::should_template_json(content));
+    }
+
+    #[test]
+    fn test_should_template_json_no_agpm_section() {
+        let content = r#"{
+  "dependencies": {
+    "agents": [
+      { "path": "helper.md" }
+    ]
+  }
+}"#;
+
+        assert!(!MetadataExtractor::should_template_json(content));
     }
 }
