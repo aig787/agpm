@@ -210,7 +210,7 @@ Systematically verify the accuracy of all documentation files against the curren
 
    ### Line 78: Outdated module structure
    - Documentation says: `src/installer/mod.rs`
-   - Actually located at: `src/installer.rs`
+   - Actually located at: `src/installer/mod.rs`
    - Verification: Used `glob` to check actual file structure
    - Severity: Minor
 

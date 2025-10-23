@@ -28,7 +28,7 @@ src/
 ├── core/        # Error handling, resources
 ├── git/         # Git CLI wrapper + worktrees
 ├── hooks/       # Claude Code hooks
-├── installer.rs # Parallel resource installation + artifact cleanup
+├── installer/   # Parallel resource installation + artifact cleanup
 ├── lockfile/    # agpm.lock management + staleness detection
 ├── manifest/    # agpm.toml parsing + transitive dependencies
 │   └── dependency_spec.rs  # DependencySpec and DependencyMetadata structures
@@ -112,7 +112,7 @@ src/
 ## Development
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
-- **File Size**: Keep source code files under 1,000 lines (including comments and docstrings). Files exceeding this limit should be refactored into smaller, focused modules.
+- **File Size**: Keep source code files under 1,000 lines of code (excluding empty lines and comments). Files exceeding this limit should be refactored into smaller, focused modules. Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes

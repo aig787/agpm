@@ -72,9 +72,11 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
    **Quick Review (--quick)**:
    - Run these checks:
-     - `cargo fmt -- --check` to ensure formatting
+     - `cargo fmt` to ensure formatting
      - `cargo clippy -- -D warnings` to catch issues
      - `cargo nextest run` for tests
+     - `cargo nextest run --profile all --test stress` for stress tests
+     - `cargo test --doc` for doctests
 
    **Full Review (--full or default)**:
    - First, run quick checks (cargo fmt -- --check, clippy, nextest run)
@@ -82,7 +84,18 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      - Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
      - Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and adherence to `.agpm/snippets/rust-best-practices.md`
      - Use Task with subagent_type="rust-test-standard" to analyze test coverage, quality, and isolation (TestProject usage)
-     - Use Task with subagent_type="rust-doc-standard" to review documentation completeness
+     - Use Task with subagent_type="rust-doc-standard" to review documentation completeness AND docstring accuracy/conciseness:
+       ```
+       Task(description="Review docstrings for accuracy and conciseness",
+            prompt="Review all docstrings in changed files for:
+            1. Accuracy - ensure docstrings correctly describe what the code does
+            2. Conciseness - keep docstrings brief but informative, avoid verbosity
+            3. Completeness - all public functions, structs, enums, and traits have proper documentation
+            4. Examples - use `no_run` for code examples by default unless they should be executed as tests; use `ignore` for examples that won't compile
+            5. Consistency - follow Rust documentation conventions and style
+            Focus on changed files and highlight any docstrings that are inaccurate, too verbose, missing, or inconsistent with the code.",
+            subagent_type="rust-doc-standard")
+       ```
      - Only escalate to advanced agents (rust-expert-advanced, rust-troubleshooter-advanced) if initial review finds complex issues
    - **CRITICAL TEST CHECK**: Search for tests using global cache:
      - Look for files matching pattern: `TempDir::new()` + `Command::cargo_bin()` but NOT `TestProject` or `Cache::with_dir()`
@@ -91,6 +104,20 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      ```
      Task(description="Review code quality",
           prompt="Review the changed files against .agpm/snippets/rust-best-practices.md covering imports, naming, error handling, ownership, and architecture...",
+          subagent_type="rust-expert-standard")
+     ```
+   - Additional Task invocation for code cleanup:
+     ```
+     Task(description="Check for deprecated methods and code cleanup",
+          prompt="Analyze changed files for:
+          1. Deprecated methods - look for #[deprecated] attributes, TODO/FIXME comments suggesting removal, or methods that should be deleted entirely
+          2. Code duplication - identify identical or very similar code blocks that could be refactored into shared functions
+          3. Redundant imports - unused imports that should be removed
+          4. Dead code - functions, structs, or methods that are never called or referenced
+          5. Verbose docstrings - documentation that is excessively wordy or contains redundant information
+          6. Orphan documentation - docs that reference removed APIs or outdated patterns
+          7. Unused variables - check for variables prefixed with `_` that should be removed entirely, not just ignored
+          Focus on recommending removal of deprecated code rather than migration paths. Prioritize cleanup and simplification.",
           subagent_type="rust-expert-standard")
      ```
    - Run full test suite and doc build IN PARALLEL:
@@ -138,6 +165,11 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - DRY principles and code clarity
    - Cross-platform compatibility
    - Unnecessary renames (e.g., `thing()` → `get_thing()` without justification)
+   - **Deprecated code removal**: Check for methods marked with `#[deprecated]` that should be removed entirely
+   - **Code duplication**: Identify duplicate or very similar code blocks that should be refactored
+   - **Unused variables**: Look for variables prefixed with `_` that should be removed entirely
+   - **Dead code**: Functions, structs, or methods that are never referenced
+   - **File size limits**: Ensure source files stay under 1,000 lines of code (excluding empty lines and comments). Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
 
    **Architecture**:
    - Module structure alignment with CLAUDE.md
@@ -159,6 +191,12 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      **Documentation**:
 
    - Public APIs documented
+   - **Docstrings reviewed for accuracy and conciseness**:
+     - Ensure docstrings correctly describe what the code does
+     - Keep docstrings brief but informative, avoid verbosity
+     - Verify examples use proper attributes (`no_run` by default, `ignore` for non-compilable examples)
+     - **Verbose docstrings**: Identify documentation that is excessively wordy or contains redundant information
+     - **Orphan documentation**: Check for docs that reference removed APIs, outdated patterns, or non-existent code
    - README.md accuracy check
    - CLAUDE.md reflects architectural changes
    - AGENTS.md updated for architectural changes
