@@ -119,30 +119,30 @@ pub struct DependencyMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
 
-    /// AGPM-specific metadata wrapper.
+    /// AGPM-specific metadata wrapper supporting templating and nested dependencies.
     ///
-    /// Supports AGPM-specific fields like templating:
+    /// Example with templating flag and nested dependencies:
     /// ```yaml
     /// agpm:
     ///   templating: true
-    /// dependencies:
-    ///   snippets:
-    ///     - path: snippets/utils.md
+    ///   dependencies:
+    ///     snippets:
+    ///       - path: snippets/utils.md
     /// ```
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agpm: Option<AgpmMetadata>,
 }
 
-/// AGPM-specific metadata section.
+/// AGPM-specific metadata for templating and nested dependency declarations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgpmMetadata {
-    /// Whether templating is enabled for this resource.
+    /// Enable templating for this resource (default: false).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub templating: Option<bool>,
 
-    /// Nested dependencies under agpm section.
+    /// Dependencies nested under `agpm` section (takes precedence over root-level).
     ///
-    /// Supports the nested structure:
+    /// Example:
     /// ```yaml
     /// agpm:
     ///   templating: true
@@ -155,10 +155,10 @@ pub struct AgpmMetadata {
 }
 
 impl DependencyMetadata {
-    /// Get the effective dependencies, checking both root-level and nested locations.
+    /// Get effective dependencies from either nested or root-level location.
     ///
-    /// Prefers nested `agpm.dependencies` if present, otherwise uses root-level `dependencies`.
-    /// If both exist, nested takes precedence (more specific).
+    /// Returns `agpm.dependencies` if present, otherwise `dependencies`.
+    /// Nested takes precedence when both exist.
     pub fn get_dependencies(&self) -> Option<&HashMap<String, Vec<DependencySpec>>> {
         // Check nested dependencies first (more specific)
         if let Some(agpm) = &self.agpm {
@@ -170,20 +170,15 @@ impl DependencyMetadata {
         self.dependencies.as_ref()
     }
 
-    /// Check if this metadata contains any dependencies.
-    ///
-    /// Checks both root-level and nested `agpm.dependencies`.
+    /// Check if metadata contains any non-empty dependencies.
     pub fn has_dependencies(&self) -> bool {
         self.get_dependencies()
             .is_some_and(|deps| !deps.is_empty() && deps.values().any(|v| !v.is_empty()))
     }
 
-    /// Get the total count of dependencies.
-    ///
-    /// Counts dependencies from the effective location (nested or root-level).
+    /// Count total dependencies across all resource types.
     pub fn dependency_count(&self) -> usize {
-        self.get_dependencies()
-            .map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
+        self.get_dependencies().map_or(0, |deps| deps.values().map(std::vec::Vec::len).sum())
     }
 
     /// Merge another metadata into this one.

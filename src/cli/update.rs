@@ -506,7 +506,7 @@ impl UpdateCommand {
 
             // Update lockfile with applied patches
             for (id, applied_patches) in applied_patches_list {
-                new_lockfile.update_resource_applied_patches(&id.name, &applied_patches);
+                new_lockfile.update_resource_applied_patches(id.name(), &applied_patches);
             }
 
             // Complete installation phase
@@ -642,7 +642,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
 
@@ -690,7 +690,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: None,
+                template_vars: "{}".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

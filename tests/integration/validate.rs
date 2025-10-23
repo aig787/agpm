@@ -687,11 +687,11 @@ async fn test_validate_circular_dependencies() {
 async fn test_validate_unsupported_resource_type() {
     let project = TestProject::new().await.unwrap();
 
-    // Create manifest with snippets using opencode tool (not supported)
+    // Create manifest with scripts using opencode tool (not supported)
     let manifest = ManifestBuilder::new()
         .add_source("community", "https://github.com/test/repo.git")
-        .add_snippet("utils", |d| {
-            d.source("community").path("snippets/utils.md").version("v1.0.0").tool("opencode")
+        .add_script("deploy", |d| {
+            d.source("community").path("scripts/deploy.sh").version("v1.0.0").tool("opencode")
         })
         .build();
 
@@ -701,11 +701,10 @@ async fn test_validate_unsupported_resource_type() {
     assert!(!output.success);
 
     // Check for enhanced error message components
-    assert!(output.stdout.contains("Resource type 'snippets' is not supported by tool 'opencode'"));
+    assert!(output.stdout.contains("Resource type 'scripts' is not supported by tool 'opencode'"));
     assert!(output.stdout.contains("Tool 'opencode' properly supports:"));
     assert!(output.stdout.contains("💡 Suggestions:"));
-    assert!(output.stdout.contains("Snippets work best with the 'agpm' tool"));
-    assert!(output.stdout.contains("Add tool='agpm' to this dependency to use shared snippets"));
+    assert!(output.stdout.contains("This resource type is supported by tools: 'claude-code'"));
     assert!(output.stdout.contains("You can fix this by:"));
     assert!(output.stdout.contains("Changing the 'tool' field to a supported tool"));
 }

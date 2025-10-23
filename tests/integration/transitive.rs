@@ -2019,15 +2019,15 @@ This agent has a transitive dependency that doesn't exist.
     Ok(())
 }
 
-/// Test local file transitive dependency with invalid path format
+/// Test that bare filenames in transitive dependencies are auto-normalized
 ///
-/// This test verifies that transitive dependency paths that don't start with
-/// `./` or `../` are rejected with a clear error message.
+/// This test verifies that transitive dependency paths without `./` or `../` prefixes
+/// are automatically normalized to file-relative paths (e.g., `helper.md` → `./helper.md`).
 ///
 /// Scenario:
-/// - Local agent declares transitive dependency with plain relative path (no ./ or ../)
-/// - Should emit warning about invalid path format
-/// - Should skip the transitive dep
+/// - Local agent declares transitive dependency with bare filename (no ./ or ../)
+/// - Should auto-normalize to `./helper.md` and resolve successfully
+/// - Both agents should be installed
 #[tokio::test]
 async fn test_local_transitive_invalid_path_format() -> Result<()> {
     agpm_cli::test_utils::init_test_logging(None);
@@ -2042,7 +2042,7 @@ async fn test_local_transitive_invalid_path_format() -> Result<()> {
     let helper_path = agents_dir.join("helper.md");
     tokio::fs::write(&helper_path, "# Helper\n").await?;
 
-    // Create agent with invalid transitive dep path (doesn't start with ./ or ../)
+    // Create agent with bare filename transitive dep (auto-normalized to ./helper.md)
     let local_agent_path = agents_dir.join("local-agent.md");
     tokio::fs::write(
         &local_agent_path,
@@ -2052,7 +2052,7 @@ dependencies:
     - path: helper.md
 ---
 # Local Agent
-This agent has an invalid transitive dependency path.
+This agent has a bare filename transitive dependency that gets auto-normalized.
 "#,
     )
     .await?;
@@ -2063,17 +2063,21 @@ This agent has an invalid transitive dependency path.
 
     project.write_manifest(&manifest).await?;
 
-    // Run install - now FAILS because path resolution failures are hard failures
+    // Run install - should SUCCEED with auto-normalization
     let output = project.run_agpm(&["install"])?;
-    assert!(!output.success, "Install should fail when transitive dependency path is invalid");
-
-    // Verify the error message indicates the failure
     assert!(
-        output.stderr.contains("Failed to resolve transitive dependency")
-            || output.stderr.contains("Failed to fetch resource")
-            || output.stderr.contains("file access"),
-        "Error should indicate transitive dependency failure, got: {}",
+        output.success,
+        "Install should succeed with auto-normalized bare filename: {}",
         output.stderr
+    );
+
+    // Verify both agents were installed
+    let installed_agent = project.project_path().join(".claude/agents/local-agent.md");
+    let installed_helper = project.project_path().join(".claude/agents/helper.md");
+    assert!(installed_agent.exists(), "Local agent should be installed");
+    assert!(
+        installed_helper.exists(),
+        "Helper agent should be installed via transitive dependency"
     );
 
     Ok(())

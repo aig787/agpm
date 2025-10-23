@@ -110,8 +110,6 @@
 // Shared test utilities (from parent tests/ directory)
 #[path = "../common/mod.rs"]
 mod common;
-#[path = "../fixtures/mod.rs"]
-mod fixtures;
 
 // Stress test modules
 mod large_scale;

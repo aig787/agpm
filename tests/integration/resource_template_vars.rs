@@ -253,7 +253,9 @@ framework = "gin"
     assert!(agent.get("template_vars").is_some(), "Agent entry should have template_vars field");
 
     let template_vars = agent.get("template_vars").unwrap();
-    let project_vars = template_vars.get("project").and_then(|p| p.as_table()).unwrap();
+    let template_vars_str = template_vars.as_str().unwrap();
+    let template_vars_json: serde_json::Value = serde_json::from_str(template_vars_str).unwrap();
+    let project_vars = template_vars_json.get("project").and_then(|p| p.as_object()).unwrap();
 
     assert_eq!(
         project_vars.get("language").and_then(|l| l.as_str()),

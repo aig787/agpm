@@ -98,24 +98,24 @@ impl PatchDisplay {
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
-/// let resource = LockedResource {
+/// let resource = LockedResource::new(
 ///     // ... resource fields
-/// #   name: "test".to_string(),
-/// #   source: Some("community".to_string()),
-/// #   url: Some("https://example.com/repo.git".to_string()),
-/// #   path: "agents/test.md".to_string(),
-/// #   version: Some("v1.0.0".to_string()),
-/// #   resolved_commit: Some("abc123".to_string()),
-/// #   checksum: "sha256:def456".to_string(),
-/// #   installed_at: "agents/test.md".to_string(),
-/// #   dependencies: vec![],
-/// #   resource_type: agpm_cli::core::ResourceType::Agent,
-/// #   tool: Some("claude-code".to_string()),
-/// #   manifest_alias: None,
-/// #   applied_patches: std::collections::HashMap::new(),
-/// #   install: None,
-/// #   template_vars: None,
-/// };
+/// #   "test".to_string(),
+/// #   Some("community".to_string()),
+/// #   Some("https://example.com/repo.git".to_string()),
+/// #   "agents/test.md".to_string(),
+/// #   Some("v1.0.0".to_string()),
+/// #   Some("abc123".to_string()),
+/// #   "sha256:def456".to_string(),
+/// #   "agents/test.md".to_string(),
+/// #   vec![],
+/// #   agpm_cli::core::ResourceType::Agent,
+/// #   Some("claude-code".to_string()),
+/// #   None,
+/// #   std::collections::HashMap::new(),
+/// #   None,
+/// #   serde_json::Value::Object(serde_json::Map::new()),
+/// );
 ///
 /// let displays = extract_patch_displays(&resource, &cache).await;
 /// for display in displays {

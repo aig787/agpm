@@ -5,6 +5,22 @@
 //! conflict detection, transitive dependency resolution,
 //! parallel source synchronization, and relative path preservation during installation.
 //!
+//! # Module Organization
+//!
+//! The resolver is organized into focused submodules:
+//!
+//! - [`dependency_graph`] - Graph-based transitive dependency resolution with cycle detection
+//! - [`version_resolution`] - Version constraint solving and conflict detection
+//! - [`version_resolver`] - Centralized batch SHA resolution for Git references
+//! - [`dependency_helpers`] - Dependency processing and validation utilities
+//! - [`install_path_resolver`] - Installation path calculation and conflict detection
+//! - [`path_helpers`] - Path manipulation and normalization utilities
+//! - `lockfile_builder` - Lockfile entry generation and metadata extraction
+//! - `lockfile_operations` - Lockfile manipulation and conflict detection
+//! - `pattern_expander` - Glob pattern expansion for bulk dependency installation
+//! - `transitive_resolver` - Transitive dependency extraction and resolution
+//! - `worktree_manager` - Git worktree creation and SHA-based deduplication
+//!
 //! # Architecture Overview
 //!
 //! The resolver operates using a **two-phase architecture** optimized for SHA-based worktree caching:
@@ -216,7 +232,7 @@ pub mod version_resolver;
 use crate::cache::Cache;
 use crate::core::{AgpmError, OperationContext, ResourceType};
 use crate::git::GitRepo;
-use crate::lockfile::{LockFile, LockedResource};
+use crate::lockfile::{LockFile, LockedResource, LockedResourceBuilder};
 use crate::manifest::{Manifest, ResourceDependency, json_value_to_toml};
 use crate::metadata::MetadataExtractor;
 use crate::source::SourceManager;
@@ -231,12 +247,81 @@ use std::time::Duration;
 use self::dependency_graph::{DependencyGraph, DependencyNode};
 use self::version_resolver::VersionResolver;
 
+// Module declarations
+pub mod dependency_helpers;
+pub mod install_path_resolver;
+mod lockfile_builder;
+mod lockfile_operations;
+pub mod path_helpers;
+mod pattern_expander;
+mod transitive_resolver;
+mod worktree_manager;
+
+#[cfg(test)]
+mod tests;
+
+// Re-export public types and functions
+pub use lockfile_builder::LockfileBuilder;
+pub use pattern_expander::{expand_pattern_to_concrete_deps, generate_dependency_name};
+pub use transitive_resolver::resolve_transitive_dependencies;
+pub use worktree_manager::{PreparedSourceVersion, WorktreeManager};
+
 /// Key for identifying unique dependencies in maps and sets.
 ///
 /// Combines resource type, name, source, and tool to uniquely identify a dependency.
 /// This prevents collisions between same-named resources from different sources or
 /// using different tools.
 type DependencyKey = (ResourceType, String, Option<String>, Option<String>);
+
+/// Determines if a path is file-relative (starts with `./` or `../`, or is a bare filename).
+///
+/// File-relative paths are resolved relative to the containing file's directory.
+/// This includes both explicit relative paths (`./helper.md`, `../utils.md`)
+/// and bare filenames (`helper.md`) which are automatically treated as file-relative.
+///
+/// # Examples
+///
+/// ```
+/// # use agpm_cli::resolver::is_file_relative_path;
+/// assert!(is_file_relative_path("./helper.md"));
+/// assert!(is_file_relative_path("../utils.md"));
+/// assert!(is_file_relative_path("helper.md"));  // Bare filename
+/// assert!(!is_file_relative_path("agents/helper.md"));  // Repo-relative
+/// ```
+pub fn is_file_relative_path(path: &str) -> bool {
+    let p = Path::new(path);
+    // Check if path starts with ./ or ../, or is a bare filename (single component)
+    path.starts_with("./") || path.starts_with("../") || p.components().count() == 1
+}
+
+/// Normalizes a bare filename to a file-relative path by prepending the current directory.
+///
+/// If the path is already explicitly relative (starts with `./` or `../`),
+/// returns it unchanged. Otherwise, joins it with the current directory (`.`)
+/// to make it unambiguous.
+///
+/// # Examples
+///
+/// ```
+/// # use agpm_cli::resolver::normalize_bare_filename;
+/// # use std::path::Path;
+/// // On Unix: "./helper.md", on Windows: ".\\helper.md"
+/// assert_eq!(
+///     normalize_bare_filename("helper.md"),
+///     Path::new(".").join("helper.md").to_string_lossy().to_string()
+/// );
+/// assert_eq!(normalize_bare_filename("./helper.md"), "./helper.md");
+/// assert_eq!(normalize_bare_filename("../utils.md"), "../utils.md");
+/// ```
+pub fn normalize_bare_filename(path: &str) -> String {
+    let p = Path::new(path);
+    // If it's a bare filename (single component), join with current directory
+    if p.components().count() == 1 {
+        Path::new(".").join(path).to_string_lossy().to_string()
+    } else {
+        path.to_string()
+    }
+}
 
 /// Extract meaningful path structure from a dependency path.
 ///
@@ -447,8 +532,6 @@ pub struct DependencyResolver {
     /// The `VersionResolver` handles the crucial first phase of dependency resolution
     /// by batch-resolving all version specifications to commit SHAs before any worktree
     /// operations. This strategy enables maximum worktree reuse and minimal Git operations.
-    ///
-    /// Used by [`prepare_remote_groups`] to resolve all dependencies upfront.
     version_resolver: VersionResolver,
     /// Dependency graph tracking which resources depend on which others.
     ///
@@ -498,13 +581,6 @@ pub struct DependencyResolver {
     operation_context: Option<Arc<OperationContext>>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct PreparedSourceVersion {
-    worktree_path: PathBuf,
-    resolved_version: Option<String>,
-    resolved_commit: String,
-}
-
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 struct PreparedGroupDescriptor {
@@ -515,540 +591,57 @@ struct PreparedGroupDescriptor {
 }
 
 impl DependencyResolver {
+    /// Generate unique key for grouping dependencies by source and version.
     fn group_key(source: &str, version: &str) -> String {
-        format!("{source}::{version}")
+        lockfile_operations::group_key(source, version)
     }
 
-    /// Build the complete merged template variable context for a dependency.
+    /// Build complete merged template variable context for a dependency.
     ///
-    /// This creates the full template_vars that should be stored in the lockfile,
-    /// combining both the global project configuration and any dependency-specific
-    /// template_vars overrides.
-    ///
-    /// This ensures lockfile entries contain the exact template context that was
-    /// used during dependency resolution, enabling reproducible builds.
-    ///
-    /// # Arguments
-    ///
-    /// * `dep` - The dependency to build template_vars for
-    ///
-    /// # Returns
-    ///
-    /// Complete merged template_vars, or None if there are no template variables
+    /// Combines global project config with dependency-specific template_vars overrides.
     fn build_merged_template_vars(
         &self,
         dep: &crate::manifest::ResourceDependency,
-    ) -> Option<serde_json::Value> {
-        use crate::templating::deep_merge_json;
-
-        // Start with dependency-level template_vars (if any)
-        let dep_vars = dep.get_template_vars();
-
-        // Get global project config as JSON
-        let global_project = self
-            .manifest
-            .project
-            .as_ref()
-            .map(|p| p.to_json_value())
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-        // Build complete context
-        let mut merged_map = serde_json::Map::new();
-
-        // If dependency has template_vars, start with those
-        if let Some(vars) = dep_vars {
-            if let Some(obj) = vars.as_object() {
-                merged_map.extend(obj.clone());
-            }
-        }
-
-        // Extract project overrides from dependency template_vars (if present)
-        let project_overrides = dep_vars
-            .and_then(|v| v.get("project").cloned())
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-        // Deep merge global project config with dependency-specific overrides
-        let merged_project = deep_merge_json(global_project, &project_overrides);
-
-        // Add merged project config to the template_vars
-        merged_map.insert("project".to_string(), merged_project);
-
-        // If the map is empty, return None
-        if merged_map.is_empty() {
-            None
-        } else {
-            Some(serde_json::Value::Object(merged_map))
-        }
+    ) -> serde_json::Value {
+        lockfile_operations::build_merged_template_vars(&self.manifest, dep)
     }
 
-    /// Adds or updates a resource entry in the lockfile based on resource type.
+    /// Add or update a resource entry in the lockfile.
     ///
-    /// This helper method eliminates code duplication between the `resolve()` and `update()`
-    /// methods by centralizing lockfile entry management logic. It automatically determines
-    /// the resource type from the entry name and adds or updates the entry in the appropriate
-    /// collection within the lockfile.
-    ///
-    /// The method performs upsert behavior - if an entry with matching name and source
-    /// already exists in the appropriate collection, it will be updated (including version);
-    /// otherwise, a new entry is added. This allows version updates (e.g., v1.0 → v2.0)
-    /// to replace the existing entry rather than creating duplicates.
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - Mutable reference to the lockfile to modify
-    /// * `name` - The name of the resource entry (used to determine resource type)
-    /// * `entry` - The [`LockedResource`] entry to add or update
-    ///
-    /// # Resource Type Detection
-    ///
-    /// Resource types are threaded from the manifest throughout the resolution pipeline,
-    /// which maps to the following lockfile collections:
-    /// - `"agent"` → `lockfile.agents`
-    /// - `"snippet"` → `lockfile.snippets`
-    /// - `"command"` → `lockfile.commands`
-    /// - `"script"` → `lockfile.scripts`
-    /// - `"hook"` → `lockfile.hooks`
-    /// - `"mcp-server"` → `lockfile.mcp_servers`
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
-    /// # use agpm_cli::core::ResourceType;
-    /// # use agpm_cli::resolver::DependencyResolver;
-    /// # let resolver = DependencyResolver::new();
-    /// let mut lockfile = LockFile::new();
-    /// let entry = LockedResource {
-    ///     name: "my-agent".to_string(),
-    ///     source: Some("github".to_string()),
-    ///     url: Some("https://github.com/org/repo.git".to_string()),
-    ///     path: "agents/my-agent.md".to_string(),
-    ///     version: Some("v1.0.0".to_string()),
-    ///     resolved_commit: Some("abc123def456...".to_string()),
-    ///     checksum: "sha256:a1b2c3d4...".to_string(),
-    ///     installed_at: ".claude/agents/my-agent.md".to_string(),
-    ///     dependencies: vec![],
-    ///     resource_type: ResourceType::Agent,
-    /// };
-    ///
-    /// // Automatically adds to agents collection based on resource type detection
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", entry);
-    /// assert_eq!(lockfile.agents.len(), 1);
-    ///
-    /// // Subsequent calls update the existing entry
-    /// let updated_entry = LockedResource {
-    ///     name: "my-agent".to_string(),
-    ///     version: Some("v1.1.0".to_string()),
-    ///     // ... other fields
-    /// #   source: Some("github".to_string()),
-    /// #   url: Some("https://github.com/org/repo.git".to_string()),
-    /// #   path: "agents/my-agent.md".to_string(),
-    /// #   resolved_commit: Some("def456789abc...".to_string()),
-    /// #   checksum: "sha256:b2c3d4e5...".to_string()),
-    /// #   installed_at: ".claude/agents/my-agent.md".to_string(),
-    ///     dependencies: vec![],
-    ///     resource_type: ResourceType::Agent,
-    /// };
-    /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", updated_entry);
-    /// assert_eq!(lockfile.agents.len(), 1); // Still one entry, but updated
-    /// ```
+    /// Uses upsert behavior - existing entries with matching name, source, and tool are updated;
+    /// otherwise a new entry is added.
     fn add_or_update_lockfile_entry(
         &self,
         lockfile: &mut LockFile,
         _name: &str,
         entry: LockedResource,
     ) {
-        // Get the appropriate resource collection based on the entry's type
-        let resources = lockfile.get_resources_mut(entry.resource_type);
-
-        // Use (name, source, tool) matching for deduplication
-        // This allows multiple entries with the same name from different sources or tools,
-        // which will be caught by conflict detection if they map to the same path
-        if let Some(existing) = resources
-            .iter_mut()
-            .find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
-        {
-            *existing = entry;
-        } else {
-            resources.push(entry);
-        }
+        lockfile_operations::add_or_update_lockfile_entry(lockfile, entry)
     }
 
-    /// Removes stale lockfile entries that are no longer in the manifest.
+    /// Remove lockfile entries for dependencies no longer in the manifest.
     ///
-    /// This method removes lockfile entries for direct manifest dependencies that have been
-    /// commented out or removed from the manifest. This must be called BEFORE
-    /// `remove_manifest_entries_for_update()` to ensure stale entries don't cause conflicts
-    /// during resolution.
-    ///
-    /// A manifest-level entry is identified by:
-    /// - `manifest_alias.is_none()` - Direct dependency with no pattern expansion
-    /// - `manifest_alias.is_some()` - Pattern-expanded dependency (alias must be in manifest)
-    ///
-    /// For each stale entry found, this also removes its transitive children to maintain
-    /// lockfile consistency.
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - The mutable lockfile to clean
-    ///
-    /// # Examples
-    ///
-    /// If a user comments out an agent in agpm.toml:
-    /// ```toml
-    /// # [agents]
-    /// # example = { source = "community", path = "agents/example.md", version = "v1.0.0" }
-    /// ```
-    ///
-    /// This function will remove the "example" agent from the lockfile and all its transitive
-    /// dependencies before the update process begins.
+    /// Removes both direct dependencies and their transitive children to maintain consistency.
     fn remove_stale_manifest_entries(&self, lockfile: &mut LockFile) {
-        use std::collections::HashSet;
-
-        // Collect all current manifest keys for each resource type
-        let manifest_agents: HashSet<String> =
-            self.manifest.agents.keys().map(|k| k.to_string()).collect();
-        let manifest_snippets: HashSet<String> =
-            self.manifest.snippets.keys().map(|k| k.to_string()).collect();
-        let manifest_commands: HashSet<String> =
-            self.manifest.commands.keys().map(|k| k.to_string()).collect();
-        let manifest_scripts: HashSet<String> =
-            self.manifest.scripts.keys().map(|k| k.to_string()).collect();
-        let manifest_hooks: HashSet<String> =
-            self.manifest.hooks.keys().map(|k| k.to_string()).collect();
-        let manifest_mcp_servers: HashSet<String> =
-            self.manifest.mcp_servers.keys().map(|k| k.to_string()).collect();
-
-        // Helper to get the right manifest keys for a resource type
-        let get_manifest_keys = |resource_type: crate::core::ResourceType| match resource_type {
-            crate::core::ResourceType::Agent => &manifest_agents,
-            crate::core::ResourceType::Snippet => &manifest_snippets,
-            crate::core::ResourceType::Command => &manifest_commands,
-            crate::core::ResourceType::Script => &manifest_scripts,
-            crate::core::ResourceType::Hook => &manifest_hooks,
-            crate::core::ResourceType::McpServer => &manifest_mcp_servers,
-        };
-
-        // Collect (name, source) pairs to remove
-        let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
-        let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
-
-        // Find all manifest-level entries that are no longer in the manifest
-        for resource_type in crate::core::ResourceType::all() {
-            let manifest_keys = get_manifest_keys(*resource_type);
-            let resources = lockfile.get_resources(*resource_type);
-
-            for entry in resources {
-                // Determine if this is a stale manifest-level entry (no longer in manifest)
-                let is_stale = if let Some(ref alias) = entry.manifest_alias {
-                    // Pattern-expanded entry: stale if alias is NOT in manifest
-                    !manifest_keys.contains(alias)
-                } else {
-                    // Direct entry: stale if name is NOT in manifest
-                    !manifest_keys.contains(&entry.name)
-                };
-
-                if is_stale {
-                    let key = (entry.name.clone(), entry.source.clone());
-                    entries_to_remove.insert(key.clone());
-                    direct_entries.push(key);
-                }
-            }
-        }
-
-        // For each stale entry, recursively collect its transitive children
-        for (parent_name, parent_source) in direct_entries {
-            for resource_type in crate::core::ResourceType::all() {
-                if let Some(parent_entry) = lockfile
-                    .get_resources(*resource_type)
-                    .iter()
-                    .find(|e| e.name == parent_name && e.source == parent_source)
-                {
-                    Self::collect_transitive_children(
-                        lockfile,
-                        parent_entry,
-                        &mut entries_to_remove,
-                    );
-                }
-            }
-        }
-
-        // Remove all marked entries
-        let should_remove = |entry: &crate::lockfile::LockedResource| {
-            entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
-        };
-
-        lockfile.agents.retain(|entry| !should_remove(entry));
-        lockfile.snippets.retain(|entry| !should_remove(entry));
-        lockfile.commands.retain(|entry| !should_remove(entry));
-        lockfile.scripts.retain(|entry| !should_remove(entry));
-        lockfile.hooks.retain(|entry| !should_remove(entry));
-        lockfile.mcp_servers.retain(|entry| !should_remove(entry));
+        lockfile_operations::remove_stale_manifest_entries(&self.manifest, lockfile)
     }
 
-    /// Removes lockfile entries for manifest dependencies that will be re-resolved.
+    /// Remove lockfile entries for manifest dependencies being re-resolved during update.
     ///
-    /// This method removes old entries for direct manifest dependencies before updating,
-    /// which handles the case where a dependency's source or resource type changes.
-    /// This prevents duplicate entries with the same name but different sources.
-    ///
-    /// Pattern-expanded and transitive dependencies are preserved because:
-    /// - Pattern expansions will be re-added during resolution with (name, source) matching
-    /// - Transitive dependencies aren't manifest keys and won't be removed
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - The mutable lockfile to clean
-    /// * `manifest_keys` - Set of manifest dependency keys being updated
+    /// Handles source changes by removing old entries and their transitive dependencies.
     fn remove_manifest_entries_for_update(
         &self,
         lockfile: &mut LockFile,
         manifest_keys: &HashSet<String>,
     ) {
-        use std::collections::HashSet;
-
-        // Collect (name, source) pairs to remove
-        // We use (name, source) tuples to distinguish same-named resources from different sources
-        let mut entries_to_remove: HashSet<(String, Option<String>)> = HashSet::new();
-
-        // Step 1: Find direct manifest entries and collect them for transitive traversal
-        let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
-
-        for resource_type in crate::core::ResourceType::all() {
-            let resources = lockfile.get_resources(*resource_type);
-            for entry in resources {
-                // Check if this entry originates from a manifest key being updated
-                if manifest_keys.contains(&entry.name)
-                    || entry
-                        .manifest_alias
-                        .as_ref()
-                        .is_some_and(|alias| manifest_keys.contains(alias))
-                {
-                    let key = (entry.name.clone(), entry.source.clone());
-                    entries_to_remove.insert(key.clone());
-                    direct_entries.push(key);
-                }
-            }
-        }
-
-        // Step 2: For each direct entry, recursively collect its transitive children
-        // This ensures that when "agent-A" changes from repo1 to repo2, we also remove
-        // all transitive dependencies that came from repo1 via agent-A
-        for (parent_name, parent_source) in direct_entries {
-            // Find the parent entry in the lockfile
-            for resource_type in crate::core::ResourceType::all() {
-                if let Some(parent_entry) = lockfile
-                    .get_resources(*resource_type)
-                    .iter()
-                    .find(|e| e.name == parent_name && e.source == parent_source)
-                {
-                    // Walk its dependency tree
-                    Self::collect_transitive_children(
-                        lockfile,
-                        parent_entry,
-                        &mut entries_to_remove,
-                    );
-                }
-            }
-        }
-
-        // Step 3: Remove all marked entries
-        let should_remove = |entry: &crate::lockfile::LockedResource| {
-            entries_to_remove.contains(&(entry.name.clone(), entry.source.clone()))
-        };
-
-        lockfile.agents.retain(|entry| !should_remove(entry));
-        lockfile.snippets.retain(|entry| !should_remove(entry));
-        lockfile.commands.retain(|entry| !should_remove(entry));
-        lockfile.scripts.retain(|entry| !should_remove(entry));
-        lockfile.hooks.retain(|entry| !should_remove(entry));
-        lockfile.mcp_servers.retain(|entry| !should_remove(entry));
+        lockfile_operations::remove_manifest_entries_for_update(lockfile, manifest_keys)
     }
 
-    /// Recursively collect all transitive children of a lockfile entry.
+    /// Detect conflicts where multiple dependencies resolve to the same installation path.
     ///
-    /// This walks the dependency graph starting from `parent`, following the `dependencies`
-    /// field to find all resources that transitively depend on the parent. Only dependencies
-    /// with the same source as the parent are collected (to avoid removing unrelated resources).
-    ///
-    /// The `dependencies` field contains strings in the format:
-    /// - `"resource_type/name"` for dependencies from the same source
-    /// - `"source:resource_type/name:version"` for explicit source references
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - The lockfile to search for dependencies
-    /// * `parent` - The parent entry whose children we want to collect
-    /// * `entries_to_remove` - Set of (name, source) pairs to populate with found children
-    fn collect_transitive_children(
-        lockfile: &crate::lockfile::LockFile,
-        parent: &crate::lockfile::LockedResource,
-        entries_to_remove: &mut std::collections::HashSet<(String, Option<String>)>,
-    ) {
-        // For each dependency declared by this parent
-        for dep_ref in &parent.dependencies {
-            // Parse dependency reference: "source:resource_type/name:version" or "resource_type/name"
-            // Examples: "repo1:snippet/utils:v1.0.0" or "agent/helper"
-            let (dep_source, dep_name) = if let Some(colon_pos) = dep_ref.find(':') {
-                // Format: "source:resource_type/name:version"
-                let source_part = &dep_ref[..colon_pos];
-                let rest = &dep_ref[colon_pos + 1..];
-                // Find the resource_type/name part (before optional :version)
-                let type_name_part = if let Some(ver_colon) = rest.rfind(':') {
-                    &rest[..ver_colon]
-                } else {
-                    rest
-                };
-                // Extract name from "resource_type/name"
-                if let Some(slash_pos) = type_name_part.find('/') {
-                    let name = &type_name_part[slash_pos + 1..];
-                    (Some(source_part.to_string()), name.to_string())
-                } else {
-                    continue; // Invalid format, skip
-                }
-            } else {
-                // Format: "resource_type/name"
-                if let Some(slash_pos) = dep_ref.find('/') {
-                    let name = &dep_ref[slash_pos + 1..];
-                    // Inherit parent's source
-                    (parent.source.clone(), name.to_string())
-                } else {
-                    continue; // Invalid format, skip
-                }
-            };
-
-            // Find the dependency entry with matching name and source
-            for resource_type in crate::core::ResourceType::all() {
-                if let Some(dep_entry) = lockfile
-                    .get_resources(*resource_type)
-                    .iter()
-                    .find(|e| e.name == dep_name && e.source == dep_source)
-                {
-                    let key = (dep_entry.name.clone(), dep_entry.source.clone());
-
-                    // Add to removal set and recurse (if not already processed)
-                    if !entries_to_remove.contains(&key) {
-                        entries_to_remove.insert(key);
-                        // Recursively collect this dependency's children
-                        Self::collect_transitive_children(lockfile, dep_entry, entries_to_remove);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Detects conflicts where multiple dependencies resolve to the same installation path.
-    ///
-    /// This method validates that no two dependencies will overwrite each other during
-    /// installation. It builds a map of all resolved `installed_at` paths and checks for
-    /// collisions across all resource types.
-    ///
-    /// # Arguments
-    ///
-    /// * `lockfile` - The lockfile containing all resolved dependencies
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if no conflicts are detected, or an error describing the conflicts.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Two or more dependencies resolve to the same `installed_at` path
-    /// - The error message lists all conflicting dependency names and the shared path
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// // This would cause a conflict error:
-    /// // [agents]
-    /// // v1 = { source = "repo", path = "agents/example.md", version = "v1.0" }
-    /// // v2 = { source = "repo", path = "agents/example.md", version = "v2.0" }
-    /// // Both resolve to .claude/agents/example.md
-    /// ```
+    /// Returns an error if dependencies with different content would overwrite each other.
     fn detect_target_conflicts(&self, lockfile: &LockFile) -> Result<()> {
-        use std::collections::HashMap;
-
-        // Map of (installed_at path, resolved_commit) -> list of dependency names
-        // Two dependencies with the same path AND same commit are NOT a conflict
-        let mut path_map: HashMap<(String, Option<String>), Vec<String>> = HashMap::new();
-
-        // Collect all resources from lockfile
-        // Note: Hooks and MCP servers are excluded because they're configuration-only
-        // resources that are designed to share config files (.claude/settings.local.json
-        // for hooks, .mcp.json for MCP servers), not individual files that would conflict.
-        let all_resources: Vec<(&str, &LockedResource)> = lockfile
-            .agents
-            .iter()
-            .map(|r| (r.name.as_str(), r))
-            .chain(lockfile.snippets.iter().map(|r| (r.name.as_str(), r)))
-            .chain(lockfile.commands.iter().map(|r| (r.name.as_str(), r)))
-            .chain(lockfile.scripts.iter().map(|r| (r.name.as_str(), r)))
-            // Hooks and MCP servers intentionally omitted - they share config files
-            .collect();
-
-        // Build the path map with commit information
-        for (name, resource) in &all_resources {
-            let key = (resource.installed_at.clone(), resource.resolved_commit.clone());
-            path_map.entry(key).or_default().push((*name).to_string());
-        }
-
-        // Now check for actual conflicts: same path but DIFFERENT commits
-        // Group by path only to find potential conflicts
-        let mut path_only_map: HashMap<String, Vec<(&str, &LockedResource)>> = HashMap::new();
-        for (name, resource) in &all_resources {
-            path_only_map.entry(resource.installed_at.clone()).or_default().push((name, resource));
-        }
-
-        // Find conflicts (same path with different commits)
-        let mut conflicts: Vec<(String, Vec<String>)> = Vec::new();
-        for (path, resources) in path_only_map {
-            if resources.len() > 1 {
-                // Check if they have different commits
-                let commits: std::collections::HashSet<_> =
-                    resources.iter().map(|(_, r)| &r.resolved_commit).collect();
-
-                // Only a conflict if different commits
-                if commits.len() > 1 {
-                    let names: Vec<String> =
-                        resources.iter().map(|(n, _)| (*n).to_string()).collect();
-                    conflicts.push((path, names));
-                }
-            }
-        }
-
-        if !conflicts.is_empty() {
-            // Build a detailed error message
-            let mut error_msg = String::from(
-                "Target path conflicts detected:\n\n\
-                 Multiple dependencies resolve to the same installation path with different content.\n\
-                 This would cause files to overwrite each other.\n\n",
-            );
-
-            for (path, names) in &conflicts {
-                error_msg.push_str(&format!(
-                    "  Path: {}\n  Conflicts: {}\n\n",
-                    path,
-                    names.join(", ")
-                ));
-            }
-
-            error_msg.push_str(
-                "To resolve this conflict:\n\
-                 1. Use custom 'target' field to specify different installation paths:\n\
-                    Example: target = \"custom/subdir/file.md\"\n\n\
-                 2. Use custom 'filename' field to specify different filenames:\n\
-                    Example: filename = \"utils-v2.md\"\n\n\
-                 3. For transitive dependencies, add them as direct dependencies with custom target/filename\n\n\
-                 4. Ensure pattern dependencies don't overlap with single-file dependencies\n\n\
-                 Note: This often occurs when different dependencies have transitive dependencies\n\
-                 with the same name but from different sources.",
-            );
-
-            return Err(anyhow::anyhow!(error_msg));
-        }
-
-        Ok(())
+        lockfile_operations::detect_target_conflicts(lockfile)
     }
 
     /// Pre-syncs all sources needed for the given dependencies.
@@ -1686,36 +1279,24 @@ impl DependencyResolver {
             if let Some(current_dep) = all_deps.get(&key) {
                 if current_dep.get_version() != dep.get_version() {
                     // This entry was superseded by conflict resolution, skip it
-                    tracing::debug!(
-                        "[QUEUE_POP] SKIPPED (stale): '{}' - version mismatch",
-                        name
-                    );
+                    tracing::debug!("[QUEUE_POP] SKIPPED (stale): '{}' - version mismatch", name);
                     continue;
                 }
             }
 
             if processed.contains(&key) {
-                tracing::debug!(
-                    "[QUEUE_POP] SKIPPED (already processed): '{}'",
-                    name
-                );
+                tracing::debug!("[QUEUE_POP] SKIPPED (already processed): '{}'", name);
                 continue;
             }
 
-            tracing::debug!(
-                "[QUEUE_POP] PROCESSING: '{}'",
-                name
-            );
+            tracing::debug!("[QUEUE_POP] PROCESSING: '{}'", name);
             processed.insert(key.clone());
 
             // Handle pattern dependencies by expanding them to concrete files
             if dep.is_pattern() {
-                tracing::debug!(
-                    "[QUEUE_POP] '{}' is a PATTERN, expanding to concrete deps",
-                    name
-                );
+                tracing::debug!("[QUEUE_POP] '{}' is a PATTERN, expanding to concrete deps", name);
                 // Expand the pattern to get all matching files
-                match self.expand_pattern_to_concrete_deps(&name, &dep, resource_type).await {
+                match self.expand_pattern_to_concrete_deps(&dep, resource_type).await {
                     Ok(concrete_deps) => {
                         // Queue each concrete dependency for transitive resolution
                         for (concrete_name, concrete_dep) in concrete_deps {
@@ -1876,13 +1457,15 @@ impl DependencyResolver {
                                 }
                             }
                             result
-                        } else if dep_spec.path.starts_with("./")
-                            || dep_spec.path.starts_with("../")
-                        {
+                        } else if is_file_relative_path(&dep_spec.path) {
                             // File-relative path (used in Markdown YAML frontmatter)
+                            // Also treat bare filenames (no path separators) as file-relative
+                            // e.g., "helper.md" is automatically treated as "./helper.md"
+                            let normalized_path = normalize_bare_filename(&dep_spec.path);
+
                             crate::utils::resolve_file_relative_path(
                                 &parent_file_path,
-                                &dep_spec.path,
+                                &normalized_path,
                             )
                             .with_context(|| {
                                 format!(
@@ -1996,7 +1579,7 @@ impl DependencyResolver {
                                 tool: trans_tool,
                                 flatten: None,
                                 install: dep_spec.install.or(Some(true)),
-                                template_vars: self.build_merged_template_vars(&dep),
+                                template_vars: Some(self.build_merged_template_vars(&dep)),
                             }))
                         } else {
                             // Git-backed transitive dep (parent is Git-backed)
@@ -2100,14 +1683,14 @@ impl DependencyResolver {
                                 tool: trans_tool,
                                 flatten: None,
                                 install: dep_spec.install.or(Some(true)),
-                                template_vars: self.build_merged_template_vars(&dep),
+                                template_vars: Some(self.build_merged_template_vars(&dep)),
                             }))
                         };
 
                         // Generate a name for the transitive dependency
                         // ALWAYS derive from path to ensure uniqueness and avoid collisions
                         // The `name` field can be stored as manifest_alias for template variable names
-                        let trans_name = self.generate_dependency_name(trans_dep.get_path());
+                        let trans_name = generate_dependency_name(trans_dep.get_path());
 
                         // Add to graph (use source-aware nodes to prevent false cycles)
                         let trans_source =
@@ -2451,7 +2034,6 @@ impl DependencyResolver {
     ///
     /// # Arguments
     ///
-    /// * `name` - The dependency name (used for logging)
     /// * `dep` - The pattern-based dependency to expand
     /// * `resource_type` - The resource type (for path construction)
     ///
@@ -2460,217 +2042,17 @@ impl DependencyResolver {
     /// A vector of (name, ResourceDependency) tuples for each matched file.
     async fn expand_pattern_to_concrete_deps(
         &self,
-        _name: &str,
         dep: &ResourceDependency,
-        _resource_type: crate::core::ResourceType,
+        resource_type: crate::core::ResourceType,
     ) -> Result<Vec<(String, ResourceDependency)>> {
-        use crate::manifest::DetailedDependency;
-
-        let pattern = dep.get_path();
-
-        if dep.is_local() {
-            // Local pattern dependency - search in filesystem
-            // For absolute patterns, use the parent directory as base and strip the pattern to just the filename part
-            // For relative patterns, use current directory
-            let pattern_path = Path::new(pattern);
-            let (base_path, search_pattern) = if pattern_path.is_absolute() {
-                // Absolute pattern: extract base directory and relative pattern
-                // Example: "/tmp/xyz/agents/*.md" -> base="/tmp/xyz", pattern="agents/*.md"
-                let components: Vec<_> = pattern_path.components().collect();
-
-                // Find the first component with a glob character
-                let glob_idx = components.iter().position(|c| {
-                    let s = c.as_os_str().to_string_lossy();
-                    s.contains('*') || s.contains('?') || s.contains('[')
-                });
-
-                if let Some(idx) = glob_idx {
-                    // Split at the glob component
-                    let base_components = &components[..idx];
-                    let pattern_components = &components[idx..];
-
-                    let base: PathBuf = base_components.iter().collect();
-                    let pattern: String = pattern_components
-                        .iter()
-                        .map(|c| c.as_os_str().to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join("/");
-
-                    (base, pattern)
-                } else {
-                    // No glob characters, use as-is
-                    (PathBuf::from("."), pattern.to_string())
-                }
-            } else {
-                // Relative pattern, use current directory
-                (PathBuf::from("."), pattern.to_string())
-            };
-
-            let pattern_resolver = crate::pattern::PatternResolver::new();
-            let matches = pattern_resolver.resolve(&search_pattern, &base_path)?;
-
-            // Get tool, target, and flatten from parent pattern dependency
-            let (tool, target, flatten) = match dep {
-                ResourceDependency::Detailed(d) => (d.tool.clone(), d.target.clone(), d.flatten),
-                _ => (None, None, None),
-            };
-
-            let mut concrete_deps = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
-                // Convert matched path to absolute by joining with base_path
-                let absolute_path = base_path.join(&matched_path);
-                let concrete_path = absolute_path.to_string_lossy().to_string();
-
-                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
-                concrete_deps.push((
-                    resource_name,
-                    ResourceDependency::Detailed(Box::new(DetailedDependency {
-                        source: None,
-                        path: concrete_path,
-                        version: None,
-                        branch: None,
-                        rev: None,
-                        command: None,
-                        args: None,
-                        target: target.clone(),
-                        filename: None,
-                        dependencies: None,
-                        tool: tool.clone(),
-                        flatten,
-                        install: None,
-
-                        template_vars: None,
-                    })),
-                ));
-            }
-
-            Ok(concrete_deps)
-        } else {
-            // Git-based remote dependency - need worktree
-            let source_name = dep
-                .get_source()
-                .ok_or_else(|| anyhow::anyhow!("Pattern dependency missing source"))?;
-
-            // Get the prepared worktree for this source/version
-            let version_key = dep
-                .get_version()
-                .map_or_else(|| "HEAD".to_string(), std::string::ToString::to_string);
-            let prepared_key = Self::group_key(source_name, &version_key);
-
-            let prepared = self.prepared_versions.get(&prepared_key).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Prepared state missing for source '{}' @ '{}'. Pattern expansion requires prepared worktree.",
-                    source_name,
-                    version_key
-                )
-            })?;
-
-            let repo_path = &prepared.worktree_path;
-
-            // Search for matching files in the repository
-            let pattern_resolver = crate::pattern::PatternResolver::new();
-            let matches = pattern_resolver.resolve(pattern, Path::new(repo_path))?;
-
-            // Create concrete dependencies for each match
-            let mut concrete_deps = Vec::new();
-            for matched_path in matches {
-                let resource_name = crate::pattern::extract_resource_name(&matched_path);
-
-                // Use the matched path as-is (it's already relative to repo root)
-                // The matched path includes the resource type directory (e.g., "snippets/helper-one.md")
-                let concrete_path = matched_path.to_string_lossy().to_string();
-
-                // Get tool, target, and flatten from parent
-                let (tool, target, flatten) = match dep {
-                    ResourceDependency::Detailed(d) => {
-                        (d.tool.clone(), d.target.clone(), d.flatten)
-                    }
-                    _ => (None, None, None),
-                };
-
-                // Create a non-pattern Detailed dependency, inheriting tool, target, and flatten from parent
-                concrete_deps.push((
-                    resource_name,
-                    ResourceDependency::Detailed(Box::new(DetailedDependency {
-                        source: Some(source_name.to_string()),
-                        path: concrete_path,
-                        version: dep.get_version().map(std::string::ToString::to_string),
-                        branch: None,
-                        rev: None,
-                        command: None,
-                        args: None,
-                        target, // Inherit custom target from parent pattern
-                        filename: None,
-                        dependencies: None,
-                        tool,
-                        flatten,
-                        install: None,
-
-                        template_vars: None,
-                    })),
-                ));
-            }
-
-            Ok(concrete_deps)
-        }
-    }
-
-    /// Generate a dependency name from a path.
-    /// Creates collision-resistant names by preserving directory structure.
-    fn generate_dependency_name(&self, path: &str) -> String {
-        // Convert path to a collision-resistant name
-        // Example: "agents/ai/helper.md" -> "ai/helper"
-        // Example: "snippets/commands/commit.md" -> "commands/commit"
-        // Example: "commit.md" -> "commit"
-        // Example (absolute): "/private/tmp/shared/snippets/utils.md" -> "/private/tmp/shared/snippets/utils"
-        // Example (Windows absolute): "C:/team/tools/foo.md" -> "C:/team/tools/foo"
-        // Example (parent-relative): "../shared/utils.md" -> "../shared/utils"
-
-        let path = Path::new(path);
-
-        // Get the path without extension
-        let without_ext = path.with_extension("");
-
-        // Convert to string and normalize separators to forward slashes
-        // This ensures consistent behavior on Windows where Path::to_string_lossy()
-        // produces backslashes, which would break our split('/') logic below
-        let path_str = without_ext.to_string_lossy().replace('\\', "/");
-
-        // Check if this is an absolute path or starts with ../ (cross-directory)
-        // Note: With the fix to always use manifest-relative paths (even with ../),
-        // lockfiles should never contain absolute paths. We check path.is_absolute()
-        // defensively for manually-edited lockfiles.
-        let is_absolute = path.is_absolute();
-        let is_cross_directory = path_str.starts_with("../");
-
-        // If the path has multiple components, skip the first directory (resource type)
-        // to avoid redundancy, but keep subdirectories for uniqueness
-        // EXCEPTIONS that keep all components to avoid collisions:
-        // 1. Absolute paths (e.g., C:/team/tools/foo.md vs D:/team/tools/foo.md)
-        // 2. Cross-directory paths with ../ (e.g., ../shared/a.md vs ../other/a.md)
-        let components: Vec<&str> = path_str.split('/').collect();
-        if is_absolute || is_cross_directory {
-            // Keep all components to avoid collisions
-            path_str.to_string()
-        } else if components.len() > 1 {
-            // Find and skip the resource type directory to get a clean name
-            // Resource type directories: agents, snippets, commands, scripts, hooks, mcp-servers
-            let resource_type_dirs =
-                ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
-
-            // Find the index of the first resource type directory
-            if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
-                // Skip everything up to and including the resource type directory
-                components[idx + 1..].join("/")
-            } else {
-                // No resource type directory found, skip just the first component as before
-                components[1..].join("/")
-            }
-        } else {
-            // Single component, just return it
-            components[0].to_string()
-        }
+        pattern_expander::expand_pattern_to_concrete_deps(
+            dep,
+            resource_type,
+            &self.source_manager,
+            &self.cache,
+            self.manifest.manifest_dir.as_deref(),
+        )
+        .await
     }
 
     /// Resolve all manifest dependencies into a deterministic lockfile.
@@ -3055,128 +2437,42 @@ impl DependencyResolver {
             // For local resources without a source, just use the name (no version suffix)
             let unique_name = name.to_string();
 
-            // Hooks and MCP servers are configured in config files, not installed as artifact files
-            let installed_at = match resource_type {
-                crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
-                    // Use configured merge target, with fallback to hardcoded defaults
-                    if let Some(merge_target) =
-                        self.manifest.get_merge_target(artifact_type, resource_type)
-                    {
-                        normalize_path_for_storage(merge_target.display().to_string())
-                    } else {
-                        // Fallback to hardcoded defaults if not configured
-                        match resource_type {
-                            crate::core::ResourceType::Hook => {
-                                ".claude/settings.local.json".to_string()
-                            }
-                            crate::core::ResourceType::McpServer => {
-                                if artifact_type == "opencode" {
-                                    ".opencode/opencode.json".to_string()
-                                } else {
-                                    ".mcp.json".to_string()
-                                }
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-                _ => {
-                    // For regular resources, get the artifact path
-                    let artifact_path = self
-                        .manifest
-                        .get_artifact_resource_path(artifact_type, resource_type)
-                        .ok_or_else(|| {
-                            // Provide helpful error message with context
-                            let base_msg = format!(
-                                "Resource type '{}' is not supported by tool '{}' for dependency '{}'",
-                                resource_type, artifact_type, name
-                            );
-
-                            // Check if this looks like a tool name was used as resource type
-                            let resource_type_str = resource_type.to_string();
-                            let hint = if ["claude-code", "opencode", "agpm"].contains(&resource_type_str.as_str()) {
-                                format!(
-                                    "\n\nIt looks like '{}' is a tool name, not a resource type.\n\
-                                    In transitive dependencies, use resource types (agents, snippets, commands)\n\
-                                    as section headers, then specify 'tool: {}' within each dependency.",
-                                    resource_type_str, resource_type_str
-                                )
-                            } else {
-                                format!(
-                                    "\n\nValid resource types: agent, command, snippet, hook, mcp-server, script\n\
-                                    Source file: {}",
-                                    dep.get_path()
-                                )
-                            };
-
-                            anyhow::anyhow!("{}{}", base_msg, hint)
-                        })?;
-
-                    // Determine flatten behavior: use explicit setting or tool config default
-                    let flatten = dep
-                        .get_flatten()
-                        .or_else(|| {
-                            // Get flatten default from tool config
-                            self.manifest
-                                .get_tool_config(artifact_type)
-                                .and_then(|config| config.resources.get(resource_type.to_plural()))
-                                .and_then(|resource_config| resource_config.flatten)
-                        })
-                        .unwrap_or(false); // Default to false if not configured
-
-                    let path = if let Some(custom_target) = dep.get_target() {
-                        // Custom target is relative to the artifact's resource directory
-                        let base_target = PathBuf::from(artifact_path.display().to_string())
-                            .join(custom_target.trim_start_matches('/'));
-                        // For custom targets, still strip prefix based on the original artifact path
-                        // (not the custom target), to avoid duplicate directories
-                        let relative_path = compute_relative_install_path(
-                            &artifact_path,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        base_target.join(relative_path)
-                    } else {
-                        // Use artifact configuration for default path
-                        let relative_path = compute_relative_install_path(
-                            &artifact_path,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        artifact_path.join(relative_path)
-                    };
-                    normalize_path_for_storage(normalize_path(&path))
-                }
-            };
-
-            Ok(LockedResource {
-                name: unique_name,
-                source: None,
-                url: None,
-                path: normalize_path_for_storage(dep.get_path()),
-                version: None,
-                resolved_commit: None,
-                checksum: String::new(),
-                installed_at,
-                dependencies: self.get_dependencies_for(name, None, resource_type, dep.get_tool()),
+            // Compute installation path using helper
+            let installed_at = install_path_resolver::resolve_install_path(
+                &self.manifest,
+                dep,
+                artifact_type,
                 resource_type,
-                tool: Some({
-                    let tool_value = dep
-                        .get_tool()
-                        .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
-                    tool_value.clone()
-                }),
-                manifest_alias: {
-                    // Only use pattern alias map - NOT transitive custom names
-                    // Transitive custom names (from YAML frontmatter) should be extracted
-                    // during template rendering, not stored in lockfile
-                    self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
-                },
-                applied_patches: HashMap::new(), // Populated during installation, not resolution
-                install: dep.get_install(),
-                template_vars: self.build_merged_template_vars(&dep),
-            })
+                &filename,
+            )
+            .with_context(|| {
+                format!("Failed to resolve installation path for dependency '{}'", name)
+            })?;
+
+            Ok(LockedResourceBuilder::new(
+                unique_name,
+                normalize_path_for_storage(dep.get_path()),
+                String::new(),
+                installed_at,
+                resource_type,
+            )
+            .dependencies(self.get_dependencies_for(name, None, resource_type, dep.get_tool()))
+            .tool(Some({
+                let tool_value = dep
+                    .get_tool()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| self.manifest.get_default_tool(resource_type));
+                tool_value.clone()
+            }))
+            .manifest_alias(self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned())
+            .applied_patches(lockfile_operations::get_patches_for_resource(
+                &self.manifest,
+                resource_type,
+                name,
+            ))
+            .install(dep.get_install())
+            .template_vars(self.build_merged_template_vars(dep))
+            .build())
         } else {
             // Remote dependency - need to sync and resolve
             let source_name = dep.get_source().ok_or_else(|| AgpmError::ConfigError {
@@ -3243,127 +2539,45 @@ impl DependencyResolver {
             // Version updates replace the existing entry for the same (name, source) pair
             let unique_name = name.to_string();
 
-            // Hooks and MCP servers are configured in config files, not installed as artifact files
-            let installed_at = match resource_type {
-                crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
-                    // Use configured merge target, with fallback to hardcoded defaults
-                    if let Some(merge_target) =
-                        self.manifest.get_merge_target(artifact_type, resource_type)
-                    {
-                        normalize_path_for_storage(merge_target.display().to_string())
-                    } else {
-                        // Fallback to hardcoded defaults if not configured
-                        match resource_type {
-                            crate::core::ResourceType::Hook => {
-                                ".claude/settings.local.json".to_string()
-                            }
-                            crate::core::ResourceType::McpServer => {
-                                if artifact_type == "opencode" {
-                                    ".opencode/opencode.json".to_string()
-                                } else {
-                                    ".mcp.json".to_string()
-                                }
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-                _ => {
-                    // For regular resources, get the artifact path
-                    let artifact_path = self
-                        .manifest
-                        .get_artifact_resource_path(artifact_type, resource_type)
-                        .ok_or_else(|| {
-                            // Provide helpful error message with context
-                            let base_msg = format!(
-                                "Resource type '{}' is not supported by tool '{}' for dependency '{}'",
-                                resource_type, artifact_type, name
-                            );
-
-                            // Check if this looks like a tool name was used as resource type
-                            let resource_type_str = resource_type.to_string();
-                            let hint = if ["claude-code", "opencode", "agpm"].contains(&resource_type_str.as_str()) {
-                                format!(
-                                    "\n\nIt looks like '{}' is a tool name, not a resource type.\n\
-                                    In transitive dependencies, use resource types (agents, snippets, commands)\n\
-                                    as section headers, then specify 'tool: {}' within each dependency.",
-                                    resource_type_str, resource_type_str
-                                )
-                            } else {
-                                format!(
-                                    "\n\nValid resource types: agent, command, snippet, hook, mcp-server, script\n\
-                                    Source file: {}",
-                                    dep.get_path()
-                                )
-                            };
-
-                            anyhow::anyhow!("{}{}", base_msg, hint)
-                        })?;
-
-                    // Determine flatten behavior: use explicit setting or tool config default
-                    let flatten = dep
-                        .get_flatten()
-                        .or_else(|| {
-                            // Get flatten default from tool config
-                            self.manifest
-                                .get_tool_config(artifact_type)
-                                .and_then(|config| config.resources.get(resource_type.to_plural()))
-                                .and_then(|resource_config| resource_config.flatten)
-                        })
-                        .unwrap_or(false); // Default to false if not configured
-
-                    let path = if let Some(custom_target) = dep.get_target() {
-                        // Custom target is relative to the artifact's resource directory
-                        let base_target = PathBuf::from(artifact_path.display().to_string())
-                            .join(custom_target.trim_start_matches('/'));
-                        // For custom targets, still strip prefix based on the original artifact path
-                        // (not the custom target), to avoid duplicate directories
-                        let relative_path = compute_relative_install_path(
-                            &artifact_path,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        base_target.join(relative_path)
-                    } else {
-                        // Use artifact configuration for default path
-                        let relative_path = compute_relative_install_path(
-                            &artifact_path,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        artifact_path.join(relative_path)
-                    };
-                    normalize_path_for_storage(normalize_path(&path))
-                }
-            };
-
-            Ok(LockedResource {
-                name: unique_name,
-                source: Some(source_name.to_string()),
-                url: Some(source_url.clone()),
-                path: normalize_path_for_storage(dep.get_path()),
-                version: resolved_version, // Resolved version (tag/branch like "v2.1.4" or "main")
-                resolved_commit: Some(resolved_commit),
-                checksum: String::new(), // Will be calculated during installation
-                installed_at,
-                dependencies: self.get_dependencies_for(
-                    name,
-                    Some(source_name),
-                    resource_type,
-                    dep.get_tool(),
-                ),
+            // Compute installation path using helper
+            let installed_at = install_path_resolver::resolve_install_path(
+                &self.manifest,
+                dep,
+                artifact_type,
                 resource_type,
-                tool: Some(artifact_type_string.clone()),
-                manifest_alias: {
-                    // Only use pattern alias map - NOT transitive custom names
-                    // Transitive custom names (from YAML frontmatter) should be extracted
-                    // during template rendering, not stored in lockfile
-                    self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned()
-                },
-                applied_patches: HashMap::new(), // Populated during installation, not resolution
-                install: dep.get_install(),
-                template_vars: self.build_merged_template_vars(&dep),
-            })
+                &filename,
+            )
+            .with_context(|| {
+                format!("Failed to resolve installation path for dependency '{}'", name)
+            })?;
+
+            Ok(LockedResourceBuilder::new(
+                unique_name,
+                normalize_path_for_storage(dep.get_path()),
+                String::new(), // Will be calculated during installation
+                installed_at,
+                resource_type,
+            )
+            .source(Some(source_name.to_string()))
+            .url(Some(source_url.clone()))
+            .version(resolved_version) // Resolved version (tag/branch like "v2.1.4" or "main")
+            .resolved_commit(Some(resolved_commit))
+            .dependencies(self.get_dependencies_for(
+                name,
+                Some(source_name),
+                resource_type,
+                dep.get_tool(),
+            ))
+            .tool(Some(artifact_type_string.clone()))
+            .manifest_alias(self.pattern_alias_map.get(&(resource_type, name.to_string())).cloned())
+            .applied_patches(lockfile_operations::get_patches_for_resource(
+                &self.manifest,
+                resource_type,
+                name,
+            ))
+            .install(dep.get_install())
+            .template_vars(self.build_merged_template_vars(dep))
+            .build())
         }
     }
 
@@ -3431,32 +2645,7 @@ impl DependencyResolver {
         if dep.is_local() {
             // Local pattern dependency - search in filesystem
             // Extract base path from the pattern if it contains an absolute path
-            let (base_path, pattern_str) = if pattern.contains('/') || pattern.contains('\\') {
-                // Pattern contains path separators, extract base path
-                let pattern_path = Path::new(pattern);
-                if let Some(parent) = pattern_path.parent() {
-                    if parent.is_absolute() || parent.starts_with("..") || parent.starts_with(".") {
-                        // Use the parent as base path and just the filename pattern
-                        (
-                            parent.to_path_buf(),
-                            pattern_path
-                                .file_name()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or(pattern)
-                                .to_string(),
-                        )
-                    } else {
-                        // Relative path, use current directory as base
-                        (PathBuf::from("."), pattern.to_string())
-                    }
-                } else {
-                    // No parent, use current directory
-                    (PathBuf::from("."), pattern.to_string())
-                }
-            } else {
-                // Simple pattern without path separators
-                (PathBuf::from("."), pattern.to_string())
-            };
+            let (base_path, pattern_str) = path_helpers::parse_pattern_base_path(pattern);
 
             let pattern_resolver = crate::pattern::PatternResolver::new();
             let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
@@ -3475,97 +2664,20 @@ impl DependencyResolver {
                 let artifact_type = artifact_type_string.as_str();
 
                 // Construct full relative path from base_path and matched_path
-                let full_relative_path = if base_path == Path::new(".") {
-                    crate::utils::normalize_path_for_storage(
-                        matched_path.to_string_lossy().to_string(),
-                    )
-                } else {
-                    crate::utils::normalize_path_for_storage(format!(
-                        "{}/{}",
-                        base_path.display(),
-                        matched_path.display()
-                    ))
-                };
+                let full_relative_path =
+                    path_helpers::construct_full_relative_path(&base_path, &matched_path);
 
                 // Use the threaded resource_type (pattern dependencies inherit from parent)
 
-                // Hooks and MCP servers are configured in config files, not installed as artifact files
-                let installed_at = match resource_type {
-                    crate::core::ResourceType::Hook | crate::core::ResourceType::McpServer => {
-                        // Use configured merge target, with fallback to hardcoded defaults
-                        if let Some(merge_target) =
-                            self.manifest.get_merge_target(artifact_type, resource_type)
-                        {
-                            normalize_path_for_storage(merge_target.display().to_string())
-                        } else {
-                            // Fallback to hardcoded defaults if not configured
-                            match resource_type {
-                                crate::core::ResourceType::Hook => {
-                                    ".claude/settings.local.json".to_string()
-                                }
-                                crate::core::ResourceType::McpServer => {
-                                    if artifact_type == "opencode" {
-                                        ".opencode/opencode.json".to_string()
-                                    } else {
-                                        ".mcp.json".to_string()
-                                    }
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
-                    _ => {
-                        // For regular resources, get the artifact path
-                        let artifact_path = self
-                            .manifest
-                            .get_artifact_resource_path(artifact_type, resource_type)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "Resource type '{}' is not supported by tool '{}'",
-                                    resource_type,
-                                    artifact_type
-                                )
-                            })?;
-
-                        // Determine flatten behavior: use explicit setting or tool config default
-                        let dep_flatten = dep.get_flatten();
-                        let tool_flatten = self
-                            .manifest
-                            .get_tool_config(artifact_type)
-                            .and_then(|config| config.resources.get(resource_type.to_plural()))
-                            .and_then(|resource_config| resource_config.flatten);
-
-                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false); // Default to false if not configured
-
-                        // Determine the base target directory
-                        let base_target = if let Some(custom_target) = dep.get_target() {
-                            // Custom target is relative to the artifact's resource directory
-                            PathBuf::from(artifact_path.display().to_string())
-                                .join(custom_target.trim_start_matches('/'))
-                        } else {
-                            artifact_path.to_path_buf()
-                        };
-
-                        // Extract the meaningful path structure
-                        let filename = {
-                            // Construct full path from base_path and matched_path for extraction
-                            let full_path = if base_path == Path::new(".") {
-                                matched_path.to_path_buf()
-                            } else {
-                                base_path.join(&matched_path)
-                            };
-                            extract_meaningful_path(&full_path)
-                        };
-
-                        // Use compute_relative_install_path to avoid redundant prefixes
-                        let relative_path = compute_relative_install_path(
-                            &base_target,
-                            Path::new(&filename),
-                            flatten,
-                        );
-                        normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
-                    }
-                };
+                // Compute installation path using helper
+                let filename = path_helpers::extract_pattern_filename(&base_path, &matched_path);
+                let installed_at = install_path_resolver::resolve_install_path(
+                    &self.manifest,
+                    dep,
+                    artifact_type,
+                    resource_type,
+                    &filename,
+                )?;
 
                 resources.push(LockedResource {
                     name: resource_name.clone(),
@@ -3589,9 +2701,13 @@ impl DependencyResolver {
                             .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
-                    applied_patches: HashMap::new(), // Populated during installation, not resolution
+                    applied_patches: lockfile_operations::get_patches_for_resource(
+                        &self.manifest,
+                        resource_type,
+                        name,
+                    ),
                     install: dep.get_install(),
-                    template_vars: None,
+                    template_vars: "{}".to_string(),
                 });
             }
 
@@ -3784,9 +2900,13 @@ impl DependencyResolver {
                             .unwrap_or_else(|| self.manifest.get_default_tool(resource_type)),
                     ),
                     manifest_alias: Some(name.to_string()), // Pattern dependency: preserve original alias
-                    applied_patches: HashMap::new(), // Populated during installation, not resolution
+                    applied_patches: lockfile_operations::get_patches_for_resource(
+                        &self.manifest,
+                        resource_type,
+                        name,
+                    ),
                     install: dep.get_install(),
-                    template_vars: None,
+                    template_vars: "{}".to_string(),
                 });
             }
 
@@ -4178,7 +3298,7 @@ impl DependencyResolver {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 })))
             }
         }
@@ -4427,19 +3547,14 @@ impl DependencyResolver {
             return;
         }
 
-        // Build resource identifier: source:path
-        let source = dep.get_source().unwrap_or("unknown");
-        let path = dep.get_path();
-        let resource_id = format!("{source}:{path}");
+        // Build resource identifier using helper
+        let resource_id = dependency_helpers::build_resource_id(dep);
 
         // Get version constraint (None means HEAD/unspecified)
-        if let Some(version) = dep.get_version() {
-            // Add to conflict detector
-            self.conflict_detector.add_requirement(&resource_id, required_by, version);
-        } else {
-            // No version specified - use HEAD marker
-            self.conflict_detector.add_requirement(&resource_id, required_by, "HEAD");
-        }
+        let version = dep.get_version().unwrap_or("HEAD");
+
+        // Add to conflict detector
+        self.conflict_detector.add_requirement(&resource_id, required_by, version);
     }
 
     /// Post-processes lockfile entries to add version information to dependencies.
@@ -4454,49 +3569,25 @@ impl DependencyResolver {
         let mut lookup_map: HashMap<(crate::core::ResourceType, String, Option<String>), String> =
             HashMap::new();
 
-        // Helper to normalize path (strip leading ./, etc.)
-        let normalize_path = |path: &str| -> String { path.trim_start_matches("./").to_string() };
-
-        // Helper to extract filename from path
-        let extract_filename = |path: &str| -> Option<String> {
-            path.split('/').next_back().map(std::string::ToString::to_string)
-        };
-
-        // Helper to strip resource type directory from path (mimics generate_dependency_name logic)
-        // This allows lookups to work with dependency names from dependency_map
-        let strip_type_directory = |path: &str| -> Option<String> {
-            let components: Vec<&str> = path.split('/').collect();
-            if components.len() > 1 {
-                // Resource type directories: agents, snippets, commands, scripts, hooks, mcp-servers
-                let resource_type_dirs =
-                    ["agents", "snippets", "commands", "scripts", "hooks", "mcp-servers"];
-
-                // Find the index of the first resource type directory
-                if let Some(idx) = components.iter().position(|c| resource_type_dirs.contains(c)) {
-                    // Skip everything up to and including the resource type directory
-                    return Some(components[idx + 1..].join("/"));
-                }
-            }
-            None
-        };
-
         // Build lookup map from all lockfile entries
         for entry in &lockfile.agents {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             // Store by full path
             lookup_map.insert(
                 (crate::core::ResourceType::Agent, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
             // Also store by filename for backward compatibility
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Agent, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
             // Also store by type-stripped path (for nested resources like agents/helpers/foo.md -> helpers/foo)
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::Agent, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4504,18 +3595,20 @@ impl DependencyResolver {
             }
         }
         for entry in &lockfile.snippets {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (crate::core::ResourceType::Snippet, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Snippet, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::Snippet, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4523,18 +3616,20 @@ impl DependencyResolver {
             }
         }
         for entry in &lockfile.commands {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (crate::core::ResourceType::Command, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Command, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::Command, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4542,18 +3637,20 @@ impl DependencyResolver {
             }
         }
         for entry in &lockfile.scripts {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (crate::core::ResourceType::Script, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Script, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::Script, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4561,18 +3658,20 @@ impl DependencyResolver {
             }
         }
         for entry in &lockfile.hooks {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (crate::core::ResourceType::Hook, normalized_path.clone(), entry.source.clone()),
                 entry.name.clone(),
             );
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::Hook, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::Hook, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4580,7 +3679,7 @@ impl DependencyResolver {
             }
         }
         for entry in &lockfile.mcp_servers {
-            let normalized_path = normalize_path(&entry.path);
+            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (
                     crate::core::ResourceType::McpServer,
@@ -4589,13 +3688,15 @@ impl DependencyResolver {
                 ),
                 entry.name.clone(),
             );
-            if let Some(filename) = extract_filename(&entry.path) {
+            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
                 lookup_map.insert(
                     (crate::core::ResourceType::McpServer, filename, entry.source.clone()),
                     entry.name.clone(),
                 );
             }
-            if let Some(stripped) = strip_type_directory(&normalized_path) {
+            if let Some(stripped) =
+                dependency_helpers::strip_resource_type_directory(&normalized_path)
+            {
                 lookup_map.insert(
                     (crate::core::ResourceType::McpServer, stripped, entry.source.clone()),
                     entry.name.clone(),
@@ -4649,96 +3750,94 @@ impl DependencyResolver {
             for entry in entries {
                 let parent_source = entry.source.clone();
 
-                let updated_deps: Vec<String> =
-                    entry
-                        .dependencies
-                        .iter()
-                        .map(|dep| {
-                            // Parse "resource_type/path" format (e.g., "agent/rust-haiku.md" or "snippet/utils.md")
-                            if let Some((_resource_type_str, dep_path)) = dep.split_once('/') {
-                                // Parse resource type from string form (accepts both singular and plural)
-                                if let Ok(resource_type) =
-                                    _resource_type_str.parse::<crate::core::ResourceType>()
-                                {
-                                    // Normalize the path for lookup
-                                    let dep_filename = normalize_path(dep_path);
+                let updated_deps: Vec<String> = entry
+                    .dependencies
+                    .iter()
+                    .map(|dep| {
+                        // Parse "resource_type/path" format (e.g., "agent/rust-haiku.md" or "snippet/utils.md")
+                        if let Some((_resource_type_str, dep_path)) = dep.split_once('/') {
+                            // Parse resource type from string form (accepts both singular and plural)
+                            if let Ok(resource_type) =
+                                _resource_type_str.parse::<crate::core::ResourceType>()
+                            {
+                                // Normalize the path for lookup
+                                let dep_filename =
+                                    dependency_helpers::normalize_lookup_path(dep_path);
 
-                                    // Look up the resource in the lookup map (same source as parent)
-                                    if let Some(dep_name) = lookup_map.get(&(
+                                // Look up the resource in the lookup map (same source as parent)
+                                if let Some(dep_name) = lookup_map.get(&(
+                                    resource_type,
+                                    dep_filename.clone(),
+                                    parent_source.clone(),
+                                )) {
+                                    // Found resource in same source - add version metadata
+                                    if let Some((_source, Some(ver))) = resource_info_map.get(&(
                                         resource_type,
-                                        dep_filename.clone(),
+                                        dep_name.clone(),
                                         parent_source.clone(),
                                     )) {
-                                        // Found resource in same source - add version metadata
-                                        if let Some((_source, version)) = resource_info_map.get(&(
-                                            resource_type,
-                                            dep_name.clone(),
-                                            parent_source.clone(),
-                                        )) {
-                                            if let Some(ver) = version {
-                                                return format!("{resource_type}/{dep_name}@{ver}");
-                                            }
-                                        }
-                                        // Fallback without version if not found in resource_info_map
-                                        return format!("{resource_type}/{dep_name}");
+                                        return format!("{resource_type}/{dep_name}@{ver}");
                                     }
+                                    // Fallback without version if not found in resource_info_map
+                                    return format!("{resource_type}/{dep_name}");
+                                }
 
-                                    // If not found with same source, try adding .md extension
-                                    let dep_filename_with_ext = format!("{dep_filename}.md");
-                                    if let Some(dep_name) = lookup_map.get(&(
+                                // If not found with same source, try adding .md extension
+                                let dep_filename_with_ext = format!("{}.md", dep_filename);
+                                if let Some(dep_name) = lookup_map.get(&(
+                                    resource_type,
+                                    dep_filename_with_ext.clone(),
+                                    parent_source.clone(),
+                                )) {
+                                    // Found resource in same source - add version metadata
+                                    if let Some((_source, Some(ver))) = resource_info_map.get(&(
                                         resource_type,
-                                        dep_filename_with_ext.clone(),
+                                        dep_name.clone(),
                                         parent_source.clone(),
                                     )) {
-                                        // Found resource in same source - add version metadata
-                                        if let Some((_source, version)) = resource_info_map.get(&(
-                                            resource_type,
-                                            dep_name.clone(),
-                                            parent_source.clone(),
-                                        )) {
-                                            if let Some(ver) = version {
-                                                return format!("{resource_type}/{dep_name}@{ver}");
-                                            }
-                                        }
-                                        // Fallback without version if not found in resource_info_map
-                                        return format!("{resource_type}/{dep_name}");
+                                        return format!("{resource_type}/{dep_name}@{ver}");
                                     }
+                                    // Fallback without version if not found in resource_info_map
+                                    return format!("{resource_type}/{dep_name}");
+                                }
 
-                                    // Try looking for resource from ANY source (cross-source dependency)
-                                    // Format: source:type/name:version
-                                    for ((rt, filename, src), name) in &lookup_map {
-                                        if *rt == resource_type
-                                            && (filename == &dep_filename
-                                                || filename == &dep_filename_with_ext)
-                                        {
-                                            // Found in different source - need to include source and version
-                                            // Use the pre-built resource info map
-                                            if let Some((source, version)) = resource_info_map
-                                                .get(&(resource_type, name.clone(), src.clone()))
-                                            {
-                                                // Build full reference: source:type/name:version
-                                                let mut dep_ref = String::new();
-                                                if let Some(src) = source {
-                                                    dep_ref.push_str(src);
-                                                    dep_ref.push(':');
-                                                }
-                                                dep_ref.push_str(&resource_type.to_string());
-                                                dep_ref.push('/');
-                                                dep_ref.push_str(name);
-                                                if let Some(ver) = version {
-                                                    dep_ref.push(':');
-                                                    dep_ref.push_str(ver);
-                                                }
-                                                return dep_ref;
+                                // Try looking for resource from ANY source (cross-source dependency)
+                                // Format: source:type/name:version
+                                for ((rt, filename, src), name) in &lookup_map {
+                                    if *rt == resource_type
+                                        && (filename == &dep_filename
+                                            || filename == &dep_filename_with_ext)
+                                    {
+                                        // Found in different source - need to include source and version
+                                        // Use the pre-built resource info map
+                                        if let Some((source, version)) = resource_info_map.get(&(
+                                            resource_type,
+                                            name.clone(),
+                                            src.clone(),
+                                        )) {
+                                            // Build full reference: source:type/name:version
+                                            let mut dep_ref = String::new();
+                                            if let Some(src) = source {
+                                                dep_ref.push_str(src);
+                                                dep_ref.push(':');
                                             }
+                                            dep_ref.push_str(&resource_type.to_string());
+                                            dep_ref.push('/');
+                                            dep_ref.push_str(name);
+                                            if let Some(ver) = version {
+                                                dep_ref.push(':');
+                                                dep_ref.push_str(ver);
+                                            }
+                                            return dep_ref;
                                         }
                                     }
                                 }
                             }
-                            // If parsing fails or resource not found, return as-is
-                            dep.clone()
-                        })
-                        .collect();
+                        }
+                        // If parsing fails or resource not found, return as-is
+                        dep.clone()
+                    })
+                    .collect();
 
                 entry.dependencies = updated_deps;
             }
@@ -4829,2030 +3928,5 @@ impl DependencyResolver {
         // Progress bar completion is handled by the caller
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::manifest::DetailedDependency;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_resolver_new() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        assert_eq!(resolver.cache.get_cache_location(), temp_dir.path());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_local_dependency() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-        manifest.add_dependency(
-            "local-agent".to_string(),
-            ResourceDependency::Simple("../agents/local.md".to_string()),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        let agents_dir = temp_dir.path().parent().unwrap().join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("local.md"), "# Local Agent").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let entry = &lockfile.agents[0];
-        assert_eq!(entry.name, "local-agent");
-        assert_eq!(entry.path, "../agents/local.md");
-        assert!(entry.source.is_none());
-        assert!(entry.url.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_pre_sync_sources() {
-        // Skip test if git is not available
-        if std::process::Command::new("git").arg("--version").output().is_err() {
-            eprintln!("Skipping test: git not available");
-            return;
-        }
-
-        // Create a test Git repository with resources
-        let temp_dir = TempDir::new().unwrap();
-        let repo_dir = temp_dir.path().join("test-repo");
-        std::fs::create_dir(&repo_dir).unwrap();
-
-        // Initialize git repo
-        std::process::Command::new("git").args(["init"]).current_dir(&repo_dir).output().unwrap();
-
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        // Create test files
-        std::fs::create_dir_all(repo_dir.join("agents")).unwrap();
-        std::fs::write(repo_dir.join("agents/test.md"), "# Test Agent\n\nTest content").unwrap();
-
-        // Commit files
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&repo_dir)
-            .output()
-            .unwrap();
-
-        // Create a manifest with a dependency from this source
-        let mut manifest = Manifest::new();
-        let source_url = format!("file://{}", repo_dir.display());
-        manifest.add_source("test-source".to_string(), source_url.clone());
-
-        manifest.add_dependency(
-            "test-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test-source".to_string()),
-                path: "agents/test.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create resolver with test cache
-        let cache_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(cache_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
-
-        // Prepare dependencies for pre-sync
-        let deps: Vec<(String, ResourceDependency)> = manifest
-            .all_dependencies()
-            .into_iter()
-            .map(|(name, dep)| (name.to_string(), dep.clone()))
-            .collect();
-
-        // Call pre_sync_sources - this should clone the repository and prepare entries
-        resolver.pre_sync_sources(&deps).await.unwrap();
-
-        // Verify that entries and repos are prepared
-        assert!(
-            resolver.version_resolver.pending_count() > 0,
-            "Should have entries after pre-sync"
-        );
-
-        let bare_repo = resolver.version_resolver.get_bare_repo_path("test-source");
-        assert!(bare_repo.is_some(), "Should have bare repo path cached");
-
-        // Verify the repository exists in cache (uses normalized name)
-        let cached_repo_path = resolver.cache.get_cache_location().join("sources");
-
-        // The cache normalizes the source name, so we check if any .git directory exists
-        let mut found_repo = false;
-        if let Ok(entries) = std::fs::read_dir(&cached_repo_path) {
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str()
-                    && name.ends_with(".git")
-                {
-                    found_repo = true;
-                    break;
-                }
-            }
-        }
-        assert!(found_repo, "Repository should be cloned to cache");
-
-        // Now call resolve_all() - it should work without cloning again
-        resolver.version_resolver.resolve_all().await.unwrap();
-
-        // Verify resolution succeeded by checking we have resolved versions
-        let all_resolved = resolver.version_resolver.get_all_resolved();
-        assert!(!all_resolved.is_empty(), "Resolution should produce resolved versions");
-
-        // Check that v1.0.0 was resolved to a SHA
-        let key = ("test-source".to_string(), "v1.0.0".to_string());
-        assert!(all_resolved.contains_key(&key), "Should have resolved v1.0.0");
-
-        let sha = all_resolved.get(&key).unwrap();
-        assert_eq!(sha.len(), 40, "SHA should be 40 characters");
-    }
-
-    #[test]
-    fn test_verify_missing_source() {
-        let mut manifest = Manifest::new();
-
-        // Add dependency without corresponding source
-        manifest.add_dependency(
-            "remote-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("nonexistent".to_string()),
-                path: "agents/test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let result = resolver.verify();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("undefined source"));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_source_dependency() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a local mock git repository
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Create the agents directory and test file
-        let agents_dir = source_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("test.md"), "# Test Agent").unwrap();
-
-        // Add and commit the file
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create a tag for version
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-        manifest.add_dependency(
-            "remote-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/test.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // This should now succeed with the local repository
-        let result = resolver.resolve().await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_progress() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-        manifest.add_dependency(
-            "local".to_string(),
-            ResourceDependency::Simple("test.md".to_string()),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().join("test.md"), "# Test").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-    }
-
-    #[test]
-    fn test_verify_with_progress() {
-        let mut manifest = Manifest::new();
-        manifest.add_source("test".to_string(), "https://github.com/test/repo.git".to_string());
-        manifest.add_dependency(
-            "agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let result = resolver.verify();
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_git_ref() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a local mock git repository
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create the agents directory and test file
-        let agents_dir = source_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("test.md"), "# Test Agent").unwrap();
-
-        // Add and commit the file
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create main branch (git may have created master)
-        std::process::Command::new("git")
-            .args(["branch", "-M", "main"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-        manifest.add_dependency(
-            "git-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // This should now succeed with the local repository
-        let result = resolver.resolve().await;
-        if let Err(e) = &result {
-            eprintln!("Test failed with error: {:#}", e);
-        }
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_new_with_global() {
-        let manifest = Manifest::new();
-        let cache = Cache::new().unwrap();
-        let result = DependencyResolver::new_with_global(manifest, cache).await;
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_resolver_new_default() {
-        let manifest = Manifest::new();
-        let cache = Cache::new().unwrap();
-        let result = DependencyResolver::new(manifest, cache);
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_multiple_dependencies() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Simple("a1.md".to_string()),
-            true,
-        );
-        manifest.add_dependency(
-            "agent2".to_string(),
-            ResourceDependency::Simple("a2.md".to_string()),
-            true,
-        );
-        manifest.add_dependency(
-            "snippet1".to_string(),
-            ResourceDependency::Simple("s1.md".to_string()),
-            false,
-        );
-
-        // Create dummy files to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().join("a1.md"), "# Agent 1").unwrap();
-        std::fs::write(temp_dir.path().join("a2.md"), "# Agent 2").unwrap();
-        std::fs::write(temp_dir.path().join("s1.md"), "# Snippet 1").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 2);
-        assert_eq!(lockfile.snippets.len(), 1);
-    }
-
-    #[test]
-    fn test_verify_local_dependency() {
-        let mut manifest = Manifest::new();
-        manifest.add_dependency(
-            "local-agent".to_string(),
-            ResourceDependency::Simple("../local/agent.md".to_string()),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let result = resolver.verify();
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_empty_manifest() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 0);
-        assert_eq!(lockfile.snippets.len(), 0);
-        assert_eq!(lockfile.sources.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_custom_target() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add local dependency with custom target
-        manifest.add_dependency(
-            "custom-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: "../test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: Some("integrations/custom".to_string()),
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        assert_eq!(agent.name, "custom-agent");
-        // Verify the custom target is relative to the default agents directory
-        // Normalize path separators for cross-platform testing
-        let normalized_path = normalize_path_for_storage(&agent.installed_at);
-        assert!(normalized_path.contains(".claude/agents/integrations/custom"));
-        // Path ../test.md extracts to test.md after stripping parent components
-        assert_eq!(normalized_path, ".claude/agents/integrations/custom/test.md");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_without_custom_target() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add local dependency without custom target
-        manifest.add_dependency(
-            "standard-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: "../test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        assert_eq!(agent.name, "standard-agent");
-        // Verify the default target is used
-        // Normalize path separators for cross-platform testing
-        let normalized_path = normalize_path_for_storage(&agent.installed_at);
-        // Path ../test.md extracts to test.md after stripping parent components
-        assert_eq!(normalized_path, ".claude/agents/test.md");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_custom_filename() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add local dependency with custom filename
-        manifest.add_dependency(
-            "my-agent".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: "../test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: Some("ai-assistant.txt".to_string()),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        assert_eq!(agent.name, "my-agent");
-        // Verify the custom filename is used
-        // Normalize path separators for cross-platform testing
-        let normalized_path = normalize_path_for_storage(&agent.installed_at);
-        assert_eq!(normalized_path, ".claude/agents/ai-assistant.txt");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_with_custom_filename_and_target() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add local dependency with both custom filename and target
-        manifest.add_dependency(
-            "special-tool".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: "../test.md".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: Some("tools/ai".to_string()),
-                filename: Some("assistant.markdown".to_string()),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create dummy file to allow transitive dependency extraction
-        std::fs::write(temp_dir.path().parent().unwrap().join("test.md"), "# Test").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        assert_eq!(agent.name, "special-tool");
-        // Verify both custom target and filename are used
-        // Custom target is relative to default agents directory
-        // Normalize path separators for cross-platform testing
-        let normalized_path = normalize_path_for_storage(&agent.installed_at);
-        assert_eq!(normalized_path, ".claude/agents/tools/ai/assistant.markdown");
-    }
-
-    #[tokio::test]
-    async fn test_resolve_script_with_custom_filename() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add script with custom filename (different extension)
-        manifest.add_dependency(
-            "analyzer".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: "../scripts/data-analyzer-v3.py".to_string(),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: Some("analyze.py".to_string()),
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            false, // script (not agent)
-        );
-
-        // Create dummy script file to allow transitive dependency extraction
-        let scripts_dir = temp_dir.path().parent().unwrap().join("scripts");
-        std::fs::create_dir_all(&scripts_dir).unwrap();
-        std::fs::write(scripts_dir.join("data-analyzer-v3.py"), "#!/usr/bin/env python3").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        // Scripts should be in snippets array for now (based on false flag)
-        assert_eq!(lockfile.snippets.len(), 1);
-
-        let script = &lockfile.snippets[0];
-        assert_eq!(script.name, "analyzer");
-        // Verify custom filename is used (with custom extension)
-        // Normalize path separators for cross-platform testing
-        // Uses claude-code tool, so snippets go to .claude/snippets/
-        let normalized_path = normalize_path_for_storage(&script.installed_at);
-        assert_eq!(normalized_path, ".claude/snippets/analyze.py");
-    }
-
-    // ============ NEW TESTS FOR UNCOVERED AREAS ============
-
-    // Disable pattern tests for now as they require changing directory which breaks parallel test safety
-    // These tests would need to be rewritten to not use pattern dependencies or
-    // the resolver would need to support absolute base paths for pattern resolution
-
-    #[tokio::test]
-    async fn test_resolve_pattern_dependency_local() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_dir = temp_dir.path();
-
-        // Create local agent files
-        let agents_dir = project_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("helper.md"), "# Helper Agent").unwrap();
-        std::fs::write(agents_dir.join("assistant.md"), "# Assistant Agent").unwrap();
-        std::fs::write(agents_dir.join("tester.md"), "# Tester Agent").unwrap();
-
-        // Create manifest with local pattern dependency
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(project_dir.to_path_buf());
-        manifest.add_dependency(
-            "local-agents".to_string(),
-            ResourceDependency::Simple(format!("{}/agents/*.md", project_dir.display())),
-            true,
-        );
-
-        // Create resolver and resolve dependencies
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-
-        // Verify all agents were resolved
-        assert_eq!(lockfile.agents.len(), 3);
-        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
-        assert!(agent_names.contains(&"helper".to_string()));
-        assert!(agent_names.contains(&"assistant".to_string()));
-        assert!(agent_names.contains(&"tester".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_pattern_dependency_remote() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a local mock git repository with pattern-matching files
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create multiple agent files
-        let agents_dir = source_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("python-linter.md"), "# Python Linter").unwrap();
-        std::fs::write(agents_dir.join("python-formatter.md"), "# Python Formatter").unwrap();
-        std::fs::write(agents_dir.join("rust-linter.md"), "# Rust Linter").unwrap();
-
-        // Add and commit
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Add agents"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create a tag
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-
-        // Add pattern dependency for python agents
-        manifest.add_dependency(
-            "python-tools".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/python-*.md".to_string(),
-                version: Some("v1.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true, // agents
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        // Should have resolved to 2 python agents
-        assert_eq!(lockfile.agents.len(), 2);
-
-        // Check that both python agents were found
-        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
-        assert!(agent_names.contains(&"python-linter".to_string()));
-        assert!(agent_names.contains(&"python-formatter".to_string()));
-        assert!(!agent_names.contains(&"rust-linter".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_pattern_dependency_with_custom_target() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_dir = temp_dir.path();
-
-        // Create local agent files
-        let agents_dir = project_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("helper.md"), "# Helper Agent").unwrap();
-        std::fs::write(agents_dir.join("assistant.md"), "# Assistant Agent").unwrap();
-
-        // Create manifest with local pattern dependency and custom target
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(project_dir.to_path_buf());
-        manifest.add_dependency(
-            "custom-agents".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: None,
-                path: format!("{}/agents/*.md", project_dir.display()),
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: Some("custom/agents".to_string()),
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Create resolver and resolve dependencies
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-
-        // Verify agents were resolved with custom target
-        // Custom target is relative to default agents directory
-        assert_eq!(lockfile.agents.len(), 2);
-        for agent in &lockfile.agents {
-            assert!(agent.installed_at.starts_with(".claude/agents/custom/agents/"));
-        }
-
-        let agent_names: Vec<String> = lockfile.agents.iter().map(|a| a.name.clone()).collect();
-        assert!(agent_names.contains(&"helper".to_string()));
-        assert!(agent_names.contains(&"assistant".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_update_specific_dependencies() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a local mock git repository
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create initial files
-        let agents_dir = source_dir.join("agents");
-        std::fs::create_dir_all(&agents_dir).unwrap();
-        std::fs::write(agents_dir.join("agent1.md"), "# Agent 1 v1").unwrap();
-        std::fs::write(agents_dir.join("agent2.md"), "# Agent 2 v1").unwrap();
-
-        // Initial commit
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Update agent1 and create v2.0.0
-        std::fs::write(agents_dir.join("agent1.md"), "# Agent 1 v2").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Update agent1"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v2.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-
-        // Add dependencies - initially both at v1.0.0
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/agent1.md".to_string(),
-                version: Some("v1.0.0".to_string()), // Start with v1.0.0
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-        manifest.add_dependency(
-            "agent2".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/agent2.md".to_string(),
-                version: Some("v1.0.0".to_string()), // Start with v1.0.0
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir.clone()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
-
-        // First resolve with v1.0.0 for both
-        let initial_lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(initial_lockfile.agents.len(), 2);
-
-        // Create a new manifest with agent1 updated to v2.0.0
-        let mut updated_manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        updated_manifest.add_source("test".to_string(), format!("file://{}", source_dir.display()));
-        updated_manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/agent1.md".to_string(),
-                version: Some("v2.0.0".to_string()),
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-        updated_manifest.add_dependency(
-            "agent2".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "agents/agent2.md".to_string(),
-                version: Some("v1.0.0".to_string()), // Keep v1.0.0
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        // Now update only agent1
-        let cache2 = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver2 = DependencyResolver::with_cache(updated_manifest, cache2);
-        let updated_lockfile =
-            resolver2.update(&initial_lockfile, Some(vec!["agent1".to_string()])).await.unwrap();
-
-        // agent1 should be updated to v2.0.0
-        let agent1 = updated_lockfile
-            .agents
-            .iter()
-            .find(|a| a.name == "agent1" && a.version.as_deref() == Some("v2.0.0"))
-            .unwrap();
-        assert_eq!(agent1.version.as_ref().unwrap(), "v2.0.0");
-
-        // agent2 should remain at v1.0.0
-        let agent2 = updated_lockfile
-            .agents
-            .iter()
-            .find(|a| a.name == "agent2" && a.version.as_deref() == Some("v1.0.0"))
-            .unwrap();
-        assert_eq!(agent2.version.as_ref().unwrap(), "v1.0.0");
-    }
-
-    #[tokio::test]
-    async fn test_update_all_dependencies() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-        manifest.add_dependency(
-            "local1".to_string(),
-            ResourceDependency::Simple("../a1.md".to_string()),
-            true,
-        );
-        manifest.add_dependency(
-            "local2".to_string(),
-            ResourceDependency::Simple("../a2.md".to_string()),
-            true,
-        );
-
-        // Create dummy files to allow transitive dependency extraction
-        let parent = temp_dir.path().parent().unwrap();
-        std::fs::write(parent.join("a1.md"), "# Agent 1").unwrap();
-        std::fs::write(parent.join("a2.md"), "# Agent 2").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache);
-
-        // Initial resolve
-        let initial_lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(initial_lockfile.agents.len(), 2);
-
-        // Update all (None means update all)
-        let cache2 = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver2 = DependencyResolver::with_cache(manifest, cache2);
-        let updated_lockfile = resolver2.update(&initial_lockfile, None).await.unwrap();
-
-        // All dependencies should be present
-        assert_eq!(updated_lockfile.agents.len(), 2);
-    }
-
-    // NOTE: Comprehensive integration tests for update() with transitive dependencies
-    // are in tests/integration_incremental_add.rs. These provide end-to-end testing
-    // of the incremental `agpm add dep` scenario which exercises the update() method.
-
-    #[tokio::test]
-    async fn test_resolve_hooks_resource_type() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add hook dependencies
-        manifest.hooks.insert(
-            "pre-commit".to_string(),
-            ResourceDependency::Simple("../hooks/pre-commit.json".to_string()),
-        );
-        manifest.hooks.insert(
-            "post-commit".to_string(),
-            ResourceDependency::Simple("../hooks/post-commit.json".to_string()),
-        );
-
-        // Create dummy hook files to allow transitive dependency extraction
-        let hooks_dir = temp_dir.path().parent().unwrap().join("hooks");
-        std::fs::create_dir_all(&hooks_dir).unwrap();
-        std::fs::write(hooks_dir.join("pre-commit.json"), "{}").unwrap();
-        std::fs::write(hooks_dir.join("post-commit.json"), "{}").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.hooks.len(), 2);
-
-        // Check that hooks point to the config file where they're configured
-        for hook in &lockfile.hooks {
-            assert_eq!(
-                hook.installed_at, ".claude/settings.local.json",
-                "Hooks should reference the config file where they're configured"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_resolve_scripts_resource_type() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add script dependencies
-        manifest.scripts.insert(
-            "build".to_string(),
-            ResourceDependency::Simple("../scripts/build.sh".to_string()),
-        );
-        manifest.scripts.insert(
-            "test".to_string(),
-            ResourceDependency::Simple("../scripts/test.py".to_string()),
-        );
-
-        // Create dummy script files to allow transitive dependency extraction
-        let scripts_dir = temp_dir.path().parent().unwrap().join("scripts");
-        std::fs::create_dir_all(&scripts_dir).unwrap();
-        std::fs::write(scripts_dir.join("build.sh"), "#!/bin/bash").unwrap();
-        std::fs::write(scripts_dir.join("test.py"), "#!/usr/bin/env python3").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.scripts.len(), 2);
-
-        // Check that scripts maintain their extensions
-        let build_script = lockfile.scripts.iter().find(|s| s.name == "build").unwrap();
-        assert!(build_script.installed_at.ends_with("build.sh"));
-
-        let test_script = lockfile.scripts.iter().find(|s| s.name == "test").unwrap();
-        assert!(test_script.installed_at.ends_with("test.py"));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_mcp_servers_resource_type() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add MCP server dependencies
-        manifest.mcp_servers.insert(
-            "filesystem".to_string(),
-            ResourceDependency::Simple("../mcp/filesystem.json".to_string()),
-        );
-        manifest.mcp_servers.insert(
-            "database".to_string(),
-            ResourceDependency::Simple("../mcp/database.json".to_string()),
-        );
-
-        // Create dummy MCP server files to allow transitive dependency extraction
-        let mcp_dir = temp_dir.path().parent().unwrap().join("mcp");
-        std::fs::create_dir_all(&mcp_dir).unwrap();
-        std::fs::write(mcp_dir.join("filesystem.json"), "{}").unwrap();
-        std::fs::write(mcp_dir.join("database.json"), "{}").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.mcp_servers.len(), 2);
-
-        // Check that MCP servers point to the config file where they're configured
-        for server in &lockfile.mcp_servers {
-            assert_eq!(
-                server.installed_at, ".mcp.json",
-                "MCP servers should reference the config file where they're configured"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_resolve_commands_resource_type() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add command dependencies
-        manifest.commands.insert(
-            "deploy".to_string(),
-            ResourceDependency::Simple("../commands/deploy.md".to_string()),
-        );
-        manifest.commands.insert(
-            "lint".to_string(),
-            ResourceDependency::Simple("../commands/lint.md".to_string()),
-        );
-
-        // Create dummy command files to allow transitive dependency extraction
-        let commands_dir = temp_dir.path().parent().unwrap().join("commands");
-        std::fs::create_dir_all(&commands_dir).unwrap();
-        std::fs::write(commands_dir.join("deploy.md"), "# Deploy").unwrap();
-        std::fs::write(commands_dir.join("lint.md"), "# Lint").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.commands.len(), 2);
-
-        // Check that commands are installed to the correct location
-        for command in &lockfile.commands {
-            // Normalize path separators for cross-platform testing
-            let normalized_path = normalize_path_for_storage(&command.installed_at);
-            assert!(normalized_path.contains(".claude/commands/"));
-            assert!(command.installed_at.ends_with(".md"));
-        }
-    }
-
-    #[tokio::test]
-    async fn test_checkout_version_with_constraint() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a git repo with multiple version tags
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create file and make commits with version tags
-        let test_file = source_dir.join("test.txt");
-
-        // v1.0.0
-        std::fs::write(&test_file, "v1.0.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v1.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // v1.1.0
-        std::fs::write(&test_file, "v1.1.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v1.1.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v1.1.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // v1.2.0
-        std::fs::write(&test_file, "v1.2.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v1.2.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v1.2.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // v2.0.0
-        std::fs::write(&test_file, "v2.0.0").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "v2.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "v2.0.0"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-
-        // Test version constraint resolution (^1.0.0 should resolve to 1.2.0)
-        manifest.add_dependency(
-            "constrained-dep".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.txt".to_string(),
-                version: Some("^1.0.0".to_string()), // Constraint: compatible with 1.x.x
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        // Should resolve to highest 1.x version (1.2.0), not 2.0.0
-        assert_eq!(agent.version.as_ref().unwrap(), "v1.2.0");
-    }
-
-    #[tokio::test]
-    async fn test_verify_absolute_path_error() {
-        let mut manifest = Manifest::new();
-
-        // Add dependency with non-existent absolute path
-        // Use platform-specific absolute path
-        let nonexistent_path = if cfg!(windows) {
-            "C:\\nonexistent\\path\\agent.md"
-        } else {
-            "/nonexistent/path/agent.md"
-        };
-
-        manifest.add_dependency(
-            "missing-agent".to_string(),
-            ResourceDependency::Simple(nonexistent_path.to_string()),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let result = resolver.verify();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_pattern_dependency_error() {
-        let mut manifest = Manifest::new();
-
-        // Add pattern dependency without source (should error in resolve_pattern_dependency)
-        manifest.add_dependency(
-            "pattern-dep".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("nonexistent".to_string()),
-                path: "agents/*.md".to_string(), // Pattern path
-                version: None,
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let result = resolver.resolve().await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_checkout_version_with_branch() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a git repo with a branch
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create initial commit on main
-        let test_file = source_dir.join("test.txt");
-        std::fs::write(&test_file, "main").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Initial"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create and switch to develop branch
-        std::process::Command::new("git")
-            .args(["checkout", "-b", "develop"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Make a commit on develop
-        std::fs::write(&test_file, "develop").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Develop commit"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-
-        // Test branch checkout
-        manifest.add_dependency(
-            "branch-dep".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.txt".to_string(),
-                version: Some("develop".to_string()), // Branch name
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        // Should have resolved to develop branch
-        let agent = &lockfile.agents[0];
-        assert!(agent.resolved_commit.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_checkout_version_with_commit_hash() {
-        let temp_dir = TempDir::new().unwrap();
-
-        // Create a git repo
-        let source_dir = temp_dir.path().join("test-source");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&source_dir)
-            .output()
-            .expect("Failed to initialize git repository");
-
-        // Configure git
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Create a commit
-        let test_file = source_dir.join("test.txt");
-        std::fs::write(&test_file, "content").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "Test commit"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-
-        // Get the commit hash
-        let output = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&source_dir)
-            .output()
-            .unwrap();
-        let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        let mut manifest = Manifest::new();
-        // Use file:// URL to ensure it's treated as a Git source, not a local path
-        let source_url = format!("file://{}", source_dir.display());
-        manifest.add_source("test".to_string(), source_url);
-
-        // Test commit hash checkout (use first 7 chars for short hash)
-        manifest.add_dependency(
-            "commit-dep".to_string(),
-            ResourceDependency::Detailed(Box::new(crate::manifest::DetailedDependency {
-                source: Some("test".to_string()),
-                path: "test.txt".to_string(),
-                version: Some(commit_hash[..7].to_string()), // Short commit hash
-                branch: None,
-                rev: None,
-                command: None,
-                args: None,
-                target: None,
-                filename: None,
-                dependencies: None,
-                tool: Some("claude-code".to_string()),
-                flatten: None,
-                install: None,
-
-                template_vars: None,
-            })),
-            true,
-        );
-
-        let cache_dir = temp_dir.path().join("cache");
-        let cache = Cache::with_dir(cache_dir).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-        assert_eq!(lockfile.agents.len(), 1);
-
-        let agent = &lockfile.agents[0];
-        assert!(agent.resolved_commit.is_some());
-        // The resolved commit should start with our short hash
-        assert!(agent.resolved_commit.as_ref().unwrap().starts_with(&commit_hash[..7]));
-    }
-
-    #[tokio::test]
-    async fn test_mixed_resource_types() {
-        let temp_dir = TempDir::new().unwrap();
-        let mut manifest = Manifest::new();
-        manifest.manifest_dir = Some(temp_dir.path().to_path_buf());
-
-        // Add various resource types
-        manifest.add_dependency(
-            "agent1".to_string(),
-            ResourceDependency::Simple("../agents/a1.md".to_string()),
-            true,
-        );
-
-        manifest.scripts.insert(
-            "build".to_string(),
-            ResourceDependency::Simple("../scripts/build.sh".to_string()),
-        );
-
-        manifest.hooks.insert(
-            "pre-commit".to_string(),
-            ResourceDependency::Simple("../hooks/pre-commit.json".to_string()),
-        );
-
-        manifest.commands.insert(
-            "deploy".to_string(),
-            ResourceDependency::Simple("../commands/deploy.md".to_string()),
-        );
-
-        manifest.mcp_servers.insert(
-            "filesystem".to_string(),
-            ResourceDependency::Simple("../mcp/filesystem.json".to_string()),
-        );
-
-        // Create dummy files for all resource types to allow transitive dependency extraction
-        let parent = temp_dir.path().parent().unwrap();
-        std::fs::create_dir_all(parent.join("agents")).unwrap();
-        std::fs::create_dir_all(parent.join("scripts")).unwrap();
-        std::fs::create_dir_all(parent.join("hooks")).unwrap();
-        std::fs::create_dir_all(parent.join("commands")).unwrap();
-        std::fs::create_dir_all(parent.join("mcp")).unwrap();
-        std::fs::write(parent.join("agents/a1.md"), "# Agent").unwrap();
-        std::fs::write(parent.join("scripts/build.sh"), "#!/bin/bash").unwrap();
-        std::fs::write(parent.join("hooks/pre-commit.json"), "{}").unwrap();
-        std::fs::write(parent.join("commands/deploy.md"), "# Deploy").unwrap();
-        std::fs::write(parent.join("mcp/filesystem.json"), "{}").unwrap();
-
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let mut resolver = DependencyResolver::with_cache(manifest, cache);
-
-        let lockfile = resolver.resolve().await.unwrap();
-
-        // Check all resource types are resolved
-        assert_eq!(lockfile.agents.len(), 1);
-        assert_eq!(lockfile.scripts.len(), 1);
-        assert_eq!(lockfile.hooks.len(), 1);
-        assert_eq!(lockfile.commands.len(), 1);
-        assert_eq!(lockfile.mcp_servers.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_version_conflict_semver_preference() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Test: semver version preferred over git branch
-        let existing_semver = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("v1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let new_branch = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: None,
-            branch: Some("main".to_string()),
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let result = resolver
-            .resolve_version_conflict("test-agent", &existing_semver, &new_branch, "app1")
-            .await;
-        assert!(result.is_ok(), "Should succeed with semver preference");
-        let resolved = result.unwrap();
-        assert_eq!(
-            resolved.get_version(),
-            Some("v1.0.0"),
-            "Should prefer semver version over branch"
-        );
-
-        // Test reverse: git branch vs semver version
-        let result2 = resolver
-            .resolve_version_conflict("test-agent", &new_branch, &existing_semver, "app2")
-            .await;
-        assert!(result2.is_ok(), "Should succeed with semver preference");
-        let resolved2 = result2.unwrap();
-        assert_eq!(
-            resolved2.get_version(),
-            Some("v1.0.0"),
-            "Should prefer semver version over branch (reversed order)"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_resolve_version_conflict_semver_comparison() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Test: higher semver version wins
-        let existing_v1 = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("v1.5.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let new_v2 = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("v2.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let result =
-            resolver.resolve_version_conflict("test-agent", &existing_v1, &new_v2, "app1").await;
-        assert!(result.is_ok(), "Should succeed with higher version");
-        let resolved = result.unwrap();
-        assert_eq!(resolved.get_version(), Some("v2.0.0"), "Should use higher semver version");
-
-        // Test reverse order
-        let result2 =
-            resolver.resolve_version_conflict("test-agent", &new_v2, &existing_v1, "app2").await;
-        assert!(result2.is_ok(), "Should succeed with higher version");
-        let resolved2 = result2.unwrap();
-        assert_eq!(
-            resolved2.get_version(),
-            Some("v2.0.0"),
-            "Should use higher semver version (reversed order)"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_resolve_version_conflict_git_refs() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Test: git refs use alphabetical ordering
-        let existing_main = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: None,
-            branch: Some("main".to_string()),
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let new_develop = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: None,
-            branch: Some("develop".to_string()),
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let result = resolver
-            .resolve_version_conflict("test-agent", &existing_main, &new_develop, "app1")
-            .await;
-        assert!(result.is_ok(), "Should succeed with alphabetical ordering");
-        let resolved = result.unwrap();
-        assert_eq!(
-            resolved.get_version(),
-            Some("develop"),
-            "Should use alphabetically first git ref"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_resolve_version_conflict_head_vs_specific() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Test: specific version preferred over HEAD (None)
-        let existing_head = ResourceDependency::Simple("agents/test.md".to_string());
-
-        let new_specific = ResourceDependency::Detailed(Box::new(DetailedDependency {
-            source: Some("test".to_string()),
-            path: "agents/test.md".to_string(),
-            version: Some("v1.0.0".to_string()),
-            branch: None,
-            rev: None,
-            command: None,
-            args: None,
-            target: None,
-            filename: None,
-            dependencies: None,
-            tool: Some("claude-code".to_string()),
-            flatten: None,
-            install: None,
-
-            template_vars: None,
-        }));
-
-        let result = resolver
-            .resolve_version_conflict("test-agent", &existing_head, &new_specific, "app1")
-            .await;
-        assert!(result.is_ok(), "Should succeed with specific version");
-        let resolved = result.unwrap();
-        assert_eq!(
-            resolved.get_version(),
-            Some("v1.0.0"),
-            "Should prefer specific version over HEAD"
-        );
-    }
-
-    #[test]
-    fn test_generate_dependency_name_manifest_relative() {
-        let manifest = Manifest::new();
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::with_dir(temp_dir.path().to_path_buf()).unwrap();
-        let resolver = DependencyResolver::with_cache(manifest, cache);
-
-        // Regular relative paths - strip resource type directory
-        assert_eq!(resolver.generate_dependency_name("agents/helper.md"), "helper");
-        assert_eq!(resolver.generate_dependency_name("snippets/utils.md"), "utils");
-
-        // Cross-directory paths with ../ - keep all components to avoid collisions
-        assert_eq!(resolver.generate_dependency_name("../shared/utils.md"), "../shared/utils");
-        assert_eq!(resolver.generate_dependency_name("../other/utils.md"), "../other/utils");
-
-        // Ensure different cross-directory paths get different names
-        let name1 = resolver.generate_dependency_name("../shared/foo.md");
-        let name2 = resolver.generate_dependency_name("../other/foo.md");
-        assert_ne!(name1, name2, "Different parent directories should produce different names");
     }
 }

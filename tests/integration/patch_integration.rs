@@ -724,8 +724,8 @@ category = "utility"
         applied_count
     );
 
-    // Each resource should have its own entry
-    for name in ["helper-alpha", "helper-beta", "helper-gamma"] {
+    // Each resource should have its own entry (with helpers/ prefix since they're in subdirectory)
+    for name in ["helpers/helper-alpha", "helpers/helper-beta", "helpers/helper-gamma"] {
         assert!(
             lockfile.contains(&format!("name = \"{}\"", name)),
             "Lockfile should have entry for {}",

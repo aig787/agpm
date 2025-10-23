@@ -199,7 +199,7 @@ async fn add_dependency_with_manifest_path(
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             }));
         }
     }
@@ -502,7 +502,7 @@ fn parse_dependency_spec(
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         ))
     } else if is_local_path {

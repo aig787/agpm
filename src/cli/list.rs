@@ -1115,7 +1115,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
 
@@ -1142,7 +1142,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
 
@@ -1187,7 +1187,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -1206,7 +1206,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add snippets
@@ -1226,7 +1226,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile
@@ -1555,7 +1555,7 @@ mod tests {
             flatten: None,
             install: None,
 
-            template_vars: None,
+            template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
         }));
 
         let dep_with_different_source =
@@ -1574,7 +1574,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             }));
 
         let dep_without_source = ResourceDependency::Simple("local/file.md".to_string());
@@ -1619,7 +1619,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1638,7 +1638,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         };
 
         let entry_without_source = LockedResource {
@@ -1657,7 +1657,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1688,7 +1688,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1885,7 +1885,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

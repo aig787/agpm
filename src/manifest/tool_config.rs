@@ -321,6 +321,14 @@ impl Default for ToolsConfig {
             },
         );
         opencode_resources.insert(
+            ResourceType::Snippet.to_plural().to_string(),
+            ResourceConfig {
+                path: Some("snippet".to_string()), // Singular
+                merge_target: None,
+                flatten: Some(false), // Snippets preserve directory structure
+            },
+        );
+        opencode_resources.insert(
             ResourceType::Command.to_plural().to_string(),
             ResourceConfig {
                 path: Some("command".to_string()), // Singular

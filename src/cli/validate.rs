@@ -933,16 +933,14 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
-                    let resource_id = crate::lockfile::ResourceId {
-                        name: $name.to_string(),
-                        source: $entry.source.clone(),
-                        tool: $entry.tool.clone(),
-                        template_vars: $entry.template_vars.clone(),
-                    };
-                    let context = match context_builder
-                        .build_context(&resource_id, $resource_type)
-                        .await
-                    {
+                    let resource_id = crate::lockfile::ResourceId::from_serialized(
+                        $name.to_string(),
+                        $entry.source.clone(),
+                        $entry.tool.clone(),
+                        $resource_type,
+                        $entry.template_vars.clone(),
+                    );
+                    let context = match context_builder.build_context(&resource_id).await {
                         Ok(c) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
@@ -1362,7 +1360,7 @@ mod tests {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1439,7 +1437,7 @@ mod tests {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1523,7 +1521,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1628,7 +1626,7 @@ mod tests {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1707,7 +1705,7 @@ mod tests {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -1835,7 +1833,7 @@ mod tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: None,
+                template_vars: "{}".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1987,7 +1985,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2076,7 +2074,7 @@ mod tests {
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -2295,7 +2293,7 @@ mod tests {
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2385,7 +2383,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2436,7 +2434,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2488,7 +2486,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             true,
@@ -2511,7 +2509,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
             false,
@@ -2637,7 +2635,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2661,7 +2659,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2717,7 +2715,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                     flatten: None,
                     install: None,
 
-                    template_vars: None,
+                    template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
                 },
             )),
         );
@@ -2869,7 +2867,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3370,7 +3368,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3445,7 +3443,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -3573,7 +3571,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3746,7 +3744,7 @@ See [helper](.agpm/snippets/helper.md) for details.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3813,7 +3811,7 @@ Also check `.claude/nonexistent.md`.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3882,7 +3880,7 @@ Visit http://example.com for more info.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3953,7 +3951,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -4023,7 +4021,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -4040,7 +4038,7 @@ Inline code `example.md` should also be ignored.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

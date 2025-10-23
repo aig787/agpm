@@ -113,6 +113,7 @@ src/
 
 - **Best Practices**: See `.agpm/snippets/rust-best-practices.md` for comprehensive coding standards
 - **File Size**: Keep source code files under 1,000 lines of code (excluding empty lines and comments). Files exceeding this limit should be refactored into smaller, focused modules. Use `cloc` to count lines of code: `cloc src/file.rs --include-lang=Rust`
+- **Code Cleanup**: Prefer removing unused code over marking it as deprecated or prefixing variables/arguments with `_`. Delete dead imports, unused functions, and obsolete dependencies entirely.
 - **Imports**: Prefer `use crate::module::Type;` at top of file vs `crate::module::Type` throughout code
 - **Pre-commit**: Always run `cargo fmt` before committing code
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes

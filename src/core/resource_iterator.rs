@@ -391,7 +391,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -410,7 +410,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile
@@ -440,7 +440,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -459,7 +459,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add commands from source1
@@ -479,7 +479,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add scripts
@@ -499,7 +499,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add hooks
@@ -519,7 +519,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add MCP servers
@@ -539,7 +539,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Add resource without source
@@ -559,7 +559,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         lockfile
@@ -605,7 +605,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         // Verify the agent was added
@@ -1060,7 +1060,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: None,
+            template_vars: "{}".to_string(),
         });
 
         let groups = ResourceIterator::group_by_source(&lockfile);

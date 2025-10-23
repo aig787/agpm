@@ -4,8 +4,6 @@
 .opencode/
 .mcp.json
 
-# Lockfile (optional - you may want to commit this)
-agpm.lock
 
 # Editor files
 .vscode/
@@ -18,9 +16,9 @@ agpm.lock
 .DS_Store
 Thumbs.db
 
+agpm.lock
+
 # AGPM managed entries - do not edit below this line
-agpm.private.toml
-agpm.private.lock
 .claude/agents/code-reviewer-with-standards.md
 .claude/snippets/api-design-principles.md
 .claude/snippets/code-quality-checklist.md

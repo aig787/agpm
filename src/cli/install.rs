@@ -587,7 +587,7 @@ impl InstallCommand {
 
                     // Update lockfile with applied patches
                     for (id, applied_patches) in applied_patches_list {
-                        lockfile.update_resource_applied_patches(&id.name, &applied_patches);
+                        lockfile.update_resource_applied_patches(id.name(), &applied_patches);
                     }
 
                     // Complete installation phase
@@ -1122,7 +1122,7 @@ This is a test agent.",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1186,7 +1186,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1210,7 +1210,7 @@ Body",
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: None,
+                template_vars: "{}".to_string(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -1260,7 +1260,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1305,7 +1305,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1349,7 +1349,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1390,7 +1390,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();
@@ -1450,7 +1450,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.add_mcp_server(
@@ -1470,7 +1470,7 @@ Body",
                 flatten: None,
                 install: None,
 
-                template_vars: None,
+                template_vars: Some(serde_json::Value::Object(serde_json::Map::new())),
             })),
         );
         manifest.save(&manifest_path).unwrap();

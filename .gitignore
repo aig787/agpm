@@ -39,7 +39,8 @@ cobertura.xml
 
 # Examples
 examples/projects/*
-!examples/projects/content-embedding/
+!examples/projects/content-embedding/agpm.toml
+!examples/projects/content-embedding/README.md
 
 # Claude
 **/.claude/settings.local.json
@@ -56,15 +57,12 @@ in-memoria.db
 .serena
 .zed
 worktrees
+scratch
 
 # AGPM
 .agpm/backups/
 agpm.private.toml
 agpm.private.lock
-
-# AGPM configuration (not checked in - user-specific)
-agpm.toml
-agpm.lock
 
 # AGPM managed entries - do not edit below this line
 .agpm/snippets/local-deps/snippets/agents/rust-doc-advanced.md
