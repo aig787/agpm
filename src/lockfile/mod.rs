@@ -1178,6 +1178,42 @@ impl LockedResource {
             && self.template_vars == id.template_vars
     }
 
+    /// Parse the dependencies field into structured lockfile dependency references.
+    ///
+    /// Returns an iterator over successfully parsed dependency references.
+    /// Invalid references are logged as warnings and skipped.
+    ///
+    /// This is the centralized way to parse lockfile dependencies, ensuring
+    /// consistent handling of the lockfile format across the codebase.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// # let resource: LockedResource = unimplemented!();
+    /// for dep in resource.parsed_dependencies() {
+    ///     println!("Dependency: {} (type: {})", dep.path, dep.resource_type);
+    /// }
+    /// ```
+    pub fn parsed_dependencies(
+        &self,
+    ) -> impl Iterator<Item = lockfile_dependency_ref::LockfileDependencyRef> + '_ {
+        use std::str::FromStr;
+
+        self.dependencies.iter().filter_map(|dep_str| {
+            lockfile_dependency_ref::LockfileDependencyRef::from_str(dep_str)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse dependency '{}' for resource '{}': {}",
+                        dep_str,
+                        self.name,
+                        e
+                    );
+                })
+                .ok()
+        })
+    }
+
     /// Create a new LockedResource with template_vars serialization handled.
     ///
     /// This constructor handles the serialization of template_vars from serde_json::Value
@@ -1271,11 +1307,10 @@ impl LockedResource {
 mod checksum;
 mod helpers;
 mod io;
+pub mod lockfile_dependency_ref;
+pub mod private_lock;
 mod resource_ops;
 mod validation;
-
-// Public submodules
-pub mod private_lock;
 pub use private_lock::PrivateLockFile;
 
 // Patch display utilities (currently unused - TODO: integrate with Cache API)

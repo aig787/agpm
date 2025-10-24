@@ -265,7 +265,7 @@ impl TemplateContextBuilder {
         resource_type: ResourceType,
     ) -> Result<ResourceMetadata> {
         let entry =
-            self.lockfile.find_resource(resource_name, resource_type).with_context(|| {
+            self.lockfile.find_resource(resource_name, &resource_type).with_context(|| {
                 format!(
                     "Resource '{}' of type {:?} not found in lockfile",
                     resource_name, resource_type
@@ -352,7 +352,7 @@ impl TemplateContextBuilder {
             ResourceType::Hook,
             ResourceType::McpServer,
         ] {
-            let resources = self.lockfile.get_resources_by_type(resource_type);
+            let resources = self.lockfile.get_resources_by_type(&resource_type);
             if resources.is_empty() {
                 continue;
             }

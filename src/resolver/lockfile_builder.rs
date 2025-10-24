@@ -4,11 +4,12 @@
 //! including conflict detection, stale entry removal, and transitive dependency management.
 
 use crate::core::ResourceType;
-use crate::lockfile::{LockFile, LockedResource};
+use crate::lockfile::{LockFile, LockedResource, lockfile_dependency_ref::LockfileDependencyRef};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::resolver::types as dependency_helpers;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 // Type aliases for internal lookups
 type ResourceKey = (ResourceType, String, Option<String>);
@@ -97,7 +98,7 @@ impl<'a> LockfileBuilder<'a> {
         _name: &str,
         entry: LockedResource,
     ) {
-        let resources = lockfile.get_resources_mut(entry.resource_type);
+        let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
             // Always replace with the new entry
@@ -169,7 +170,7 @@ impl<'a> LockfileBuilder<'a> {
         // Find all manifest-level entries that are no longer in the manifest
         for resource_type in ResourceType::all() {
             let manifest_keys = get_manifest_keys(*resource_type);
-            let resources = lockfile.get_resources(*resource_type);
+            let resources = lockfile.get_resources(resource_type);
 
             for entry in resources {
                 // Determine if this is a stale manifest-level entry (no longer in manifest)
@@ -193,7 +194,7 @@ impl<'a> LockfileBuilder<'a> {
         for (parent_name, parent_source) in direct_entries {
             for resource_type in ResourceType::all() {
                 if let Some(parent_entry) = lockfile
-                    .get_resources(*resource_type)
+                    .get_resources(resource_type)
                     .iter()
                     .find(|e| e.name == parent_name && e.source == parent_source)
                 {
@@ -246,7 +247,7 @@ impl<'a> LockfileBuilder<'a> {
         let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
 
         for resource_type in ResourceType::all() {
-            let resources = lockfile.get_resources(*resource_type);
+            let resources = lockfile.get_resources(resource_type);
             for entry in resources {
                 // Check if this entry originates from a manifest key being updated
                 if manifest_keys.contains(&entry.name)
@@ -269,7 +270,7 @@ impl<'a> LockfileBuilder<'a> {
             // Find the parent entry in the lockfile
             for resource_type in ResourceType::all() {
                 if let Some(parent_entry) = lockfile
-                    .get_resources(*resource_type)
+                    .get_resources(resource_type)
                     .iter()
                     .find(|e| e.name == parent_name && e.source == parent_source)
                 {
@@ -317,52 +318,30 @@ impl<'a> LockfileBuilder<'a> {
         entries_to_remove: &mut HashSet<(String, Option<String>)>,
     ) {
         // For each dependency declared by this parent
-        for dep_ref in &parent.dependencies {
-            // Parse dependency reference: "source:resource_type/name:version" or "resource_type/name"
-            // Examples: "repo1:snippet/utils:v1.0.0" or "agent/helper"
-            let (dep_source, dep_name) = if let Some(colon_pos) = dep_ref.find(':') {
-                // Format: "source:resource_type/name:version"
-                let source_part = &dep_ref[..colon_pos];
-                let rest = &dep_ref[colon_pos + 1..];
-                // Find the resource_type/name part (before optional :version)
-                let type_name_part = if let Some(ver_colon) = rest.rfind(':') {
-                    &rest[..ver_colon]
-                } else {
-                    rest
-                };
-                // Extract name from "resource_type/name"
-                if let Some(slash_pos) = type_name_part.find('/') {
-                    let name = &type_name_part[slash_pos + 1..];
-                    (Some(source_part.to_string()), name.to_string())
-                } else {
-                    continue; // Invalid format, skip
-                }
-            } else {
-                // Format: "resource_type/name"
-                if let Some(slash_pos) = dep_ref.find('/') {
-                    let name = &dep_ref[slash_pos + 1..];
-                    // Inherit parent's source
-                    (parent.source.clone(), name.to_string())
-                } else {
-                    continue; // Invalid format, skip
-                }
-            };
+        for dep_ref in parent.parsed_dependencies() {
+            let dep_path = &dep_ref.path;
+            let resource_type = dep_ref.resource_type;
+
+            // Extract the resource name from the path (filename without extension)
+            let dep_name = dependency_helpers::extract_filename_from_path(dep_path)
+                .unwrap_or_else(|| dep_path.to_string());
+
+            // Determine the source: use explicit source from dep_ref if present, otherwise inherit from parent
+            let dep_source = dep_ref.source.or_else(|| parent.source.clone());
 
             // Find the dependency entry with matching name and source
-            for resource_type in ResourceType::all() {
-                if let Some(dep_entry) = lockfile
-                    .get_resources(*resource_type)
-                    .iter()
-                    .find(|e| e.name == dep_name && e.source == dep_source)
-                {
-                    let key = (dep_entry.name.clone(), dep_entry.source.clone());
+            if let Some(dep_entry) = lockfile
+                .get_resources(&resource_type)
+                .iter()
+                .find(|e| e.name == dep_name && e.source == dep_source)
+            {
+                let key = (dep_entry.name.clone(), dep_entry.source.clone());
 
-                    // Add to removal set and recurse (if not already processed)
-                    if !entries_to_remove.contains(&key) {
-                        entries_to_remove.insert(key);
-                        // Recursively collect this dependency's children
-                        Self::collect_transitive_children(lockfile, dep_entry, entries_to_remove);
-                    }
+                // Add to removal set and recurse (if not already processed)
+                if !entries_to_remove.contains(&key) {
+                    entries_to_remove.insert(key);
+                    // Recursively collect this dependency's children
+                    Self::collect_transitive_children(lockfile, dep_entry, entries_to_remove);
                 }
             }
         }
@@ -390,7 +369,7 @@ pub fn add_pattern_entries(
     entries: Vec<LockedResource>,
     resource_type: ResourceType,
 ) {
-    let resources = lockfile.get_resources_mut(resource_type);
+    let resources = lockfile.get_resources_mut(&resource_type);
 
     for entry in entries {
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
@@ -404,161 +383,61 @@ pub fn add_pattern_entries(
     }
 }
 
-/// Post-processes lockfile entries to add version information to dependencies.
+/// Rewrites a dependency string to include version information.
 ///
-/// Updates the `dependencies` field in each lockfile entry from the format
-/// `"resource_type/name"` to `"resource_type/name@version"` by looking up
-/// the resolved version in the lockfile.
+/// This helper function transforms dependency strings by looking up version information
+/// in the provided maps and updating the dependency reference accordingly.
 ///
-/// This is a standalone function used during lockfile finalization to enrich
-/// dependency references with version information for better tracking and reproducibility.
-pub fn add_version_to_dependencies(lockfile: &mut LockFile) -> Result<()> {
-    // Build a lookup map: (resource_type, path, source) -> unique_name
-    // This allows us to resolve dependency paths to lockfile names
-    // We store both the full path and just the filename for flexible lookup
-    let mut lookup_map: HashMap<(ResourceType, String, Option<String>), String> = HashMap::new();
+/// # Arguments
+///
+/// * `dep` - The original dependency string (must be properly formatted)
+/// * `lookup_map` - Map of (resource_type, path, source) -> name for resolving dependencies
+/// * `resource_info_map` - Map of (resource_type, name, source) -> (source, version) for version info
+/// * `parent_source` - The source of the parent resource (for inheritance)
+///
+/// # Returns
+///
+/// The updated dependency string with version information included, or the original
+/// dependency string if it cannot be parsed or no version info is found
+fn rewrite_dependency_string(
+    dep: &str,
+    lookup_map: &HashMap<(ResourceType, String, Option<String>), String>,
+    resource_info_map: &HashMap<ResourceKey, ResourceInfo>,
+    parent_source: Option<String>,
+) -> String {
+    // Parse dependency using DependencyReference - only support properly formatted dependencies
+    if let Ok(existing_dep) = LockfileDependencyRef::from_str(dep) {
+        // If it's already a properly formatted dependency, try to add version info if missing
+        let dep_source = existing_dep.source.clone().or_else(|| parent_source.clone());
+        let dep_resource_type = existing_dep.resource_type;
+        let dep_path = existing_dep.path.clone();
 
-    // Build lookup map from all lockfile entries
-    for resource_type in ResourceType::all() {
-        for entry in lockfile.get_resources(*resource_type) {
-            let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
-            // Store by full path
-            lookup_map.insert(
-                (*resource_type, normalized_path.clone(), entry.source.clone()),
-                entry.name.clone(),
-            );
-            // Also store by filename for backward compatibility
-            if let Some(filename) = dependency_helpers::extract_filename_from_path(&entry.path) {
-                lookup_map
-                    .insert((*resource_type, filename, entry.source.clone()), entry.name.clone());
-            }
-            // Also store by type-stripped path (for nested resources like agents/helpers/foo.md -> helpers/foo)
-            if let Some(stripped) =
-                dependency_helpers::strip_resource_type_directory(&normalized_path)
+        // Look up resource in same source
+        if let Some(dep_name) = lookup_map.get(&(
+            dep_resource_type,
+            dependency_helpers::normalize_lookup_path(&dep_path),
+            dep_source.clone(),
+        )) {
+            if let Some((_source, Some(ver))) =
+                resource_info_map.get(&(dep_resource_type, dep_name.clone(), dep_source.clone()))
             {
-                lookup_map
-                    .insert((*resource_type, stripped, entry.source.clone()), entry.name.clone());
+                // Create updated dependency reference with version
+                return LockfileDependencyRef::git(
+                    dep_source.clone().unwrap_or_default(),
+                    dep_resource_type,
+                    dep_path,
+                    Some(ver.clone()),
+                )
+                .to_string();
             }
         }
+
+        // Return as-is if no version info found
+        existing_dep.to_string()
+    } else {
+        // Return as-is if parsing fails
+        dep.to_string()
     }
-
-    // Build a complete map of (resource_type, name, source) -> (source, version) for cross-source lookup
-    // This needs to be done before we start mutating entries
-    let mut resource_info_map: HashMap<ResourceKey, ResourceInfo> = HashMap::new();
-
-    for resource_type in ResourceType::all() {
-        for entry in lockfile.get_resources(*resource_type) {
-            resource_info_map.insert(
-                (*resource_type, entry.name.clone(), entry.source.clone()),
-                (entry.source.clone(), entry.version.clone()),
-            );
-        }
-    }
-
-    // Helper function to update dependencies in a vector of entries
-    let update_deps = |entries: &mut Vec<LockedResource>| {
-        for entry in entries {
-            let parent_source = entry.source.clone();
-
-            let updated_deps: Vec<String> = entry
-                .dependencies
-                .iter()
-                .map(|dep| {
-                    // Parse "resource_type/path" format (e.g., "agent/rust-haiku.md" or "snippet/utils.md")
-                    if let Some((_resource_type_str, dep_path)) = dep.split_once('/') {
-                        // Parse resource type from string form (accepts both singular and plural)
-                        if let Ok(resource_type) = _resource_type_str.parse::<ResourceType>() {
-                            // Normalize the path for lookup
-                            let dep_filename = dependency_helpers::normalize_lookup_path(dep_path);
-
-                            // Look up the resource in the lookup map (same source as parent)
-                            if let Some(dep_name) = lookup_map.get(&(
-                                resource_type,
-                                dep_filename.clone(),
-                                parent_source.clone(),
-                            )) {
-                                // Found resource in same source - add version metadata
-                                if let Some((_source, Some(ver))) = resource_info_map.get(&(
-                                    resource_type,
-                                    dep_name.clone(),
-                                    parent_source.clone(),
-                                )) {
-                                    return format!("{resource_type}/{dep_name}@{ver}");
-                                }
-                                // Fallback without version if not found in resource_info_map
-                                return format!("{resource_type}/{dep_name}");
-                            }
-
-                            // If not found with same source, try adding .md extension
-                            let dep_filename_with_ext = format!("{dep_filename}.md");
-                            if let Some(dep_name) = lookup_map.get(&(
-                                resource_type,
-                                dep_filename_with_ext.clone(),
-                                parent_source.clone(),
-                            )) {
-                                // Found resource in same source - add version metadata
-                                if let Some((_source, Some(ver))) = resource_info_map.get(&(
-                                    resource_type,
-                                    dep_name.clone(),
-                                    parent_source.clone(),
-                                )) {
-                                    return format!("{resource_type}/{dep_name}@{ver}");
-                                }
-                                // Fallback without version if not found in resource_info_map
-                                return format!("{resource_type}/{dep_name}");
-                            }
-
-                            // Try looking for resource from ANY source (cross-source dependency)
-                            // Format: source:type/name@version
-                            for ((rt, filename, src), name) in &lookup_map {
-                                if *rt == resource_type
-                                    && (filename == &dep_filename
-                                        || filename == &dep_filename_with_ext)
-                                {
-                                    // Found in different source - need to include source and version
-                                    // Use the pre-built resource info map
-                                    if let Some((source, version)) = resource_info_map.get(&(
-                                        resource_type,
-                                        name.clone(),
-                                        src.clone(),
-                                    )) {
-                                        // Build full reference: source:type/name@version
-                                        let mut dep_ref = String::new();
-                                        if let Some(src) = source {
-                                            dep_ref.push_str(src);
-                                            dep_ref.push(':');
-                                        }
-                                        dep_ref.push_str(&resource_type.to_string());
-                                        dep_ref.push('/');
-                                        dep_ref.push_str(name);
-                                        if let Some(ver) = version {
-                                            dep_ref.push('@');
-                                            dep_ref.push_str(ver);
-                                        }
-                                        return dep_ref;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // If parsing fails or resource not found, return as-is
-                    dep.clone()
-                })
-                .collect();
-
-            entry.dependencies = updated_deps;
-        }
-    };
-
-    // Update all entry types
-    update_deps(&mut lockfile.agents);
-    update_deps(&mut lockfile.snippets);
-    update_deps(&mut lockfile.commands);
-    update_deps(&mut lockfile.scripts);
-    update_deps(&mut lockfile.hooks);
-    update_deps(&mut lockfile.mcp_servers);
-
-    Ok(())
 }
 
 // ============================================================================
@@ -682,7 +561,7 @@ pub(super) fn build_merged_template_vars(
 /// * `entry` - The [`LockedResource`] entry to add or update
 #[allow(dead_code)] // Not yet used in service-based refactoring
 pub(super) fn add_or_update_lockfile_entry(lockfile: &mut LockFile, entry: LockedResource) {
-    let resources = lockfile.get_resources_mut(entry.resource_type);
+    let resources = lockfile.get_resources_mut(&entry.resource_type);
 
     if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
         // For local dependencies with path-based duplicates, keep the existing entry
@@ -750,7 +629,7 @@ pub(super) fn remove_stale_manifest_entries(manifest: &Manifest, lockfile: &mut 
     // Find all manifest-level entries that are no longer in the manifest
     for resource_type in ResourceType::all() {
         let manifest_keys = get_manifest_keys(*resource_type);
-        let resources = lockfile.get_resources(*resource_type);
+        let resources = lockfile.get_resources(resource_type);
 
         for entry in resources {
             // Determine if this is a stale manifest-level entry (no longer in manifest)
@@ -774,7 +653,7 @@ pub(super) fn remove_stale_manifest_entries(manifest: &Manifest, lockfile: &mut 
     for (parent_name, parent_source) in direct_entries {
         for resource_type in ResourceType::all() {
             if let Some(parent_entry) = lockfile
-                .get_resources(*resource_type)
+                .get_resources(resource_type)
                 .iter()
                 .find(|e| e.name == parent_name && e.source == parent_source)
             {
@@ -823,7 +702,7 @@ pub(super) fn remove_manifest_entries_for_update(
     let mut direct_entries: Vec<(String, Option<String>)> = Vec::new();
 
     for resource_type in ResourceType::all() {
-        let resources = lockfile.get_resources(*resource_type);
+        let resources = lockfile.get_resources(resource_type);
         for entry in resources {
             // Check if this entry originates from a manifest key being updated
             if manifest_keys.contains(&entry.name)
@@ -843,7 +722,7 @@ pub(super) fn remove_manifest_entries_for_update(
         // Find the parent entry in the lockfile
         for resource_type in ResourceType::all() {
             if let Some(parent_entry) = lockfile
-                .get_resources(*resource_type)
+                .get_resources(resource_type)
                 .iter()
                 .find(|e| e.name == parent_name && e.source == parent_source)
             {
@@ -888,52 +767,30 @@ pub(super) fn collect_transitive_children(
     entries_to_remove: &mut HashSet<(String, Option<String>)>,
 ) {
     // For each dependency declared by this parent
-    for dep_ref in &parent.dependencies {
-        // Parse dependency reference: "source:resource_type/name:version" or "resource_type/name"
-        // Examples: "repo1:snippet/utils:v1.0.0" or "agent/helper"
-        let (dep_source, dep_name) = if let Some(colon_pos) = dep_ref.find(':') {
-            // Format: "source:resource_type/name:version"
-            let source_part = &dep_ref[..colon_pos];
-            let rest = &dep_ref[colon_pos + 1..];
-            // Find the resource_type/name part (before optional :version)
-            let type_name_part = if let Some(ver_colon) = rest.rfind(':') {
-                &rest[..ver_colon]
-            } else {
-                rest
-            };
-            // Extract name from "resource_type/name"
-            if let Some(slash_pos) = type_name_part.find('/') {
-                let name = &type_name_part[slash_pos + 1..];
-                (Some(source_part.to_string()), name.to_string())
-            } else {
-                continue; // Invalid format, skip
-            }
-        } else {
-            // Format: "resource_type/name"
-            if let Some(slash_pos) = dep_ref.find('/') {
-                let name = &dep_ref[slash_pos + 1..];
-                // Inherit parent's source
-                (parent.source.clone(), name.to_string())
-            } else {
-                continue; // Invalid format, skip
-            }
-        };
+    for dep_ref in parent.parsed_dependencies() {
+        let dep_path = &dep_ref.path;
+        let resource_type = dep_ref.resource_type;
+
+        // Extract the resource name from the path (filename without extension)
+        let dep_name = dependency_helpers::extract_filename_from_path(dep_path)
+            .unwrap_or_else(|| dep_path.to_string());
+
+        // Determine the source: use explicit source from dep_ref if present, otherwise inherit from parent
+        let dep_source = dep_ref.source.or_else(|| parent.source.clone());
 
         // Find the dependency entry with matching name and source
-        for resource_type in ResourceType::all() {
-            if let Some(dep_entry) = lockfile
-                .get_resources(*resource_type)
-                .iter()
-                .find(|e| e.name == dep_name && e.source == dep_source)
-            {
-                let key = (dep_entry.name.clone(), dep_entry.source.clone());
+        if let Some(dep_entry) = lockfile
+            .get_resources(&resource_type)
+            .iter()
+            .find(|e| e.name == dep_name && e.source == dep_source)
+        {
+            let key = (dep_entry.name.clone(), dep_entry.source.clone());
 
-                // Add to removal set and recurse (if not already processed)
-                if !entries_to_remove.contains(&key) {
-                    entries_to_remove.insert(key);
-                    // Recursively collect this dependency's children
-                    collect_transitive_children(lockfile, dep_entry, entries_to_remove);
-                }
+            // Add to removal set and recurse (if not already processed)
+            if !entries_to_remove.contains(&key) {
+                entries_to_remove.insert(key);
+                // Recursively collect this dependency's children
+                collect_transitive_children(lockfile, dep_entry, entries_to_remove);
             }
         }
     }
@@ -1055,7 +912,7 @@ pub(super) fn add_version_to_all_dependencies(lockfile: &mut LockFile) {
 
     // Build lookup from all lockfile entries
     for resource_type in ResourceType::all() {
-        for entry in lockfile.get_resources(*resource_type) {
+        for entry in lockfile.get_resources(resource_type) {
             let normalized_path = dependency_helpers::normalize_lookup_path(&entry.path);
             lookup_map.insert(
                 (*resource_type, normalized_path.clone(), entry.source.clone()),
@@ -1082,7 +939,7 @@ pub(super) fn add_version_to_all_dependencies(lockfile: &mut LockFile) {
     let mut resource_info_map: HashMap<ResourceKey, ResourceInfo> = HashMap::new();
 
     for resource_type in ResourceType::all() {
-        for entry in lockfile.get_resources(*resource_type) {
+        for entry in lockfile.get_resources(resource_type) {
             resource_info_map.insert(
                 (*resource_type, entry.name.clone(), entry.source.clone()),
                 (entry.source.clone(), entry.version.clone()),
@@ -1092,7 +949,7 @@ pub(super) fn add_version_to_all_dependencies(lockfile: &mut LockFile) {
 
     // Update dependencies in all resources
     for resource_type in ResourceType::all() {
-        let resources = lockfile.get_resources_mut(*resource_type);
+        let resources = lockfile.get_resources_mut(resource_type);
         for entry in resources {
             let parent_source = entry.source.clone();
 
@@ -1100,30 +957,12 @@ pub(super) fn add_version_to_all_dependencies(lockfile: &mut LockFile) {
                 .dependencies
                 .iter()
                 .map(|dep| {
-                    // Parse "resource_type/path" format
-                    if let Some((_resource_type_str, dep_path)) = dep.split_once('/') {
-                        if let Ok(dep_resource_type) = _resource_type_str.parse::<ResourceType>() {
-                            // Normalize path (strips extension for consistent lookup)
-                            let dep_filename = dependency_helpers::normalize_lookup_path(dep_path);
-
-                            // Look up resource in same source
-                            if let Some(dep_name) = lookup_map.get(&(
-                                dep_resource_type,
-                                dep_filename,
-                                parent_source.clone(),
-                            )) {
-                                if let Some((_source, Some(ver))) = resource_info_map.get(&(
-                                    dep_resource_type,
-                                    dep_name.clone(),
-                                    parent_source.clone(),
-                                )) {
-                                    return format!("{dep_resource_type}/{dep_name}@{ver}");
-                                }
-                                return format!("{dep_resource_type}/{dep_name}");
-                            }
-                        }
-                    }
-                    dep.clone()
+                    rewrite_dependency_string(
+                        dep,
+                        &lookup_map,
+                        &resource_info_map,
+                        parent_source.clone(),
+                    )
                 })
                 .collect();
 
@@ -1308,7 +1147,7 @@ mod tests {
             installed_at: ".claude/agents/parent.md".to_string(),
             resolved_commit: Some("parent123".to_string()),
             checksum: "sha256:parent".to_string(),
-            dependencies: vec!["agent/test-agent".to_string()], // Reference to test-agent
+            dependencies: vec!["agent:agents/test-agent".to_string()], // Reference to test-agent (new format)
             applied_patches: std::collections::HashMap::new(),
             install: None,
             template_vars: "{}".to_string(),

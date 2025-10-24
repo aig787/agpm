@@ -1,7 +1,8 @@
-//! Dependency reference handling for lockfiles.
+//! Lockfile dependency reference handling.
 //!
-//! This module provides a structured way to handle dependency references
-//! in lockfiles with proper parsing and formatting.
+//! This module provides a structured way to parse and format the dependency references
+//! that appear in the lockfile's `dependencies` arrays. These use a specific compact format
+//! designed for lockfile serialization.
 
 use anyhow::{Result, bail};
 use std::fmt;
@@ -9,7 +10,10 @@ use std::str::FromStr;
 
 use crate::core::ResourceType;
 
-/// A structured representation of a dependency reference.
+/// A structured representation of a lockfile dependency reference.
+///
+/// This type represents dependencies as they appear in `agpm.lock` files.
+/// The format is compact and designed for lockfile serialization.
 ///
 /// Supports the following formats:
 /// - Local: `<type>:<path>` (e.g., `snippet:snippets/commands/update-docstrings`)
@@ -17,23 +21,24 @@ use crate::core::ResourceType;
 ///
 /// Examples:
 /// ```
-/// use agpm_cli::lockfile::dependency_reference::DependencyReference;
+/// use agpm_cli::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
+/// use agpm_cli::core::ResourceType;
 /// use std::str::FromStr;
 ///
-/// let local_dep = DependencyReference::from_str("snippet:snippets/commands/update-docstrings").unwrap();
+/// let local_dep = LockfileDependencyRef::from_str("snippet:snippets/commands/update-docstrings").unwrap();
 /// assert_eq!(local_dep.source, None);
 /// assert_eq!(local_dep.resource_type, ResourceType::Snippet);
 /// assert_eq!(local_dep.path, "snippets/commands/update-docstrings");
 /// assert_eq!(local_dep.version, None);
 ///
-/// let git_dep = DependencyReference::from_str("agpm-resources/snippet:snippets/commands/update-docstrings@v0.0.1").unwrap();
+/// let git_dep = LockfileDependencyRef::from_str("agpm-resources/snippet:snippets/commands/update-docstrings@v0.0.1").unwrap();
 /// assert_eq!(git_dep.source, Some("agpm-resources".to_string()));
 /// assert_eq!(git_dep.resource_type, ResourceType::Snippet);
 /// assert_eq!(git_dep.path, "snippets/commands/update-docstrings");
 /// assert_eq!(git_dep.version, Some("v0.0.1".to_string()));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DependencyReference {
+pub struct LockfileDependencyRef {
     /// Optional source name (e.g., "agpm-resources")
     pub source: Option<String>,
     /// Resource type (agent, snippet, command, etc.)
@@ -44,8 +49,8 @@ pub struct DependencyReference {
     pub version: Option<String>,
 }
 
-impl DependencyReference {
-    /// Create a new dependency reference.
+impl LockfileDependencyRef {
+    /// Create a new lockfile dependency reference.
     pub fn new(
         source: Option<String>,
         resource_type: ResourceType,
@@ -86,7 +91,7 @@ impl DependencyReference {
     }
 }
 
-impl FromStr for DependencyReference {
+impl FromStr for LockfileDependencyRef {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
@@ -147,7 +152,7 @@ impl FromStr for DependencyReference {
     }
 }
 
-impl fmt::Display for DependencyReference {
+impl fmt::Display for LockfileDependencyRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.source {
             Some(source) => {
@@ -177,7 +182,7 @@ mod tests {
     #[test]
     fn test_parse_local_dependency_no_version() {
         let dep =
-            DependencyReference::from_str("snippet:snippets/commands/update-docstrings").unwrap();
+            LockfileDependencyRef::from_str("snippet:snippets/commands/update-docstrings").unwrap();
         assert_eq!(dep.source, None);
         assert_eq!(dep.resource_type, ResourceType::Snippet);
         assert_eq!(dep.path, "snippets/commands/update-docstrings");
@@ -187,7 +192,7 @@ mod tests {
     #[test]
     fn test_parse_local_dependency_with_version() {
         let dep =
-            DependencyReference::from_str("snippet:snippets/commands/update-docstrings@v0.0.1")
+            LockfileDependencyRef::from_str("snippet:snippets/commands/update-docstrings@v0.0.1")
                 .unwrap();
         assert_eq!(dep.source, None);
         assert_eq!(dep.resource_type, ResourceType::Snippet);
@@ -197,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_parse_git_dependency_no_version() {
-        let dep = DependencyReference::from_str(
+        let dep = LockfileDependencyRef::from_str(
             "agpm-resources/snippet:snippets/commands/update-docstrings",
         )
         .unwrap();
@@ -209,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_parse_git_dependency_with_version() {
-        let dep = DependencyReference::from_str(
+        let dep = LockfileDependencyRef::from_str(
             "agpm-resources/snippet:snippets/commands/update-docstrings@v0.0.1",
         )
         .unwrap();
@@ -221,19 +226,19 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_format() {
-        let result = DependencyReference::from_str("invalid-format");
+        let result = LockfileDependencyRef::from_str("invalid-format");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_empty_path() {
-        let result = DependencyReference::from_str("snippet:");
+        let result = LockfileDependencyRef::from_str("snippet:");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_display_local_dependency() {
-        let dep = DependencyReference::local(
+        let dep = LockfileDependencyRef::local(
             ResourceType::Snippet,
             "snippets/commands/update-docstrings".to_string(),
             Some("v0.0.1".to_string()),
@@ -243,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_display_local_dependency_no_version() {
-        let dep = DependencyReference::local(
+        let dep = LockfileDependencyRef::local(
             ResourceType::Snippet,
             "snippets/commands/update-docstrings".to_string(),
             None,
@@ -253,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_display_git_dependency() {
-        let dep = DependencyReference::git(
+        let dep = LockfileDependencyRef::git(
             "agpm-resources".to_string(),
             ResourceType::Snippet,
             "snippets/commands/update-docstrings".to_string(),
@@ -267,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_display_git_dependency_no_version() {
-        let dep = DependencyReference::git(
+        let dep = LockfileDependencyRef::git(
             "agpm-resources".to_string(),
             ResourceType::Snippet,
             "snippets/commands/update-docstrings".to_string(),
@@ -279,7 +284,7 @@ mod tests {
     #[test]
     fn test_roundtrip_conversion() {
         let original = "agpm-resources/snippet:snippets/commands/update-docstrings@v0.0.1";
-        let parsed = DependencyReference::from_str(original).unwrap();
+        let parsed = LockfileDependencyRef::from_str(original).unwrap();
         assert_eq!(parsed.to_string(), original);
     }
 }

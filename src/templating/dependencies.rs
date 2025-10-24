@@ -5,9 +5,11 @@
 
 use anyhow::{Context as _, Result};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::core::ResourceType;
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::lockfile::{LockFile, LockedResource, ResourceId};
 
 use super::cache::{RenderCache, RenderCacheKey};
@@ -17,6 +19,23 @@ use super::content::{
 use super::context::DependencyData;
 use super::renderer::TemplateRenderer;
 use super::utils::to_native_path_display;
+
+/// Helper function to create a LockfileDependencyRef string from a resource.
+///
+/// This centralizes the logic for creating dependency references based on whether
+/// the resource has a source (Git) or is local.
+fn create_dependency_ref_string(
+    source: Option<String>,
+    resource_type: ResourceType,
+    name: String,
+    version: Option<String>,
+) -> String {
+    if let Some(source) = source {
+        LockfileDependencyRef::git(source, resource_type, name, version).to_string()
+    } else {
+        LockfileDependencyRef::local(resource_type, name, version).to_string()
+    }
+}
 
 /// Trait for dependency extraction methods on TemplateContextBuilder.
 pub(crate) trait DependencyExtractor: ContentExtractor {
@@ -41,37 +60,15 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     ) -> HashMap<String, String> {
         let mut custom_names = HashMap::new();
 
-        // Get the resolved dependencies from the lockfile
-        // These are in the format "type/name" where name is the resolved path
-        let lockfile_deps = &resource.dependencies;
-
-        // Debug: log ALL resources to understand what's being processed
-        if !lockfile_deps.is_empty() {
-            tracing::info!(
-                "Processing resource '{}' (type: {:?}) with {} lockfile dependencies",
-                resource.name,
-                resource.resource_type,
-                lockfile_deps.len()
-            );
-            for dep in lockfile_deps {
-                tracing::info!("  Lockfile dep: '{}'", dep);
-            }
-        }
-
         // Build a lookup structure upfront to avoid O(n³) nested loops
         // Map: type -> Vec<(basename, full_dep_ref)>
-        let mut lockfile_lookup: HashMap<&str, Vec<(String, String)>> = HashMap::new();
+        let mut lockfile_lookup: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
-        for lockfile_dep_ref in lockfile_deps {
-            // Parse lockfile dependency ref: "type/name" or "type/name@version"
-            let parts: Vec<&str> = lockfile_dep_ref.splitn(2, '/').collect();
-            if parts.len() != 2 {
-                continue;
-            }
-
-            let lockfile_type = parts[0];
-            // Strip version suffix if present (format: name@version)
-            let lockfile_name = parts[1].split('@').next().unwrap_or(parts[1]);
+        // Use parsed_dependencies() helper to parse all dependencies
+        for dep_ref in resource.parsed_dependencies() {
+            let lockfile_type = dep_ref.resource_type.to_string();
+            let lockfile_name = &dep_ref.path;
+            let lockfile_dep_ref = dep_ref.to_string();
 
             // Extract basename from lockfile name
             let lockfile_basename = std::path::Path::new(lockfile_name)
@@ -83,7 +80,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             lockfile_lookup
                 .entry(lockfile_type)
                 .or_default()
-                .push((lockfile_basename, lockfile_dep_ref.to_string()));
+                .push((lockfile_basename, lockfile_dep_ref));
         }
 
         // Determine source path (same logic as extract_content)
@@ -135,18 +132,18 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                 // Process each resource type (agents, snippets, commands, etc.)
                                 for (resource_type_str, deps_array) in deps_map {
                                     // Convert frontmatter type to lockfile type (singular)
-                                    let lockfile_type = match resource_type_str.as_str() {
-                                        "agents" | "agent" => "agent",
-                                        "snippets" | "snippet" => "snippet",
-                                        "commands" | "command" => "command",
-                                        "scripts" | "script" => "script",
-                                        "hooks" | "hook" => "hook",
-                                        "mcp-servers" | "mcp-server" => "mcp-server",
+                                    let lockfile_type: String = match resource_type_str.as_str() {
+                                        "agents" | "agent" => "agent".to_string(),
+                                        "snippets" | "snippet" => "snippet".to_string(),
+                                        "commands" | "command" => "command".to_string(),
+                                        "scripts" | "script" => "script".to_string(),
+                                        "hooks" | "hook" => "hook".to_string(),
+                                        "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
                                         _ => continue, // Skip unknown types
                                     };
 
                                     // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
-                                    let type_entries = match lockfile_lookup.get(lockfile_type) {
+                                    let type_entries = match lockfile_lookup.get(&lockfile_type) {
                                         Some(entries) => entries,
                                         None => continue, // No lockfile deps of this type
                                     };
@@ -252,7 +249,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
         // Helper function to determine the key name for a resource
         let get_key_names = |resource: &LockedResource,
-                             dep_type: ResourceType|
+                             dep_type: &ResourceType|
          -> (String, String, String, String) {
             let type_str_plural = dep_type.to_plural().to_string();
             let type_str_singular = dep_type.to_string();
@@ -283,70 +280,39 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Use a set to track which dependencies we've already added to avoid duplicates
         let mut resources_to_process: Vec<(&LockedResource, ResourceType, bool)> = Vec::new();
         let mut visited_dep_ids = HashSet::new();
-        let mut queue: VecDeque<String> = current_resource.dependencies.iter().cloned().collect();
+        let mut queue: VecDeque<LockfileDependencyRef> =
+            current_resource.parsed_dependencies().collect();
 
-        while let Some(dep_id) = queue.pop_front() {
+        while let Some(dep_ref) = queue.pop_front() {
+            // Build dep_id for deduplication tracking
+            let dep_id = dep_ref.to_string();
+
             // Skip if we've already processed this dependency
-            if !visited_dep_ids.insert(dep_id.clone()) {
+            if !visited_dep_ids.insert(dep_id) {
                 continue;
             }
 
-            // Parse dependency ID format: "type/name" or "type/name@version"
-            // (e.g., "snippet/helper", "agent/foo@v1.0.0")
-            if let Some((type_str, name_with_version)) = dep_id.split_once('/') {
-                // Strip the version suffix if present (format: "name@version")
-                let name = if let Some((base_name, _version)) = name_with_version.split_once('@') {
-                    base_name
-                } else {
-                    name_with_version
-                };
-                // Convert type string to ResourceType
-                let resource_type = match type_str {
-                    "agent" => ResourceType::Agent,
-                    "snippet" => ResourceType::Snippet,
-                    "command" => ResourceType::Command,
-                    "script" => ResourceType::Script,
-                    "hook" => ResourceType::Hook,
-                    "mcp-server" => ResourceType::McpServer,
-                    _ => {
-                        tracing::warn!(
-                            "Unknown resource type '{}' in dependency '{}' for resource '{}'",
-                            type_str,
-                            dep_id,
-                            current_resource.name
-                        );
-                        continue;
-                    }
-                };
+            let resource_type = dep_ref.resource_type;
+            let name = &dep_ref.path;
 
-                // Look up the dependency in the lockfile
-                if let Some(dep_resource) = self.lockfile().find_resource(name, resource_type) {
-                    // Add this dependency to resources to process (true = declared dependency)
-                    resources_to_process.push((dep_resource, resource_type, true));
+            // Look up the dependency in the lockfile
+            if let Some(dep_resource) = self.lockfile().find_resource(name, &resource_type) {
+                // Add this dependency to resources to process (true = declared dependency)
+                resources_to_process.push((dep_resource, resource_type, true));
 
-                    tracing::debug!(
-                        "  [TRANSITIVE] Found dependency '{}' with {} dependencies: {:?}",
-                        name,
-                        dep_resource.dependencies.len(),
-                        dep_resource.dependencies
-                    );
+                tracing::debug!(
+                    "  [TRANSITIVE] Found dependency '{}' with {} dependencies",
+                    name,
+                    dep_resource.dependencies.len()
+                );
 
-                    // Add its dependencies to the queue for recursive processing
-                    for transitive_dep in &dep_resource.dependencies {
-                        queue.push_back(transitive_dep.clone());
-                    }
-                } else {
-                    tracing::warn!(
-                        "Dependency '{}' (type: {:?}) not found in lockfile for resource '{}'",
-                        name,
-                        resource_type,
-                        current_resource.name
-                    );
-                }
+                // Add its dependencies to the queue for recursive processing
+                queue.extend(dep_resource.parsed_dependencies());
             } else {
                 tracing::warn!(
-                    "Invalid dependency ID format '{}' for resource '{}' (expected 'type/name')",
-                    dep_id,
+                    "Dependency '{}' (type: {:?}) not found in lockfile for resource '{}'",
+                    name,
+                    resource_type,
                     current_resource.name
                 );
             }
@@ -360,34 +326,13 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         let mut already_added: HashSet<(String, ResourceType)> =
             resources_to_process.iter().map(|(r, rt, _)| (r.name.clone(), *rt)).collect();
 
-        for resource in &self.lockfile().agents {
-            if already_added.insert((resource.name.clone(), ResourceType::Agent)) {
-                resources_to_process.push((resource, ResourceType::Agent, false));
-            }
-        }
-        for resource in &self.lockfile().commands {
-            if already_added.insert((resource.name.clone(), ResourceType::Command)) {
-                resources_to_process.push((resource, ResourceType::Command, false));
-            }
-        }
-        for resource in &self.lockfile().snippets {
-            if already_added.insert((resource.name.clone(), ResourceType::Snippet)) {
-                resources_to_process.push((resource, ResourceType::Snippet, false));
-            }
-        }
-        for resource in &self.lockfile().scripts {
-            if already_added.insert((resource.name.clone(), ResourceType::Script)) {
-                resources_to_process.push((resource, ResourceType::Script, false));
-            }
-        }
-        for resource in &self.lockfile().hooks {
-            if already_added.insert((resource.name.clone(), ResourceType::Hook)) {
-                resources_to_process.push((resource, ResourceType::Hook, false));
-            }
-        }
-        for resource in &self.lockfile().mcp_servers {
-            if already_added.insert((resource.name.clone(), ResourceType::McpServer)) {
-                resources_to_process.push((resource, ResourceType::McpServer, false));
+        // Add all resources from the lockfile for universal access
+        for resource_type in ResourceType::all() {
+            let resources = self.lockfile().get_resources(resource_type);
+            for resource in resources {
+                if already_added.insert((resource.name.clone(), *resource_type)) {
+                    resources_to_process.push((resource, *resource_type, false));
+                }
             }
         }
 
@@ -408,12 +353,21 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         }
 
         // Get current resource ID for filtering
-        let current_resource_id =
-            format!("{}::{:?}", current_resource.name, current_resource.resource_type);
+        let current_resource_id = create_dependency_ref_string(
+            current_resource.source.clone(),
+            current_resource.resource_type,
+            current_resource.name.clone(),
+            current_resource.version.clone(),
+        );
 
         // Process each resource (excluding the current resource to prevent self-reference)
         for (resource, dep_type, is_dependency) in &resources_to_process {
-            let resource_id = format!("{}::{:?}", resource.name, dep_type);
+            let resource_id = create_dependency_ref_string(
+                resource.source.clone(),
+                *dep_type,
+                resource.name.clone(),
+                resource.version.clone(),
+            );
 
             // Skip if this is the current resource (prevent self-dependency)
             if resource_id == current_resource_id {
@@ -427,7 +381,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             tracing::debug!("  Processing resource: {} ({})", resource.name, dep_type);
 
             let (type_str_plural, type_str_singular, _key_name, sanitized_key) =
-                get_key_names(resource, *dep_type);
+                get_key_names(resource, dep_type);
 
             // Extract content from source file FIRST (before creating the struct)
             // Declared dependencies should be rendered with their own context before being made available
@@ -480,7 +434,12 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     );
 
                     // Check if we're already rendering this dependency (cycle detection)
-                    let dep_id = format!("{}::{:?}", resource.name, dep_type);
+                    let dep_id = create_dependency_ref_string(
+                        resource.source.clone(),
+                        *dep_type,
+                        resource.name.clone(),
+                        resource.version.clone(),
+                    );
                     if rendering_stack.contains(&dep_id) {
                         let chain: Vec<String> = rendering_stack.iter().cloned().collect();
                         anyhow::bail!(
@@ -612,7 +571,8 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         );
 
         // Walk the dependency tree and collect custom names from each resource
-        let mut to_process: Vec<String> = current_resource.dependencies.clone();
+        let mut to_process: Vec<LockfileDependencyRef> =
+            current_resource.parsed_dependencies().collect();
         let mut processed = HashSet::new();
 
         // Also process the current resource itself
@@ -633,36 +593,22 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         }
 
         // Process all transitive dependencies
-        while let Some(dep_ref) = to_process.pop() {
+        while let Some(dep_ref_parsed) = to_process.pop() {
+            // Build dep_ref string for deduplication tracking
+            let dep_ref = dep_ref_parsed.to_string();
+
             if !processed.insert(dep_ref.clone()) {
                 continue; // Already processed
             }
 
-            // Parse dependency reference format: "type/name"
-            let parts: Vec<&str> = dep_ref.splitn(2, '/').collect();
-            if parts.len() != 2 {
-                continue;
-            }
-
-            let dep_type_str = parts[0];
-            let dep_name = parts[1];
-
-            // Convert to ResourceType enum
-            let dep_type = match dep_type_str {
-                "agent" => ResourceType::Agent,
-                "snippet" => ResourceType::Snippet,
-                "command" => ResourceType::Command,
-                "script" => ResourceType::Script,
-                "hook" => ResourceType::Hook,
-                "mcp-server" => ResourceType::McpServer,
-                _ => continue,
-            };
+            let dep_type = dep_ref_parsed.resource_type;
+            let dep_name = &dep_ref_parsed.path;
 
             // Find the dependency resource in the lockfile
             // Note: We search by name only since dep_ref doesn't include template_vars.
             // The first match should be correct for extracting transitive custom names,
             // as custom names apply to all variants of a resource.
-            let dep_resource = match self.lockfile().find_resource(dep_name, dep_type) {
+            let dep_resource = match self.lockfile().find_resource(dep_name, &dep_type) {
                 Some(res) => res,
                 None => {
                     tracing::warn!(
@@ -681,7 +627,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             }
 
             // Add this dependency's own dependencies to the queue
-            to_process.extend(dep_resource.dependencies.clone());
+            to_process.extend(dep_resource.parsed_dependencies());
         }
 
         // Debug: Print what we built
@@ -736,39 +682,22 @@ pub(crate) fn add_custom_alias(
     dep_ref: &str,
     custom_name: &str,
 ) {
-    // Parse dependency reference format: "type/name" or "type/name@version"
-    let parts: Vec<&str> = dep_ref.splitn(2, '/').collect();
-    if parts.len() != 2 {
-        tracing::debug!(
-            "Skipping invalid dep_ref format '{}' for custom name '{}'",
-            dep_ref,
-            custom_name
-        );
-        return;
-    }
-
-    let dep_type_str = parts[0];
-    // Strip version suffix if present (format: name@version)
-    let dep_name = parts[1].split('@').next().unwrap_or(parts[1]);
-
-    // Convert to ResourceType enum to get plural form
-    let dep_type = match dep_type_str {
-        "agent" => ResourceType::Agent,
-        "snippet" => ResourceType::Snippet,
-        "command" => ResourceType::Command,
-        "script" => ResourceType::Script,
-        "hook" => ResourceType::Hook,
-        "mcp-server" => ResourceType::McpServer,
-        _ => {
+    // Parse dependency reference using centralized LockfileDependencyRef logic
+    let dep_ref_parsed = match LockfileDependencyRef::from_str(dep_ref) {
+        Ok(dep_ref) => dep_ref,
+        Err(e) => {
             tracing::debug!(
-                "Skipping unknown resource type '{}' in dep_ref '{}' for custom name '{}'",
-                dep_type_str,
+                "Skipping invalid dep_ref format '{}' for custom name '{}': {}",
                 dep_ref,
-                custom_name
+                custom_name,
+                e
             );
             return;
         }
     };
+
+    let dep_type = dep_ref_parsed.resource_type;
+    let dep_name = &dep_ref_parsed.path;
 
     let type_str_plural = dep_type.to_plural().to_string();
 
@@ -780,7 +709,7 @@ pub(crate) fn add_custom_alias(
             .values()
             .find(|data| {
                 // Match by the actual lockfile resource name
-                data.name == dep_name
+                data.name == *dep_name
             })
             .cloned();
 

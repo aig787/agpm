@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::cache::Cache;
 use crate::core::ResourceType;
 use crate::core::operation_context::OperationContext;
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::source::SourceManager;
 use crate::version::conflict::ConflictDetector;
@@ -330,21 +331,22 @@ pub fn strip_resource_type_directory(path: &str) -> Option<String> {
 ///     "helper",
 ///     "v1.0.0"
 /// );
-/// assert_eq!(formatted, "agents/helper@v1.0.0");
+/// assert_eq!(formatted, "agent:helper@v1.0.0");
 ///
 /// let formatted = format_dependency_with_version(
 ///     ResourceType::Snippet,
 ///     "utils",
 ///     "abc123"
 /// );
-/// assert_eq!(formatted, "snippets/utils@abc123");
+/// assert_eq!(formatted, "snippet:utils@abc123");
 /// ```
 pub fn format_dependency_with_version(
     resource_type: ResourceType,
     name: &str,
     version: &str,
 ) -> String {
-    format!("{}/{}@{}", resource_type.to_plural(), name, version)
+    LockfileDependencyRef::local(resource_type, name.to_string(), Some(version.to_string()))
+        .to_string()
 }
 
 /// Formats a dependency reference without version suffix.
@@ -368,13 +370,13 @@ pub fn format_dependency_with_version(
 /// use agpm_cli::resolver::types::format_dependency_without_version;
 ///
 /// let formatted = format_dependency_without_version(ResourceType::Agent, "helper");
-/// assert_eq!(formatted, "agents/helper");
+/// assert_eq!(formatted, "agent:helper");
 ///
 /// let formatted = format_dependency_without_version(ResourceType::Command, "deploy");
-/// assert_eq!(formatted, "commands/deploy");
+/// assert_eq!(formatted, "command:deploy");
 /// ```
 pub fn format_dependency_without_version(resource_type: ResourceType, name: &str) -> String {
-    format!("{}/{}", resource_type.to_plural(), name)
+    LockfileDependencyRef::local(resource_type, name.to_string(), None).to_string()
 }
 
 #[cfg(test)]
@@ -428,11 +430,11 @@ mod tests {
     fn test_format_dependency_with_version() {
         assert_eq!(
             format_dependency_with_version(ResourceType::Agent, "helper", "v1.0.0"),
-            "agents/helper@v1.0.0"
+            "agent:helper@v1.0.0"
         );
         assert_eq!(
             format_dependency_with_version(ResourceType::Snippet, "utils", "abc123"),
-            "snippets/utils@abc123"
+            "snippet:utils@abc123"
         );
     }
 
@@ -440,11 +442,11 @@ mod tests {
     fn test_format_dependency_without_version() {
         assert_eq!(
             format_dependency_without_version(ResourceType::Agent, "helper"),
-            "agents/helper"
+            "agent:helper"
         );
         assert_eq!(
             format_dependency_without_version(ResourceType::Command, "deploy"),
-            "commands/deploy"
+            "command:deploy"
         );
     }
 

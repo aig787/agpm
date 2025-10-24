@@ -277,7 +277,7 @@ impl LockFile {
     }
 
     /// Get resources by type as slice.
-    pub fn get_resources(&self, resource_type: crate::core::ResourceType) -> &[LockedResource] {
+    pub fn get_resources(&self, resource_type: &crate::core::ResourceType) -> &[LockedResource] {
         use crate::core::ResourceType;
         match resource_type {
             ResourceType::Agent => &self.agents,
@@ -292,7 +292,7 @@ impl LockFile {
     /// Get mutable resources by type.
     pub const fn get_resources_mut(
         &mut self,
-        resource_type: crate::core::ResourceType,
+        resource_type: &crate::core::ResourceType,
     ) -> &mut Vec<LockedResource> {
         use crate::core::ResourceType;
         match resource_type {
@@ -335,7 +335,7 @@ impl LockFile {
 
         // Use ResourceType::all() to iterate through all resource types
         for resource_type in crate::core::ResourceType::all() {
-            resources.extend(self.get_resources(*resource_type));
+            resources.extend(self.get_resources(resource_type));
         }
 
         resources
@@ -369,7 +369,7 @@ impl LockFile {
 
         // Use ResourceType::all() to clear all resource types
         for resource_type in crate::core::ResourceType::all() {
-            self.get_resources_mut(*resource_type).clear();
+            self.get_resources_mut(resource_type).clear();
         }
     }
 
@@ -394,12 +394,12 @@ impl LockFile {
     /// # use agpm_cli::core::ResourceType;
     /// # let lockfile = LockFile::new();
     /// // Find a specific agent
-    /// if let Some(agent) = lockfile.find_resource("helper", ResourceType::Agent) {
+    /// if let Some(agent) = lockfile.find_resource("helper", &ResourceType::Agent) {
     ///     println!("Found agent: {}", agent.installed_at);
     /// }
     ///
     /// // Find a specific snippet
-    /// if let Some(snippet) = lockfile.find_resource("utils", ResourceType::Snippet) {
+    /// if let Some(snippet) = lockfile.find_resource("utils", &ResourceType::Snippet) {
     ///     println!("Found snippet: {}", snippet.installed_at);
     /// }
     /// ```
@@ -409,7 +409,7 @@ impl LockFile {
     pub fn find_resource(
         &self,
         name: &str,
-        resource_type: crate::core::ResourceType,
+        resource_type: &crate::core::ResourceType,
     ) -> Option<&LockedResource> {
         self.get_resources(resource_type).iter().find(|r| r.name == name)
     }
@@ -510,13 +510,13 @@ impl LockFile {
     /// # use agpm_cli::core::ResourceType;
     /// # let lockfile = LockFile::new();
     /// // Get all agents for templating
-    /// let agents = lockfile.get_resources_by_type(ResourceType::Agent);
+    /// let agents = lockfile.get_resources_by_type(&ResourceType::Agent);
     /// for agent in agents {
     ///     println!("Agent: {} -> {}", agent.name, agent.installed_at);
     /// }
     ///
     /// // Get all snippets for templating
-    /// let snippets = lockfile.get_resources_by_type(ResourceType::Snippet);
+    /// let snippets = lockfile.get_resources_by_type(&ResourceType::Snippet);
     /// println!("Found {} snippets", snippets.len());
     /// ```
     ///
@@ -527,7 +527,7 @@ impl LockFile {
     #[must_use]
     pub fn get_resources_by_type(
         &self,
-        resource_type: crate::core::ResourceType,
+        resource_type: &crate::core::ResourceType,
     ) -> &[LockedResource] {
         self.get_resources(resource_type)
     }

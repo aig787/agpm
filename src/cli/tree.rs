@@ -483,7 +483,7 @@ impl TreeCommand {
         lockfile: &'a LockFile,
     ) -> Option<&'a LockedResource> {
         // Find matching resource in lockfile by name and resource type
-        lockfile.get_resources(node.resource_type).iter().find(|r| {
+        lockfile.get_resources(&node.resource_type).iter().find(|r| {
             // Extract display name from locked resource's unique name
             let display_name = TreeBuilder::extract_display_name(&r.name);
             display_name == node.name && r.source == node.source && r.version == node.version
@@ -694,7 +694,7 @@ impl<'a> TreeBuilder<'a> {
                     continue;
                 }
 
-                for resource in self.lockfile.get_resources(*resource_type) {
+                for resource in self.lockfile.get_resources(resource_type) {
                     let node = self.build_node(resource, cmd)?;
                     let node_id = self.node_id(&node);
 
@@ -724,7 +724,7 @@ impl<'a> TreeBuilder<'a> {
                 // Build a set of all dependency IDs (already in singular "type/name" format)
                 let mut all_dependencies = HashSet::new();
                 for resource_type in ResourceType::all() {
-                    for resource in self.lockfile.get_resources(*resource_type) {
+                    for resource in self.lockfile.get_resources(resource_type) {
                         for dep_id in &resource.dependencies {
                             // Dependencies are already in singular form (e.g., "agent/foo")
                             all_dependencies.insert(dep_id.clone());
@@ -766,7 +766,7 @@ impl<'a> TreeBuilder<'a> {
 
     fn find_package(&self, name: &str) -> Result<&LockedResource> {
         for resource_type in ResourceType::all() {
-            for resource in self.lockfile.get_resources(*resource_type) {
+            for resource in self.lockfile.get_resources(resource_type) {
                 if resource.name == name {
                     return Ok(resource);
                 }
@@ -879,20 +879,23 @@ impl<'a> TreeBuilder<'a> {
         id: &str,
         preferred_source: Option<&str>,
     ) -> Option<&LockedResource> {
-        // Dependencies in the lockfile use singular "type/name" format (e.g., "snippet/test-automation")
-        // Parse the type/name format
-        let (type_str, name) = id.split_once('/')?;
-        let resource_type = type_str.parse::<ResourceType>().ok()?;
+        // Dependencies use LockfileDependencyRef format: "type:name" or "source/type:name@version"
+        // Parse using centralized LockfileDependencyRef logic
+        use std::str::FromStr;
+        let dep_ref =
+            crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef::from_str(id).ok()?;
+        let resource_type = dep_ref.resource_type;
+        let name = &dep_ref.path;
 
         // Find the resource by matching the display name extracted from the unique name
         // Prefer resources from the same source as the parent (transitive deps should be same-source)
-        let resources = self.lockfile.get_resources(resource_type);
+        let resources = self.lockfile.get_resources(&resource_type);
 
         // First try to find a match with the preferred source
         if let Some(source) = preferred_source {
             for resource in resources {
                 let display_name = Self::extract_display_name(&resource.name);
-                if display_name == name && resource.source.as_deref() == Some(source) {
+                if display_name == *name && resource.source.as_deref() == Some(source) {
                     return Some(resource);
                 }
             }
@@ -901,7 +904,7 @@ impl<'a> TreeBuilder<'a> {
         // Fall back to any match if no preferred source match found
         for resource in resources {
             let display_name = Self::extract_display_name(&resource.name);
-            if display_name == name {
+            if display_name == *name {
                 return Some(resource);
             }
         }

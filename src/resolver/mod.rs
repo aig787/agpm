@@ -37,6 +37,7 @@ use anyhow::{Context, Result};
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceType};
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::metadata::MetadataExtractor;
@@ -611,7 +612,12 @@ impl DependencyResolver {
 
                         // Track in dependency map
                         let from_key = (resource_type, name.clone(), source.clone(), tool.clone());
-                        let dep_ref = format!("{}/{}", dep_resource_type, trans_name);
+                        let dep_ref = LockfileDependencyRef::local(
+                            dep_resource_type,
+                            trans_name.clone(),
+                            None,
+                        )
+                        .to_string();
                         self.dependency_map.entry(from_key).or_default().push(dep_ref);
 
                         // Add to conflict detector
@@ -1464,7 +1470,7 @@ impl DependencyResolver {
         _name: &str,
         entry: LockedResource,
     ) {
-        let resources = lockfile.get_resources_mut(entry.resource_type);
+        let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) =
             resources.iter_mut().find(|e| lockfile_builder::is_duplicate_entry(e, &entry))

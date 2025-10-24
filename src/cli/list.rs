@@ -505,7 +505,7 @@ impl ListCommand {
             let type_str = resource_type.to_string();
 
             // Get resources for this type from the lockfile
-            for entry in lockfile.get_resources(*resource_type) {
+            for entry in lockfile.get_resources(resource_type) {
                 if self.matches_lockfile_filters(&entry.name, entry, &type_str) {
                     items.push(self.lockentry_to_listitem(entry, &type_str));
                 }
@@ -909,7 +909,7 @@ impl ListCommand {
         };
 
         // Find matching resource in lockfile
-        lockfile.get_resources(resource_type).iter().find(|r| r.name == item.name)
+        lockfile.get_resources(&resource_type).iter().find(|r| r.name == item.name)
     }
 
     /// Print a single item

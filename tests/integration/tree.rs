@@ -36,7 +36,7 @@ version = "v1.0.0"
 resolved_commit = "abc123def456"
 checksum = "sha256:abc123"
 installed_at = ".claude/agents/code-reviewer.md"
-dependencies = ["agent/rust-helper", "snippet/utils"]
+dependencies = ["agent:agents/rust-helper", "snippet:snippets/utils"]
 resource_type = "agent"
 
 [[agents]]

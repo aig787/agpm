@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::core::ResourceType;
+use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
 use crate::manifest::{DetailedDependency, ResourceDependency, json_value_to_toml};
 use crate::metadata::MetadataExtractor;
 use crate::utils;
@@ -255,7 +256,9 @@ where
 
                     // Track in dependency map
                     let from_key = (resource_type, name.clone(), source.clone(), tool.clone());
-                    let dep_ref = format!("{dep_resource_type}/{trans_name}");
+                    let dep_ref =
+                        LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
+                            .to_string();
                     ctx.dependency_map.entry(from_key).or_default().push(dep_ref);
 
                     // Add to conflict detector

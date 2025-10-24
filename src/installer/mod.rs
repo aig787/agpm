@@ -453,6 +453,32 @@ pub async fn install_resource(
                 )
                 .with_context(|| "Failed to create template renderer")?;
 
+                // Debug: Check if agpm.deps.snippets exists in context
+                if let Some(agpm) = template_context.get("agpm") {
+                    if let Some(deps) = agpm.get("deps") {
+                        if let Some(snippets) = deps.get("snippets") {
+                            tracing::debug!(
+                                "Template context has agpm.deps.snippets with {} entries",
+                                snippets.as_object().map(|o| o.len()).unwrap_or(0)
+                            );
+                            if let Some(best_practices) = snippets.get("best_practices") {
+                                tracing::debug!(
+                                    "✓ Found best_practices in context: has content field = {}",
+                                    best_practices.get("content").is_some()
+                                );
+                            } else {
+                                tracing::warn!("✗ best_practices NOT found in agpm.deps.snippets");
+                            }
+                        } else {
+                            tracing::warn!("✗ agpm.deps.snippets NOT found in context");
+                        }
+                    } else {
+                        tracing::warn!("✗ agpm.deps NOT found in context");
+                    }
+                } else {
+                    tracing::warn!("✗ agpm NOT found in context");
+                }
+
                 let rendered_content = renderer
                     .render_template(&patched_content, &template_context)
                     .map_err(|e| {

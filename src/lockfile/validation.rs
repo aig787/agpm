@@ -197,7 +197,7 @@ impl LockFile {
     pub(crate) fn detect_duplicate_entries(&self) -> Result<Option<StalenessReason>> {
         // Check each resource type for duplicates
         for resource_type in crate::core::ResourceType::all() {
-            let resources = self.get_resources(*resource_type);
+            let resources = self.get_resources(resource_type);
             let mut seen_names = HashMap::new();
 
             for resource in resources {
@@ -239,7 +239,7 @@ impl LockFile {
 
         // Check each resource type for duplicates
         for resource_type in crate::core::ResourceType::all() {
-            let resources = self.get_resources(*resource_type);
+            let resources = self.get_resources(resource_type);
             let mut name_counts = HashMap::new();
 
             // Count occurrences of each name
