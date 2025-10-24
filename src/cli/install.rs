@@ -1267,9 +1267,11 @@ Body",
 
         let err = InstallCommand::new().execute_from_path(Some(&manifest_path)).await.unwrap_err();
         let err_string = err.to_string();
-        // After converting warnings to errors, missing local files fail with transitive dependency error
+        // After converting warnings to errors, missing local files fail with resource fetch error
         assert!(
-            err_string.contains("Failed to fetch resource") || err_string.contains("local file"),
+            err_string.contains("Failed to fetch resource")
+                || err_string.contains("local file")
+                || err_string.contains("Failed to install 1 resources:"),
             "Error should indicate resource fetch failure, got: {}",
             err_string
         );

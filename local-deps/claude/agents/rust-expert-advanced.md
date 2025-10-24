@@ -1,7 +1,7 @@
 ---
 name: rust-expert-advanced
 description: "ESCALATION ONLY: Use only after rust-expert-standard fails repeatedly. Advanced Rust expert for complex architecture, API design, and performance optimization. Handles the most challenging Rust development tasks."
-model: opus
+model: sonnet
 tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch, ExitPlanMode
 agpm:
   templating: true

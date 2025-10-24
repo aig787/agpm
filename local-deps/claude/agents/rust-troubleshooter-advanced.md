@@ -1,7 +1,7 @@
 ---
 name: rust-troubleshooter-advanced
-description: "⚠️ ESCALATION ONLY: Use only after rust-troubleshooter-standard fails repeatedly. Advanced Rust troubleshooting expert (Opus 4.1) for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving."
-model: opus
+description: "ESCALATION ONLY: Use only after rust-troubleshooter-standard fails repeatedly. Advanced Rust troubleshooting expert (Opus 4.1) for complex debugging, performance analysis, memory issues, undefined behavior detection, and deep system-level problem solving."
+model: sonnet
 tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch
 agpm:
   templating: true

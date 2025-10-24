@@ -1,8 +1,9 @@
 //! Pattern expansion for AGPM dependencies.
 //!
-//! This module handles the expansion of glob patterns in dependency specifications,
-//! converting pattern dependencies into concrete file dependencies. It supports both
-//! local and remote pattern resolution with proper path handling.
+//! This module handles expansion of glob patterns to concrete file paths,
+//! converting pattern dependencies (like "agents/*.md") into individual file
+//! dependencies. It supports both local and remote pattern resolution with
+//! proper path handling, dependency naming, and locked resource generation.
 
 use crate::git::GitRepo;
 use crate::manifest::{DetailedDependency, ResourceDependency};
@@ -260,6 +261,173 @@ pub fn generate_dependency_name(path: &str) -> String {
         "unnamed".to_string()
     } else {
         result
+    }
+}
+
+// ============================================================================
+// Pattern Expansion Service
+// ============================================================================
+
+use crate::core::ResourceType;
+use crate::lockfile::LockedResource;
+use std::collections::HashMap;
+
+use super::types::ResolutionCore;
+use super::version_resolver::VersionResolutionService;
+
+/// Service for pattern expansion and resolution.
+///
+/// Handles expansion of glob patterns to concrete dependencies and maintains
+/// mappings between concrete files and their source patterns.
+pub struct PatternExpansionService {
+    /// Map tracking pattern alias relationships (concrete_name -> pattern_name)
+    pattern_alias_map: HashMap<(ResourceType, String), String>,
+}
+
+impl PatternExpansionService {
+    /// Create a new pattern expansion service.
+    pub fn new() -> Self {
+        Self {
+            pattern_alias_map: HashMap::new(),
+        }
+    }
+
+    /// Expand a pattern dependency to concrete dependencies.
+    ///
+    /// Takes a glob pattern like "agents/*.md" and expands it to
+    /// concrete file paths like ["agents/foo.md", "agents/bar.md"].
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core with cache and source manager
+    /// * `dep` - The pattern dependency to expand
+    /// * `resource_type` - The type of resource being expanded
+    /// * `version_service` - Version service for worktree paths
+    ///
+    /// # Returns
+    ///
+    /// List of (name, concrete_dependency) tuples
+    pub async fn expand_pattern(
+        &mut self,
+        core: &ResolutionCore,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+        _version_service: &VersionResolutionService,
+    ) -> Result<Vec<(String, ResourceDependency)>> {
+        // Delegate to expand_pattern_to_concrete_deps helper
+        expand_pattern_to_concrete_deps(
+            dep,
+            resource_type,
+            &core.source_manager,
+            &core.cache,
+            None, // manifest_dir - use current working directory
+        )
+        .await
+    }
+
+    /// Expand a pattern dependency to locked resources.
+    ///
+    /// This is full expansion that creates LockedResource entries
+    /// for lockfile generation.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core
+    /// * `name` - The pattern dependency name
+    /// * `dep` - The pattern dependency
+    /// * `resource_type` - The type of resource
+    /// * `version_service` - Version service for worktree info
+    ///
+    /// # Returns
+    ///
+    /// List of locked resources for pattern
+    pub async fn expand_to_locked_resources(
+        &mut self,
+        core: &ResolutionCore,
+        name: &str,
+        dep: &ResourceDependency,
+        resource_type: ResourceType,
+        version_service: &VersionResolutionService,
+    ) -> Result<Vec<LockedResource>> {
+        // Get prepared version
+        let source = dep.get_source().context("Pattern dependency must have source")?;
+        let version = dep.get_version().unwrap_or("main");
+        let group_key = format!("{}::{}", source, version);
+
+        let prepared = version_service
+            .get_prepared_version(&group_key)
+            .context("Version not prepared for pattern dependency")?;
+
+        let _worktree_path = &prepared.worktree_path;
+        let resolved_commit = &prepared.resolved_commit;
+
+        // Expand pattern to concrete files
+        let concrete_deps = self.expand_pattern(core, dep, resource_type, version_service).await?;
+
+        let mut locked_resources = Vec::new();
+
+        for (concrete_name, concrete_dep) in concrete_deps {
+            // Record pattern alias mapping
+            self.pattern_alias_map.insert((resource_type, concrete_name.clone()), name.to_string());
+
+            // Build locked resource for each concrete dependency
+            // TODO: Add checksum calculation and proper path resolution
+            locked_resources.push(LockedResource {
+                name: concrete_name,
+                source: Some(source.to_string()),
+                url: None, // Will be filled from source
+                path: concrete_dep.get_path().to_string(),
+                version: Some(version.to_string()),
+                resolved_commit: Some(resolved_commit.clone()),
+                checksum: "placeholder".to_string(), // Will be calculated properly
+                installed_at: "".to_string(),        // Will be calculated properly
+                manifest_alias: Some(name.to_string()),
+                dependencies: vec![],
+                resource_type,
+                tool: None,
+                applied_patches: HashMap::new(),
+                install: Some(true),
+                template_vars: "{}".to_string(),
+            });
+        }
+
+        Ok(locked_resources)
+    }
+
+    /// Get pattern alias for a concrete dependency.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_type` - The resource type
+    /// * `name` - The concrete dependency name
+    ///
+    /// # Returns
+    ///
+    /// The pattern name if this is from a pattern expansion
+    pub fn get_pattern_alias(&self, resource_type: ResourceType, name: &str) -> Option<&String> {
+        self.pattern_alias_map.get(&(resource_type, name.to_string()))
+    }
+
+    /// Record a pattern alias mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource_type` - The resource type
+    /// * `concrete_name` - The concrete file name
+    /// * `pattern_name` - The pattern that expanded to this file
+    pub fn add_pattern_alias(
+        &mut self,
+        resource_type: ResourceType,
+        concrete_name: String,
+        pattern_name: String,
+    ) {
+        self.pattern_alias_map.insert((resource_type, concrete_name), pattern_name);
+    }
+}
+
+impl Default for PatternExpansionService {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

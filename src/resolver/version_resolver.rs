@@ -23,6 +23,8 @@ use std::path::PathBuf;
 
 use crate::cache::Cache;
 use crate::git::GitRepo;
+use crate::manifest::ResourceDependency;
+use crate::source::SourceManager;
 
 /// Version resolution entry tracking source and version to SHA mapping
 #[derive(Debug, Clone)]
@@ -237,7 +239,7 @@ impl VersionResolver {
                     "local".to_string()
                 } else if let Some(ref version) = entry.version {
                     // First check if this is a version constraint
-                    if crate::resolver::version_resolution::is_version_constraint(version) {
+                    if is_version_constraint(version) {
                         // Resolve constraint to actual tag first
                         // Note: get_or_clone_source already fetched, so tags should be available
                         let tags = repo.list_tags().await.unwrap_or_default();
@@ -249,7 +251,7 @@ impl VersionResolver {
                         }
 
                         // Find best matching tag
-                        crate::resolver::version_resolution::find_best_matching_tag(version, tags)
+                        find_best_matching_tag(version, tags)
                             .with_context(|| format!("Failed to resolve version constraint '{version}' for source '{source}'"))?
                     } else {
                         // Not a constraint, use as-is
@@ -485,6 +487,13 @@ impl VersionResolver {
         self.bare_repos.get(source)
     }
 
+    /// Registers a bare repository path for a source
+    ///
+    /// This is used when manually ensuring a repository exists without clearing all state.
+    pub fn register_bare_repo(&mut self, source: String, repo_path: PathBuf) {
+        self.bare_repos.insert(source, repo_path);
+    }
+
     /// Clears all resolved versions and cached data
     ///
     /// Useful for testing or when starting a fresh resolution.
@@ -529,6 +538,496 @@ impl VersionResolver {
     /// Returns the number of successfully resolved versions
     pub fn resolved_count(&self) -> usize {
         self.resolved.len()
+    }
+}
+
+// ============================================================================
+// Version Resolution Service
+// ============================================================================
+
+use super::types::ResolutionCore;
+use std::path::Path;
+
+/// Service for version resolution and worktree management.
+///
+/// Provides high-level orchestration for version constraint resolution,
+/// SHA resolution, and worktree preparation for Git-backed dependencies.
+pub struct VersionResolutionService {
+    /// Centralized version resolver for batch SHA resolution
+    version_resolver: VersionResolver,
+
+    /// Cache of prepared versions (source::version -> worktree info)
+    prepared_versions: HashMap<String, PreparedSourceVersion>,
+}
+
+impl VersionResolutionService {
+    /// Create a new version resolution service.
+    pub fn new(cache: crate::cache::Cache) -> Self {
+        Self {
+            version_resolver: VersionResolver::new(cache),
+            prepared_versions: HashMap::new(),
+        }
+    }
+
+    /// Pre-sync all source repositories needed for dependencies.
+    ///
+    /// This performs all Git network operations upfront:
+    /// 1. Clone/fetch source repositories
+    /// 2. Resolve version constraints to commit SHAs
+    /// 3. Create worktrees for resolved commits
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core with cache and source manager
+    /// * `deps` - All dependencies that need sources synced
+    pub async fn pre_sync_sources(
+        &mut self,
+        core: &ResolutionCore,
+        deps: &[(String, ResourceDependency)],
+    ) -> Result<()> {
+        // Clear and rebuild version resolver entries
+        self.version_resolver.clear();
+
+        // Collect all unique (source, version) pairs
+        for (_name, dep) in deps {
+            if let Some(source) = dep.get_source() {
+                let version = dep.get_version(); // None means HEAD
+
+                let source_url = core
+                    .source_manager
+                    .get_source_url(source)
+                    .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source))?;
+
+                // Add to version resolver for batch syncing (None -> "HEAD")
+                self.version_resolver.add_version(source, &source_url, version);
+            }
+        }
+
+        // Pre-sync all source repositories (clone/fetch)
+        self.version_resolver.pre_sync_sources().await?;
+
+        // Resolve all versions to SHAs in batch
+        self.version_resolver.resolve_all().await?;
+
+        // Handle local paths (non-Git sources) separately
+        // These don't go through version resolution but need to be in prepared_versions
+        for (_name, dep) in deps {
+            if let Some(source) = dep.get_source() {
+                let source_url = core
+                    .source_manager
+                    .get_source_url(source)
+                    .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source))?;
+
+                if crate::utils::is_local_path(&source_url) {
+                    let version_key = dep.get_version().unwrap_or("HEAD");
+                    let group_key = format!("{}::{}", source, version_key);
+
+                    // Add to prepared_versions with the local path
+                    self.prepared_versions.insert(
+                        group_key,
+                        PreparedSourceVersion {
+                            worktree_path: PathBuf::from(&source_url),
+                            resolved_version: Some("local".to_string()),
+                            resolved_commit: String::new(), // No commit for local sources
+                        },
+                    );
+                }
+            }
+        }
+
+        // Create worktrees for all resolved commits using WorktreeManager
+        let worktree_manager =
+            WorktreeManager::new(&core.cache, &core.source_manager, &self.version_resolver);
+        let prepared = worktree_manager.create_worktrees_for_resolved_versions().await?;
+
+        // Merge Git-backed worktrees with local paths
+        self.prepared_versions.extend(prepared);
+
+        Ok(())
+    }
+
+    /// Get a prepared version by source and version.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_key` - The key in format "source::version"
+    ///
+    /// # Returns
+    ///
+    /// The prepared version info with worktree path and resolved commit
+    pub fn get_prepared_version(&self, group_key: &str) -> Option<&PreparedSourceVersion> {
+        self.prepared_versions.get(group_key)
+    }
+
+    /// Prepare an additional version on-demand without clearing existing ones.
+    ///
+    /// This is used for transitive dependencies discovered during resolution.
+    /// Unlike `pre_sync_sources`, this doesn't clear existing prepared versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core with cache and source manager
+    /// * `source_name` - Name of the source repository
+    /// * `version` - Optional version constraint (None = HEAD)
+    pub async fn prepare_additional_version(
+        &mut self,
+        core: &ResolutionCore,
+        source_name: &str,
+        version: Option<&str>,
+    ) -> Result<()> {
+        let version_key = version.unwrap_or("HEAD");
+        let source_url = core
+            .source_manager
+            .get_source_url(source_name)
+            .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+        // Handle local paths (non-Git sources) separately
+        if crate::utils::is_local_path(&source_url) {
+            let group_key = format!("{}::{}", source_name, version_key);
+            self.prepared_versions.insert(
+                group_key,
+                PreparedSourceVersion {
+                    worktree_path: PathBuf::from(&source_url),
+                    resolved_version: Some("local".to_string()),
+                    resolved_commit: String::new(),
+                },
+            );
+            return Ok(());
+        }
+
+        // For Git sources, proceed with version resolution
+        self.version_resolver.add_version(source_name, &source_url, version);
+
+        // Ensure the bare repository exists
+        if self.version_resolver.get_bare_repo_path(source_name).is_none() {
+            let repo_path =
+                core.cache.get_or_clone_source(source_name, &source_url, None).await.with_context(
+                    || format!("Failed to sync repository for source '{}'", source_name),
+                )?;
+            self.version_resolver.register_bare_repo(source_name.to_string(), repo_path);
+        }
+
+        // Resolve this specific version to SHA
+        self.version_resolver.resolve_all().await?;
+
+        // Get the resolved SHA and resolved reference
+        let resolved_version_data = self
+            .version_resolver
+            .get_all_resolved_full()
+            .get(&(source_name.to_string(), version_key.to_string()))
+            .ok_or_else(|| {
+                anyhow::anyhow!("Failed to resolve version for {} @ {}", source_name, version_key)
+            })?
+            .clone();
+
+        let sha = resolved_version_data.sha.clone();
+        let resolved_ref = resolved_version_data.resolved_ref.clone();
+
+        // Create worktree for this SHA
+        let worktree_path =
+            core.cache.get_or_create_worktree_for_sha(source_name, &source_url, &sha, None).await?;
+
+        // Cache the prepared version with the RESOLVED reference, not the constraint
+        let group_key = format!("{}::{}", source_name, version_key);
+        self.prepared_versions.insert(
+            group_key,
+            PreparedSourceVersion {
+                worktree_path,
+                resolved_version: Some(resolved_ref),
+                resolved_commit: sha,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Get available versions (tags/branches) for a repository.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The resolution core with cache
+    /// * `repo_path` - Path to bare repository
+    ///
+    /// # Returns
+    ///
+    /// List of available version strings
+    pub async fn get_available_versions(
+        _core: &ResolutionCore,
+        repo_path: &Path,
+    ) -> Result<Vec<String>> {
+        let repo = GitRepo::new(repo_path);
+
+        // Get all tags
+        let tags = repo.list_tags().await.context("Failed to list tags")?;
+
+        // TODO: Add branches if needed in future
+        // For now, only use tags
+        let versions = tags;
+
+        Ok(versions)
+    }
+
+    /// Get the version resolver (for testing).
+    #[cfg(test)]
+    pub fn version_resolver(&self) -> &VersionResolver {
+        &self.version_resolver
+    }
+}
+
+// ============================================================================
+// Version Constraint Resolution Helpers
+// ============================================================================
+
+use crate::version::constraints::{ConstraintSet, VersionConstraint};
+use semver::Version;
+
+/// Checks if a string represents a version constraint rather than a direct reference.
+///
+/// Version constraints contain operators like `^`, `~`, `>`, `<`, `=`, or special
+/// keywords. Direct references are branch names, tag names, or commit hashes.
+/// This function now supports prefixed constraints like `agents-^v1.0.0`.
+///
+/// # Arguments
+///
+/// * `version` - The version string to check
+///
+/// # Returns
+///
+/// Returns `true` if the string contains constraint operators or keywords,
+/// `false` for plain tags, branches, or commit hashes.
+#[must_use]
+pub fn is_version_constraint(version: &str) -> bool {
+    // Extract prefix first, then check the version part for constraint indicators
+    let (_prefix, version_str) = crate::version::split_prefix_and_version(version);
+
+    // Check for wildcard (works with or without prefix)
+    if version_str == "*" {
+        return true;
+    }
+
+    // Check for version constraint operators in the version part
+    if version_str.starts_with('^')
+        || version_str.starts_with('~')
+        || version_str.starts_with('>')
+        || version_str.starts_with('<')
+        || version_str.starts_with('=')
+        || version_str.contains(',')
+    // Range constraints like ">=1.0.0, <2.0.0"
+    {
+        return true;
+    }
+
+    false
+}
+
+/// Parses Git tags into semantic versions, filtering out non-semver tags.
+///
+/// This function handles both prefixed and non-prefixed version tags,
+/// including support for monorepo-style prefixes like `agents-v1.0.0`.
+/// Tags that don't represent valid semantic versions are filtered out.
+#[must_use]
+pub fn parse_tags_to_versions(tags: Vec<String>) -> Vec<(String, Version)> {
+    let mut versions = Vec::new();
+
+    for tag in tags {
+        // Extract prefix and version part (handles both prefixed and unprefixed)
+        let (_prefix, version_str) = crate::version::split_prefix_and_version(&tag);
+
+        // Strip 'v' prefix from version part
+        let cleaned = version_str.trim_start_matches('v').trim_start_matches('V');
+
+        if let Ok(version) = Version::parse(cleaned) {
+            versions.push((tag, version));
+        }
+    }
+
+    // Sort by version, highest first
+    versions.sort_by(|a, b| b.1.cmp(&a.1));
+
+    versions
+}
+
+/// Finds the best matching tag for a version constraint.
+///
+/// This function resolves version constraints to actual Git tags by:
+/// 1. Extracting the prefix from the constraint (if any)
+/// 2. Filtering tags to only those with matching prefix
+/// 3. Parsing the constraint and matching tags
+/// 4. Selecting the best match (usually the highest compatible version)
+pub fn find_best_matching_tag(constraint_str: &str, tags: Vec<String>) -> Result<String> {
+    // Extract prefix from constraint
+    let (constraint_prefix, version_str) = crate::version::split_prefix_and_version(constraint_str);
+
+    // Filter tags by prefix first
+    let filtered_tags: Vec<String> = tags
+        .into_iter()
+        .filter(|tag| {
+            let (tag_prefix, _) = crate::version::split_prefix_and_version(tag);
+            tag_prefix.as_ref() == constraint_prefix.as_ref()
+        })
+        .collect();
+
+    if filtered_tags.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No tags found with matching prefix for constraint: {constraint_str}"
+        ));
+    }
+
+    // Parse filtered tags to versions
+    let tag_versions = parse_tags_to_versions(filtered_tags);
+
+    if tag_versions.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No valid semantic version tags found for constraint: {constraint_str}"
+        ));
+    }
+
+    // Special case: wildcard (*) matches the highest available version
+    if version_str == "*" {
+        // tag_versions is already sorted highest first
+        return Ok(tag_versions[0].0.clone());
+    }
+
+    // Parse constraint using ONLY the version part (prefix already filtered)
+    // This ensures semver matching works correctly after prefix filtering
+    let constraint = VersionConstraint::parse(version_str)?;
+
+    // Extract just the versions for constraint matching
+    let versions: Vec<Version> = tag_versions.iter().map(|(_, v)| v.clone()).collect();
+
+    // Create a constraint set with just this constraint
+    let mut constraint_set = ConstraintSet::new();
+    constraint_set.add(constraint)?;
+
+    // Find the best match
+    if let Some(best_version) = constraint_set.find_best_match(&versions) {
+        // Find the original tag name for this version
+        for (tag_name, version) in tag_versions {
+            if &version == best_version {
+                return Ok(tag_name);
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!("No tag found matching constraint: {constraint_str}"))
+}
+
+// ============================================================================
+// Worktree Management
+// ============================================================================
+
+/// Represents a prepared source version with worktree information.
+#[derive(Clone, Debug, Default)]
+pub struct PreparedSourceVersion {
+    /// Path to the worktree for this version
+    pub worktree_path: std::path::PathBuf,
+    /// The resolved version reference (tag, branch, etc.)
+    pub resolved_version: Option<String>,
+    /// The commit SHA for this version
+    pub resolved_commit: String,
+}
+
+/// Manages worktree creation for resolved dependency versions.
+pub struct WorktreeManager<'a> {
+    cache: &'a Cache,
+    source_manager: &'a SourceManager,
+    version_resolver: &'a VersionResolver,
+}
+
+impl<'a> WorktreeManager<'a> {
+    /// Create a new worktree manager.
+    pub fn new(
+        cache: &'a Cache,
+        source_manager: &'a SourceManager,
+        version_resolver: &'a VersionResolver,
+    ) -> Self {
+        Self {
+            cache,
+            source_manager,
+            version_resolver,
+        }
+    }
+
+    /// Create a group key for identifying source-version combinations.
+    pub fn group_key(source: &str, version: &str) -> String {
+        format!("{source}::{version}")
+    }
+
+    /// Create worktrees for all resolved versions in parallel.
+    ///
+    /// This function takes the resolved versions from the VersionResolver
+    /// and creates Git worktrees for each unique commit SHA, enabling
+    /// efficient parallel access to dependency resources.
+    ///
+    /// # Returns
+    ///
+    /// A map of group keys to prepared source versions containing worktree paths.
+    pub async fn create_worktrees_for_resolved_versions(
+        &self,
+    ) -> Result<HashMap<String, PreparedSourceVersion>> {
+        use crate::core::AgpmError;
+        use futures::future::join_all;
+
+        let resolved_full = self.version_resolver.get_all_resolved_full().clone();
+        let mut prepared_versions = HashMap::new();
+
+        // Build futures for parallel worktree creation
+        let mut futures = Vec::new();
+
+        for ((source_name, version_key), resolved_version) in resolved_full {
+            let sha = resolved_version.sha;
+            let resolved_ref = resolved_version.resolved_ref;
+            let repo_key = Self::group_key(&source_name, &version_key);
+            let cache_clone = self.cache.clone();
+            let source_name_clone = source_name.clone();
+
+            // Get the source URL for this source
+            let source_url_clone = self
+                .source_manager
+                .get_source_url(&source_name)
+                .ok_or_else(|| AgpmError::SourceNotFound {
+                    name: source_name.to_string(),
+                })?
+                .to_string();
+
+            let sha_clone = sha.clone();
+            let resolved_ref_clone = resolved_ref.clone();
+
+            let future = async move {
+                // Use SHA-based worktree creation
+                // The version resolver has already handled fetching and SHA resolution
+                let worktree_path = cache_clone
+                    .get_or_create_worktree_for_sha(
+                        &source_name_clone,
+                        &source_url_clone,
+                        &sha_clone,
+                        Some(&source_name_clone), // context for logging
+                    )
+                    .await?;
+
+                Ok::<_, anyhow::Error>((
+                    repo_key,
+                    PreparedSourceVersion {
+                        worktree_path,
+                        resolved_version: Some(resolved_ref_clone),
+                        resolved_commit: sha_clone,
+                    },
+                ))
+            };
+
+            futures.push(future);
+        }
+
+        // Execute all futures concurrently and collect results
+        let results = join_all(futures).await;
+
+        // Process results and build the map
+        for result in results {
+            let (key, prepared) = result?;
+            prepared_versions.insert(key, prepared);
+        }
+
+        Ok(prepared_versions)
     }
 }
 
@@ -585,5 +1084,11 @@ mod tests {
         assert!(resolver.is_resolved("test_source", "v1.0.0"));
         assert_eq!(resolver.get_resolved_sha("test_source", "v1.0.0"), Some(sha.to_string()));
         assert!(!resolver.is_resolved("test_source", "v2.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_worktree_group_key() {
+        assert_eq!(WorktreeManager::group_key("source", "version"), "source::version");
+        assert_eq!(WorktreeManager::group_key("community", "v1.0.0"), "community::v1.0.0");
     }
 }

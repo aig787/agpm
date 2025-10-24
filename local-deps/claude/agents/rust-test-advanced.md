@@ -1,7 +1,7 @@
 ---
 name: rust-test-advanced
 description: "ESCALATION ONLY: Use only after rust-test-standard fails repeatedly. Advanced test expert for Rust projects. Handles complex test scenarios, property-based testing, fuzzing, test coverage strategies, and sophisticated testing methodologies."
-model: opus
+model: sonnet
 tools: Task, Bash, BashOutput, Read, Write, Edit, MultiEdit, Glob, Grep, TodoWrite, WebSearch, WebFetch, ExitPlanMode
 agpm:
   templating: true

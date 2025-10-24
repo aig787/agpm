@@ -2112,7 +2112,23 @@ impl Manifest {
                         }
                     }
 
-                    deps.push((name.as_str(), std::borrow::Cow::Borrowed(dep), *resource_type));
+                    // Ensure the tool is set on the dependency (apply default if not explicitly set)
+                    let dep_with_tool = if dep.get_tool().is_none() {
+                        tracing::debug!(
+                            "Setting default tool '{}' for dependency '{}' (type: {:?})",
+                            tool,
+                            name,
+                            resource_type
+                        );
+                        // Need to set the tool - create a modified copy
+                        let mut dep_owned = dep.clone();
+                        dep_owned.set_tool(Some(tool_string.clone()));
+                        std::borrow::Cow::Owned(dep_owned)
+                    } else {
+                        std::borrow::Cow::Borrowed(dep)
+                    };
+
+                    deps.push((name.as_str(), dep_with_tool, *resource_type));
                 }
             }
         }

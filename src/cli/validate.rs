@@ -536,7 +536,7 @@ impl ValidateCommand {
             }
 
             let cache = Cache::new()?;
-            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache).await;
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
@@ -560,7 +560,9 @@ impl ValidateCommand {
             let operation_context = Arc::new(OperationContext::new());
             resolver.set_operation_context(operation_context);
 
-            match resolver.verify() {
+            // Create an empty lockfile for verification (since we're just testing resolution)
+            let empty_lockfile = crate::lockfile::LockFile::new();
+            match resolver.verify(&empty_lockfile).await {
                 Ok(()) => {
                     validation_results.dependencies_resolvable = true;
                     if !self.quiet {
@@ -596,7 +598,7 @@ impl ValidateCommand {
             }
 
             let cache = Cache::new()?;
-            let resolver_result = DependencyResolver::new(manifest.clone(), cache);
+            let resolver_result = DependencyResolver::new(manifest.clone(), cache).await;
             let mut resolver = match resolver_result {
                 Ok(resolver) => resolver,
                 Err(e) => {
@@ -620,7 +622,7 @@ impl ValidateCommand {
             let operation_context = Arc::new(OperationContext::new());
             resolver.set_operation_context(operation_context);
 
-            let result = resolver.source_manager.verify_all().await;
+            let result = resolver.core().source_manager().verify_all().await;
 
             match result {
                 Ok(()) => {

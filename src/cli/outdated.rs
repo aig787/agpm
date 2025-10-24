@@ -653,6 +653,7 @@ impl OutdatedCommand {
 
         // 3. Create resolver for version resolution
         let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())
+            .await
             .context("Failed to create dependency resolver")?;
 
         // Create operation context for warning deduplication

@@ -78,7 +78,7 @@ async fn test_heavy_stress_500_dependencies() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -318,7 +318,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver_v1 = DependencyResolver::with_cache(manifest_v1.clone(), cache.clone());
+    let mut resolver_v1 =
+        DependencyResolver::with_cache(manifest_v1.clone(), cache.clone()).await?;
     let lockfile_v1 = resolver_v1.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -379,7 +380,8 @@ async fn test_heavy_stress_500_updates() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver_v2 = DependencyResolver::with_cache(manifest_v2.clone(), cache.clone());
+    let mut resolver_v2 =
+        DependencyResolver::with_cache(manifest_v2.clone(), cache.clone()).await?;
     let lockfile_v2 = resolver_v2.resolve().await?;
 
     let progress2 = Arc::new(MultiPhaseProgress::new(false));
@@ -550,7 +552,7 @@ async fn test_mixed_repos_file_and_https() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -708,7 +710,7 @@ async fn test_community_repo_parallel_checkout_performance() -> Result<()> {
     let total_agents = community_agents.len();
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
     let progress = Arc::new(MultiPhaseProgress::new(false));
 
@@ -880,7 +882,7 @@ async fn test_community_repo_500_dependencies() -> Result<()> {
     }
 
     // Resolve to lockfile
-    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone());
+    let mut resolver = DependencyResolver::with_cache(manifest.clone(), cache.clone()).await?;
     let lockfile = resolver.resolve().await?;
 
     // Install all dependencies in parallel

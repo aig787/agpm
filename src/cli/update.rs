@@ -378,7 +378,7 @@ impl UpdateCommand {
         let cache = Cache::new()?;
 
         // Resolve updated dependencies
-        let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone())?;
+        let mut resolver = DependencyResolver::new(manifest.clone(), cache.clone()).await?;
 
         // Create operation context for warning deduplication
         let operation_context = Arc::new(OperationContext::new());

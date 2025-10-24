@@ -599,6 +599,15 @@ impl ResourceDependency {
         }
     }
 
+    /// Set the tool for this dependency.
+    ///
+    /// Only works for `Detailed` dependencies. Does nothing for `Simple` dependencies.
+    pub fn set_tool(&mut self, tool: Option<String>) {
+        if let Self::Detailed(d) = self {
+            d.tool = tool;
+        }
+    }
+
     /// Get the custom filename for this dependency.
     ///
     /// Returns the custom filename if specified, or `None` if the
