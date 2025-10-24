@@ -158,7 +158,7 @@ use tracing::{debug, info};
 use crate::cache::Cache;
 use crate::core::OperationContext;
 use crate::git::parse_git_url;
-use crate::lockfile::{LockFile, LockedResource};
+use crate::lockfile::LockedResource;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::resolver::DependencyResolver;
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
@@ -636,6 +636,8 @@ impl OutdatedCommand {
         let manifest = Manifest::load(&manifest_path)
             .with_context(|| format!("Failed to load manifest from {manifest_path:?}"))?;
 
+        let project_dir =
+            manifest_path.parent().ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
         let lockfile_path = manifest_path.with_file_name("agpm.lock");
 
         // Check if lockfile exists first - the outdated command requires it
@@ -645,8 +647,19 @@ impl OutdatedCommand {
             ));
         }
 
-        let lockfile = LockFile::load(&lockfile_path)
-            .with_context(|| format!("Failed to load lockfile from {lockfile_path:?}"))?;
+        // Create command context for enhanced lockfile loading
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_dir.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let lockfile = match command_context.load_lockfile_with_regeneration(true, "outdated")? {
+            Some(lockfile) => lockfile,
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it first."
+                ));
+            }
+        };
 
         // 2. Initialize cache and resolver
         let cache = Cache::new().context("Failed to initialize cache")?;

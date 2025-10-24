@@ -405,19 +405,37 @@ impl InstallCommand {
         // This allows users to customize their local configuration without modifying
         // the team-wide project configuration.
 
+        // Create command context for using enhanced lockfile loading
+        let project_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_dir.to_path_buf())?;
+
         // In --frozen mode, check for corruption and security issues only
-        let lockfile_path =
-            manifest_path.parent().unwrap_or_else(|| Path::new(".")).join("agpm.lock");
+        let lockfile_path = project_dir.join("agpm.lock");
 
         if self.frozen && lockfile_path.exists() {
-            // Check for critical issues (corruption/security) but not version/path changes
-            let lockfile = LockFile::load(&lockfile_path)?;
-            if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
-                return Err(anyhow::anyhow!(
-                    "Lockfile has critical issues in --frozen mode:\n\n\
-                     {reason}\n\n\
-                     Hint: Fix the issue or remove --frozen flag."
-                ));
+            // In frozen mode, we should NOT regenerate - fail hard if lockfile is invalid
+            match LockFile::load(&lockfile_path) {
+                Ok(lockfile) => {
+                    if let Some(reason) = lockfile.validate_against_manifest(&manifest, false)? {
+                        return Err(anyhow::anyhow!(
+                            "Lockfile has critical issues in --frozen mode:\n\n\
+                             {reason}\n\n\
+                             Hint: Fix the issue or remove --frozen flag."
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // In frozen mode, provide enhanced error message with beta notice
+                    return Err(anyhow::anyhow!(
+                        "Cannot proceed in --frozen mode due to invalid lockfile.\n\n\
+                         Error: {}\n\n\
+                         In --frozen mode, the lockfile must be valid.\n\
+                         Fix the lockfile manually or remove the --frozen flag to allow regeneration.\n\n\
+                         Note: The lockfile format is not yet stable as this is beta software.",
+                        e
+                    ));
+                }
             }
         }
         let total_deps = manifest.all_dependencies().len();
@@ -433,10 +451,16 @@ impl InstallCommand {
         // Check for existing lockfile
         let lockfile_path = actual_project_dir.join("agpm.lock");
 
-        let existing_lockfile = if lockfile_path.exists() {
-            Some(LockFile::load(&lockfile_path)?)
+        // Use enhanced lockfile loading with automatic regeneration for non-frozen mode
+        let existing_lockfile = if !self.frozen {
+            command_context.load_lockfile_with_regeneration(true, "install")?
         } else {
-            None
+            // In frozen mode, use the original loading logic (already validated above)
+            if lockfile_path.exists() {
+                Some(LockFile::load(&lockfile_path)?)
+            } else {
+                None
+            }
         };
 
         // Initialize cache (always needed now, even with --no-cache)

@@ -56,6 +56,17 @@ pub struct CommandContext {
 }
 
 impl CommandContext {
+    /// Create a new command context from a manifest and project directory
+    pub fn new(manifest: Manifest, project_dir: PathBuf) -> Result<Self> {
+        let lockfile_path = project_dir.join("agpm.lock");
+        Ok(Self {
+            manifest,
+            manifest_path: project_dir.join("agpm.toml"),
+            project_dir,
+            lockfile_path,
+        })
+    }
+
     /// Create a new command context from a manifest path
     ///
     /// # Errors
@@ -100,6 +111,184 @@ impl CommandContext {
         } else {
             Ok(None)
         }
+    }
+
+    /// Load an existing lockfile with automatic regeneration for invalid files
+    ///
+    /// If the lockfile exists but is invalid or corrupted, this method will
+    /// offer to automatically regenerate it. This provides a better user
+    /// experience by recovering from common lockfile issues.
+    ///
+    /// # Arguments
+    ///
+    /// * `can_regenerate` - Whether automatic regeneration should be offered
+    /// * `operation_name` - Name of the operation for error messages (e.g., "list")
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(lockfile))` - Successfully loaded or regenerated lockfile
+    /// * `Ok(None)` - No lockfile exists (not an error)
+    /// * `Err` - Critical error that cannot be recovered from
+    ///
+    /// # Behavior
+    ///
+    /// - **Interactive mode** (TTY): Prompts user with Y/n confirmation
+    /// - **Non-interactive mode** (CI/CD): Fails with helpful error message
+    /// - **Backup strategy**: Copies invalid lockfile to `agpm.lock.invalid` before regeneration
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use anyhow::Result;
+    /// # use agpm_cli::cli::common::CommandContext;
+    /// # use agpm_cli::manifest::Manifest;
+    /// # use std::path::PathBuf;
+    /// # async fn example() -> Result<()> {
+    /// let manifest = Manifest::load(&PathBuf::from("agpm.toml"))?;
+    /// let project_dir = PathBuf::from(".");
+    /// let ctx = CommandContext::new(manifest, project_dir)?;
+    /// match ctx.load_lockfile_with_regeneration(true, "list") {
+    ///     Ok(Some(lockfile)) => println!("Loaded lockfile"),
+    ///     Ok(None) => println!("No lockfile found"),
+    ///     Err(e) => eprintln!("Error: {}", e),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn load_lockfile_with_regeneration(
+        &self,
+        can_regenerate: bool,
+        operation_name: &str,
+    ) -> Result<Option<crate::lockfile::LockFile>> {
+        // If lockfile doesn't exist, that's not an error
+        if !self.lockfile_path.exists() {
+            return Ok(None);
+        }
+
+        // Try to load the lockfile
+        match crate::lockfile::LockFile::load(&self.lockfile_path) {
+            Ok(lockfile) => Ok(Some(lockfile)),
+            Err(e) => {
+                // Analyze the error to see if it's recoverable
+                let error_msg = e.to_string();
+                let can_auto_recover = can_regenerate
+                    && (error_msg.contains("Invalid TOML syntax")
+                        || error_msg.contains("Lockfile version")
+                        || error_msg.contains("missing field")
+                        || error_msg.contains("invalid type")
+                        || error_msg.contains("expected"));
+
+                if !can_auto_recover {
+                    // Not a recoverable error, return the original error
+                    return Err(e);
+                }
+
+                // This is a recoverable error, offer regeneration
+                let backup_path = self.lockfile_path.with_extension("lock.invalid");
+
+                // Create user-friendly message
+                let regenerate_message = format!(
+                    "The lockfile appears to be invalid or corrupted.\n\n\
+                     Error: {}\n\n\
+                     Note: The lockfile format is not yet stable as this is beta software.\n\n\
+                     The invalid lockfile will be backed up to: {}",
+                    error_msg,
+                    backup_path.display()
+                );
+
+                // Check if we're in interactive mode
+                if io::stdin().is_terminal() {
+                    // Interactive mode: prompt user
+                    println!("{}", regenerate_message);
+                    print!("Would you like to regenerate the lockfile automatically? [Y/n] ");
+                    io::stdout().flush().unwrap();
+
+                    let mut input = String::new();
+                    match io::stdin().read_line(&mut input) {
+                        Ok(_) => {
+                            let response = input.trim().to_lowercase();
+                            if response.is_empty() || response == "y" || response == "yes" {
+                                // User agreed to regenerate
+                                self.backup_and_regenerate_lockfile(&backup_path, operation_name)?;
+                                Ok(None) // Return None so caller creates new lockfile
+                            } else {
+                                // User declined, return the original error
+                                Err(crate::core::AgpmError::InvalidLockfileError {
+                                    file: self.lockfile_path.display().to_string(),
+                                    reason: format!(
+                                        "{} (User declined automatic regeneration)",
+                                        error_msg
+                                    ),
+                                    can_regenerate: true,
+                                }
+                                .into())
+                            }
+                        }
+                        Err(_) => {
+                            // Failed to read input, fall back to non-interactive behavior
+                            Err(self.create_non_interactive_error(&error_msg, operation_name))
+                        }
+                    }
+                } else {
+                    // Non-interactive mode: fail with helpful message
+                    Err(self.create_non_interactive_error(&error_msg, operation_name))
+                }
+            }
+        }
+    }
+
+    /// Backup the invalid lockfile and display regeneration instructions
+    fn backup_and_regenerate_lockfile(
+        &self,
+        backup_path: &Path,
+        operation_name: &str,
+    ) -> Result<()> {
+        // Backup the invalid lockfile
+        if let Err(e) = std::fs::copy(&self.lockfile_path, backup_path) {
+            eprintln!("Warning: Failed to backup invalid lockfile: {}", e);
+        } else {
+            println!("✓ Backed up invalid lockfile to: {}", backup_path.display());
+        }
+
+        // Remove the invalid lockfile
+        if let Err(e) = std::fs::remove_file(&self.lockfile_path) {
+            return Err(anyhow::anyhow!("Failed to remove invalid lockfile: {}", e));
+        }
+
+        println!("✓ Removed invalid lockfile");
+        println!("Note: Run 'agpm install' to regenerate the lockfile");
+
+        // If this is not an install command, suggest running install
+        if operation_name != "install" {
+            println!("Alternatively, run 'agpm {} --regenerate' if available", operation_name);
+        }
+
+        Ok(())
+    }
+
+    /// Create a non-interactive error message for CI/CD environments
+    fn create_non_interactive_error(
+        &self,
+        error_msg: &str,
+        _operation_name: &str,
+    ) -> anyhow::Error {
+        let backup_path = self.lockfile_path.with_extension("lock.invalid");
+
+        crate::core::AgpmError::InvalidLockfileError {
+            file: self.lockfile_path.display().to_string(),
+            reason: format!(
+                "{}\n\n\
+                 To fix this issue:\n\
+                 1. Backup the invalid lockfile: cp agpm.lock {}\n\
+                 2. Remove the invalid lockfile: rm agpm.lock\n\
+                 3. Regenerate it: agpm install\n\n\
+                 Note: The lockfile format is not yet stable as this is beta software.",
+                error_msg,
+                backup_path.display()
+            ),
+            can_regenerate: true,
+        }
+        .into()
     }
 
     /// Save a lockfile to the project directory
@@ -526,6 +715,233 @@ fetched_at = "2024-01-01T00:00:00Z"
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    #[cfg(test)]
+    mod lockfile_regeneration_tests {
+        use super::*;
+        use crate::manifest::Manifest;
+        use tempfile::TempDir;
+
+        #[test]
+        fn test_load_lockfile_with_regeneration_valid_lockfile() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+
+[agents]
+test = { source = "example", path = "test.md", version = "v1.0.0" }
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Create a valid lockfile
+            let lockfile_content = r#"version = 1
+
+[[sources]]
+name = "example"
+url = "https://github.com/example/repo.git"
+commit = "abc123def456789012345678901234567890abcd"
+fetched_at = "2024-01-01T00:00:00Z"
+
+[[agents]]
+name = "test"
+source = "example"
+path = "test.md"
+version = "v1.0.0"
+resolved_commit = "abc123def456789012345678901234567890abcd"
+checksum = "sha256:examplechecksum"
+installed_at = ".claude/agents/test.md"
+"#;
+            std::fs::write(&lockfile_path, lockfile_content).unwrap();
+
+            // Test loading valid lockfile
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let result = ctx.load_lockfile_with_regeneration(true, "test").unwrap();
+            assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_load_lockfile_with_regeneration_invalid_toml() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Create an invalid TOML lockfile
+            std::fs::write(&lockfile_path, "invalid toml [[[").unwrap();
+
+            // Test loading invalid lockfile in non-interactive mode
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            // This should return an error in non-interactive mode
+            let result = ctx.load_lockfile_with_regeneration(true, "test");
+            assert!(result.is_err());
+
+            let error_msg = result.unwrap_err().to_string();
+            assert!(error_msg.contains("Invalid or corrupted lockfile detected"));
+            assert!(error_msg.contains("beta software"));
+            assert!(error_msg.contains("cp agpm.lock"));
+        }
+
+        #[test]
+        fn test_load_lockfile_with_regeneration_missing_lockfile() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Test loading non-existent lockfile
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let result = ctx.load_lockfile_with_regeneration(true, "test").unwrap();
+            assert!(result.is_none()); // Should return None for missing lockfile
+        }
+
+        #[test]
+        fn test_load_lockfile_with_regeneration_version_incompatibility() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Create a lockfile with future version
+            let lockfile_content = r#"version = 999
+
+[[sources]]
+name = "example"
+url = "https://github.com/example/repo.git"
+commit = "abc123def456789012345678901234567890abcd"
+fetched_at = "2024-01-01T00:00:00Z"
+"#;
+            std::fs::write(&lockfile_path, lockfile_content).unwrap();
+
+            // Test loading future version lockfile
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let result = ctx.load_lockfile_with_regeneration(true, "test");
+            assert!(result.is_err());
+
+            let error_msg = result.unwrap_err().to_string();
+            assert!(error_msg.contains("version") || error_msg.contains("newer"));
+        }
+
+        #[test]
+        fn test_load_lockfile_with_regeneration_cannot_regenerate() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Create an invalid TOML lockfile
+            std::fs::write(&lockfile_path, "invalid toml [[[").unwrap();
+
+            // Test with can_regenerate = false
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let result = ctx.load_lockfile_with_regeneration(false, "test");
+            assert!(result.is_err());
+
+            // Should return the original error, not the enhanced one
+            let error_msg = result.unwrap_err().to_string();
+            assert!(!error_msg.contains("Invalid or corrupted lockfile detected"));
+            assert!(
+                error_msg.contains("Failed to load lockfile")
+                    || error_msg.contains("Invalid TOML syntax")
+            );
+        }
+
+        #[test]
+        fn test_backup_and_regenerate_lockfile() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+            let lockfile_path = project_dir.join("agpm.lock");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Create an invalid lockfile
+            std::fs::write(&lockfile_path, "invalid content").unwrap();
+
+            // Test backup and regeneration
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let backup_path = lockfile_path.with_extension("lock.invalid");
+
+            // This should backup the file and remove the original
+            ctx.backup_and_regenerate_lockfile(&backup_path, "test").unwrap();
+
+            // Check that backup was created
+            assert!(backup_path.exists());
+            assert_eq!(std::fs::read_to_string(&backup_path).unwrap(), "invalid content");
+
+            // Check that original was removed
+            assert!(!lockfile_path.exists());
+        }
+
+        #[test]
+        fn test_create_non_interactive_error() {
+            let temp_dir = TempDir::new().unwrap();
+            let project_dir = temp_dir.path();
+            let manifest_path = project_dir.join("agpm.toml");
+
+            // Create a minimal manifest
+            let manifest_content = r#"[sources]
+example = "https://github.com/example/repo.git"
+"#;
+            std::fs::write(&manifest_path, manifest_content).unwrap();
+
+            // Test non-interactive error creation
+            let manifest = Manifest::load(&manifest_path).unwrap();
+            let ctx = CommandContext::new(manifest, project_dir.to_path_buf()).unwrap();
+
+            let error = ctx.create_non_interactive_error("Invalid TOML syntax", "test");
+            let error_msg = error.to_string();
+
+            assert!(error_msg.contains("Invalid TOML syntax"));
+            assert!(error_msg.contains("beta software"));
+            assert!(error_msg.contains("cp agpm.lock"));
+            assert!(error_msg.contains("rm agpm.lock"));
+            assert!(error_msg.contains("agpm install"));
+        }
     }
 
     // Note: Testing interactive behavior (user input) requires mocking stdin,

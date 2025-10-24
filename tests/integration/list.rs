@@ -799,7 +799,8 @@ async fn test_list_corrupted_lockfile() {
     let output = project.run_agpm(&["list"]).unwrap();
     assert!(!output.success);
     assert!(
-        output.stderr.contains("Invalid lockfile syntax")
+        output.stderr.contains("Invalid or corrupted lockfile detected")
+            || output.stderr.contains("Invalid lockfile syntax")
             || output.stderr.contains("Failed to parse lockfile"),
         "Expected lockfile error, got: {}",
         output.stderr

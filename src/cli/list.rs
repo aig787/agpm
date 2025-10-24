@@ -483,7 +483,28 @@ impl ListCommand {
             return Ok(());
         }
 
-        let lockfile = LockFile::load(&lockfile_path)?;
+        // Create a temporary manifest for CommandContext (we only need it for lockfile loading)
+        let manifest_path = project_dir.join("agpm.toml");
+        let manifest = crate::manifest::Manifest::load(&manifest_path)?;
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest, project_dir.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let lockfile = match command_context.load_lockfile_with_regeneration(true, "list")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was regenerated and doesn't exist yet
+                if self.format == "json" {
+                    println!("{{}}");
+                } else {
+                    println!("No installed resources found.");
+                    println!(
+                        "⚠️  Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it."
+                    );
+                }
+                return Ok(());
+            }
+        };
 
         // Create cache if needed for detailed mode with patches
         let cache = if self.detailed {

@@ -93,7 +93,6 @@ use std::sync::Arc;
 
 use crate::cache::Cache;
 use crate::core::{OperationContext, ResourceType};
-use crate::lockfile::LockFile;
 use crate::manifest::{Manifest, find_manifest_with_optional};
 use crate::markdown::reference_extractor::{extract_file_references, validate_file_references};
 use crate::resolver::DependencyResolver;
@@ -847,7 +846,23 @@ impl ValidateCommand {
                 return Err(anyhow::anyhow!("{}", error_msg));
             }
 
-            let lockfile = Arc::new(LockFile::load(&lockfile_path)?);
+            // Create command context for enhanced lockfile loading
+            let command_context = crate::cli::common::CommandContext::new(
+                manifest.clone(),
+                project_dir.to_path_buf(),
+            )?;
+
+            // Use enhanced lockfile loading with automatic regeneration
+            let lockfile = match command_context
+                .load_lockfile_with_regeneration(true, "validate")?
+            {
+                Some(lockfile) => Arc::new(lockfile),
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Lockfile was invalid and has been removed. Run 'agpm install' to regenerate it first."
+                    ));
+                }
+            };
             let cache = Arc::new(Cache::new()?);
 
             // Load global config for template rendering settings
@@ -1284,7 +1299,6 @@ impl Default for ValidationResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lockfile::LockFile;
     use crate::manifest::{Manifest, ResourceDependency};
     use tempfile::TempDir;
 
@@ -3025,7 +3039,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile
-        let lockfile = LockFile::new();
+        let lockfile = crate::lockfile::LockFile::new();
         lockfile.save(&lockfile_path).unwrap();
 
         let cmd = ValidateCommand {
@@ -3353,7 +3367,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile with different agent
-        let mut lockfile = LockFile::new();
+        let mut lockfile = crate::lockfile::LockFile::new();
         lockfile.agents.push(crate::lockfile::LockedResource {
             name: "lockfile-agent".to_string(),
             source: None,
@@ -3556,7 +3570,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
         manifest.save(&manifest_path).unwrap();
 
         // Create lockfile missing some dependencies
-        let mut lockfile = LockFile::new();
+        let mut lockfile = crate::lockfile::LockFile::new();
         lockfile.agents.push(crate::lockfile::LockedResource {
             name: "agent1".to_string(),
             source: None,
@@ -3730,7 +3744,7 @@ See [helper](.agpm/snippets/helper.md) for details.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3797,7 +3811,7 @@ Also check `.claude/nonexistent.md`.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3866,7 +3880,7 @@ Visit http://example.com for more info.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -3937,7 +3951,7 @@ Inline code `example.md` should also be ignored.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "test-agent".to_string(),
             source: None,
@@ -4007,7 +4021,7 @@ Inline code `example.md` should also be ignored.
 
         // Create lockfile
         let lockfile_path = project_dir.join("agpm.lock");
-        let mut lockfile = LockFile::default();
+        let mut lockfile = crate::lockfile::LockFile::default();
         lockfile.agents.push(LockedResource {
             name: "agent1".to_string(),
             source: None,

@@ -429,8 +429,10 @@ async fn test_install_corrupted_lockfile() {
     let output = project.run_agpm(&["install", "--no-cache"]).unwrap();
     assert!(!output.success, "Expected command to fail but it succeeded");
     assert!(
-        output.stderr.contains("Invalid lockfile syntax"),
-        "Expected lockfile syntax error, got: {}",
+        output.stderr.contains("Invalid or corrupted lockfile detected")
+            || output.stderr.contains("Invalid lockfile syntax")
+            || output.stderr.contains("Failed to parse lockfile"),
+        "Expected lockfile error, got: {}",
         output.stderr
     );
 }

@@ -300,8 +300,19 @@ async fn remove_source_with_manifest_path(
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
 
     if lockfile_path.exists() {
-        let mut lockfile = LockFile::load(&lockfile_path)?;
+        // Create command context for enhanced lockfile loading
         let project_root = manifest_path.parent().unwrap();
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_root.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let mut lockfile = match command_context.load_lockfile_with_regeneration(true, "remove")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was invalid and has been removed, nothing to update
+                return Ok(());
+            }
+        };
 
         // Find and remove installed files from this source
         let agents_to_remove: Vec<String> = lockfile
@@ -445,7 +456,19 @@ async fn remove_dependency_with_manifest_path(
     // Update lockfile and remove installed files
     let lockfile_path = manifest_path.parent().unwrap().join("agpm.lock");
     if lockfile_path.exists() {
-        let mut lockfile = LockFile::load(&lockfile_path)?;
+        // Create command context for enhanced lockfile loading
+        let project_root = manifest_path.parent().unwrap();
+        let command_context =
+            crate::cli::common::CommandContext::new(manifest.clone(), project_root.to_path_buf())?;
+
+        // Use enhanced lockfile loading with automatic regeneration
+        let mut lockfile = match command_context.load_lockfile_with_regeneration(true, "remove")? {
+            Some(lockfile) => lockfile,
+            None => {
+                // Lockfile was invalid and has been removed, nothing to update
+                return Ok(());
+            }
+        };
 
         // Find the installed file path and remove it
         let installed_path = get_installed_path_from_lockfile(

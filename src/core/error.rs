@@ -129,6 +129,7 @@ use thiserror::Error;
 /// - [`ManifestParseError`] - Invalid TOML syntax in manifest
 /// - [`ManifestValidationError`] - Manifest content validation failed
 /// - [`LockfileParseError`] - Invalid lockfile format
+/// - [`InvalidLockfileError`] - Invalid lockfile that can be automatically regenerated
 /// - [`ConfigError`] - Configuration file issues
 /// - [`TomlError`] - TOML parsing errors from [`toml::de::Error`]
 /// - [`TomlSerError`] - TOML serialization errors from [`toml::ser::Error`]
@@ -220,6 +221,7 @@ use thiserror::Error;
 /// [`ManifestParseError`]: AgpmError::ManifestParseError
 /// [`ManifestValidationError`]: AgpmError::ManifestValidationError
 /// [`LockfileParseError`]: AgpmError::LockfileParseError
+/// [`InvalidLockfileError`]: AgpmError::InvalidLockfileError
 /// [`ConfigError`]: AgpmError::ConfigError
 /// [`TomlError`]: AgpmError::TomlError
 /// [`TomlSerError`]: AgpmError::TomlSerError
@@ -356,6 +358,19 @@ pub enum AgpmError {
         file: String,
         /// Specific reason for the parsing failure
         reason: String,
+    },
+
+    /// Invalid lockfile that can be automatically regenerated
+    #[error(
+        "Invalid or corrupted lockfile detected: {file}\n\n{reason}\n\nNote: The lockfile format is not yet stable as this is beta software."
+    )]
+    InvalidLockfileError {
+        /// Path to the invalid lockfile
+        file: String,
+        /// Specific reason why the lockfile is invalid
+        reason: String,
+        /// Whether automatic regeneration is offered
+        can_regenerate: bool,
     },
 
     /// Resource not found
@@ -622,6 +637,15 @@ impl Clone for AgpmError {
             } => Self::LockfileParseError {
                 file: file.clone(),
                 reason: reason.clone(),
+            },
+            Self::InvalidLockfileError {
+                file,
+                reason,
+                can_regenerate,
+            } => Self::InvalidLockfileError {
+                file: file.clone(),
+                reason: reason.clone(),
+                can_regenerate: *can_regenerate,
             },
             Self::ResourceNotFound {
                 name,
