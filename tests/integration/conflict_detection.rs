@@ -829,3 +829,99 @@ async fn test_commented_out_dependency_removed_from_lockfile() -> Result<()> {
     assert!(agent_a_path.exists(), "Agent A file should exist");
     Ok(())
 }
+
+/// Test that direct and transitive dependencies to the same local file don't cause false conflicts.
+///
+/// This is a regression test for a bug where:
+/// 1. A direct dependency with a custom manifest name (e.g., "my-agent")
+/// 2. A transitive dependency with a path-based name (e.g., "../local/agents/helper")
+/// Both pointing to the same local file would create duplicate lockfile entries with different
+/// names but the same path, triggering false conflict detection.
+///
+/// The fix ensures path-based deduplication for local dependencies (source = None).
+#[tokio::test]
+async fn test_local_direct_and_transitive_deps_no_false_conflict() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+    let project = TestProject::new().await?;
+
+    // Create a local directory with two agents
+    let local_dir = project.project_path().join("local-agents");
+    tokio::fs::create_dir_all(&local_dir.join("agents")).await?;
+    let _local_path = local_dir.to_str().unwrap();
+
+    // Helper agent (will be referenced as transitive dep)
+    let helper_content = "# Helper Agent\nProvides helper functionality";
+    tokio::fs::write(local_dir.join("agents/helper.md"), helper_content).await?;
+
+    // Parent agent that depends on helper (will have transitive dep)
+    // Use a relative path in transitive dep (as it would be in real usage)
+    let parent_content = r#"---
+dependencies:
+  agents:
+    - path: helper.md
+---
+# Parent Agent
+Uses the helper agent"#;
+    tokio::fs::write(local_dir.join("agents/parent.md"), parent_content).await?;
+
+    // Create manifest that:
+    // 1. Directly references helper with custom name "my-helper"
+    // 2. References parent which has transitive dep on helper (will be named "helper")
+    // Use relative paths (relative to project root)
+    let manifest = ManifestBuilder::new()
+        .add_agent("my-helper", |d| d.path("local-agents/agents/helper.md"))
+        .add_agent("parent", |d| d.path("local-agents/agents/parent.md"))
+        .build();
+    project.write_manifest(&manifest).await?;
+
+    // Install should succeed without conflicts
+    let output = project.run_agpm(&["install"])?;
+
+    assert!(
+        output.success,
+        "Install should succeed without false conflicts. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        !output.stderr.contains("Target path conflicts detected"),
+        "Should not report false conflicts. Stderr: {}",
+        output.stderr
+    );
+    assert!(
+        !output.stderr.contains("Version conflicts detected"),
+        "Should not report version conflicts. Stderr: {}",
+        output.stderr
+    );
+
+    // Verify lockfile has only ONE entry for helper (deduplicated by path)
+    let lockfile = project.read_lockfile().await?;
+    let helper_entries = lockfile.matches("path = \"local-agents/agents/helper.md\"").count();
+    assert_eq!(
+        helper_entries, 1,
+        "Lockfile should have exactly one entry for helper.md (deduplicated by path). Found {}: {}",
+        helper_entries, lockfile
+    );
+
+    // Verify parent is installed
+    let parent_path = project.project_path().join(".claude/agents/parent.md");
+    assert!(parent_path.exists(), "Parent should be installed");
+
+    // Verify lockfile entry uses the direct dependency name
+    assert!(
+        lockfile.contains("name = \"my-helper\""),
+        "Lockfile should use the direct dependency name 'my-helper'. Lockfile: {}",
+        lockfile
+    );
+    assert!(
+        !lockfile.contains("name = \"helper\"")
+            || lockfile.matches("name = \"helper\"").count() == 0,
+        "Lockfile should not have a separate 'helper' entry (should be deduplicated). Lockfile: {}",
+        lockfile
+    );
+
+    // Helper file should exist (installed using the basename from the path)
+    let helper_path = project.project_path().join(".claude/agents/helper.md");
+    assert!(helper_path.exists(), "Helper file should be installed");
+
+    Ok(())
+}

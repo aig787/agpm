@@ -125,76 +125,85 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Parse markdown frontmatter
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
                 if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
-                    if let Some(metadata) = doc.metadata {
-                        // Extract dependencies from frontmatter
-                        if let Some(deps_map) = metadata.dependencies {
-                            // Process each resource type (agents, snippets, commands, etc.)
-                            for (resource_type_str, deps_array) in deps_map {
-                                // Convert frontmatter type to lockfile type (singular)
-                                let lockfile_type = match resource_type_str.as_str() {
-                                    "agents" | "agent" => "agent",
-                                    "snippets" | "snippet" => "snippet",
-                                    "commands" | "command" => "command",
-                                    "scripts" | "script" => "script",
-                                    "hooks" | "hook" => "hook",
-                                    "mcp-servers" | "mcp-server" => "mcp-server",
-                                    _ => continue, // Skip unknown types
-                                };
+                    // Extract raw frontmatter string and parse as DependencyMetadata
+                    // This handles both nested (agpm.dependencies) and root-level (dependencies) locations
+                    if let Some(frontmatter) = doc.frontmatter_str() {
+                        if let Ok(metadata) =
+                            serde_yaml::from_str::<crate::manifest::DependencyMetadata>(frontmatter)
+                        {
+                            if let Some(deps_map) = metadata.get_dependencies() {
+                                // Process each resource type (agents, snippets, commands, etc.)
+                                for (resource_type_str, deps_array) in deps_map {
+                                    // Convert frontmatter type to lockfile type (singular)
+                                    let lockfile_type = match resource_type_str.as_str() {
+                                        "agents" | "agent" => "agent",
+                                        "snippets" | "snippet" => "snippet",
+                                        "commands" | "command" => "command",
+                                        "scripts" | "script" => "script",
+                                        "hooks" | "hook" => "hook",
+                                        "mcp-servers" | "mcp-server" => "mcp-server",
+                                        _ => continue, // Skip unknown types
+                                    };
 
-                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
-                                let type_entries = match lockfile_lookup.get(lockfile_type) {
-                                    Some(entries) => entries,
-                                    None => continue, // No lockfile deps of this type
-                                };
+                                    // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                                    let type_entries = match lockfile_lookup.get(lockfile_type) {
+                                        Some(entries) => entries,
+                                        None => continue, // No lockfile deps of this type
+                                    };
 
-                                // deps_array is Vec<DependencySpec>
-                                for dep_spec in deps_array {
-                                    let path = &dep_spec.path;
-                                    if let Some(custom_name) = &dep_spec.name {
-                                        // Extract basename from the path (without extension)
-                                        let basename = std::path::Path::new(path)
-                                            .file_stem()
-                                            .and_then(|s| s.to_str())
-                                            .unwrap_or(path);
+                                    // deps_array is Vec<DependencySpec>
+                                    for dep_spec in deps_array {
+                                        let path = &dep_spec.path;
+                                        if let Some(custom_name) = &dep_spec.name {
+                                            // Extract basename from the path (without extension)
+                                            let basename = std::path::Path::new(path)
+                                                .file_stem()
+                                                .and_then(|s| s.to_str())
+                                                .unwrap_or(path);
 
-                                        tracing::info!(
-                                            "Found custom name '{}' for path '{}' (basename: '{}')",
-                                            custom_name,
-                                            path,
-                                            basename
-                                        );
+                                            tracing::info!(
+                                                "Found custom name '{}' for path '{}' (basename: '{}')",
+                                                custom_name,
+                                                path,
+                                                basename
+                                            );
 
-                                        // Check if basename has template variables
-                                        if basename.contains("{{") {
-                                            // Template variable in basename - try suffix matching
-                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
-                                            if let Some(static_suffix_start) = basename.find("}}") {
-                                                let static_suffix =
-                                                    &basename[static_suffix_start + 2..];
+                                            // Check if basename has template variables
+                                            if basename.contains("{{") {
+                                                // Template variable in basename - try suffix matching
+                                                // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                                if let Some(static_suffix_start) =
+                                                    basename.find("}}")
+                                                {
+                                                    let static_suffix =
+                                                        &basename[static_suffix_start + 2..];
 
-                                                // Search for any lockfile basename ending with this suffix
+                                                    // Search for any lockfile basename ending with this suffix
+                                                    for (lockfile_basename, lockfile_dep_ref) in
+                                                        type_entries
+                                                    {
+                                                        if lockfile_basename
+                                                            .ends_with(static_suffix)
+                                                        {
+                                                            custom_names.insert(
+                                                                lockfile_dep_ref.clone(),
+                                                                custom_name.to_string(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                // No template variables - exact basename match (O(n) but only within type)
                                                 for (lockfile_basename, lockfile_dep_ref) in
                                                     type_entries
                                                 {
-                                                    if lockfile_basename.ends_with(static_suffix) {
+                                                    if lockfile_basename == basename {
                                                         custom_names.insert(
                                                             lockfile_dep_ref.clone(),
                                                             custom_name.to_string(),
                                                         );
+                                                        break; // Found exact match, no need to continue
                                                     }
-                                                }
-                                            }
-                                        } else {
-                                            // No template variables - exact basename match (O(n) but only within type)
-                                            for (lockfile_basename, lockfile_dep_ref) in
-                                                type_entries
-                                            {
-                                                if lockfile_basename == basename {
-                                                    custom_names.insert(
-                                                        lockfile_dep_ref.clone(),
-                                                        custom_name.to_string(),
-                                                    );
-                                                    break; // Found exact match, no need to continue
                                                 }
                                             }
                                         }

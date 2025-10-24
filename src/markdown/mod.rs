@@ -667,6 +667,34 @@ impl MarkdownDocument {
     ///
     /// assert!(doc.metadata.is_some());
     /// ```
+    pub fn frontmatter_str(&self) -> Option<&str> {
+        // YAML frontmatter
+        if (self.raw.starts_with("---\n") || self.raw.starts_with("---\r\n"))
+            && let Some(end_idx) = find_frontmatter_end(&self.raw)
+        {
+            let skip_size = if self.raw.starts_with("---\r\n") {
+                5
+            } else {
+                4
+            };
+            return Some(&self.raw[skip_size..end_idx]);
+        }
+
+        // TOML frontmatter
+        if (self.raw.starts_with("+++\n") || self.raw.starts_with("+++\r\n"))
+            && let Some(end_idx) = find_toml_frontmatter_end(&self.raw)
+        {
+            let skip_size = if self.raw.starts_with("+++\r\n") {
+                5
+            } else {
+                4
+            };
+            return Some(&self.raw[skip_size..end_idx]);
+        }
+
+        None
+    }
+
     pub fn parse_with_operation_context(
         input: &str,
         _file_context: Option<&str>,

@@ -14,6 +14,36 @@ use std::collections::{HashMap, HashSet};
 type ResourceKey = (ResourceType, String, Option<String>);
 type ResourceInfo = (Option<String>, Option<String>);
 
+/// Checks if two lockfile entries should be considered duplicates.
+///
+/// Two entries are duplicates if either:
+/// 1. They have the same name, source, and tool (standard deduplication)
+/// 2. They are both local dependencies (source = None) with the same path and tool
+///
+/// The second case handles situations where a direct dependency and a transitive
+/// dependency point to the same local file but have different names (e.g., manifest
+/// name vs path-based name). This prevents false conflicts.
+pub fn is_duplicate_entry(existing: &LockedResource, new_entry: &LockedResource) -> bool {
+    // Standard deduplication: same name, source, and tool
+    if existing.name == new_entry.name
+        && existing.source == new_entry.source
+        && existing.tool == new_entry.tool
+    {
+        return true;
+    }
+
+    // Local dependency deduplication: same path and tool (source must both be None)
+    if existing.source.is_none()
+        && new_entry.source.is_none()
+        && existing.path == new_entry.path
+        && existing.tool == new_entry.tool
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Manages lockfile operations including entry creation, updates, and cleanup.
 pub struct LockfileBuilder<'a> {
     manifest: &'a Manifest,
@@ -67,16 +97,12 @@ impl<'a> LockfileBuilder<'a> {
         _name: &str,
         entry: LockedResource,
     ) {
-        // Get the appropriate resource collection based on the entry's type
         let resources = lockfile.get_resources_mut(entry.resource_type);
 
-        // Use (name, source, tool) matching for deduplication
-        // This allows multiple entries with the same name from different sources or tools,
-        // which will be caught by conflict detection if they map to the same path
-        if let Some(existing) = resources
-            .iter_mut()
-            .find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
-        {
+        if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
+            // Always replace with the new entry
+            // This ensures that direct manifest dependencies (processed last) take precedence
+            // over transitive dependencies (discovered during collection)
             *existing = entry;
         } else {
             resources.push(entry);
@@ -364,74 +390,16 @@ pub fn add_pattern_entries(
     entries: Vec<LockedResource>,
     resource_type: ResourceType,
 ) {
+    let resources = lockfile.get_resources_mut(resource_type);
+
     for entry in entries {
-        match resource_type {
-            ResourceType::Agent => {
-                if let Some(existing) = lockfile
-                    .agents
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.agents.push(entry);
-                }
-            }
-            ResourceType::Snippet => {
-                if let Some(existing) = lockfile
-                    .snippets
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.snippets.push(entry);
-                }
-            }
-            ResourceType::Command => {
-                if let Some(existing) = lockfile
-                    .commands
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.commands.push(entry);
-                }
-            }
-            ResourceType::Script => {
-                if let Some(existing) = lockfile
-                    .scripts
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.scripts.push(entry);
-                }
-            }
-            ResourceType::Hook => {
-                if let Some(existing) = lockfile
-                    .hooks
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.hooks.push(entry);
-                }
-            }
-            ResourceType::McpServer => {
-                if let Some(existing) = lockfile
-                    .mcp_servers
-                    .iter_mut()
-                    .find(|e| e.name == entry.name && e.source == entry.source)
-                {
-                    *existing = entry;
-                } else {
-                    lockfile.mcp_servers.push(entry);
-                }
-            }
+        if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
+            // Always replace with the new entry
+            // This ensures that direct manifest dependencies (processed last) take precedence
+            // over transitive dependencies (discovered during collection)
+            *existing = entry;
+        } else {
+            resources.push(entry);
         }
     }
 }
@@ -714,17 +682,20 @@ pub(super) fn build_merged_template_vars(
 /// * `entry` - The [`LockedResource`] entry to add or update
 #[allow(dead_code)] // Not yet used in service-based refactoring
 pub(super) fn add_or_update_lockfile_entry(lockfile: &mut LockFile, entry: LockedResource) {
-    // Get the appropriate resource collection based on the entry's type
     let resources = lockfile.get_resources_mut(entry.resource_type);
 
-    // Use (name, source, tool) matching for deduplication
-    // This allows multiple entries with the same name from different sources or tools,
-    // which will be caught by conflict detection if they map to the same path
-    if let Some(existing) = resources
-        .iter_mut()
-        .find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
-    {
-        *existing = entry;
+    if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
+        // For local dependencies with path-based duplicates, keep the existing entry
+        // (direct dependencies are processed first, so this preserves user's explicit choice)
+        let is_local_path_duplicate = existing.source.is_none()
+            && entry.source.is_none()
+            && existing.path == entry.path
+            && existing.name != entry.name;
+
+        if !is_local_path_duplicate {
+            *existing = entry;
+        }
+        // If it's a local path duplicate, we keep the existing entry (don't replace)
     } else {
         resources.push(entry);
     }

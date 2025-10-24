@@ -1466,12 +1466,12 @@ impl DependencyResolver {
     ) {
         let resources = lockfile.get_resources_mut(entry.resource_type);
 
-        // Use (name, source, tool) matching for deduplication
-        // This allows multiple entries with the same name from different sources or tools
-        if let Some(existing) = resources
-            .iter_mut()
-            .find(|e| e.name == entry.name && e.source == entry.source && e.tool == entry.tool)
+        if let Some(existing) =
+            resources.iter_mut().find(|e| lockfile_builder::is_duplicate_entry(e, &entry))
         {
+            // Always replace with the new entry
+            // This ensures that direct manifest dependencies (processed last) take precedence
+            // over transitive dependencies (discovered during collection)
             *existing = entry;
         } else {
             resources.push(entry);
