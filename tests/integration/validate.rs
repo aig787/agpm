@@ -83,9 +83,6 @@ async fn test_validate_missing_fields() {
     assert!(output.stdout.contains("path"));
 }
 
-// TODO: Implement version conflict detection in validate command
-// Would check if manifest has conflicting version requirements
-
 /// Test validating with --sources flag to check source availability
 #[tokio::test]
 async fn test_validate_sources() {

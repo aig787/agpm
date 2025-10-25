@@ -5,6 +5,7 @@
 
 use anyhow::{Context as _, Result};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -122,85 +123,175 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Parse markdown frontmatter
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
                 if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
-                    // Extract raw frontmatter string and parse as DependencyMetadata
-                    // This handles both nested (agpm.dependencies) and root-level (dependencies) locations
-                    if let Some(frontmatter) = doc.frontmatter_str() {
-                        if let Ok(metadata) =
-                            serde_yaml::from_str::<crate::manifest::DependencyMetadata>(frontmatter)
-                        {
-                            if let Some(deps_map) = metadata.get_dependencies() {
-                                // Process each resource type (agents, snippets, commands, etc.)
-                                for (resource_type_str, deps_array) in deps_map {
-                                    // Convert frontmatter type to lockfile type (singular)
-                                    let lockfile_type: String = match resource_type_str.as_str() {
-                                        "agents" | "agent" => "agent".to_string(),
-                                        "snippets" | "snippet" => "snippet".to_string(),
-                                        "commands" | "command" => "command".to_string(),
-                                        "scripts" | "script" => "script".to_string(),
-                                        "hooks" | "hook" => "hook".to_string(),
-                                        "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
-                                        _ => continue, // Skip unknown types
-                                    };
+                    // Extract dependencies from parsed metadata
+                    if let Some(markdown_metadata) = &doc.metadata {
+                        // Convert MarkdownMetadata to DependencyMetadata
+                        // The dependencies are directly in markdown_metadata.dependencies
+                        let dependency_metadata =
+                            if let Some(deps) = &markdown_metadata.dependencies {
+                                crate::manifest::DependencyMetadata {
+                                    dependencies: Some(deps.clone()),
+                                    agpm: None,
+                                }
+                            } else {
+                                crate::manifest::DependencyMetadata::default()
+                            };
 
-                                    // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
-                                    let type_entries = match lockfile_lookup.get(&lockfile_type) {
-                                        Some(entries) => entries,
-                                        None => continue, // No lockfile deps of this type
-                                    };
+                        if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                            // Process each resource type (agents, snippets, commands, etc.)
+                            for (resource_type_str, deps_array) in deps_map {
+                                // Convert frontmatter type to lockfile type (singular)
+                                let lockfile_type: String = match resource_type_str.as_str() {
+                                    "agents" | "agent" => "agent".to_string(),
+                                    "snippets" | "snippet" => "snippet".to_string(),
+                                    "commands" | "command" => "command".to_string(),
+                                    "scripts" | "script" => "script".to_string(),
+                                    "hooks" | "hook" => "hook".to_string(),
+                                    "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
+                                    _ => continue, // Skip unknown types
+                                };
 
-                                    // deps_array is Vec<DependencySpec>
-                                    for dep_spec in deps_array {
-                                        let path = &dep_spec.path;
-                                        if let Some(custom_name) = &dep_spec.name {
-                                            // Extract basename from the path (without extension)
-                                            let basename = std::path::Path::new(path)
-                                                .file_stem()
-                                                .and_then(|s| s.to_str())
-                                                .unwrap_or(path);
+                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                                let type_entries = match lockfile_lookup.get(&lockfile_type) {
+                                    Some(entries) => entries,
+                                    None => continue, // No lockfile deps of this type
+                                };
 
-                                            tracing::info!(
-                                                "Found custom name '{}' for path '{}' (basename: '{}')",
-                                                custom_name,
-                                                path,
-                                                basename
-                                            );
+                                // deps_array is Vec<DependencySpec>
+                                for dep_spec in deps_array {
+                                    let path = &dep_spec.path;
+                                    if let Some(custom_name) = &dep_spec.name {
+                                        // Extract basename from the path (without extension)
+                                        let basename = std::path::Path::new(path)
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(path);
 
-                                            // Check if basename has template variables
-                                            if basename.contains("{{") {
-                                                // Template variable in basename - try suffix matching
-                                                // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
-                                                if let Some(static_suffix_start) =
-                                                    basename.find("}}")
-                                                {
-                                                    let static_suffix =
-                                                        &basename[static_suffix_start + 2..];
+                                        tracing::info!(
+                                            "Found custom name '{}' for path '{}' (basename: '{}')",
+                                            custom_name,
+                                            path,
+                                            basename
+                                        );
 
-                                                    // Search for any lockfile basename ending with this suffix
-                                                    for (lockfile_basename, lockfile_dep_ref) in
-                                                        type_entries
-                                                    {
-                                                        if lockfile_basename
-                                                            .ends_with(static_suffix)
-                                                        {
-                                                            custom_names.insert(
-                                                                lockfile_dep_ref.clone(),
-                                                                custom_name.to_string(),
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                // No template variables - exact basename match (O(n) but only within type)
+                                        // Check if basename has template variables
+                                        if basename.contains("{{") {
+                                            // Template variable in basename - try suffix matching
+                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                            if let Some(static_suffix_start) = basename.find("}}") {
+                                                let static_suffix =
+                                                    &basename[static_suffix_start + 2..];
+
+                                                // Search for any lockfile basename ending with this suffix
                                                 for (lockfile_basename, lockfile_dep_ref) in
                                                     type_entries
                                                 {
-                                                    if lockfile_basename == basename {
+                                                    if lockfile_basename.ends_with(static_suffix) {
                                                         custom_names.insert(
                                                             lockfile_dep_ref.clone(),
                                                             custom_name.to_string(),
                                                         );
-                                                        break; // Found exact match, no need to continue
                                                     }
+                                                }
+                                            }
+                                        } else {
+                                            // No template variables - exact basename match (O(n) but only within type)
+                                            for (lockfile_basename, lockfile_dep_ref) in
+                                                type_entries
+                                            {
+                                                if lockfile_basename == basename {
+                                                    custom_names.insert(
+                                                        lockfile_dep_ref.clone(),
+                                                        custom_name.to_string(),
+                                                    );
+                                                    break; // Found exact match, no need to continue
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if resource.path.ends_with(".json") {
+            // Parse JSON dependencies field
+            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
+                // Parse JSON and extract dependencies field
+                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(deps_value) = json_value.get("dependencies") {
+                        if let Ok(deps_map) = serde_json::from_value::<
+                            std::collections::HashMap<String, Vec<crate::manifest::DependencySpec>>,
+                        >(deps_value.clone())
+                        {
+                            // Process each resource type (agents, snippets, commands, etc.)
+                            for (resource_type_str, deps_array) in deps_map {
+                                // Convert frontmatter type to lockfile type (singular)
+                                let lockfile_type: String = match resource_type_str.as_str() {
+                                    "agents" | "agent" => "agent".to_string(),
+                                    "snippets" | "snippet" => "snippet".to_string(),
+                                    "commands" | "command" => "command".to_string(),
+                                    "scripts" | "script" => "script".to_string(),
+                                    "hooks" | "hook" => "hook".to_string(),
+                                    "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
+                                    _ => continue, // Skip unknown types
+                                };
+
+                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                                let type_entries = match lockfile_lookup.get(&lockfile_type) {
+                                    Some(entries) => entries,
+                                    None => continue, // No lockfile deps of this type
+                                };
+
+                                // deps_array is Vec<DependencySpec>
+                                for dep_spec in deps_array {
+                                    let path = &dep_spec.path;
+                                    if let Some(custom_name) = &dep_spec.name {
+                                        // Extract basename from the path (without extension)
+                                        let basename = std::path::Path::new(path)
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap_or(path);
+
+                                        tracing::info!(
+                                            "Found custom name '{}' for path '{}' (basename: '{}') from JSON",
+                                            custom_name,
+                                            path,
+                                            basename
+                                        );
+
+                                        // Check if basename has template variables
+                                        if basename.contains("{{") {
+                                            // Template variable in basename - try suffix matching
+                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                            if let Some(static_suffix_start) = basename.find("}}") {
+                                                let static_suffix =
+                                                    &basename[static_suffix_start + 2..];
+
+                                                // Search for any lockfile basename ending with this suffix
+                                                for (lockfile_basename, lockfile_dep_ref) in
+                                                    type_entries
+                                                {
+                                                    if lockfile_basename.ends_with(static_suffix) {
+                                                        custom_names.insert(
+                                                            lockfile_dep_ref.clone(),
+                                                            custom_name.to_string(),
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            // No template variables - exact basename match (O(n) but only within type)
+                                            for (lockfile_basename, lockfile_dep_ref) in
+                                                type_entries
+                                            {
+                                                if lockfile_basename == basename {
+                                                    custom_names.insert(
+                                                        lockfile_dep_ref.clone(),
+                                                        custom_name.to_string(),
+                                                    );
+                                                    break; // Found exact match, no need to continue
                                                 }
                                             }
                                         }
@@ -212,7 +303,6 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 }
             }
         }
-        // TODO: Add JSON support if needed
 
         custom_names
     }
@@ -577,6 +667,12 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
         // Also process the current resource itself
         let current_custom_names = self.extract_dependency_custom_names(current_resource).await;
+        tracing::debug!(
+            "Extracted {} custom names from current resource '{}' (type: {:?})",
+            current_custom_names.len(),
+            current_resource.name,
+            current_resource.resource_type
+        );
         if !current_custom_names.is_empty() || current_resource.name.contains("golang") {
             tracing::info!(
                 "Extracted {} custom names from current resource '{}' (type: {:?})",
@@ -711,7 +807,26 @@ pub(crate) fn add_custom_alias(
                 // Match by the actual lockfile resource name
                 data.name == *dep_name
             })
-            .cloned();
+            .cloned()
+            .or_else(|| {
+                // Some direct manifest dependencies use the bare manifest key (no type prefix)
+                // even though transitive refs include the source-relative path (snippets/foo/bar).
+                // Fall back to matching by the last path segment to align the two representations.
+                Path::new(dep_name).file_name().and_then(|name| name.to_str()).and_then(
+                    |basename| {
+                        type_deps
+                            .values()
+                            .find(|data| {
+                                data.name == basename
+                                    || Path::new(&data.name).file_name().and_then(|n| n.to_str())
+                                        == Some(basename)
+                                    || Path::new(&data.path).file_stem().and_then(|n| n.to_str())
+                                        == Some(basename)
+                            })
+                            .cloned()
+                    },
+                )
+            });
 
         if let Some(data) = existing_data {
             // Sanitize the alias (replace hyphens with underscores for Tera)

@@ -318,9 +318,6 @@ async fn test_install_local_dependencies() {
     assert!(local_utils_path.exists(), "Local utils should be at {:?}", local_utils_path);
 }
 
-// TODO: Implement --dry-run flag for install command
-// Would show what would be installed without actually installing
-
 /// Test install with verbose output
 #[tokio::test]
 async fn test_install_verbose() {
@@ -436,9 +433,3 @@ async fn test_install_corrupted_lockfile() {
         output.stderr
     );
 }
-
-// TODO: Implement version conflict detection in resolver
-// Would detect when multiple dependencies require incompatible versions of the same resource
-
-// TODO: Implement --no-progress flag for install command
-// Would disable progress bars for CI/automated environments

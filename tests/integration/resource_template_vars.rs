@@ -4,8 +4,85 @@
 //! is specialized for different languages using template_vars, and its transitive dependencies
 //! should be resolved using those resource-specific vars, not the global project config.
 
-use crate::common::TestProject;
+use crate::common::{ManifestBuilder, TestProject};
 use anyhow::Result;
+
+/// Regression test: ensure snippets referenced both directly (via manifest key)
+/// and transitively (via path-prefixed dependency refs) still resolve to the
+/// same template alias (`agpm.deps.snippets.best_practices`) after installation.
+#[tokio::test]
+async fn test_transitive_snippet_alias_resolves_with_direct_manifest_entry() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let community_repo = project.create_source_repo("community").await?;
+
+    community_repo
+        .add_resource(
+            "snippets",
+            "rust-best-practices",
+            "# Rust Best Practices\n- Use Result\n- Embrace ownership\n",
+        )
+        .await?;
+
+    community_repo
+        .add_resource(
+            "agents",
+            "rust-dev",
+            r#"---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - name: best_practices
+      path: ../snippets/rust-best-practices.md
+      install: false
+---
+# Rust Developer
+
+{{ agpm.deps.snippets.best_practices.content }}
+"#,
+        )
+        .await?;
+
+    community_repo.commit_all("Add rust resources with shared snippet")?;
+    community_repo.tag_version("v1.0.0")?;
+
+    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_snippet("rust-best-practices", |d| {
+            d.source("community").path("snippets/rust-best-practices.md").version("v1.0.0")
+        })
+        .add_agent("rust-dev", |d| {
+            d.source("community").path("agents/rust-dev.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        output.success,
+        "Install should succeed. Stderr:\n{}\nStdout:\n{}",
+        output.stderr, output.stdout
+    );
+    assert!(
+        !output.stderr.contains("agpm.deps.snippets.best_practices"),
+        "Install stderr should not contain missing best_practices alias error:\n{}",
+        output.stderr
+    );
+
+    let agent_path = project.project_path().join(".claude/agents/rust-dev.md");
+    let agent_content = tokio::fs::read_to_string(&agent_path).await?;
+    assert!(
+        agent_content.contains("Use Result"),
+        "Rendered agent should include snippet content. File:\n{}",
+        agent_content
+    );
+
+    Ok(())
+}
 
 /// Test that resource-specific template_vars override global config for transitive dependencies
 #[tokio::test]
