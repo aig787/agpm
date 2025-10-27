@@ -453,45 +453,22 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                 for dep_spec in deps_array {
                                     // Canonicalize the frontmatter path to match lockfile format
                                     // Frontmatter paths are relative to the resource file itself
-                                    // We need to resolve them relative to project/source root
+                                    // We need to resolve them relative to source root (not filesystem paths!)
                                     let canonical_path = if dep_spec.path.starts_with("../")
                                         || dep_spec.path.starts_with("./")
                                     {
-                                        // Relative path - resolve it relative to the resource file
-                                        let parent_dir = source_path
+                                        // Relative path - resolve using source-relative paths, not filesystem paths
+                                        // Get the parent directory of the resource within the source
+                                        let resource_parent = std::path::Path::new(&resource.path)
                                             .parent()
                                             .unwrap_or_else(|| std::path::Path::new(""));
-                                        let resolved = parent_dir.join(&dep_spec.path);
 
-                                        // Manually resolve .. components using path components
-                                        let project_root = self.project_dir();
-                                        let project_relative = resolved
-                                            .strip_prefix(project_root)
-                                            .unwrap_or(&resolved);
+                                        // Join with the relative dependency path (still may have ..)
+                                        let joined = resource_parent.join(&dep_spec.path);
 
-                                        // Manually normalize by processing components
-                                        let mut components = Vec::new();
-                                        for component in project_relative.components() {
-                                            match component {
-                                                std::path::Component::ParentDir => {
-                                                    components.pop();
-                                                }
-                                                std::path::Component::CurDir => {}
-                                                _ => components.push(component),
-                                            }
-                                        }
-
-                                        let normalized = components
-                                            .iter()
-                                            .map(|c| c.as_os_str().to_string_lossy())
-                                            .collect::<Vec<_>>()
-                                            .join("/");
-
-                                        if normalized.is_empty() {
-                                            dep_spec.path.clone()
-                                        } else {
-                                            normalized
-                                        }
+                                        // Normalize to remove .. and . components, then format for storage
+                                        let normalized = crate::utils::normalize_path(&joined);
+                                        crate::utils::normalize_path_for_storage(&normalized)
                                     } else {
                                         // Absolute or already canonical
                                         dep_spec.path.clone()
@@ -571,35 +548,22 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                             for dep_spec in deps_array {
                                 // Canonicalize the frontmatter path to match lockfile format
                                 // Frontmatter paths are relative to the resource file itself
-                                // We need to resolve them relative to project/source root
+                                // We need to resolve them relative to source root (not filesystem paths!)
                                 let canonical_path = if dep_spec.path.starts_with("../")
                                     || dep_spec.path.starts_with("./")
                                 {
-                                    // Relative path - resolve it relative to the resource file
-                                    let parent_dir = source_path
+                                    // Relative path - resolve using source-relative paths, not filesystem paths
+                                    // Get the parent directory of the resource within the source
+                                    let resource_parent = std::path::Path::new(&resource.path)
                                         .parent()
                                         .unwrap_or_else(|| std::path::Path::new(""));
-                                    let resolved = parent_dir.join(&dep_spec.path);
 
-                                    // Canonicalize to resolve .. components, then convert to project-relative
-                                    let project_root = self.project_dir();
-                                    if let Ok(canonical) = resolved.canonicalize() {
-                                        canonical
-                                            .strip_prefix(project_root)
-                                            .ok()
-                                            .and_then(|p| p.to_str())
-                                            .map(std::string::ToString::to_string)
-                                            .unwrap_or_else(|| dep_spec.path.clone())
-                                    } else {
-                                        // File doesn't exist yet, manually normalize path
-                                        crate::utils::normalize_path_for_storage(
-                                            resolved
-                                                .strip_prefix(project_root)
-                                                .ok()
-                                                .and_then(|p| p.to_str())
-                                                .unwrap_or(&dep_spec.path),
-                                        )
-                                    }
+                                    // Join with the relative dependency path (still may have ..)
+                                    let joined = resource_parent.join(&dep_spec.path);
+
+                                    // Normalize to remove .. and . components, then format for storage
+                                    let normalized = crate::utils::normalize_path(&joined);
+                                    crate::utils::normalize_path_for_storage(&normalized)
                                 } else {
                                     // Absolute or already canonical
                                     dep_spec.path.clone()
@@ -731,7 +695,28 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             let name = &dep_ref.path;
 
             // Get the dependency spec for this reference (if declared in frontmatter)
-            let dep_spec = dependency_specs.get(&dep_id);
+            // NOTE: dependency_specs keys are normalized (no ../ segments) because
+            // extract_dependency_specs normalizes paths using Path component iteration.
+            // We must normalize the lookup key to match.
+            let dep_spec = {
+                // Normalize the path to match what extract_dependency_specs stored
+                let normalized_path = {
+                    let path = std::path::Path::new(&dep_ref.path);
+                    let normalized = crate::utils::normalize_path(path);
+                    normalized.to_string_lossy().to_string()
+                };
+
+                // Create a normalized dep_ref for cache lookup only
+                let normalized_dep_ref = LockfileDependencyRef::new(
+                    dep_ref.source.clone(),
+                    dep_ref.resource_type,
+                    normalized_path,
+                    dep_ref.version.clone(),
+                );
+                let normalized_dep_id = normalized_dep_ref.to_string();
+
+                dependency_specs.get(&normalized_dep_id)
+            };
 
             tracing::debug!(
                 "Looking up dep_spec for dep_id='{}', found={}, available_keys={:?}",

@@ -277,7 +277,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-doc-advanced"
 path = "local-deps/snippets/agents/rust-doc-advanced.md"
-checksum = "sha256:792e1467aa75c3e39ae9e9159997944e7f2d457472915343c28d1da7f5c94b63"
+checksum = "sha256:eb369072eed53abd23238e58aa95253ca376faa70952b800ff267ae4e225bd93"
 context_checksum = "sha256:cebc3b18228ac5d50a1ae1291677edf878bc15d9546eac750732bd3e5669ba69"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
 dependencies = [
@@ -293,7 +293,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-doc-advanced"
 path = "local-deps/snippets/agents/rust-doc-advanced.md"
-checksum = "sha256:792e1467aa75c3e39ae9e9159997944e7f2d457472915343c28d1da7f5c94b63"
+checksum = "sha256:eb369072eed53abd23238e58aa95253ca376faa70952b800ff267ae4e225bd93"
 context_checksum = "sha256:2cd7e3b0eb4897b0a92a4cefd456e2cc5b83ae25ffd2d0b1e3386ce63c5f25f8"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
 dependencies = [
@@ -309,7 +309,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-doc-standard"
 path = "local-deps/snippets/agents/rust-doc-standard.md"
-checksum = "sha256:cdf17e11c2e93a2a411e3f2a0d896fd698009b25ae67947d988f0b6b476a8e16"
+checksum = "sha256:b7b4671161c528af2bf8831f026314957bfd658347797df526fa7fcd581e9260"
 context_checksum = "sha256:51c08a2d917fce1df891299c39d2c66baffd3695c43cf9929db9dc6c1f710a94"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-standard.md"
 dependencies = [
@@ -325,7 +325,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-doc-standard"
 path = "local-deps/snippets/agents/rust-doc-standard.md"
-checksum = "sha256:cdf17e11c2e93a2a411e3f2a0d896fd698009b25ae67947d988f0b6b476a8e16"
+checksum = "sha256:b7b4671161c528af2bf8831f026314957bfd658347797df526fa7fcd581e9260"
 context_checksum = "sha256:7cde7fcb025dfb7e7d3be73e4e2917297e3807acbd024d157bbdef10df6fa35e"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-standard.md"
 dependencies = [
@@ -341,7 +341,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-expert"
 path = "local-deps/snippets/agents/rust-expert.md"
-checksum = "sha256:6d9d9ec47f5ccd22f1ad196f00f8796fbf300cc79d531503b47c82c067fa64ac"
+checksum = "sha256:691317f0512f8698334f0f629f5277d8c30d52ef8ec2a46d5b08c93c2e477b12"
 context_checksum = "sha256:8f2721b74321fc8bfcf352dcabd6000f643fc689b9835185696841a0026237a8"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert.md"
 dependencies = [
@@ -357,7 +357,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-expert-advanced"
 path = "local-deps/snippets/agents/rust-expert-advanced.md"
-checksum = "sha256:d0c166ec4e1c803d43c6093278999867a54ae4a64540d34f7476c8fb2e6d651d"
+checksum = "sha256:d6583cb4e6190e11d239afe11709b9c1f7c464583ad31213320a1338b7713278"
 context_checksum = "sha256:525f71bdca34dd8d41583c2461cc52975e69f9b777b47491858ce1463993c7e6"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
 dependencies = [
@@ -373,7 +373,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-expert-advanced"
 path = "local-deps/snippets/agents/rust-expert-advanced.md"
-checksum = "sha256:d0c166ec4e1c803d43c6093278999867a54ae4a64540d34f7476c8fb2e6d651d"
+checksum = "sha256:d6583cb4e6190e11d239afe11709b9c1f7c464583ad31213320a1338b7713278"
 context_checksum = "sha256:5fa7bee1c384dc798e1b7ccb54543515ef4c0c9738d4b4768c878b0a144d4f49"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
 dependencies = [
@@ -389,7 +389,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-expert-standard"
 path = "local-deps/snippets/agents/rust-expert-standard.md"
-checksum = "sha256:e0276d3037ec795eae9141ece8d9eebf750609414e3cc58cdfff12f59e74c589"
+checksum = "sha256:bb2bb947bcee05ce6aab9cd9d798e7f65524ea883dd18a92dd4d645157900bae"
 context_checksum = "sha256:4de01485650b1ab8e74050349649a3345195c1a629a0608115d11811755aa9c1"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-standard.md"
 dependencies = [
@@ -405,7 +405,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-expert-standard"
 path = "local-deps/snippets/agents/rust-expert-standard.md"
-checksum = "sha256:e0276d3037ec795eae9141ece8d9eebf750609414e3cc58cdfff12f59e74c589"
+checksum = "sha256:bb2bb947bcee05ce6aab9cd9d798e7f65524ea883dd18a92dd4d645157900bae"
 context_checksum = "sha256:ea05ca7371addeaef65ce8a842297b9a1c23da46286c27a8ebba48c53667bcf2"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-standard.md"
 dependencies = [
@@ -421,7 +421,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-linting-advanced"
 path = "local-deps/snippets/agents/rust-linting-advanced.md"
-checksum = "sha256:349851214d8819305be176039b35817933250922557dd275f3b32193df7a84e3"
+checksum = "sha256:22d92b282e8d8000b14aa68f6b449e92ef7f3a3fd122d472ff82d244a6e9a420"
 context_checksum = "sha256:f6fdc605c01928611f0849f16a45ff32229696885e059d27708b618b38502add"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
 dependencies = [
@@ -437,7 +437,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-linting-advanced"
 path = "local-deps/snippets/agents/rust-linting-advanced.md"
-checksum = "sha256:349851214d8819305be176039b35817933250922557dd275f3b32193df7a84e3"
+checksum = "sha256:22d92b282e8d8000b14aa68f6b449e92ef7f3a3fd122d472ff82d244a6e9a420"
 context_checksum = "sha256:60df6d7be7239616f83b84832f62041f8c7f248a3675730d1049eb091d8ad632"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
 dependencies = [
@@ -453,7 +453,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-linting-standard"
 path = "local-deps/snippets/agents/rust-linting-standard.md"
-checksum = "sha256:2679fb86c2521cd34927523b33075fbeec6a894177cf7ce5bf7c3a8f1b974b1e"
+checksum = "sha256:bcca705f57b55a7196df5329588583f51fc27a0c439e8b7b651f22bb7776db96"
 context_checksum = "sha256:a0ff824f935bad99b79a86548e73686af17919841ddcfd05f3b5b01de51827da"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-standard.md"
 dependencies = [
@@ -469,7 +469,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-linting-standard"
 path = "local-deps/snippets/agents/rust-linting-standard.md"
-checksum = "sha256:2679fb86c2521cd34927523b33075fbeec6a894177cf7ce5bf7c3a8f1b974b1e"
+checksum = "sha256:bcca705f57b55a7196df5329588583f51fc27a0c439e8b7b651f22bb7776db96"
 context_checksum = "sha256:6321a68f9b21bb02678861a444eb6fc9e9de295c1ff63aa7ad38f44c4e5a34cf"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-standard.md"
 dependencies = [
@@ -485,7 +485,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-test-advanced"
 path = "local-deps/snippets/agents/rust-test-advanced.md"
-checksum = "sha256:d10c6242bfebdbcd4acc705acfb5c9304bd67617b8f67f1d07f08c6881f021dd"
+checksum = "sha256:86a110ab258eafc5d93b1ab0b8f7a17ee158ee3d2f84810d42e948308de44d91"
 context_checksum = "sha256:093b61dfbacd1279b1f74583b62cde0ff01daf40da640b6752731940b33aee54"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-advanced.md"
 dependencies = [
@@ -501,7 +501,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-test-advanced"
 path = "local-deps/snippets/agents/rust-test-advanced.md"
-checksum = "sha256:d10c6242bfebdbcd4acc705acfb5c9304bd67617b8f67f1d07f08c6881f021dd"
+checksum = "sha256:86a110ab258eafc5d93b1ab0b8f7a17ee158ee3d2f84810d42e948308de44d91"
 context_checksum = "sha256:a96e96a372046f1624424821ea8c70e0869cec73c82ce1e4a3c62640825d4423"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-advanced.md"
 dependencies = [
@@ -517,7 +517,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-test-standard"
 path = "local-deps/snippets/agents/rust-test-standard.md"
-checksum = "sha256:4c469d674df8c0d7fb065d0e7fb26278198f18cb5bf03a47b0a6ef59580e1a24"
+checksum = "sha256:cf0167185b4e08d17d4e4196f42941c445b9ce0a9122ba2ae03b6a051e7269a1"
 context_checksum = "sha256:f8b12a143f20b90aebed24c043f3aca2cb01e942ed1262e911cb015a3fb06375"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-standard.md"
 dependencies = [
@@ -533,7 +533,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-test-standard"
 path = "local-deps/snippets/agents/rust-test-standard.md"
-checksum = "sha256:4c469d674df8c0d7fb065d0e7fb26278198f18cb5bf03a47b0a6ef59580e1a24"
+checksum = "sha256:cf0167185b4e08d17d4e4196f42941c445b9ce0a9122ba2ae03b6a051e7269a1"
 context_checksum = "sha256:c18fdf8594ce5742180e0ea54df29af28d17a1843ae1497350ef586fa4d52883"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-standard.md"
 dependencies = [
@@ -549,7 +549,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-troubleshooter-advanced"
 path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-checksum = "sha256:69b6fff9f95cbe2b5d7bacd9c10384abcfdfa9435fb968d1781aadbf4005b7a1"
+checksum = "sha256:10bb70f827c6b02457d976f3d5d97ba8d5679693010cd2785a2f1a85888e8f1b"
 context_checksum = "sha256:91bb874f86896f0d1530797ed3ccce03e47170b9066bf277d2f982a584b1d225"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
 dependencies = [
@@ -565,7 +565,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-troubleshooter-advanced"
 path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-checksum = "sha256:69b6fff9f95cbe2b5d7bacd9c10384abcfdfa9435fb968d1781aadbf4005b7a1"
+checksum = "sha256:10bb70f827c6b02457d976f3d5d97ba8d5679693010cd2785a2f1a85888e8f1b"
 context_checksum = "sha256:9e9fd23011e0f1998827aa3bcf675daa22734fd4ddb95910f0499959ac8e0c43"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
 dependencies = [
@@ -581,7 +581,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-troubleshooter-standard"
 path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
-checksum = "sha256:4201a2a56b1675d4709a1f663e912430f3ab6c19d7a7e7a354df923ea48f7860"
+checksum = "sha256:9ee9bc2500b33a814c19746c0b2eed240c2abb171c4c38790cfe42d8932e8d42"
 context_checksum = "sha256:5bb41cb522c410ae8324d147a3479d23c2f2441a503cc8a6a6f36fd2476c1e6a"
 installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
 dependencies = [
@@ -597,7 +597,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/agents/rust-troubleshooter-standard"
 path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
-checksum = "sha256:4201a2a56b1675d4709a1f663e912430f3ab6c19d7a7e7a354df923ea48f7860"
+checksum = "sha256:9ee9bc2500b33a814c19746c0b2eed240c2abb171c4c38790cfe42d8932e8d42"
 context_checksum = "sha256:25ebec0098977015beaa4f9042a1c1f5709429e4fa513abed3bc1c86a542a599"
 installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
 dependencies = [
@@ -757,7 +757,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:13d797a0deba09341663e5a2982f90ce54609b9f690b53baf85bc91e4ccf7f87"
+checksum = "sha256:2e43b95ed85626263b6290c5c1c09bc2988f05309cf2e262e5354eab6049868b"
 context_checksum = "sha256:8b5a9f2c0dbade570c709d988a174cbf6a03b7aaf561633048eb47c72ddd3a26"
 installed_at = ".agpm/snippets/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
@@ -770,7 +770,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:13d797a0deba09341663e5a2982f90ce54609b9f690b53baf85bc91e4ccf7f87"
+checksum = "sha256:2e43b95ed85626263b6290c5c1c09bc2988f05309cf2e262e5354eab6049868b"
 context_checksum = "sha256:4b1abcac25a92325de7e934f86c882f9a1f1a766dcfad66ba406dfa3a8c4250a"
 installed_at = ".claude/snippets/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]

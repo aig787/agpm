@@ -436,3 +436,124 @@ language = "java"
 
     Ok(())
 }
+
+/// Regression test: tool overrides should work with relative dependency paths
+///
+/// This tests that when a resource declares a dependency with:
+/// - A relative path (../snippets/...)
+/// - An explicit tool override (tool = "agpm")
+///
+/// The tool override is preserved during template rendering, and the snippet
+/// installs to the correct tool directory (.agpm/ not .claude/).
+///
+/// Bug: Path normalization mismatch between extract_dependency_specs (normalizes)
+/// and build_dependencies_data (uses raw lockfile paths) causes cache lookup to fail,
+/// losing the tool override and causing the dependency to be dropped.
+#[tokio::test]
+async fn test_tool_override_preserved_with_relative_paths() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let community_repo = project.create_source_repo("community").await?;
+
+    // Create a snippet in a subdirectory
+    community_repo
+        .add_resource(
+            "snippets/agents",
+            "github-actions-expert",
+            "# GitHub Actions Expert\n- Use workflow best practices\n- Cache dependencies\n",
+        )
+        .await?;
+
+    // Create an agent that declares the snippet as a dependency with:
+    // 1. Relative path (../snippets/...)
+    // 2. Explicit tool override (tool: agpm)
+    // 3. Template reference to snippet content
+    community_repo
+        .add_resource(
+            "agents",
+            "devops-agent",
+            r#"---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - path: ../snippets/agents/github-actions-expert.md
+      tool: agpm
+      name: github_actions_expert
+      install: false
+---
+# DevOps Agent
+
+## GitHub Actions Best Practices
+
+{{ agpm.deps.snippets.github_actions_expert.content }}
+"#,
+        )
+        .await?;
+
+    community_repo.commit_all("Add agent with relative dependency and tool override")?;
+    community_repo.tag_version("v1.0.0")?;
+
+    let source_url = community_repo.bare_file_url(project.sources_path())?;
+    let manifest = ManifestBuilder::new()
+        .add_source("community", &source_url)
+        .add_agent("devops-agent", |d| {
+            d.source("community").path("agents/devops-agent.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Run install
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        output.success,
+        "Install should succeed. Stderr:\n{}\nStdout:\n{}",
+        output.stderr, output.stdout
+    );
+
+    // Verify the snippet was NOT dropped during template rendering
+    assert!(
+        !output.stderr.contains("agpm.deps.snippets.github_actions_expert"),
+        "Should not have template error about missing snippet. Stderr:\n{}",
+        output.stderr
+    );
+
+    // Verify the agent was rendered with the snippet content
+    let agent_path = project.project_path().join(".claude/agents/devops-agent.md");
+    let agent_content = tokio::fs::read_to_string(&agent_path).await?;
+
+    assert!(
+        agent_content.contains("Use workflow best practices"),
+        "Agent should contain snippet content. File:\n{}",
+        agent_content
+    );
+    assert!(
+        agent_content.contains("Cache dependencies"),
+        "Agent should contain full snippet content. File:\n{}",
+        agent_content
+    );
+    assert!(
+        !agent_content.contains("{{"),
+        "Agent should not have unrendered template syntax. File:\n{}",
+        agent_content
+    );
+
+    // Verify the snippet itself was NOT installed (install: false)
+    let snippet_claude_path =
+        project.project_path().join(".claude/snippets/agents/github-actions-expert.md");
+    let snippet_agpm_path =
+        project.project_path().join(".agpm/snippets/agents/github-actions-expert.md");
+
+    assert!(
+        !snippet_claude_path.exists(),
+        "Snippet should not be installed to .claude/ (wrong tool)"
+    );
+    assert!(
+        !snippet_agpm_path.exists(),
+        "Snippet should not be installed to .agpm/ (install: false)"
+    );
+
+    Ok(())
+}
