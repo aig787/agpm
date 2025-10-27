@@ -88,7 +88,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use crate::cache::Cache;
@@ -121,7 +121,7 @@ struct ListItem {
     /// The tool ("claude-code", "opencode", "agpm", or custom)
     tool: Option<String>,
     /// Patches that were applied to this resource
-    applied_patches: std::collections::HashMap<String, toml::Value>,
+    applied_patches: std::collections::BTreeMap<String, toml::Value>,
 }
 
 /// Command to list installed Claude Code resources.
@@ -431,7 +431,7 @@ impl ListCommand {
                                     .map(|s| s.to_string())
                                     .unwrap_or_else(|| manifest.get_default_tool(*resource_type)),
                             ),
-                            applied_patches: std::collections::HashMap::new(),
+                            applied_patches: std::collections::BTreeMap::new(),
                         });
                     }
                 }
@@ -455,7 +455,7 @@ impl ListCommand {
                         tool: Some(mcp_dep.get_tool().map(|s| s.to_string()).unwrap_or_else(
                             || manifest.get_default_tool(crate::core::ResourceType::McpServer),
                         )),
-                        applied_patches: std::collections::HashMap::new(),
+                        applied_patches: std::collections::BTreeMap::new(),
                     });
                 }
             }
@@ -902,7 +902,7 @@ impl ListCommand {
     }
 
     /// Fallback patch display without original values
-    fn print_patches_fallback(&self, patches: &HashMap<String, toml::Value>) {
+    fn print_patches_fallback(&self, patches: &BTreeMap<String, toml::Value>) {
         let mut patch_keys: Vec<_> = patches.keys().collect();
         patch_keys.sort();
         for key in patch_keys {
@@ -1208,7 +1208,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1228,7 +1228,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1249,7 +1249,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1643,7 +1643,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1663,7 +1663,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1683,7 +1683,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1715,7 +1715,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1743,7 +1743,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "alpha".to_string(),
@@ -1755,7 +1755,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1782,7 +1782,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1794,7 +1794,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1821,7 +1821,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1833,7 +1833,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test3".to_string(),
@@ -1845,7 +1845,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1873,7 +1873,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("agpm".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
             ListItem {
                 name: "test2".to_string(),
@@ -1885,7 +1885,7 @@ mod tests {
                 checksum: None,
                 resolved_commit: None,
                 tool: Some("claude-code".to_string()),
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
             },
         ];
 
@@ -1913,7 +1913,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };

@@ -27,38 +27,33 @@ async fn test_install_auto_updates_missing_dependency() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Now remove one agent from lockfile to simulate staleness
-    let lockfile = project.read_lockfile().await?;
+    let mut lockfile = project.load_lockfile()?;
 
-    // Find and remove the agent-two section (search by manifest_alias for direct dependencies)
-    let alias_marker = "manifest_alias = \"agent-two\"";
-    if let Some(alias_pos) = lockfile.find(alias_marker) {
-        // Find the start of this [[agents]] entry (search backwards)
-        let agents_marker = "[[agents]]";
-        let section_start = lockfile[..alias_pos]
-            .rfind(agents_marker)
-            .expect("Should find [[agents]] marker before manifest_alias");
+    // Remove agent-two by filtering
+    let original_count = lockfile.agents.len();
+    lockfile.agents.retain(|agent| agent.manifest_alias.as_deref() != Some("agent-two"));
 
-        // Find the end of this agent entry (next [[agents]] or end of file)
-        let end_pos = lockfile[section_start + agents_marker.len()..]
-            .find("[[agents]]")
-            .map(|p| section_start + agents_marker.len() + p)
-            .unwrap_or(lockfile.len());
+    assert_eq!(
+        lockfile.agents.len(),
+        original_count - 1,
+        "Should have removed agent-two from lockfile"
+    );
 
-        // Remove this entire agent section
-        let modified_lockfile = format!("{}{}", &lockfile[..section_start], &lockfile[end_pos..]);
-        project.write_lockfile(&modified_lockfile).await?;
-    } else {
-        panic!("Could not find agent-two in lockfile to remove");
-    }
+    // Save the modified lockfile
+    let lockfile_path = project.project_path().join("agpm.lock");
+    lockfile.save(&lockfile_path)?;
 
     // Install should auto-update the lockfile (Cargo-style behavior)
     let output = project.run_agpm(&["install", "--quiet"])?;
     assert!(output.success, "Install should auto-update lockfile: {}", output.stderr);
 
     // Verify lockfile now contains agent-two again
-    let updated_lockfile = project.read_lockfile().await?;
+    let updated_lockfile = project.load_lockfile()?;
     assert!(
-        updated_lockfile.contains("agent-two"),
+        updated_lockfile
+            .agents
+            .iter()
+            .any(|agent| { agent.manifest_alias.as_deref() == Some("agent-two") }),
         "Lockfile should have been auto-updated with missing dependency"
     );
 
@@ -285,19 +280,15 @@ async fn test_install_detects_duplicate_entries() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Read the valid lockfile and manually duplicate an entry
-    let lockfile = project.read_lockfile().await?;
+    let mut lockfile = project.load_lockfile()?;
 
-    // Find the agents section and duplicate the first agent entry
-    if let Some(agents_pos) = lockfile.find("[[agents]]") {
-        let agent_section = &lockfile[agents_pos..];
+    // Duplicate the first agent entry (if any)
+    if let Some(first_agent) = lockfile.agents.first().cloned() {
+        lockfile.agents.push(first_agent);
 
-        // Find the end of this agent entry
-        let next_section = agent_section[11..].find("[[").unwrap_or(agent_section.len() - 11) + 11;
-        let agent_entry = &agent_section[..next_section];
-
-        // Add a duplicate at the end
-        let corrupted_lockfile = format!("{}\n{}", lockfile.trim(), agent_entry);
-        project.write_lockfile(&corrupted_lockfile).await?;
+        // Save the corrupted lockfile
+        let lockfile_path = project.project_path().join("agpm.lock");
+        lockfile.save(&lockfile_path)?;
     } else {
         panic!("Could not find agents section in lockfile");
     }
@@ -380,9 +371,9 @@ async fn test_install_detects_tool_field_change() -> Result<()> {
     assert!(output.success, "Initial install failed: {}", output.stderr);
 
     // Verify the lockfile has tool field explicitly set to claude-code
-    let lockfile = project.read_lockfile().await?;
+    let lockfile = project.load_lockfile()?;
     assert!(
-        lockfile.contains("tool = \"claude-code\""),
+        lockfile.agents.iter().any(|agent| { agent.tool.as_deref() == Some("claude-code") }),
         "Lockfile should include tool field for clarity"
     );
 
@@ -418,11 +409,10 @@ async fn test_install_detects_tool_field_change() -> Result<()> {
     );
 
     // Verify the lockfile now has tool = "opencode"
-    let updated_lockfile = project.read_lockfile().await?;
+    let updated_lockfile = project.load_lockfile()?;
     assert!(
-        updated_lockfile.contains("tool = \"opencode\""),
-        "Lockfile should have been updated to tool = 'opencode', but got:\n{}",
-        updated_lockfile
+        updated_lockfile.agents.iter().any(|agent| { agent.tool.as_deref() == Some("opencode") }),
+        "Lockfile should have been updated to tool = 'opencode'"
     );
 
     // Revert to claude-code tool and reinstall

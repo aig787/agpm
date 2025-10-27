@@ -926,7 +926,7 @@ test-agent = "../test/agent.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1068,7 +1068,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1089,7 +1089,7 @@ test-snippet = { source = "test-source", path = "snippets/test.md", version = "v
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1180,7 +1180,7 @@ test-hook = "../test/hook.json"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1199,7 +1199,7 @@ test-hook = "../test/hook.json"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1275,7 +1275,7 @@ test-snippet = "../local/snippet.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1294,7 +1294,7 @@ test-snippet = "../local/snippet.md"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1479,7 +1479,7 @@ test-script = "../test/script.sh"
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });

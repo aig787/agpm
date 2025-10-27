@@ -1556,7 +1556,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1869,7 +1869,7 @@ mod tests {
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
                 context_checksum: None,
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
@@ -2904,7 +2904,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3406,7 +3406,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3610,7 +3610,7 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3784,7 +3784,7 @@ See [helper](.agpm/snippets/helper.md) for details.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3852,7 +3852,7 @@ Also check `.claude/nonexistent.md`.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3922,7 +3922,7 @@ Visit http://example.com for more info.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -3994,7 +3994,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -4065,7 +4065,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -4083,7 +4083,7 @@ Inline code `example.md` should also be ignored.
             tool: None,
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });

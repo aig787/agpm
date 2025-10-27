@@ -13,40 +13,69 @@
 //!
 //! # Test Organization
 //!
-//! Tests are organized by functionality area:
-//! - **cache_behavior**: Cache and worktree management
-//! - **conflict_detection**: Version conflict detection
-//! - **content_filter**: Content filter (`{{ 'path' | content }}`) functionality
-//! - **cross_platform**: Cross-platform compatibility (Windows, macOS, Linux)
-//! - **deploy**: Deployment and installation workflows
-//! - **deps_refresh**: Dependency refresh and update logic
-//! - **direct_overrides_transitive**: Direct manifest dependencies overriding transitive ones
-//! - **error_scenarios**: Error handling and edge cases
-//! - **file_url**: file:// URL support
-//! - **gitignore**: .gitignore management
-//! - **hooks**: Claude Code hooks integration
+//! Tests are organized into logical subdirectories by functionality area:
+//!
+//! ## Transitive Dependencies (`transitive/`)
+//! - **basic**: Basic transitive dependency resolution, diamond patterns, cycles
+//! - **complex**: Complex dependency graphs and scenarios
+//! - **cross_type**: Cross-type and cross-source transitive dependencies
+//! - **local**: Local file transitive dependency resolution
+//! - **merged**: Dependency merging and deduplication
+//! - **overrides**: Direct manifest dependencies overriding transitive ones
+//! - **patterns**: Pattern expansion in transitive dependencies
+//! - **versions**: Version conflict and metadata resolution
+//!
+//! ## Lockfile Management (`lockfile/`)
+//! - **checksums**: Checksum computation and validation
+//! - **determinism**: Deterministic lockfile generation
+//! - **migration**: Migration from older lockfile formats
+//! - **stability**: Lockfile stability across operations
+//! - **staleness**: Lockfile staleness detection
+//!
+//! ## Installation Workflows (`install/`)
+//! - **basic**: Basic installation workflows (formerly deploy.rs)
+//! - **cleanup**: Artifact cleanup and removal
 //! - **incremental_add**: Incremental dependency addition
 //! - **install_field**: Install field and content embedding functionality
-//! - **list**: List command functionality
-//! - **lockfile_staleness**: Lockfile staleness detection
-//! - **max_parallel_flag**: --max-parallel flag behavior
 //! - **multi_artifact**: Multiple artifact types
 //! - **multi_resource**: Multiple resource management
+//!
+//! ## Template Rendering (`templating/`)
+//! - **basic**: Basic template rendering
+//! - **content_filter**: Content filter (`{{ 'path' | content }}`) functionality
+//! - **project_vars**: Project-level template variables in transitive dependencies
+//! - **resource_vars**: Resource-specific template variables with transitive dependencies
+//!
+//! ## Version Management (`versioning/`)
+//! - **basic**: Version constraint handling
 //! - **outdated**: Outdated dependency detection
-//! - **patch_integration**: Patch/override functionality
-//! - **pattern**: Pattern-based dependency installation
-//! - **project_template_vars**: Project-level template variables in transitive dependencies
-//! - **resource_template_vars**: Resource-specific template variables with transitive dependencies
-//! - **transitive_basic**: Basic transitive dependency resolution, diamond patterns, cycles
-//! - **transitive_cross_type**: Cross-type and cross-source transitive dependencies
-//! - **transitive_local**: Local file transitive dependency resolution
-//! - **transitive_patterns**: Pattern expansion in transitive dependencies
-//! - **transitive_versions**: Version conflict and metadata resolution
+//! - **prefixed**: Prefixed version tags (monorepo-style)
+//! - **progress**: Update progress reporting
+//!
+//! ## CLI Commands (`commands/`)
+//! - **config**: Configuration management (test_config)
+//! - **list**: List command functionality
 //! - **tree**: Dependency tree visualization
-//! - **upd_progress**: Update progress reporting
 //! - **upgrade**: Self-upgrade functionality
 //! - **validate**: Validation command
-//! - **versioning**: Version constraint handling
+//!
+//! ## Pattern Matching (`patterns/`)
+//! - **basic**: Basic pattern matching and expansion
+//! - **refresh**: Dependency refresh and update logic
+//!
+//! ## Configuration (`config/`)
+//! - **conflicts**: Version conflict detection
+//! - **hooks**: Claude Code hooks integration
+//! - **patches**: Patch/override functionality
+//! - **tools**: Tool enable/disable management
+//!
+//! ## System Infrastructure (`system/`)
+//! - **cache**: Cache and worktree management
+//! - **cross_platform**: Cross-platform compatibility (Windows, macOS, Linux)
+//! - **errors**: Error handling and edge cases
+//! - **file_url**: file:// URL support
+//! - **gitignore**: .gitignore management
+//! - **parallelism**: --max-parallel flag behavior
 
 // Shared test utilities (from parent tests/ directory)
 #[path = "../common/mod.rs"]
@@ -57,44 +86,13 @@ mod fixtures;
 // Test configuration (used by versioning tests)
 mod test_config;
 
-// Integration tests
-mod cache_behavior;
-mod conflict_detection;
-mod content_filter;
-mod cross_platform;
-mod deploy;
-mod deps_refresh;
-mod determinism_tests;
-mod direct_overrides_transitive;
-mod error_scenarios;
-mod file_url;
-mod gitignore;
-mod hooks;
-mod incremental_add;
-mod install_field;
-mod list;
-mod lockfile_stability;
-mod lockfile_staleness;
-mod max_parallel_flag;
-mod multi_artifact;
-mod multi_resource;
-mod outdated;
-mod patch_integration;
-mod pattern;
-mod prefixed_versions;
-mod project_template_vars;
-mod resource_template_vars;
+// Test modules organized by functionality
+mod commands;
+mod config;
+mod install;
+mod lockfile;
+mod patterns;
+mod system;
 mod templating;
-mod test_merged_dependencies;
-mod test_transitive_deps_complex;
-mod tool_enable_disable;
-mod transitive_basic;
-mod transitive_cross_type;
-mod transitive_local;
-mod transitive_patterns;
-mod transitive_versions;
-mod tree;
-mod upd_progress;
-mod upgrade;
-mod validate;
+mod transitive;
 mod versioning;

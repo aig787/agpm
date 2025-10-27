@@ -61,7 +61,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use colored::Colorize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::cache::Cache;
@@ -486,7 +486,7 @@ impl TreeCommand {
     }
 
     /// Fallback patch display without original values for tree output
-    fn print_patches_fallback_tree(&self, patches: &HashMap<String, toml::Value>, prefix: &str) {
+    fn print_patches_fallback_tree(&self, patches: &BTreeMap<String, toml::Value>, prefix: &str) {
         let mut patch_keys: Vec<_> = patches.keys().collect();
         patch_keys.sort();
         for key in patch_keys {
@@ -639,7 +639,7 @@ struct TreeNode {
     dependencies: Vec<String>, // IDs of dependency nodes
     has_patches: bool,         // True if resource has applied patches
     installed_at: String,      // Installation path for detailed output
-    applied_patches: std::collections::HashMap<String, toml::Value>, // Patch field -> value mapping
+    applied_patches: std::collections::BTreeMap<String, toml::Value>, // Patch field -> value mapping
 }
 
 /// The complete dependency tree structure
@@ -1115,7 +1115,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node), "community:test-agent@v1.0.0");
 
@@ -1129,7 +1129,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_local_source), "local-deps:local-agent");
 
@@ -1143,7 +1143,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/local-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_local), "local-agent");
 
@@ -1157,7 +1157,7 @@ mod tests {
             dependencies: vec![],
             has_patches: false,
             installed_at: ".claude/agents/test-agent.md".to_string(),
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
         };
         assert_eq!(builder.node_id(&node_no_version), "community:test-agent");
     }

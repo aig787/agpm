@@ -394,7 +394,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -413,7 +413,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -443,7 +443,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -462,7 +462,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -482,7 +482,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -502,7 +502,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -522,7 +522,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -542,7 +542,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -562,7 +562,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -608,7 +608,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1063,7 +1063,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });

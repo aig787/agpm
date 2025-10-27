@@ -31,7 +31,7 @@
 //! let mut private_lock = PrivateLockFile::new();
 //!
 //! // Add private patches for a resource
-//! let patches = std::collections::HashMap::from([
+//! let patches = std::collections::BTreeMap::from([
 //!     ("temperature".to_string(), toml::Value::String("0.9".into())),
 //! ]);
 //! private_lock.add_private_patches("agents", "my-agent", patches);
@@ -43,7 +43,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const PRIVATE_LOCK_FILENAME: &str = "agpm.private.lock";
@@ -63,8 +63,8 @@ pub struct PrivateLockedResource {
     ///
     /// Contains the key-value pairs from `agpm.private.toml` that override
     /// the resource's default configuration or project-level patches.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub applied_patches: HashMap<String, toml::Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub applied_patches: BTreeMap<String, toml::Value>,
 }
 
 /// Private lockfile tracking user-level patches.
@@ -230,10 +230,10 @@ impl PrivateLockFile {
     ///
     /// ```rust,no_run
     /// use agpm_cli::lockfile::private_lock::PrivateLockFile;
-    /// use std::collections::HashMap;
+    /// use std::collections::BTreeMap;
     ///
     /// let mut lock = PrivateLockFile::new();
-    /// let patches = HashMap::from([
+    /// let patches = BTreeMap::from([
     ///     ("model".to_string(), toml::Value::String("haiku".into())),
     /// ]);
     /// lock.add_private_patches("agents", "my-agent", patches);
@@ -242,7 +242,7 @@ impl PrivateLockFile {
         &mut self,
         resource_type: &str,
         name: &str,
-        patches: HashMap<String, toml::Value>,
+        patches: BTreeMap<String, toml::Value>,
     ) {
         if patches.is_empty() {
             return;
@@ -273,7 +273,7 @@ impl PrivateLockFile {
         &self,
         resource_type: &str,
         name: &str,
-    ) -> Option<&HashMap<String, toml::Value>> {
+    ) -> Option<&BTreeMap<String, toml::Value>> {
         let vec = match resource_type {
             "agents" => &self.agents,
             "snippets" => &self.snippets,
@@ -339,6 +339,7 @@ fn serialize_private_lockfile_with_inline_patches(lockfile: &PrivateLockFile) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use tempfile::TempDir;
 
     #[test]
@@ -351,7 +352,7 @@ mod tests {
     #[test]
     fn test_add_private_patches() {
         let mut lock = PrivateLockFile::new();
-        let patches = HashMap::from([
+        let patches = BTreeMap::from([
             ("model".to_string(), toml::Value::String("haiku".into())),
             ("temp".to_string(), toml::Value::String("0.9".into())),
         ]);
@@ -366,7 +367,7 @@ mod tests {
     #[test]
     fn test_empty_patches_not_added() {
         let mut lock = PrivateLockFile::new();
-        lock.add_private_patches("agents", "my-agent", HashMap::new());
+        lock.add_private_patches("agents", "my-agent", BTreeMap::new());
         assert!(lock.is_empty());
     }
 
@@ -375,7 +376,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let mut lock = PrivateLockFile::new();
 
-        let patches = HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
+        let patches = BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
         lock.add_private_patches("agents", "test", patches);
 
         // Save
@@ -412,7 +413,7 @@ mod tests {
     #[test]
     fn test_get_patches() {
         let mut lock = PrivateLockFile::new();
-        let patches = HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
+        let patches = BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
         lock.add_private_patches("agents", "test", patches.clone());
 
         let retrieved = lock.get_patches("agents", "test");

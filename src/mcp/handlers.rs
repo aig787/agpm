@@ -163,8 +163,8 @@ impl McpHandler for ClaudeCodeMcpHandler {
                         apply_patches_to_content_with_origin(
                             &json_content,
                             &source_path.display().to_string(),
-                            project_patches.unwrap_or(&std::collections::HashMap::new()),
-                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                            project_patches.unwrap_or(&std::collections::BTreeMap::new()),
+                            private_patches.unwrap_or(&std::collections::BTreeMap::new()),
                         )?
                     } else {
                         (json_content, crate::manifest::patches::AppliedPatches::default())
@@ -308,8 +308,8 @@ impl McpHandler for OpenCodeMcpHandler {
                         apply_patches_to_content_with_origin(
                             &json_content,
                             &source_path.display().to_string(),
-                            project_patches.unwrap_or(&std::collections::HashMap::new()),
-                            private_patches.unwrap_or(&std::collections::HashMap::new()),
+                            project_patches.unwrap_or(&std::collections::BTreeMap::new()),
+                            private_patches.unwrap_or(&std::collections::BTreeMap::new()),
                         )?
                     } else {
                         (json_content, crate::manifest::patches::AppliedPatches::default())

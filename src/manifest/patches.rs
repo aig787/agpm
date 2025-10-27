@@ -17,7 +17,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Collection of patches for all resource types.
 ///
@@ -45,28 +45,28 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ManifestPatches {
     /// Patches for agent resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub agents: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agents: BTreeMap<String, PatchData>,
 
     /// Patches for snippet resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub snippets: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub snippets: BTreeMap<String, PatchData>,
 
     /// Patches for command resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub commands: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub commands: BTreeMap<String, PatchData>,
 
     /// Patches for script resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub scripts: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub scripts: BTreeMap<String, PatchData>,
 
     /// Patches for MCP server resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "mcp-servers")]
-    pub mcp_servers: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty", rename = "mcp-servers")]
+    pub mcp_servers: BTreeMap<String, PatchData>,
 
     /// Patches for hook resources.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub hooks: HashMap<String, PatchData>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub hooks: BTreeMap<String, PatchData>,
 }
 
 /// Arbitrary key-value pairs to override in a resource's metadata.
@@ -83,7 +83,7 @@ pub struct ManifestPatches {
 /// temperature = "0.7"
 /// max_tokens = 2000
 /// ```
-pub type PatchData = HashMap<String, toml::Value>;
+pub type PatchData = BTreeMap<String, toml::Value>;
 
 /// Result of applying patches, separated by origin.
 ///
@@ -95,13 +95,13 @@ pub type PatchData = HashMap<String, toml::Value>;
 ///
 /// ```no_run
 /// use agpm_cli::manifest::patches::AppliedPatches;
-/// use std::collections::HashMap;
+/// use std::collections::BTreeMap;
 ///
 /// let applied = AppliedPatches {
-///     project: HashMap::from([
+///     project: BTreeMap::from([
 ///         ("model".to_string(), toml::Value::String("haiku".into())),
 ///     ]),
-///     private: HashMap::from([
+///     private: BTreeMap::from([
 ///         ("temperature".to_string(), toml::Value::String("0.9".into())),
 ///     ]),
 /// };
@@ -112,9 +112,9 @@ pub type PatchData = HashMap<String, toml::Value>;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AppliedPatches {
     /// Patches from `agpm.toml` (project-level).
-    pub project: HashMap<String, toml::Value>,
+    pub project: BTreeMap<String, toml::Value>,
     /// Patches from `agpm.private.toml` (user-level).
-    pub private: HashMap<String, toml::Value>,
+    pub private: BTreeMap<String, toml::Value>,
 }
 
 impl AppliedPatches {
@@ -127,10 +127,10 @@ impl AppliedPatches {
     ///
     /// The lockfile doesn't distinguish between project and private patches,
     /// so this method places all patches in the `project` field.
-    pub fn from_lockfile_patches(patches: &HashMap<String, toml::Value>) -> Self {
+    pub fn from_lockfile_patches(patches: &BTreeMap<String, toml::Value>) -> Self {
         Self {
             project: patches.clone(),
-            private: HashMap::new(),
+            private: BTreeMap::new(),
         }
     }
 
@@ -164,7 +164,7 @@ pub struct MergedPatch {
     /// The merged patch data.
     pub data: PatchData,
     /// Origin of each field (for diagnostics).
-    pub field_origins: HashMap<String, PatchOrigin>,
+    pub field_origins: BTreeMap<String, PatchOrigin>,
 }
 
 impl ManifestPatches {
@@ -247,8 +247,8 @@ impl ManifestPatches {
 
     /// Helper to merge patches for a specific resource type.
     fn merge_resource_patches(
-        base: &mut HashMap<String, PatchData>,
-        overlay: &HashMap<String, PatchData>,
+        base: &mut BTreeMap<String, PatchData>,
+        overlay: &BTreeMap<String, PatchData>,
         resource_type: &str,
         conflicts: &mut Vec<PatchConflict>,
     ) {
@@ -284,7 +284,7 @@ impl ManifestPatches {
     pub fn get_for_resource_type(
         &self,
         resource_type: &str,
-    ) -> Option<&HashMap<String, PatchData>> {
+    ) -> Option<&BTreeMap<String, PatchData>> {
         match resource_type {
             "agents" => Some(&self.agents),
             "snippets" => Some(&self.snippets),
@@ -318,10 +318,10 @@ impl ManifestPatches {
 ///
 /// ```no_run
 /// use agpm_cli::manifest::patches::apply_patches_to_content;
-/// use std::collections::HashMap;
+/// use std::collections::BTreeMap;
 ///
 /// let content = "---\nmodel: claude-3-opus\n---\n# Agent\n\nContent here.";
-/// let mut patches = HashMap::new();
+/// let mut patches = BTreeMap::new();
 /// patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
 ///
 /// let (new_content, applied) = apply_patches_to_content(
@@ -335,7 +335,7 @@ pub fn apply_patches_to_content(
     content: &str,
     file_path: &str,
     patch_data: &PatchData,
-) -> anyhow::Result<(String, HashMap<String, toml::Value>)> {
+) -> anyhow::Result<(String, BTreeMap<String, toml::Value>)> {
     tracing::info!(
         "apply_patches_to_content: file={}, patches_empty={}, patch_count={}",
         file_path,
@@ -344,7 +344,7 @@ pub fn apply_patches_to_content(
     );
 
     if patch_data.is_empty() {
-        return Ok((content.to_string(), HashMap::new()));
+        return Ok((content.to_string(), BTreeMap::new()));
     }
 
     let file_ext =
@@ -360,7 +360,7 @@ pub fn apply_patches_to_content(
                 file_ext,
                 file_path
             );
-            Ok((content.to_string(), HashMap::new()))
+            Ok((content.to_string(), BTreeMap::new()))
         }
     }
 }
@@ -388,13 +388,13 @@ pub fn apply_patches_to_content(
 ///
 /// ```no_run
 /// use agpm_cli::manifest::patches::apply_patches_to_content_with_origin;
-/// use std::collections::HashMap;
+/// use std::collections::BTreeMap;
 ///
 /// let content = "---\nmodel: claude-3-opus\n---\n# Agent\n";
-/// let project = HashMap::from([
+/// let project = BTreeMap::from([
 ///     ("model".to_string(), toml::Value::String("haiku".into())),
 /// ]);
-/// let private = HashMap::from([
+/// let private = BTreeMap::from([
 ///     ("temperature".to_string(), toml::Value::String("0.9".into())),
 /// ]);
 ///
@@ -428,8 +428,8 @@ pub fn apply_patches_to_content_with_origin(
     // Track which patches were actually applied by origin
     // Note: When both project and private define the same key, we track BOTH
     // even though only the private value ends up in the content
-    let mut project_applied = HashMap::new();
-    let mut private_applied = HashMap::new();
+    let mut project_applied = BTreeMap::new();
+    let mut private_applied = BTreeMap::new();
 
     for key in all_applied.keys() {
         // Track project patches
@@ -456,7 +456,7 @@ fn apply_patches_to_markdown(
     content: &str,
     file_path: &str,
     patch_data: &PatchData,
-) -> anyhow::Result<(String, HashMap<String, toml::Value>)> {
+) -> anyhow::Result<(String, BTreeMap<String, toml::Value>)> {
     use crate::markdown::MarkdownDocument;
 
     // Parse the markdown file (pass file_path for warning deduplication)
@@ -466,7 +466,7 @@ fn apply_patches_to_markdown(
         None, // No operation context available here, but file path helps deduplication
     )?;
 
-    let mut applied_patches = HashMap::new();
+    let mut applied_patches = BTreeMap::new();
 
     // Apply each patch to the metadata in deterministic order (sorted by key)
     // This ensures consistent file content across runs
@@ -500,11 +500,11 @@ fn apply_patches_to_markdown(
 fn apply_patches_to_json(
     content: &str,
     patch_data: &PatchData,
-) -> anyhow::Result<(String, HashMap<String, toml::Value>)> {
+) -> anyhow::Result<(String, BTreeMap<String, toml::Value>)> {
     // Parse the JSON
     let mut json_value: serde_json::Value = serde_json::from_str(content)?;
 
-    let mut applied_patches = HashMap::new();
+    let mut applied_patches = BTreeMap::new();
 
     // Apply each patch to the top-level JSON object in deterministic order (sorted by key)
     // This ensures consistent file content across runs
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn test_get_patch() {
         let mut patches = ManifestPatches::new();
-        let mut patch_data = HashMap::new();
+        let mut patch_data = BTreeMap::new();
         patch_data.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         patches.agents.insert("test-agent".to_string(), patch_data.clone());
 
@@ -625,12 +625,12 @@ mod tests {
     #[test]
     fn test_merge_no_conflict() {
         let mut base = ManifestPatches::new();
-        let mut base_patch = HashMap::new();
+        let mut base_patch = BTreeMap::new();
         base_patch.insert("model".to_string(), toml::Value::String("claude-3-opus".to_string()));
         base.agents.insert("test".to_string(), base_patch);
 
         let mut overlay = ManifestPatches::new();
-        let mut overlay_patch = HashMap::new();
+        let mut overlay_patch = BTreeMap::new();
         overlay_patch.insert("temperature".to_string(), toml::Value::String("0.7".to_string()));
         overlay.agents.insert("test".to_string(), overlay_patch);
 
@@ -650,12 +650,12 @@ mod tests {
     #[test]
     fn test_merge_with_conflict() {
         let mut base = ManifestPatches::new();
-        let mut base_patch = HashMap::new();
+        let mut base_patch = BTreeMap::new();
         base_patch.insert("model".to_string(), toml::Value::String("claude-3-opus".to_string()));
         base.agents.insert("test".to_string(), base_patch);
 
         let mut overlay = ManifestPatches::new();
-        let mut overlay_patch = HashMap::new();
+        let mut overlay_patch = BTreeMap::new();
         overlay_patch
             .insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         overlay.agents.insert("test".to_string(), overlay_patch);
@@ -684,7 +684,7 @@ temperature: "0.5"
 This is a test agent.
 "#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
 
         let (new_content, applied) =
@@ -711,7 +711,7 @@ temperature: "0.5"
 # Test Agent
 "#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         patches.insert("temperature".to_string(), toml::Value::String("0.7".to_string()));
         patches.insert("max_tokens".to_string(), toml::Value::Integer(2000));
@@ -732,7 +732,7 @@ temperature: "0.5"
     fn test_apply_patches_to_markdown_create_frontmatter() {
         let content = "# Test Agent\n\nThis is a test agent without frontmatter.";
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         patches.insert("temperature".to_string(), toml::Value::String("0.7".to_string()));
 
@@ -759,7 +759,7 @@ temperature: "0.5"
   "args": ["server"]
 }"#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("timeout".to_string(), toml::Value::Integer(300));
 
         let (new_content, applied) =
@@ -784,7 +784,7 @@ temperature: "0.5"
   }
 }"#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
 
         // Add nested object
         let mut nested_table = toml::value::Table::new();
@@ -822,7 +822,7 @@ model: claude-3-opus
 # Test Agent
 "#;
 
-        let patches = HashMap::new();
+        let patches = BTreeMap::new();
 
         let (new_content, applied) =
             apply_patches_to_content(content, "agent.md", &patches).unwrap();
@@ -838,7 +838,7 @@ model: claude-3-opus
     fn test_apply_patches_to_content_unsupported_extension() {
         let content = "This is a text file.";
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("field".to_string(), toml::Value::String("value".to_string()));
 
         let (new_content, applied) =
@@ -897,11 +897,11 @@ model: claude-3-opus
     #[test]
     fn test_get_for_resource_type() {
         let mut patches = ManifestPatches::new();
-        let mut agent_patch = HashMap::new();
+        let mut agent_patch = BTreeMap::new();
         agent_patch.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         patches.agents.insert("test-agent".to_string(), agent_patch.clone());
 
-        let mut snippet_patch = HashMap::new();
+        let mut snippet_patch = BTreeMap::new();
         snippet_patch.insert("lang".to_string(), toml::Value::String("rust".to_string()));
         patches.snippets.insert("test-snippet".to_string(), snippet_patch.clone());
 
@@ -937,13 +937,13 @@ model: claude-3-opus
     #[test]
     fn test_merge_different_resource_types() {
         let mut base = ManifestPatches::new();
-        let mut base_agent_patch = HashMap::new();
+        let mut base_agent_patch = BTreeMap::new();
         base_agent_patch
             .insert("model".to_string(), toml::Value::String("claude-3-opus".to_string()));
         base.agents.insert("test".to_string(), base_agent_patch);
 
         let mut overlay = ManifestPatches::new();
-        let mut overlay_snippet_patch = HashMap::new();
+        let mut overlay_snippet_patch = BTreeMap::new();
         overlay_snippet_patch.insert("lang".to_string(), toml::Value::String("rust".to_string()));
         overlay.snippets.insert("test".to_string(), overlay_snippet_patch);
 
@@ -958,12 +958,12 @@ model: claude-3-opus
     #[test]
     fn test_merge_adds_new_aliases() {
         let mut base = ManifestPatches::new();
-        let mut base_patch = HashMap::new();
+        let mut base_patch = BTreeMap::new();
         base_patch.insert("model".to_string(), toml::Value::String("claude-3-opus".to_string()));
         base.agents.insert("agent1".to_string(), base_patch);
 
         let mut overlay = ManifestPatches::new();
-        let mut overlay_patch = HashMap::new();
+        let mut overlay_patch = BTreeMap::new();
         overlay_patch
             .insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         overlay.agents.insert("agent2".to_string(), overlay_patch);
@@ -996,7 +996,7 @@ fn main() {
 ```
 "#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
 
         let (new_content, _) = apply_patches_to_content(content, "agent.md", &patches).unwrap();
@@ -1014,7 +1014,7 @@ fn main() {
     fn test_json_patch_requires_object() {
         let content = r#"["array", "of", "strings"]"#;
 
-        let mut patches = HashMap::new();
+        let mut patches = BTreeMap::new();
         patches.insert("field".to_string(), toml::Value::String("value".to_string()));
 
         let result = apply_patches_to_json(content, &patches);
@@ -1027,13 +1027,13 @@ fn main() {
     #[test]
     fn test_merge_multiple_conflicts() {
         let mut base = ManifestPatches::new();
-        let mut base_patch = HashMap::new();
+        let mut base_patch = BTreeMap::new();
         base_patch.insert("model".to_string(), toml::Value::String("claude-3-opus".to_string()));
         base_patch.insert("temperature".to_string(), toml::Value::String("0.5".to_string()));
         base.agents.insert("test".to_string(), base_patch);
 
         let mut overlay = ManifestPatches::new();
-        let mut overlay_patch = HashMap::new();
+        let mut overlay_patch = BTreeMap::new();
         overlay_patch
             .insert("model".to_string(), toml::Value::String("claude-3-haiku".to_string()));
         overlay_patch.insert("temperature".to_string(), toml::Value::String("0.7".to_string()));
@@ -1067,8 +1067,8 @@ fn main() {
     #[test]
     fn test_applied_patches_struct() {
         let applied = AppliedPatches {
-            project: HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]),
-            private: HashMap::from([(
+            project: BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]),
+            private: BTreeMap::from([(
                 "temperature".to_string(),
                 toml::Value::String("0.9".into()),
             )]),
@@ -1087,9 +1087,9 @@ fn main() {
     #[test]
     fn test_apply_patches_with_origin_separates_project_and_private() {
         let content = "---\nmodel: gpt-4\n---\n# Test\n";
-        let project = HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
+        let project = BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
         let private =
-            HashMap::from([("temperature".to_string(), toml::Value::String("0.9".into()))]);
+            BTreeMap::from([("temperature".to_string(), toml::Value::String("0.9".into()))]);
 
         let (result, applied) =
             apply_patches_to_content_with_origin(content, "test.md", &project, &private).unwrap();
@@ -1104,8 +1104,8 @@ fn main() {
     #[test]
     fn test_apply_patches_with_origin_empty_patches() {
         let content = "---\nmodel: gpt-4\n---\n# Test\n";
-        let project = HashMap::new();
-        let private = HashMap::new();
+        let project = BTreeMap::new();
+        let private = BTreeMap::new();
 
         let (result, applied) =
             apply_patches_to_content_with_origin(content, "test.md", &project, &private).unwrap();
@@ -1117,8 +1117,8 @@ fn main() {
     #[test]
     fn test_apply_patches_with_origin_only_project() {
         let content = "---\nmodel: gpt-4\n---\n# Test\n";
-        let project = HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
-        let private = HashMap::new();
+        let project = BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
+        let private = BTreeMap::new();
 
         let (result, applied) =
             apply_patches_to_content_with_origin(content, "test.md", &project, &private).unwrap();
@@ -1131,9 +1131,9 @@ fn main() {
     #[test]
     fn test_apply_patches_with_origin_only_private() {
         let content = "---\nmodel: gpt-4\n---\n# Test\n";
-        let project = HashMap::new();
+        let project = BTreeMap::new();
         let private =
-            HashMap::from([("temperature".to_string(), toml::Value::String("0.9".into()))]);
+            BTreeMap::from([("temperature".to_string(), toml::Value::String("0.9".into()))]);
 
         let (result, applied) =
             apply_patches_to_content_with_origin(content, "test.md", &project, &private).unwrap();
@@ -1147,8 +1147,8 @@ fn main() {
     #[test]
     fn test_apply_patches_with_origin_private_overrides_project() {
         let content = "---\nmodel: gpt-4\n---\n# Test\n";
-        let project = HashMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
-        let private = HashMap::from([("model".to_string(), toml::Value::String("sonnet".into()))]);
+        let project = BTreeMap::from([("model".to_string(), toml::Value::String("haiku".into()))]);
+        let private = BTreeMap::from([("model".to_string(), toml::Value::String("sonnet".into()))]);
 
         let (result, applied) =
             apply_patches_to_content_with_origin(content, "test.md", &project, &private).unwrap();

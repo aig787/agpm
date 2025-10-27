@@ -29,7 +29,7 @@ mod installer_tests {
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }
@@ -48,7 +48,7 @@ mod installer_tests {
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
-                applied_patches: std::collections::HashMap::new(),
+                applied_patches: std::collections::BTreeMap::new(),
                 install: None,
                 variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }

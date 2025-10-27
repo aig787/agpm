@@ -93,29 +93,27 @@ impl PatchDisplay {
 ///
 /// ```rust,no_run
 /// use agpm_cli::lockfile::patch_display::extract_patch_displays;
-/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::lockfile::LockedResourceBuilder;
 /// use agpm_cli::cache::Cache;
+/// use agpm_cli::core::ResourceType;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
-/// let resource = LockedResource::new(
-///     // ... resource fields
-/// #   "test".to_string(),
-/// #   Some("community".to_string()),
-/// #   Some("https://example.com/repo.git".to_string()),
-/// #   "agents/test.md".to_string(),
-/// #   Some("v1.0.0".to_string()),
-/// #   Some("abc123".to_string()),
-/// #   "sha256:def456".to_string(),
-/// #   "agents/test.md".to_string(),
-/// #   vec![],
-/// #   agpm_cli::core::ResourceType::Agent,
-/// #   Some("claude-code".to_string()),
-/// #   None,
-/// #   std::collections::HashMap::new(),
-/// #   None,
-/// #   serde_json::Value::Object(serde_json::Map::new()),
-/// );
+/// let resource = LockedResourceBuilder::new(
+///     "test".to_string(),
+///     "agents/test.md".to_string(),
+///     "sha256:def456".to_string(),
+///     "agents/test.md".to_string(),
+///     ResourceType::Agent,
+/// )
+/// #   .source(Some("community".to_string()))
+/// #   .url(Some("https://example.com/repo.git".to_string()))
+/// #   .version(Some("v1.0.0".to_string()))
+/// #   .resolved_commit(Some("abc123".to_string()))
+/// #   .tool(Some("claude-code".to_string()))
+/// #   .dependencies(Vec::new())
+/// #   .applied_patches(std::collections::BTreeMap::new())
+/// #   .build();
 ///
 /// let displays = extract_patch_displays(&resource, &cache).await;
 /// for display in displays {

@@ -384,7 +384,7 @@ pub async fn install_resource(
     };
 
     // Apply patches if provided (before templating)
-    let empty_patches = std::collections::HashMap::new();
+    let empty_patches = std::collections::BTreeMap::new();
     let (patched_content, applied_patches) = if context.project_patches.is_some()
         || context.private_patches.is_some()
     {
@@ -426,146 +426,141 @@ pub async fn install_resource(
         (new_content.clone(), crate::manifest::patches::AppliedPatches::default())
     };
 
-    // Apply templating to markdown files if enabled in frontmatter (after patching)
+    // Apply templating to markdown files (after patching)
+    // Strategy: Always render first, then check agpm.templating flag in rendered frontmatter
     // Track whether templating was applied and capture context checksum from rendering
     let (final_content, templating_was_applied, captured_checksum) = if entry.path.ends_with(".md")
     {
-        // Check for opt-in in frontmatter
-        let templating_enabled = if let Ok(md_file) = MarkdownFile::parse(&patched_content) {
-            md_file
-                .metadata
-                .as_ref()
-                .and_then(|m| m.extra.get("agpm"))
-                .and_then(|agpm| agpm.get("templating"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        } else {
-            false
-        };
+        // Build template context if we have a shared builder
+        if let Some(template_context_builder) = &context.template_context_builder {
+            use crate::templating::TemplateRenderer;
 
-        if !templating_enabled {
-            tracing::debug!("Templating not enabled via frontmatter for {}", entry.name);
-            (patched_content, false, None)
-        } else {
-            // Templating enabled - render template
-            tracing::debug!("Templating enabled for {}, rendering template...", entry.name);
+            // Determine resource type from entry
+            let resource_type = entry.resource_type;
 
-            // Build template context if we have a shared builder
-            if let Some(template_context_builder) = &context.template_context_builder {
-                use crate::templating::TemplateRenderer;
+            // Compute context digest for cache invalidation
+            // This ensures that changes to dependency versions invalidate the cache
+            let context_digest =
+                template_context_builder.compute_context_digest().with_context(|| {
+                    format!("Failed to compute template context digest for {}", entry.name)
+                })?;
 
-                // Determine resource type from entry
-                let resource_type = entry.resource_type;
+            let resource_id = crate::lockfile::ResourceId::new(
+                entry.name.clone(),
+                entry.source.clone(),
+                entry.tool.clone(),
+                resource_type,
+                entry.variant_inputs.hash().to_string(),
+            );
+            let (template_context, captured_context_checksum) = template_context_builder
+                .build_context(&resource_id, entry.variant_inputs.json())
+                .await
+                .map_err(|e| {
+                    // Preserve the full error chain for debugging
+                    anyhow::anyhow!("Failed to build template context for {}: {:#}", entry.name, e)
+                })?;
 
-                // Compute context digest for cache invalidation
-                // This ensures that changes to dependency versions invalidate the cache
-                let context_digest =
-                    template_context_builder.compute_context_digest().with_context(|| {
-                        format!("Failed to compute template context digest for {}", entry.name)
-                    })?;
+            // Show verbose output before rendering
+            if context.verbose {
+                let num_resources = template_context
+                    .get("resources")
+                    .and_then(|v| v.as_object())
+                    .map(|o| o.len())
+                    .unwrap_or(0);
+                let num_dependencies = template_context
+                    .get("dependencies")
+                    .and_then(|v| v.as_object())
+                    .map(|o| o.len())
+                    .unwrap_or(0);
 
-                let resource_id = crate::lockfile::ResourceId::new(
-                    entry.name.clone(),
-                    entry.source.clone(),
-                    entry.tool.clone(),
-                    resource_type,
-                    entry.variant_inputs.hash().to_string(),
+                tracing::info!("📝 Rendering template: {}", entry.path);
+                tracing::info!(
+                    "   Context: {} resources, {} dependencies",
+                    num_resources,
+                    num_dependencies
                 );
-                let (template_context, captured_context_checksum) = template_context_builder
-                    .build_context(&resource_id, entry.variant_inputs.json())
-                    .await
-                    .map_err(|e| {
-                        // Preserve the full error chain for debugging
-                        anyhow::anyhow!(
-                            "Failed to build template context for {}: {:#}",
-                            entry.name,
-                            e
-                        )
-                    })?;
+                tracing::debug!("   Context digest: {}", context_digest);
+            }
 
-                // Show verbose output before rendering
-                if context.verbose {
-                    let num_resources = template_context
-                        .get("resources")
-                        .and_then(|v| v.as_object())
-                        .map(|o| o.len())
-                        .unwrap_or(0);
-                    let num_dependencies = template_context
-                        .get("dependencies")
-                        .and_then(|v| v.as_object())
-                        .map(|o| o.len())
-                        .unwrap_or(0);
+            // Create renderer and render template
+            let mut renderer = TemplateRenderer::new(
+                true,
+                context.project_dir.to_path_buf(),
+                context.max_content_file_size,
+            )
+            .with_context(|| "Failed to create template renderer")?;
 
-                    tracing::info!("📝 Rendering template: {}", entry.path);
-                    tracing::info!(
-                        "   Context: {} resources, {} dependencies",
-                        num_resources,
-                        num_dependencies
-                    );
-                    tracing::debug!("   Context digest: {}", context_digest);
-                }
-
-                // Create renderer and render template
-                let mut renderer = TemplateRenderer::new(
-                    true,
-                    context.project_dir.to_path_buf(),
-                    context.max_content_file_size,
-                )
-                .with_context(|| "Failed to create template renderer")?;
-
-                // Debug: Check if agpm.deps.snippets exists in context
-                if let Some(agpm) = template_context.get("agpm") {
-                    if let Some(deps) = agpm.get("deps") {
-                        if let Some(snippets) = deps.get("snippets") {
+            // Debug: Check if agpm.deps.snippets exists in context
+            if let Some(agpm) = template_context.get("agpm") {
+                if let Some(deps) = agpm.get("deps") {
+                    if let Some(snippets) = deps.get("snippets") {
+                        tracing::debug!(
+                            "Template context has agpm.deps.snippets with {} entries",
+                            snippets.as_object().map(|o| o.len()).unwrap_or(0)
+                        );
+                        if let Some(best_practices) = snippets.get("best_practices") {
                             tracing::debug!(
-                                "Template context has agpm.deps.snippets with {} entries",
-                                snippets.as_object().map(|o| o.len()).unwrap_or(0)
+                                "✓ Found best_practices in context: has content field = {}",
+                                best_practices.get("content").is_some()
                             );
-                            if let Some(best_practices) = snippets.get("best_practices") {
-                                tracing::debug!(
-                                    "✓ Found best_practices in context: has content field = {}",
-                                    best_practices.get("content").is_some()
-                                );
-                            } else {
-                                tracing::warn!("✗ best_practices NOT found in agpm.deps.snippets");
-                            }
                         } else {
-                            tracing::warn!("✗ agpm.deps.snippets NOT found in context");
+                            tracing::warn!("✗ best_practices NOT found in agpm.deps.snippets");
                         }
                     } else {
-                        tracing::warn!("✗ agpm.deps NOT found in context");
+                        tracing::warn!("✗ agpm.deps.snippets NOT found in context");
                     }
                 } else {
-                    tracing::warn!("✗ agpm NOT found in context");
+                    tracing::warn!("✗ agpm.deps NOT found in context");
                 }
+            } else {
+                tracing::warn!("✗ agpm NOT found in context");
+            }
 
-                let rendered_content = renderer
-                    .render_template(&patched_content, &template_context)
-                    .map_err(|e| {
-                        // Log detailed error with full error chain
-                        tracing::error!(
-                            "Template rendering failed for resource '{}' ({}): {}",
-                            entry.name,
-                            entry.path,
-                            e
-                        );
-                        // Log error chain if available
-                        for (i, cause) in e.chain().skip(1).enumerate() {
-                            tracing::error!("  Caused by [{}]: {}", i + 1, cause);
-                        }
+            let rendered_content = renderer
+                .render_template(&patched_content, &template_context)
+                .map_err(|e| {
+                    // Log detailed error with full error chain
+                    tracing::error!(
+                        "Template rendering failed for resource '{}' ({}): {}",
+                        entry.name,
+                        entry.path,
                         e
-                    })
-                    .with_context(|| {
-                        format!(
-                            "Failed to render template for '{}' (source: {}, path: {})",
-                            entry.name,
-                            entry.source.as_deref().unwrap_or("local"),
-                            entry.path
-                        )
-                    })?;
+                    );
+                    // Log error chain if available
+                    for (i, cause) in e.chain().skip(1).enumerate() {
+                        tracing::error!("  Caused by [{}]: {}", i + 1, cause);
+                    }
+                    e
+                })
+                .with_context(|| {
+                    format!(
+                        "Failed to render template for '{}' (source: {}, path: {})",
+                        entry.name,
+                        entry.source.as_deref().unwrap_or("local"),
+                        entry.path
+                    )
+                })?;
 
-                tracing::debug!("Successfully rendered template for {}", entry.name);
+            tracing::debug!("Successfully rendered template for {}", entry.name);
 
+            // Parse the RENDERED content to check agpm.templating flag
+            let use_rendered = if let Ok(md_file) = MarkdownFile::parse(&rendered_content) {
+                md_file
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.extra.get("agpm"))
+                    .and_then(|agpm| agpm.get("templating"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            } else {
+                tracing::warn!(
+                    "Failed to parse rendered frontmatter for {}, using original content",
+                    entry.name
+                );
+                false
+            };
+
+            if use_rendered {
                 // Show verbose output after rendering
                 if context.verbose {
                     let size_bytes = rendered_content.len();
@@ -579,15 +574,17 @@ pub async fn install_resource(
                     tracing::info!("   Output: {} ({})", dest_path.display(), size_str);
                     tracing::info!("✅ Template rendered successfully");
                 }
-
                 (rendered_content, true, captured_context_checksum)
             } else {
-                tracing::warn!(
-                    "Templating enabled in {} but manifest/lockfile not available, skipping templating",
+                tracing::debug!(
+                    "agpm.templating not enabled for {}, using original content",
                     entry.name
                 );
                 (patched_content, false, None)
             }
+        } else {
+            tracing::debug!("No template context builder available for {}", entry.name);
+            (patched_content, false, None)
         }
     } else {
         tracing::debug!("Not a markdown file: {}", entry.path);

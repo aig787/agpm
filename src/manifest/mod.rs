@@ -489,7 +489,7 @@ mod tool_config_tests;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 pub use dependency_spec::{DependencyMetadata, DependencySpec};
@@ -1794,7 +1794,7 @@ impl Manifest {
 
         // Helper to check if an alias exists for a resource type
         let check_patch_aliases = |resource_type: ResourceType,
-                                   patches: &HashMap<String, PatchData>|
+                                   patches: &BTreeMap<String, PatchData>|
          -> Result<()> {
             let deps = self.get_dependencies(resource_type);
 

@@ -1,8 +1,8 @@
 //! Tests for cleanup logic with dual checksum system
 
-use agpm_cli::tests::common::TestProject;
+use crate::common::TestProject;
 use anyhow::Result;
-use tokio::fs as fs;
+use tokio::fs;
 
 /// Test that cleanup logic works correctly with dual checksum system
 #[tokio::test]
@@ -69,7 +69,8 @@ templated = {{ source = "test-repo", path = "agents/templated-agent.md", version
     assert!(output.success, "Initial install should succeed. Stderr: {}", output.stderr);
 
     // Verify the agent and its dependency are installed
-    let agent_path = project.project_path().join(".claude/agents/templated.md");
+    // Files are named after their canonical path (from source), not manifest alias
+    let agent_path = project.project_path().join(".claude/agents/templated-agent.md");
     let helper_path = project.project_path().join(".claude/agents/helper.md");
 
     assert!(
@@ -111,10 +112,7 @@ templated = {{ source = "test-repo", path = "agents/templated-agent.md", version
         fs::metadata(&agent_path).await.is_ok(),
         "Agent should still exist (only context checksum changed)"
     );
-    assert!(
-        fs::metadata(&helper_path).await.is_ok(),
-        "Helper should still exist"
-    );
+    assert!(fs::metadata(&helper_path).await.is_ok(), "Helper should still exist");
 
     // Verify context checksum changed in lockfile
     let updated_lockfile_content = project.read_lockfile().await?;
@@ -204,7 +202,8 @@ test = {{ source = "test-repo", path = "snippets/variant-test.md", version = "v1
     assert!(output.success, "Initial install should succeed. Stderr: {}", output.stderr);
 
     // Verify snippet is installed
-    let snippet_path = project.project_path().join(".agpm/snippets/test.md");
+    // Files are named after their canonical path (from source), not manifest alias
+    let snippet_path = project.project_path().join(".agpm/snippets/variant-test.md");
     assert!(
         fs::metadata(&snippet_path).await.is_ok(),
         "Snippet should be installed at {:?}",

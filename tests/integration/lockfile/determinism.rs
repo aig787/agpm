@@ -150,8 +150,11 @@ temperature = "0.3"
         let output = project.run_agpm(&["install"])?;
         assert!(output.success, "Run {} should succeed. Stderr: {}", run, output.stderr);
 
-        // Read lockfile content
-        let lockfile_content = project.read_lockfile().await?;
+        // Read lockfile
+        let lockfile = project.load_lockfile()?;
+
+        // Serialize lockfile to string for hashing
+        let lockfile_content = toml::to_string(&lockfile)?;
 
         // Normalize lockfile by removing timestamps before hashing
         let normalize = |s: &str| {
@@ -172,20 +175,23 @@ temperature = "0.3"
         lockfile_contents.push(lockfile_content.clone());
         checksums.insert(content_hash);
 
-        // Verify key elements are present
+        // Verify key elements are present using struct
+        let has_context_checksum = lockfile.agents.iter().any(|a| a.context_checksum.is_some());
+        assert!(has_context_checksum, "Run {} should contain context_checksum", run);
+
+        let has_variant_inputs = lockfile.agents.iter().any(|a| {
+            // Check if variant_inputs is not an empty object
+            a.variant_inputs.json().as_object().map_or(false, |obj| !obj.is_empty())
+        });
+        assert!(has_variant_inputs, "Run {} should contain variant_inputs", run);
+
         assert!(
-            lockfile_content.contains("context_checksum"),
-            "Run {} should contain context_checksum",
+            lockfile.agents.iter().any(|a| a.name.contains("simple")),
+            "Run {} should contain simple agent",
             run
         );
         assert!(
-            lockfile_content.contains("variant_inputs"), // Serialized as variant_inputs TOML table
-            "Run {} should contain variant_inputs",
-            run
-        );
-        assert!(lockfile_content.contains("simple"), "Run {} should contain simple agent", run);
-        assert!(
-            lockfile_content.contains("templated"),
+            lockfile.agents.iter().any(|a| a.name.contains("templated")),
             "Run {} should contain templated agent",
             run
         );
@@ -215,21 +221,15 @@ temperature = "0.3"
     );
 
     // Additional verification: check that context checksums are consistent
-    let first_content = &lockfile_contents[0];
+    // Load first lockfile to extract checksums
+    let first_lockfile = toml::from_str::<agpm_cli::lockfile::LockFile>(&lockfile_contents[0])?;
 
-    // Extract and verify context checksums are consistent
-    let lines: Vec<&str> = first_content.lines().collect();
-    let mut context_checksums = Vec::new();
-
-    for line in lines {
-        if line.trim().starts_with("context_checksum") {
-            if let Some(checksum) = line.split('=').nth(1) {
-                // Remove quotes and whitespace
-                let checksum = checksum.trim().trim_matches('"');
-                context_checksums.push(checksum);
-            }
-        }
-    }
+    // Extract context checksums from agents that have them
+    let context_checksums: Vec<&str> = first_lockfile
+        .agents
+        .iter()
+        .filter_map(|agent| agent.context_checksum.as_deref())
+        .collect();
 
     // Should have context checksums for templated resources
     assert!(
@@ -286,7 +286,7 @@ agpm:
 # {{ project.name }} Agent
 
 Database: {{ db.host }}:{{ db.port }}
-Features: {{ features | join(", ") }}
+Features: {{ features | join(sep=", ") }}
 "#,
         )
         .await?;
@@ -323,43 +323,23 @@ complex = {{ source = "test-repo", path = "agents/complex-variant.md", version =
         let output = project.run_agpm(&["install"])?;
         assert!(output.success, "Run {} should succeed", run);
 
-        // Extract the serialized variant_inputs section
-        let lockfile_content = project.read_lockfile().await?;
+        // Load lockfile and extract variant_inputs for complex agent
+        let lockfile = project.load_lockfile()?;
 
-        // Find the variant_inputs section for complex agent
-        let lines: Vec<&str> = lockfile_content.lines().collect();
-        let mut variant_inputs_section = String::new();
-        let mut in_complex_agent = false;
-        let mut in_variant_inputs = false;
+        // Find the complex agent
+        let complex_agent =
+            lockfile.agents.iter().find(|agent| agent.name == "agents/complex-variant").expect(
+                &format!(
+                    "Should find complex agent in run {}. Available agents: {:?}",
+                    run,
+                    lockfile.agents.iter().map(|a| &a.name).collect::<Vec<_>>()
+                ),
+            );
 
-        for line in lines {
-            if line.trim() == "name = \"agents/complex-variant\"" {
-                in_complex_agent = true;
-            } else if line.trim().starts_with("[[") && in_complex_agent {
-                // New resource section started
-                break;
-            } else if line.trim() == "[agents.variant_inputs]" && in_complex_agent {
-                in_variant_inputs = true;
-                variant_inputs_section.push_str(line);
-                variant_inputs_section.push('\n');
-            } else if in_variant_inputs {
-                if line.trim().is_empty() || line.trim().starts_with('[') {
-                    // End of variant_inputs section
-                    break;
-                }
-                variant_inputs_section.push_str(line);
-                variant_inputs_section.push('\n');
-            }
-        }
+        // Serialize variant_inputs for comparison
+        let variant_inputs_serialized = toml::to_string(&complex_agent.variant_inputs)?;
 
-        assert!(
-            !variant_inputs_section.is_empty(),
-            "Should find variant_inputs section for complex agent in run {}. Lockfile:\n{}",
-            run,
-            lockfile_content
-        );
-
-        serialized_vars.push(variant_inputs_section);
+        serialized_vars.push(variant_inputs_serialized);
     }
 
     // All serialized variant_inputs should be identical
@@ -457,24 +437,10 @@ beta = {{ source = "test-repo", path = "agents/beta-agent.md", version = "v1.0.0
         let output = project.run_agpm(&["install"])?;
         assert!(output.success, "Run {} should succeed", run);
 
-        // Extract agents section order
-        let lockfile_content = project.read_lockfile().await?;
-        let lines: Vec<&str> = lockfile_content.lines().collect();
-
-        let mut current_agents = Vec::new();
-        let mut in_agents_section = false;
-
-        for line in lines {
-            if line.trim() == "[[agents]]" {
-                in_agents_section = true;
-                // Extract agent name from next few lines
-            } else if line.trim().starts_with('[') && line.trim() != "[[agents]]" {
-                in_agents_section = false;
-            } else if in_agents_section && line.trim().starts_with("name = ") {
-                let name = line.trim().strip_prefix("name = ").unwrap().trim_matches('"');
-                current_agents.push(name.to_string());
-            }
-        }
+        // Load lockfile and extract agent names in order
+        let lockfile = project.load_lockfile()?;
+        let current_agents: Vec<String> =
+            lockfile.agents.iter().map(|agent| agent.name.clone()).collect();
 
         agent_sections.push(current_agents);
     }
@@ -604,53 +570,38 @@ update-examples = {{ source = "test-repo", path = "commands/update-examples.md",
         let output = project.run_agpm(&["install"])?;
         assert!(output.success, "Run {} should succeed. Stderr: {}", run, output.stderr);
 
-        // Read lockfile content
-        let lockfile_content = project.read_lockfile().await?;
+        // Load lockfile
+        let lockfile = project.load_lockfile()?;
+        let lockfile_content = toml::to_string(&lockfile)?;
         lockfile_contents.push(lockfile_content.clone());
 
-        // Extract context checksum for the command
-        let lines: Vec<&str> = lockfile_content.lines().collect();
-        let mut command_context_checksum = None;
-        let mut in_update_examples = false;
+        // Extract context checksum for the command using struct
+        let update_examples_cmd =
+            lockfile.commands.iter().find(|cmd| cmd.name == "commands/update-examples").expect(
+                &format!(
+                    "Run {} should have update-examples command. Available commands: {:?}",
+                    run,
+                    lockfile.commands.iter().map(|c| &c.name).collect::<Vec<_>>()
+                ),
+            );
 
-        for line in lines {
-            if line.trim() == "name = \"commands/update-examples\"" {
-                in_update_examples = true;
-            } else if line.trim().starts_with('[') && in_update_examples {
-                // New section started
-                break;
-            } else if line.trim().starts_with("context_checksum") && in_update_examples {
-                if let Some(checksum) = line.split('=').nth(1) {
-                    command_context_checksum = Some(checksum.trim().trim_matches('"').to_string());
-                    break;
-                }
-            }
-        }
+        let command_context_checksum = update_examples_cmd
+            .context_checksum
+            .as_ref()
+            .expect(&format!("Run {} should have context_checksum for templated command", run));
+        context_checksums.push(command_context_checksum.clone());
 
-        assert!(
-            command_context_checksum.is_some(),
-            "Run {} should have context_checksum for templated command.\nLockfile content:\n{}",
-            run,
-            lockfile_content
-        );
-        context_checksums.push(command_context_checksum.unwrap());
+        // Verify lockfile contains both snippet variants using struct
+        let has_agpm_tool = lockfile.snippets.iter().any(|s| s.tool.as_deref() == Some("agpm"));
+        assert!(has_agpm_tool, "Run {} should contain agpm tool variant", run);
 
-        // Verify lockfile contains both snippet variants
-        assert!(
-            lockfile_content.contains("tool = \"agpm\""),
-            "Run {} should contain agpm tool variant",
-            run
-        );
-        assert!(
-            lockfile_content.contains("tool = \"claude-code\""),
-            "Run {} should contain claude-code tool variant",
-            run
-        );
-        assert!(
-            lockfile_content.contains("commands/update-examples"),
-            "Run {} should contain commands/update-examples command",
-            run
-        );
+        let has_claude_tool =
+            lockfile.snippets.iter().any(|s| s.tool.as_deref() == Some("claude-code"));
+        assert!(has_claude_tool, "Run {} should contain claude-code tool variant", run);
+
+        let has_update_examples =
+            lockfile.commands.iter().any(|c| c.name == "commands/update-examples");
+        assert!(has_update_examples, "Run {} should contain commands/update-examples command", run);
 
         // Verify consistent content across runs (ignoring fetched_at timestamps)
         if run > 1 {

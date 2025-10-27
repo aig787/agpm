@@ -83,7 +83,7 @@ mod tests {
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -232,7 +232,7 @@ mod tests {
             context_checksum: None,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -664,7 +664,7 @@ This should show {{ agpm.deps.some.content }} literally.
             )
             .dependencies(vec!["snippet:non_templated".to_string()])
             .tool(Some("claude-code".to_string()))
-            .applied_patches(std::collections::HashMap::new())
+            .applied_patches(std::collections::BTreeMap::new())
             .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
             .build(),
         );
@@ -678,7 +678,7 @@ This should show {{ agpm.deps.some.content }} literally.
             )
             .dependencies(vec![])
             .tool(Some("claude-code".to_string()))
-            .applied_patches(std::collections::HashMap::new())
+            .applied_patches(std::collections::BTreeMap::new())
             .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
             .build(),
         );
@@ -760,7 +760,7 @@ This should show {{ agpm.deps.some.content }} literally.
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: variant_inputs_obj.clone(),
             context_checksum: None,
@@ -863,7 +863,7 @@ This should show {{ agpm.deps.some.content }} literally.
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs,
             context_checksum: None,
@@ -953,7 +953,7 @@ Language: {{ project.language }}
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs,
             context_checksum: None,
@@ -1027,7 +1027,7 @@ Language: {{ project.language }}
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs,
             context_checksum: None,

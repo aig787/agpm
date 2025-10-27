@@ -96,6 +96,7 @@
 // and not all utilities are used in every test file
 #![allow(dead_code)]
 
+use agpm_cli::lockfile::LockFile;
 use agpm_cli::utils::normalize_path_for_storage;
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -336,6 +337,12 @@ impl TestProject {
         fs::read_to_string(&lockfile_path)
             .await
             .with_context(|| format!("Failed to read lockfile from {:?}", lockfile_path))
+    }
+
+    /// Load and parse the lockfile as a LockFile struct
+    pub fn load_lockfile(&self) -> Result<LockFile> {
+        let lockfile_path = self.project_dir.join("agpm.lock");
+        LockFile::load(&lockfile_path)
     }
 
     /// Create a local resource file

@@ -311,7 +311,7 @@ async fn test_update_specific_dependency() {
         tool: Some("claude-code".to_string()),
         manifest_alias: None,
         context_checksum: None,
-        applied_patches: std::collections::HashMap::new(),
+        applied_patches: std::collections::BTreeMap::new(),
         install: None,
         variant_inputs: serde_json::json!({}),
     });

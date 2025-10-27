@@ -9,6 +9,7 @@ use crate::git::GitRepo;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::pattern::PatternResolver;
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -356,7 +357,7 @@ impl PatternExpansionService {
                 dependencies: vec![],
                 resource_type,
                 tool: None,
-                applied_patches: HashMap::new(),
+                applied_patches: BTreeMap::new(),
                 install: Some(true),
                 variant_inputs,
                 context_checksum: None,

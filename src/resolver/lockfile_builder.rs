@@ -8,7 +8,7 @@ use crate::lockfile::{LockFile, LockedResource, lockfile_dependency_ref::Lockfil
 use crate::manifest::{Manifest, ResourceDependency};
 use crate::resolver::types as dependency_helpers;
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr;
 
 // Type aliases for internal lookups
@@ -627,13 +627,13 @@ pub(super) fn group_key(source: &str, version: &str) -> String {
 ///
 /// # Returns
 ///
-/// HashMap of patch key-value pairs, or empty HashMap if no patches defined
+/// BTreeMap of patch key-value pairs, or empty BTreeMap if no patches defined
 pub(super) fn get_patches_for_resource(
     manifest: &Manifest,
     resource_type: ResourceType,
     name: &str,
     manifest_alias: Option<&str>,
-) -> HashMap<String, toml::Value> {
+) -> BTreeMap<String, toml::Value> {
     // Use manifest_alias for pattern-expanded resources, name for regular resources
     let lookup_name = manifest_alias.unwrap_or(name);
 
@@ -1278,7 +1278,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1297,7 +1297,7 @@ mod tests {
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
@@ -1325,7 +1325,7 @@ mod tests {
             resolved_commit: Some("xyz789".to_string()),
             checksum: "sha256:new".to_string(),
             dependencies: vec![],
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1356,7 +1356,7 @@ mod tests {
             resolved_commit: Some("updated123".to_string()), // Updated commit
             checksum: "sha256:updated".to_string(),          // Updated checksum
             dependencies: vec![],
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1422,7 +1422,7 @@ mod tests {
             resolved_commit: Some("parent123".to_string()),
             checksum: "sha256:parent".to_string(),
             dependencies: vec!["agent:agents/test-agent".to_string()], // Reference to test-agent (new format)
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
@@ -1506,7 +1506,7 @@ test-repo = "https://example.com/repo.git"
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "rust"})),
         };
@@ -1526,7 +1526,7 @@ test-repo = "https://example.com/repo.git"
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             context_checksum: None,
-            applied_patches: std::collections::HashMap::new(),
+            applied_patches: std::collections::BTreeMap::new(),
             install: None,
             variant_inputs: VariantInputs::new(json!({"lang": "python"})),
         };

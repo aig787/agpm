@@ -290,7 +290,7 @@
 //! - **Concurrent Reads**: Safe to read lockfile from multiple threads
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Reasons why a lockfile might be considered stale.
@@ -944,8 +944,8 @@ pub struct LockedResource {
     /// resources have been patched.
     ///
     /// Omitted from TOML serialization when empty.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub applied_patches: HashMap<String, toml::Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub applied_patches: BTreeMap<String, toml::Value>,
 
     /// Whether this dependency should be installed to disk.
     ///
@@ -995,7 +995,7 @@ pub struct LockedResourceBuilder {
     resource_type: crate::core::ResourceType,
     tool: Option<String>,
     manifest_alias: Option<String>,
-    applied_patches: HashMap<String, toml::Value>,
+    applied_patches: BTreeMap<String, toml::Value>,
     install: Option<bool>,
     context_checksum: Option<String>,
     variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
@@ -1023,7 +1023,7 @@ impl LockedResourceBuilder {
             resource_type,
             tool: None,
             manifest_alias: None,
-            applied_patches: HashMap::new(),
+            applied_patches: BTreeMap::new(),
             install: None,
             context_checksum: None,
             variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
@@ -1073,7 +1073,7 @@ impl LockedResourceBuilder {
     }
 
     /// Set the applied patches.
-    pub fn applied_patches(mut self, applied_patches: HashMap<String, toml::Value>) -> Self {
+    pub fn applied_patches(mut self, applied_patches: BTreeMap<String, toml::Value>) -> Self {
         self.applied_patches = applied_patches;
         self
     }
@@ -1204,7 +1204,7 @@ impl LockedResource {
         resource_type: crate::core::ResourceType,
         tool: Option<String>,
         manifest_alias: Option<String>,
-        applied_patches: HashMap<String, toml::Value>,
+        applied_patches: BTreeMap<String, toml::Value>,
         install: Option<bool>,
         variant_inputs: serde_json::Value,
     ) -> Self {

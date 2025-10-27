@@ -103,27 +103,25 @@ impl LockFile {
     /// Adding an agent:
     ///
     /// ```rust,no_run
-    /// use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// use agpm_cli::lockfile::{LockFile, LockedResourceBuilder};
     /// use agpm_cli::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
-    /// let resource = LockedResource::new(
+    /// let resource = LockedResourceBuilder::new(
     ///     "example-agent".to_string(),
-    ///     Some("community".to_string()),
-    ///     Some("https://github.com/example/repo.git".to_string()),
     ///     "agents/example.md".to_string(),
-    ///     Some("^1.0".to_string()),
-    ///     Some("a1b2c3d...".to_string()),
     ///     "sha256:abcdef...".to_string(),
     ///     "agents/example-agent.md".to_string(),
-    ///     vec![],
     ///     ResourceType::Agent,
-    ///     Some("claude-code".to_string()),
-    ///     None,
-    ///     std::collections::HashMap::new(),
-    ///     None,
-    ///     serde_json::Value::Object(serde_json::Map::new()),
-    /// );
+    /// )
+    /// .source(Some("community".to_string()))
+    /// .url(Some("https://github.com/example/repo.git".to_string()))
+    /// .version(Some("^1.0".to_string()))
+    /// .resolved_commit(Some("a1b2c3d...".to_string()))
+    /// .tool(Some("claude-code".to_string()))
+    /// .dependencies(Vec::new())
+    /// .applied_patches(std::collections::BTreeMap::new())
+    /// .build();
     ///
     /// lockfile.add_resource("example-agent".to_string(), resource, true);
     /// assert_eq!(lockfile.agents.len(), 1);
@@ -132,26 +130,20 @@ impl LockFile {
     /// Adding a snippet:
     ///
     /// ```rust,no_run
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// # use agpm_cli::lockfile::{LockFile, LockedResourceBuilder};
     /// # use agpm_cli::core::ResourceType;
     /// # let mut lockfile = LockFile::new();
-    /// let snippet = LockedResource::new(
+    /// let snippet = LockedResourceBuilder::new(
     ///     "util-snippet".to_string(),
-    ///     None,  // Local resource
-    ///     None,
     ///     "../local/utils.md".to_string(),
-    ///     None,
-    ///     None,
     ///     "sha256:fedcba...".to_string(),
     ///     "snippets/util-snippet.md".to_string(),
-    ///     vec![],
     ///     ResourceType::Snippet,
-    ///     Some("claude-code".to_string()),
-    ///     None,
-    ///     std::collections::HashMap::new(),
-    ///     None,
-    ///     serde_json::Value::Object(serde_json::Map::new()),
-    /// );
+    /// )
+    /// .tool(Some("claude-code".to_string()))
+    /// .dependencies(Vec::new())
+    /// .applied_patches(std::collections::BTreeMap::new())
+    /// .build();
     ///
     /// lockfile.add_resource("util-snippet".to_string(), snippet, false);
     /// assert_eq!(lockfile.snippets.len(), 1);
@@ -181,27 +173,25 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use agpm_cli::lockfile::{LockFile, LockedResource};
+    /// use agpm_cli::lockfile::{LockFile, LockedResourceBuilder};
     /// use agpm_cli::core::ResourceType;
     ///
     /// let mut lockfile = LockFile::new();
-    /// let command = LockedResource::new(
+    /// let command = LockedResourceBuilder::new(
     ///     "build-command".to_string(),
-    ///     Some("community".to_string()),
-    ///     Some("https://github.com/example/repo.git".to_string()),
     ///     "commands/build.md".to_string(),
-    ///     Some("v1.0.0".to_string()),
-    ///     Some("a1b2c3d...".to_string()),
     ///     "sha256:abcdef...".to_string(),
     ///     ".claude/commands/build-command.md".to_string(),
-    ///     vec![],
     ///     ResourceType::Command,
-    ///     Some("claude-code".to_string()),
-    ///     None,
-    ///     std::collections::HashMap::new(),
-    ///     None,
-    ///     serde_json::Value::Object(serde_json::Map::new()),
-    /// );
+    /// )
+    /// .source(Some("community".to_string()))
+    /// .url(Some("https://github.com/example/repo.git".to_string()))
+    /// .version(Some("v1.0.0".to_string()))
+    /// .resolved_commit(Some("a1b2c3d...".to_string()))
+    /// .tool(Some("claude-code".to_string()))
+    /// .dependencies(Vec::new())
+    /// .applied_patches(std::collections::BTreeMap::new())
+    /// .build();
     ///
     /// lockfile.add_typed_resource("build-command".to_string(), command, ResourceType::Command);
     /// assert_eq!(lockfile.commands.len(), 1);
