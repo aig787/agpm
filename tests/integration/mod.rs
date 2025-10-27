@@ -37,7 +37,11 @@
 //! - **pattern**: Pattern-based dependency installation
 //! - **project_template_vars**: Project-level template variables in transitive dependencies
 //! - **resource_template_vars**: Resource-specific template variables with transitive dependencies
-//! - **transitive**: Transitive dependency resolution
+//! - **transitive_basic**: Basic transitive dependency resolution, diamond patterns, cycles
+//! - **transitive_cross_type**: Cross-type and cross-source transitive dependencies
+//! - **transitive_local**: Local file transitive dependency resolution
+//! - **transitive_patterns**: Pattern expansion in transitive dependencies
+//! - **transitive_versions**: Version conflict and metadata resolution
 //! - **tree**: Dependency tree visualization
 //! - **upd_progress**: Update progress reporting
 //! - **upgrade**: Self-upgrade functionality
@@ -84,7 +88,11 @@ mod templating;
 mod test_merged_dependencies;
 mod test_transitive_deps_complex;
 mod tool_enable_disable;
-mod transitive;
+mod transitive_basic;
+mod transitive_cross_type;
+mod transitive_local;
+mod transitive_patterns;
+mod transitive_versions;
 mod tree;
 mod upd_progress;
 mod upgrade;
