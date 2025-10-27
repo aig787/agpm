@@ -633,21 +633,20 @@ Version: {{ agpm.resource.version }}
     assert!(output.success);
 
     // Now validate with --render flag
-    // TODO: This currently finds no templates due to a bug in validate.rs where it searches
-    // lockfile.name instead of lockfile.manifest_alias. Need to fix validate.rs to use
-    // lookup_name() when matching manifest keys against lockfile entries.
+    // FIXED: validate.rs now correctly uses manifest_alias when matching manifest keys
+    // against lockfile entries, so templates are properly found and validated.
     let output = project.run_agpm(&["validate", "--render"])?;
     if !output.success {
         eprintln!("STDERR: {}", output.stderr);
         eprintln!("STDOUT: {}", output.stdout);
     }
-    assert!(output.success, "Validation should succeed (no templates found due to lookup bug)");
+    assert!(output.success, "Validation should succeed");
 
-    // Currently reports no templates found - this is a bug in validate.rs
+    // Verify that template was found and rendered successfully
     let stdout = &output.stdout;
     assert!(
-        stdout.contains("No templates found"),
-        "Currently reports no templates due to name lookup bug. Actual stdout: {}",
+        stdout.contains("1 template") || stdout.contains("Templates valid: 1"),
+        "Should find and validate 1 template. Actual stdout: {}",
         stdout
     );
 

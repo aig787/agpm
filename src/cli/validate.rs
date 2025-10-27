@@ -711,39 +711,42 @@ impl ValidateCommand {
                         let mut missing = Vec::new();
                         let mut extra = Vec::new();
 
-                        // Check for missing dependencies
-                        for name in manifest.agents.keys() {
-                            if !lockfile
-                                .agents
-                                .iter()
-                                .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
-                            {
-                                missing.push((name.clone(), "agent"));
-                            }
-                        }
+                        // Check for missing dependencies using unified interface
+                        for resource_type in &[ResourceType::Agent, ResourceType::Snippet] {
+                            let manifest_resources = manifest.get_resources(resource_type);
+                            let lockfile_resources = lockfile.get_resources(resource_type);
+                            let type_name = match resource_type {
+                                ResourceType::Agent => "agent",
+                                ResourceType::Snippet => "snippet",
+                                _ => unreachable!(),
+                            };
 
-                        for name in manifest.snippets.keys() {
-                            if !lockfile
-                                .snippets
-                                .iter()
-                                .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
-                            {
-                                missing.push((name.clone(), "snippet"));
+                            for name in manifest_resources.keys() {
+                                if !lockfile_resources
+                                    .iter()
+                                    .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                                {
+                                    missing.push((name.clone(), type_name));
+                                }
                             }
                         }
 
                         // Check for extra dependencies in lockfile
-                        for entry in &lockfile.agents {
-                            let manifest_key = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
-                            if !manifest.agents.contains_key(manifest_key) {
-                                extra.push((entry.name.clone(), "agent"));
-                            }
-                        }
+                        for resource_type in &[ResourceType::Agent, ResourceType::Snippet] {
+                            let manifest_resources = manifest.get_resources(resource_type);
+                            let lockfile_resources = lockfile.get_resources(resource_type);
+                            let type_name = match resource_type {
+                                ResourceType::Agent => "agent",
+                                ResourceType::Snippet => "snippet",
+                                _ => unreachable!(),
+                            };
 
-                        for entry in &lockfile.snippets {
-                            let manifest_key = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
-                            if !manifest.snippets.contains_key(manifest_key) {
-                                extra.push((entry.name.clone(), "snippet"));
+                            for entry in lockfile_resources {
+                                let manifest_key =
+                                    entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                                if !manifest_resources.contains_key(manifest_key) {
+                                    extra.push((entry.name.clone(), type_name));
+                                }
                             }
                         }
 
@@ -966,8 +969,9 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
+                    // Use canonical name from lockfile entry, not manifest key
                     let resource_id = crate::lockfile::ResourceId::new(
-                        $name.to_string(),
+                        $entry.name.clone(),
                         $entry.source.clone(),
                         $entry.tool.clone(),
                         $resource_type,
@@ -1009,27 +1013,23 @@ impl ValidateCommand {
             }
 
             // Process each resource type
-            for name in manifest.agents.keys() {
-                if let Some(entry) = lockfile.agents.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Agent);
-                }
-            }
+            // Use manifest_alias (if present) when matching manifest keys to lockfile entries
+            for resource_type in &[
+                ResourceType::Agent,
+                ResourceType::Snippet,
+                ResourceType::Command,
+                ResourceType::Script,
+            ] {
+                let manifest_resources = manifest.get_resources(resource_type);
+                let lockfile_resources = lockfile.get_resources(resource_type);
 
-            for name in manifest.snippets.keys() {
-                if let Some(entry) = lockfile.snippets.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Snippet);
-                }
-            }
-
-            for name in manifest.commands.keys() {
-                if let Some(entry) = lockfile.commands.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Command);
-                }
-            }
-
-            for name in manifest.scripts.keys() {
-                if let Some(entry) = lockfile.scripts.iter().find(|e| &e.name == name) {
-                    validate_resource_template!(name, entry, ResourceType::Script);
+                for name in manifest_resources.keys() {
+                    if let Some(entry) = lockfile_resources
+                        .iter()
+                        .find(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                    {
+                        validate_resource_template!(name, entry, *resource_type);
+                    }
                 }
             }
 

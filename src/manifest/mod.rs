@@ -2427,6 +2427,79 @@ impl Manifest {
         }
     }
 
+    /// Get resource dependencies by type.
+    ///
+    /// Returns a reference to the HashMap of dependencies for the specified resource type.
+    /// This provides a unified interface for accessing different resource collections,
+    /// similar to `LockFile::get_resources()`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::Manifest;
+    /// use agpm_cli::core::ResourceType;
+    ///
+    /// let manifest = Manifest::new();
+    /// let agents = manifest.get_resources(&ResourceType::Agent);
+    /// println!("Found {} agent dependencies", agents.len());
+    /// ```
+    #[must_use]
+    pub fn get_resources(
+        &self,
+        resource_type: &crate::core::ResourceType,
+    ) -> &HashMap<String, ResourceDependency> {
+        use crate::core::ResourceType;
+        match resource_type {
+            ResourceType::Agent => &self.agents,
+            ResourceType::Snippet => &self.snippets,
+            ResourceType::Command => &self.commands,
+            ResourceType::Script => &self.scripts,
+            ResourceType::Hook => &self.hooks,
+            ResourceType::McpServer => &self.mcp_servers,
+        }
+    }
+
+    /// Get all resource dependencies across all types.
+    ///
+    /// Returns a vector of tuples containing the resource type, manifest key (name),
+    /// and the dependency specification. This provides a unified way to iterate over
+    /// all resources regardless of type.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `(ResourceType, &str, &ResourceDependency)` tuples where:
+    /// - The first element is the type of resource (Agent, Snippet, etc.)
+    /// - The second element is the manifest key (the name in the TOML file)
+    /// - The third element is the resource dependency specification
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::manifest::Manifest;
+    ///
+    /// let manifest = Manifest::new();
+    /// let all = manifest.all_resources();
+    ///
+    /// for (resource_type, name, dep) in all {
+    ///     println!("{:?}: {}", resource_type, name);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn all_resources(&self) -> Vec<(crate::core::ResourceType, &str, &ResourceDependency)> {
+        use crate::core::ResourceType;
+
+        let mut resources = Vec::new();
+
+        for resource_type in ResourceType::all() {
+            let type_resources = self.get_resources(resource_type);
+            for (name, dep) in type_resources {
+                resources.push((*resource_type, name.as_str(), dep));
+            }
+        }
+
+        resources
+    }
+
     /// Add or update an MCP server configuration.
     ///
     /// MCP servers now use standard `ResourceDependency` format,
