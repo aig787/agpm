@@ -205,6 +205,9 @@ mod installer_tests {
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
+        if let Err(e) = &result {
+            eprintln!("ERROR: {:#}", e);
+        }
         assert!(result.is_ok());
         let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
         assert!(installed);

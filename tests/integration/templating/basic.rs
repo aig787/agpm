@@ -86,6 +86,98 @@ Version: {{ agpm.resource.version }}
     Ok(())
 }
 
+/// Test that files without templating enabled can contain template-like syntax.
+///
+/// This is critical for snippets containing JSDoc or other documentation that uses
+/// curly braces (e.g., `@param {{id: number, name: string}} user`).
+#[tokio::test]
+async fn test_non_templated_files_with_curly_braces() -> Result<()> {
+    agpm_cli::test_utils::init_test_logging(None);
+
+    let project = TestProject::new().await?;
+    let test_repo = project.create_source_repo("test-repo").await?;
+
+    // Create a snippet with JSDoc-style syntax but NO templating enabled
+    // This should install successfully without attempting to parse the {{ }} as templates
+    test_repo
+        .add_resource(
+            "snippets",
+            "jsdoc-examples",
+            r#"---
+title: JSDoc Examples
+description: Common JSDoc patterns
+---
+# JSDoc Documentation Examples
+
+## Function with Object Parameter
+
+```javascript
+/**
+ * Process user data
+ * @param {{id: number, name: string, email?: string}} user - User object
+ * @returns {{success: boolean, message: string}} Result object
+ */
+function processUser(user) {
+  return { success: true, message: `Processed ${user.name}` };
+}
+```
+
+## Type Definitions
+
+```typescript
+type Config = {{
+  apiKey: string,
+  timeout: number,
+  retries?: number
+}};
+```
+
+These examples use {{ }} for type annotations but should not be treated as templates.
+"#,
+        )
+        .await?;
+
+    test_repo.commit_all("Add JSDoc snippet")?;
+    test_repo.tag_version("v1.0.0")?;
+
+    let repo_url = test_repo.bare_file_url(project.sources_path())?;
+
+    // Create manifest
+    let manifest = ManifestBuilder::new()
+        .add_source("test-repo", &repo_url)
+        .add_snippet("jsdoc-examples", |d| {
+            d.source("test-repo").path("snippets/jsdoc-examples.md").version("v1.0.0")
+        })
+        .build();
+
+    project.write_manifest(&manifest).await?;
+
+    // Install - should succeed without template parsing errors
+    let output = project.run_agpm(&["install"])?;
+    assert!(
+        output.success,
+        "Installation should succeed for files without templating enabled. Error: {}",
+        output.stderr
+    );
+
+    // Read the installed file and verify curly braces are preserved
+    let installed_path = project.project_path().join(".agpm/snippets/jsdoc-examples.md");
+    let content = fs::read_to_string(&installed_path).await?;
+
+    // Verify JSDoc syntax is preserved exactly
+    assert!(
+        content.contains("@param {{id: number, name: string, email?: string}} user"),
+        "JSDoc parameter syntax should be preserved"
+    );
+    assert!(
+        content.contains("@returns {{success: boolean, message: string}}"),
+        "JSDoc return type syntax should be preserved"
+    );
+    assert!(content.contains("type Config = {{"), "TypeScript type syntax should be preserved");
+
+    Ok(())
+}
+
 /// Test that resources can reference dependencies via templates.
 #[tokio::test]
 async fn test_dependency_references() -> Result<()> {

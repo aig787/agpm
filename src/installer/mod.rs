@@ -427,143 +427,222 @@ pub async fn install_resource(
     };
 
     // Apply templating to markdown files (after patching)
-    // Strategy: Always render first, then check agpm.templating flag in rendered frontmatter
+    // Strategy: Always render frontmatter (for template variables in frontmatter fields),
+    //           but only render body if agpm.templating: true
     // Track whether templating was applied and capture context checksum from rendering
     let (final_content, templating_was_applied, captured_checksum) = if entry.path.ends_with(".md")
     {
-        // Build template context if we have a shared builder
-        if let Some(template_context_builder) = &context.template_context_builder {
-            use crate::templating::TemplateRenderer;
+        // Strategy: Always render frontmatter first (it may contain template vars)
+        // Then check agpm.templating flag in the RENDERED frontmatter
+        // Then conditionally render the body based on that flag
+        let template_context_builder = &context.template_context_builder;
+        use crate::templating::TemplateRenderer;
 
+        // Step 1: Extract raw frontmatter text WITHOUT parsing YAML
+        // (since frontmatter may contain template syntax that makes it unparseable YAML)
+        use crate::markdown::frontmatter::FrontmatterParser;
+        let parser = FrontmatterParser::new();
+
+        let (raw_frontmatter_text, body_content) =
+            if let Some(raw_fm) = parser.extract_raw_frontmatter(&patched_content) {
+                let body = parser.strip_frontmatter(&patched_content);
+                (raw_fm, body)
+            } else {
+                // No frontmatter
+                (String::new(), patched_content.clone())
+            };
+
+        if raw_frontmatter_text.is_empty() {
+            // No frontmatter - return content as-is (no templating to do)
+            (patched_content, false, None)
+        } else {
             // Determine resource type from entry
             let resource_type = entry.resource_type;
 
             // Compute context digest for cache invalidation
             // This ensures that changes to dependency versions invalidate the cache
-            let context_digest =
-                template_context_builder.compute_context_digest().with_context(|| {
-                    format!("Failed to compute template context digest for {}", entry.name)
-                })?;
-
-            let resource_id = crate::lockfile::ResourceId::new(
-                entry.name.clone(),
-                entry.source.clone(),
-                entry.tool.clone(),
-                resource_type,
-                entry.variant_inputs.hash().to_string(),
-            );
-            let (template_context, captured_context_checksum) = template_context_builder
-                .build_context(&resource_id, entry.variant_inputs.json())
-                .await
-                .map_err(|e| {
-                    // Preserve the full error chain for debugging
-                    anyhow::anyhow!("Failed to build template context for {}: {:#}", entry.name, e)
-                })?;
-
-            // Show verbose output before rendering
-            if context.verbose {
-                let num_resources = template_context
-                    .get("resources")
-                    .and_then(|v| v.as_object())
-                    .map(|o| o.len())
-                    .unwrap_or(0);
-                let num_dependencies = template_context
-                    .get("dependencies")
-                    .and_then(|v| v.as_object())
-                    .map(|o| o.len())
-                    .unwrap_or(0);
-
-                tracing::info!("📝 Rendering template: {}", entry.path);
-                tracing::info!(
-                    "   Context: {} resources, {} dependencies",
-                    num_resources,
-                    num_dependencies
-                );
-                tracing::debug!("   Context digest: {}", context_digest);
-            }
-
-            // Create renderer and render template
-            let mut renderer = TemplateRenderer::new(
-                true,
-                context.project_dir.to_path_buf(),
-                context.max_content_file_size,
-            )
-            .with_context(|| "Failed to create template renderer")?;
-
-            // Debug: Check if agpm.deps.snippets exists in context
-            if let Some(agpm) = template_context.get("agpm") {
-                if let Some(deps) = agpm.get("deps") {
-                    if let Some(snippets) = deps.get("snippets") {
+            // Wrap templating logic in a block that can be skipped on errors
+            let templating_result: Option<(String, bool, Option<String>)> = 'templating: {
+                let context_digest = match template_context_builder.compute_context_digest() {
+                    Ok(digest) => digest,
+                    Err(e) => {
+                        // Digest computation failed - fall back to using original content without templating
                         tracing::debug!(
-                            "Template context has agpm.deps.snippets with {} entries",
-                            snippets.as_object().map(|o| o.len()).unwrap_or(0)
+                            "Failed to compute context digest for {}: {}. Using original content.",
+                            entry.name,
+                            e
                         );
-                        if let Some(best_practices) = snippets.get("best_practices") {
-                            tracing::debug!(
-                                "✓ Found best_practices in context: has content field = {}",
-                                best_practices.get("content").is_some()
-                            );
-                        } else {
-                            tracing::warn!("✗ best_practices NOT found in agpm.deps.snippets");
-                        }
-                    } else {
-                        tracing::warn!("✗ agpm.deps.snippets NOT found in context");
+                        break 'templating None;
                     }
-                } else {
-                    tracing::warn!("✗ agpm.deps NOT found in context");
-                }
-            } else {
-                tracing::warn!("✗ agpm NOT found in context");
-            }
+                };
 
-            let rendered_content = renderer
-                .render_template(&patched_content, &template_context)
-                .map_err(|e| {
-                    // Log detailed error with full error chain
-                    tracing::error!(
-                        "Template rendering failed for resource '{}' ({}): {}",
-                        entry.name,
-                        entry.path,
-                        e
-                    );
-                    // Log error chain if available
-                    for (i, cause) in e.chain().skip(1).enumerate() {
-                        tracing::error!("  Caused by [{}]: {}", i + 1, cause);
-                    }
-                    e
-                })
-                .with_context(|| {
-                    format!(
-                        "Failed to render template for '{}' (source: {}, path: {})",
-                        entry.name,
-                        entry.source.as_deref().unwrap_or("local"),
-                        entry.path
-                    )
-                })?;
-
-            tracing::debug!("Successfully rendered template for {}", entry.name);
-
-            // Parse the RENDERED content to check agpm.templating flag
-            let use_rendered = if let Ok(md_file) = MarkdownFile::parse(&rendered_content) {
-                md_file
-                    .metadata
-                    .as_ref()
-                    .and_then(|m| m.extra.get("agpm"))
-                    .and_then(|agpm| agpm.get("templating"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            } else {
-                tracing::warn!(
-                    "Failed to parse rendered frontmatter for {}, using original content",
-                    entry.name
+                let resource_id = crate::lockfile::ResourceId::new(
+                    entry.name.clone(),
+                    entry.source.clone(),
+                    entry.tool.clone(),
+                    resource_type,
+                    entry.variant_inputs.hash().to_string(),
                 );
-                false
-            };
 
-            if use_rendered {
-                // Show verbose output after rendering
+                // Try to build template context - if it fails, fall back to using original content
+                let (template_context, captured_context_checksum) = match template_context_builder
+                    .build_context(&resource_id, entry.variant_inputs.json())
+                    .await
+                {
+                    Ok(ctx) => ctx,
+                    Err(e) => {
+                        // Context building failed - likely resource not in lockfile or other issue
+                        // Fall back to using original content without templating
+                        tracing::debug!(
+                            "Failed to build template context for {}: {}. Using original content.",
+                            entry.name,
+                            e
+                        );
+                        break 'templating None;
+                    }
+                };
+
+                // Show verbose output before rendering
                 if context.verbose {
-                    let size_bytes = rendered_content.len();
+                    let num_resources = template_context
+                        .get("resources")
+                        .and_then(|v| v.as_object())
+                        .map(|o| o.len())
+                        .unwrap_or(0);
+                    let num_dependencies = template_context
+                        .get("dependencies")
+                        .and_then(|v| v.as_object())
+                        .map(|o| o.len())
+                        .unwrap_or(0);
+
+                    tracing::info!("📝 Rendering template: {}", entry.path);
+                    tracing::info!(
+                        "   Context: {} resources, {} dependencies",
+                        num_resources,
+                        num_dependencies
+                    );
+                    tracing::debug!("   Context digest: {}", context_digest);
+                }
+
+                // Step 2: Render the raw frontmatter text (which may contain template syntax)
+                let frontmatter_template = format!("---\n{}\n---\n", raw_frontmatter_text);
+
+                let mut renderer = TemplateRenderer::new(
+                    true,
+                    context.project_dir.to_path_buf(),
+                    context.max_content_file_size,
+                )
+                .with_context(|| "Failed to create template renderer")?;
+
+                let rendered_frontmatter = renderer
+                    .render_template(&frontmatter_template, &template_context)
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Frontmatter rendering failed for resource '{}': {}",
+                            entry.name,
+                            e
+                        );
+                        e
+                    })
+                    .with_context(|| {
+                        format!("Failed to render frontmatter for '{}'", entry.name)
+                    })?;
+
+                // Step 3: Parse the rendered frontmatter to check agpm.templating flag
+                // If parsing fails, use original content entirely (no templating)
+                let (templating_enabled, yaml_parse_failed) = match MarkdownFile::parse(
+                    &rendered_frontmatter,
+                ) {
+                    Ok(parsed_rendered) => (
+                        parsed_rendered
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.extra.get("agpm"))
+                            .and_then(|agpm| agpm.get("templating"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        false,
+                    ),
+                    Err(e) => {
+                        // Parsing failed - frontmatter is invalid even after rendering
+                        // Emit warning and fall back to using original content as-is
+                        eprintln!(
+                            "Warning: Unable to parse YAML frontmatter in '{}' after template rendering.\n\
+                        The file will be installed as-is without processing.\n\
+                        Parse error: {}\n",
+                            entry.name, e
+                        );
+                        tracing::debug!(
+                            "Failed to parse rendered frontmatter for {}, using original content",
+                            entry.name
+                        );
+                        (false, true)
+                    }
+                };
+
+                tracing::debug!(
+                    "Resource '{}': templating_enabled={}",
+                    entry.name,
+                    templating_enabled
+                );
+
+                // If YAML parsing failed, use original content entirely
+                if yaml_parse_failed {
+                    break 'templating Some((patched_content.clone(), false, None));
+                }
+                // Step 4: Conditionally render the body based on agpm.templating flag
+                let final_body = if templating_enabled {
+                    // Render the body through Tera
+                    let mut renderer = TemplateRenderer::new(
+                        true,
+                        context.project_dir.to_path_buf(),
+                        context.max_content_file_size,
+                    )
+                    .with_context(|| "Failed to create template renderer")?;
+
+                    renderer
+                        .render_template(&body_content, &template_context)
+                        .map_err(|e| {
+                            tracing::error!(
+                                "Body rendering failed for resource '{}': {}",
+                                entry.name,
+                                e
+                            );
+                            for (i, cause) in e.chain().skip(1).enumerate() {
+                                tracing::error!("  Caused by [{}]: {}", i + 1, cause);
+                            }
+                            e
+                        })
+                        .with_context(|| {
+                            format!(
+                                "Failed to render body for '{}' (source: {}, path: {})",
+                                entry.name,
+                                entry.source.as_deref().unwrap_or("local"),
+                                entry.path
+                            )
+                        })?
+                } else {
+                    // Use original body content without rendering
+                    tracing::debug!(
+                        "agpm.templating not enabled for {}, using original body content",
+                        entry.name
+                    );
+                    body_content.clone()
+                };
+
+                // Step 5: Combine rendered frontmatter with body
+                // The rendered frontmatter ends with "---\n", body starts after
+                let mut final_content = rendered_frontmatter;
+                final_content.push_str(&final_body);
+
+                // Preserve trailing newline from original if present
+                if patched_content.ends_with('\n') && !final_content.ends_with('\n') {
+                    final_content.push('\n');
+                }
+
+                if templating_enabled && context.verbose {
+                    // Show verbose output after rendering
+                    let size_bytes = final_content.len();
                     let size_str = if size_bytes < 1024 {
                         format!("{} B", size_bytes)
                     } else if size_bytes < 1024 * 1024 {
@@ -574,17 +653,20 @@ pub async fn install_resource(
                     tracing::info!("   Output: {} ({})", dest_path.display(), size_str);
                     tracing::info!("✅ Template rendered successfully");
                 }
-                (rendered_content, true, captured_context_checksum)
-            } else {
-                tracing::debug!(
-                    "agpm.templating not enabled for {}, using original content",
-                    entry.name
-                );
-                (patched_content, false, None)
-            }
-        } else {
-            tracing::debug!("No template context builder available for {}", entry.name);
-            (patched_content, false, None)
+
+                Some((
+                    final_content,
+                    templating_enabled,
+                    if templating_enabled {
+                        captured_context_checksum
+                    } else {
+                        None
+                    },
+                ))
+            };
+
+            // Unwrap templating result or fall back to patched content
+            templating_result.unwrap_or((patched_content, false, None))
         }
     } else {
         tracing::debug!("Not a markdown file: {}", entry.path);

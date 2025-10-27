@@ -38,8 +38,8 @@ pub struct InstallContext<'a> {
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
     pub max_content_file_size: Option<u64>,
-    /// Shared template context builder for all resources (optional, created if lockfile available)
-    pub template_context_builder: Option<Arc<crate::templating::TemplateContextBuilder>>,
+    /// Shared template context builder for all resources
+    pub template_context_builder: Arc<crate::templating::TemplateContextBuilder>,
 }
 
 impl<'a> InstallContext<'a> {
@@ -58,18 +58,21 @@ impl<'a> InstallContext<'a> {
         gitignore_lock: Option<&'a Arc<Mutex<()>>>,
         max_content_file_size: Option<u64>,
     ) -> Self {
-        // Create shared template context builder if lockfile is available
-        let template_context_builder = if let Some(lockfile) = lockfile {
-            let project_config = manifest.and_then(|m| m.project.clone());
-            Some(Arc::new(crate::templating::TemplateContextBuilder::new(
-                lockfile.clone(),
-                project_config,
-                Arc::new(cache.clone()),
-                project_dir.to_path_buf(),
-            )))
+        // Create shared template context builder
+        // Use lockfile if available, otherwise create with empty lockfile
+        let (lockfile_for_builder, project_config) = if let Some(lf) = lockfile {
+            (lf.clone(), manifest.and_then(|m| m.project.clone()))
         } else {
-            None
+            // No lockfile - create an empty one for the builder
+            (Arc::new(LockFile::default()), None)
         };
+
+        let template_context_builder = Arc::new(crate::templating::TemplateContextBuilder::new(
+            lockfile_for_builder,
+            project_config,
+            Arc::new(cache.clone()),
+            project_dir.to_path_buf(),
+        ));
 
         Self {
             project_dir,
