@@ -97,3 +97,32 @@ pub fn init_test_logging(level: Option<Level>) {
             .try_init();
     });
 }
+
+/// Compute the SHA-256 hash of variant_inputs JSON value for tests.
+///
+/// This helper function computes the correct `variant_inputs_hash` value
+/// that should be used when creating `LockedResource` instances in tests.
+/// It delegates to the centralized hash computation function.
+///
+/// # Arguments
+///
+/// * `variant_inputs` - The variant_inputs JSON value (typically empty object for tests)
+///
+/// # Returns
+///
+/// A string in the format "sha256:hexdigest"
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use agpm_cli::test_utils::compute_variant_inputs_hash;
+/// use serde_json::json;
+///
+/// let hash = compute_variant_inputs_hash(&json!({}));
+/// assert_eq!(hash, "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
+/// ```
+pub fn compute_variant_inputs_hash(variant_inputs: &serde_json::Value) -> String {
+    crate::utils::compute_variant_inputs_hash(variant_inputs).unwrap_or_else(|_| {
+        panic!("Failed to compute variant_inputs_hash in test");
+    })
+}

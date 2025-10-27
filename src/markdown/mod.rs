@@ -208,12 +208,12 @@ pub mod reference_extractor;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::core::OperationContext;
-use crate::manifest::DependencySpec;
+use crate::manifest::{DependencySpec, dependency_spec::AgpmMetadata};
 use crate::markdown::frontmatter::{FrontmatterParser, ParsedFrontmatter};
 
 /// Type alias for [`MarkdownDocument`] for backward compatibility.
@@ -266,7 +266,7 @@ pub type MarkdownFile = MarkdownDocument;
 ///
 /// ```rust,no_run
 /// # use agpm_cli::markdown::MarkdownMetadata;
-/// # use std::collections::HashMap;
+/// # use std::collections::{BTreeMap, HashMap};
 /// let mut metadata = MarkdownMetadata::default();
 /// metadata.title = Some("Python Linter".to_string());
 /// metadata.version = Some("2.0.1".to_string());
@@ -275,7 +275,7 @@ pub type MarkdownFile = MarkdownDocument;
 /// // This is typically parsed from frontmatter rather than set programmatically
 ///
 /// // Custom fields via extra map
-/// let mut extra = HashMap::new();
+/// let mut extra = BTreeMap::new();
 /// extra.insert("license".to_string(), "MIT".into());
 /// extra.insert("min_python".to_string(), "3.8".into());
 /// metadata.extra = extra;
@@ -347,7 +347,7 @@ pub struct MarkdownMetadata {
     ///     - path: snippets/utils.md
     /// ```
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<HashMap<String, Vec<DependencySpec>>>,
+    pub dependencies: Option<BTreeMap<String, Vec<DependencySpec>>>,
 
     /// Additional custom metadata fields.
     ///
@@ -357,8 +357,19 @@ pub struct MarkdownMetadata {
     ///
     /// Values are stored as `serde_json::Value` to handle mixed types
     /// (strings, numbers, arrays, objects).
+    /// Uses BTreeMap for deterministic serialization order.
     #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
+    pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+impl MarkdownMetadata {
+    /// Get AGPM-specific metadata from the extra fields.
+    ///
+    /// Extracts the `agpm` section from the frontmatter if present,
+    /// which may contain templating flags and nested dependencies.
+    pub fn get_agpm_metadata(&self) -> Option<AgpmMetadata> {
+        self.extra.get("agpm").and_then(|value| serde_json::from_value(value.clone()).ok())
+    }
 }
 
 /// A parsed Markdown document representing a Claude Code resource.

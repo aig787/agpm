@@ -713,21 +713,37 @@ impl ValidateCommand {
 
                         // Check for missing dependencies
                         for name in manifest.agents.keys() {
-                            if !lockfile.agents.iter().any(|e| &e.name == name) {
+                            if !lockfile
+                                .agents
+                                .iter()
+                                .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                            {
                                 missing.push((name.clone(), "agent"));
                             }
                         }
 
                         for name in manifest.snippets.keys() {
-                            if !lockfile.snippets.iter().any(|e| &e.name == name) {
+                            if !lockfile
+                                .snippets
+                                .iter()
+                                .any(|e| e.manifest_alias.as_ref().unwrap_or(&e.name) == name)
+                            {
                                 missing.push((name.clone(), "snippet"));
                             }
                         }
 
                         // Check for extra dependencies in lockfile
                         for entry in &lockfile.agents {
-                            if !manifest.agents.contains_key(&entry.name) {
+                            let manifest_key = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                            if !manifest.agents.contains_key(manifest_key) {
                                 extra.push((entry.name.clone(), "agent"));
+                            }
+                        }
+
+                        for entry in &lockfile.snippets {
+                            let manifest_key = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                            if !manifest.snippets.contains_key(manifest_key) {
+                                extra.push((entry.name.clone(), "snippet"));
                             }
                         }
 
@@ -950,15 +966,18 @@ impl ValidateCommand {
                         Arc::clone(&cache),
                         project_dir.to_path_buf(),
                     );
-                    let resource_id = crate::lockfile::ResourceId::from_serialized(
+                    let resource_id = crate::lockfile::ResourceId::new(
                         $name.to_string(),
                         $entry.source.clone(),
                         $entry.tool.clone(),
                         $resource_type,
-                        $entry.template_vars.clone(),
+                        $entry.variant_inputs.hash().to_string(),
                     );
-                    let context = match context_builder.build_context(&resource_id).await {
-                        Ok(c) => c,
+                    let context = match context_builder
+                        .build_context(&resource_id, $entry.variant_inputs.json())
+                        .await
+                    {
+                        Ok((c, _checksum)) => c,
                         Err(e) => {
                             template_results.push(format!("{}: {}", $name, e));
                             continue;
@@ -1300,6 +1319,7 @@ impl Default for ValidationResults {
 mod tests {
     use super::*;
     use crate::manifest::{Manifest, ResourceDependency};
+
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -1535,9 +1555,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&temp.path().join("agpm.lock")).unwrap();
 
@@ -1847,9 +1868,10 @@ mod tests {
 
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
+                context_checksum: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: "{}".to_string(),
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
             snippets: vec![],
             mcp_servers: vec![],
@@ -2881,9 +2903,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3382,9 +3405,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3585,9 +3609,10 @@ another-agent = { source = "test", path = "agent.md", version = "v2.0.0" }
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3758,9 +3783,10 @@ See [helper](.agpm/snippets/helper.md) for details.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3825,9 +3851,10 @@ Also check `.claude/nonexistent.md`.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3894,9 +3921,10 @@ Visit http://example.com for more info.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -3965,9 +3993,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 
@@ -4035,9 +4064,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Agent,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.commands.push(LockedResource {
             name: "cmd1".to_string(),
@@ -4052,9 +4082,10 @@ Inline code `example.md` should also be ignored.
             resource_type: crate::core::ResourceType::Command,
             tool: None,
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
         lockfile.save(&lockfile_path).unwrap();
 

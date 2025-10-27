@@ -17,32 +17,178 @@ type ResourceInfo = (Option<String>, Option<String>);
 
 /// Checks if two lockfile entries should be considered duplicates.
 ///
-/// Two entries are duplicates if either:
-/// 1. They have the same name, source, and tool (standard deduplication)
-/// 2. They are both local dependencies (source = None) with the same path and tool
+/// Two entries are duplicates if they have the same:
+/// 1. name, source, tool, AND template_vars (standard deduplication)
+/// 2. path and tool for local dependencies (source = None)
+///
+/// **CRITICAL**: template_vars are part of the resource identity! Resources with
+/// different template_vars are DISTINCT resources that must all exist in the lockfile.
+/// For example, `backend-engineer` with `language=typescript` and `language=javascript`
+/// are TWO DIFFERENT resources.
 ///
 /// The second case handles situations where a direct dependency and a transitive
 /// dependency point to the same local file but have different names (e.g., manifest
 /// name vs path-based name). This prevents false conflicts.
 pub fn is_duplicate_entry(existing: &LockedResource, new_entry: &LockedResource) -> bool {
-    // Standard deduplication: same name, source, and tool
-    if existing.name == new_entry.name
+    tracing::info!(
+        "is_duplicate_entry: existing.name='{}', new.name='{}', existing.manifest_alias={:?}, new.manifest_alias={:?}, existing.path='{}', new.path='{}'",
+        existing.name,
+        new_entry.name,
+        existing.manifest_alias,
+        new_entry.manifest_alias,
+        existing.path,
+        new_entry.path
+    );
+
+    // CRITICAL: manifest_alias is part of resource identity for PATTERN-EXPANDED dependencies!
+    // When BOTH entries have manifest_alias (both are direct or pattern-expanded),
+    // different aliases mean different resources, even with identical paths/variant_inputs.
+    //
+    // Example case where we should NOT deduplicate:
+    //   - backend-engineer (manifest_alias = Some("backend-engineer"))
+    //   - backend-engineer-python (manifest_alias = Some("backend-engineer-python"))
+    // Both from same path but represent distinct manifest entries.
+    //
+    // Example case where we SHOULD deduplicate (let merge strategy decide which wins):
+    //   - general-purpose (manifest_alias = Some("general-purpose"), direct from manifest)
+    //   - general-purpose (manifest_alias = None, transitive dependency)
+    // One is direct, one is transitive - merge strategy will pick the direct one.
+    if existing.manifest_alias.is_some()
+        && new_entry.manifest_alias.is_some()
+        && existing.manifest_alias != new_entry.manifest_alias
+    {
+        tracing::debug!(
+            "NOT duplicates - both are direct/pattern deps with different manifest_alias: existing={:?} vs new={:?} (path={})",
+            existing.manifest_alias,
+            new_entry.manifest_alias,
+            existing.path
+        );
+        return false; // Different direct dependencies = NOT duplicates
+    }
+
+    // Determine if one is direct and one is transitive
+    let existing_is_direct = existing.manifest_alias.is_some();
+    let new_is_direct = new_entry.manifest_alias.is_some();
+    let one_direct_one_transitive = existing_is_direct != new_is_direct;
+
+    // Standard deduplication logic:
+    // - When BOTH are direct/transitive: require variant_inputs to match (different templates = different resources)
+    // - When ONE is direct and ONE is transitive: ignore variant_inputs (same resource, different declaration paths)
+    let basic_match = existing.name == new_entry.name
         && existing.source == new_entry.source
-        && existing.tool == new_entry.tool
-    {
+        && existing.tool == new_entry.tool;
+
+    let is_duplicate = if one_direct_one_transitive {
+        // Direct vs transitive: ignore variant_inputs, use priority system to decide which wins
+        basic_match
+    } else {
+        // Both direct or both transitive: variant_inputs is part of resource identity
+        basic_match && existing.variant_inputs == new_entry.variant_inputs
+    };
+
+    if is_duplicate {
+        tracing::debug!(
+            "Deduplicating entries: name={}, source={:?}, tool={:?}, manifest_alias existing={:?} new={:?}, one_direct_one_transitive={}",
+            existing.name,
+            existing.source,
+            existing.tool,
+            existing.manifest_alias,
+            new_entry.manifest_alias,
+            one_direct_one_transitive
+        );
         return true;
     }
 
-    // Local dependency deduplication: same path and tool (source must both be None)
-    if existing.source.is_none()
-        && new_entry.source.is_none()
-        && existing.path == new_entry.path
-        && existing.tool == new_entry.tool
-    {
-        return true;
+    // Local dependency deduplication: same path and tool
+    // Apply same logic as above: ignore variant_inputs when one is direct and one is transitive
+    if existing.source.is_none() && new_entry.source.is_none() {
+        let path_tool_match = existing.path == new_entry.path && existing.tool == new_entry.tool;
+
+        let is_local_duplicate = if one_direct_one_transitive {
+            // Direct vs transitive: ignore variant_inputs
+            path_tool_match
+        } else {
+            // Both direct or both transitive: check variant_inputs
+            path_tool_match && existing.variant_inputs == new_entry.variant_inputs
+        };
+
+        if is_local_duplicate {
+            tracing::debug!(
+                "Deduplicating local deps: path={}, tool={:?}, one_direct_one_transitive={}",
+                existing.path,
+                existing.tool,
+                one_direct_one_transitive
+            );
+            return true;
+        }
     }
 
+    tracing::debug!(
+        "NOT duplicates: name existing={} new={}, source existing={:?} new={:?}, variant_inputs match={}",
+        existing.name,
+        new_entry.name,
+        existing.source,
+        new_entry.source,
+        existing.variant_inputs == new_entry.variant_inputs
+    );
     false
+}
+
+/// Determines if a new lockfile entry should replace an existing duplicate entry.
+///
+/// Uses a deterministic merge strategy to ensure consistent lockfile generation
+/// regardless of processing order (e.g., HashMap iteration order).
+///
+/// # Merge Priority Rules (highest to lowest)
+///
+/// 1. **Manifest dependencies win** - Direct manifest dependencies (with `manifest_alias`)
+///    always take precedence over transitive dependencies
+/// 2. **install=true wins** - Dependencies that create files (`install=true`) are
+///    preferred over content-only dependencies (`install=false`)
+/// 3. **First wins** - If both have equal priority, keep the existing entry
+///
+/// This ensures that the lockfile is deterministic even when:
+/// - Dependencies are processed in different orders
+/// - HashMap iteration order varies between runs
+/// - Multiple parents declare the same transitive dependency with different settings
+///
+/// # Arguments
+///
+/// * `existing` - The current entry in the lockfile
+/// * `new_entry` - The new entry being added
+///
+/// # Returns
+///
+/// `true` if the new entry should replace the existing one, `false` otherwise
+fn should_replace_duplicate(existing: &LockedResource, new_entry: &LockedResource) -> bool {
+    let is_new_manifest = new_entry.manifest_alias.is_some();
+    let is_existing_manifest = existing.manifest_alias.is_some();
+    let new_install = new_entry.install.unwrap_or(true);
+    let existing_install = existing.install.unwrap_or(true);
+
+    let should_replace = if is_new_manifest != is_existing_manifest {
+        // Rule 1: Manifest dependencies always win
+        is_new_manifest
+    } else if new_install != existing_install {
+        // Rule 2: Prefer install=true (files that should be written)
+        new_install
+    } else {
+        // Rule 3: Both have same priority, but still replace if new is manifest
+        // to ensure direct dependencies override transitive ones
+        is_new_manifest
+    };
+
+    if new_install != existing_install {
+        tracing::debug!(
+            "Merge decision for {}: existing.install={:?}, new.install={:?}, should_replace={}",
+            new_entry.name,
+            existing.install,
+            new_entry.install,
+            should_replace
+        );
+    }
+
+    should_replace
 }
 
 /// Manages lockfile operations including entry creation, updates, and cleanup.
@@ -58,11 +204,21 @@ impl<'a> LockfileBuilder<'a> {
         }
     }
 
-    /// Add or update a lockfile entry, replacing existing entries with the same name, source, and tool.
+    /// Add or update a lockfile entry with deterministic merging for duplicates.
     ///
     /// This method handles deduplication by using (name, source, tool) tuples as the unique key.
-    /// This allows multiple entries with the same name from different sources or tools,
-    /// which will be caught by conflict detection if they map to the same path.
+    /// When duplicates are found, it uses a deterministic merge strategy to ensure consistent
+    /// lockfile generation across runs, regardless of processing order.
+    ///
+    /// # Merge Strategy (deterministic, order-independent)
+    ///
+    /// When merging duplicate entries:
+    /// 1. **Prefer direct manifest dependencies** (has `manifest_alias`) over transitive dependencies
+    /// 2. **Prefer install=true** over install=false (prefer dependencies that create files)
+    /// 3. Otherwise, keep the existing entry (first-wins for same priority)
+    ///
+    /// This ensures that even with non-deterministic HashMap iteration order, the same
+    /// logical dependency structure produces the same lockfile.
     ///
     /// # Arguments
     ///
@@ -83,7 +239,7 @@ impl<'a> LockfileBuilder<'a> {
     ///
     /// resolver.add_or_update_lockfile_entry(&mut lockfile, "my-agent", entry);
     ///
-    /// // Later updates replace the existing entry
+    /// // Later updates use deterministic merge strategy
     /// let updated_entry = LockedResource {
     ///     name: "my-agent".to_string(),
     ///     source: Some("community".to_string()),
@@ -101,10 +257,21 @@ impl<'a> LockfileBuilder<'a> {
         let resources = lockfile.get_resources_mut(&entry.resource_type);
 
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
-            // Always replace with the new entry
-            // This ensures that direct manifest dependencies (processed last) take precedence
-            // over transitive dependencies (discovered during collection)
-            *existing = entry;
+            // Use deterministic merge strategy to ensure consistent lockfile generation
+            let should_replace = should_replace_duplicate(existing, &entry);
+
+            tracing::trace!(
+                "Duplicate entry for {}: existing.install={:?}, new.install={:?}, should_replace={}",
+                entry.name,
+                existing.install,
+                entry.install,
+                should_replace
+            );
+
+            if should_replace {
+                *existing = entry;
+            }
+            // Otherwise keep existing entry (deterministic: first-wins for same priority)
         } else {
             resources.push(entry);
         }
@@ -348,11 +515,12 @@ impl<'a> LockfileBuilder<'a> {
     }
 }
 
-/// Adds pattern-expanded entries to the lockfile with deduplication.
+/// Adds pattern-expanded entries to the lockfile with deterministic deduplication.
 ///
 /// This function adds multiple resolved entries from a pattern dependency to the
-/// appropriate resource type collection in the lockfile, using (name, source) as
-/// the deduplication key.
+/// appropriate resource type collection in the lockfile. When duplicates are found,
+/// it uses the same deterministic merge strategy as `add_or_update_lockfile_entry`
+/// to ensure consistent lockfile generation.
 ///
 /// # Arguments
 ///
@@ -362,8 +530,10 @@ impl<'a> LockfileBuilder<'a> {
 ///
 /// # Deduplication
 ///
-/// Entries are matched by (name, source) tuples. If an entry with the same name
-/// and source exists, it is replaced; otherwise the new entry is appended.
+/// Uses deterministic merge strategy:
+/// 1. Prefer manifest dependencies over transitive dependencies
+/// 2. Prefer install=true over install=false
+/// 3. Otherwise keep existing entry
 pub fn add_pattern_entries(
     lockfile: &mut LockFile,
     entries: Vec<LockedResource>,
@@ -373,10 +543,10 @@ pub fn add_pattern_entries(
 
     for entry in entries {
         if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
-            // Always replace with the new entry
-            // This ensures that direct manifest dependencies (processed last) take precedence
-            // over transitive dependencies (discovered during collection)
-            *existing = entry;
+            // Use deterministic merge strategy to ensure consistent lockfile generation
+            if should_replace_duplicate(existing, &entry) {
+                *existing = entry;
+            }
         } else {
             resources.push(entry);
         }
@@ -455,11 +625,16 @@ pub(super) fn group_key(source: &str, version: &str) -> String {
 /// Looks up patches defined in `[patch.<resource_type>.<alias>]` sections
 /// and returns them as a HashMap ready for inclusion in the lockfile.
 ///
+/// For pattern-expanded resources, the manifest_alias should be provided to ensure
+/// patches are looked up using the original pattern name rather than the concrete
+/// resource name.
+///
 /// # Arguments
 ///
 /// * `manifest` - Reference to the project manifest containing patches
 /// * `resource_type` - Type of the resource (agent, snippet, command, etc.)
-/// * `name` - Resource name or manifest_alias to look up patches for
+/// * `name` - Resource name to look up patches for
+/// * `manifest_alias` - Optional manifest alias for pattern-expanded resources
 ///
 /// # Returns
 ///
@@ -468,7 +643,11 @@ pub(super) fn get_patches_for_resource(
     manifest: &Manifest,
     resource_type: ResourceType,
     name: &str,
+    manifest_alias: Option<&str>,
 ) -> HashMap<String, toml::Value> {
+    // Use manifest_alias for pattern-expanded resources, name for regular resources
+    let lookup_name = manifest_alias.unwrap_or(name);
+
     let patches = match resource_type {
         ResourceType::Agent => &manifest.patches.agents,
         ResourceType::Snippet => &manifest.patches.snippets,
@@ -478,14 +657,14 @@ pub(super) fn get_patches_for_resource(
         ResourceType::McpServer => &manifest.patches.mcp_servers,
     };
 
-    patches.get(name).cloned().unwrap_or_default()
+    patches.get(lookup_name).cloned().unwrap_or_default()
 }
 
 /// Build the complete merged template variable context for a dependency.
 ///
-/// This creates the full template_vars that should be stored in the lockfile,
+/// This creates the full variant_inputs that should be stored in the lockfile,
 /// combining both the global project configuration and any dependency-specific
-/// template_vars overrides.
+/// variant_inputs overrides.
 ///
 /// This ensures lockfile entries contain the exact template context that was
 /// used during dependency resolution, enabling reproducible builds.
@@ -493,12 +672,12 @@ pub(super) fn get_patches_for_resource(
 /// # Arguments
 ///
 /// * `manifest` - Reference to the project manifest containing global project config
-/// * `dep` - The dependency to build template_vars for
+/// * `dep` - The dependency to build variant_inputs for
 ///
 /// # Returns
 ///
-/// Complete merged template_vars (always returns a Value, empty if no variables)
-pub(super) fn build_merged_template_vars(
+/// Complete merged variant_inputs (always returns a Value, empty if no variables)
+pub(super) fn build_merged_variant_inputs(
     manifest: &Manifest,
     dep: &ResourceDependency,
 ) -> serde_json::Value {
@@ -507,12 +686,21 @@ pub(super) fn build_merged_template_vars(
     // Start with dependency-level template_vars (if any)
     let dep_vars = dep.get_template_vars();
 
+    tracing::debug!(
+        "[DEBUG] build_merged_variant_inputs: dep_path='{}', has_dep_vars={}, dep_vars={:?}",
+        dep.get_path(),
+        dep_vars.is_some(),
+        dep_vars
+    );
+
     // Get global project config as JSON
     let global_project = manifest
         .project
         .as_ref()
         .map(|p| p.to_json_value())
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    tracing::debug!("[DEBUG] build_merged_variant_inputs: global_project={:?}", global_project);
 
     // Build complete context
     let mut merged_map = serde_json::Map::new();
@@ -540,7 +728,86 @@ pub(super) fn build_merged_template_vars(
     }
 
     // Always return a Value (empty object if nothing else)
-    serde_json::Value::Object(merged_map)
+    let result = serde_json::Value::Object(merged_map);
+
+    tracing::debug!(
+        "[DEBUG] build_merged_variant_inputs: dep_path='{}', result={:?}",
+        dep.get_path(),
+        result
+    );
+
+    result
+}
+
+/// Variant inputs with JSON value and computed hash.
+///
+/// This struct holds the variant inputs as a JSON value along with its
+/// pre-computed SHA-256 hash for identity comparison. Computing the hash
+/// once ensures consistency throughout the codebase.
+///
+/// Uses `#[serde(transparent)]` so it serializes as the JSON value directly,
+/// which becomes a TOML table when serialized to TOML.
+/// The hash is transient and recomputed after deserialization.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct VariantInputs {
+    /// The JSON value
+    json: serde_json::Value,
+    /// SHA-256 hash of the serialized JSON (not serialized, computed on load)
+    #[serde(skip)]
+    hash: String,
+}
+
+impl PartialEq for VariantInputs {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare by hash for performance (avoid deep JSON comparison)
+        self.hash == other.hash
+    }
+}
+
+impl Eq for VariantInputs {}
+
+impl Default for VariantInputs {
+    fn default() -> Self {
+        Self::new(serde_json::Value::Object(serde_json::Map::new()))
+    }
+}
+
+impl VariantInputs {
+    /// Create a new VariantInputs from a JSON value, computing the hash once.
+    pub fn new(json: serde_json::Value) -> Self {
+        // Compute hash using centralized function
+        let hash = crate::utils::compute_variant_inputs_hash(&json).unwrap_or_else(|_| {
+            // Fallback to empty hash if serialization fails (shouldn't happen)
+            tracing::error!("Failed to compute variant_inputs_hash, using empty hash");
+            "sha256:".to_string()
+        });
+
+        Self {
+            json,
+            hash,
+        }
+    }
+
+    /// Get the JSON value
+    pub fn json(&self) -> &serde_json::Value {
+        &self.json
+    }
+
+    /// Get the SHA-256 hash
+    pub fn hash(&self) -> &str {
+        &self.hash
+    }
+
+    /// Recompute the hash from the JSON value.
+    ///
+    /// This is called after deserialization since the hash field is skipped.
+    pub fn recompute_hash(&mut self) {
+        self.hash = crate::utils::compute_variant_inputs_hash(&self.json).unwrap_or_else(|_| {
+            tracing::error!("Failed to recompute variant_inputs_hash");
+            "sha256:".to_string()
+        });
+    }
 }
 
 /// Adds or updates a resource entry in the lockfile based on resource type.
@@ -564,17 +831,10 @@ pub(super) fn add_or_update_lockfile_entry(lockfile: &mut LockFile, entry: Locke
     let resources = lockfile.get_resources_mut(&entry.resource_type);
 
     if let Some(existing) = resources.iter_mut().find(|e| is_duplicate_entry(e, &entry)) {
-        // For local dependencies with path-based duplicates, keep the existing entry
-        // (direct dependencies are processed first, so this preserves user's explicit choice)
-        let is_local_path_duplicate = existing.source.is_none()
-            && entry.source.is_none()
-            && existing.path == entry.path
-            && existing.name != entry.name;
-
-        if !is_local_path_duplicate {
+        // Use deterministic merge strategy to ensure consistent lockfile generation
+        if should_replace_duplicate(existing, &entry) {
             *existing = entry;
         }
-        // If it's a local path duplicate, we keep the existing entry (don't replace)
     } else {
         resources.push(entry);
     }
@@ -824,13 +1084,33 @@ pub(super) fn detect_target_conflicts(lockfile: &LockFile) -> Result<()> {
     // Note: Hooks and MCP servers are excluded because they're configuration-only
     // resources that are designed to share config files (.claude/settings.local.json
     // for hooks, .mcp.json for MCP servers), not individual files that would conflict.
+    // Also skip resources with install=false since they don't create files.
     let all_resources: Vec<(&str, &LockedResource)> = lockfile
         .agents
         .iter()
+        .filter(|r| r.install != Some(false))
         .map(|r| (r.name.as_str(), r))
-        .chain(lockfile.snippets.iter().map(|r| (r.name.as_str(), r)))
-        .chain(lockfile.commands.iter().map(|r| (r.name.as_str(), r)))
-        .chain(lockfile.scripts.iter().map(|r| (r.name.as_str(), r)))
+        .chain(
+            lockfile
+                .snippets
+                .iter()
+                .filter(|r| r.install != Some(false))
+                .map(|r| (r.name.as_str(), r)),
+        )
+        .chain(
+            lockfile
+                .commands
+                .iter()
+                .filter(|r| r.install != Some(false))
+                .map(|r| (r.name.as_str(), r)),
+        )
+        .chain(
+            lockfile
+                .scripts
+                .iter()
+                .filter(|r| r.install != Some(false))
+                .map(|r| (r.name.as_str(), r)),
+        )
         // Hooks and MCP servers intentionally omitted - they share config files
         .collect();
 
@@ -1008,9 +1288,10 @@ mod tests {
             resource_type: ResourceType::Agent,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.snippets.push(LockedResource {
@@ -1026,9 +1307,10 @@ mod tests {
             resource_type: ResourceType::Snippet,
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -1049,13 +1331,14 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             installed_at: ".claude/agents/new-agent.md".to_string(),
             resolved_commit: Some("xyz789".to_string()),
             checksum: "sha256:new".to_string(),
             dependencies: vec![],
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, "new-agent", entry);
@@ -1078,14 +1361,15 @@ mod tests {
             path: "agents/test-agent.md".to_string(),
             version: Some("v1.0.0".to_string()),
             tool: Some("claude-code".to_string()),
-            manifest_alias: None,
+            manifest_alias: Some("test-agent".to_string()), // Manifest dependency being updated
+            context_checksum: None,
             installed_at: ".claude/agents/test-agent.md".to_string(),
             resolved_commit: Some("updated123".to_string()), // Updated commit
             checksum: "sha256:updated".to_string(),          // Updated checksum
             dependencies: vec![],
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         builder.add_or_update_lockfile_entry(&mut lockfile, "test-agent", updated_entry);
@@ -1144,13 +1428,14 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             installed_at: ".claude/agents/parent.md".to_string(),
             resolved_commit: Some("parent123".to_string()),
             checksum: "sha256:parent".to_string(),
             dependencies: vec!["agent:agents/test-agent".to_string()], // Reference to test-agent (new format)
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         LockfileBuilder::collect_transitive_children(&lockfile, &parent, &mut entries_to_remove);
@@ -1159,5 +1444,57 @@ mod tests {
         assert!(
             entries_to_remove.contains(&("test-agent".to_string(), Some("community".to_string())))
         );
+    }
+
+    #[test]
+    fn test_build_merged_variant_inputs_preserves_all_keys() {
+        use crate::manifest::DetailedDependency;
+        use serde_json::json;
+
+        // Create a manifest with no global project config
+        let manifest_toml = r#"
+[sources]
+test-repo = "https://example.com/repo.git"
+        "#;
+
+        let manifest: Manifest = toml::from_str(manifest_toml).unwrap();
+
+        // Create a dependency with template_vars containing both project and config
+        let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+            source: Some("test-repo".to_string()),
+            path: "agents/test.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            branch: None,
+            rev: None,
+            command: None,
+            args: None,
+            target: None,
+            filename: None,
+            dependencies: None,
+            tool: None,
+            flatten: None,
+            install: None,
+            template_vars: Some(json!({
+                "project": { "name": "Production" },
+                "config": { "model": "claude-3-opus", "temperature": 0.5 }
+            })),
+        }));
+
+        // Call build_merged_variant_inputs
+        let result = build_merged_variant_inputs(&manifest, &dep);
+
+        // Print the result for debugging
+        println!(
+            "Result: {}",
+            serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+        );
+
+        // Verify both project and config are present
+        assert!(result.get("project").is_some(), "project should be present in variant_inputs");
+        assert!(result.get("config").is_some(), "config should be present in variant_inputs");
+
+        let config = result.get("config").unwrap();
+        assert_eq!(config.get("model").unwrap().as_str().unwrap(), "claude-3-opus");
+        assert_eq!(config.get("temperature").unwrap().as_f64().unwrap(), 0.5);
     }
 }

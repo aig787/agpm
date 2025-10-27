@@ -470,13 +470,12 @@ impl std::error::Error for StalenessReason {}
 /// ```rust
 /// use agpm_cli::lockfile::ResourceId;
 /// use agpm_cli::core::ResourceType;
-/// use serde_json::json;
 ///
 /// // Local resource (no source)
-/// let local = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, json!({}));
+/// let local = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, "default".to_string());
 ///
 /// // Git resource from a source
-/// let git = ResourceId::new("shared-agent", Some("community"), Some("claude-code"), ResourceType::Agent, json!({}));
+/// let git = ResourceId::new("shared-agent", Some("community"), Some("claude-code"), ResourceType::Agent, "default".to_string());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResourceId {
@@ -488,48 +487,30 @@ pub struct ResourceId {
     tool: Option<String>,
     /// The resource type (Agent, Snippet, Command, etc.)
     resource_type: crate::core::ResourceType,
-    /// The complete merged template variable context (serialized as JSON string)
+    /// SHA-256 hash of the complete merged template variable context
     ///
-    /// This contains the full template context that was used during dependency
-    /// resolution, including both global project config and resource-specific overrides.
-    /// Stored as a JSON string to ensure consistent comparison with LockedResource.
-    /// Two resources with different template_vars are considered distinct, even if
-    /// they have the same name, source, and tool.
-    template_vars: String,
+    /// This hash uniquely identifies the template inputs used during dependency resolution.
+    /// Two resources with different variant_inputs_hash are considered distinct, even if
+    /// they have the same name, source, and tool. Only the hash is needed for identity
+    /// comparison; the full JSON value is stored in LockedResource for serialization.
+    variant_inputs_hash: String,
 }
 
 impl ResourceId {
-    /// Create a new ResourceId from template_vars JSON value
+    /// Create a new ResourceId with pre-computed hash
     pub fn new(
         name: impl Into<String>,
         source: Option<impl Into<String>>,
         tool: Option<impl Into<String>>,
         resource_type: crate::core::ResourceType,
-        template_vars: serde_json::Value,
+        variant_inputs_hash: String,
     ) -> Self {
         Self {
             name: name.into(),
             source: source.map(|s| s.into()),
             tool: tool.map(|t| t.into()),
             resource_type,
-            template_vars: serde_json::to_string(&template_vars).unwrap_or_default(),
-        }
-    }
-
-    /// Create a new ResourceId from pre-serialized template_vars string
-    pub fn from_serialized(
-        name: impl Into<String>,
-        source: Option<impl Into<String>>,
-        tool: Option<impl Into<String>>,
-        resource_type: crate::core::ResourceType,
-        template_vars: String,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            source: source.map(|s| s.into()),
-            tool: tool.map(|t| t.into()),
-            resource_type,
-            template_vars,
+            variant_inputs_hash,
         }
     }
 
@@ -540,7 +521,7 @@ impl ResourceId {
             source: resource.source.clone(),
             tool: resource.tool.clone(),
             resource_type: resource.resource_type,
-            template_vars: resource.template_vars.clone(),
+            variant_inputs_hash: resource.variant_inputs.hash().to_string(),
         }
     }
 
@@ -568,17 +549,10 @@ impl ResourceId {
         self.resource_type
     }
 
-    /// Template variables accessor (returns parsed JSON value).
-    /// Returns None if template_vars is an empty JSON object "{}".
+    /// Get the variant_inputs_hash for this resource ID.
     #[must_use]
-    pub fn template_vars(&self) -> Option<serde_json::Value> {
-        let parsed =
-            serde_json::from_str::<serde_json::Value>(&self.template_vars).unwrap_or_default();
-        if parsed == serde_json::Value::Object(serde_json::Map::new()) {
-            None
-        } else {
-            Some(parsed)
-        }
+    pub fn variant_inputs_hash(&self) -> &str {
+        &self.variant_inputs_hash
     }
 }
 
@@ -591,13 +565,11 @@ impl std::fmt::Display for ResourceId {
         if let Some(ref tool) = self.tool {
             write!(f, " [{}]", tool)?;
         }
-        // Show compact representation of template_vars
-        if let Ok(serde_json::Value::Object(map)) =
-            serde_json::from_str::<serde_json::Value>(&self.template_vars)
+        // Show hash prefix for variant inputs (not default empty hash)
+        if !self.variant_inputs_hash.is_empty()
+            && self.variant_inputs_hash != crate::utils::EMPTY_VARIANT_INPUTS_HASH.as_str()
         {
-            if !map.is_empty() {
-                write!(f, " <vars: {} keys>", map.len())?;
-            }
+            write!(f, " <hash: {}>", &self.variant_inputs_hash[..16])?;
         }
         Ok(())
     }
@@ -880,6 +852,16 @@ pub struct LockedResource {
     /// Example: "sha256:a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
     pub checksum: String,
 
+    /// SHA-256 checksum of the template rendering context (NEW FIELD).
+    ///
+    /// This is None for resources that don't use templating, and Some(checksum)
+    /// for templated resources. The checksum is computed from the canonical
+    /// serialization of the template context (dependencies, variant_inputs, etc.)
+    /// and is used to detect when template inputs change, even if the rendered
+    /// output happens to be identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_checksum: Option<String>,
+
     /// Installation path relative to the project root.
     ///
     /// Where the resource file is installed within the project directory.
@@ -980,19 +962,20 @@ pub struct LockedResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install: Option<bool>,
 
-    /// Template variable overrides applied to this dependency.
+    /// Variant inputs for template rendering.
     ///
     /// Stores the template variable overrides that were specified in the manifest
     /// for this dependency. These overrides are applied when rendering templates
     /// to allow customization of generic templates for specific use cases.
     ///
-    /// The structure matches the template namespace hierarchy
-    /// (e.g., `{ "project": { "language": "python" } }`).
-    ///
-    /// Always serialized, even when empty, for consistent lockfile format.
-    /// Stored as JSON string to ensure inline serialization and consistent comparison.
-    #[serde(default = "default_template_vars_string")]
-    pub template_vars: String,
+    /// Encapsulates both the JSON value and its pre-computed hash for identity comparison.
+    /// The hash is not serialized and is recomputed after deserialization.
+    #[serde(
+        default = "default_variant_inputs_struct",
+        serialize_with = "serialize_variant_inputs_as_toml",
+        deserialize_with = "deserialize_variant_inputs_from_toml"
+    )]
+    pub variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
 }
 
 /// Builder for creating LockedResource instances.
@@ -1014,7 +997,8 @@ pub struct LockedResourceBuilder {
     manifest_alias: Option<String>,
     applied_patches: HashMap<String, toml::Value>,
     install: Option<bool>,
-    template_vars: serde_json::Value,
+    context_checksum: Option<String>,
+    variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
 }
 
 impl LockedResourceBuilder {
@@ -1041,7 +1025,8 @@ impl LockedResourceBuilder {
             manifest_alias: None,
             applied_patches: HashMap::new(),
             install: None,
-            template_vars: serde_json::Value::Object(Default::default()),
+            context_checksum: None,
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         }
     }
 
@@ -1099,13 +1084,22 @@ impl LockedResourceBuilder {
         self
     }
 
-    /// Set the template variables.
-    pub fn template_vars(mut self, template_vars: serde_json::Value) -> Self {
-        self.template_vars = template_vars;
+    /// Set the context checksum.
+    pub fn context_checksum(mut self, context_checksum: Option<String>) -> Self {
+        self.context_checksum = context_checksum;
         self
     }
 
-    /// Build the LockedResource, serializing template_vars to string format.
+    /// Set the variant inputs.
+    pub fn variant_inputs(
+        mut self,
+        variant_inputs: crate::resolver::lockfile_builder::VariantInputs,
+    ) -> Self {
+        self.variant_inputs = variant_inputs;
+        self
+    }
+
+    /// Build the LockedResource.
     pub fn build(self) -> LockedResource {
         LockedResource {
             name: self.name,
@@ -1115,6 +1109,7 @@ impl LockedResourceBuilder {
             version: self.version,
             resolved_commit: self.resolved_commit,
             checksum: self.checksum,
+            context_checksum: self.context_checksum,
             installed_at: self.installed_at,
             dependencies: self.dependencies,
             resource_type: self.resource_type,
@@ -1122,60 +1117,30 @@ impl LockedResourceBuilder {
             manifest_alias: self.manifest_alias,
             applied_patches: self.applied_patches,
             install: self.install,
-            template_vars: serde_json::to_string(&self.template_vars).unwrap_or_default(),
-        }
-    }
-
-    /// Build the LockedResource from pre-serialized template_vars string.
-    ///
-    /// This method is useful when building from lockfile data where template_vars
-    /// has already been serialized to string format.
-    pub fn build_from_serialized(self, template_vars: String) -> LockedResource {
-        LockedResource {
-            name: self.name,
-            source: self.source,
-            url: self.url,
-            path: self.path,
-            version: self.version,
-            resolved_commit: self.resolved_commit,
-            checksum: self.checksum,
-            installed_at: self.installed_at,
-            dependencies: self.dependencies,
-            resource_type: self.resource_type,
-            tool: self.tool,
-            manifest_alias: self.manifest_alias,
-            applied_patches: self.applied_patches,
-            install: self.install,
-            template_vars,
+            variant_inputs: self.variant_inputs,
         }
     }
 }
 
 impl LockedResource {
-    /// Unique identifier combining name, source, tool, and template_vars.
+    /// Unique identifier combining name, source, tool, and variant_inputs hash.
     ///
     /// Canonical method for resource identification in checksum updates and lookups.
     #[must_use]
     pub fn id(&self) -> ResourceId {
-        ResourceId {
-            name: self.name.clone(),
-            source: self.source.clone(),
-            tool: self.tool.clone(),
-            resource_type: self.resource_type,
-            template_vars: self.template_vars.clone(),
-        }
+        ResourceId::from_resource(self)
     }
 
-    /// Check if resource matches ResourceId by comparing name, source, tool, and template_vars.
+    /// Check if resource matches ResourceId by comparing name, source, tool, and variant_inputs hash.
     ///
-    /// Template_vars are part of identity - same resource with different template_vars
+    /// Variant_inputs hash is part of identity - same resource with different variant_inputs
     /// produces different artifacts and must be tracked separately.
     #[must_use]
     pub fn matches_id(&self, id: &ResourceId) -> bool {
         self.name == id.name
             && self.source == id.source
             && self.tool == id.tool
-            && self.template_vars == id.template_vars
+            && self.variant_inputs.hash() == id.variant_inputs_hash
     }
 
     /// Parse the dependencies field into structured lockfile dependency references.
@@ -1241,7 +1206,7 @@ impl LockedResource {
         manifest_alias: Option<String>,
         applied_patches: HashMap<String, toml::Value>,
         install: Option<bool>,
-        template_vars: serde_json::Value,
+        variant_inputs: serde_json::Value,
     ) -> Self {
         LockedResourceBuilder::new(name, path, checksum, installed_at, resource_type)
             .source(source)
@@ -1253,53 +1218,140 @@ impl LockedResource {
             .manifest_alias(manifest_alias)
             .applied_patches(applied_patches)
             .install(install)
-            .template_vars(template_vars)
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::new(variant_inputs))
             .build()
     }
 
-    /// Create a new LockedResource from pre-serialized template_vars string.
+    /// Get the display name for user-facing contexts.
     ///
-    /// This constructor accepts template_vars as an already-serialized string, useful
-    /// when building from lockfile data or other sources where serialization has already occurred.
+    /// Returns the manifest_alias if present (for direct manifest dependencies or
+    /// pattern-expanded resources), otherwise returns the canonical name.
+    /// This provides the most user-friendly name for display purposes.
     ///
-    /// # Deprecated
+    /// # Examples
     ///
-    /// This method has too many parameters and triggers clippy warnings.
-    /// Use `LockedResourceBuilder::new()` with `build_from_serialized()` instead.
-    #[allow(deprecated)]
-    #[deprecated(
-        since = "0.5.0",
-        note = "Use LockedResourceBuilder::new() with build_from_serialized() instead"
-    )]
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_serialized(
-        name: String,
-        source: Option<String>,
-        url: Option<String>,
-        path: String,
-        version: Option<String>,
-        resolved_commit: Option<String>,
-        checksum: String,
-        installed_at: String,
-        dependencies: Vec<String>,
-        resource_type: crate::core::ResourceType,
-        tool: Option<String>,
-        manifest_alias: Option<String>,
-        applied_patches: HashMap<String, toml::Value>,
-        install: Option<bool>,
-        template_vars: String,
-    ) -> Self {
-        LockedResourceBuilder::new(name, path, checksum, installed_at, resource_type)
-            .source(source)
-            .url(url)
-            .version(version)
-            .resolved_commit(resolved_commit)
-            .dependencies(dependencies)
-            .tool(tool)
-            .manifest_alias(manifest_alias)
-            .applied_patches(applied_patches)
-            .install(install)
-            .build_from_serialized(template_vars)
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency with custom manifest name
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),  // canonical name from path
+    ///     manifest_alias: Some("my-ai-helper".to_string()),  // user's chosen name
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "my-ai-helper");
+    ///
+    /// // Pattern-expanded dependency
+    /// let resource = LockedResource {
+    ///     name: "helper-alpha".to_string(),  // canonical name
+    ///     manifest_alias: Some("all-helpers".to_string()),  // pattern alias
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "all-helpers");
+    ///
+    /// // Transitive dependency (no manifest_alias)
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),  // canonical name
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.display_name(), "utils");
+    /// ```
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        self.manifest_alias.as_ref().unwrap_or(&self.name)
+    }
+
+    /// Get the lookup name for patch resolution and manifest lookups.
+    ///
+    /// Returns the manifest_alias if present (for direct manifest dependencies or
+    /// pattern-expanded resources), otherwise returns the canonical name.
+    /// This ensures patches are looked up using the correct manifest key.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency - patches defined under manifest key
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),  // canonical name from path
+    ///     manifest_alias: Some("my-ai-helper".to_string()),  // manifest key
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.lookup_name(), "my-ai-helper");
+    ///
+    /// // Transitive dependency - no manifest key
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),  // canonical name
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert_eq!(resource.lookup_name(), "utils");
+    /// ```
+    #[must_use]
+    pub fn lookup_name(&self) -> &str {
+        self.manifest_alias.as_ref().unwrap_or(&self.name)
+    }
+
+    /// Check if this resource represents a direct manifest dependency.
+    ///
+    /// Returns true if this resource was directly specified in the manifest
+    /// (not discovered through transitive dependencies or pattern expansion).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Direct dependency from manifest
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),
+    ///     manifest_alias: Some("my-ai-helper".to_string()),
+    ///     // ... other fields
+    /// };
+    /// assert!(resource.is_direct_manifest());
+    ///
+    /// // Transitive dependency
+    /// let resource = LockedResource {
+    ///     name: "utils".to_string(),
+    ///     manifest_alias: None,
+    ///     // ... other fields
+    /// };
+    /// assert!(!resource.is_direct_manifest());
+    /// ```
+    #[must_use]
+    pub fn is_direct_manifest(&self) -> bool {
+        // After the canonical naming change, direct dependencies will have manifest_alias set
+        // to preserve the original manifest key. Transitive dependencies have no manifest_alias.
+        self.manifest_alias.is_some() && !self.name.starts_with("generated-")
+    }
+
+    /// Check if this resource came from a pattern expansion.
+    ///
+    /// Returns true if this resource was created by expanding a pattern dependency
+    /// from the manifest.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// # use agpm_cli::lockfile::LockedResource;
+    /// // Pattern-expanded resource
+    /// let resource = LockedResource {
+    ///     name: "helper-alpha".to_string(),
+    ///     manifest_alias: Some("all-helpers".to_string()),
+    ///     // ... other fields
+    /// };
+    /// assert!(resource.is_pattern_expanded());
+    ///
+    /// // Direct dependency (single file)
+    /// let resource = LockedResource {
+    ///     name: "ai-helper".to_string(),
+    ///     manifest_alias: None,  // Will change after implementation
+    ///     // ... other fields
+    /// };
+    /// assert!(!resource.is_pattern_expanded());
+    /// ```
+    #[must_use]
+    pub fn is_pattern_expanded(&self) -> bool {
+        self.manifest_alias.is_some()
     }
 }
 
@@ -1356,6 +1408,123 @@ impl LockFile {
     }
 }
 
+impl LockFile {
+    /// Normalize lockfile entries for backward compatibility.
+    ///
+    /// Converts old lockfile entries that don't follow the canonical naming convention
+    /// to use canonical names with manifest_alias. This ensures that lockfiles created
+    /// before the naming change remain compatible with the new system.
+    ///
+    /// # Returns
+    ///
+    /// A new LockFile with normalized entries
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use agpm_cli::lockfile::LockFile;
+    /// let mut lockfile = LockFile::new();
+    /// // Load or create entries...
+    /// let normalized = lockfile.normalize();
+    /// ```
+    pub fn normalize(&self) -> Self {
+        let mut normalized = self.clone();
+
+        // Normalize each resource type
+        Self::normalize_resources(&mut normalized.agents);
+        Self::normalize_resources(&mut normalized.snippets);
+        Self::normalize_resources(&mut normalized.commands);
+        Self::normalize_resources(&mut normalized.scripts);
+        Self::normalize_resources(&mut normalized.hooks);
+        Self::normalize_resources(&mut normalized.mcp_servers);
+
+        // Sort all resource vectors for deterministic lockfile output
+        // This ensures the lockfile is identical across runs regardless of
+        // HashMap iteration order during dependency resolution
+        normalized.agents.sort_by(Self::compare_resources);
+        normalized.snippets.sort_by(Self::compare_resources);
+        normalized.commands.sort_by(Self::compare_resources);
+        normalized.scripts.sort_by(Self::compare_resources);
+        normalized.hooks.sort_by(Self::compare_resources);
+        normalized.mcp_servers.sort_by(Self::compare_resources);
+
+        normalized
+    }
+
+    /// Compare two resources for deterministic sorting.
+    ///
+    /// Sort order:
+    /// 1. By name (lexicographic)
+    /// 2. By source (None first, then lexicographic)
+    /// 3. By tool (None first, then lexicographic)
+    /// 4. By template_vars (lexicographic comparison of JSON strings)
+    ///
+    /// This ensures stable, deterministic lockfile ordering even when the same resource
+    /// exists with different template_vars (e.g., backend-engineer with language=typescript
+    /// vs language=javascript).
+    fn compare_resources(a: &LockedResource, b: &LockedResource) -> std::cmp::Ordering {
+        a.name
+            .cmp(&b.name)
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.tool.cmp(&b.tool))
+            .then_with(|| a.variant_inputs.hash().cmp(b.variant_inputs.hash()))
+    }
+
+    /// Normalize a vector of LockedResource entries.
+    ///
+    /// For each entry that doesn't follow canonical naming:
+    /// - Compute canonical name from path
+    /// - Move current name to manifest_alias if not already set
+    /// - Update name to canonical value
+    /// - Sort dependencies array for deterministic output
+    fn normalize_resources(resources: &mut [LockedResource]) {
+        use crate::resolver::pattern_expander::generate_dependency_name;
+
+        for resource in resources.iter_mut() {
+            // Sort dependencies array for deterministic lockfile output
+            // This ensures dependencies appear in consistent order regardless of
+            // HashMap iteration order during resolution
+            resource.dependencies.sort();
+
+            // Skip if already has manifest_alias (indicating it's already normalized)
+            if resource.manifest_alias.is_some() {
+                continue;
+            }
+
+            // Compute expected canonical name from path using appropriate source context
+            let canonical_name = if let Some(source_name) = &resource.source {
+                // Remote resource - use source name context
+                let source_context =
+                    crate::resolver::source_context::SourceContext::remote(source_name);
+                generate_dependency_name(&resource.path, &source_context)
+            } else {
+                // Local resource - handle absolute vs relative paths correctly
+                let path = std::path::Path::new(&resource.path);
+                if path.is_absolute() {
+                    // Absolute paths keep their absolute form (with file extension removed)
+                    let without_ext = path.with_extension("");
+                    crate::utils::normalize_path_for_storage(without_ext)
+                } else {
+                    // Relative paths - we don't have manifest context here, so use "local" prefix
+                    // This ensures consistency but may not match the exact manifest-relative path
+                    let source_context =
+                        crate::resolver::source_context::SourceContext::remote("local");
+                    generate_dependency_name(&resource.path, &source_context)
+                }
+            };
+
+            // Skip if already has the correct canonical name
+            if resource.name == canonical_name {
+                continue;
+            }
+
+            // Move current name to manifest_alias and update to canonical name
+            resource.manifest_alias = Some(resource.name.clone());
+            resource.name = canonical_name;
+        }
+    }
+}
+
 impl Default for LockFile {
     /// Equivalent to [`LockFile::new()`] - creates empty lockfile with current format version.
     fn default() -> Self {
@@ -1366,8 +1535,46 @@ impl Default for LockFile {
 /// Default value for `template_vars` field.
 ///
 /// Returns an empty JSON object which will serialize as `"{}"` in TOML.
-fn default_template_vars_string() -> String {
-    "{}".to_string()
+fn default_variant_inputs_struct() -> crate::resolver::lockfile_builder::VariantInputs {
+    crate::resolver::lockfile_builder::VariantInputs::new(serde_json::Value::Object(
+        serde_json::Map::new(),
+    ))
+}
+
+/// Serialize `VariantInputs` as a TOML table.
+///
+/// Converts the internal JSON value to a TOML value to enable proper nested table serialization.
+fn serialize_variant_inputs_as_toml<S>(
+    variant_inputs: &crate::resolver::lockfile_builder::VariantInputs,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use crate::lockfile::patch_display::json_to_toml_value;
+
+    let toml_value = json_to_toml_value(variant_inputs.json()).map_err(|e| {
+        serde::ser::Error::custom(format!("Failed to convert variant_inputs to TOML: {}", e))
+    })?;
+    toml_value.serialize(serializer)
+}
+
+/// Deserialize `VariantInputs` from a TOML value.
+///
+/// Converts the TOML value back to JSON for internal storage.
+fn deserialize_variant_inputs_from_toml<'de, D>(
+    deserializer: D,
+) -> Result<crate::resolver::lockfile_builder::VariantInputs, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use crate::manifest::patches::toml_value_to_json;
+
+    let toml_value = toml::Value::deserialize(deserializer)?;
+    let json_value = toml_value_to_json(&toml_value).map_err(|e| {
+        serde::de::Error::custom(format!("Failed to convert TOML to variant_inputs: {}", e))
+    })?;
+    Ok(crate::resolver::lockfile_builder::VariantInputs::new(json_value))
 }
 
 /// Find the lockfile in the current or parent directories.

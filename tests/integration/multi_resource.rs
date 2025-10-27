@@ -271,8 +271,9 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
     assert!(lockfile.contains("[[hooks]]"));
     assert!(lockfile.contains("[[mcp-servers]]"));
 
-    // Verify all resource names are present
-    let resource_names = [
+    // Verify all manifest aliases are present
+    // Direct manifest dependencies now use canonical names with manifest_alias
+    let manifest_aliases = [
         "agent-alpha",
         "agent-beta",
         "agent-gamma",
@@ -295,11 +296,11 @@ async fn test_install_multiple_resources_with_versions() -> Result<()> {
         "redis",
     ];
 
-    for name in &resource_names {
+    for alias in &manifest_aliases {
         assert!(
-            lockfile.contains(&format!("name = \"{}\"", name)),
-            "Lockfile should contain resource: {}",
-            name
+            lockfile.contains(&format!("manifest_alias = \"{}\"", alias)),
+            "Lockfile should contain manifest_alias: {}",
+            alias
         );
     }
 

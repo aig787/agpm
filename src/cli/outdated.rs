@@ -724,11 +724,11 @@ impl OutdatedCommand {
                 continue;
             }
 
-            // Find corresponding old entry
+            // Find corresponding old entry using display_name for backward compatibility
             if let Some((_, old_entry)) =
                 crate::core::ResourceIterator::find_resource_by_name_and_source(
                     &lockfile,
-                    &new_entry.name,
+                    new_entry.display_name(),
                     new_entry.source.as_deref(),
                 )
             {

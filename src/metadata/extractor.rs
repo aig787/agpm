@@ -17,11 +17,10 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::core::OperationContext;
-use crate::manifest::{DependencyMetadata, ProjectConfig};
+use crate::manifest::{DependencyMetadata, dependency_spec::AgpmMetadata};
 use crate::markdown::frontmatter::FrontmatterParser;
 
 /// Metadata extractor for resource files.
@@ -40,7 +39,7 @@ impl MetadataExtractor {
     /// # Arguments
     /// * `path` - Path to the file (used to determine file type)
     /// * `content` - Content of the file
-    /// * `project_config` - Optional project configuration for template rendering
+    /// * `variant_inputs` - Optional template variables (contains project config and any overrides)
     /// * `context` - Optional operation context for warning deduplication
     ///
     /// # Returns
@@ -48,9 +47,9 @@ impl MetadataExtractor {
     ///
     /// # Template Support
     ///
-    /// If `project_config` is provided, frontmatter is rendered as a Tera template
-    /// before parsing, allowing references to project variables like:
-    /// `{{ agpm.project.language }}`
+    /// If `variant_inputs` is provided, frontmatter is rendered as a Tera template
+    /// before parsing, allowing references like:
+    /// `{{ project.language }}` or `{{ config.model }}`
     ///
     /// # Examples
     ///
@@ -73,14 +72,14 @@ impl MetadataExtractor {
     pub fn extract(
         path: &Path,
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         match extension {
-            "md" => Self::extract_markdown_frontmatter(content, project_config, path, context),
-            "json" => Self::extract_json_field(content, project_config, path, context),
+            "md" => Self::extract_markdown_frontmatter(content, variant_inputs, path, context),
+            "json" => Self::extract_json_field(content, variant_inputs, path, context),
             _ => {
                 // Scripts and other files don't support embedded dependencies
                 Ok(DependencyMetadata::default())
@@ -94,22 +93,38 @@ impl MetadataExtractor {
     /// dependency metadata from YAML frontmatter.
     fn extract_markdown_frontmatter(
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         let mut parser = FrontmatterParser::new();
-        let result = parser.parse_with_templating::<DependencyMetadata>(
+        let result = parser.parse_with_templating::<crate::markdown::MarkdownMetadata>(
             content,
-            project_config,
+            variant_inputs,
             path,
             context,
         )?;
 
-        // Validate resource types if we successfully parsed metadata
-        if let Some(ref metadata) = result.data {
-            Self::validate_resource_types(metadata, path)?;
-            Ok(metadata.clone())
+        // Convert MarkdownMetadata to DependencyMetadata
+        if let Some(ref markdown_metadata) = result.data {
+            // Extract dependencies from both root-level and agpm section
+            let root_dependencies = markdown_metadata.dependencies.clone();
+            let agpm_dependencies =
+                markdown_metadata.get_agpm_metadata().and_then(|agpm| agpm.dependencies);
+
+            let dependency_metadata = DependencyMetadata::new(
+                root_dependencies,
+                Some(AgpmMetadata {
+                    templating: markdown_metadata
+                        .get_agpm_metadata()
+                        .and_then(|agpm| agpm.templating),
+                    dependencies: agpm_dependencies,
+                }),
+            );
+
+            // Validate resource types if we successfully parsed metadata
+            Self::validate_resource_types(&dependency_metadata, path)?;
+            Ok(dependency_metadata)
         } else {
             Ok(DependencyMetadata::default())
         }
@@ -121,27 +136,25 @@ impl MetadataExtractor {
     /// Uses unified templating logic to respect per-resource templating settings.
     fn extract_json_field(
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<DependencyMetadata> {
         // Use unified templating logic - always template to catch syntax errors
         let mut parser = FrontmatterParser::new();
-        let templated_content = parser.apply_templating(content, project_config, path)?;
+        let templated_content = parser.apply_templating(content, variant_inputs, path)?;
 
         let json: JsonValue = serde_json::from_str(&templated_content)
             .with_context(|| "Failed to parse JSON content")?;
 
         if let Some(deps) = json.get("dependencies") {
             // The dependencies field should match our expected structure
-            match serde_json::from_value::<HashMap<String, Vec<crate::manifest::DependencySpec>>>(
-                deps.clone(),
-            ) {
+            match serde_json::from_value::<
+                std::collections::BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+            >(deps.clone())
+            {
                 Ok(dependencies) => {
-                    let metadata = DependencyMetadata {
-                        dependencies: Some(dependencies),
-                        agpm: None,
-                    };
+                    let metadata = DependencyMetadata::new(Some(dependencies), None);
                     // Validate resource types (catch tool names used as types)
                     Self::validate_resource_types(&metadata, path)?;
                     Ok(metadata)
@@ -260,6 +273,7 @@ https://github.com/aig787/agpm#transitive-dependencies",
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::ProjectConfig;
 
     #[test]
     fn test_extract_markdown_frontmatter() {
@@ -492,6 +506,11 @@ dependencies:
         config_map.insert("framework".to_string(), toml::Value::String("tokio".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Markdown with templated dependency path
         let content = r#"---
 agpm:
@@ -508,7 +527,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -528,6 +547,11 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Template references undefined variable (should error with helpful message)
         let content = r#"---
 agpm:
@@ -540,7 +564,7 @@ dependencies:
 # My Agent"#;
 
         let path = Path::new("agent.md");
-        let result = MetadataExtractor::extract(path, content, Some(&project_config), None);
+        let result = MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None);
 
         // Should error on undefined variable
         assert!(result.is_err());
@@ -557,6 +581,11 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Use default filter for undefined variable (recommended pattern)
         let content = r#"---
 agpm:
@@ -570,7 +599,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -586,6 +615,11 @@ dependencies:
         let mut config_map = toml::map::Map::new();
         config_map.insert("tool".to_string(), toml::Value::String("linter".into()));
         let project_config = ProjectConfig::from(config_map);
+
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
 
         // JSON with templated dependency path
         let content = r#"{
@@ -603,7 +637,7 @@ dependencies:
 
         let path = Path::new("hook.json");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -620,6 +654,11 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".into()));
         let project_config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Content without template syntax - should work normally
         let content = r#"---
 dependencies:
@@ -631,7 +670,7 @@ dependencies:
 
         let path = Path::new("agent.md");
         let metadata =
-            MetadataExtractor::extract(path, content, Some(&project_config), None).unwrap();
+            MetadataExtractor::extract(path, content, Some(&variant_inputs_value), None).unwrap();
 
         assert!(metadata.has_dependencies());
         let deps = metadata.dependencies.unwrap();
@@ -662,8 +701,13 @@ dependencies:
         config_map.insert("language".to_string(), toml::Value::String("rust".to_string()));
         let config = ProjectConfig::from(config_map);
 
+        // Convert project config to variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         let path = PathBuf::from("agents/main.md");
-        let result = MetadataExtractor::extract(&path, content, Some(&config), None);
+        let result = MetadataExtractor::extract(&path, content, Some(&variant_inputs_value), None);
 
         assert!(result.is_ok(), "Should extract metadata: {:?}", result.err());
         let metadata = result.unwrap();

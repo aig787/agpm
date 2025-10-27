@@ -347,10 +347,10 @@ async fn test_changing_dependency_source_no_false_conflict() -> Result<()> {
         output.stderr
     );
 
-    // Verify lockfile has only ONE entry for "commit"
+    // Verify lockfile has only ONE entry for "commit" (check manifest_alias since names are now canonical)
     let lockfile_path = project.project_path().join("agpm.lock");
     let lockfile_content = tokio::fs::read_to_string(&lockfile_path).await.unwrap();
-    let commit_count = lockfile_content.matches("name = \"commit\"").count();
+    let commit_count = lockfile_content.matches("manifest_alias = \"commit\"").count();
     assert_eq!(
         commit_count, 1,
         "Lockfile should have exactly one entry for 'commit', found {}: {}",
@@ -451,16 +451,16 @@ async fn test_pattern_source_change_no_false_conflict() -> Result<()> {
     );
 
     // Verify we still have exactly 2 agents (helper and worker), not 4
-    let helper_count = updated_lockfile.matches("name = \"helper\"").count();
-    let worker_count = updated_lockfile.matches("name = \"worker\"").count();
+    let helper_count = updated_lockfile.matches("name = \"agents/helper\"").count();
+    let worker_count = updated_lockfile.matches("name = \"agents/worker\"").count();
     assert_eq!(
         helper_count, 1,
-        "Lockfile should have exactly one 'helper' entry, found {}: {}",
+        "Lockfile should have exactly one helper entry, found {}: {}",
         helper_count, updated_lockfile
     );
     assert_eq!(
         worker_count, 1,
-        "Lockfile should have exactly one 'worker' entry, found {}: {}",
+        "Lockfile should have exactly one worker entry, found {}: {}",
         worker_count, updated_lockfile
     );
     Ok(())
@@ -522,10 +522,15 @@ dependencies:
     let lockfile_content =
         tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     eprintln!("=== Initial lockfile ===\n{}", lockfile_content);
-    assert!(lockfile_content.contains("name = \"agent-a\""), "Lockfile should contain agent-a");
     assert!(
-        lockfile_content.contains("name = \"utils\""),
-        "Lockfile should contain transitive dep utils. Lockfile:\n{}",
+        lockfile_content.contains("manifest_alias = \"agent-a\""),
+        "Lockfile should contain agent-a"
+    );
+    // Transitive dependency should have canonical name but NO manifest_alias
+    assert!(
+        lockfile_content.contains("name = \"snippets/utils\"")
+            && lockfile_content.matches("source = \"repo1\"").count() >= 2,
+        "Lockfile should contain transitive dep utils from repo1. Lockfile:\n{}",
         lockfile_content
     );
     let repo1_count = lockfile_content.matches("source = \"repo1\"").count();
@@ -573,8 +578,8 @@ dependencies:
     );
 
     // Should have exactly one agent-a and one utils (no duplicates)
-    let agent_count = updated_lockfile.matches("name = \"agent-a\"").count();
-    let utils_count = updated_lockfile.matches("name = \"utils\"").count();
+    let agent_count = updated_lockfile.matches("name = \"agents/agent-a\"").count();
+    let utils_count = updated_lockfile.matches("name = \"snippets/utils\"").count();
     assert_eq!(
         agent_count, 1,
         "Lockfile should have exactly one agent-a entry. Lockfile:\n{}",
@@ -666,11 +671,12 @@ dependencies:
         tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
     eprintln!("=== Initial lockfile ===\n{}", lockfile_content);
 
-    assert!(lockfile_content.contains("name = \"helper\""), "Should have helper");
-    assert!(lockfile_content.contains("name = \"worker\""), "Should have worker");
+    assert!(lockfile_content.contains("name = \"agents/helper\""), "Should have helper");
+    assert!(lockfile_content.contains("name = \"agents/worker\""), "Should have worker");
     assert!(
-        lockfile_content.contains("name = \"utils\""),
-        "Should have transitive utils. Lockfile:\n{}",
+        lockfile_content.contains("name = \"snippets/utils\"")
+            && lockfile_content.matches("source = \"repo1\"").count() >= 3,
+        "Should have transitive utils from repo1. Lockfile:\n{}",
         lockfile_content
     );
 
@@ -724,9 +730,9 @@ dependencies:
     );
 
     // Should have exactly one of each resource (no duplicates)
-    let helper_count = updated_lockfile.matches("name = \"helper\"").count();
-    let worker_count = updated_lockfile.matches("name = \"worker\"").count();
-    let utils_count = updated_lockfile.matches("name = \"utils\"").count();
+    let helper_count = updated_lockfile.matches("name = \"agents/helper\"").count();
+    let worker_count = updated_lockfile.matches("name = \"agents/worker\"").count();
+    let utils_count = updated_lockfile.matches("name = \"snippets/utils\"").count();
 
     assert_eq!(
         helper_count, 1,
@@ -787,8 +793,14 @@ async fn test_commented_out_dependency_removed_from_lockfile() -> Result<()> {
 
     // Verify lockfile contains both agents
     let lockfile_content = project.read_lockfile().await.unwrap();
-    assert!(lockfile_content.contains("name = \"agent-a\""), "Lockfile should contain agent-a");
-    assert!(lockfile_content.contains("name = \"agent-b\""), "Lockfile should contain agent-b");
+    assert!(
+        lockfile_content.contains("manifest_alias = \"agent-a\""),
+        "Lockfile should contain agent-a"
+    );
+    assert!(
+        lockfile_content.contains("manifest_alias = \"agent-b\""),
+        "Lockfile should contain agent-b"
+    );
 
     // Comment out agent-b in the manifest
     let manifest2 = ManifestBuilder::new()
@@ -808,11 +820,11 @@ async fn test_commented_out_dependency_removed_from_lockfile() -> Result<()> {
     // Verify lockfile no longer contains agent-b
     let updated_lockfile = project.read_lockfile().await.unwrap();
     assert!(
-        updated_lockfile.contains("name = \"agent-a\""),
+        updated_lockfile.contains("manifest_alias = \"agent-a\""),
         "Lockfile should still contain agent-a"
     );
     assert!(
-        !updated_lockfile.contains("name = \"agent-b\""),
+        !updated_lockfile.contains("manifest_alias = \"agent-b\""),
         "Lockfile should NOT contain agent-b after commenting out. Lockfile:\n{}",
         updated_lockfile
     );
@@ -906,9 +918,9 @@ Uses the helper agent"#;
     let parent_path = project.project_path().join(".claude/agents/parent.md");
     assert!(parent_path.exists(), "Parent should be installed");
 
-    // Verify lockfile entry uses the direct dependency name
+    // Verify lockfile entry uses the direct dependency name (check manifest_alias for user-chosen names)
     assert!(
-        lockfile.contains("name = \"my-helper\""),
+        lockfile.contains("manifest_alias = \"my-helper\""),
         "Lockfile should use the direct dependency name 'my-helper'. Lockfile: {}",
         lockfile
     );

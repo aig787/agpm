@@ -1087,6 +1087,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockedResource, LockedSource};
     use crate::manifest::{DetailedDependency, ResourceDependency};
+
     use tempfile::TempDir;
 
     fn create_default_command() -> ListCommand {
@@ -1206,9 +1207,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile.agents.push(LockedResource {
@@ -1225,9 +1227,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add snippets
@@ -1245,9 +1248,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -1638,9 +1642,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let entry_with_different_source = LockedResource {
@@ -1657,9 +1662,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let entry_without_source = LockedResource {
@@ -1676,9 +1682,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         assert!(cmd.matches_lockfile_filters("test", &entry_with_source, "agent"));
@@ -1707,9 +1714,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         assert!(cmd.matches_lockfile_filters("code-reviewer", &entry, "agent"));
@@ -1904,9 +1912,10 @@ mod tests {
 
             tool: Some("claude-code".to_string()),
             manifest_alias: None,
+            context_checksum: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         };
 
         let list_item = cmd.lockentry_to_listitem(&lock_entry, "agent");

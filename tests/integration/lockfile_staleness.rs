@@ -29,18 +29,23 @@ async fn test_install_auto_updates_missing_dependency() -> Result<()> {
     // Now remove one agent from lockfile to simulate staleness
     let lockfile = project.read_lockfile().await?;
 
-    // Find and remove the agent-two section
-    let start_marker = "[[agents]]\nname = \"agent-two\"";
-    if let Some(start_pos) = lockfile.find(start_marker) {
+    // Find and remove the agent-two section (search by manifest_alias for direct dependencies)
+    let alias_marker = "manifest_alias = \"agent-two\"";
+    if let Some(alias_pos) = lockfile.find(alias_marker) {
+        // Find the start of this [[agents]] entry (search backwards)
+        let agents_marker = "[[agents]]";
+        let section_start = lockfile[..alias_pos]
+            .rfind(agents_marker)
+            .expect("Should find [[agents]] marker before manifest_alias");
+
         // Find the end of this agent entry (next [[agents]] or end of file)
-        let after_start = start_pos + start_marker.len();
-        let end_pos = lockfile[after_start..]
+        let end_pos = lockfile[section_start + agents_marker.len()..]
             .find("[[agents]]")
-            .map(|p| after_start + p)
+            .map(|p| section_start + agents_marker.len() + p)
             .unwrap_or(lockfile.len());
 
         // Remove this entire agent section
-        let modified_lockfile = format!("{}{}", &lockfile[..start_pos], &lockfile[end_pos..]);
+        let modified_lockfile = format!("{}{}", &lockfile[..section_start], &lockfile[end_pos..]);
         project.write_lockfile(&modified_lockfile).await?;
     } else {
         panic!("Could not find agent-two in lockfile to remove");

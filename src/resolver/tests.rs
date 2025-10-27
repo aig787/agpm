@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::manifest::DetailedDependency;
+use crate::test_utils::compute_variant_inputs_hash;
 use tempfile::TempDir;
 
 #[test]
@@ -309,9 +310,10 @@ async fn test_update_specific_dependency() {
         resource_type: ResourceType::Agent,
         tool: Some("claude-code".to_string()),
         manifest_alias: None,
+        context_checksum: None,
         applied_patches: std::collections::HashMap::new(),
         install: None,
-        template_vars: "{}".to_string(),
+        variant_inputs: serde_json::json!({}),
     });
 
     // Create the agent file

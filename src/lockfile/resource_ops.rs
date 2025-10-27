@@ -432,15 +432,18 @@ impl LockFile {
     /// ```rust,no_run
     /// # use agpm_cli::lockfile::{LockFile, ResourceId};
     /// # use agpm_cli::core::ResourceType;
+    /// # use agpm_cli::utils::compute_variant_inputs_hash;
     /// # use serde_json::json;
     /// # let lockfile = LockFile::new();
     /// // Find resource with specific template_vars
+    /// let template_vars = json!({"project": {"language": "python"}});
+    /// let variant_hash = compute_variant_inputs_hash(&template_vars).unwrap_or_default();
     /// let id = ResourceId::new(
     ///     "backend-engineer",
     ///     Some("community"),
     ///     Some("claude-code"),
     ///     ResourceType::Agent,
-    ///     json!({"project": {"language": "python"}})
+    ///     variant_hash
     /// );
     ///
     /// if let Some(resource) = lockfile.find_resource_by_id(&id) {

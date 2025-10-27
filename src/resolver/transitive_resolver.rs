@@ -12,371 +12,47 @@ use anyhow::{Context, Result};
 
 use crate::core::ResourceType;
 use crate::lockfile::lockfile_dependency_ref::LockfileDependencyRef;
-use crate::manifest::{DetailedDependency, ResourceDependency, json_value_to_toml};
+use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::metadata::MetadataExtractor;
 use crate::utils;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
-use super::types::{DependencyKey, TransitiveContext};
-use super::version_resolver::PreparedSourceVersion;
-use super::{is_file_relative_path, normalize_bare_filename};
+use super::types::{DependencyKey, TransitiveContext, compute_dependency_variant_hash};
+use super::version_resolver::{PreparedSourceVersion, VersionResolutionService};
+use super::{PatternExpansionService, ResourceFetchingService, is_file_relative_path};
 
-/// Configuration for transitive dependency resolution functions.
-pub struct TransitiveResolver<F1, F2, F3, F4> {
-    /// Function to fetch resource content for metadata extraction
-    pub fetch_content: F1,
-    /// Function to expand pattern dependencies
-    pub expand_pattern: F2,
-    /// Function to get canonical path for a dependency
-    pub get_canonical_path: F3,
-    /// Function to resolve version conflicts
-    pub resolve_version_conflict: F4,
-}
-
-/// Input data for transitive dependency resolution.
-pub struct TransitiveInput<'a> {
-    /// Initial dependencies from the manifest with their resource types
-    pub base_deps: &'a [(String, ResourceDependency, ResourceType)],
-    /// Whether to enable transitive dependency resolution
-    pub enable_transitive: bool,
-    /// Map of prepared worktrees keyed by source::version
-    pub prepared_versions: &'a HashMap<String, PreparedSourceVersion>,
-    /// Mutable map tracking pattern alias relationships
-    pub pattern_alias_map: &'a mut HashMap<(ResourceType, String), String>,
-}
-
-/// Resolve transitive dependencies starting from a set of base dependencies.
-///
-/// This is the main entry point for transitive dependency resolution. It:
-/// 1. Discovers dependencies declared in resource files
-/// 2. Expands pattern dependencies to concrete files
-/// 3. Builds a dependency graph with cycle detection
-/// 4. Resolves version conflicts
-/// 5. Returns dependencies in topological order
-///
-/// # Arguments
-///
-/// * `ctx` - Transitive resolution context with manifest, cache, and mutable state
-/// * `input` - Input data containing base dependencies and resolution configuration
-/// * `resolver` - Resolver functions for content fetching, pattern expansion, and conflict resolution
-///
-/// # Returns
-///
-/// A vector of all dependencies (direct + transitive) in topological order
-pub async fn resolve_transitive_dependencies<F1, F2, F3, F4, Fut1, Fut2, Fut3, Fut4>(
-    ctx: &mut TransitiveContext<'_>,
-    input: TransitiveInput<'_>,
-    mut resolver: TransitiveResolver<F1, F2, F3, F4>,
-) -> Result<Vec<(String, ResourceDependency, ResourceType)>>
-where
-    F1: FnMut(&str, &ResourceDependency) -> Fut1,
-    Fut1: std::future::Future<Output = Result<String>>,
-    F2: FnMut(&ResourceDependency, ResourceType) -> Fut2,
-    Fut2: std::future::Future<Output = Result<Vec<(String, ResourceDependency)>>>,
-    F3: FnMut(&ResourceDependency) -> Fut3,
-    Fut3: std::future::Future<Output = Result<PathBuf>>,
-    F4: FnMut(&str, &ResourceDependency, &ResourceDependency, &str) -> Fut4,
-    Fut4: std::future::Future<Output = Result<ResourceDependency>>,
-{
-    // Clear state from any previous resolution
-    ctx.dependency_map.clear();
-
-    if !input.enable_transitive {
-        // If transitive resolution is disabled, return base dependencies as-is
-        return Ok(input.base_deps.to_vec());
-    }
-
-    let mut graph = DependencyGraph::new();
-    let mut all_deps: HashMap<DependencyKey, ResourceDependency> = HashMap::new();
-    let mut processed: HashSet<DependencyKey> = HashSet::new();
-    let mut queue: Vec<(String, ResourceDependency, Option<ResourceType>)> = Vec::new();
-
-    // Add initial dependencies to queue with their threaded types
-    for (name, dep, resource_type) in input.base_deps {
-        let source = dep.get_source().map(std::string::ToString::to_string);
-        let tool = dep.get_tool().map(std::string::ToString::to_string);
-        queue.push((name.clone(), dep.clone(), Some(*resource_type)));
-        all_deps.insert((*resource_type, name.clone(), source, tool), dep.clone());
-    }
-
-    // Process queue to discover transitive dependencies
-    while let Some((name, dep, resource_type)) = queue.pop() {
-        let source = dep.get_source().map(std::string::ToString::to_string);
-        let tool = dep.get_tool().map(std::string::ToString::to_string);
-        let resource_type =
-            resource_type.expect("resource_type should always be threaded through queue");
-        let key = (resource_type, name.clone(), source.clone(), tool.clone());
-
-        tracing::debug!(
-            "[QUEUE_POP] Popped from queue: '{}' (type: {:?}, source: {:?}, tool: {:?})",
-            name,
-            resource_type,
-            source,
-            tool
-        );
-
-        // Check if this queue entry is stale (superseded by conflict resolution)
-        if let Some(current_dep) = all_deps.get(&key) {
-            if current_dep.get_version() != dep.get_version() {
-                tracing::debug!("[QUEUE_POP] SKIPPED (stale): '{}' - version mismatch", name);
-                continue;
-            }
-        }
-
-        if processed.contains(&key) {
-            tracing::debug!("[QUEUE_POP] SKIPPED (already processed): '{}'", name);
-            continue;
-        }
-
-        tracing::debug!("[QUEUE_POP] PROCESSING: '{}'", name);
-        processed.insert(key.clone());
-
-        // Handle pattern dependencies by expanding them to concrete files
-        if dep.is_pattern() {
-            tracing::debug!("[QUEUE_POP] '{}' is a PATTERN, expanding to concrete deps", name);
-            match (resolver.expand_pattern)(&dep, resource_type).await {
-                Ok(concrete_deps) => {
-                    for (concrete_name, concrete_dep) in concrete_deps {
-                        // Record the mapping from concrete resource name to pattern alias
-                        input
-                            .pattern_alias_map
-                            .insert((resource_type, concrete_name.clone()), name.clone());
-
-                        let concrete_source =
-                            concrete_dep.get_source().map(std::string::ToString::to_string);
-                        let concrete_tool =
-                            concrete_dep.get_tool().map(std::string::ToString::to_string);
-                        let concrete_key =
-                            (resource_type, concrete_name.clone(), concrete_source, concrete_tool);
-
-                        // Only add if not already processed or queued
-                        if let std::collections::hash_map::Entry::Vacant(e) =
-                            all_deps.entry(concrete_key)
-                        {
-                            e.insert(concrete_dep.clone());
-                            queue.push((concrete_name, concrete_dep, Some(resource_type)));
-                        }
-                    }
-                }
-                Err(e) => {
-                    anyhow::bail!(
-                        "Failed to expand pattern '{}' for transitive dependency extraction: {}",
-                        dep.get_path(),
-                        e
-                    );
-                }
-            }
-            continue;
-        }
-
-        tracing::debug!(
-            "[QUEUE_POP] '{}' is NOT a pattern, fetching content for metadata extraction",
-            name
-        );
-
-        // Get the resource content to extract metadata
-        let content = (resolver.fetch_content)(&name, &dep).await.with_context(|| {
-            format!("Failed to fetch resource '{name}' for transitive dependency extraction")
-        })?;
-
-        tracing::debug!(
-            "[QUEUE_POP] '{}' content fetched ({} bytes), extracting metadata",
-            name,
-            content.len()
-        );
-
-        // Merge resource-specific template_vars with global project config
-        let project_config = build_project_config(ctx, &dep)?;
-
-        // Extract metadata from the resource with merged config
-        let path = PathBuf::from(dep.get_path());
-        let metadata = MetadataExtractor::extract(
-            &path,
-            &content,
-            project_config.as_ref(),
-            ctx.base.operation_context.map(|arc| arc.as_ref()),
-        )?;
-
-        // Process transitive dependencies if present
-        if let Some(deps_map) = metadata.get_dependencies() {
-            tracing::debug!(
-                "Processing transitive deps for: {} (has source: {:?})",
-                name,
-                dep.get_source()
-            );
-
-            for (dep_resource_type_str, dep_specs) in deps_map {
-                // Convert plural form from YAML (e.g., "agents") to ResourceType enum
-                let dep_resource_type: ResourceType =
-                    dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
-
-                for dep_spec in dep_specs {
-                    // Process each transitive dependency spec
-                    let (trans_dep, trans_name) = process_transitive_dependency_spec(
-                        ctx,
-                        &dep,
-                        dep_resource_type,
-                        resource_type,
-                        &name,
-                        dep_spec,
-                        &mut resolver.get_canonical_path,
-                        input.prepared_versions,
-                    )
-                    .await?;
-
-                    let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
-                    let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
-
-                    // Store custom name if provided, for use as manifest_alias
-                    if let Some(custom_name) = &dep_spec.name {
-                        let trans_key = (
-                            dep_resource_type,
-                            trans_name.clone(),
-                            trans_source.clone(),
-                            trans_tool.clone(),
-                        );
-                        ctx.transitive_custom_names.insert(trans_key, custom_name.clone());
-                        tracing::debug!(
-                            "Storing custom name '{}' for transitive dependency '{}'",
-                            custom_name,
-                            trans_name
-                        );
-                    }
-
-                    // Add to graph
-                    let from_node =
-                        DependencyNode::with_source(resource_type, &name, source.clone());
-                    let to_node = DependencyNode::with_source(
-                        dep_resource_type,
-                        &trans_name,
-                        trans_source.clone(),
-                    );
-                    graph.add_dependency(from_node.clone(), to_node.clone());
-
-                    // Track in dependency map
-                    let from_key = (resource_type, name.clone(), source.clone(), tool.clone());
-                    let dep_ref =
-                        LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
-                            .to_string();
-                    ctx.dependency_map.entry(from_key).or_default().push(dep_ref);
-
-                    // Add to conflict detector
-                    add_to_conflict_detector(ctx, &trans_name, &trans_dep, &name);
-
-                    // Check for version conflicts and resolve them
-                    let trans_key = (
-                        dep_resource_type,
-                        trans_name.clone(),
-                        trans_source.clone(),
-                        trans_tool.clone(),
-                    );
-
-                    if let Some(existing_dep) = all_deps.get(&trans_key) {
-                        // Version conflict detected
-                        let resolved_dep = (resolver.resolve_version_conflict)(
-                            &trans_name,
-                            existing_dep,
-                            &trans_dep,
-                            &name,
-                        )
-                        .await?;
-
-                        let needs_reprocess =
-                            resolved_dep.get_version() != existing_dep.get_version();
-
-                        all_deps.insert(trans_key.clone(), resolved_dep.clone());
-
-                        if needs_reprocess {
-                            processed.remove(&trans_key);
-                            queue.push((trans_name.clone(), resolved_dep, Some(dep_resource_type)));
-                        }
-                    } else {
-                        // No conflict, add the dependency
-                        tracing::debug!(
-                            "Adding transitive dep '{}' to all_deps and queue (parent: {})",
-                            trans_name,
-                            name
-                        );
-                        all_deps.insert(trans_key.clone(), trans_dep.clone());
-                        queue.push((trans_name, trans_dep, Some(dep_resource_type)));
-                    }
-                }
-            }
-        }
-    }
-
-    // Check for circular dependencies
-    graph.detect_cycles()?;
-
-    // Get topological order for dependencies that have relationships
-    let ordered_nodes = graph.topological_order()?;
-
-    // Build result: start with topologically ordered dependencies
-    build_ordered_result(all_deps, ordered_nodes)
-}
-
-/// Build the merged project config for a dependency.
-fn build_project_config(
-    ctx: &TransitiveContext<'_>,
-    dep: &ResourceDependency,
-) -> Result<Option<crate::manifest::ProjectConfig>> {
-    use crate::manifest::ProjectConfig;
-    use crate::templating::deep_merge_json;
-
-    if let Some(template_vars) = dep.get_template_vars() {
-        // Extract the "project" key from template_vars
-        let project_overrides = template_vars
-            .get("project")
-            .cloned()
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-        let global_json = ctx
-            .base
-            .manifest
-            .project
-            .as_ref()
-            .map(|p| p.to_json_value())
-            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-        // Deep merge: global config + resource-specific project overrides
-        let merged_json = deep_merge_json(global_json, &project_overrides);
-
-        // Convert merged JSON back to TOML for ProjectConfig
-        let mut config_map = toml::map::Map::new();
-        if let Some(merged_obj) = merged_json.as_object() {
-            for (key, value) in merged_obj {
-                config_map.insert(key.clone(), json_value_to_toml(value));
-            }
-        }
-
-        Ok(Some(ProjectConfig::from(config_map)))
-    } else {
-        // No template_vars - use global config
-        Ok(ctx.base.manifest.project.clone())
-    }
+/// Container for resolution services to reduce parameter count.
+pub struct ResolutionServices<'a> {
+    /// Service for version resolution and commit SHA lookup
+    pub version_service: &'a mut VersionResolutionService,
+    /// Service for pattern expansion (glob patterns)
+    pub pattern_service: &'a mut PatternExpansionService,
 }
 
 /// Process a single transitive dependency specification.
 #[allow(clippy::too_many_arguments)]
-async fn process_transitive_dependency_spec<F, Fut>(
+async fn process_transitive_dependency_spec(
     ctx: &TransitiveContext<'_>,
+    core: &super::ResolutionCore,
     parent_dep: &ResourceDependency,
     dep_resource_type: ResourceType,
     parent_resource_type: ResourceType,
     parent_name: &str,
     dep_spec: &crate::manifest::DependencySpec,
-    get_canonical_path: &mut F,
+    version_service: &mut VersionResolutionService,
     prepared_versions: &HashMap<String, PreparedSourceVersion>,
-) -> Result<(ResourceDependency, String)>
-where
-    F: FnMut(&ResourceDependency) -> Fut,
-    Fut: std::future::Future<Output = Result<PathBuf>>,
-{
+) -> Result<(ResourceDependency, String)> {
     // Get the canonical path to the parent resource file
-    let parent_file_path = get_canonical_path(parent_dep).await.with_context(|| {
-        format!("Failed to get parent path for transitive dependencies of '{}'", parent_name)
-    })?;
+    let parent_file_path =
+        ResourceFetchingService::get_canonical_path(core, parent_dep, version_service)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to get parent path for transitive dependencies of '{}'",
+                    parent_name
+                )
+            })?;
 
     // Resolve the transitive dependency path
     let trans_canonical = resolve_transitive_path(&parent_file_path, &dep_spec.path, parent_name)?;
@@ -395,8 +71,28 @@ where
     )
     .await?;
 
-    // Generate a name for the transitive dependency
-    let trans_name = generate_dependency_name(trans_dep.get_path());
+    // Generate a name for the transitive dependency using source context
+    let trans_name = if trans_dep.get_source().is_none() {
+        // Local dependency - use manifest directory as source context
+        // Use trans_canonical (absolute path) instead of trans_dep.get_path() (relative path)
+        // because compute_canonical_name() expects absolute paths
+        let manifest_dir = ctx
+            .base
+            .manifest
+            .manifest_dir
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Manifest directory not available"))?;
+
+        let source_context = crate::resolver::source_context::SourceContext::local(manifest_dir);
+        generate_dependency_name(&trans_canonical.to_string_lossy(), &source_context)
+    } else {
+        // Git dependency - use remote source context
+        let source_name = trans_dep
+            .get_source()
+            .ok_or_else(|| anyhow::anyhow!("Git dependency missing source name"))?;
+        let source_context = crate::resolver::source_context::SourceContext::remote(source_name);
+        generate_dependency_name(trans_dep.get_path(), &source_context)
+    };
 
     Ok((trans_dep, trans_name))
 }
@@ -434,10 +130,19 @@ fn resolve_transitive_path(
             }
         }
         Ok(result)
-    } else if is_file_relative_path(dep_path) {
-        // File-relative path
-        let normalized_path = normalize_bare_filename(dep_path);
-        utils::resolve_file_relative_path(parent_file_path, &normalized_path).with_context(|| {
+    } else if is_file_relative_path(dep_path) || !dep_path.contains('/') {
+        // File-relative path (starts with ./ or ../) or bare filename
+        // For bare filenames, treat as file-relative by resolving from parent directory
+        let parent_dir = parent_file_path.parent().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to resolve transitive dependency '{}' for '{}': parent file has no directory",
+                dep_path,
+                parent_name
+            )
+        })?;
+
+        let resolved = parent_dir.join(dep_path);
+        resolved.canonicalize().with_context(|| {
             format!("Failed to resolve transitive dependency '{}' for '{}'", dep_path, parent_name)
         })
     } else {
@@ -492,7 +197,10 @@ async fn create_transitive_dependency(
     trans_canonical: &Path,
     prepared_versions: &HashMap<String, PreparedSourceVersion>,
 ) -> Result<ResourceDependency> {
-    if parent_dep.get_source().is_none() {
+    use super::types::{OverrideKey, compute_dependency_variant_hash, normalize_lookup_path};
+
+    // Create the dependency as before
+    let mut dep = if parent_dep.get_source().is_none() {
         create_path_only_transitive_dep(
             ctx,
             parent_dep,
@@ -500,7 +208,7 @@ async fn create_transitive_dependency(
             parent_resource_type,
             dep_spec,
             trans_canonical,
-        )
+        )?
     } else {
         create_git_backed_transitive_dep(
             ctx,
@@ -513,8 +221,66 @@ async fn create_transitive_dependency(
             trans_canonical,
             prepared_versions,
         )
-        .await
+        .await?
+    };
+
+    // Check for manifest override
+    let normalized_path = normalize_lookup_path(dep.get_path());
+    let source = dep.get_source().map(std::string::ToString::to_string);
+
+    // Determine tool for the dependency
+    let tool = dep
+        .get_tool()
+        .map(str::to_string)
+        .unwrap_or_else(|| ctx.base.manifest.get_default_tool(dep_resource_type));
+
+    let variant_hash = compute_dependency_variant_hash(&dep);
+
+    let override_key = OverrideKey {
+        resource_type: dep_resource_type,
+        normalized_path: normalized_path.clone(),
+        source,
+        tool,
+        variant_hash,
+    };
+
+    // Apply manifest override if found
+    if let Some(override_info) = ctx.manifest_overrides.get(&override_key) {
+        tracing::debug!(
+            "Applying manifest override to transitive dependency: {} (normalized: {})",
+            dep.get_path(),
+            normalized_path
+        );
+
+        // Apply overrides to make transitive dep match manifest version
+        if let ResourceDependency::Detailed(ref mut detailed) = dep {
+            if let Some(filename) = &override_info.filename {
+                detailed.filename = Some(filename.clone());
+            }
+
+            if let Some(target) = &override_info.target {
+                detailed.target = Some(target.clone());
+            }
+
+            if let Some(install) = override_info.install {
+                detailed.install = Some(install);
+            }
+
+            // Replace template vars with manifest version for consistent rendering
+            if let Some(template_vars) = &override_info.template_vars {
+                detailed.template_vars = Some(template_vars.clone());
+            }
+
+            // Note: We don't need to update dependencies field as that's not in the override
+        } else {
+            tracing::warn!(
+                "Cannot apply manifest override to non-detailed dependency: {}",
+                dep.get_path()
+            );
+        }
     }
+
+    Ok(dep)
 }
 
 /// Create a path-only transitive dependency (parent is path-only).
@@ -568,7 +334,10 @@ fn create_path_only_transitive_dep(
         tool: trans_tool,
         flatten: None,
         install: dep_spec.install.or(Some(true)),
-        template_vars: Some(build_merged_template_vars(ctx, parent_dep)),
+        template_vars: Some(super::lockfile_builder::build_merged_variant_inputs(
+            ctx.base.manifest,
+            parent_dep,
+        )),
     })))
 }
 
@@ -581,14 +350,13 @@ async fn create_git_backed_transitive_dep(
     parent_resource_type: ResourceType,
     _parent_name: &str,
     dep_spec: &crate::manifest::DependencySpec,
-    _parent_file_path: &Path,
+    parent_file_path: &Path,
     trans_canonical: &Path,
-    prepared_versions: &HashMap<String, PreparedSourceVersion>,
+    _prepared_versions: &HashMap<String, PreparedSourceVersion>,
 ) -> Result<ResourceDependency> {
     let source_name = parent_dep
         .get_source()
         .ok_or_else(|| anyhow::anyhow!("Expected source for Git-backed dependency"))?;
-    let version = parent_dep.get_version().unwrap_or("main").to_string();
     let source_url = ctx
         .base
         .source_manager
@@ -599,15 +367,8 @@ async fn create_git_backed_transitive_dep(
     let repo_relative = if utils::is_local_path(&source_url) {
         strip_local_source_prefix(&source_url, trans_canonical)?
     } else {
-        strip_git_worktree_prefix(
-            ctx,
-            source_name,
-            &version,
-            &source_url,
-            trans_canonical,
-            prepared_versions,
-        )
-        .await?
+        // For remote Git sources, derive the worktree root from the parent file path
+        strip_git_worktree_prefix_from_parent(parent_file_path, trans_canonical)?
     };
 
     // Determine tool for transitive dependency
@@ -636,58 +397,138 @@ async fn create_git_backed_transitive_dep(
         tool: trans_tool,
         flatten: None,
         install: dep_spec.install.or(Some(true)),
-        template_vars: Some(build_merged_template_vars(ctx, parent_dep)),
+        template_vars: Some(super::lockfile_builder::build_merged_variant_inputs(
+            ctx.base.manifest,
+            parent_dep,
+        )),
     })))
 }
 
 /// Strip the local source prefix from a transitive dependency path.
 fn strip_local_source_prefix(source_url: &str, trans_canonical: &Path) -> Result<PathBuf> {
     let source_path = PathBuf::from(source_url).canonicalize()?;
-    trans_canonical
-        .strip_prefix(&source_path)
-        .with_context(|| {
-            format!(
-                "Transitive dep resolved outside parent's source directory: {} not under {}",
-                trans_canonical.display(),
-                source_path.display()
-            )
-        })
-        .map(|p| p.to_path_buf())
+
+    // Check if this is a pattern path (contains glob characters)
+    let trans_str = trans_canonical.to_string_lossy();
+    let is_pattern = trans_str.contains('*') || trans_str.contains('?') || trans_str.contains('[');
+
+    if is_pattern {
+        // For patterns, canonicalize the directory part while keeping the pattern filename intact
+        let parent_dir = trans_canonical.parent().ok_or_else(|| {
+            anyhow::anyhow!("Pattern path has no parent directory: {}", trans_canonical.display())
+        })?;
+        let filename = trans_canonical.file_name().ok_or_else(|| {
+            anyhow::anyhow!("Pattern path has no filename: {}", trans_canonical.display())
+        })?;
+
+        // Canonicalize the directory part
+        let canonical_dir = parent_dir.canonicalize().with_context(|| {
+            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        })?;
+
+        // Reconstruct the full path with canonical directory and pattern filename
+        let canonical_pattern = canonical_dir.join(filename);
+
+        // Now strip the source prefix
+        canonical_pattern
+            .strip_prefix(&source_path)
+            .with_context(|| {
+                format!(
+                    "Transitive pattern dep outside parent's source: {} not under {}",
+                    canonical_pattern.display(),
+                    source_path.display()
+                )
+            })
+            .map(|p| p.to_path_buf())
+    } else {
+        trans_canonical
+            .strip_prefix(&source_path)
+            .with_context(|| {
+                format!(
+                    "Transitive dep resolved outside parent's source directory: {} not under {}",
+                    trans_canonical.display(),
+                    source_path.display()
+                )
+            })
+            .map(|p| p.to_path_buf())
+    }
 }
 
-/// Strip the Git worktree prefix from a transitive dependency path.
-async fn strip_git_worktree_prefix(
-    ctx: &TransitiveContext<'_>,
-    source_name: &str,
-    version: &str,
-    source_url: &str,
+/// Strip the Git worktree prefix from a transitive dependency path by deriving
+/// the worktree root from the parent file path.
+fn strip_git_worktree_prefix_from_parent(
+    parent_file_path: &Path,
     trans_canonical: &Path,
-    prepared_versions: &HashMap<String, PreparedSourceVersion>,
 ) -> Result<PathBuf> {
-    let sha = prepared_versions
-        .get(&group_key(source_name, version))
-        .ok_or_else(|| anyhow::anyhow!("Parent version not resolved for {}", source_name))?
-        .resolved_commit
-        .clone();
+    // Find the worktree root by looking for a directory with the pattern: owner_repo_sha8
+    // Start from the parent file and walk up the directory tree
+    let worktree_root = parent_file_path
+        .ancestors()
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| {
+                    // Worktree directories have format: owner_repo_sha8 (contains underscores)
+                    s.contains('_')
+                })
+                .unwrap_or(false)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to find worktree root from parent file: {}",
+                parent_file_path.display()
+            )
+        })?;
 
-    let worktree_path =
-        ctx.base.cache.get_or_create_worktree_for_sha(source_name, source_url, &sha, None).await?;
-
-    // Canonicalize worktree path to handle symlinks
-    let canonical_worktree = worktree_path.canonicalize().with_context(|| {
-        format!("Failed to canonicalize worktree path: {}", worktree_path.display())
+    // Canonicalize worktree root to handle symlinks
+    let canonical_worktree = worktree_root.canonicalize().with_context(|| {
+        format!("Failed to canonicalize worktree root: {}", worktree_root.display())
     })?;
 
-    trans_canonical
-        .strip_prefix(&canonical_worktree)
-        .with_context(|| {
-            format!(
-                "Transitive dep resolved outside parent's worktree: {} not under {}",
-                trans_canonical.display(),
-                canonical_worktree.display()
-            )
-        })
-        .map(|p| p.to_path_buf())
+    // Check if this is a pattern path (contains glob characters)
+    let trans_str = trans_canonical.to_string_lossy();
+    let is_pattern = trans_str.contains('*') || trans_str.contains('?') || trans_str.contains('[');
+
+    if is_pattern {
+        // For patterns, canonicalize the directory part while keeping the pattern filename intact
+        let parent_dir = trans_canonical.parent().ok_or_else(|| {
+            anyhow::anyhow!("Pattern path has no parent directory: {}", trans_canonical.display())
+        })?;
+        let filename = trans_canonical.file_name().ok_or_else(|| {
+            anyhow::anyhow!("Pattern path has no filename: {}", trans_canonical.display())
+        })?;
+
+        // Canonicalize the directory part
+        let canonical_dir = parent_dir.canonicalize().with_context(|| {
+            format!("Failed to canonicalize pattern directory: {}", parent_dir.display())
+        })?;
+
+        // Reconstruct the full path with canonical directory and pattern filename
+        let canonical_pattern = canonical_dir.join(filename);
+
+        // Now strip the worktree prefix
+        canonical_pattern
+            .strip_prefix(&canonical_worktree)
+            .with_context(|| {
+                format!(
+                    "Transitive pattern dep outside parent's worktree: {} not under {}",
+                    canonical_pattern.display(),
+                    canonical_worktree.display()
+                )
+            })
+            .map(|p| p.to_path_buf())
+    } else {
+        trans_canonical
+            .strip_prefix(&canonical_worktree)
+            .with_context(|| {
+                format!(
+                    "Transitive dep outside parent's worktree: {} not under {}",
+                    trans_canonical.display(),
+                    canonical_worktree.display()
+                )
+            })
+            .map(|p| p.to_path_buf())
+    }
 }
 
 /// Determine the tool for a transitive dependency.
@@ -713,14 +554,6 @@ fn determine_transitive_tool(
     }
 }
 
-/// Build merged template variables for a dependency.
-fn build_merged_template_vars(
-    ctx: &TransitiveContext<'_>,
-    dep: &ResourceDependency,
-) -> serde_json::Value {
-    super::lockfile_builder::build_merged_template_vars(ctx.base.manifest, dep)
-}
-
 /// Add a dependency to the conflict detector.
 fn add_to_conflict_detector(
     ctx: &mut TransitiveContext<'_>,
@@ -729,7 +562,7 @@ fn add_to_conflict_detector(
     requester: &str,
 ) {
     if let Some(version) = dep.get_version() {
-        ctx.conflict_detector.add_requirement(name, version, requester);
+        ctx.conflict_detector.add_requirement(name, requester, version);
     }
 }
 
@@ -789,6 +622,297 @@ fn build_ordered_result(
 }
 
 /// Generate unique key for grouping dependencies by source and version.
-fn group_key(source: &str, version: &str) -> String {
+pub fn group_key(source: &str, version: &str) -> String {
     format!("{source}::{version}")
+}
+
+/// Service-based wrapper for transitive dependency resolution.
+///
+/// This provides a simpler API for internal use that takes service references
+/// directly instead of requiring closure-based dependency injection.
+pub async fn resolve_with_services(
+    ctx: &mut TransitiveContext<'_>,
+    core: &super::ResolutionCore,
+    base_deps: &[(String, ResourceDependency, ResourceType)],
+    enable_transitive: bool,
+    prepared_versions: &HashMap<String, PreparedSourceVersion>,
+    pattern_alias_map: &mut HashMap<(ResourceType, String), String>,
+    services: &mut ResolutionServices<'_>,
+) -> Result<Vec<(String, ResourceDependency, ResourceType)>> {
+    // Clear state from any previous resolution
+    ctx.dependency_map.clear();
+
+    if !enable_transitive {
+        return Ok(base_deps.to_vec());
+    }
+
+    let mut graph = DependencyGraph::new();
+    let mut all_deps: HashMap<DependencyKey, ResourceDependency> = HashMap::new();
+    let mut processed: HashSet<DependencyKey> = HashSet::new();
+    let mut queue: Vec<(String, ResourceDependency, Option<ResourceType>)> = Vec::new();
+
+    // Add initial dependencies to queue with their threaded types
+    for (name, dep, resource_type) in base_deps {
+        let source = dep.get_source().map(std::string::ToString::to_string);
+        let tool = dep.get_tool().map(std::string::ToString::to_string);
+
+        // Compute variant_hash from MERGED variant_inputs (dep + global config)
+        // This ensures consistency with how LockedResource computes its hash
+        let merged_variant_inputs =
+            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, dep);
+        let variant_hash = crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
+            .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string());
+
+        tracing::debug!(
+            "[DEBUG] Adding base dep to queue: '{}' (type: {:?}, source: {:?}, tool: {:?}, is_local: {})",
+            name,
+            resource_type,
+            source,
+            tool,
+            dep.is_local()
+        );
+        queue.push((name.clone(), dep.clone(), Some(*resource_type)));
+        all_deps.insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
+    }
+
+    // Process queue to discover transitive dependencies
+    while let Some((name, dep, resource_type)) = queue.pop() {
+        let source = dep.get_source().map(std::string::ToString::to_string);
+        let tool = dep.get_tool().map(std::string::ToString::to_string);
+
+        // Compute variant_hash from MERGED variant_inputs (dep + global config)
+        // This ensures consistency with how LockedResource computes its hash
+        let merged_variant_inputs =
+            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, &dep);
+        let variant_hash = crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
+            .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string());
+
+        let resource_type =
+            resource_type.expect("resource_type should always be threaded through queue");
+        let key = (resource_type, name.clone(), source.clone(), tool.clone(), variant_hash.clone());
+
+        tracing::debug!(
+            "[TRANSITIVE] Processing: '{}' (type: {:?}, source: {:?})",
+            name,
+            resource_type,
+            source
+        );
+
+        // Check if this queue entry is stale (superseded by conflict resolution)
+        if let Some(current_dep) = all_deps.get(&key) {
+            if current_dep.get_version() != dep.get_version() {
+                tracing::debug!("[TRANSITIVE] Skipped stale: '{}'", name);
+                continue;
+            }
+        }
+
+        if processed.contains(&key) {
+            tracing::debug!("[TRANSITIVE] Already processed: '{}'", name);
+            continue;
+        }
+
+        processed.insert(key.clone());
+
+        // Handle pattern dependencies by expanding them to concrete files
+        if dep.is_pattern() {
+            tracing::debug!("[TRANSITIVE] Expanding pattern: '{}'", name);
+            match services
+                .pattern_service
+                .expand_pattern(core, &dep, resource_type, services.version_service)
+                .await
+            {
+                Ok(concrete_deps) => {
+                    for (concrete_name, concrete_dep) in concrete_deps {
+                        pattern_alias_map
+                            .insert((resource_type, concrete_name.clone()), name.clone());
+
+                        let concrete_source =
+                            concrete_dep.get_source().map(std::string::ToString::to_string);
+                        let concrete_tool =
+                            concrete_dep.get_tool().map(std::string::ToString::to_string);
+                        let concrete_variant_hash = compute_dependency_variant_hash(&concrete_dep);
+                        let concrete_key = (
+                            resource_type,
+                            concrete_name.clone(),
+                            concrete_source,
+                            concrete_tool,
+                            concrete_variant_hash,
+                        );
+
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            all_deps.entry(concrete_key)
+                        {
+                            e.insert(concrete_dep.clone());
+                            queue.push((concrete_name, concrete_dep, Some(resource_type)));
+                        }
+                    }
+                }
+                Err(e) => {
+                    anyhow::bail!("Failed to expand pattern '{}': {}", dep.get_path(), e);
+                }
+            }
+            continue;
+        }
+
+        // Fetch resource content for metadata extraction
+        let content = ResourceFetchingService::fetch_content(core, &dep, services.version_service)
+            .await
+            .with_context(|| format!("Failed to fetch resource '{}' for transitive deps", name))?;
+
+        tracing::debug!("[TRANSITIVE] Fetched content for '{}' ({} bytes)", name, content.len());
+
+        // Build complete template_vars including global project config for metadata extraction
+        // This ensures transitive dependencies can use template variables like {{ agpm.project.language }}
+        let variant_inputs_value =
+            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, &dep);
+        let variant_inputs = Some(&variant_inputs_value);
+
+        // Extract metadata from the resource with complete variant_inputs
+        let path = PathBuf::from(dep.get_path());
+        let metadata = MetadataExtractor::extract(
+            &path,
+            &content,
+            variant_inputs,
+            ctx.base.operation_context.map(|arc| arc.as_ref()),
+        )?;
+
+        tracing::debug!(
+            "[DEBUG] Extracted metadata for '{}': has_deps={}",
+            name,
+            metadata.get_dependencies().is_some()
+        );
+
+        // Process transitive dependencies if present
+        if let Some(deps_map) = metadata.get_dependencies() {
+            tracing::debug!(
+                "[DEBUG] Found {} dependency type(s) for '{}': {:?}",
+                deps_map.len(),
+                name,
+                deps_map.keys().collect::<Vec<_>>()
+            );
+
+            for (dep_resource_type_str, dep_specs) in deps_map {
+                let dep_resource_type: ResourceType =
+                    dep_resource_type_str.parse().unwrap_or(ResourceType::Snippet);
+
+                for dep_spec in dep_specs {
+                    // Process each transitive dependency spec
+                    let (trans_dep, trans_name) = process_transitive_dependency_spec(
+                        ctx,
+                        core,
+                        &dep,
+                        dep_resource_type,
+                        resource_type,
+                        &name,
+                        dep_spec,
+                        services.version_service,
+                        prepared_versions,
+                    )
+                    .await?;
+
+                    let trans_source = trans_dep.get_source().map(std::string::ToString::to_string);
+                    let trans_tool = trans_dep.get_tool().map(std::string::ToString::to_string);
+                    let trans_variant_hash = compute_dependency_variant_hash(&trans_dep);
+
+                    // Store custom name if provided
+                    if let Some(custom_name) = &dep_spec.name {
+                        let trans_key = (
+                            dep_resource_type,
+                            trans_name.clone(),
+                            trans_source.clone(),
+                            trans_tool.clone(),
+                            trans_variant_hash.clone(),
+                        );
+                        ctx.transitive_custom_names.insert(trans_key, custom_name.clone());
+                        tracing::debug!(
+                            "Storing custom name '{}' for transitive dep '{}'",
+                            custom_name,
+                            trans_name
+                        );
+                    }
+
+                    // Add to dependency graph
+                    let from_node =
+                        DependencyNode::with_source(resource_type, &name, source.clone());
+                    let to_node = DependencyNode::with_source(
+                        dep_resource_type,
+                        &trans_name,
+                        trans_source.clone(),
+                    );
+                    graph.add_dependency(from_node, to_node);
+
+                    // Track in dependency map
+                    let from_key = (
+                        resource_type,
+                        name.clone(),
+                        source.clone(),
+                        tool.clone(),
+                        variant_hash.clone(),
+                    );
+                    let dep_ref =
+                        LockfileDependencyRef::local(dep_resource_type, trans_name.clone(), None)
+                            .to_string();
+                    tracing::debug!(
+                        "[DEBUG] Adding to dependency_map: parent='{}' (type={:?}, source={:?}, tool={:?}, hash={}), child='{}' (type={:?})",
+                        name,
+                        resource_type,
+                        source,
+                        tool,
+                        &variant_hash[..8],
+                        dep_ref,
+                        dep_resource_type
+                    );
+                    ctx.dependency_map.entry(from_key).or_default().push(dep_ref);
+
+                    // Add to conflict detector
+                    add_to_conflict_detector(ctx, &trans_name, &trans_dep, &name);
+
+                    // Check for version conflicts
+                    let trans_key = (
+                        dep_resource_type,
+                        trans_name.clone(),
+                        trans_source.clone(),
+                        trans_tool.clone(),
+                        trans_variant_hash.clone(),
+                    );
+
+                    tracing::debug!(
+                        "[TRANSITIVE] Found transitive dep '{}' (type: {:?}, tool: {:?}, parent: {})",
+                        trans_name,
+                        dep_resource_type,
+                        trans_tool,
+                        name
+                    );
+
+                    // Check if we already have this dependency
+                    if let std::collections::hash_map::Entry::Vacant(e) = all_deps.entry(trans_key)
+                    {
+                        // No conflict, add the dependency
+                        tracing::debug!(
+                            "Adding transitive dep '{}' (parent: {})",
+                            trans_name,
+                            name
+                        );
+                        e.insert(trans_dep.clone());
+                        queue.push((trans_name, trans_dep, Some(dep_resource_type)));
+                    } else {
+                        // Dependency already exists - conflict detector will handle version requirement conflicts
+                        tracing::debug!(
+                            "[TRANSITIVE] Skipping duplicate transitive dep '{}' (already processed)",
+                            trans_name
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for circular dependencies
+    graph.detect_cycles()?;
+
+    // Get topological order
+    let ordered_nodes = graph.topological_order()?;
+
+    // Build result with topologically ordered dependencies
+    build_ordered_result(all_deps, ordered_nodes)
 }

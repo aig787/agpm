@@ -3,10 +3,10 @@
 //! This module provides structures and methods for building the template context
 //! that will be available to Markdown templates during rendering.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, to_string, to_value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tera::Context as TeraContext;
@@ -151,6 +151,15 @@ pub struct TemplateContextBuilder {
     /// Cache of rendered content to avoid re-rendering same dependencies
     /// Shared via Arc<Mutex> for safe concurrent access during template rendering
     render_cache: Arc<Mutex<RenderCache>>,
+    /// Cache of parsed custom dependency names to avoid re-reading and re-parsing files
+    /// Maps resource ID (name@type) to custom name mappings (dep_ref -> custom_name)
+    /// Shared via Arc<Mutex> for safe concurrent access
+    custom_names_cache: Arc<Mutex<HashMap<String, BTreeMap<String, String>>>>,
+    /// Cache of parsed dependency specifications to avoid re-reading and re-parsing files
+    /// Maps resource ID (name@type) to full DependencySpec objects (dep_ref -> DependencySpec)
+    /// Shared via Arc<Mutex> for safe concurrent access
+    dependency_specs_cache:
+        Arc<Mutex<HashMap<String, BTreeMap<String, crate::manifest::DependencySpec>>>>,
 }
 
 impl TemplateContextBuilder {
@@ -174,6 +183,8 @@ impl TemplateContextBuilder {
             cache,
             project_dir,
             render_cache: Arc::new(Mutex::new(RenderCache::new())),
+            custom_names_cache: Arc::new(Mutex::new(HashMap::new())),
+            dependency_specs_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -183,6 +194,26 @@ impl TemplateContextBuilder {
     /// and ensure next installation starts with a fresh cache.
     pub fn clear_render_cache(&self) {
         if let Ok(mut cache) = self.render_cache.lock() {
+            cache.clear();
+        }
+    }
+
+    /// Clear the custom names cache.
+    ///
+    /// Should be called after installation completes to free memory
+    /// and ensure next installation starts with a fresh cache.
+    pub fn clear_custom_names_cache(&self) {
+        if let Ok(mut cache) = self.custom_names_cache.lock() {
+            cache.clear();
+        }
+    }
+
+    /// Clear the dependency specs cache.
+    ///
+    /// Should be called after installation completes to free memory
+    /// and ensure next installation starts with a fresh cache.
+    pub fn clear_dependency_specs_cache(&self) {
+        if let Ok(mut cache) = self.dependency_specs_cache.lock() {
             cache.clear();
         }
     }
@@ -239,49 +270,136 @@ impl TemplateContextBuilder {
     /// });
     ///
     /// use agpm_cli::lockfile::ResourceId;
+    /// use agpm_cli::utils::compute_variant_inputs_hash;
     /// // Create ResourceId with template_vars and ResourceType included
-    /// let resource_id = ResourceId::new("agent", None::<String>, Some("claude-code"), ResourceType::Agent, overrides);
-    /// let context = builder
-    ///     .build_context(&resource_id)
+    /// let variant_hash = compute_variant_inputs_hash(&overrides).unwrap_or_default();
+    /// let resource_id = ResourceId::new("agent", None::<String>, Some("claude-code"), ResourceType::Agent, variant_hash);
+    /// let (context, _context_checksum) = builder
+    ///     .build_context(&resource_id, &overrides)
     ///     .await?;
     ///
     /// // Result: project.name preserved, language replaced, framework added
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn build_context(&self, resource_id: &ResourceId) -> Result<TeraContext> {
-        self.build_context_with_visited(resource_id, &mut HashSet::new()).await
+    pub async fn build_context(
+        &self,
+        resource_id: &ResourceId,
+        variant_inputs: &serde_json::Value,
+    ) -> Result<(TeraContext, Option<String>)> {
+        // Build the template context as before
+        let context = self
+            .build_context_with_visited(resource_id, variant_inputs, &mut HashSet::new())
+            .await?;
+
+        // Compute context checksum if resource uses templating
+        let context_checksum = if self.resource_uses_templating(resource_id).await? {
+            Some(compute_context_checksum(&context)?)
+        } else {
+            None
+        };
+
+        Ok((context, context_checksum))
+    }
+
+    /// Check if a resource has templating enabled.
+    ///
+    /// Returns true if the resource is a Markdown file with `agpm.templating: true`
+    /// in its frontmatter. Non-Markdown files always return false.
+    async fn resource_uses_templating(&self, resource_id: &ResourceId) -> Result<bool> {
+        // Look up resource in lockfile
+        let resource = self
+            .lockfile
+            .find_resource_by_id(resource_id)
+            .ok_or_else(|| anyhow!("Resource not found in lockfile"))?;
+
+        // Only Markdown files support templating
+        if !resource.path.ends_with(".md") {
+            return Ok(false);
+        }
+
+        // Determine source path (same logic as ContentExtractor::extract_content)
+        let source_path = if let Some(_source_name) = &resource.source {
+            let url = resource
+                .url
+                .as_ref()
+                .ok_or_else(|| anyhow!("Resource '{}' has source but no URL", resource.name))?;
+
+            // Check if this is a local directory source
+            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+            if is_local_source {
+                // Local directory source - use URL as path directly
+                std::path::PathBuf::from(url).join(&resource.path)
+            } else {
+                // Git-based source - get worktree path
+                let sha = resource.resolved_commit.as_deref().ok_or_else(|| {
+                    anyhow!("Resource '{}' has no resolved commit", resource.name)
+                })?;
+
+                // Use centralized worktree path construction
+                let worktree_dir = self.cache.get_worktree_path(url, sha)?;
+                worktree_dir.join(&resource.path)
+            }
+        } else {
+            // Local file - path is relative to project or absolute
+            let local_path = std::path::Path::new(&resource.path);
+            if local_path.is_absolute() {
+                local_path.to_path_buf()
+            } else {
+                self.project_dir.join(local_path)
+            }
+        };
+
+        // Read and parse the Markdown file
+        // If the file doesn't exist or can't be read, assume templating is disabled
+        let content = match tokio::fs::read_to_string(&source_path).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(
+                    "Could not read file for resource '{}' from {}: {}. Assuming templating disabled.",
+                    resource.name,
+                    source_path.display(),
+                    e
+                );
+                return Ok(false);
+            }
+        };
+
+        // Parse the markdown document
+        // If parsing fails, assume templating is disabled
+        let doc = match crate::markdown::MarkdownDocument::parse(&content) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::debug!(
+                    "Could not parse markdown for resource '{}': {}. Assuming templating disabled.",
+                    resource.name,
+                    e
+                );
+                return Ok(false);
+            }
+        };
+
+        // Check frontmatter for agpm.templating flag
+        Ok(super::content::is_markdown_templating_enabled(doc.metadata.as_ref()))
     }
 
     /// Build resource metadata for the template context.
     ///
     /// # Arguments
     ///
-    /// * `resource_name` - Name of the resource
-    /// * `resource_type` - Type of the resource
-    fn build_resource_data(
-        &self,
-        resource_name: &str,
-        resource_type: ResourceType,
-    ) -> Result<ResourceMetadata> {
-        let entry =
-            self.lockfile.find_resource(resource_name, &resource_type).with_context(|| {
-                format!(
-                    "Resource '{}' of type {:?} not found in lockfile",
-                    resource_name, resource_type
-                )
-            })?;
-
-        Ok(ResourceMetadata {
-            resource_type: resource_type.to_string(),
-            name: resource_name.to_string(),
-            install_path: to_native_path_display(&entry.installed_at),
-            source: entry.source.clone(),
-            version: entry.version.clone(),
-            resolved_commit: entry.resolved_commit.clone(),
-            checksum: entry.checksum.clone(),
-            path: entry.path.clone(),
-        })
+    /// * `resource` - The locked resource entry (already looked up by full ResourceId)
+    fn build_resource_data(&self, resource: &crate::lockfile::LockedResource) -> ResourceMetadata {
+        ResourceMetadata {
+            resource_type: resource.resource_type.to_string(),
+            name: resource.name.clone(),
+            install_path: to_native_path_display(&resource.installed_at),
+            source: resource.source.clone(),
+            version: resource.version.clone(),
+            resolved_commit: resource.resolved_commit.clone(),
+            checksum: resource.checksum.clone(),
+            path: resource.path.clone(),
+        }
     }
 
     /// Compute a stable digest of the template context data.
@@ -402,6 +520,29 @@ impl TemplateContextBuilder {
     }
 }
 
+/// Compute checksum of a Tera context for cache invalidation.
+///
+/// Creates a deterministic hash based on the context data structure.
+/// This ensures that changes to template inputs are detected.
+fn compute_context_checksum(context: &TeraContext) -> Result<String> {
+    use crate::utils::canonicalize_json;
+    use sha2::{Digest, Sha256};
+
+    // Convert TeraContext to JSON Value using its built-in conversion
+    let context_clone = context.clone();
+    let json_value = context_clone.into_json();
+
+    // Serialize to deterministic JSON with preserved order
+    let json_str = canonicalize_json(&json_value)?;
+
+    // Compute SHA-256 hash
+    let mut hasher = Sha256::new();
+    hasher.update(json_str.as_bytes());
+    let hash = hasher.finalize();
+
+    Ok(format!("sha256:{}", hex::encode(hash)))
+}
+
 // Implement ContentExtractor trait for TemplateContextBuilder
 impl ContentExtractor for TemplateContextBuilder {
     fn cache(&self) -> &Arc<crate::cache::Cache> {
@@ -423,9 +564,20 @@ impl DependencyExtractor for TemplateContextBuilder {
         &self.render_cache
     }
 
+    fn custom_names_cache(&self) -> &Arc<Mutex<HashMap<String, BTreeMap<String, String>>>> {
+        &self.custom_names_cache
+    }
+
+    fn dependency_specs_cache(
+        &self,
+    ) -> &Arc<Mutex<HashMap<String, BTreeMap<String, crate::manifest::DependencySpec>>>> {
+        &self.dependency_specs_cache
+    }
+
     async fn build_context_with_visited(
         &self,
         resource_id: &ResourceId,
+        variant_inputs: &serde_json::Value,
         rendering_stack: &mut HashSet<String>,
     ) -> Result<TeraContext> {
         tracing::info!(
@@ -457,9 +609,8 @@ impl DependencyExtractor for TemplateContextBuilder {
             current_resource.dependencies.len()
         );
 
-        // Build current resource data
-        let resource_data =
-            self.build_resource_data(resource_id.name(), resource_id.resource_type())?;
+        // Build current resource data (using already-looked-up resource to preserve full identity)
+        let resource_data = self.build_resource_data(current_resource);
         agpm.insert("resource".to_string(), to_value(resource_data)?);
 
         // Build dependency data from ALL lockfile resources + current resource's declared dependencies
@@ -489,66 +640,69 @@ impl DependencyExtractor for TemplateContextBuilder {
         // Insert the complete agpm object
         context.insert("agpm", &agpm);
 
-        // Apply template variable overrides if provided
-        if let Some(overrides) = resource_id.template_vars() {
-            tracing::debug!(
-                "Applying template variable overrides for resource '{}'",
-                resource_id.name()
-            );
+        // Apply template variable overrides if provided (non-empty variant_inputs)
+        if let Some(overrides_obj) = variant_inputs.as_object() {
+            if !overrides_obj.is_empty() {
+                tracing::debug!(
+                    "Applying template variable overrides for resource '{}'",
+                    resource_id.name()
+                );
 
-            // Convert context to JSON for merging
-            let mut context_json = context.clone().into_json();
+                // Convert context to JSON for merging
+                let mut context_json = context.clone().into_json();
 
-            // Iterate through all keys in template_vars and merge them
-            for (key, value) in overrides.as_object().unwrap_or(&serde_json::Map::new()) {
-                if key == "project" {
-                    // Project vars need to be in both agpm.project and top-level project
-                    let original_project = context_json
-                        .get("agpm")
-                        .and_then(|v| v.as_object())
-                        .and_then(|o| o.get("project"))
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                // Iterate through all keys in variant_inputs and merge them
+                for (key, value) in overrides_obj {
+                    if key == "project" {
+                        // Project vars need to be in both agpm.project and top-level project
+                        let original_project = context_json
+                            .get("agpm")
+                            .and_then(|v| v.as_object())
+                            .and_then(|o| o.get("project"))
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-                    let merged_project = deep_merge_json(original_project, value);
+                        let merged_project = deep_merge_json(original_project, value);
 
-                    // Update agpm.project
-                    if let Some(agpm_obj) =
-                        context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
-                    {
-                        agpm_obj.insert("project".to_string(), merged_project.clone());
+                        // Update agpm.project
+                        if let Some(agpm_obj) =
+                            context_json.get_mut("agpm").and_then(|v| v.as_object_mut())
+                        {
+                            agpm_obj.insert("project".to_string(), merged_project.clone());
+                        }
+
+                        // Update top-level project
+                        // SAFETY: context.into_json() always produces an object at the top level
+                        context_json
+                            .as_object_mut()
+                            .expect("context JSON must be an object")
+                            .insert("project".to_string(), merged_project);
+                    } else {
+                        // Other vars go to top-level context only
+                        let original = context_json
+                            .get(key)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                        let merged = deep_merge_json(original, value);
+
+                        // SAFETY: context.into_json() always produces an object at the top level
+                        context_json
+                            .as_object_mut()
+                            .expect("context JSON must be an object")
+                            .insert(key.clone(), merged);
                     }
-
-                    // Update top-level project
-                    // SAFETY: context.into_json() always produces an object at the top level
-                    context_json
-                        .as_object_mut()
-                        .expect("context JSON must be an object")
-                        .insert("project".to_string(), merged_project);
-                } else {
-                    // Other vars go to top-level context only
-                    let original = context_json
-                        .get(key)
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-                    let merged = deep_merge_json(original, value);
-
-                    // SAFETY: context.into_json() always produces an object at the top level
-                    context_json
-                        .as_object_mut()
-                        .expect("context JSON must be an object")
-                        .insert(key.clone(), merged);
                 }
+
+                // Replace context with merged result
+                context = TeraContext::from_serialize(&context_json)
+                    .context("Failed to create context from merged template variables")?;
+
+                tracing::debug!(
+                    "Applied template overrides: {}",
+                    serde_json::to_string_pretty(&variant_inputs)
+                        .unwrap_or_else(|_| "{}".to_string())
+                );
             }
-
-            // Replace context with merged result
-            context = TeraContext::from_serialize(&context_json)
-                .context("Failed to create context from merged template variables")?;
-
-            tracing::debug!(
-                "Applied template overrides: {}",
-                serde_json::to_string_pretty(&overrides).unwrap_or_else(|_| "{}".to_string())
-            );
         }
 
         Ok(context)

@@ -648,8 +648,11 @@ pub(crate) fn toml_value_to_json(value: &toml::Value) -> serde_json::Value {
             serde_json::Value::Array(arr.iter().map(toml_value_to_json).collect())
         }
         toml::Value::Table(table) => {
+            // Sort keys to ensure deterministic JSON serialization
+            let mut keys: Vec<_> = table.keys().collect();
+            keys.sort();
             let map: serde_json::Map<String, serde_json::Value> =
-                table.iter().map(|(k, v)| (k.clone(), toml_value_to_json(v))).collect();
+                keys.into_iter().map(|k| (k.clone(), toml_value_to_json(&table[k]))).collect();
             serde_json::Value::Object(map)
         }
     }
@@ -659,6 +662,7 @@ pub(crate) fn toml_value_to_json(value: &toml::Value) -> serde_json::Value {
 ///
 /// Handles JSON null as empty string since TOML lacks a null type.
 /// Used when merging template_vars (JSON) with project config (TOML).
+#[cfg(test)]
 pub(crate) fn json_value_to_toml(value: &serde_json::Value) -> toml::Value {
     match value {
         serde_json::Value::String(s) => toml::Value::String(s.clone()),
@@ -2043,7 +2047,11 @@ impl Manifest {
         // Use ResourceType::all() to iterate through all resource types
         for resource_type in crate::core::ResourceType::all() {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
-                for (name, dep) in type_deps {
+                // CRITICAL: Sort for deterministic iteration order
+                let mut sorted_deps: Vec<_> = type_deps.iter().collect();
+                sorted_deps.sort_by_key(|(name, _)| name.as_str());
+
+                for (name, dep) in sorted_deps {
                     deps.push((name.as_str(), dep));
                 }
             }
@@ -2064,7 +2072,11 @@ impl Manifest {
         // Use ResourceType::all() to iterate through all resource types
         for resource_type in crate::core::ResourceType::all() {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
-                for (name, dep) in type_deps {
+                // CRITICAL: Sort for deterministic iteration order
+                let mut sorted_deps: Vec<_> = type_deps.iter().collect();
+                sorted_deps.sort_by_key(|(name, _)| name.as_str());
+
+                for (name, dep) in sorted_deps {
                     deps.push((name.as_str(), std::borrow::Cow::Borrowed(dep)));
                 }
             }
@@ -2091,7 +2103,13 @@ impl Manifest {
         // Use ResourceType::all() to iterate through all resource types
         for resource_type in crate::core::ResourceType::all() {
             if let Some(type_deps) = self.get_dependencies(*resource_type) {
-                for (name, dep) in type_deps {
+                // CRITICAL: Sort dependencies for deterministic iteration order!
+                // HashMap iteration is non-deterministic, so we must sort by name
+                // to ensure consistent lockfile generation across runs.
+                let mut sorted_deps: Vec<_> = type_deps.iter().collect();
+                sorted_deps.sort_by_key(|(name, _)| name.as_str());
+
+                for (name, dep) in sorted_deps {
                     // Determine the tool for this dependency
                     let tool_string = dep
                         .get_tool()

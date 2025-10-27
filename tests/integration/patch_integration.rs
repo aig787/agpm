@@ -683,6 +683,12 @@ category = "utility"
     let output = project.run_agpm(&["install"]).unwrap();
     output.assert_success();
 
+    // Debug: Let's see what's in the lockfile
+    let lockfile_content =
+        tokio::fs::read_to_string(project.project_path().join("agpm.lock")).await.unwrap();
+    println!("=== LOCKFILE CONTENT ===\n{}", lockfile_content);
+    println!("=== END LOCKFILE ===\n");
+
     // Verify ALL 3 agents got the patches
     for name in ["helper-alpha", "helper-beta", "helper-gamma"] {
         let agent_path = project.project_path().join(format!(".claude/agents/helpers/{}.md", name));
@@ -717,6 +723,7 @@ category = "utility"
 
     // Verify lockfile has 3 separate entries with applied_patches
     let lockfile = project.read_lockfile().await.unwrap();
+    eprintln!("=== LOCKFILE ===\n{}", lockfile);
     let applied_count = lockfile.matches("applied_patches").count();
     assert!(
         applied_count >= 3,
@@ -724,8 +731,10 @@ category = "utility"
         applied_count
     );
 
-    // Each resource should have its own entry (with helpers/ prefix since they're in subdirectory)
-    for name in ["helpers/helper-alpha", "helpers/helper-beta", "helpers/helper-gamma"] {
+    // Each resource should have its own entry (with agents/helpers/ prefix - canonical names)
+    for name in
+        ["agents/helpers/helper-alpha", "agents/helpers/helper-beta", "agents/helpers/helper-gamma"]
+    {
         assert!(
             lockfile.contains(&format!("name = \"{}\"", name)),
             "Lockfile should have entry for {}",
@@ -805,6 +814,22 @@ team = "ai"
         "Rust helper should NOT have AI category"
     );
     assert!(!code_content.contains("team: ai"), "Rust helper should NOT have team patch");
+
+    // Verify lockfile has correct canonical names for pattern-matched resources
+    let lockfile = project.read_lockfile().await.unwrap();
+    // Check for canonical names (agents/ai/language/gpt, etc.)
+    assert!(
+        lockfile.contains("name = \"agents/ai/language/gpt\""),
+        "Lockfile should have canonical name for GPT agent"
+    );
+    assert!(
+        lockfile.contains("name = \"agents/ai/vision/dalle\""),
+        "Lockfile should have canonical name for DALL-E agent"
+    );
+    assert!(
+        lockfile.contains("name = \"agents/code/rust/rustacean\""),
+        "Lockfile should have canonical name for Rust agent"
+    );
 }
 
 /// Tests behavior when pattern matches zero files

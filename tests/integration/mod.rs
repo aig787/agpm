@@ -20,6 +20,7 @@
 //! - **cross_platform**: Cross-platform compatibility (Windows, macOS, Linux)
 //! - **deploy**: Deployment and installation workflows
 //! - **deps_refresh**: Dependency refresh and update logic
+//! - **direct_overrides_transitive**: Direct manifest dependencies overriding transitive ones
 //! - **error_scenarios**: Error handling and edge cases
 //! - **file_url**: file:// URL support
 //! - **gitignore**: .gitignore management
@@ -59,6 +60,8 @@ mod content_filter;
 mod cross_platform;
 mod deploy;
 mod deps_refresh;
+mod determinism_tests;
+mod direct_overrides_transitive;
 mod error_scenarios;
 mod file_url;
 mod gitignore;
@@ -78,6 +81,7 @@ mod prefixed_versions;
 mod project_template_vars;
 mod resource_template_vars;
 mod templating;
+mod test_merged_dependencies;
 mod test_transitive_deps_complex;
 mod tool_enable_disable;
 mod transitive;

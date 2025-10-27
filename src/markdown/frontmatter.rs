@@ -31,19 +31,17 @@
 //! language = "rust"
 //! "#;
 //! let project_config = {
-//!     let mut config_map = toml::map::Map::new();
 //!     let value = toml::Value::from_str(toml_content).unwrap();
 //!     if let toml::Value::Table(table) = value {
-//!         for (key, val) in table {
-//!             config_map.insert(key, val);
-//!         }
+//!         ProjectConfig::from(table)
+//!     } else {
+//!         ProjectConfig::default()
 //!     }
-//!     ProjectConfig::from(config_map)
 //! };
 //!
 //! let result = parser.parse_with_templating::<DependencyMetadata>(
 //!     content,
-//!     Some(&project_config),
+//!     Some(&project_config.to_json_value()),
 //!     Path::new("test.md"),
 //!     None
 //! ).unwrap_or_else(|e| panic!("Failed to parse: {}", e));
@@ -163,6 +161,38 @@ impl FrontmatterTemplating {
             )
         })
     }
+
+    /// Build template context from variant inputs.
+    ///
+    /// Creates a Tera context from variant_inputs, which contains all template
+    /// variables including project config and any overrides.
+    ///
+    /// # Arguments
+    /// * `variant_inputs` - Template variables (project, config, etc.)
+    ///
+    /// # Returns
+    /// * `TeraContext` - Configured template context
+    pub fn build_template_context_from_variant_inputs(
+        variant_inputs: &serde_json::Value,
+    ) -> TeraContext {
+        let mut context = TeraContext::new();
+
+        // Build agpm namespace and top-level keys from variant_inputs
+        if let Some(obj) = variant_inputs.as_object() {
+            let mut agpm = serde_json::Map::new();
+
+            for (key, value) in obj {
+                // Insert at top level
+                context.insert(key, value);
+                // Also add to agpm namespace
+                agpm.insert(key.clone(), value.clone());
+            }
+
+            context.insert("agpm", &agpm);
+        }
+
+        context
+    }
 }
 
 /// Unified frontmatter parser with templating support.
@@ -229,12 +259,12 @@ impl FrontmatterParser {
     ///
     /// This method provides the complete parsing pipeline:
     /// 1. Extract frontmatter using gray_matter
-    /// 2. Apply Tera templating if project config is provided and templating is enabled
+    /// 2. Apply Tera templating if variant_inputs is provided
     /// 3. Deserialize the result to the target type
     ///
     /// # Arguments
     /// * `content` - The content to parse
-    /// * `project_config` - Optional project configuration for templating
+    /// * `variant_inputs` - Optional template variables (project, config, etc.)
     /// * `file_path` - Path to the file (used for error reporting)
     /// * `context` - Optional operation context for warning deduplication
     ///
@@ -243,7 +273,7 @@ impl FrontmatterParser {
     pub fn parse_with_templating<T>(
         &mut self,
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         file_path: &Path,
         context: Option<&OperationContext>,
     ) -> Result<ParsedFrontmatter<T>>
@@ -255,31 +285,34 @@ impl FrontmatterParser {
         let content_without_frontmatter = self.strip_frontmatter(content);
 
         // Step 2: Always apply templating if frontmatter is present
-        let (templated_frontmatter, was_templated) =
-            if let Some(raw_fm) = raw_frontmatter_text.as_ref() {
-                // Always apply templating to catch invalid Jinja syntax
-                let templated = if let Some(config) = project_config {
-                    FrontmatterTemplating::apply_templating(
-                        raw_fm,
-                        config,
-                        &mut self.template_renderer,
-                        file_path,
-                    )?
-                } else {
-                    // Even without project config, render to catch syntax errors
-                    let empty_context = TeraContext::new();
-                    self.template_renderer.render_template(raw_fm, &empty_context).map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to render frontmatter template in '{}': {}",
-                            file_path.display(),
-                            e
-                        )
-                    })?
-                };
-                (Some(templated), true)
+        let (templated_frontmatter, was_templated) = if let Some(raw_fm) =
+            raw_frontmatter_text.as_ref()
+        {
+            // Always apply templating to catch invalid Jinja syntax
+            let templated = if let Some(inputs) = variant_inputs {
+                let ctx = FrontmatterTemplating::build_template_context_from_variant_inputs(inputs);
+                self.template_renderer.render_template(raw_fm, &ctx).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to render frontmatter template in '{}': {}",
+                        file_path.display(),
+                        e
+                    )
+                })?
             } else {
-                (None, false)
+                // Even without variant_inputs, render to catch syntax errors
+                let empty_context = TeraContext::new();
+                self.template_renderer.render_template(raw_fm, &empty_context).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to render frontmatter template in '{}': {}",
+                        file_path.display(),
+                        e
+                    )
+                })?
             };
+            (Some(templated), true)
+        } else {
+            (None, false)
+        };
 
         // Step 3: Deserialize to target type
         let parsed_data = if let Some(ref frontmatter) = templated_frontmatter {
@@ -418,12 +451,12 @@ The document will be processed without metadata.",
     /// Apply Tera templating to content.
     ///
     /// Always renders the content as a template to catch syntax errors.
-    /// If project_config is provided, it's used for template variables.
+    /// If variant_inputs is provided, it's used for template variables.
     /// Otherwise, renders with an empty context.
     ///
     /// # Arguments
     /// * `content` - The content to template
-    /// * `project_config` - Optional project configuration for template variables
+    /// * `variant_inputs` - Optional template variables (project, config, etc.)
     /// * `file_path` - Path to file for error reporting
     ///
     /// # Returns
@@ -431,16 +464,18 @@ The document will be processed without metadata.",
     pub fn apply_templating(
         &mut self,
         content: &str,
-        project_config: Option<&ProjectConfig>,
+        variant_inputs: Option<&serde_json::Value>,
         file_path: &Path,
     ) -> Result<String> {
-        if let Some(config) = project_config {
-            FrontmatterTemplating::apply_templating(
-                content,
-                config,
-                &mut self.template_renderer,
-                file_path,
-            )
+        if let Some(inputs) = variant_inputs {
+            let context = FrontmatterTemplating::build_template_context_from_variant_inputs(inputs);
+            self.template_renderer.render_template(content, &context).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to render frontmatter template in '{}': {}",
+                    file_path.display(),
+                    e
+                )
+            })
         } else {
             // Render with empty context to catch syntax errors
             let empty_context = TeraContext::new();
@@ -476,10 +511,15 @@ mod tests {
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
+        // Convert ProjectConfig to JSON Value for variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Test simple template variable substitution
         let content = "name: {{ project.name }}\nversion: {{ project.version }}";
         let mut parser = FrontmatterParser::new();
-        let result = parser.apply_templating(content, Some(&project_config), file_path);
+        let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
         assert!(result.is_ok());
         let templated = result.unwrap();
@@ -495,10 +535,15 @@ mod tests {
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
+        // Convert ProjectConfig to JSON Value for variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Test plain YAML without template syntax
         let content = "name: static\nversion: 1.0.0";
         let mut parser = FrontmatterParser::new();
-        let result = parser.apply_templating(content, Some(&project_config), file_path);
+        let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
         assert!(result.is_ok());
         let templated = result.unwrap();
@@ -513,10 +558,15 @@ mod tests {
         let project_config = create_test_project_config();
         let file_path = Path::new("test.md");
 
+        // Convert ProjectConfig to JSON Value for variant_inputs
+        let mut variant_inputs = serde_json::Map::new();
+        variant_inputs.insert("project".to_string(), project_config.to_json_value());
+        let variant_inputs_value = serde_json::Value::Object(variant_inputs);
+
         // Test template with undefined variable
         let content = "name: {{ undefined_var }}";
         let mut parser = FrontmatterParser::new();
-        let result = parser.apply_templating(content, Some(&project_config), file_path);
+        let result = parser.apply_templating(content, Some(&variant_inputs_value), file_path);
 
         assert!(result.is_err());
     }

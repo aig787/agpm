@@ -217,6 +217,14 @@ pub async fn cleanup_removed_artifacts(
         if !new_paths.contains(&old_resource.installed_at) {
             let full_path = project_dir.join(&old_resource.installed_at);
 
+            tracing::debug!(
+                "Cleanup: old path not in new lockfile - name={}, path={}, install={:?}, exists={}",
+                old_resource.name,
+                old_resource.installed_at,
+                old_resource.install,
+                full_path.exists()
+            );
+
             // Only remove if the file actually exists
             if full_path.exists() {
                 tokio::fs::remove_file(&full_path).await.with_context(|| {

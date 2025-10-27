@@ -279,7 +279,7 @@ fn extract_from_json(content: &str) -> Result<HashMap<String, toml::Value>> {
 }
 
 /// Convert serde_json::Value to toml::Value.
-fn json_to_toml_value(json: &serde_json::Value) -> Result<toml::Value> {
+pub(crate) fn json_to_toml_value(json: &serde_json::Value) -> Result<toml::Value> {
     match json {
         serde_json::Value::String(s) => Ok(toml::Value::String(s.clone())),
         serde_json::Value::Number(n) => {

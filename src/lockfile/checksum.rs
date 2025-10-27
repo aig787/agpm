@@ -156,28 +156,23 @@ impl LockFile {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use agpm_cli::lockfile::{LockFile, LockedResource, ResourceId};
+    /// # use agpm_cli::lockfile::{LockFile, LockedResourceBuilder, ResourceId};
     /// # use agpm_cli::core::ResourceType;
+    /// # use agpm_cli::utils::compute_variant_inputs_hash;
     /// # let mut lockfile = LockFile::default();
     /// # // First add a resource to update
-    /// # lockfile.add_typed_resource("my-agent".to_string(), LockedResource::new(
+    /// # let resource = LockedResourceBuilder::new(
     /// #     "my-agent".to_string(),
-    /// #     None,
-    /// #     None,
     /// #     "my-agent.md".to_string(),
-    /// #     None,
-    /// #     None,
     /// #     "".to_string(),
     /// #     "agents/my-agent.md".to_string(),
-    /// #     vec![],
     /// #     ResourceType::Agent,
-    /// #     Some("claude-code".to_string()),
-    /// #     None,
-    /// #     std::collections::HashMap::new(),
-    /// #     None,
-    /// #     serde_json::Value::Object(serde_json::Map::new()),
-    /// # ), ResourceType::Agent);
-    /// let id = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, serde_json::json!({}));
+    /// # )
+    /// # .tool(Some("claude-code".to_string()))
+    /// # .build();
+    /// # lockfile.add_typed_resource("my-agent".to_string(), resource, ResourceType::Agent);
+    /// let variant_hash = compute_variant_inputs_hash(&serde_json::json!({})).unwrap_or_default();
+    /// let id = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, variant_hash);
     /// let updated = lockfile.update_resource_checksum(&id, "sha256:abcdef123456...");
     /// assert!(updated);
     /// ```
@@ -221,6 +216,79 @@ impl LockFile {
         for resource in &mut self.mcp_servers {
             if resource.id() == *id {
                 resource.checksum = checksum.to_string();
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Update context checksum for resource by ResourceId.
+    ///
+    /// Stores the SHA-256 checksum of template rendering inputs (context) in the lockfile.
+    /// This is different from the file checksum which covers the final rendered content.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ResourceId identifying the resource to update
+    /// * `context_checksum` - The SHA-256 checksum of template context, or None for non-templated resources
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the resource was found and updated, `false` otherwise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let mut lockfile = LockFile::new();
+    /// let id = ResourceId::new("my-agent", None::<String>, Some("claude-code"), ResourceType::Agent, serde_json::json!({}));
+    /// let updated = lockfile.update_resource_context_checksum(&id, Some("sha256:context123456..."));
+    /// assert!(updated);
+    /// ```
+    pub fn update_resource_context_checksum(
+        &mut self,
+        id: &ResourceId,
+        context_checksum: &str,
+    ) -> bool {
+        // Try each resource type until we find a match by comparing ResourceIds
+        for resource in &mut self.agents {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.snippets {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.commands {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.scripts {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.hooks {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
+                return true;
+            }
+        }
+
+        for resource in &mut self.mcp_servers {
+            if resource.id() == *id {
+                resource.context_checksum = Some(context_checksum.to_string());
                 return true;
             }
         }

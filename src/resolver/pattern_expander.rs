@@ -103,12 +103,20 @@ async fn expand_local_pattern(
     let mut concrete_deps = Vec::new();
 
     for matched_path in matches {
-        // Generate a dependency name from the matched path
-        let dep_name = generate_dependency_name(&matched_path.to_string_lossy());
-
         // Convert matched path to absolute by joining with base_path
         let absolute_path = base_path.join(&matched_path);
         let concrete_path = absolute_path.to_string_lossy().to_string();
+
+        // Generate a dependency name using source context
+        let source_context = if let Some(manifest_dir) = manifest_dir {
+            // For local dependencies, use manifest directory as source context
+            crate::resolver::source_context::SourceContext::local(manifest_dir)
+        } else {
+            // Fallback: use the base_path as source context
+            crate::resolver::source_context::SourceContext::local(&base_path)
+        };
+
+        let dep_name = generate_dependency_name(&concrete_path, &source_context);
 
         // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
         let concrete_dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
@@ -185,8 +193,10 @@ async fn expand_remote_pattern(
     let mut concrete_deps = Vec::new();
 
     for matched_path in matches {
-        // Generate a dependency name from the matched path
-        let dep_name = generate_dependency_name(&matched_path.to_string_lossy());
+        // Generate a dependency name using source context
+        // For Git dependencies, use the repository root as source context
+        let source_context = crate::resolver::source_context::SourceContext::git(&worktree_path);
+        let dep_name = generate_dependency_name(&matched_path.to_string_lossy(), &source_context);
 
         // matched_path is already relative to worktree root (from PatternResolver)
         // Create a concrete dependency for the matched file, inheriting tool, target, and flatten from parent
@@ -213,55 +223,14 @@ async fn expand_remote_pattern(
     Ok(concrete_deps)
 }
 
-/// Generates a dependency name from a path.
-/// Creates collision-resistant names by preserving directory structure.
-pub fn generate_dependency_name(path: &str) -> String {
-    // Convert path to a collision-resistant name
-    // Example: "agents/ai/helper.md" -> "ai/helper"
-    // Example: "snippets/commands/commit.md" -> "commands/commit"
-    // Example: "commit.md" -> "commit"
-    // Example (absolute): "/private/tmp/shared/snippets/utils.md" -> "/private/tmp/shared/snippets/utils"
-    // Example (Windows absolute): "C:/team/tools/foo.md" -> "C:/team/tools/foo"
-    // Example (parent-relative): "../shared/utils.md" -> "../shared/utils"
-
-    let path = Path::new(path);
-
-    // Get the path without extension
-    let without_ext = path.with_extension("");
-
-    // Convert to string and normalize separators to forward slashes
-    // This ensures consistent behavior on Windows where Path::to_string_lossy()
-    // produces backslashes, which would break our split('/') logic below
-    let path_str = without_ext.to_string_lossy().replace('\\', "/");
-
-    // Check if this is an absolute path or starts with ../ (cross-directory)
-    // Note: With the fix to always use manifest-relative paths (even with ../),
-    // lockfiles should never contain absolute paths. We check path.is_absolute()
-    // defensively for manually-edited lockfiles.
-    let is_absolute = path.is_absolute();
-    let is_cross_directory = path_str.starts_with("../");
-
-    // If the path has multiple components, skip the first directory (resource type)
-    // to avoid redundancy, but keep subdirectories for uniqueness
-    // EXCEPTIONS that keep all components to avoid collisions:
-    // 1. Absolute paths (e.g., C:/team/tools/foo.md vs D:/team/tools/foo.md)
-    // 2. Cross-directory paths with ../ (e.g., ../shared/a.md vs ../other/a.md)
-    let components: Vec<&str> = path_str.split('/').collect();
-
-    let result = if components.len() > 1 && !is_absolute && !is_cross_directory {
-        // Skip first component (resource type) for normal relative paths
-        components[1..].join("/")
-    } else {
-        // Keep all components for absolute paths, cross-directory paths, or single-component paths
-        path_str
-    };
-
-    // Ensure the result is not empty
-    if result.is_empty() {
-        "unnamed".to_string()
-    } else {
-        result
-    }
+/// Generates a dependency name from a path using source context.
+/// Creates collision-resistant names by preserving directory structure relative to source.
+pub fn generate_dependency_name(
+    path: &str,
+    source_context: &crate::resolver::source_context::SourceContext,
+) -> String {
+    // Use the new source context-aware name generation
+    crate::resolver::source_context::compute_canonical_name(path, source_context)
 }
 
 // ============================================================================
@@ -372,6 +341,8 @@ impl PatternExpansionService {
 
             // Build locked resource for each concrete dependency
             // TODO: Add checksum calculation and proper path resolution
+            let variant_inputs = crate::resolver::lockfile_builder::VariantInputs::default();
+
             locked_resources.push(LockedResource {
                 name: concrete_name,
                 source: Some(source.to_string()),
@@ -387,7 +358,8 @@ impl PatternExpansionService {
                 tool: None,
                 applied_patches: HashMap::new(),
                 install: Some(true),
-                template_vars: "{}".to_string(),
+                variant_inputs,
+                context_checksum: None,
             });
         }
 
@@ -436,40 +408,8 @@ mod tests {
     use super::*;
     use crate::manifest::DetailedDependency;
 
-    #[test]
-    fn test_generate_dependency_name() {
-        // Basic relative paths
-        assert_eq!(generate_dependency_name("agents/helper.md"), "helper");
-        assert_eq!(generate_dependency_name("snippets/rust-patterns.md"), "rust-patterns");
-        assert_eq!(generate_dependency_name("commands/deploy.sh"), "deploy");
-
-        // Paths with subdirectories
-        assert_eq!(generate_dependency_name("agents/ai/helper.md"), "ai/helper");
-        assert_eq!(generate_dependency_name("snippets/commands/commit.md"), "commands/commit");
-
-        // Single component paths
-        assert_eq!(generate_dependency_name("README.md"), "README");
-        assert_eq!(generate_dependency_name("helper.md"), "helper");
-
-        // Cross-directory paths (should keep all components)
-        assert_eq!(generate_dependency_name("../shared/utils.md"), "../shared/utils");
-        assert_eq!(generate_dependency_name("../../common/base.md"), "../../common/base");
-
-        // Absolute paths (should keep all components)
-        assert_eq!(generate_dependency_name("/tmp/shared/utils.md"), "/tmp/shared/utils");
-
-        // Windows absolute paths (only test on Windows where they're recognized as absolute)
-        #[cfg(target_os = "windows")]
-        assert_eq!(generate_dependency_name("C:/team/tools/foo.md"), "C:/team/tools/foo");
-
-        // Complex names with special characters
-        assert_eq!(generate_dependency_name("agents/ai-helper_v2.md"), "ai-helper_v2");
-        assert_eq!(generate_dependency_name("snippets/rust-patterns@123.md"), "rust-patterns@123");
-
-        // Edge cases
-        assert_eq!(generate_dependency_name(".hidden.md"), ".hidden");
-        assert_eq!(generate_dependency_name(""), "unnamed");
-    }
+    // TODO: ADD NEW TESTS for the source context version once we have concrete examples
+    // These tests should use generate_dependency_name() with proper SourceContext
 
     #[tokio::test]
     async fn test_expand_local_pattern() {

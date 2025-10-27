@@ -123,6 +123,17 @@ impl AppliedPatches {
         Self::default()
     }
 
+    /// Creates an AppliedPatches from a lockfile's combined patches HashMap.
+    ///
+    /// The lockfile doesn't distinguish between project and private patches,
+    /// so this method places all patches in the `project` field.
+    pub fn from_lockfile_patches(patches: &HashMap<String, toml::Value>) -> Self {
+        Self {
+            project: patches.clone(),
+            private: HashMap::new(),
+        }
+    }
+
     /// Checks if no patches were applied.
     pub fn is_empty(&self) -> bool {
         self.project.is_empty() && self.private.is_empty()
@@ -457,8 +468,13 @@ fn apply_patches_to_markdown(
 
     let mut applied_patches = HashMap::new();
 
-    // Apply each patch to the metadata
-    for (key, value) in patch_data {
+    // Apply each patch to the metadata in deterministic order (sorted by key)
+    // This ensures consistent file content across runs
+    let mut sorted_keys: Vec<_> = patch_data.keys().cloned().collect();
+    sorted_keys.sort();
+
+    for key in sorted_keys {
+        let value = &patch_data[&key];
         // Convert toml::Value to serde_json::Value for the extra fields
         let json_value = toml_value_to_json(value)?;
 
@@ -490,9 +506,14 @@ fn apply_patches_to_json(
 
     let mut applied_patches = HashMap::new();
 
-    // Apply each patch to the top-level JSON object
+    // Apply each patch to the top-level JSON object in deterministic order (sorted by key)
+    // This ensures consistent file content across runs
     if let serde_json::Value::Object(ref mut map) = json_value {
-        for (key, value) in patch_data {
+        let mut sorted_keys: Vec<_> = patch_data.keys().cloned().collect();
+        sorted_keys.sort();
+
+        for key in sorted_keys {
+            let value = &patch_data[&key];
             // Convert toml::Value to serde_json::Value
             let json_val = toml_value_to_json(value)?;
             map.insert(key.clone(), json_val);
@@ -509,7 +530,7 @@ fn apply_patches_to_json(
 }
 
 /// Convert toml::Value to serde_json::Value.
-fn toml_value_to_json(value: &toml::Value) -> anyhow::Result<serde_json::Value> {
+pub(crate) fn toml_value_to_json(value: &toml::Value) -> anyhow::Result<serde_json::Value> {
     toml_value_to_json_with_depth(value, 0)
 }
 

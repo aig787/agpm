@@ -23,6 +23,7 @@ use crate::manifest::Manifest;
 /// * `force_refresh` - Whether to force refresh of cached worktrees
 /// * `manifest` - Optional reference to the project manifest for template context
 /// * `lockfile` - Optional reference to the lockfile for template context
+/// * `old_lockfile` - Optional reference to the previous lockfile for early-exit optimization
 /// * `project_patches` - Optional project-level patches from agpm.toml
 /// * `private_patches` - Optional user-level patches from agpm.private.toml
 pub struct InstallContext<'a> {
@@ -32,6 +33,7 @@ pub struct InstallContext<'a> {
     pub verbose: bool,
     pub manifest: Option<&'a Manifest>,
     pub lockfile: Option<&'a Arc<LockFile>>,
+    pub old_lockfile: Option<&'a LockFile>,
     pub project_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub private_patches: Option<&'a crate::manifest::ManifestPatches>,
     pub gitignore_lock: Option<&'a Arc<Mutex<()>>>,
@@ -50,6 +52,7 @@ impl<'a> InstallContext<'a> {
         verbose: bool,
         manifest: Option<&'a Manifest>,
         lockfile: Option<&'a Arc<LockFile>>,
+        old_lockfile: Option<&'a LockFile>,
         project_patches: Option<&'a crate::manifest::ManifestPatches>,
         private_patches: Option<&'a crate::manifest::ManifestPatches>,
         gitignore_lock: Option<&'a Arc<Mutex<()>>>,
@@ -75,6 +78,7 @@ impl<'a> InstallContext<'a> {
             verbose,
             manifest,
             lockfile,
+            old_lockfile,
             project_patches,
             private_patches,
             gitignore_lock,

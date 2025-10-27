@@ -82,8 +82,12 @@ impl ResolutionCore {
 
 /// Type alias for dependency keys used in resolution maps.
 ///
-/// Format: (ResourceType, dependency_name, source, tool)
-pub type DependencyKey = (ResourceType, String, Option<String>, Option<String>);
+/// Format: (ResourceType, dependency_name, source, tool, variant_inputs_hash)
+///
+/// The variant_inputs_hash ensures that dependencies with different template variables
+/// are treated as distinct entries, preventing incorrect deduplication when multiple
+/// parent resources need the same dependency with different variant inputs.
+pub type DependencyKey = (ResourceType, String, Option<String>, Option<String>, String);
 
 /// Base resolution context with immutable shared state.
 ///
@@ -119,6 +123,9 @@ pub struct TransitiveContext<'a> {
 
     /// Conflict detector for version resolution
     pub conflict_detector: &'a mut ConflictDetector,
+
+    /// Index of manifest overrides for deduplication with transitive deps
+    pub manifest_overrides: &'a ManifestOverrideIndex,
 }
 
 /// Context for pattern expansion operations.
@@ -131,6 +138,62 @@ pub struct PatternContext<'a> {
     /// Map tracking pattern alias relationships (concrete_name -> pattern_name)
     pub pattern_alias_map: &'a mut HashMap<(ResourceType, String), String>,
 }
+
+// ============================================================================
+// Manifest Override Types
+// ============================================================================
+
+/// Stores override information from manifest dependencies.
+///
+/// When a resource appears both as a direct dependency in the manifest and as
+/// a transitive dependency of another resource, this structure stores the
+/// customizations from the manifest version to ensure they take precedence.
+#[derive(Debug, Clone)]
+pub struct ManifestOverride {
+    /// Custom filename specified in manifest
+    pub filename: Option<String>,
+
+    /// Custom target path specified in manifest
+    pub target: Option<String>,
+
+    /// Install flag override
+    pub install: Option<bool>,
+
+    /// Manifest alias (for reference)
+    pub manifest_alias: Option<String>,
+
+    /// Original template variables from manifest
+    pub template_vars: Option<serde_json::Value>,
+}
+
+/// Key for override index lookup.
+///
+/// This key uniquely identifies a resource variant for the purpose of
+/// detecting when a transitive dependency should be overridden by a
+/// direct manifest dependency.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OverrideKey {
+    /// The type of resource (Agent, Snippet, etc.)
+    pub resource_type: ResourceType,
+
+    /// Normalized path (without leading ./ and without extension)
+    pub normalized_path: String,
+
+    /// Source repository name (None for local dependencies)
+    pub source: Option<String>,
+
+    /// Target tool name
+    pub tool: String,
+
+    /// Variant inputs hash (computed from template_vars)
+    pub variant_hash: String,
+}
+
+/// Override index mapping resource identities to their manifest customizations.
+///
+/// This index is built once during resolution from the manifest dependencies
+/// and used to apply overrides to transitive dependencies that match.
+pub type ManifestOverrideIndex = HashMap<OverrideKey, ManifestOverride>;
 
 // ============================================================================
 // Dependency Helper Functions
@@ -377,6 +440,70 @@ pub fn format_dependency_with_version(
 /// ```
 pub fn format_dependency_without_version(resource_type: ResourceType, name: &str) -> String {
     LockfileDependencyRef::local(resource_type, name.to_string(), None).to_string()
+}
+
+/// Compute the variant inputs hash from a `ResourceDependency`.
+///
+/// This function extracts the `template_vars` field from a dependency and computes
+/// its SHA-256 hash for use in the dependency key. If the dependency has no
+/// `template_vars`, returns the hash of an empty JSON object.
+///
+/// # Arguments
+///
+/// * `dep` - The resource dependency to extract variant inputs from
+///
+/// # Returns
+///
+/// A SHA-256 hash string in the format `"sha256:hexdigest"`
+///
+/// # Examples
+///
+/// ```
+/// use agpm_cli::manifest::{ResourceDependency, DetailedDependency};
+/// use agpm_cli::resolver::types::compute_dependency_variant_hash;
+///
+/// let dep = ResourceDependency::Detailed(Box::new(DetailedDependency {
+///     source: Some("test".to_string()),
+///     path: "agents/test.md".to_string(),
+///     version: Some("v1.0.0".to_string()),
+///     branch: None,
+///     rev: None,
+///     command: None,
+///     args: None,
+///     target: None,
+///     filename: None,
+///     dependencies: None,
+///     tool: None,
+///     flatten: None,
+///     install: None,
+///     template_vars: None,
+/// }));
+///
+/// let hash = compute_dependency_variant_hash(&dep);
+/// assert!(hash.starts_with("sha256:"));
+/// ```
+pub fn compute_dependency_variant_hash(dep: &ResourceDependency) -> String {
+    use crate::utils::compute_variant_inputs_hash;
+
+    let empty_object = serde_json::Value::Object(serde_json::Map::new());
+    let template_vars = dep.get_template_vars().unwrap_or(&empty_object);
+
+    let hash = compute_variant_inputs_hash(template_vars).unwrap_or_else(|err| {
+        tracing::warn!(
+            "Failed to compute variant_inputs_hash for dependency: {}. Using empty hash.",
+            err
+        );
+        crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string()
+    });
+
+    tracing::debug!(
+        "[DEBUG] compute_dependency_variant_hash: path='{}', template_vars={:?}, hash={}",
+        dep.get_path(),
+        template_vars,
+        &hash[..15]
+    );
+
+    hash
 }
 
 #[cfg(test)]

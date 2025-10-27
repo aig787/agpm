@@ -7,6 +7,7 @@ mod installer_tests {
     };
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::Manifest;
+
     use crate::utils::ensure_dir;
     use indicatif::ProgressBar;
     use std::sync::Arc;
@@ -22,6 +23,7 @@ mod installer_tests {
                 version: None,
                 resolved_commit: None,
                 checksum: String::new(),
+                context_checksum: None,
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
@@ -29,7 +31,7 @@ mod installer_tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: "{}".to_string(),
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }
         } else {
             LockedResource {
@@ -40,6 +42,7 @@ mod installer_tests {
                 version: Some("v1.0.0".to_string()),
                 resolved_commit: Some("abc123".to_string()),
                 checksum: "sha256:test".to_string(),
+                context_checksum: None,
                 installed_at: String::new(),
                 dependencies: vec![],
                 resource_type: crate::core::ResourceType::Agent,
@@ -47,7 +50,7 @@ mod installer_tests {
                 manifest_alias: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: "{}".to_string(),
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }
         }
     }
@@ -78,6 +81,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install the resource
@@ -85,7 +89,7 @@ mod installer_tests {
         assert!(result.is_ok(), "Failed to install local resource: {:?}", result);
 
         // Should be installed the first time
-        let (installed, _checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed
@@ -124,12 +128,13 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
         assert!(result.is_ok());
-        let (installed, _checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify the file was installed at custom path
@@ -159,6 +164,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Try to install the resource
@@ -194,12 +200,13 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install should now succeed even with invalid frontmatter (just emits a warning)
         let result = install_resource(&entry, "agents", &context).await;
         assert!(result.is_ok());
-        let (installed, _checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
         assert!(installed);
 
         // Verify the file was installed
@@ -240,6 +247,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install with progress
@@ -261,7 +269,7 @@ mod installer_tests {
         let lockfile = LockFile::new();
         let manifest = Manifest::new();
 
-        let (count, _, _) = install_resources(
+        let (count, _, _context_checksums, _) = install_resources(
             ResourceFilter::All,
             &Arc::new(lockfile),
             &manifest,
@@ -271,6 +279,7 @@ mod installer_tests {
             None,
             None,
             false, // verbose
+            None,  // old_lockfile
         )
         .await
         .unwrap();
@@ -314,7 +323,7 @@ mod installer_tests {
 
         let manifest = Manifest::new();
 
-        let (count, _, _) = install_resources(
+        let (count, _, _context_checksums, _) = install_resources(
             ResourceFilter::All,
             &Arc::new(lockfile),
             &manifest,
@@ -324,6 +333,7 @@ mod installer_tests {
             None,
             None,
             false, // verbose
+            None,  // old_lockfile
         )
         .await
         .unwrap();
@@ -381,6 +391,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         let count = install_updated_resources(
@@ -433,6 +444,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         let count = install_updated_resources(
@@ -471,6 +483,7 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install using the public function
@@ -509,12 +522,13 @@ mod installer_tests {
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         // Install the resource
         let result = install_resource(&entry, "agents", &context).await;
         assert!(result.is_ok());
-        let (installed, _checksum, _applied_patches) = result.unwrap();
+        let (installed, _checksum, _context_checksum, _applied_patches) = result.unwrap();
         assert!(installed, "Should have installed new resource");
 
         // Verify nested directories were created
@@ -728,6 +742,7 @@ local-config.json
             None,
             None,
             None,
+            None, // max_content_file_size
         );
 
         let count =

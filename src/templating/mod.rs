@@ -59,6 +59,7 @@ mod tests {
     use super::*;
     use crate::core::ResourceType;
     use crate::lockfile::{LockFile, LockedResource, LockedResourceBuilder};
+
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -76,6 +77,7 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123def456".to_string()),
             checksum: "sha256:testchecksum".to_string(),
+            context_checksum: None,
             installed_at: ".claude/agents/test-agent.md".to_string(),
             dependencies: vec![],
             resource_type: ResourceType::Agent,
@@ -83,7 +85,7 @@ mod tests {
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         lockfile
@@ -98,14 +100,17 @@ mod tests {
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
 
-        let resource_id = crate::lockfile::ResourceId::from_serialized(
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
             "test-agent",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            "{}".to_string(),
+            hash,
         );
-        let _context = builder.build_context(&resource_id).await.unwrap();
+        let (_context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         // If we got here without panicking, context building succeeded
         // The actual context structure is tested implicitly by the renderer tests
@@ -204,6 +209,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_template_context_uses_native_paths() {
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
         let mut lockfile = create_test_lockfile();
 
         // Add another resource with a nested path
@@ -215,33 +226,42 @@ mod tests {
             version: Some("v1.0.0".to_string()),
             resolved_commit: Some("abc123def456".to_string()),
             checksum: "sha256:testchecksum".to_string(),
-            installed_at: ".agpm/snippets/utils/test.md".to_string(),
+            installed_at: ".claude/snippets/utils/test.md".to_string(),
             dependencies: vec![],
             resource_type: ResourceType::Snippet,
-            tool: Some("agpm".to_string()),
+            context_checksum: None,
+            tool: Some("claude-code".to_string()),
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: "{}".to_string(),
+            variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
         });
 
         // Add the snippet as a dependency of the test-agent
         if let Some(agent) = lockfile.agents.first_mut() {
-            agent.dependencies.push("snippet/test-snippet".to_string());
+            agent.dependencies.push("snippet:test-snippet".to_string());
         }
 
+        // Create the snippet file at the installed location
+        let snippet_path = project_dir.join(".claude/snippets/utils/test.md");
+        fs::create_dir_all(snippet_path.parent().unwrap()).await.unwrap();
+        let snippet_content = "# Test Snippet\n\nSome content here.";
+        fs::write(&snippet_path, snippet_content).await.unwrap();
+
         let cache = crate::cache::Cache::new().unwrap();
-        let project_dir = std::env::current_dir().unwrap();
         let builder =
             TemplateContextBuilder::new(Arc::new(lockfile), None, Arc::new(cache), project_dir);
-        let resource_id = crate::lockfile::ResourceId::from_serialized(
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
             "test-agent",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            "{}".to_string(),
+            hash,
         );
-        let context = builder.build_context(&resource_id).await.unwrap();
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         // Extract the agpm.resource.install_path from context
         let agpm_value = context.get("agpm").expect("agpm context should exist");
@@ -282,12 +302,12 @@ mod tests {
 
         #[cfg(windows)]
         {
-            assert_eq!(snippet_path, ".agpm\\snippets\\utils\\test.md");
+            assert_eq!(snippet_path, ".claude\\snippets\\utils\\test.md");
         }
 
         #[cfg(not(windows))]
         {
-            assert_eq!(snippet_path, ".agpm/snippets/utils/test.md");
+            assert_eq!(snippet_path, ".claude/snippets/utils/test.md");
         }
     }
 
@@ -617,19 +637,21 @@ The agent uses templating."#;
         let snippets_dir = project_dir.join("snippets");
         fs::create_dir_all(&snippets_dir).await.unwrap();
         let snippet_path = snippets_dir.join("non-templated.md");
-        fs::write(
-            &snippet_path,
-            r#"---
+        let snippet_content = r#"---
 agpm:
   templating: false
 ---
 # Example Snippet
 
 This should show {{ agpm.deps.some.content }} literally.
-"#,
-        )
-        .await
-        .unwrap();
+"#;
+        fs::write(&snippet_path, snippet_content).await.unwrap();
+
+        // Also create the installed file at the location referenced in the lockfile
+        let installed_snippets_dir = project_dir.join(".claude/snippets");
+        fs::create_dir_all(&installed_snippets_dir).await.unwrap();
+        let installed_snippet_path = installed_snippets_dir.join("non-templated.md");
+        fs::write(&installed_snippet_path, snippet_content).await.unwrap();
 
         let mut lockfile = LockFile::default();
         lockfile.commands.push(
@@ -640,10 +662,10 @@ This should show {{ agpm.deps.some.content }} literally.
                 ".claude/commands/test.md".to_string(),
                 ResourceType::Command,
             )
-            .dependencies(vec!["snippet/non_templated".to_string()])
+            .dependencies(vec!["snippet:non_templated".to_string()])
             .tool(Some("claude-code".to_string()))
             .applied_patches(std::collections::HashMap::new())
-            .template_vars(serde_json::Value::Object(serde_json::Map::new()))
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
             .build(),
         );
         lockfile.snippets.push(
@@ -651,13 +673,13 @@ This should show {{ agpm.deps.some.content }} literally.
                 "non_templated".to_string(),
                 "snippets/non-templated.md".to_string(),
                 "sha256:test-snippet".to_string(),
-                ".agpm/snippets/non-templated.md".to_string(),
+                ".claude/snippets/non-templated.md".to_string(),
                 ResourceType::Snippet,
             )
             .dependencies(vec![])
-            .tool(Some("agpm".to_string()))
+            .tool(Some("claude-code".to_string()))
             .applied_patches(std::collections::HashMap::new())
-            .template_vars(serde_json::Value::Object(serde_json::Map::new()))
+            .variant_inputs(crate::resolver::lockfile_builder::VariantInputs::default())
             .build(),
         );
 
@@ -668,14 +690,17 @@ This should show {{ agpm.deps.some.content }} literally.
             Arc::new(cache),
             project_dir.clone(),
         );
-        let resource_id = crate::lockfile::ResourceId::from_serialized(
+        let variant_inputs = serde_json::json!({});
+        let hash = crate::utils::compute_variant_inputs_hash(&variant_inputs).unwrap();
+        let resource_id = crate::lockfile::ResourceId::new(
             "test-command",
             None::<String>,
             Some("claude-code"),
             ResourceType::Command,
-            "{}".to_string(),
+            hash,
         );
-        let context = builder.build_context(&resource_id).await.unwrap();
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &variant_inputs).await.unwrap();
 
         let mut renderer = TemplateRenderer::new(true, project_dir.clone(), None).unwrap();
         let template = r#"# Combined Output
@@ -720,6 +745,8 @@ This should show {{ agpm.deps.some.content }} literally.
             }
         });
 
+        let variant_inputs_obj =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
         lockfile.agents.push(LockedResource {
             name: "test-agent-python".to_string(),
             source: Some("community".to_string()),
@@ -735,7 +762,8 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: serde_json::to_string(&template_vars).unwrap(),
+            variant_inputs: variant_inputs_obj.clone(),
+            context_checksum: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -757,26 +785,30 @@ This should show {{ agpm.deps.some.content }} literally.
         );
 
         // Build context without template_vars
-        let resource_id_no_override = crate::lockfile::ResourceId::from_serialized(
+        let variant_inputs_empty = serde_json::json!({});
+        let hash_empty = crate::utils::compute_variant_inputs_hash(&variant_inputs_empty).unwrap();
+        let resource_id_no_override = crate::lockfile::ResourceId::new(
             "test-agent",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            "{}".to_string(),
+            hash_empty,
         );
-        let context_without_override =
-            builder.build_context(&resource_id_no_override).await.unwrap();
+        let (context_without_override, _checksum) =
+            builder.build_context(&resource_id_no_override, &variant_inputs_empty).await.unwrap();
 
         // Build context WITH template_vars (different lockfile entry)
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_with_override = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
         let resource_id_with_override = crate::lockfile::ResourceId::new(
             "test-agent-python",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            template_vars,
+            hash_with_override,
         );
-        let context_with_override =
-            builder.build_context(&resource_id_with_override).await.unwrap();
+        let (context_with_override, _checksum) =
+            builder.build_context(&resource_id_with_override, &template_vars).await.unwrap();
 
         // Test without overrides - should use project defaults
         let project_dir = std::env::current_dir().unwrap();
@@ -816,6 +848,8 @@ This should show {{ agpm.deps.some.content }} literally.
         });
 
         // Add a second agent with template_vars for deep merge testing
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
         lockfile.agents.push(LockedResource {
             name: "test-agent-merged".to_string(),
             source: Some("community".to_string()),
@@ -831,7 +865,8 @@ This should show {{ agpm.deps.some.content }} literally.
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: serde_json::to_string(&template_vars).unwrap(),
+            variant_inputs,
+            context_checksum: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -856,14 +891,17 @@ This should show {{ agpm.deps.some.content }} literally.
             project_dir.clone(),
         );
 
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
         let resource_id = crate::lockfile::ResourceId::new(
             "test-agent-merged",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            template_vars,
+            hash_for_id,
         );
-        let context = builder.build_context(&resource_id).await.unwrap();
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
 
         let project_dir = std::env::current_dir().unwrap();
         let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
@@ -899,6 +937,8 @@ Language: {{ project.language }}
 
         // Empty object should be a no-op
         let template_vars = json!({});
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
 
         lockfile.agents.push(LockedResource {
             name: "test-agent-empty".to_string(),
@@ -915,7 +955,8 @@ Language: {{ project.language }}
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: serde_json::to_string(&template_vars).unwrap(),
+            variant_inputs,
+            context_checksum: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -936,15 +977,18 @@ Language: {{ project.language }}
             project_dir.clone(),
         );
 
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
         let resource_id = crate::lockfile::ResourceId::new(
             "test-agent-empty",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            template_vars,
+            hash_for_id,
         );
 
-        let context = builder.build_context(&resource_id).await.unwrap();
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
 
         let project_dir = std::env::current_dir().unwrap();
         let mut renderer = TemplateRenderer::new(true, project_dir, None).unwrap();
@@ -967,6 +1011,8 @@ Language: {{ project.language }}
                 "optional_field": null
             }
         });
+        let variant_inputs =
+            crate::resolver::lockfile_builder::VariantInputs::new(template_vars.clone());
 
         lockfile.agents.push(LockedResource {
             name: "test-agent-null".to_string(),
@@ -983,7 +1029,8 @@ Language: {{ project.language }}
             manifest_alias: None,
             applied_patches: std::collections::HashMap::new(),
             install: None,
-            template_vars: serde_json::to_string(&template_vars).unwrap(),
+            variant_inputs,
+            context_checksum: None,
         });
 
         let cache = crate::cache::Cache::new().unwrap();
@@ -1003,15 +1050,18 @@ Language: {{ project.language }}
             project_dir.clone(),
         );
 
+        // Must use the same variant_inputs that was stored in the lockfile
+        let hash_for_id = crate::utils::compute_variant_inputs_hash(&template_vars).unwrap();
         let resource_id = crate::lockfile::ResourceId::new(
             "test-agent-null",
             Some("community"),
             Some("claude-code"),
             ResourceType::Agent,
-            template_vars,
+            hash_for_id,
         );
 
-        let context = builder.build_context(&resource_id).await.unwrap();
+        let (context, _checksum) =
+            builder.build_context(&resource_id, &template_vars).await.unwrap();
 
         // Verify null is present in context
         let agpm_value = context.get("agpm").expect("agpm should exist");

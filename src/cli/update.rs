@@ -416,11 +416,12 @@ impl UpdateCommand {
         // Compare lockfiles to see what changed
         let mut updates = Vec::new();
         ResourceIterator::for_each_resource(&new_lockfile, |_, new_entry| {
-            // Use (name, source) pair for correct matching when multiple sources
-            // provide resources with the same name
+            // Use (display_name, source) pair for correct matching
+            // display_name() uses manifest_alias if present, otherwise name
+            // This ensures backward compatibility with old lockfiles
             if let Some((_, old_entry)) = ResourceIterator::find_resource_by_name_and_source(
                 &existing_lockfile,
-                &new_entry.name,
+                new_entry.display_name(),
                 new_entry.source.as_deref(),
             ) {
                 // Resource needs update if:
@@ -482,26 +483,35 @@ impl UpdateCommand {
                 );
             }
 
-            let (install_count, checksums, applied_patches_list) = install_resources(
-                ResourceFilter::Updated(updates.clone()),
-                &Arc::new(new_lockfile.clone()),
-                &manifest,
-                project_dir,
-                cache,
-                false,             // don't force refresh for updates
-                self.max_parallel, // use provided or default concurrency
-                if self.quiet || self.no_progress {
-                    None
-                } else {
-                    Some(multi_phase.clone())
-                },
-                self.verbose,
-            )
-            .await?;
+            let (install_count, checksums, context_checksums, applied_patches_list) =
+                install_resources(
+                    ResourceFilter::Updated(updates.clone()),
+                    &Arc::new(new_lockfile.clone()),
+                    &manifest,
+                    project_dir,
+                    cache,
+                    false,             // don't force refresh for updates
+                    self.max_parallel, // use provided or default concurrency
+                    if self.quiet || self.no_progress {
+                        None
+                    } else {
+                        Some(multi_phase.clone())
+                    },
+                    self.verbose,
+                    Some(&existing_lockfile), // Pass old lockfile for early-exit optimization
+                )
+                .await?;
 
             // Update lockfile with checksums in-memory
             for (id, checksum) in checksums {
                 new_lockfile.update_resource_checksum(&id, &checksum);
+            }
+
+            // Update lockfile with context checksums
+            for (id, context_checksum) in context_checksums {
+                if let Some(checksum) = context_checksum {
+                    new_lockfile.update_resource_context_checksum(&id, &checksum);
+                }
             }
 
             // Update lockfile with applied patches
@@ -600,6 +610,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource, LockedSource};
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
+
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
@@ -688,9 +699,10 @@ mod tests {
 
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
+                context_checksum: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: "{}".to_string(),
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

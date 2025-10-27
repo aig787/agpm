@@ -75,12 +75,13 @@ use context::read_with_cache_retry;
 /// It was introduced in AGPM v0.3.0 to resolve `clippy::type_complexity` warnings
 /// while maintaining clear semantics for installation results.
 ///
-/// # Success Variant: `Ok((String, bool, String))`
+/// # Success Variant: `Ok((String, bool, String, Option<String>))`
 ///
 /// When installation succeeds, the tuple contains:
 /// - `String`: Resource name that was processed
 /// - `bool`: Whether the resource was actually installed (`true`) or already up-to-date (`false`)
 /// - `String`: SHA-256 checksum of the installed file content
+/// - `Option<String>`: SHA-256 checksum of the template rendering inputs, or None for non-templated resources
 ///
 /// # Error Variant: `Err((String, anyhow::Error))`
 ///
@@ -130,7 +131,13 @@ use context::read_with_cache_retry;
 /// - **Error context**: Preserves resource name context when installation fails
 /// - **Batch processing**: Enables efficient collection and processing of parallel results
 type InstallResult = Result<
-    (crate::lockfile::ResourceId, bool, String, crate::manifest::patches::AppliedPatches),
+    (
+        crate::lockfile::ResourceId,
+        bool,
+        String,
+        Option<String>,
+        crate::manifest::patches::AppliedPatches,
+    ),
     (crate::lockfile::ResourceId, anyhow::Error),
 >;
 
@@ -166,10 +173,11 @@ use std::collections::HashSet;
 ///
 /// # Returns
 ///
-/// Returns `Ok((installed, checksum, applied_patches))` where:
+/// Returns `Ok((installed, file_checksum, context_checksum, applied_patches))` where:
 /// - `installed` is `true` if the resource was actually installed (new or updated),
 ///   `false` if the resource already existed and was unchanged
-/// - `checksum` is the SHA-256 hash of the installed file content
+/// - `file_checksum` is the SHA-256 hash of the installed file content (after rendering)
+/// - `context_checksum` is the SHA-256 hash of the template rendering inputs, or None for non-templated resources
 /// - `applied_patches` contains information about any patches that were applied during installation
 ///
 /// # Worktree Usage
@@ -191,33 +199,29 @@ use std::collections::HashSet;
 ///
 /// ```rust,no_run
 /// use agpm_cli::installer::{install_resource, InstallContext};
-/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::lockfile::LockedResourceBuilder;
 /// use agpm_cli::cache::Cache;
 /// use agpm_cli::core::ResourceType;
 /// use std::path::Path;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
-/// let entry = LockedResource::new(
+/// let entry = LockedResourceBuilder::new(
 ///     "example-agent".to_string(),
-///     Some("community".to_string()),
-///     Some("https://github.com/example/repo.git".to_string()),
 ///     "agents/example.md".to_string(),
-///     Some("v1.0.0".to_string()),
-///     Some("abc123".to_string()),
 ///     "sha256:...".to_string(),
 ///     ".claude/agents/example.md".to_string(),
-///     vec![],
 ///     ResourceType::Agent,
-///     Some("claude-code".to_string()),
-///     None,
-///     std::collections::HashMap::new(),
-///     None,
-///     serde_json::Value::Object(serde_json::Map::new()),
-/// );
+/// )
+/// .source(Some("community".to_string()))
+/// .url(Some("https://github.com/example/repo.git".to_string()))
+/// .version(Some("v1.0.0".to_string()))
+/// .resolved_commit(Some("abc123".to_string()))
+/// .tool(Some("claude-code".to_string()))
+/// .build();
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
-/// let (installed, checksum, _patches) = install_resource(&entry, "agents", &context).await?;
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None, None);
+/// let (installed, checksum, _old_checksum, _patches) = install_resource(&entry, "agents", &context).await?;
 /// if installed {
 ///     println!("Resource was installed with checksum: {}", checksum);
 /// } else {
@@ -239,7 +243,7 @@ pub async fn install_resource(
     entry: &LockedResource,
     resource_dir: &str,
     context: &InstallContext<'_>,
-) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
     // Determine destination path
     let dest_path = if entry.installed_at.is_empty() {
         context.project_dir.join(resource_dir).join(format!("{}.md", entry.name))
@@ -255,6 +259,47 @@ pub async fn install_resource(
     } else {
         None
     };
+
+    // Early-exit optimization: Skip processing if nothing changed
+    // This dramatically speeds up subsequent installations when resources are unchanged
+    if !context.force_refresh {
+        if let Some(old_lockfile) = context.old_lockfile {
+            if let Some(old_entry) = old_lockfile.find_resource(&entry.name, &entry.resource_type) {
+                // Check if all inputs that affect the final content are unchanged
+                let resolved_commit_unchanged = old_entry.resolved_commit == entry.resolved_commit;
+                let variant_inputs_unchanged = old_entry.variant_inputs == entry.variant_inputs;
+                let patches_unchanged = old_entry.applied_patches == entry.applied_patches;
+
+                let all_inputs_unchanged =
+                    resolved_commit_unchanged && variant_inputs_unchanged && patches_unchanged;
+
+                if all_inputs_unchanged && dest_path.exists() {
+                    // File exists and all inputs match - verify checksum matches
+                    if existing_checksum.as_ref() == Some(&old_entry.checksum) {
+                        tracing::debug!(
+                            "⏭️  Skipping unchanged resource: {} (checksum matches)",
+                            entry.name
+                        );
+                        return Ok((
+                            false, // not installed (already up to date)
+                            old_entry.checksum.clone(),
+                            old_entry.context_checksum.clone(),
+                            crate::manifest::patches::AppliedPatches::from_lockfile_patches(
+                                &old_entry.applied_patches,
+                            ),
+                        ));
+                    } else {
+                        tracing::debug!(
+                            "Checksum mismatch for {}: existing={:?}, expected={}",
+                            entry.name,
+                            existing_checksum,
+                            old_entry.checksum
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     let new_content = if let Some(source_name) = &entry.source {
         let url = entry
@@ -338,39 +383,51 @@ pub async fn install_resource(
 
     // Apply patches if provided (before templating)
     let empty_patches = std::collections::HashMap::new();
-    let (patched_content, applied_patches) =
-        if context.project_patches.is_some() || context.private_patches.is_some() {
-            use crate::manifest::patches::apply_patches_to_content_with_origin;
+    let (patched_content, applied_patches) = if context.project_patches.is_some()
+        || context.private_patches.is_some()
+    {
+        use crate::manifest::patches::apply_patches_to_content_with_origin;
 
-            // Look up patches for this specific resource
-            let resource_type = entry.resource_type.to_plural();
-            let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+        // Look up patches for this specific resource
+        let resource_type = entry.resource_type.to_plural();
+        let lookup_name = entry.lookup_name();
 
-            let project_patch_data = context
-                .project_patches
-                .and_then(|patches| patches.get(resource_type, lookup_name))
-                .unwrap_or(&empty_patches);
+        tracing::debug!(
+            "Installer patch lookup: resource_type={}, lookup_name={}, name={}, manifest_alias={:?}",
+            resource_type,
+            lookup_name,
+            entry.name,
+            entry.manifest_alias
+        );
 
-            let private_patch_data = context
-                .private_patches
-                .and_then(|patches| patches.get(resource_type, lookup_name))
-                .unwrap_or(&empty_patches);
+        let project_patch_data = context
+            .project_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
 
-            let file_path = entry.installed_at.as_str();
-            apply_patches_to_content_with_origin(
-                &new_content,
-                file_path,
-                project_patch_data,
-                private_patch_data,
-            )
-            .with_context(|| format!("Failed to apply patches to resource {}", entry.name))?
-        } else {
-            (new_content.clone(), crate::manifest::patches::AppliedPatches::default())
-        };
+        tracing::debug!("Found {} project patches for {}", project_patch_data.len(), lookup_name);
+
+        let private_patch_data = context
+            .private_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
+
+        let file_path = entry.installed_at.as_str();
+        apply_patches_to_content_with_origin(
+            &new_content,
+            file_path,
+            project_patch_data,
+            private_patch_data,
+        )
+        .with_context(|| format!("Failed to apply patches to resource {}", entry.name))?
+    } else {
+        (new_content.clone(), crate::manifest::patches::AppliedPatches::default())
+    };
 
     // Apply templating to markdown files if enabled in frontmatter (after patching)
-    // Track whether templating was applied and the context digest for cache invalidation
-    let (final_content, template_context_digest) = if entry.path.ends_with(".md") {
+    // Track whether templating was applied and capture context checksum from rendering
+    let (final_content, templating_was_applied, captured_checksum) = if entry.path.ends_with(".md")
+    {
         // Check for opt-in in frontmatter
         let templating_enabled = if let Ok(md_file) = MarkdownFile::parse(&patched_content) {
             md_file
@@ -386,13 +443,10 @@ pub async fn install_resource(
 
         if !templating_enabled {
             tracing::debug!("Templating not enabled via frontmatter for {}", entry.name);
-            (patched_content, None)
-        } else if patched_content.contains("{{")
-            || patched_content.contains("{%")
-            || patched_content.contains("{#")
-        {
-            // Check if content contains template syntax
-            tracing::debug!("Template syntax detected in {}, rendering...", entry.name);
+            (patched_content, false, None)
+        } else {
+            // Templating enabled - render template
+            tracing::debug!("Templating enabled for {}, rendering template...", entry.name);
 
             // Build template context if we have a shared builder
             if let Some(template_context_builder) = &context.template_context_builder {
@@ -408,20 +462,24 @@ pub async fn install_resource(
                         format!("Failed to compute template context digest for {}", entry.name)
                     })?;
 
-                let resource_id = crate::lockfile::ResourceId::from_serialized(
+                let resource_id = crate::lockfile::ResourceId::new(
                     entry.name.clone(),
                     entry.source.clone(),
                     entry.tool.clone(),
                     resource_type,
-                    entry.template_vars.clone(),
+                    entry.variant_inputs.hash().to_string(),
                 );
-                let template_context = template_context_builder
-                    .build_context(&resource_id)
+                let (template_context, captured_context_checksum) = template_context_builder
+                    .build_context(&resource_id, entry.variant_inputs.json())
                     .await
                     .map_err(|e| {
-                    // Preserve the full error chain for debugging
-                    anyhow::anyhow!("Failed to build template context for {}: {:#}", entry.name, e)
-                })?;
+                        // Preserve the full error chain for debugging
+                        anyhow::anyhow!(
+                            "Failed to build template context for {}: {:#}",
+                            entry.name,
+                            e
+                        )
+                    })?;
 
                 // Show verbose output before rendering
                 if context.verbose {
@@ -520,42 +578,38 @@ pub async fn install_resource(
                     tracing::info!("✅ Template rendered successfully");
                 }
 
-                (rendered_content, Some(context_digest))
+                (rendered_content, true, captured_context_checksum)
             } else {
                 tracing::warn!(
-                    "Template syntax found in {} but manifest/lockfile not available, skipping templating",
+                    "Templating enabled in {} but manifest/lockfile not available, skipping templating",
                     entry.name
                 );
-                (patched_content, None)
+                (patched_content, false, None)
             }
-        } else {
-            tracing::debug!("No template syntax in {}, skipping templating", entry.name);
-            (patched_content, None)
         }
     } else {
         tracing::debug!("Not a markdown file: {}", entry.path);
-        (patched_content, None)
+        (patched_content, false, None)
     };
 
-    // Calculate checksum of final content (after patching and templating)
-    // Include template context digest to ensure cache invalidation when dependencies change
-    let new_checksum = {
+    // Calculate file checksum of final content (after patching and templating)
+    let file_checksum = {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(final_content.as_bytes());
-
-        // Include context digest if templating was applied
-        // This ensures that changes to dependency versions trigger re-rendering
-        if let Some(ref digest) = template_context_digest {
-            hasher.update(digest.as_bytes());
-        }
-
         let hash = hasher.finalize();
         format!("sha256:{}", hex::encode(hash))
     };
 
-    // Check if content has changed by comparing checksums
-    let content_changed = existing_checksum.as_ref() != Some(&new_checksum);
+    // Use captured context checksum from rendering (avoid rebuilding context)
+    let context_checksum = if templating_was_applied {
+        captured_checksum
+    } else {
+        None
+    };
+
+    // Reinstall decision: trust file checksum, ignore context checksum
+    let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
 
     // Check if we should actually write the file to disk
     let should_install = entry.install.unwrap_or(true);
@@ -596,7 +650,7 @@ pub async fn install_resource(
         false
     };
 
-    Ok((actually_installed, new_checksum, applied_patches))
+    Ok((actually_installed, file_checksum, context_checksum, applied_patches))
 }
 
 /// Install a single resource with progress bar updates for user feedback.
@@ -618,7 +672,9 @@ pub async fn install_resource(
 ///
 /// Returns a tuple of:
 /// - `bool`: Whether the resource was actually installed (`true` for new/updated, `false` for unchanged)
-/// - `String`: SHA-256 checksum of the installed content
+/// - `String`: SHA-256 checksum of the installed file content
+/// - `Option<String>`: SHA-256 checksum of the template rendering inputs, or None for non-templated resources
+/// - `AppliedPatches`: Information about any patches that were applied during installation
 ///
 /// # Progress Integration
 ///
@@ -630,7 +686,7 @@ pub async fn install_resource(
 ///
 /// ```rust,no_run
 /// use agpm_cli::installer::{install_resource_with_progress, InstallContext};
-/// use agpm_cli::lockfile::LockedResource;
+/// use agpm_cli::lockfile::{LockedResource, LockedResourceBuilder};
 /// use agpm_cli::cache::Cache;
 /// use agpm_cli::core::ResourceType;
 /// use agpm_cli::utils::progress::ProgressBar;
@@ -639,26 +695,22 @@ pub async fn install_resource(
 /// # async fn example() -> anyhow::Result<()> {
 /// let cache = Cache::new()?;
 /// let pb = ProgressBar::new(1);
-/// let entry = LockedResource::new(
+/// let entry = LockedResourceBuilder::new(
 ///     "example-agent".to_string(),
-///     Some("community".to_string()),
-///     Some("https://github.com/example/repo.git".to_string()),
 ///     "agents/example.md".to_string(),
-///     Some("v1.0.0".to_string()),
-///     Some("abc123".to_string()),
 ///     "sha256:...".to_string(),
 ///     ".claude/agents/example.md".to_string(),
-///     vec![],
 ///     ResourceType::Agent,
-///     Some("claude-code".to_string()),
-///     None,
-///     std::collections::HashMap::new(),
-///     None,
-///     serde_json::Value::Object(serde_json::Map::new()),
-/// );
+/// )
+/// .source(Some("community".to_string()))
+/// .url(Some("https://github.com/example/repo.git".to_string()))
+/// .version(Some("v1.0.0".to_string()))
+/// .resolved_commit(Some("abc123".to_string()))
+/// .tool(Some("claude-code".to_string()))
+/// .build();
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None);
-/// let (installed, checksum, _patches) = install_resource_with_progress(
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, None, None, None, None, None, None, None);
+/// let (installed, checksum, _old_checksum, _patches) = install_resource_with_progress(
 ///     &entry,
 ///     "agents",
 ///     &context,
@@ -682,7 +734,7 @@ pub async fn install_resource_with_progress(
     resource_dir: &str,
     context: &InstallContext<'_>,
     pb: &ProgressBar,
-) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
     pb.set_message(format!("Installing {}", entry.name));
     install_resource(entry, resource_dir, context).await
 }
@@ -753,7 +805,7 @@ pub async fn install_resource_with_progress(
 ///     + lockfile.hooks.len() + lockfile.mcp_servers.len();
 /// let pb = ProgressBar::new(total as u64);
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None, None);
 /// let count = install_resources_parallel(
 ///     &lockfile,
 ///     &manifest,
@@ -892,6 +944,7 @@ pub async fn install_resources_parallel(
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(lockfile),
+                    None, // old_lockfile - not available in parallel context
                     install_ctx.project_patches,
                     install_ctx.private_patches,
                     install_ctx.gitignore_lock,
@@ -900,7 +953,7 @@ pub async fn install_resources_parallel(
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
                 match res {
-                    Ok((actually_installed, checksum, applied_patches)) => {
+                    Ok((actually_installed, file_checksum, context_checksum, applied_patches)) => {
                         if actually_installed {
                             let mut count = installed_count.lock().await;
                             *count += 1;
@@ -908,20 +961,26 @@ pub async fn install_resources_parallel(
                         let count = *installed_count.lock().await;
                         pb.set_message(format!("Installing {count}/{total} resources"));
                         pb.inc(1);
-                        Ok((entry.id(), actually_installed, checksum, applied_patches))
+                        Ok((
+                            entry.id(),
+                            actually_installed,
+                            file_checksum,
+                            context_checksum,
+                            applied_patches,
+                        ))
                     }
                     Err(err) => Err((entry.id(), err)),
                 }
             }
         })
-        .buffer_unordered(concurrency)
+        .buffered(concurrency) // Use buffered instead of buffer_unordered to preserve input order for deterministic checksums
         .collect()
         .await;
 
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_id, _installed, _checksum, _applied_patches)) => {
+            Ok((_id, _installed, _file_checksum, _context_checksum, _applied_patches)) => {
                 // Old function doesn't return checksums or patches
             }
             Err((id, error)) => {
@@ -1030,7 +1089,7 @@ async fn install_resource_for_parallel(
     entry: &LockedResource,
     resource_dir: &str,
     context: &InstallContext<'_>,
-) -> Result<(bool, String, crate::manifest::patches::AppliedPatches)> {
+) -> Result<(bool, String, Option<String>, crate::manifest::patches::AppliedPatches)> {
     install_resource(entry, resource_dir, context).await
 }
 
@@ -1311,6 +1370,7 @@ pub async fn install_resources_parallel_with_progress(
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
+                    None, // old_lockfile - not available in parallel context
                     install_ctx.project_patches,
                     install_ctx.private_patches,
                     install_ctx.gitignore_lock,
@@ -1323,7 +1383,13 @@ pub async fn install_resources_parallel_with_progress(
                     let mut active = active_deps.lock().await;
                     active.retain(|x| x != &entry.name);
 
-                    if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
+                    if let Ok((
+                        actually_installed,
+                        _file_checksum,
+                        _context_checksum,
+                        _applied_patches,
+                    )) = &res
+                    {
                         if *actually_installed {
                             let mut count = installed_count.lock().await;
                             *count += 1;
@@ -1341,21 +1407,25 @@ pub async fn install_resources_parallel_with_progress(
                 }
 
                 match res {
-                    Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.id(), installed, checksum, applied_patches))
-                    }
+                    Ok((installed, file_checksum, context_checksum, applied_patches)) => Ok((
+                        entry.id(),
+                        installed,
+                        file_checksum,
+                        context_checksum,
+                        applied_patches,
+                    )),
                     Err(err) => Err((entry.id(), err)),
                 }
             }
         })
-        .buffer_unordered(concurrency)
+        .buffered(concurrency) // Use buffered instead of buffer_unordered to preserve input order for deterministic checksums
         .collect()
         .await;
 
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_id, _installed, _checksum, _applied_patches)) => {
+            Ok((_id, _installed, _file_checksum, _context_checksum, _applied_patches)) => {
                 // Old function doesn't return checksums or patches
             }
             Err((id, error)) => {
@@ -1548,7 +1618,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let progress = Arc::new(MultiPhaseProgress::new(true));
 ///
-/// let (count, _checksums, _patches) = install_resources(
+/// let (count, _checksums, _old_checksums, _patches) = install_resources(
 ///     ResourceFilter::All,
 ///     &lockfile,
 ///     &manifest,
@@ -1558,6 +1628,7 @@ pub enum ResourceFilter {
 ///     Some(8), // Limit to 8 concurrent operations
 ///     Some(progress),
 ///     false, // verbose
+///     None, // old_lockfile
 /// ).await?;
 ///
 /// println!("Installed {} resources", count);
@@ -1581,7 +1652,7 @@ pub enum ResourceFilter {
 /// # let cache = Cache::new()?;
 /// let updates = vec![("agent1".to_string(), None, "v1.0".to_string(), "v1.1".to_string())];
 ///
-/// let (count, _checksums, _patches) = install_resources(
+/// let (count, _checksums, _old_checksums, _patches) = install_resources(
 ///     ResourceFilter::Updated(updates),
 ///     &lockfile,
 ///     &manifest,
@@ -1591,6 +1662,7 @@ pub enum ResourceFilter {
 ///     None, // Unlimited concurrency
 ///     None, // No progress output
 ///     false, // verbose
+///     None, // old_lockfile
 /// ).await?;
 ///
 /// println!("Updated {} resources", count);
@@ -1608,9 +1680,11 @@ pub async fn install_resources(
     max_concurrency: Option<usize>,
     progress: Option<Arc<MultiPhaseProgress>>,
     verbose: bool,
+    old_lockfile: Option<&LockFile>,
 ) -> Result<(
     usize,
     Vec<(crate::lockfile::ResourceId, String)>,
+    Vec<(crate::lockfile::ResourceId, Option<String>)>,
     Vec<(crate::lockfile::ResourceId, crate::manifest::patches::AppliedPatches)>,
 )> {
     // Collect entries to install based on filter
@@ -1647,8 +1721,15 @@ pub async fn install_resources(
     };
 
     if all_entries.is_empty() {
-        return Ok((0, Vec::new(), Vec::new()));
+        return Ok((0, Vec::new(), Vec::new(), Vec::new()));
     }
+
+    // Sort entries for deterministic processing order
+    // This ensures context checksums are deterministic even when lockfile isn't normalized yet
+    let mut all_entries = all_entries;
+    all_entries.sort_by(|(a, _), (b, _)| {
+        a.resource_type.cmp(&b.resource_type).then_with(|| a.name.cmp(&b.name))
+    });
 
     let total = all_entries.len();
 
@@ -1729,6 +1810,7 @@ pub async fn install_resources(
                     verbose,
                     Some(manifest),
                     Some(lockfile),
+                    old_lockfile, // Pass old_lockfile for early-exit optimization
                     Some(&manifest.project_patches),
                     Some(&manifest.private_patches),
                     Some(&gitignore_lock),
@@ -1739,7 +1821,13 @@ pub async fn install_resources(
                     install_resource_for_parallel(&entry, &resource_dir, &install_context).await;
 
                 // Update progress on success - but only count if actually installed
-                if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
+                if let Ok((
+                    actually_installed,
+                    _file_checksum,
+                    _context_checksum,
+                    _applied_patches,
+                )) = &res
+                {
                     if *actually_installed {
                         let mut count = installed_count.lock().await;
                         *count += 1;
@@ -1753,25 +1841,31 @@ pub async fn install_resources(
                 }
 
                 match res {
-                    Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.id(), installed, checksum, applied_patches))
-                    }
+                    Ok((installed, file_checksum, context_checksum, applied_patches)) => Ok((
+                        entry.id(),
+                        installed,
+                        file_checksum,
+                        context_checksum,
+                        applied_patches,
+                    )),
                     Err(err) => Err((entry.id(), err)),
                 }
             }
         })
-        .buffer_unordered(concurrency)
+        .buffered(concurrency) // Use buffered instead of buffer_unordered to preserve input order for deterministic checksums
         .collect()
         .await;
 
-    // Handle errors and collect checksums and applied patches
+    // Handle errors and collect checksums, context checksums, and applied patches
     let mut errors = Vec::new();
     let mut checksums = Vec::new();
+    let mut context_checksums = Vec::new();
     let mut applied_patches_list = Vec::new();
     for result in results {
         match result {
-            Ok((id, _installed, checksum, applied_patches)) => {
-                checksums.push((id.clone(), checksum));
+            Ok((id, _installed, file_checksum, context_checksum, applied_patches)) => {
+                checksums.push((id.clone(), file_checksum));
+                context_checksums.push((id.clone(), context_checksum));
                 applied_patches_list.push((id, applied_patches));
             }
             Err((id, error)) => {
@@ -1804,7 +1898,7 @@ pub async fn install_resources(
         pm.complete_phase(Some(&format!("Installed {final_count} resources")));
     }
 
-    Ok((final_count, checksums, applied_patches_list))
+    Ok((final_count, checksums, context_checksums, applied_patches_list))
 }
 
 /// Install resources with real-time dynamic progress management.
@@ -1858,7 +1952,7 @@ pub async fn install_resources(
 /// // Create dynamic progress manager
 /// let progress_bar = Arc::new(ProgressBar::new(100));
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None, None);
 /// let count = install_resources_with_dynamic_progress(
 ///     &lockfile,
 ///     &manifest,
@@ -1978,6 +2072,7 @@ pub async fn install_resources_with_dynamic_progress(
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
+                    None, // old_lockfile - not available in parallel context
                     install_ctx.project_patches,
                     install_ctx.private_patches,
                     install_ctx.gitignore_lock,
@@ -1986,7 +2081,13 @@ pub async fn install_resources_with_dynamic_progress(
                 let res = install_resource_for_parallel(&entry, &resource_dir, &context).await;
 
                 // Signal completion and update count only if actually installed
-                if let Ok((actually_installed, _checksum, _applied_patches)) = &res {
+                if let Ok((
+                    actually_installed,
+                    _file_checksum,
+                    _context_checksum,
+                    _applied_patches,
+                )) = &res
+                {
                     if *actually_installed {
                         let mut count = installed_count.lock().await;
                         *count += 1;
@@ -1998,21 +2099,25 @@ pub async fn install_resources_with_dynamic_progress(
                 }
 
                 match res {
-                    Ok((installed, checksum, applied_patches)) => {
-                        Ok((entry.id(), installed, checksum, applied_patches))
-                    }
+                    Ok((installed, file_checksum, context_checksum, applied_patches)) => Ok((
+                        entry.id(),
+                        installed,
+                        file_checksum,
+                        context_checksum,
+                        applied_patches,
+                    )),
                     Err(err) => Err((entry.id(), err)),
                 }
             }
         })
-        .buffer_unordered(concurrency)
+        .buffered(concurrency) // Use buffered instead of buffer_unordered to preserve input order for deterministic checksums
         .collect()
         .await;
 
     let mut errors = Vec::new();
     for result in results {
         match result {
-            Ok((_name, _installed, _checksum, _applied_patches)) => {
+            Ok((_name, _installed, _file_checksum, _context_checksum, _applied_patches)) => {
                 // Old function doesn't return checksums or patches
             }
             Err((name, error)) => {
@@ -2103,7 +2208,7 @@ pub async fn install_resources_with_dynamic_progress(
 ///     ("data-processor".to_string(), None, "v1.5.0".to_string(), "v1.6.0".to_string()),
 /// ];
 ///
-/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None);
+/// let context = InstallContext::new(Path::new("."), &cache, false, false, Some(&manifest), Some(&lockfile), None, None, None, None, None);
 /// let count = install_updated_resources(
 ///     &updates,
 ///     &lockfile,
@@ -2260,6 +2365,7 @@ pub async fn install_updated_resources(
                     false, // verbose - will be threaded through from CLI
                     Some(manifest),
                     Some(&lockfile),
+                    None, // old_lockfile - not available in parallel context
                     install_ctx.project_patches,
                     install_ctx.private_patches,
                     install_ctx.gitignore_lock,
@@ -2279,7 +2385,7 @@ pub async fn install_updated_resources(
                 Ok::<(), anyhow::Error>(())
             }
         })
-        .buffer_unordered(usize::MAX) // Allow unlimited task concurrency
+        .buffered(usize::MAX) // Allow unlimited task concurrency while preserving input order for deterministic checksums
         .collect()
         .await;
 

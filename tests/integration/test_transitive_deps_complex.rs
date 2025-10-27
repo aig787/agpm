@@ -128,16 +128,19 @@ Depends on shared@>=v2.0.0 (intersection with parent-a picks v2.0.0).
     let lockfile_content = project.read_lockfile().await?;
 
     // Check that shared is at v2.0.0
+    // Transitive dependency has canonical name with resource type directory
     assert!(
-        lockfile_content.contains(r#"name = "shared""#) && lockfile_content.contains("v2.0.0"),
+        lockfile_content.contains(r#"name = "snippets/shared""#)
+            && lockfile_content.contains("v2.0.0"),
         "Lockfile should show shared at v2.0.0"
     );
 
     // Find the shared snippet section in lockfile
+    // Transitive dependencies use canonical names: "snippets/shared"
     let shared_section_start = lockfile_content
         .find("[[snippets]]")
         .and_then(|pos| {
-            if lockfile_content[pos..].contains(r#"name = "shared""#) {
+            if lockfile_content[pos..].contains(r#"name = "snippets/shared""#) {
                 Some(pos)
             } else {
                 None
@@ -237,10 +240,11 @@ Depends on a snippet in a subdirectory.
     let lockfile_content = project.read_lockfile().await?;
 
     // Find the main agent section
+    // Direct manifest dependencies use canonical names with resource type directory
     let main_section_start = lockfile_content
         .find("[[agents]]")
         .and_then(|pos| {
-            if lockfile_content[pos..].contains(r#"name = "main""#) {
+            if lockfile_content[pos..].contains(r#"name = "agents/main""#) {
                 Some(pos)
             } else {
                 None
@@ -330,8 +334,9 @@ Template test: {{ agpm.deps.snippets.custom_helper.name }}
     let agent_content = tokio::fs::read_to_string(&installed_agent).await?;
 
     // The template should have been rendered with the custom alias
-    // Expected: "Template test: helper" (using custom_helper alias to get the name)
-    let template_rendered = agent_content.contains("Template test: helper");
+    // Expected: "Template test: snippets/helper" (canonical name in lockfile)
+    // The .name field uses canonical naming, not just basename
+    let template_rendered = agent_content.contains("Template test: snippets/helper");
 
     assert!(
         template_rendered,

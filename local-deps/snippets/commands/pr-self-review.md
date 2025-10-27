@@ -16,10 +16,6 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
 **IMPORTANT**: Batch related operations thoughtfully; schedule tool calls in Claude Code only in parallel when the workflow benefits from it.
 
-## Best Practices
-
-{{ agpm.deps.snippets.best_practices.content }}
-
 **CRITICAL**: Use the Task tool to delegate to specialized agents for code analysis, NOT Grep or other direct tools. Agents have context about the project and can provide deeper insights.
 
 ## Approach
@@ -68,7 +64,71 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - `--security`: Focus on security implications
    - `--performance`: Focus on performance analysis
 
-3. Run automated checks based on review type:
+3. **Detect changeset size and adapt review strategy**:
+
+   **IMPORTANT**: Before running full reviews, analyze the changeset size to determine the appropriate approach.
+
+   **Get changeset statistics**:
+   - For uncommitted changes: `git diff HEAD --stat`
+   - For single commit: `git show --stat <commit>`
+   - For commit range: `git diff --stat <range>`
+   - Parse the summary line (e.g., "42 files changed, 1523 insertions(+), 891 deletions(-)")
+
+   **Categorize changeset size**:
+   - **Small** (<500 lines): Standard single-pass review (existing behavior)
+   - **Medium** (500-2000 lines): Standard review with progress tracking
+   - **Large** (2000-5000 lines): Chunked review with parallel processing
+   - **Massive** (>5000 lines): Chunked review + warn user about scope
+   - **Extreme** (>20000 lines): Suggest alternatives, proceed with best-effort
+
+   **For Large/Massive changesets, prepare chunks**:
+
+   a. **Get detailed file list with line counts**:
+      ```bash
+      git diff --numstat <target> | grep -v "^-"  # Filter out binary files
+      ```
+      This outputs: `<additions> <deletions> <filepath>` per line
+
+   b. **Group files by module/directory**:
+      - Priority 1 (Critical): `src/core/`, `src/resolver/`, `src/installer/`
+      - Priority 2 (Security): `src/git/`, `src/config/`, `src/utils/path_validation.rs`
+      - Priority 3 (Standard): Other `src/` modules
+      - Priority 4 (Low): `tests/`, `docs/`, config files
+
+   c. **Create balanced chunks**:
+      - Target: ~1000-1500 total lines (additions + deletions) per chunk
+      - Keep related files together (same module/directory)
+      - Sort by priority, create chunks that respect module boundaries
+      - Example: "Chunk 1: src/resolver/ (4 files, 1200 lines)"
+
+   d. **Notify user of strategy**:
+      ```
+      Detected LARGE changeset: 42 files, 3500 lines changed
+      Strategy: Parallel chunked review (4 chunks)
+      - Chunk 1: src/core/ + src/resolver/ (8 files, ~1200 lines)
+      - Chunk 2: src/installer/ + src/lockfile/ (10 files, ~1000 lines)
+      - Chunk 3: src/templating/ + src/mcp/ (12 files, ~900 lines)
+      - Chunk 4: tests/ (12 files, ~400 lines)
+      ```
+
+   e. **Use TodoWrite to track chunks**:
+      Create a todo list with one item per chunk:
+      ```
+      TodoWrite([
+          {content: "Review chunk 1/4: src/core/ + src/resolver/ (8 files)", status: "pending"},
+          {content: "Review chunk 2/4: src/installer/ + src/lockfile/ (10 files)", status: "pending"},
+          {content: "Review chunk 3/4: src/templating/ + src/mcp/ (12 files)", status: "pending"},
+          {content: "Review chunk 4/4: tests/ (12 files)", status: "pending"},
+          {content: "Aggregate findings and generate report", status: "pending"}
+      ])
+      ```
+
+   **For Extreme changesets (>20k lines)**:
+   - Warn: "⚠️  EXTREME changeset detected: 65k lines changed across 150 files"
+   - Suggest: "Consider reviewing by smaller commit ranges or individual commits instead"
+   - Offer to proceed: "Proceeding with best-effort chunked review (may take significant time)"
+
+4. Run automated checks based on review type:
 
    **Quick Review (--quick)**:
    - Run these checks:
@@ -80,7 +140,11 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
    **Full Review (--full or default)**:
    - First, run quick checks (cargo fmt -- --check, clippy, nextest run)
-   - Then use the Task tool to delegate to specialized agents IN PARALLEL:
+
+   **Agent Delegation Strategy** (adapts based on changeset size):
+
+   **For Small/Medium changesets (<2000 lines)** - Single-pass review:
+   - Use the Task tool to delegate to specialized agents IN PARALLEL:
      - Use Task with subagent_type="rust-linting-standard" to check formatting and linting issues
      - Use Task with subagent_type="rust-expert-standard" to review code quality, architecture, and adherence to `.agpm/snippets/rust-best-practices.md`
      - Use Task with subagent_type="rust-test-standard" to analyze test coverage, quality, and isolation (TestProject usage)
@@ -106,6 +170,22 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
           prompt="Review the changed files against .agpm/snippets/rust-best-practices.md covering imports, naming, error handling, ownership, and architecture...",
           subagent_type="rust-expert-standard")
      ```
+   - **Systematic Code Duplication Detection**:
+     - Use targeted Grep searches to find duplicate patterns:
+       ```
+       # Find similar function signatures (potential duplication)
+       Grep(pattern="pub fn \w+\([^)]+\) -> [^{]+ \{", type="rust", output_mode="content", -n)
+
+       # Find similar error handling patterns
+       Grep(pattern="anyhow::bail|anyhow::ensure|return Err\(", type="rust", output_mode="content", -n)
+
+       # Find similar match patterns that could be refactored
+       Grep(pattern="match \w+ \{[\s\S]*?\}", type="rust", output_mode="content", -n)
+       ```
+     - Check for repeated async/await patterns
+     - Identify similar file I/O operations
+     - Look for duplicate validation logic
+
    - Additional Task invocation for code cleanup:
      ```
      Task(description="Check for deprecated methods and code cleanup",
@@ -117,6 +197,8 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
           5. Verbose docstrings - documentation that is excessively wordy or contains redundant information
           6. Orphan documentation - docs that reference removed APIs or outdated patterns
           7. Unused variables - check for variables prefixed with `_` that should be removed entirely, not just ignored
+          8. Similar function patterns - look for functions with nearly identical logic that could be unified
+          9. Repeated error handling - identify duplicate error creation/propagation patterns
           Focus on recommending removal of deprecated code rather than migration paths. Prioritize cleanup and simplification.",
           subagent_type="rust-expert-standard")
      ```
@@ -125,6 +207,99 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      - `cargo test --doc` for doctests
      - `cargo doc --no-deps`
    - Check cross-platform compatibility
+
+   **For Large/Massive changesets (≥2000 lines)** - Chunked parallel review:
+
+   **IMPORTANT**: For large changesets, process chunks in parallel to stay within context limits while maintaining thorough coverage.
+
+   **For each chunk (process 3-4 chunks in parallel)**:
+
+   a. **Mark chunk as in_progress** using TodoWrite before starting
+
+   b. **Get files for this chunk**:
+      ```bash
+      # Extract files for this chunk based on the chunking strategy from step 3
+      # Example: For chunk 1 (src/resolver/), get all changed files in that directory
+      git diff --name-only <target> | grep "^src/resolver/"
+      ```
+
+   c. **Get focused diff for chunk**:
+      ```bash
+      # Get only the diff for files in this chunk
+      git diff <target> -- <file1> <file2> <file3>...
+      ```
+
+   d. **Launch parallel agent tasks** for this chunk:
+      - Each agent gets:
+        - **Chunk context**: "Reviewing chunk 2/5: src/installer/ + src/lockfile/ modules (10 files, ~1000 lines)"
+        - **Full changeset scope**: Brief summary of what the entire PR changes
+        - **Files in chunk**: List of specific files with line change counts
+        - **Focused diff**: Only the changes for files in this chunk
+        - **Module context**: Understanding of what this module does in the system
+
+      Example prompt structure:
+      ```
+      Task(description="Review chunk 2/5: installer module",
+           prompt="You are reviewing PART of a larger changeset as part of a chunked review strategy.
+
+           FULL CHANGESET SCOPE:
+           - Total: 42 files, 3500 lines changed
+           - Focus: Refactoring dependency resolution and installation logic
+           - This is chunk 2 of 5
+
+           YOUR CHUNK (src/installer/ + src/lockfile/):
+           - Files: src/installer/mod.rs (+234/-156), src/installer/resource_installer.rs (+89/-42), src/lockfile/mod.rs (+123/-67), ...
+           - Total: 10 files, ~1000 lines
+           - Module purpose: Handles resource installation and lockfile management
+
+           Review this chunk for:
+           1. Code quality and adherence to .agpm/snippets/rust-best-practices.md
+           2. Architecture alignment with resolver changes (from chunk 1)
+           3. Error handling consistency
+           4. Test coverage and TestProject usage
+           5. Cross-module interaction impacts
+
+           [Include focused diff here]
+
+           Provide findings specific to this chunk. Note any cross-chunk concerns.",
+           subagent_type="rust-expert-standard")
+      ```
+
+      Launch similar tasks for:
+      - `rust-linting-standard` - linting issues in this chunk
+      - `rust-test-standard` - test coverage for this chunk
+      - `rust-doc-standard` - documentation for this chunk
+
+   e. **Store chunk findings**:
+      - Collect agent responses for this chunk
+      - Tag findings with chunk identifier (e.g., "Chunk 2: installer")
+      - Note any cross-chunk concerns flagged by agents
+
+   f. **Mark chunk as completed** using TodoWrite when all agents finish
+
+   **After all chunks complete**:
+   - Mark "Aggregate findings and generate report" todo as in_progress
+   - Run full test suite (tests entire codebase, not individual chunks):
+     - `cargo nextest run` - run all tests (not just changed modules)
+     - `cargo test --doc` - verify all doctests
+     - `cargo doc --no-deps` - ensure documentation builds
+     - **NOTE**: For massive changesets (>5000 lines), full codebase testing is essential to catch cross-module integration issues
+   - Proceed to result aggregation (see section 5.5)
+
+   **Chunk processing example** (3 chunks in parallel):
+   ```
+   # Launch chunks 1, 2, 3 in parallel with Task tool
+   Task(chunk 1: core/resolver) | Task(chunk 2: installer/lockfile) | Task(chunk 3: templating/mcp)
+
+   # While chunks run, TodoWrite shows progress:
+   ✓ Review chunk 1/4: src/core/ + src/resolver/
+   ⊙ Review chunk 2/4: src/installer/ + src/lockfile/  (in progress)
+   ⊙ Review chunk 3/4: src/templating/ + src/mcp/      (in progress)
+   ⊙ Review chunk 4/4: tests/                          (pending)
+
+   # When batch completes, launch next batch
+   Task(chunk 4: tests)
+   ```
 
      **Security Review (--security)**:
 
@@ -139,8 +314,49 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      - Search for unsafe blocks: `unsafe\s+\{`
      - Search for path traversal: `\.\./`
      - Search for Windows path issues: `r"[A-Z]:\\|\\\\|CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]"`
+     - Search for SQL injection patterns: `\b(format!.*SELECT|format!.*INSERT|format!.*UPDATE|format!.*DELETE)\s*\(`
+     - Search for command injection: `Command::new\([^)]+\).arg\(.*format!|std::process::Command`
+     - Search for hardcoded temporary files: `/tmp|\\temp`
+     - Search for weak crypto: `md5|sha1\(|crypt\(`
+     - Search for unvalidated input: `unwrap\(\)|expect\("|\?` (in parsing contexts)
+     - **CRITICAL**: unwrap() and expect() are FORBIDDEN in ALL code including tests
+     - **Exception**: Each unwrap() MUST have a comment justifying WHY it's acceptable:
+       ```rust
+       // System invariant: cannot fail due to validation above
+       let value = config.timeout.unwrap();
+
+       // TODO: Remove by v1.2.0 - temporary during refactoring
+       let legacy = old_api.get_value().unwrap();
+       ```
+     - Search for eval-like patterns: `exec\(|eval\(|system\(`
+     - Analyze unsafe blocks with:
+       ```
+       Grep(pattern="unsafe\s+\{[\s\S]*?\}", type="rust", output_mode="content", -A 5)
+       ```
    - Verify no secrets in version-controlled files
    - Check proper path validation in utils/path_validation.rs
+
+   **Deprecated Methods and Code Cleanup Detection**:
+   - Run targeted searches for deprecated patterns:
+     ```
+     # Find deprecated attributes
+     Grep(pattern="#\[deprecated[^\]]*\]", type="rust", output_mode="content", -C 2)
+
+     # Find TODO/FIXME comments suggesting removal
+     Grep(pattern="(?i)// TODO.*remove|FIXME.*delete|TODO.*deprecated", type="rust", output_mode="content", -n)
+     Grep(pattern="(?i)/\*[\s\S]*?(TODO|FIXME).*remove.*?[\s\S]*?\*/", type="rust", output_mode="content", -n)
+
+     # Find commented out code that should be removed
+     Grep(pattern="^\s*//\s*(let|fn|struct|enum|impl|use|pub)\s+", type="rust", output_mode="content", -n)
+
+     # Find old error patterns that should use new approaches
+     Grep(pattern="panic!|unwrap\(\)|expect\(", type="rust", output_mode="content", -B 3 -A 1)
+     # Check for unwrap without justification comments
+     Grep(pattern="(?<!//.*invariant|//.*cannot fail|//.*TODO.*unwrap).unwrap\(\)", type="rust", output_mode="content", -B 3 -A 1)
+
+     # Find legacy patterns (e.g., old async patterns)
+     Grep(pattern="\.block_on\(|tokio::run\(|std::thread::sleep", type="rust", output_mode="content", -n)
+     ```
 
    **Performance Review (--performance)**:
    - Build in release mode: `cargo build --release`
@@ -157,8 +373,48 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      - Missing Drop implementations for resources
      - Potential deadlocks in parallel code
      - Blocking I/O in async functions
+     - **Performance Anti-Pattern Detection**:
+       ```
+       # Find blocking I/O in async contexts
+       Grep(pattern="async fn.*\{[\s\S]*?std::fs::|async fn.*\{[\s\S]*?std::thread::|async fn.*\{[\s\S]*?\.block_on\(", type="rust", output_mode="content", -B 2 -A 2)
 
-4. Manual review based on these key areas:
+       # Check for unnecessary allocations
+       Grep(pattern="\.to_string\(\)|\.to_owned\(\)|\.clone\(\)", type="rust", output_mode="content", -B 1 -A 1)
+
+       # Look for missing capacity hints
+       Grep(pattern="Vec::new\(\)|String::new\(\)|HashMap::new\(\)", type="rust", output_mode="content", -A 3)
+
+       # Find potential lock contention
+       Grep(pattern="Mutex::new|RwLock::new|\.lock\(\)|\.write\(\)", type="rust", output_mode="content", -B 1 -A 1)
+
+       # Check for inefficient string operations
+       Grep(pattern="format!.*\+.*\+|\+.*&str|&str.*\+", type="rust", output_mode="content", -B 1 -A 1)
+
+       # Look for unnecessary collections
+       Grep(pattern="\.collect\(\)\.iter\(\)|\.collect\(\)\.len\(\)", type="rust", output_mode="content", -B 1 -A 1)
+
+       # Find missing #[inline] hints on small functions
+       Grep(pattern="^pub fn \w+\([^)]*\) -> [^{]+\{[\s\S]{1,200}\}", type="rust", output_mode="content", -A 3)
+       ```
+
+4. **Enhanced Unused Code Detection**:
+   - Run systematic searches for unused code patterns:
+     ```
+     # Find unused imports (common patterns)
+     Grep(pattern="^use .+;$", type="rust", output_mode="content", -n)
+     Grep(pattern="^use crate::", type="rust", output_mode="content", -n)
+
+     # Find private functions that might be unused
+     Grep(pattern="fn \w+\([^)]*\)(?: -> [^{]+)? \{", type="rust", output_mode="content", -n)
+
+     # Look for TODO/FIXME comments suggesting removal
+     Grep(pattern="(?i)// TODO|FIXME.*remove|delete|deprecated", type="rust", output_mode="content", -n)
+     ```
+   - Check for unused constants and static variables
+   - Identify unused trait implementations
+   - Find unused struct fields (private fields with no usage)
+
+5. Manual review based on these key areas:
 
    **Code Quality**:
    - Adherence to `.agpm/snippets/rust-best-practices.md` (imports, naming, error handling, ownership)
@@ -175,6 +431,25 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - Module structure alignment with CLAUDE.md
    - Proper async/await usage
    - No circular dependencies
+   - **Architectural Consistency Checks**:
+     ```
+     # Check for proper module boundaries (no direct access to private internals)
+     Grep(pattern="use crate::[^:]+::[^:]+::[^:]+", type="rust", output_mode="content", -n)
+
+     # Verify trait implementations follow patterns
+     Grep(pattern="impl \w+ for \w+", type="rust", output_mode="content", -A 5)
+
+     # Check async function boundaries
+     Grep(pattern="async fn \w+", type="rust", output_mode="content", -A 2)
+     Grep(pattern="\.await", type="rust", output_mode="content", -B 1 -A 1)
+
+     # Verify error handling consistency
+     Grep(pattern="Result<[^,]+,\s*[\w:]+>", type="rust", output_mode="content", -n)
+     Grep(pattern="\?(?!\s*$)", type="rust", output_mode="content", -B 1 -A 1)
+
+     # Check for proper use of types (avoiding raw pointers where possible)
+     Grep(pattern="\*mut |\*const ", type="rust", output_mode="content", -n)
+     ```
 
    **Security**:
    - No credentials in agpm.toml
@@ -187,6 +462,27 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - **CRITICAL**: All integration tests MUST use `TestProject` for cache isolation
    - Check for tests using `TempDir::new()` with `Command::cargo_bin()` but no `TestProject` or `Cache::with_dir()`
    - Platform-specific tests handled correctly
+   - **Best Practices Validation**:
+     ```
+     # Check import organization (std → external → internal)
+     Grep(pattern="^(use std::|use crate::|use )", type="rust", output_mode="content", -n)
+
+     # Verify proper Result/Option usage (unwrap requires justification comment)
+     Grep(pattern="\.unwrap\(\)|\.expect\(", type="rust", output_mode="content", -B 3 -A 1)
+
+     # Check for iterator patterns vs manual loops
+     Grep(pattern="for \w+ in &.*\.iter\(\)|for \w+ in \w+\.\.|\w+\.len\(\) \{", type="rust", output_mode="content", -C 2)
+
+     # Verify proper error context usage
+     Grep(pattern="\.context\(|\.with_context\(|anyhow::bail!", type="rust", output_mode="content", -B 1 -A 1)
+
+     # Check for proper async I/O usage
+     Grep(pattern="std::fs::|std::io::", type="rust", output_mode="content", -n)
+     Grep(pattern="tokio::fs::|tokio::io::", type="rust", output_mode="content", -n)
+
+     # Verify proper use of String vs &str
+     Grep(pattern="String::new\(\)|String::from\(".*"\)", type="rust", output_mode="content", -B 1 -A 1)
+     ```
 
      **Documentation**:
 
@@ -203,15 +499,83 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - Examples in docs/ updated if relevant
    - Help text and man page consistency
 
-5. Generate a summary report with:
+5.5. **Result Aggregation** (for chunked reviews only):
+
+   **IMPORTANT**: If you performed a chunked review (Large/Massive changeset), aggregate findings before generating the final report.
+
+   **Deduplication Strategy**:
+
+   a. **Collect all findings** from chunk reviews:
+      - Group by finding type: errors, warnings, suggestions, security issues, etc.
+      - Preserve chunk context for each finding
+
+   b. **Deduplicate similar issues**:
+      - **Identical issues**: Same error/warning in multiple chunks
+        - Example: "Missing error context" found in chunks 1, 2, 4
+        - Consolidate: "Missing error context in 3 chunks (core, installer, mcp)"
+
+      - **Pattern-based duplicates**: Same issue type across different files
+        - Example: Clippy warning "needless_return" in 8 different files
+        - Consolidate: "needless_return pattern detected (8 occurrences across chunks 1-3)"
+
+      - **Cross-chunk concerns**: Issues flagged by multiple agents
+        - Example: Chunk 2 agent notes dependency on chunk 1 changes
+        - Link findings: "Installer changes depend on resolver refactoring (see chunk 1 findings)"
+
+   c. **Categorize by severity**:
+      - **Critical**: Security issues, breaking changes, data loss risks
+      - **High**: Architecture violations, significant bugs, missing tests
+      - **Medium**: Code quality issues, incomplete docs, minor bugs
+      - **Low**: Style issues, typos, suggestions
+
+   d. **Identify cross-cutting concerns**:
+      - Issues that span multiple chunks (architectural)
+      - Patterns repeated across modules (refactoring opportunities)
+      - Missing integration points between chunks
+
+   e. **Calculate aggregate metrics**:
+      - Total issues by severity
+      - Coverage by module (which chunks were clean vs. problematic)
+      - Most common issue types
+      - Example: "15 total issues: 2 critical (security), 5 high (architecture), 8 medium (docs)"
+
+   **Aggregation Example**:
+
+   ```
+   Chunk 1 findings:
+   - [High] Missing error context in resolver/mod.rs:245
+   - [Medium] Verbose docstring in resolver/version_resolver.rs:120
+   - [Low] Clippy needless_return in resolver/mod.rs:300
+
+   Chunk 2 findings:
+   - [High] Missing error context in installer/mod.rs:180
+   - [Critical] Path traversal risk in installer/resource_installer.rs:95
+   - [Low] Clippy needless_return in installer/mod.rs:200
+
+   Aggregated findings:
+   - [Critical] Path traversal risk in installer/resource_installer.rs:95
+   - [High] Missing error context pattern (2 occurrences: resolver, installer)
+   - [Medium] Verbose docstring in resolver/version_resolver.rs:120
+   - [Low] Clippy needless_return pattern (2 occurrences: resolver, installer)
+
+   Summary: 1 critical, 1 high, 1 medium, 1 low (grouped from 5 original findings)
+   ```
+
+   **Mark aggregation todo as completed** when finished.
+
+6. Generate a summary report with:
    - **Changes Overview**: What was modified
    - **Test Results**: Pass/fail status of automated checks
    - **Issues Found**: Any problems discovered (grouped by severity)
+     - **For chunked reviews**: Use aggregated findings from step 5.5
+     - Group by severity (Critical, High, Medium, Low)
+     - Include cross-chunk concerns and patterns
    - **Security Analysis**: Security implications if any
    - **Performance Impact**: Performance considerations
    - **Recommendations**: Approve, request changes, or needs discussion
+   - **Review Strategy Used**: Note if chunked review was used (e.g., "Chunked review: 4 batches across 42 files")
 
-6. Focus only on tracked files - ignore untracked files marked with ?? in git status
+7. Focus only on tracked files - ignore untracked files marked with ?? in git status
 
 Examples of usage:
 
@@ -243,3 +607,7 @@ Examples of usage:
 - `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range
 
 **Note**: This command only reviews and reports on changes. To create an actual pull request after review, use the `gh-pr-create` command.
+
+## Best Practices
+
+{{ agpm.deps.snippets.best_practices.content }}

@@ -1088,4 +1088,46 @@ project = { language = "python", framework = "fastapi" }
 
         assert_eq!(dep.get_template_vars(), None);
     }
+
+    #[test]
+    fn test_template_vars_inline_table_with_multiple_keys() {
+        let temp = tempdir().unwrap();
+        let manifest_path = temp.path().join("agpm.toml");
+
+        // Test inline table format with multiple top-level keys (project AND config)
+        let toml_content = r#"
+[sources]
+test-repo = "https://example.com/repo.git"
+
+[agents]
+templated = { source = "test-repo", path = "agents/templated-agent.md", version = "v1.0.0", template_vars = { project = { name = "Production" }, config = { model = "claude-3-opus", temperature = 0.5 } } }
+"#;
+        std::fs::write(&manifest_path, toml_content).unwrap();
+
+        let manifest = Manifest::load(&manifest_path).unwrap();
+        let dep = manifest.agents.get("templated").unwrap();
+
+        let vars = dep.get_template_vars().unwrap();
+
+        // Debug: print the vars
+        println!("Parsed template_vars: {}", serde_json::to_string_pretty(vars).unwrap());
+
+        // Verify project key
+        assert!(vars.get("project").is_some(), "project should be present");
+        assert_eq!(
+            vars.get("project").and_then(|p| p.get("name")).and_then(|n| n.as_str()),
+            Some("Production")
+        );
+
+        // Verify config key
+        assert!(vars.get("config").is_some(), "config should be present in template_vars");
+        assert_eq!(
+            vars.get("config").and_then(|c| c.get("model")).and_then(|m| m.as_str()),
+            Some("claude-3-opus")
+        );
+        assert_eq!(
+            vars.get("config").and_then(|c| c.get("temperature")).and_then(|t| t.as_f64()),
+            Some(0.5)
+        );
+    }
 }

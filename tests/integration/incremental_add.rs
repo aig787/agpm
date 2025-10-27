@@ -90,9 +90,19 @@ async fn get_lockfile_dependencies(lockfile_path: &PathBuf, resource_name: &str)
     for resource_type in &["agents", "snippets", "commands", "scripts", "hooks", "mcp_servers"] {
         if let Some(resources) = lockfile.get(resource_type).and_then(|v| v.as_array()) {
             for resource in resources {
-                if let Some(name) = resource.get("name").and_then(|v| v.as_str())
-                    && name == resource_name
-                {
+                // Match by name OR manifest_alias for backward compatibility
+                let name_matches = resource
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|n| n == resource_name)
+                    .unwrap_or(false);
+                let alias_matches = resource
+                    .get("manifest_alias")
+                    .and_then(|v| v.as_str())
+                    .map(|a| a == resource_name)
+                    .unwrap_or(false);
+
+                if name_matches || alias_matches {
                     if let Some(deps) = resource.get("dependencies").and_then(|v| v.as_array()) {
                         return deps.iter().filter_map(|v| v.as_str().map(String::from)).collect();
                     }

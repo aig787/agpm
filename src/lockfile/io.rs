@@ -140,6 +140,15 @@ impl LockFile {
             }
         }
 
+        // Recompute hash for all VariantInputs
+        // The hash is not stored in the lockfile (serde(skip)) but needs to be computed
+        // from the variant_inputs Value for resource identity comparison
+        for resource_type in crate::core::ResourceType::all() {
+            for resource in lockfile.get_resources_mut(resource_type) {
+                resource.variant_inputs.recompute_hash();
+            }
+        }
+
         // Check version compatibility
         if lockfile.version > Self::CURRENT_VERSION {
             return Err(crate::core::AgpmError::Other {
@@ -231,9 +240,12 @@ impl LockFile {
     /// fetched_at = "2024-01-15T10:30:00Z"
     /// ```
     pub fn save(&self, path: &Path) -> Result<()> {
+        // Normalize lockfile for backward compatibility before saving
+        let normalized = self.normalize();
+
         // Use toml_edit to ensure applied_patches are formatted as inline tables
         let mut content = String::from("# Auto-generated lockfile - DO NOT EDIT\n");
-        let toml_content = serialize_lockfile_with_inline_patches(self)?;
+        let toml_content = serialize_lockfile_with_inline_patches(&normalized)?;
         content.push_str(&toml_content);
 
         atomic_write(path, content.as_bytes()).with_context(|| {

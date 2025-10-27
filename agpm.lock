@@ -2,1053 +2,1260 @@
 version = 1
 
 [[agents]]
-name = "rust-troubleshooter-advanced"
-path = "local-deps/claude/agents/rust-troubleshooter-advanced.md"
-checksum = "sha256:ea6f1db6821252f515b20415366cb9ce565b7abd208dc0883db79887fe8d20c9"
-installed_at = ".claude/agents/rust-troubleshooter-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-troubleshooter-advanced"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-doc-standard"
-path = "local-deps/opencode/agent/rust-doc-standard.md"
-checksum = "sha256:9fa39eea2de7f212a48db6a52c74e7a13fea9a24a5b425d427d548608777af98"
-installed_at = ".opencode/agent/rust-doc-standard.md"
-dependencies = ["snippet/snippets/agents/rust-doc-standard"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-test-standard"
-path = "local-deps/opencode/agent/rust-test-standard.md"
-checksum = "sha256:8abbec1c1c59f3f1eccb874cf605e35d1c66951cefd2f00f573fc6601ec75714"
-installed_at = ".opencode/agent/rust-test-standard.md"
-dependencies = ["snippet/snippets/agents/rust-test-standard"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-expert-standard"
-path = "local-deps/claude/agents/rust-expert-standard.md"
-checksum = "sha256:6263c717eb268942af72e6a17b968ba4535ae52e50ed373f3bf9977b8b57fcd7"
-installed_at = ".claude/agents/rust-expert-standard.md"
-dependencies = ["snippet/snippets/agents/rust-expert-standard"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-expert-advanced"
-path = "local-deps/claude/agents/rust-expert-advanced.md"
-checksum = "sha256:946f9a2db27962c427a07c2191c5db87c24d16ce2e0d04b99ab1aa37ad495481"
-installed_at = ".claude/agents/rust-expert-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-expert-advanced"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-doc-advanced"
-path = "local-deps/opencode/agent/rust-doc-advanced.md"
-checksum = "sha256:f7cd22a3b9a0301ac212c180c1780eba6bb15a00316d11edd627b0ea293c9d94"
-installed_at = ".opencode/agent/rust-doc-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-doc-advanced"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-troubleshooter-standard"
-path = "local-deps/claude/agents/rust-troubleshooter-standard.md"
-checksum = "sha256:6f8ba641121f755b221a6027e269bf28353f7fc7f8fe8542fabfade4cba5c16d"
-installed_at = ".claude/agents/rust-troubleshooter-standard.md"
-dependencies = ["snippet/snippets/agents/rust-troubleshooter-standard"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-test-advanced"
-path = "local-deps/claude/agents/rust-test-advanced.md"
-checksum = "sha256:e57c467929296e12970e0bcb56e4598f5bd077426587200721e9cfb06b7cd212"
-installed_at = ".claude/agents/rust-test-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-test-advanced"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-expert-standard"
-path = "local-deps/opencode/agent/rust-expert-standard.md"
-checksum = "sha256:5371e216e43bbb523e702b87a41f1503b1f1b38bbb847708a5d21a5c37b7cf91"
-installed_at = ".opencode/agent/rust-expert-standard.md"
-dependencies = ["snippet/snippets/agents/rust-expert-standard"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-linting-standard"
-path = "local-deps/opencode/agent/rust-linting-standard.md"
-checksum = "sha256:48604cbb126b66920fedbc2130e00c06dd600f0d07f97d8741c2048be8e5808f"
-installed_at = ".opencode/agent/rust-linting-standard.md"
-dependencies = ["snippet/snippets/agents/rust-linting-standard"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-doc-advanced"
+name = "local-deps/claude/agents/rust-doc-advanced"
 path = "local-deps/claude/agents/rust-doc-advanced.md"
-checksum = "sha256:9c7a03551e714d99bcff592dcd91e09ed60a94628160ac588841c07bd0918adb"
+checksum = "sha256:10fa7e1bfcaeba1bf3527c89365925e6ac2c431f8d1ec359d49e720aa57cc277"
+context_checksum = "sha256:24eb10fa9b8f673bdf2e46b458f3f664cc2e47412c65318ba2828dc655962849"
 installed_at = ".claude/agents/rust-doc-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-doc-advanced"]
+dependencies = ["snippet:local-deps/snippets/agents/rust-doc-advanced"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "rust-doc-advanced"
 applied_patches = {}
 
+[agents.variant_inputs]
+
 [[agents]]
-name = "rust-doc-standard"
+name = "local-deps/claude/agents/rust-doc-standard"
 path = "local-deps/claude/agents/rust-doc-standard.md"
-checksum = "sha256:0e32a8d5f8575f39e807e426c28a4643683b9218dd28c23c8aa1c73df677085a"
+checksum = "sha256:7c9f23beeba96eee62dcf6d344b02c880de4342414b6eb16220007c3181c0dd6"
+context_checksum = "sha256:2e78ddad5e2adf7d7b9033c7ce3c0b674d1f38144848563d031bcb6804b9a992"
 installed_at = ".claude/agents/rust-doc-standard.md"
-dependencies = ["snippet/snippets/agents/rust-doc-standard"]
+dependencies = ["snippet:local-deps/snippets/agents/rust-doc-standard"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "rust-doc-standard"
 applied_patches = {}
 
+[agents.variant_inputs]
+
 [[agents]]
-name = "rust-linting-advanced"
+name = "local-deps/claude/agents/rust-expert-advanced"
+path = "local-deps/claude/agents/rust-expert-advanced.md"
+checksum = "sha256:84e0b2652bf0601bdbc6e46527a1a0c6e59e7d739e6373f7800af00f01483413"
+context_checksum = "sha256:ae1d3d5b17ec89a35e41812e0dcc530a59ca98e051aa8387e8ea4e9f80851f46"
+installed_at = ".claude/agents/rust-expert-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-expert-advanced"]
+tool = "claude-code"
+manifest_alias = "rust-expert-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/claude/agents/rust-expert-standard"
+path = "local-deps/claude/agents/rust-expert-standard.md"
+checksum = "sha256:718835b3ab06e2c2c38c437067cc3bc8fde8fa35ff4f5325a10e9ba1a1fac7d3"
+context_checksum = "sha256:bab77bdb54c11caa48f7cfdbd2ad6d44306fd22eee7595eb99ed63bdc0237d4a"
+installed_at = ".claude/agents/rust-expert-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-expert-standard"]
+tool = "claude-code"
+manifest_alias = "rust-expert-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/claude/agents/rust-linting-advanced"
 path = "local-deps/claude/agents/rust-linting-advanced.md"
-checksum = "sha256:a22afec804a4104b374384567e37fa6c193e93ecc54e2dc6d84985c081bdd037"
+checksum = "sha256:a12a919eaa173f94ede46256537c144dc512a1321bfcc097edb6943bf7b8a3ad"
+context_checksum = "sha256:65996feea495cda9018f8afcb8a778453b04bf143323255015b88132891178e5"
 installed_at = ".claude/agents/rust-linting-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-linting-advanced"]
+dependencies = ["snippet:local-deps/snippets/agents/rust-linting-advanced"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "rust-linting-advanced"
 applied_patches = {}
 
-[[agents]]
-name = "opencode-rust-troubleshooter-advanced"
-path = "local-deps/opencode/agent/rust-troubleshooter-advanced.md"
-checksum = "sha256:644b526f14000ad3ff8d053667c8fb687c16d0b305257f07e8f47bcc1839e5bd"
-installed_at = ".opencode/agent/rust-troubleshooter-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-troubleshooter-advanced"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
+[agents.variant_inputs]
 
 [[agents]]
-name = "opencode-rust-test-advanced"
-path = "local-deps/opencode/agent/rust-test-advanced.md"
-checksum = "sha256:7a1a1f743313d6cec2a8259cf288d94b1b4beb9273aa1be3383eaf373aa70614"
-installed_at = ".opencode/agent/rust-test-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-test-advanced"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "opencode-rust-troubleshooter-standard"
-path = "local-deps/opencode/agent/rust-troubleshooter-standard.md"
-checksum = "sha256:a15c7f2ac30de3d8f4ca0158bbf68e4eaffd7158264d67a1211d122d691ecfa4"
-installed_at = ".opencode/agent/rust-troubleshooter-standard.md"
-dependencies = ["snippet/snippets/agents/rust-troubleshooter-standard"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-test-standard"
-path = "local-deps/claude/agents/rust-test-standard.md"
-checksum = "sha256:10a5297b90e1bf861972cbaf34b88356a5e9d07b6d28f4679f565b0be7248524"
-installed_at = ".claude/agents/rust-test-standard.md"
-dependencies = ["snippet/snippets/agents/rust-test-standard"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[agents]]
-name = "rust-linting-standard"
+name = "local-deps/claude/agents/rust-linting-standard"
 path = "local-deps/claude/agents/rust-linting-standard.md"
-checksum = "sha256:53b5b775c6c0d4c383b15c9aa26d4ff437e13db6e51b97315e6b78f78c939c3b"
+checksum = "sha256:bc1f55d35584d683149306ce85f7722bb56745a9a35426e2e5976a123d919970"
+context_checksum = "sha256:a883b191315e7f992679aeff9e86194539119a058fa81611954e88d99f36e9bd"
 installed_at = ".claude/agents/rust-linting-standard.md"
-dependencies = ["snippet/snippets/agents/rust-linting-standard"]
+dependencies = ["snippet:local-deps/snippets/agents/rust-linting-standard"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "rust-linting-standard"
 applied_patches = {}
 
+[agents.variant_inputs]
+
 [[agents]]
-name = "opencode-rust-linting-advanced"
-path = "local-deps/opencode/agent/rust-linting-advanced.md"
-checksum = "sha256:1606c7cef5873321b85cf5f84096cf1a74a832572c260c8f3d4f609df5b3747b"
-installed_at = ".opencode/agent/rust-linting-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-linting-advanced"]
+name = "local-deps/claude/agents/rust-test-advanced"
+path = "local-deps/claude/agents/rust-test-advanced.md"
+checksum = "sha256:c6350e08aca84f167b4ccc50b09747dc89944654f97b654be1df006e9535a36c"
+context_checksum = "sha256:91015ad5f8bfd153b28487b11d6e4e661f48b4159eaf438f3607f1e9557692f7"
+installed_at = ".claude/agents/rust-test-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-test-advanced"]
+tool = "claude-code"
+manifest_alias = "rust-test-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/claude/agents/rust-test-standard"
+path = "local-deps/claude/agents/rust-test-standard.md"
+checksum = "sha256:2c949a11667f095fbf89c33ec5d164f405386f5e571e82ef51a874b8cafc8a17"
+context_checksum = "sha256:26dc8ce66cf3fc2a9fdee54b526285b855b188f902f5c1559a133b9489059fe5"
+installed_at = ".claude/agents/rust-test-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-test-standard"]
+tool = "claude-code"
+manifest_alias = "rust-test-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/claude/agents/rust-troubleshooter-advanced"
+path = "local-deps/claude/agents/rust-troubleshooter-advanced.md"
+checksum = "sha256:48a0a5be0d5ca591546f12995a230dab8c537613c73da6b1c751cff7747c20e4"
+context_checksum = "sha256:32581f808977a82ed423e3dbe967eb71e44d64713fab63111aee4982a0d42cb6"
+installed_at = ".claude/agents/rust-troubleshooter-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-troubleshooter-advanced"]
+tool = "claude-code"
+manifest_alias = "rust-troubleshooter-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/claude/agents/rust-troubleshooter-standard"
+path = "local-deps/claude/agents/rust-troubleshooter-standard.md"
+checksum = "sha256:79c946909384801809ce33f73f8c7f894a825d4b633c3856127bd2133e7b229c"
+context_checksum = "sha256:a7db882612236cac67ebbd5148ba4c6991c3c67ec618a1f641abfee8a89703e1"
+installed_at = ".claude/agents/rust-troubleshooter-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-troubleshooter-standard"]
+tool = "claude-code"
+manifest_alias = "rust-troubleshooter-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-doc-advanced"
+path = "local-deps/opencode/agent/rust-doc-advanced.md"
+checksum = "sha256:c82cc23ec148c36d2a31afe271c0c07fc62d07d76da175a94e621db08f99fda7"
+context_checksum = "sha256:f97c26515369d0c1afde6d68c076f157b7618189092e2292d1b321fb8443a899"
+installed_at = ".opencode/agent/rust-doc-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-doc-advanced"]
 tool = "opencode"
-template_vars = "{}"
+manifest_alias = "opencode-rust-doc-advanced"
 applied_patches = {}
 
+[agents.variant_inputs]
+
 [[agents]]
-name = "opencode-rust-expert-advanced"
-path = "local-deps/opencode/agent/rust-expert-advanced.md"
-checksum = "sha256:faaaf60d99afc415ee74068baccf2eaad59e6a793ec626f737cfcd2fd80c066b"
-installed_at = ".opencode/agent/rust-expert-advanced.md"
-dependencies = ["snippet/snippets/agents/rust-expert-advanced"]
+name = "local-deps/opencode/agent/rust-doc-standard"
+path = "local-deps/opencode/agent/rust-doc-standard.md"
+checksum = "sha256:6a19461ac56e73b2cff5f291978d3989be23ae8232863a5f9f378fbf636c22b3"
+context_checksum = "sha256:3e0bfad03377b77d17181dd9ca65667cdebdd81aa0e3f0a0b517c37b7f4bebd1"
+installed_at = ".opencode/agent/rust-doc-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-doc-standard"]
 tool = "opencode"
-template_vars = "{}"
+manifest_alias = "opencode-rust-doc-standard"
 applied_patches = {}
 
+[agents.variant_inputs]
+
 [[agents]]
-name = "opencode-rust-expert"
+name = "local-deps/opencode/agent/rust-expert"
 path = "local-deps/opencode/agent/rust-expert.md"
-checksum = "sha256:817e6ec7469a45323f419d8b7c9fc56e370121a8620bd9287790f87693c2c768"
+checksum = "sha256:d52128f9b55e546230ceb82ffc308a90fd12ff67df3ff47351a287c830a080bb"
+context_checksum = "sha256:2d306705ef060d71266069a9ea5952926600344f4e4275410977a457adfb47a9"
 installed_at = ".opencode/agent/rust-expert.md"
-dependencies = ["snippet/snippets/agents/rust-expert"]
+dependencies = ["snippet:local-deps/snippets/agents/rust-expert"]
 tool = "opencode"
-template_vars = "{}"
+manifest_alias = "opencode-rust-expert"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/commands/fact-check-docs"
-path = "local-deps/snippets/commands/fact-check-docs.md"
-checksum = "sha256:ecd906d9b4b6224d3c80cb79fb927003f546a4778cf5b3c4ffbc55469bd0114b"
-installed_at = ".claude/snippets/local-deps/snippets/commands/fact-check-docs.md"
-dependencies = []
-tool = "claude-code"
-install = false
-template_vars = "{}"
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-expert-advanced"
+path = "local-deps/opencode/agent/rust-expert-advanced.md"
+checksum = "sha256:6a0b444b96c86dadccc9ed27300a20dfcb39a07c9a6647bfc249b3f9ef44e4a7"
+context_checksum = "sha256:658513db5b2c0fefdff687072f085dec9b60b565aeec50efcd2a307550882ec7"
+installed_at = ".opencode/agent/rust-expert-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-expert-advanced"]
+tool = "opencode"
+manifest_alias = "opencode-rust-expert-advanced"
 applied_patches = {}
 
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-expert-standard"
+path = "local-deps/opencode/agent/rust-expert-standard.md"
+checksum = "sha256:027eaff72b98451a650084b2ae793dd9ccc4f073cec6ea5dccd6cf1779d61abe"
+context_checksum = "sha256:61736d3d77eb2d978f790da4305eca461ba0a9a210d60b687e006529ec64269b"
+installed_at = ".opencode/agent/rust-expert-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-expert-standard"]
+tool = "opencode"
+manifest_alias = "opencode-rust-expert-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-linting-advanced"
+path = "local-deps/opencode/agent/rust-linting-advanced.md"
+checksum = "sha256:8b6687937be4adfa0b6e7e779227f42480043cbb0dffee3fdf1c733f18a8b894"
+context_checksum = "sha256:5da3a4c0f1d4e9e6b28c8b8ff1f761cc518aed5e631b4a5108a027957ea993df"
+installed_at = ".opencode/agent/rust-linting-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-linting-advanced"]
+tool = "opencode"
+manifest_alias = "opencode-rust-linting-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-linting-standard"
+path = "local-deps/opencode/agent/rust-linting-standard.md"
+checksum = "sha256:761b6af170f86923a3577e8741b4aa038dca59e3b25adc6618f6027876711372"
+context_checksum = "sha256:ce7a07725ad327273a50aea802502c01f513e3d8f778d901020b078624df5bcc"
+installed_at = ".opencode/agent/rust-linting-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-linting-standard"]
+tool = "opencode"
+manifest_alias = "opencode-rust-linting-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-test-advanced"
+path = "local-deps/opencode/agent/rust-test-advanced.md"
+checksum = "sha256:76b315a467f2a446933b85616d7582516f92b10c9909ea0563148dddcfef8da7"
+context_checksum = "sha256:053e9812304a84669ba7155c6d7232132c831665c202c5ca53b2868ca400d9f4"
+installed_at = ".opencode/agent/rust-test-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-test-advanced"]
+tool = "opencode"
+manifest_alias = "opencode-rust-test-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-test-standard"
+path = "local-deps/opencode/agent/rust-test-standard.md"
+checksum = "sha256:1070faa50f68f7f61415ce31e16d12177c62d604339cc2c952a35b84fec0d64e"
+context_checksum = "sha256:bdc9d87a487c9d3d526490978b969c4c3a875a0d334b3de45400620864c3c3f5"
+installed_at = ".opencode/agent/rust-test-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-test-standard"]
+tool = "opencode"
+manifest_alias = "opencode-rust-test-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-troubleshooter-advanced"
+path = "local-deps/opencode/agent/rust-troubleshooter-advanced.md"
+checksum = "sha256:5e747ac16e9da2e893f46581d77deabf9f7207515894698d82b497bfec459cf9"
+context_checksum = "sha256:1a72d932b5430b9576215ada9acd8771e068d3af346dcfb5dd363f314ebf8258"
+installed_at = ".opencode/agent/rust-troubleshooter-advanced.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-troubleshooter-advanced"]
+tool = "opencode"
+manifest_alias = "opencode-rust-troubleshooter-advanced"
+applied_patches = {}
+
+[agents.variant_inputs]
+
+[[agents]]
+name = "local-deps/opencode/agent/rust-troubleshooter-standard"
+path = "local-deps/opencode/agent/rust-troubleshooter-standard.md"
+checksum = "sha256:b05eea90cb5b8cb574160e3f673e2484a02a8097490b87e2b191677b11a6b3c3"
+context_checksum = "sha256:5a963c808a60784ea5946aae5c0328ddc09753b709f4faceb096c6bdfe2c9e96"
+installed_at = ".opencode/agent/rust-troubleshooter-standard.md"
+dependencies = ["snippet:local-deps/snippets/agents/rust-troubleshooter-standard"]
+tool = "opencode"
+manifest_alias = "opencode-rust-troubleshooter-standard"
+applied_patches = {}
+
+[agents.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/fact-check-docs"
-path = "local-deps/snippets/commands/fact-check-docs.md"
-checksum = "sha256:ecd906d9b4b6224d3c80cb79fb927003f546a4778cf5b3c4ffbc55469bd0114b"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/fact-check-docs.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-doc-advanced"
+path = "local-deps/snippets/agents/rust-doc-advanced.md"
+checksum = "sha256:792e1467aa75c3e39ae9e9159997944e7f2d457472915343c28d1da7f5c94b63"
+context_checksum = "sha256:cebc3b18228ac5d50a1ae1291677edf878bc15d9546eac750732bd3e5669ba69"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-claude"
-path = "local-deps/snippets/commands/update-claude.md"
-checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
-installed_at = ".claude/snippets/local-deps/snippets/commands/update-claude.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-doc-advanced"
+path = "local-deps/snippets/agents/rust-doc-advanced.md"
+checksum = "sha256:792e1467aa75c3e39ae9e9159997944e7f2d457472915343c28d1da7f5c94b63"
+context_checksum = "sha256:2cd7e3b0eb4897b0a92a4cefd456e2cc5b83ae25ffd2d0b1e3386ce63c5f25f8"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-claude"
-path = "local-deps/snippets/commands/update-claude.md"
-checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/update-claude.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-doc-standard"
+path = "local-deps/snippets/agents/rust-doc-standard.md"
+checksum = "sha256:cdf17e11c2e93a2a411e3f2a0d896fd698009b25ae67947d988f0b6b476a8e16"
+context_checksum = "sha256:51c08a2d917fce1df891299c39d2c66baffd3695c43cf9929db9dc6c1f710a94"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/rust-best-practices"
-path = "local-deps/snippets/rust-best-practices.md"
-checksum = "sha256:9c9898d98e1135430106d9594d6ba3fa03074681f798d90919a23a6418520628"
-installed_at = ".agpm/snippets/local-deps/snippets/rust-best-practices.md"
-dependencies = []
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
+[snippets.variant_inputs]
 
 [[snippets]]
-name = "snippets/rust-best-practices"
-path = "local-deps/snippets/rust-best-practices.md"
-checksum = "sha256:9c9898d98e1135430106d9594d6ba3fa03074681f798d90919a23a6418520628"
-installed_at = ".claude/snippets/local-deps/snippets/rust-best-practices.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-doc-standard"
+path = "local-deps/snippets/agents/rust-doc-standard.md"
+checksum = "sha256:cdf17e11c2e93a2a411e3f2a0d896fd698009b25ae67947d988f0b6b476a8e16"
+context_checksum = "sha256:7cde7fcb025dfb7e7d3be73e4e2917297e3807acbd024d157bbdef10df6fa35e"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/commands/pr-self-review"
-path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:ec0b2d7398491854cf2c5ab1cdf9d0eac76ed9c01ddad7a1611fb4345b2cde2f"
-installed_at = ".claude/snippets/local-deps/snippets/commands/pr-self-review.md"
-dependencies = ["snippet/snippets/rust-best-practices"]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
+[snippets.variant_inputs]
 
 [[snippets]]
-name = "snippets/commands/pr-self-review"
-path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:ec0b2d7398491854cf2c5ab1cdf9d0eac76ed9c01ddad7a1611fb4345b2cde2f"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/pr-self-review.md"
-dependencies = ["snippet/snippets/rust-best-practices"]
+name = "local-deps/snippets/agents/rust-expert"
+path = "local-deps/snippets/agents/rust-expert.md"
+checksum = "sha256:6d9d9ec47f5ccd22f1ad196f00f8796fbf300cc79d531503b47c82c067fa64ac"
+context_checksum = "sha256:8f2721b74321fc8bfcf352dcabd6000f643fc689b9835185696841a0026237a8"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/squash"
-path = "local-deps/snippets/commands/squash.md"
-checksum = "sha256:567f880216ec7b40be4507acd1a09bf3eee2c0ae0328c57c608375e5f6c2425d"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/squash.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-expert-advanced"
+path = "local-deps/snippets/agents/rust-expert-advanced.md"
+checksum = "sha256:d0c166ec4e1c803d43c6093278999867a54ae4a64540d34f7476c8fb2e6d651d"
+context_checksum = "sha256:525f71bdca34dd8d41583c2461cc52975e69f9b777b47491858ce1463993c7e6"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/squash"
-path = "local-deps/snippets/commands/squash.md"
-checksum = "sha256:567f880216ec7b40be4507acd1a09bf3eee2c0ae0328c57c608375e5f6c2425d"
-installed_at = ".claude/snippets/local-deps/snippets/commands/squash.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-expert-advanced"
+path = "local-deps/snippets/agents/rust-expert-advanced.md"
+checksum = "sha256:d0c166ec4e1c803d43c6093278999867a54ae4a64540d34f7476c8fb2e6d651d"
+context_checksum = "sha256:5fa7bee1c384dc798e1b7ccb54543515ef4c0c9738d4b4768c878b0a144d4f49"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/commands/lint"
-path = "local-deps/snippets/commands/lint.md"
-checksum = "sha256:62c349c50b962ce52fd4861834200a2fccb8532fe35f4abf7506a781dce963ff"
-installed_at = ".claude/snippets/local-deps/snippets/commands/lint.md"
-dependencies = []
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
+[snippets.variant_inputs]
 
 [[snippets]]
-name = "snippets/commands/lint"
-path = "local-deps/snippets/commands/lint.md"
-checksum = "sha256:62c349c50b962ce52fd4861834200a2fccb8532fe35f4abf7506a781dce963ff"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/lint.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-expert-standard"
+path = "local-deps/snippets/agents/rust-expert-standard.md"
+checksum = "sha256:e0276d3037ec795eae9141ece8d9eebf750609414e3cc58cdfff12f59e74c589"
+context_checksum = "sha256:4de01485650b1ab8e74050349649a3345195c1a629a0608115d11811755aa9c1"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-docstrings"
-path = "local-deps/snippets/commands/update-docstrings.md"
-checksum = "sha256:9f505280136a484d0ceb33d2a6fc9b30338a6d5f31b9f3080c8530df5a0181f6"
-installed_at = ".claude/snippets/local-deps/snippets/commands/update-docstrings.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-expert-standard"
+path = "local-deps/snippets/agents/rust-expert-standard.md"
+checksum = "sha256:e0276d3037ec795eae9141ece8d9eebf750609414e3cc58cdfff12f59e74c589"
+context_checksum = "sha256:ea05ca7371addeaef65ce8a842297b9a1c23da46286c27a8ebba48c53667bcf2"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-docstrings"
-path = "local-deps/snippets/commands/update-docstrings.md"
-checksum = "sha256:9f505280136a484d0ceb33d2a6fc9b30338a6d5f31b9f3080c8530df5a0181f6"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/update-docstrings.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-linting-advanced"
+path = "local-deps/snippets/agents/rust-linting-advanced.md"
+checksum = "sha256:349851214d8819305be176039b35817933250922557dd275f3b32193df7a84e3"
+context_checksum = "sha256:f6fdc605c01928611f0849f16a45ff32229696885e059d27708b618b38502add"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/commands/commit"
-path = "local-deps/snippets/commands/commit.md"
-checksum = "sha256:b215b4db4a408447a3442c3ff76481c7669595b18c07342022e6d61af19b9bbd"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/commit.md"
-dependencies = []
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
+[snippets.variant_inputs]
 
 [[snippets]]
-name = "snippets/commands/commit"
-path = "local-deps/snippets/commands/commit.md"
-checksum = "sha256:b215b4db4a408447a3442c3ff76481c7669595b18c07342022e6d61af19b9bbd"
-installed_at = ".claude/snippets/local-deps/snippets/commands/commit.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-linting-advanced"
+path = "local-deps/snippets/agents/rust-linting-advanced.md"
+checksum = "sha256:349851214d8819305be176039b35817933250922557dd275f3b32193df7a84e3"
+context_checksum = "sha256:60df6d7be7239616f83b84832f62041f8c7f248a3675730d1049eb091d8ad632"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-all"
-path = "local-deps/snippets/commands/update-all.md"
-checksum = "sha256:caf2f56de539faf55069109de739861e5824057fbca9cb3f989e6a94e64de7d2"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/update-all.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-linting-standard"
+path = "local-deps/snippets/agents/rust-linting-standard.md"
+checksum = "sha256:2679fb86c2521cd34927523b33075fbeec6a894177cf7ce5bf7c3a8f1b974b1e"
+context_checksum = "sha256:a0ff824f935bad99b79a86548e73686af17919841ddcfd05f3b5b01de51827da"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-all"
-path = "local-deps/snippets/commands/update-all.md"
-checksum = "sha256:caf2f56de539faf55069109de739861e5824057fbca9cb3f989e6a94e64de7d2"
-installed_at = ".claude/snippets/local-deps/snippets/commands/update-all.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-linting-standard"
+path = "local-deps/snippets/agents/rust-linting-standard.md"
+checksum = "sha256:2679fb86c2521cd34927523b33075fbeec6a894177cf7ce5bf7c3a8f1b974b1e"
+context_checksum = "sha256:6321a68f9b21bb02678861a444eb6fc9e9de295c1ff63aa7ad38f44c4e5a34cf"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/gh-pr-create"
-path = "local-deps/snippets/commands/gh-pr-create.md"
-checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
-installed_at = ".agpm/snippets/local-deps/snippets/commands/gh-pr-create.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-test-advanced"
+path = "local-deps/snippets/agents/rust-test-advanced.md"
+checksum = "sha256:d10c6242bfebdbcd4acc705acfb5c9304bd67617b8f67f1d07f08c6881f021dd"
+context_checksum = "sha256:093b61dfbacd1279b1f74583b62cde0ff01daf40da640b6752731940b33aee54"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/gh-pr-create"
-path = "local-deps/snippets/commands/gh-pr-create.md"
-checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
-installed_at = ".claude/snippets/local-deps/snippets/commands/gh-pr-create.md"
-dependencies = []
+name = "local-deps/snippets/agents/rust-test-advanced"
+path = "local-deps/snippets/agents/rust-test-advanced.md"
+checksum = "sha256:d10c6242bfebdbcd4acc705acfb5c9304bd67617b8f67f1d07f08c6881f021dd"
+context_checksum = "sha256:a96e96a372046f1624424821ea8c70e0869cec73c82ce1e4a3c62640825d4423"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/checkpoint"
+name = "local-deps/snippets/agents/rust-test-standard"
+path = "local-deps/snippets/agents/rust-test-standard.md"
+checksum = "sha256:4c469d674df8c0d7fb065d0e7fb26278198f18cb5bf03a47b0a6ef59580e1a24"
+context_checksum = "sha256:f8b12a143f20b90aebed24c043f3aca2cb01e942ed1262e911cb015a3fb06375"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/agents/rust-test-standard"
+path = "local-deps/snippets/agents/rust-test-standard.md"
+checksum = "sha256:4c469d674df8c0d7fb065d0e7fb26278198f18cb5bf03a47b0a6ef59580e1a24"
+context_checksum = "sha256:c18fdf8594ce5742180e0ea54df29af28d17a1843ae1497350ef586fa4d52883"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/agents/rust-troubleshooter-advanced"
+path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
+checksum = "sha256:69b6fff9f95cbe2b5d7bacd9c10384abcfdfa9435fb968d1781aadbf4005b7a1"
+context_checksum = "sha256:91bb874f86896f0d1530797ed3ccce03e47170b9066bf277d2f982a584b1d225"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/agents/rust-troubleshooter-advanced"
+path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
+checksum = "sha256:69b6fff9f95cbe2b5d7bacd9c10384abcfdfa9435fb968d1781aadbf4005b7a1"
+context_checksum = "sha256:9e9fd23011e0f1998827aa3bcf675daa22734fd4ddb95910f0499959ac8e0c43"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/agents/rust-troubleshooter-standard"
+path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
+checksum = "sha256:4201a2a56b1675d4709a1f663e912430f3ab6c19d7a7e7a354df923ea48f7860"
+context_checksum = "sha256:5bb41cb522c410ae8324d147a3479d23c2f2441a503cc8a6a6f36fd2476c1e6a"
+installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/agents/rust-troubleshooter-standard"
+path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
+checksum = "sha256:4201a2a56b1675d4709a1f663e912430f3ab6c19d7a7e7a354df923ea48f7860"
+context_checksum = "sha256:25ebec0098977015beaa4f9042a1c1f5709429e4fa513abed3bc1c86a542a599"
+installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
+dependencies = [
+    "snippet:local-deps/snippets/rust-best-practices",
+    "snippet:local-deps/snippets/rust-cargo-commands",
+]
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/checkpoint"
 path = "local-deps/snippets/commands/checkpoint.md"
 checksum = "sha256:4442158f15493e04d48860639d479c1f504b0ae2991b938a09059f3a8379812e"
 installed_at = ".agpm/snippets/local-deps/snippets/commands/checkpoint.md"
 dependencies = []
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/checkpoint"
+name = "local-deps/snippets/commands/checkpoint"
 path = "local-deps/snippets/commands/checkpoint.md"
 checksum = "sha256:4442158f15493e04d48860639d479c1f504b0ae2991b938a09059f3a8379812e"
 installed_at = ".claude/snippets/local-deps/snippets/commands/checkpoint.md"
 dependencies = []
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/execute"
+name = "local-deps/snippets/commands/commit"
+path = "local-deps/snippets/commands/commit.md"
+checksum = "sha256:b215b4db4a408447a3442c3ff76481c7669595b18c07342022e6d61af19b9bbd"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/commit.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/commit"
+path = "local-deps/snippets/commands/commit.md"
+checksum = "sha256:b215b4db4a408447a3442c3ff76481c7669595b18c07342022e6d61af19b9bbd"
+installed_at = ".claude/snippets/local-deps/snippets/commands/commit.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/execute"
 path = "local-deps/snippets/commands/execute.md"
 checksum = "sha256:652874990cafdb5c3ad5d9e98e8e5b7355229de3b8ccf12326fbbb5bddf9f259"
 installed_at = ".agpm/snippets/local-deps/snippets/commands/execute.md"
 dependencies = []
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/execute"
+name = "local-deps/snippets/commands/execute"
 path = "local-deps/snippets/commands/execute.md"
 checksum = "sha256:652874990cafdb5c3ad5d9e98e8e5b7355229de3b8ccf12326fbbb5bddf9f259"
 installed_at = ".claude/snippets/local-deps/snippets/commands/execute.md"
 dependencies = []
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-docs"
+name = "local-deps/snippets/commands/fact-check-docs"
+path = "local-deps/snippets/commands/fact-check-docs.md"
+checksum = "sha256:ecd906d9b4b6224d3c80cb79fb927003f546a4778cf5b3c4ffbc55469bd0114b"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/fact-check-docs.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/fact-check-docs"
+path = "local-deps/snippets/commands/fact-check-docs.md"
+checksum = "sha256:ecd906d9b4b6224d3c80cb79fb927003f546a4778cf5b3c4ffbc55469bd0114b"
+installed_at = ".claude/snippets/local-deps/snippets/commands/fact-check-docs.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/gh-pr-create"
+path = "local-deps/snippets/commands/gh-pr-create.md"
+checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/gh-pr-create.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/gh-pr-create"
+path = "local-deps/snippets/commands/gh-pr-create.md"
+checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
+installed_at = ".claude/snippets/local-deps/snippets/commands/gh-pr-create.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/lint"
+path = "local-deps/snippets/commands/lint.md"
+checksum = "sha256:62c349c50b962ce52fd4861834200a2fccb8532fe35f4abf7506a781dce963ff"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/lint.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/lint"
+path = "local-deps/snippets/commands/lint.md"
+checksum = "sha256:62c349c50b962ce52fd4861834200a2fccb8532fe35f4abf7506a781dce963ff"
+installed_at = ".claude/snippets/local-deps/snippets/commands/lint.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/pr-self-review"
+path = "local-deps/snippets/commands/pr-self-review.md"
+checksum = "sha256:13d797a0deba09341663e5a2982f90ce54609b9f690b53baf85bc91e4ccf7f87"
+context_checksum = "sha256:8b5a9f2c0dbade570c709d988a174cbf6a03b7aaf561633048eb47c72ddd3a26"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/pr-self-review.md"
+dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/pr-self-review"
+path = "local-deps/snippets/commands/pr-self-review.md"
+checksum = "sha256:13d797a0deba09341663e5a2982f90ce54609b9f690b53baf85bc91e4ccf7f87"
+context_checksum = "sha256:4b1abcac25a92325de7e934f86c882f9a1f1a766dcfad66ba406dfa3a8c4250a"
+installed_at = ".claude/snippets/local-deps/snippets/commands/pr-self-review.md"
+dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/squash"
+path = "local-deps/snippets/commands/squash.md"
+checksum = "sha256:567f880216ec7b40be4507acd1a09bf3eee2c0ae0328c57c608375e5f6c2425d"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/squash.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/squash"
+path = "local-deps/snippets/commands/squash.md"
+checksum = "sha256:567f880216ec7b40be4507acd1a09bf3eee2c0ae0328c57c608375e5f6c2425d"
+installed_at = ".claude/snippets/local-deps/snippets/commands/squash.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-all"
+path = "local-deps/snippets/commands/update-all.md"
+checksum = "sha256:caf2f56de539faf55069109de739861e5824057fbca9cb3f989e6a94e64de7d2"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/update-all.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-all"
+path = "local-deps/snippets/commands/update-all.md"
+checksum = "sha256:caf2f56de539faf55069109de739861e5824057fbca9cb3f989e6a94e64de7d2"
+installed_at = ".claude/snippets/local-deps/snippets/commands/update-all.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-claude"
+path = "local-deps/snippets/commands/update-claude.md"
+checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/update-claude.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-claude"
+path = "local-deps/snippets/commands/update-claude.md"
+checksum = "sha256:86f5d804a4d675a428514785fd5d59794f71855eeb491aa6df582d38fff286b4"
+installed_at = ".claude/snippets/local-deps/snippets/commands/update-claude.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-docs"
 path = "local-deps/snippets/commands/update-docs.md"
 checksum = "sha256:092be7b3cabd206ba5debdaabeff971cdfb5448c26b522f52b3f28f96e30dae8"
 installed_at = ".agpm/snippets/local-deps/snippets/commands/update-docs.md"
 dependencies = []
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/commands/update-docs"
+name = "local-deps/snippets/commands/update-docs"
 path = "local-deps/snippets/commands/update-docs.md"
 checksum = "sha256:092be7b3cabd206ba5debdaabeff971cdfb5448c26b522f52b3f28f96e30dae8"
 installed_at = ".claude/snippets/local-deps/snippets/commands/update-docs.md"
 dependencies = []
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/rust-cargo-commands"
+name = "local-deps/snippets/commands/update-docstrings"
+path = "local-deps/snippets/commands/update-docstrings.md"
+checksum = "sha256:9f505280136a484d0ceb33d2a6fc9b30338a6d5f31b9f3080c8530df5a0181f6"
+installed_at = ".agpm/snippets/local-deps/snippets/commands/update-docstrings.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/commands/update-docstrings"
+path = "local-deps/snippets/commands/update-docstrings.md"
+checksum = "sha256:9f505280136a484d0ceb33d2a6fc9b30338a6d5f31b9f3080c8530df5a0181f6"
+installed_at = ".claude/snippets/local-deps/snippets/commands/update-docstrings.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/rust-best-practices"
+path = "local-deps/snippets/rust-best-practices.md"
+checksum = "sha256:e1f7df7077d95d0ed561cd86d5c86380a2be1933f422a90325f065fcb6714f81"
+installed_at = ".agpm/snippets/local-deps/snippets/rust-best-practices.md"
+dependencies = []
+tool = "agpm"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/rust-best-practices"
+path = "local-deps/snippets/rust-best-practices.md"
+checksum = "sha256:e1f7df7077d95d0ed561cd86d5c86380a2be1933f422a90325f065fcb6714f81"
+installed_at = ".claude/snippets/local-deps/snippets/rust-best-practices.md"
+dependencies = []
+tool = "claude-code"
+install = false
+applied_patches = {}
+
+[snippets.variant_inputs]
+
+[[snippets]]
+name = "local-deps/snippets/rust-cargo-commands"
 path = "local-deps/snippets/rust-cargo-commands.md"
-checksum = "sha256:16c285ae6b58efbe90d674367ec6ddce2cdf7dd1d81b953e03a9bb9f3caa94b5"
+checksum = "sha256:dea751fa5c4e08f973e5bcc0d5a13511a7fd7526f4cbe7ae046d5f51600271c8"
 installed_at = ".agpm/snippets/local-deps/snippets/rust-cargo-commands.md"
 dependencies = []
 tool = "agpm"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
+[snippets.variant_inputs]
+
 [[snippets]]
-name = "snippets/rust-cargo-commands"
+name = "local-deps/snippets/rust-cargo-commands"
 path = "local-deps/snippets/rust-cargo-commands.md"
-checksum = "sha256:16c285ae6b58efbe90d674367ec6ddce2cdf7dd1d81b953e03a9bb9f3caa94b5"
+checksum = "sha256:dea751fa5c4e08f973e5bcc0d5a13511a7fd7526f4cbe7ae046d5f51600271c8"
 installed_at = ".claude/snippets/local-deps/snippets/rust-cargo-commands.md"
 dependencies = []
 tool = "claude-code"
 install = false
-template_vars = "{}"
 applied_patches = {}
 
-[[snippets]]
-name = "snippets/agents/rust-troubleshooter-advanced"
-path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-checksum = "sha256:390b46b55711209a5b3612ed81766de775110de7cc005febd966f1c06494f40b"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-troubleshooter-advanced"
-path = "local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-checksum = "sha256:390b46b55711209a5b3612ed81766de775110de7cc005febd966f1c06494f40b"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-doc-standard"
-path = "local-deps/snippets/agents/rust-doc-standard.md"
-checksum = "sha256:0497e7107384cab785355db6f9d21b111dd66f3f7b076faa28121adeb5c497a1"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-doc-standard"
-path = "local-deps/snippets/agents/rust-doc-standard.md"
-checksum = "sha256:0497e7107384cab785355db6f9d21b111dd66f3f7b076faa28121adeb5c497a1"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-test-standard"
-path = "local-deps/snippets/agents/rust-test-standard.md"
-checksum = "sha256:c84b43141b544247ba498f00b7c3f0614ef5666dfec93ba7809cded70098c6e0"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-test-standard"
-path = "local-deps/snippets/agents/rust-test-standard.md"
-checksum = "sha256:c84b43141b544247ba498f00b7c3f0614ef5666dfec93ba7809cded70098c6e0"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-expert-standard"
-path = "local-deps/snippets/agents/rust-expert-standard.md"
-checksum = "sha256:d7246e20b372120a47c89e873efd0f2c6418dac4ac60a736146edde1f30c5e77"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-expert-standard"
-path = "local-deps/snippets/agents/rust-expert-standard.md"
-checksum = "sha256:d7246e20b372120a47c89e873efd0f2c6418dac4ac60a736146edde1f30c5e77"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-expert-advanced"
-path = "local-deps/snippets/agents/rust-expert-advanced.md"
-checksum = "sha256:04d44c8aa76632714a593a994f829f7270df61ee09917d5bc9de455c15774abf"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-expert-advanced"
-path = "local-deps/snippets/agents/rust-expert-advanced.md"
-checksum = "sha256:04d44c8aa76632714a593a994f829f7270df61ee09917d5bc9de455c15774abf"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-expert-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-doc-advanced"
-path = "local-deps/snippets/agents/rust-doc-advanced.md"
-checksum = "sha256:cb876c4ec014e394a8079dc49f4516d1a3f8a93d58c711ab236d326861ed6739"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-doc-advanced"
-path = "local-deps/snippets/agents/rust-doc-advanced.md"
-checksum = "sha256:cb876c4ec014e394a8079dc49f4516d1a3f8a93d58c711ab236d326861ed6739"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-doc-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-troubleshooter-standard"
-path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
-checksum = "sha256:3ac99cc555350f63ee5895765f941f85ad0eecc9dd855065eb0de47ebc8e71a2"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-troubleshooter-standard"
-path = "local-deps/snippets/agents/rust-troubleshooter-standard.md"
-checksum = "sha256:3ac99cc555350f63ee5895765f941f85ad0eecc9dd855065eb0de47ebc8e71a2"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-troubleshooter-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-test-advanced"
-path = "local-deps/snippets/agents/rust-test-advanced.md"
-checksum = "sha256:27badb8507c621c18ab36fadc11137ed1f7000bd558463a8567c2eb424b12a16"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-test-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-test-advanced"
-path = "local-deps/snippets/agents/rust-test-advanced.md"
-checksum = "sha256:27badb8507c621c18ab36fadc11137ed1f7000bd558463a8567c2eb424b12a16"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-test-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-linting-standard"
-path = "local-deps/snippets/agents/rust-linting-standard.md"
-checksum = "sha256:c1deb53afa05f171e8134c4814b28673a184d851546acee7001b1b43823c329e"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-linting-standard"
-path = "local-deps/snippets/agents/rust-linting-standard.md"
-checksum = "sha256:c1deb53afa05f171e8134c4814b28673a184d851546acee7001b1b43823c329e"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-standard.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-linting-advanced"
-path = "local-deps/snippets/agents/rust-linting-advanced.md"
-checksum = "sha256:49e8beb9cdd96bbb5c8e946cb7f3446dffaff33bc1b200e53717e23c8bdb28a4"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-linting-advanced"
-path = "local-deps/snippets/agents/rust-linting-advanced.md"
-checksum = "sha256:49e8beb9cdd96bbb5c8e946cb7f3446dffaff33bc1b200e53717e23c8bdb28a4"
-installed_at = ".claude/snippets/local-deps/snippets/agents/rust-linting-advanced.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "claude-code"
-install = false
-template_vars = "{}"
-applied_patches = {}
-
-[[snippets]]
-name = "snippets/agents/rust-expert"
-path = "local-deps/snippets/agents/rust-expert.md"
-checksum = "sha256:2552a6a642f244efd7edeb08fffaef82cc2657066713349715895402adcf9c17"
-installed_at = ".agpm/snippets/local-deps/snippets/agents/rust-expert.md"
-dependencies = [
-    "snippet/snippets/rust-best-practices",
-    "snippet/snippets/rust-cargo-commands",
-]
-tool = "agpm"
-install = false
-template_vars = "{}"
-applied_patches = {}
+[snippets.variant_inputs]
 
 [[commands]]
-name = "opencode-fact-check-docs"
-path = "local-deps/opencode/command/fact-check-docs.md"
-checksum = "sha256:c446f6e0968ffbf6c5a1e7919634e5c610c6dd96ee9c9a0bde2dbce606a26efa"
-installed_at = ".opencode/command/fact-check-docs.md"
-dependencies = ["snippet/snippets/commands/fact-check-docs"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "update-claude"
-path = "local-deps/claude/commands/update-claude.md"
-checksum = "sha256:65c3623bcf21ae3b8aecc3ea768718b64ac1ce1175919f3c7d5e61072e9d6bb3"
-installed_at = ".claude/commands/update-claude.md"
-dependencies = ["snippet/snippets/commands/update-claude"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "pr-self-review"
-path = "local-deps/claude/commands/pr-self-review.md"
-checksum = "sha256:c7d16418647e00bcbbbe6979b2d1d2e522262b709638a0d18ff5cffc2eeff48b"
-installed_at = ".claude/commands/pr-self-review.md"
-dependencies = ["snippet/snippets/commands/pr-self-review"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "squash"
-path = "local-deps/claude/commands/squash.md"
-checksum = "sha256:9fdcf324ffa59b7fff68d1d0c886f4df7c49069f64316bfb4308698424bf9ec9"
-installed_at = ".claude/commands/squash.md"
-dependencies = ["snippet/snippets/commands/squash"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "lint"
-path = "local-deps/claude/commands/lint.md"
-checksum = "sha256:8ed3f335ef2a5b81c7dc8ab263bd9a3ab95a2f9469c7039396dee6744448b688"
-installed_at = ".claude/commands/lint.md"
-dependencies = ["snippet/snippets/commands/lint"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-update-docstrings"
-path = "local-deps/opencode/command/update-docstrings.md"
-checksum = "sha256:c1010e7f4bc7002d02574c83152a2b01f55602eb11c877d573719a4fd6fabd2e"
-installed_at = ".opencode/command/update-docstrings.md"
-dependencies = ["snippet/snippets/commands/update-docstrings"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "commit"
-path = "local-deps/claude/commands/commit.md"
-checksum = "sha256:da604e722cae7c7c1bb2dbb2fb8b0cc546ae44c2e2787a713209ce69b78a74db"
-installed_at = ".claude/commands/commit.md"
-dependencies = ["snippet/snippets/commands/commit"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-update-all"
-path = "local-deps/opencode/command/update-all.md"
-checksum = "sha256:381c241dd6aaadb8670032f65b6cd3331bf930789de46bb9da484739f1a5d0c7"
-installed_at = ".opencode/command/update-all.md"
-dependencies = ["snippet/snippets/commands/update-all"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-gh-pr-create"
-path = "local-deps/opencode/command/gh-pr-create.md"
-checksum = "sha256:6a506275270e0f6a53ad7048fdc96aa3cf95b252b32c77f392793b18633e5195"
-installed_at = ".opencode/command/gh-pr-create.md"
-dependencies = ["snippet/snippets/commands/gh-pr-create"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "gh-pr-create"
-path = "local-deps/claude/commands/gh-pr-create.md"
-checksum = "sha256:91f05367024c4a890e30a009bb54a9a8089224a62e3eb8631e4e600869e1140d"
-installed_at = ".claude/commands/gh-pr-create.md"
-dependencies = ["snippet/snippets/commands/gh-pr-create"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-squash"
-path = "local-deps/opencode/command/squash.md"
-checksum = "sha256:102fc33e061541bfbbdb6bc8163de3ab2ab7e6512346b478a15c038b27f3ed1e"
-installed_at = ".opencode/command/squash.md"
-dependencies = ["snippet/snippets/commands/squash"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-checkpoint"
-path = "local-deps/opencode/command/checkpoint.md"
-checksum = "sha256:999e84eec07261b6094b46f361ca922be8e8d605ef2dde36e8042ee20037a218"
-installed_at = ".opencode/command/checkpoint.md"
-dependencies = ["snippet/snippets/commands/checkpoint"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "execute"
-path = "local-deps/claude/commands/execute.md"
-checksum = "sha256:98c0d32ea44f4e991400479ead83f0eb2eadb0edbe63b7d660011bd626eeb8be"
-installed_at = ".claude/commands/execute.md"
-dependencies = ["snippet/snippets/commands/execute"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-lint"
-path = "local-deps/opencode/command/lint.md"
-checksum = "sha256:0557f4522659132cb09d3d22566d2a7b3d3ff27cc50d01fdcc54c6baa00bb9d8"
-installed_at = ".opencode/command/lint.md"
-dependencies = ["snippet/snippets/commands/lint"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-pr-self-review"
-path = "local-deps/opencode/command/pr-self-review.md"
-checksum = "sha256:51b4c2715ad0dc44265eb179c892f4292f7717c42d65a813aa42d580c302937f"
-installed_at = ".opencode/command/pr-self-review.md"
-dependencies = ["snippet/snippets/commands/pr-self-review"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-update-docs"
-path = "local-deps/opencode/command/update-docs.md"
-checksum = "sha256:1e3db288fcc5601fe18b906f9a711220ec6bf2e749e0d21fe3180c171b3bf417"
-installed_at = ".opencode/command/update-docs.md"
-dependencies = ["snippet/snippets/commands/update-docs"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "update-docstrings"
-path = "local-deps/claude/commands/update-docstrings.md"
-checksum = "sha256:6175e74c1003d8b32aab04cfe3d97cd51e08d97c3796ece87df3d264ddc0921d"
-installed_at = ".claude/commands/update-docstrings.md"
-dependencies = ["snippet/snippets/commands/update-docstrings"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "update-docs"
-path = "local-deps/claude/commands/update-docs.md"
-checksum = "sha256:990a19ba7d071fdea6f075e5d48a83e317b68133c5295bffd21ace4944d7ed29"
-installed_at = ".claude/commands/update-docs.md"
-dependencies = ["snippet/snippets/commands/update-docs"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "update-all"
-path = "local-deps/claude/commands/update-all.md"
-checksum = "sha256:2ee80636e693f5929168d51d08dc26f4ea0702f77c81081935c3c3ce9b48ac85"
-installed_at = ".claude/commands/update-all.md"
-dependencies = ["snippet/snippets/commands/update-all"]
-tool = "claude-code"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "opencode-commit"
-path = "local-deps/opencode/command/commit.md"
-checksum = "sha256:b6625f27b9ad2040f5194fd4a9d04627820ba3ded6569078a585c1e0ca687f6c"
-installed_at = ".opencode/command/commit.md"
-dependencies = ["snippet/snippets/commands/commit"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
-
-[[commands]]
-name = "checkpoint"
+name = "local-deps/claude/commands/checkpoint"
 path = "local-deps/claude/commands/checkpoint.md"
-checksum = "sha256:89f169a6716ec13b25e0ed09af76ad4bb3e609845c838089cb2590ae1657f7aa"
+checksum = "sha256:afe72ae654a49603b5797d5f2fc47807bca94195cdb4126efbae461ff7c1b38d"
+context_checksum = "sha256:9091934b6c129357d7b7f36f24dd260a4e92456e3a974925205b3fb9a587821f"
 installed_at = ".claude/commands/checkpoint.md"
-dependencies = ["snippet/snippets/commands/checkpoint"]
+dependencies = ["snippet:local-deps/snippets/commands/checkpoint"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "checkpoint"
 applied_patches = {}
 
-[[commands]]
-name = "opencode-update-claude"
-path = "local-deps/opencode/command/update-claude.md"
-checksum = "sha256:48e002638c5ed0f3b229360b54dd10ec0d8001b620a81d4e5b2f608924683956"
-installed_at = ".opencode/command/update-claude.md"
-dependencies = ["snippet/snippets/commands/update-claude"]
-tool = "opencode"
-template_vars = "{}"
-applied_patches = {}
+[commands.variant_inputs]
 
 [[commands]]
-name = "fact-check-docs"
+name = "local-deps/claude/commands/commit"
+path = "local-deps/claude/commands/commit.md"
+checksum = "sha256:10e5cede0b194c2b5ebfd27fc7ae6da42eaec1459e1b4f3b642a81f31328c114"
+context_checksum = "sha256:eedc7eff75235cfc901a60cb24f8b7aab2108a1364b823ed5e6c237ce05501a3"
+installed_at = ".claude/commands/commit.md"
+dependencies = ["snippet:local-deps/snippets/commands/commit"]
+tool = "claude-code"
+manifest_alias = "commit"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/execute"
+path = "local-deps/claude/commands/execute.md"
+checksum = "sha256:bdafd2aed5d7ec953d928f788ba65f96416cca1105d7a82031b844a6d59ff343"
+context_checksum = "sha256:5a9901eaa78aceeadb9e51e75e9011bc023d518e9e4488ae89ffd36640dc5d45"
+installed_at = ".claude/commands/execute.md"
+dependencies = ["snippet:local-deps/snippets/commands/execute"]
+tool = "claude-code"
+manifest_alias = "execute"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/fact-check-docs"
 path = "local-deps/claude/commands/fact-check-docs.md"
-checksum = "sha256:6303d6673ea0af64fa9eeccc3fe5067b505714b27809072b5ff295c0678fcb5e"
+checksum = "sha256:efba0b8e71c76f8c66b9869365e697dd150bc987ce13929963a59a6830ba2a41"
+context_checksum = "sha256:d83b1cf1129fc2e1572f4a2d6e808445c4f753f8afb8792ff2c16ea286f7e55c"
 installed_at = ".claude/commands/fact-check-docs.md"
-dependencies = ["snippet/snippets/commands/fact-check-docs"]
+dependencies = ["snippet:local-deps/snippets/commands/fact-check-docs"]
 tool = "claude-code"
-template_vars = "{}"
+manifest_alias = "fact-check-docs"
 applied_patches = {}
 
+[commands.variant_inputs]
+
 [[commands]]
-name = "opencode-execute"
-path = "local-deps/opencode/command/execute.md"
-checksum = "sha256:c403a648f73e856ee2d7c5ea00542ef9b73ba545c8237e9688004b4b83ca366a"
-installed_at = ".opencode/command/execute.md"
-dependencies = ["snippet/snippets/commands/execute"]
-tool = "opencode"
-template_vars = "{}"
+name = "local-deps/claude/commands/gh-pr-create"
+path = "local-deps/claude/commands/gh-pr-create.md"
+checksum = "sha256:ecf6a385402f2775b4584c7544d3406baa973ceac60787ecfe8c2d18f079569e"
+context_checksum = "sha256:c48631998b1bb1ca3dd0574560aa476a15c2f702e730a8d81080ce908eda4950"
+installed_at = ".claude/commands/gh-pr-create.md"
+dependencies = ["snippet:local-deps/snippets/commands/gh-pr-create"]
+tool = "claude-code"
+manifest_alias = "gh-pr-create"
 applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/lint"
+path = "local-deps/claude/commands/lint.md"
+checksum = "sha256:202f7baaead2d44e57cdd204f10d49e97fa31b2962f679a7ff351df10fe1f896"
+context_checksum = "sha256:f62d0537b1ddf2d8cd8e9161581fe1ea45decfeb2f2a9d12fa3508c0d3865fb8"
+installed_at = ".claude/commands/lint.md"
+dependencies = ["snippet:local-deps/snippets/commands/lint"]
+tool = "claude-code"
+manifest_alias = "lint"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/pr-self-review"
+path = "local-deps/claude/commands/pr-self-review.md"
+checksum = "sha256:b972eb5e07587fa6e5ffee42f7ca70891f9688bc7b33895188218d635841d561"
+context_checksum = "sha256:5211dedfd84742d38f81115921d70ea9321773ce8c65f839344cbd42d6c75e01"
+installed_at = ".claude/commands/pr-self-review.md"
+dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
+tool = "claude-code"
+manifest_alias = "pr-self-review"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/squash"
+path = "local-deps/claude/commands/squash.md"
+checksum = "sha256:98e73a810612865c1877794ee3d2f558e79bc50a27b5b35250dc001f858bb3d9"
+context_checksum = "sha256:5032d8d7a7cbc67862cf165baef8b57e4ebaab36e46c3468af51b67920549a97"
+installed_at = ".claude/commands/squash.md"
+dependencies = ["snippet:local-deps/snippets/commands/squash"]
+tool = "claude-code"
+manifest_alias = "squash"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/update-all"
+path = "local-deps/claude/commands/update-all.md"
+checksum = "sha256:af77c9fc4fc03ca2c3054b899a06cf2b9103e9bbfae8ec81e7b5c45ba537ac06"
+context_checksum = "sha256:db29863aeb042248bc46454489c76852629187156def77405f9b1df2d644b6d2"
+installed_at = ".claude/commands/update-all.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-all"]
+tool = "claude-code"
+manifest_alias = "update-all"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/update-claude"
+path = "local-deps/claude/commands/update-claude.md"
+checksum = "sha256:4928f6f392a453e1667772ad55338e4e005ddffcf1d7bf64758310afc149b983"
+context_checksum = "sha256:4b7c79387fcbd5608fe18a0dd6587e0a429c3151c0980eb1ae39c6f207d79c49"
+installed_at = ".claude/commands/update-claude.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-claude"]
+tool = "claude-code"
+manifest_alias = "update-claude"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/update-docs"
+path = "local-deps/claude/commands/update-docs.md"
+checksum = "sha256:498aa7e9c9652e7da523ea711f311b5fb2f90e717bee239f104cc60816b6adee"
+context_checksum = "sha256:b27a573bd29ec024641408debdd752b0e2385a0da048436e1fef5c6462126db9"
+installed_at = ".claude/commands/update-docs.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-docs"]
+tool = "claude-code"
+manifest_alias = "update-docs"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/claude/commands/update-docstrings"
+path = "local-deps/claude/commands/update-docstrings.md"
+checksum = "sha256:75a4b19f98cdea9cf6d61584ef3d6dbe5f1281e9ba1c970a12e1538bf296e903"
+context_checksum = "sha256:a9156befcc78a3c95f45d0eaba67660462799a4788988b26ee0ff012a7e465ab"
+installed_at = ".claude/commands/update-docstrings.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-docstrings"]
+tool = "claude-code"
+manifest_alias = "update-docstrings"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/checkpoint"
+path = "local-deps/opencode/command/checkpoint.md"
+checksum = "sha256:4bad245c9372d498b4cf454c387a976095ad9915800dac6d5737f0d907124bc4"
+context_checksum = "sha256:1f07894e995d6241c4a98b8a9e5ecbf8bfa7a562c40fee4c2a00b24e516ce1fe"
+installed_at = ".opencode/command/checkpoint.md"
+dependencies = ["snippet:local-deps/snippets/commands/checkpoint"]
+tool = "opencode"
+manifest_alias = "opencode-checkpoint"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/commit"
+path = "local-deps/opencode/command/commit.md"
+checksum = "sha256:2faa6c571963a80e7db2332d5fb1ab7057822160b2f06846a858854e0e2c79bc"
+context_checksum = "sha256:b83fc5eb7bcf317d608bcd398e1349c39a7f271f7efa06140d8e453c59e588e5"
+installed_at = ".opencode/command/commit.md"
+dependencies = ["snippet:local-deps/snippets/commands/commit"]
+tool = "opencode"
+manifest_alias = "opencode-commit"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/execute"
+path = "local-deps/opencode/command/execute.md"
+checksum = "sha256:eac37b298fb7fd15fc53b4d1272b8b50542e2e37e8d0481955d434defc68749f"
+context_checksum = "sha256:f882fcd8b0006371ff5d017e1a5e61530633695c73624c723e7d7c0295b14b91"
+installed_at = ".opencode/command/execute.md"
+dependencies = ["snippet:local-deps/snippets/commands/execute"]
+tool = "opencode"
+manifest_alias = "opencode-execute"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/fact-check-docs"
+path = "local-deps/opencode/command/fact-check-docs.md"
+checksum = "sha256:679b4d0bdc2586397e10683b2344b4770ff5cdef0bc32dffb9853692dcd37240"
+context_checksum = "sha256:c628fae4f571f8b9359e22adc12a96f210a0e47da742adbea56089d5a44b1898"
+installed_at = ".opencode/command/fact-check-docs.md"
+dependencies = ["snippet:local-deps/snippets/commands/fact-check-docs"]
+tool = "opencode"
+manifest_alias = "opencode-fact-check-docs"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/gh-pr-create"
+path = "local-deps/opencode/command/gh-pr-create.md"
+checksum = "sha256:608fffe4c157d85d462e0078488223aaf254966e833a8e74c4d205a7e793804d"
+context_checksum = "sha256:c003c433a7c04f8ce9104e0c11e6397c9acf885a4e62eebb306f8ba204808b80"
+installed_at = ".opencode/command/gh-pr-create.md"
+dependencies = ["snippet:local-deps/snippets/commands/gh-pr-create"]
+tool = "opencode"
+manifest_alias = "opencode-gh-pr-create"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/lint"
+path = "local-deps/opencode/command/lint.md"
+checksum = "sha256:331f2e7507919e3acf92f359ce93856b55d1fc290b355aec7418545cc7944352"
+context_checksum = "sha256:f77d8d2bdac54fbdf564abb879f8216efcd0d4064a26b60f923b5ae35c06d857"
+installed_at = ".opencode/command/lint.md"
+dependencies = ["snippet:local-deps/snippets/commands/lint"]
+tool = "opencode"
+manifest_alias = "opencode-lint"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/pr-self-review"
+path = "local-deps/opencode/command/pr-self-review.md"
+checksum = "sha256:1ac25a1cebacc088615d16761cdb3af89c0d39476b8b6ec54c3320b5e010db98"
+context_checksum = "sha256:3935508c108d0ab55d39b86a5ffcf5711cdbc8bf46c6f57b05650d9afda1e938"
+installed_at = ".opencode/command/pr-self-review.md"
+dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
+tool = "opencode"
+manifest_alias = "opencode-pr-self-review"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/squash"
+path = "local-deps/opencode/command/squash.md"
+checksum = "sha256:5924c5e45978397a31e8b76ac876a42480ecff18df725449e20f939d5c913bbe"
+context_checksum = "sha256:7dc75661b7f56d53c20710e74445da1d99a6adbe5745d36e103454c667dc6b07"
+installed_at = ".opencode/command/squash.md"
+dependencies = ["snippet:local-deps/snippets/commands/squash"]
+tool = "opencode"
+manifest_alias = "opencode-squash"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/update-all"
+path = "local-deps/opencode/command/update-all.md"
+checksum = "sha256:8d92a4f6d4c4aff98c94e06583e6fd8ec249e42c8c2d873a0780dcfe91e03ab1"
+context_checksum = "sha256:bd80d622ecde7833fd3a68b73bddba574a60ba2e708630ae57151c4bc56f6958"
+installed_at = ".opencode/command/update-all.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-all"]
+tool = "opencode"
+manifest_alias = "opencode-update-all"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/update-claude"
+path = "local-deps/opencode/command/update-claude.md"
+checksum = "sha256:d9929c24bd9a5c883f02687d5665ea654548aff326e030bb9e2994afe1fd60ed"
+context_checksum = "sha256:a7b366e365133b9bb11dcf5587d4637d1cc14710de2162e902f0dbf23b1809cc"
+installed_at = ".opencode/command/update-claude.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-claude"]
+tool = "opencode"
+manifest_alias = "opencode-update-claude"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/update-docs"
+path = "local-deps/opencode/command/update-docs.md"
+checksum = "sha256:f269912923a587b861c1c4a7d40454eeb9d1eb128d4816e2c3e4140b9065e11d"
+context_checksum = "sha256:79d2c2a4cf7fb881053921116248e22ff6e8e7af82d0a3115788836e4bbd8123"
+installed_at = ".opencode/command/update-docs.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-docs"]
+tool = "opencode"
+manifest_alias = "opencode-update-docs"
+applied_patches = {}
+
+[commands.variant_inputs]
+
+[[commands]]
+name = "local-deps/opencode/command/update-docstrings"
+path = "local-deps/opencode/command/update-docstrings.md"
+checksum = "sha256:8854bf77d59cf6c21fa4166454fdef7e110e354399a5ffbbedf420c07d549950"
+context_checksum = "sha256:6ab0f56c4a71549020bfac5672af6bcc18ccb12c1bf3eb344a46e1a2fc450e47"
+installed_at = ".opencode/command/update-docstrings.md"
+dependencies = ["snippet:local-deps/snippets/commands/update-docstrings"]
+tool = "opencode"
+manifest_alias = "opencode-update-docstrings"
+applied_patches = {}
+
+[commands.variant_inputs]

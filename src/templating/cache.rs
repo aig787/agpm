@@ -12,7 +12,7 @@ use crate::core::ResourceType;
 /// Uniquely identifies a rendered version of a resource based on:
 /// - The source file path (canonical path to the resource)
 /// - The resource type (Agent, Snippet, Command, etc.)
-/// - Template variable overrides (hashed for efficient comparison)
+/// - Template variable overrides (pre-computed hash)
 ///
 /// This ensures that the same resource with different template_vars
 /// produces different cache entries, while identical resources share
@@ -23,30 +23,26 @@ pub(crate) struct RenderCacheKey {
     pub(crate) resource_path: String,
     /// Resource type (Agent, Snippet, etc.)
     pub(crate) resource_type: ResourceType,
-    /// Hash of template_vars JSON string
-    pub(crate) template_vars_hash: u64,
+    /// Tool (claude-code, opencode, etc.) - CRITICAL for cache isolation!
+    /// Same resource path renders differently for different tools.
+    pub(crate) tool: Option<String>,
+    /// Pre-computed variant_inputs_hash (never recomputed!)
+    pub(crate) variant_inputs_hash: String,
 }
 
 impl RenderCacheKey {
-    /// Create a new cache key with template variable hash
+    /// Create a new cache key using the pre-computed variant_inputs_hash
     pub(crate) fn new(
         resource_path: String,
         resource_type: ResourceType,
-        template_vars: &str,
+        tool: Option<String>,
+        variant_inputs_hash: String,
     ) -> Self {
-        let template_vars_hash = {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-
-            let mut hasher = DefaultHasher::new();
-            template_vars.hash(&mut hasher);
-            hasher.finish()
-        };
-
         Self {
             resource_path,
             resource_type,
-            template_vars_hash,
+            tool,
+            variant_inputs_hash,
         }
     }
 }

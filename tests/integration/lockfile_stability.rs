@@ -511,6 +511,7 @@ dependencies:
         .await?;
 
     // Create a command that depends on base (which transitively depends on helper)
+    // The command must declare helper explicitly if it wants to access it directly
     source_repo
         .add_resource(
             "commands",
@@ -523,6 +524,9 @@ dependencies:
     - name: base
       install: false
       path: ../snippets/base.md
+    - name: helper
+      install: false
+      path: ../snippets/helper.md
 ---
 # My Command
 

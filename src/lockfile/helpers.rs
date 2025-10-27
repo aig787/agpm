@@ -72,11 +72,18 @@ pub(crate) fn serialize_lockfile_with_inline_patches<T: serde::Serialize>(
             for table in array.iter_mut() {
                 // Ensure applied_patches is always present as an inline table
                 if let Some(Item::Table(patches_table)) = table.get_mut("applied_patches") {
-                    // Convert existing table to inline table
+                    // Convert existing table to inline table with sorted keys for determinism
                     let mut inline = toml_edit::InlineTable::new();
-                    for (key, val) in patches_table.iter() {
-                        if let Some(v) = val.as_value() {
-                            inline.insert(key, v.clone());
+
+                    // Collect keys and sort them for deterministic ordering
+                    let mut keys: Vec<_> =
+                        patches_table.iter().filter_map(|(k, v)| v.as_value().map(|_| k)).collect();
+                    keys.sort();
+
+                    // Insert in sorted order
+                    for key in keys {
+                        if let Some(val) = patches_table.get(key).and_then(|v| v.as_value()) {
+                            inline.insert(key, val.clone());
                         }
                     }
                     table.insert("applied_patches", toml_edit::value(inline));

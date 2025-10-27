@@ -373,7 +373,8 @@ Depends on both Agent B and Agent C
     assert!(lockfile_content.contains("agent-d"), "Agent D should be in lockfile");
 
     // Verify agent-d appears exactly once (no duplication despite two paths to it)
-    let agent_d_count = lockfile_content.matches("name = \"agent-d\"").count();
+    // Transitive dependencies have canonical names like "agents/agent-d"
+    let agent_d_count = lockfile_content.matches("name = \"agents/agent-d\"").count();
     assert_eq!(
         agent_d_count, 1,
         "Agent D should appear exactly once in lockfile (deduplication), found {}",
@@ -560,12 +561,13 @@ This agent depends on both helper agent and command with the same name.
     let lockfile_content = project.read_lockfile().await?;
 
     // Both should be in lockfile with correct types
+    // Transitive dependencies use canonical names with resource type directory
     let has_agent_helper = lockfile_content.contains("[[agents]]")
-        && lockfile_content.contains(r#"name = "helper""#)
+        && lockfile_content.contains(r#"name = "agents/helper""#)
         && lockfile_content.contains(r#"path = "agents/helper.md""#);
 
     let has_command_helper = lockfile_content.contains("[[commands]]")
-        && lockfile_content.contains(r#"name = "helper""#)
+        && lockfile_content.contains(r#"name = "commands/helper""#)
         && lockfile_content.contains(r#"path = "commands/helper.md""#);
 
     assert!(
@@ -833,12 +835,14 @@ This command depends on the helper snippet.
     );
 
     // Verify specific resource assignments
-    let deploy_in_install = install_lockfile.contains(r#"name = "deploy""#);
-    let deploy_in_update = update_lockfile.contains(r#"name = "deploy""#);
+    // All dependencies use canonical names with resource type directory
+    let deploy_in_install = install_lockfile.contains(r#"name = "commands/deploy""#);
+    let deploy_in_update = update_lockfile.contains(r#"name = "commands/deploy""#);
     assert!(deploy_in_install && deploy_in_update, "Deploy command should exist in both lockfiles");
 
-    let helper_in_install = install_lockfile.contains(r#"name = "helper""#);
-    let helper_in_update = update_lockfile.contains(r#"name = "helper""#);
+    // Transitive dependency also has canonical name
+    let helper_in_install = install_lockfile.contains(r#"name = "snippets/helper""#);
+    let helper_in_update = update_lockfile.contains(r#"name = "snippets/helper""#);
     assert!(helper_in_install && helper_in_update, "Helper snippet should exist in both lockfiles");
 
     Ok(())
@@ -961,13 +965,14 @@ This agent depends on both helper snippet and helper agent (same name, different
     let lockfile_content = project.read_lockfile().await?;
 
     // Each helper should now be in the correct section with correct installed_at path
+    // Transitive dependencies use canonical names with resource type directory
     // Check that snippet helper is in snippets section
-    let has_snippet_helper = lockfile_content.contains(r#"name = "helper""#)
+    let has_snippet_helper = lockfile_content.contains(r#"name = "snippets/helper""#)
         && lockfile_content.contains(r#"path = "snippets/helper.md""#);
     assert!(has_snippet_helper, "Lockfile should have helper snippet:\n{}", lockfile_content);
 
     // Check that agent helper is in agents section
-    let has_agent_helper = lockfile_content.contains(r#"name = "helper""#)
+    let has_agent_helper = lockfile_content.contains(r#"name = "agents/helper""#)
         && lockfile_content.contains(r#"path = "agents/helper.md""#);
     assert!(has_agent_helper, "Lockfile should have helper agent:\n{}", lockfile_content);
 
@@ -1124,8 +1129,10 @@ Depends on shared@>=v1.5.0 (intersection with parent-a is >=v1.5.0).
 
     // Verify lockfile shows v3.0.0 for shared
     let lockfile_content = project.read_lockfile().await?;
+    // Transitive dependency has canonical name with resource type directory
     assert!(
-        lockfile_content.contains(r#"name = "shared""#) && lockfile_content.contains("v3.0.0"),
+        lockfile_content.contains(r#"name = "snippets/shared""#)
+            && lockfile_content.contains("v3.0.0"),
         "Lockfile should show shared at v3.0.0 (highest version satisfying both constraints)"
     );
 
@@ -1311,7 +1318,8 @@ Depends on shared snippet.
     // Verify lockfile has TWO entries for shared (one per tool)
     // This is expected behavior: same resource with different tools are treated as separate entries
     let lockfile_content = project.read_lockfile().await?;
-    let shared_count = lockfile_content.matches(r#"name = "shared""#).count();
+    // Both entries have canonical name "snippets/shared"
+    let shared_count = lockfile_content.matches(r#"name = "snippets/shared""#).count();
 
     assert_eq!(
         shared_count, 2,
@@ -1325,7 +1333,8 @@ Depends on shared snippet.
 
     // The lockfile entry for shared should exist and have v1.0.0
     assert!(
-        lockfile_content.contains(r#"name = "shared""#) && lockfile_content.contains("v1.0.0"),
+        lockfile_content.contains(r#"name = "snippets/shared""#)
+            && lockfile_content.contains("v1.0.0"),
         "Lockfile should show shared at v1.0.0"
     );
 
@@ -1512,17 +1521,28 @@ Each snippet has its own transitive dependencies.
 
     // Verify lockfile contains all resources
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "parent""#), "Lockfile should contain parent");
+    // All dependencies use canonical names with resource type directory
     assert!(
-        lockfile_content.contains(r#"name = "helper-one""#),
+        lockfile_content.contains(r#"name = "agents/parent""#),
+        "Lockfile should contain parent with canonical name"
+    );
+    // Transitive dependencies also have canonical names
+    assert!(
+        lockfile_content.contains(r#"name = "snippets/helper-one""#),
         "Lockfile should contain helper-one"
     );
     assert!(
-        lockfile_content.contains(r#"name = "helper-two""#),
+        lockfile_content.contains(r#"name = "snippets/helper-two""#),
         "Lockfile should contain helper-two"
     );
-    assert!(lockfile_content.contains(r#"name = "cmd-one""#), "Lockfile should contain cmd-one");
-    assert!(lockfile_content.contains(r#"name = "cmd-two""#), "Lockfile should contain cmd-two");
+    assert!(
+        lockfile_content.contains(r#"name = "commands/cmd-one""#),
+        "Lockfile should contain cmd-one"
+    );
+    assert!(
+        lockfile_content.contains(r#"name = "commands/cmd-two""#),
+        "Lockfile should contain cmd-two"
+    );
 
     Ok(())
 }
@@ -1628,10 +1648,24 @@ Second utility with transitive dependency on cmd-b.
 
     // Verify lockfile contains all resources
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "util-one""#), "Lockfile should contain util-one");
-    assert!(lockfile_content.contains(r#"name = "util-two""#), "Lockfile should contain util-two");
-    assert!(lockfile_content.contains(r#"name = "cmd-a""#), "Lockfile should contain cmd-a");
-    assert!(lockfile_content.contains(r#"name = "cmd-b""#), "Lockfile should contain cmd-b");
+    // Pattern-expanded manifest dependencies have canonical names with resource type directory
+    assert!(
+        lockfile_content.contains(r#"name = "snippets/util-one""#),
+        "Lockfile should contain util-one"
+    );
+    assert!(
+        lockfile_content.contains(r#"name = "snippets/util-two""#),
+        "Lockfile should contain util-two"
+    );
+    // Transitive command dependencies also have canonical names
+    assert!(
+        lockfile_content.contains(r#"name = "commands/cmd-a""#),
+        "Lockfile should contain cmd-a"
+    );
+    assert!(
+        lockfile_content.contains(r#"name = "commands/cmd-b""#),
+        "Lockfile should contain cmd-b"
+    );
 
     Ok(())
 }
@@ -1718,16 +1752,19 @@ Depends on remote-helper from same Git source.
 
     // Verify lockfile has all three resources
     let lockfile_content = project.read_lockfile().await?;
+    // All dependencies use canonical names
+    // Local snippet path is "local-snippet.md" (no resource type prefix), so name is just "local-snippet"
     assert!(
         lockfile_content.contains(r#"name = "local-snippet""#),
         "Lockfile should contain local-snippet"
     );
     assert!(
-        lockfile_content.contains(r#"name = "remote-parent""#),
-        "Lockfile should contain remote-parent"
+        lockfile_content.contains(r#"name = "agents/remote-parent""#),
+        "Lockfile should contain remote-parent with canonical name"
     );
+    // Transitive dependency
     assert!(
-        lockfile_content.contains(r#"name = "remote-helper""#),
+        lockfile_content.contains(r#"name = "snippets/remote-helper""#),
         "Lockfile should contain remote-helper (transitive)"
     );
 
@@ -1805,12 +1842,16 @@ This is a local agent with a transitive dependency on ./helper.md.
 
     // Verify lockfile contains both resources
     let lockfile_content = project.read_lockfile().await?;
+    // Both direct and transitive dependencies use canonical names with resource type directory
+    // Direct manifest dependency also has manifest_alias field
     assert!(
-        lockfile_content.contains(r#"name = "local-agent""#),
-        "Lockfile should contain local-agent"
+        lockfile_content.contains(r#"name = "agents/local-agent""#),
+        "Lockfile should contain local-agent with canonical name. Lockfile:\n{}",
+        lockfile_content
     );
+    // Transitive dependency has canonical name but no manifest_alias
     assert!(
-        lockfile_content.contains(r#"name = "helper""#),
+        lockfile_content.contains(r#"name = "agents/helper""#),
         "Lockfile should contain helper (transitive). Lockfile:\n{}",
         lockfile_content
     );
@@ -1884,8 +1925,10 @@ This agent depends on ../helper.md (parent directory).
 
     // Verify lockfile
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "local-agent""#));
-    assert!(lockfile_content.contains(r#"name = "helper""#));
+    // Both direct and transitive use canonical names
+    // Direct dependency preserves subdirectory: agents/subfolder/local-agent.md -> agents/subfolder/local-agent
+    assert!(lockfile_content.contains(r#"name = "agents/subfolder/local-agent""#));
+    assert!(lockfile_content.contains(r#"name = "agents/helper""#));
     // Verify path uses forward slashes
     assert!(lockfile_content.contains(r#"path = "agents/helper.md""#));
 
@@ -1955,8 +1998,9 @@ This agent depends on a snippet in a different directory.
 
     // Verify lockfile
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "local-agent""#));
-    assert!(lockfile_content.contains(r#"name = "utils""#));
+    // Both direct and transitive use canonical names
+    assert!(lockfile_content.contains(r#"name = "agents/local-agent""#));
+    assert!(lockfile_content.contains(r#"name = "snippets/utils""#));
     // Verify path uses forward slashes
     assert!(lockfile_content.contains(r#"path = "snippets/utils.md""#));
 
@@ -2175,7 +2219,11 @@ Uses a shared snippet outside the project directory.
 
     // Verify lockfile contains manifest-relative path (even with ../) for portability
     let lockfile_content = project.read_lockfile().await?;
-    assert!(lockfile_content.contains(r#"name = "my-agent""#), "Lockfile should contain agent");
+    // Direct manifest dependency uses canonical name
+    assert!(
+        lockfile_content.contains(r#"name = "agents/my-agent""#),
+        "Lockfile should contain agent with canonical name"
+    );
 
     // The path should be manifest-relative with ../ since it's outside the project
     // Structure: <parent>/project/ and <parent>/shared/utils.md

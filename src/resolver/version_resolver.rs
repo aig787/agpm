@@ -659,6 +659,13 @@ impl VersionResolutionService {
         self.prepared_versions.get(group_key)
     }
 
+    /// Get the prepared versions map.
+    ///
+    /// Returns a reference to the HashMap of prepared source versions.
+    pub fn prepared_versions(&self) -> &HashMap<String, PreparedSourceVersion> {
+        &self.prepared_versions
+    }
+
     /// Prepare an additional version on-demand without clearing existing ones.
     ///
     /// This is used for transitive dependencies discovered during resolution.

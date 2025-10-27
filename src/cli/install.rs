@@ -600,13 +600,21 @@ impl InstallCommand {
                 Some(max_concurrency),
                 Some(multi_phase.clone()),
                 self.verbose,
+                old_lockfile.as_ref(), // Pass old lockfile for early-exit optimization
             )
             .await
             {
-                Ok((count, checksums, applied_patches_list)) => {
+                Ok((count, checksums, context_checksums, applied_patches_list)) => {
                     // Update lockfile with checksums
                     for (id, checksum) in checksums {
                         lockfile.update_resource_checksum(&id, &checksum);
+                    }
+
+                    // Update lockfile with context checksums
+                    for (id, context_checksum) in context_checksums {
+                        if let Some(checksum) = context_checksum {
+                            lockfile.update_resource_context_checksum(&id, &checksum);
+                        }
                     }
 
                     // Update lockfile with applied patches
@@ -748,8 +756,8 @@ impl InstallCommand {
                 // Collect private patches for all installed resources
                 for (entry, _) in ResourceIterator::collect_all_entries(&lockfile, &manifest) {
                     let resource_type = entry.resource_type.to_plural();
-                    // For pattern-expanded resources, use manifest_alias; otherwise use name
-                    let lookup_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name);
+                    // Use the lookup_name helper to get the correct name for patch lookups
+                    let lookup_name = entry.lookup_name();
                     if let Some(private_patches) =
                         manifest.private_patches.get(resource_type, lookup_name)
                     {
@@ -1011,7 +1019,8 @@ fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: 
             }
 
             // Find the corresponding old resource
-            if let Some(old_resource) = old_resources.iter().find(|r| r.name == new_resource.name)
+            if let Some(old_resource) =
+                old_resources.iter().find(|r| r.display_name() == new_resource.display_name())
                 && let (Some(old_version), Some(old_commit)) =
                     (&old_resource.version, &old_resource.resolved_commit)
             {
@@ -1021,7 +1030,7 @@ fn detect_tag_movement(old_lockfile: &LockFile, new_lockfile: &LockFile, quiet: 
                         "⚠️  Warning: Tag '{}' for {} '{}' has moved from {} to {}",
                         new_version,
                         resource_type,
-                        new_resource.name,
+                        new_resource.display_name(),
                         &old_commit[..8.min(old_commit.len())],
                         &new_commit[..8.min(new_commit.len())]
                     );
@@ -1052,6 +1061,7 @@ mod tests {
     use super::*;
     use crate::lockfile::{LockFile, LockedResource};
     use crate::manifest::{DetailedDependency, Manifest, ResourceDependency};
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -1232,9 +1242,10 @@ Body",
                 resource_type: crate::core::ResourceType::Agent,
                 tool: Some("claude-code".to_string()),
                 manifest_alias: None,
+                context_checksum: None,
                 applied_patches: std::collections::HashMap::new(),
                 install: None,
-                template_vars: "{}".to_string(),
+                variant_inputs: crate::resolver::lockfile_builder::VariantInputs::default(),
             }],
             snippets: vec![],
             mcp_servers: vec![],

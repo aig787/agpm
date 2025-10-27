@@ -10,7 +10,7 @@ use crate::core::ResourceType;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::version::conflict::{ConflictDetector, VersionConflict};
 
-pub type DependencyKey = (ResourceType, String, Option<String>, Option<String>);
+use super::types::DependencyKey;
 
 /// Conflict detection service.
 ///

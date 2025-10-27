@@ -4,7 +4,7 @@
 //! custom names, and building the dependency data structure for template rendering.
 
 use anyhow::{Context as _, Result};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -46,6 +46,16 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     /// Get the render cache
     fn render_cache(&self) -> &Arc<std::sync::Mutex<RenderCache>>;
 
+    /// Get the custom names cache
+    fn custom_names_cache(
+        &self,
+    ) -> &Arc<std::sync::Mutex<HashMap<String, BTreeMap<String, String>>>>;
+
+    /// Get the dependency specs cache
+    fn dependency_specs_cache(
+        &self,
+    ) -> &Arc<std::sync::Mutex<HashMap<String, BTreeMap<String, crate::manifest::DependencySpec>>>>;
+
     /// Extract custom dependency names from a resource's frontmatter.
     ///
     /// Parses the resource file to extract the `dependencies` declaration with `name:` fields
@@ -53,17 +63,36 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     ///
     /// # Returns
     ///
-    /// A HashMap mapping dependency references (e.g., "snippet/rust-best-practices") to custom
+    /// A BTreeMap mapping dependency references (e.g., "snippet/rust-best-practices") to custom
     /// names (e.g., "best_practices") as declared in the resource's YAML frontmatter.
+    /// BTreeMap ensures deterministic iteration order for consistent context checksums.
     async fn extract_dependency_custom_names(
         &self,
         resource: &LockedResource,
-    ) -> HashMap<String, String> {
-        let mut custom_names = HashMap::new();
+    ) -> BTreeMap<String, String> {
+        // Build cache key from resource name and type
+        let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
+
+        // Check cache first
+        if let Ok(cache) = self.custom_names_cache().lock() {
+            if let Some(cached_names) = cache.get(&cache_key) {
+                tracing::debug!(
+                    "Custom names cache HIT for '{}' ({} names)",
+                    resource.name,
+                    cached_names.len()
+                );
+                return cached_names.clone();
+            }
+        }
+
+        tracing::debug!("Custom names cache MISS for '{}'", resource.name);
+
+        let mut custom_names = BTreeMap::new();
 
         // Build a lookup structure upfront to avoid O(n³) nested loops
         // Map: type -> Vec<(basename, full_dep_ref)>
-        let mut lockfile_lookup: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        // Use BTreeMap for deterministic iteration order
+        let mut lockfile_lookup: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
         // Use parsed_dependencies() helper to parse all dependencies
         for dep_ref in resource.parsed_dependencies() {
@@ -126,16 +155,11 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     // Extract dependencies from parsed metadata
                     if let Some(markdown_metadata) = &doc.metadata {
                         // Convert MarkdownMetadata to DependencyMetadata
-                        // The dependencies are directly in markdown_metadata.dependencies
-                        let dependency_metadata =
-                            if let Some(deps) = &markdown_metadata.dependencies {
-                                crate::manifest::DependencyMetadata {
-                                    dependencies: Some(deps.clone()),
-                                    agpm: None,
-                                }
-                            } else {
-                                crate::manifest::DependencyMetadata::default()
-                            };
+                        // Merge both root-level dependencies and agpm.dependencies
+                        let dependency_metadata = crate::manifest::DependencyMetadata::new(
+                            markdown_metadata.dependencies.clone(),
+                            markdown_metadata.get_agpm_metadata(),
+                        );
 
                         if let Some(deps_map) = dependency_metadata.get_dependencies() {
                             // Process each resource type (agents, snippets, commands, etc.)
@@ -220,79 +244,91 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
                 // Parse JSON and extract dependencies field
                 if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(deps_value) = json_value.get("dependencies") {
-                        if let Ok(deps_map) = serde_json::from_value::<
-                            std::collections::HashMap<String, Vec<crate::manifest::DependencySpec>>,
-                        >(deps_value.clone())
-                        {
-                            // Process each resource type (agents, snippets, commands, etc.)
-                            for (resource_type_str, deps_array) in deps_map {
-                                // Convert frontmatter type to lockfile type (singular)
-                                let lockfile_type: String = match resource_type_str.as_str() {
-                                    "agents" | "agent" => "agent".to_string(),
-                                    "snippets" | "snippet" => "snippet".to_string(),
-                                    "commands" | "command" => "command".to_string(),
-                                    "scripts" | "script" => "script".to_string(),
-                                    "hooks" | "hook" => "hook".to_string(),
-                                    "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
-                                    _ => continue, // Skip unknown types
-                                };
+                    // Extract both root-level dependencies and agpm.dependencies
+                    let root_deps = json_value.get("dependencies").and_then(|v| {
+                        serde_json::from_value::<
+                            BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+                        >(v.clone())
+                        .ok()
+                    });
 
-                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
-                                let type_entries = match lockfile_lookup.get(&lockfile_type) {
-                                    Some(entries) => entries,
-                                    None => continue, // No lockfile deps of this type
-                                };
+                    let agpm_metadata = json_value.get("agpm").and_then(|v| {
+                        serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
+                            v.clone(),
+                        )
+                        .ok()
+                    });
 
-                                // deps_array is Vec<DependencySpec>
-                                for dep_spec in deps_array {
-                                    let path = &dep_spec.path;
-                                    if let Some(custom_name) = &dep_spec.name {
-                                        // Extract basename from the path (without extension)
-                                        let basename = std::path::Path::new(path)
-                                            .file_stem()
-                                            .and_then(|s| s.to_str())
-                                            .unwrap_or(path);
+                    // Merge both dependency sources
+                    let dependency_metadata =
+                        crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
 
-                                        tracing::info!(
-                                            "Found custom name '{}' for path '{}' (basename: '{}') from JSON",
-                                            custom_name,
-                                            path,
-                                            basename
-                                        );
+                    if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                        // Process each resource type (agents, snippets, commands, etc.)
+                        for (resource_type_str, deps_array) in deps_map {
+                            // Convert frontmatter type to lockfile type (singular)
+                            let lockfile_type: String = match resource_type_str.as_str() {
+                                "agents" | "agent" => "agent".to_string(),
+                                "snippets" | "snippet" => "snippet".to_string(),
+                                "commands" | "command" => "command".to_string(),
+                                "scripts" | "script" => "script".to_string(),
+                                "hooks" | "hook" => "hook".to_string(),
+                                "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
+                                _ => continue, // Skip unknown types
+                            };
 
-                                        // Check if basename has template variables
-                                        if basename.contains("{{") {
-                                            // Template variable in basename - try suffix matching
-                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
-                                            if let Some(static_suffix_start) = basename.find("}}") {
-                                                let static_suffix =
-                                                    &basename[static_suffix_start + 2..];
+                            // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                            let type_entries = match lockfile_lookup.get(&lockfile_type) {
+                                Some(entries) => entries,
+                                None => continue, // No lockfile deps of this type
+                            };
 
-                                                // Search for any lockfile basename ending with this suffix
-                                                for (lockfile_basename, lockfile_dep_ref) in
-                                                    type_entries
-                                                {
-                                                    if lockfile_basename.ends_with(static_suffix) {
-                                                        custom_names.insert(
-                                                            lockfile_dep_ref.clone(),
-                                                            custom_name.to_string(),
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            // No template variables - exact basename match (O(n) but only within type)
+                            // deps_array is Vec<DependencySpec>
+                            for dep_spec in deps_array {
+                                let path = &dep_spec.path;
+                                if let Some(custom_name) = &dep_spec.name {
+                                    // Extract basename from the path (without extension)
+                                    let basename = std::path::Path::new(path)
+                                        .file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or(path);
+
+                                    tracing::info!(
+                                        "Found custom name '{}' for path '{}' (basename: '{}') from JSON",
+                                        custom_name,
+                                        path,
+                                        basename
+                                    );
+
+                                    // Check if basename has template variables
+                                    if basename.contains("{{") {
+                                        // Template variable in basename - try suffix matching
+                                        // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                        if let Some(static_suffix_start) = basename.find("}}") {
+                                            let static_suffix =
+                                                &basename[static_suffix_start + 2..];
+
+                                            // Search for any lockfile basename ending with this suffix
                                             for (lockfile_basename, lockfile_dep_ref) in
                                                 type_entries
                                             {
-                                                if lockfile_basename == basename {
+                                                if lockfile_basename.ends_with(static_suffix) {
                                                     custom_names.insert(
                                                         lockfile_dep_ref.clone(),
                                                         custom_name.to_string(),
                                                     );
-                                                    break; // Found exact match, no need to continue
                                                 }
+                                            }
+                                        }
+                                    } else {
+                                        // No template variables - exact basename match (O(n) but only within type)
+                                        for (lockfile_basename, lockfile_dep_ref) in type_entries {
+                                            if lockfile_basename == basename {
+                                                custom_names.insert(
+                                                    lockfile_dep_ref.clone(),
+                                                    custom_name.to_string(),
+                                                );
+                                                break; // Found exact match, no need to continue
                                             }
                                         }
                                     }
@@ -304,7 +340,314 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             }
         }
 
+        // Store in cache before returning
+        if let Ok(mut cache) = self.custom_names_cache().lock() {
+            cache.insert(cache_key, custom_names.clone());
+            tracing::debug!(
+                "Stored {} custom names in cache for '{}'",
+                custom_names.len(),
+                resource.name
+            );
+        }
+
         custom_names
+    }
+
+    /// Extract full dependency specifications from a resource's frontmatter.
+    ///
+    /// Parses the resource file to extract complete DependencySpec objects including
+    /// tool, name, flatten, and install fields. This information is used to build
+    /// complete ResourceIds for dependency lookups.
+    ///
+    /// # Returns
+    ///
+    /// A BTreeMap mapping dependency references (e.g., "snippet:snippets/commands/commit")
+    /// to their full DependencySpec objects. BTreeMap ensures deterministic iteration.
+    async fn extract_dependency_specs(
+        &self,
+        resource: &LockedResource,
+    ) -> BTreeMap<String, crate::manifest::DependencySpec> {
+        // Build cache key from resource name and type
+        let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
+
+        // Check cache first
+        if let Ok(cache) = self.dependency_specs_cache().lock() {
+            if let Some(cached_specs) = cache.get(&cache_key) {
+                tracing::debug!(
+                    "Dependency specs cache HIT for '{}' ({} specs)",
+                    resource.name,
+                    cached_specs.len()
+                );
+                return cached_specs.clone();
+            }
+        }
+
+        tracing::debug!("Dependency specs cache MISS for '{}'", resource.name);
+
+        let mut dependency_specs = BTreeMap::new();
+
+        // Determine source path (same logic as extract_content)
+        let source_path = if let Some(_source_name) = &resource.source {
+            // Has source - check if local or Git
+            let url = match resource.url.as_ref() {
+                Some(u) => u,
+                None => return dependency_specs,
+            };
+
+            let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+            if is_local_source {
+                // Local source
+                std::path::PathBuf::from(url).join(&resource.path)
+            } else {
+                // Git source
+                let sha = match resource.resolved_commit.as_deref() {
+                    Some(s) => s,
+                    None => return dependency_specs,
+                };
+                match self.cache().get_worktree_path(url, sha) {
+                    Ok(worktree_dir) => worktree_dir.join(&resource.path),
+                    Err(_) => return dependency_specs,
+                }
+            }
+        } else {
+            // Local file
+            let local_path = std::path::Path::new(&resource.path);
+            if local_path.is_absolute() {
+                local_path.to_path_buf()
+            } else {
+                self.project_dir().join(local_path)
+            }
+        };
+
+        // Read and parse the file based on type
+        if resource.path.ends_with(".md") {
+            // Parse markdown frontmatter
+            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
+                if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
+                    // Extract dependencies from parsed metadata
+                    if let Some(markdown_metadata) = &doc.metadata {
+                        // Convert MarkdownMetadata to DependencyMetadata
+                        let dependency_metadata = crate::manifest::DependencyMetadata::new(
+                            markdown_metadata.dependencies.clone(),
+                            markdown_metadata.get_agpm_metadata(),
+                        );
+
+                        if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                            // Process each resource type
+                            for (resource_type_str, deps_array) in deps_map {
+                                // Convert frontmatter type to ResourceType
+                                let resource_type = match resource_type_str.as_str() {
+                                    "agents" | "agent" => crate::core::ResourceType::Agent,
+                                    "snippets" | "snippet" => crate::core::ResourceType::Snippet,
+                                    "commands" | "command" => crate::core::ResourceType::Command,
+                                    "scripts" | "script" => crate::core::ResourceType::Script,
+                                    "hooks" | "hook" => crate::core::ResourceType::Hook,
+                                    "mcp-servers" | "mcp-server" => {
+                                        crate::core::ResourceType::McpServer
+                                    }
+                                    _ => continue,
+                                };
+
+                                // Store each DependencySpec with its lockfile reference as key
+                                for dep_spec in deps_array {
+                                    // Canonicalize the frontmatter path to match lockfile format
+                                    // Frontmatter paths are relative to the resource file itself
+                                    // We need to resolve them relative to project/source root
+                                    let canonical_path = if dep_spec.path.starts_with("../")
+                                        || dep_spec.path.starts_with("./")
+                                    {
+                                        // Relative path - resolve it relative to the resource file
+                                        let parent_dir = source_path
+                                            .parent()
+                                            .unwrap_or_else(|| std::path::Path::new(""));
+                                        let resolved = parent_dir.join(&dep_spec.path);
+
+                                        // Manually resolve .. components using path components
+                                        let project_root = self.project_dir();
+                                        let project_relative = resolved
+                                            .strip_prefix(project_root)
+                                            .unwrap_or(&resolved);
+
+                                        // Manually normalize by processing components
+                                        let mut components = Vec::new();
+                                        for component in project_relative.components() {
+                                            match component {
+                                                std::path::Component::ParentDir => {
+                                                    components.pop();
+                                                }
+                                                std::path::Component::CurDir => {}
+                                                _ => components.push(component),
+                                            }
+                                        }
+
+                                        let normalized = components
+                                            .iter()
+                                            .map(|c| c.as_os_str().to_string_lossy())
+                                            .collect::<Vec<_>>()
+                                            .join("/");
+
+                                        if normalized.is_empty() {
+                                            dep_spec.path.clone()
+                                        } else {
+                                            normalized
+                                        }
+                                    } else {
+                                        // Absolute or already canonical
+                                        dep_spec.path.clone()
+                                    };
+
+                                    // Remove extension to match lockfile format
+                                    let normalized_path = std::path::Path::new(&canonical_path)
+                                        .with_extension("")
+                                        .to_string_lossy()
+                                        .to_string();
+
+                                    // Build the dependency reference string
+                                    let dep_ref = if let Some(ref src) = resource.source {
+                                        LockfileDependencyRef::git(
+                                            src.clone(),
+                                            resource_type,
+                                            normalized_path,
+                                            resource.version.clone(),
+                                        )
+                                        .to_string()
+                                    } else {
+                                        LockfileDependencyRef::local(
+                                            resource_type,
+                                            normalized_path,
+                                            resource.version.clone(),
+                                        )
+                                        .to_string()
+                                    };
+
+                                    dependency_specs.insert(dep_ref, dep_spec.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if resource.path.ends_with(".json") {
+            // Parse JSON dependencies field
+            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
+                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
+                    // Extract both root-level dependencies and agpm.dependencies
+                    let root_deps = json_value.get("dependencies").and_then(|v| {
+                        serde_json::from_value::<
+                            BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+                        >(v.clone())
+                        .ok()
+                    });
+
+                    let agpm_metadata = json_value.get("agpm").and_then(|v| {
+                        serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
+                            v.clone(),
+                        )
+                        .ok()
+                    });
+
+                    // Merge both dependency sources
+                    let dependency_metadata =
+                        crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
+
+                    if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                        // Process each resource type
+                        for (resource_type_str, deps_array) in deps_map {
+                            // Convert frontmatter type to ResourceType
+                            let resource_type = match resource_type_str.as_str() {
+                                "agents" | "agent" => crate::core::ResourceType::Agent,
+                                "snippets" | "snippet" => crate::core::ResourceType::Snippet,
+                                "commands" | "command" => crate::core::ResourceType::Command,
+                                "scripts" | "script" => crate::core::ResourceType::Script,
+                                "hooks" | "hook" => crate::core::ResourceType::Hook,
+                                "mcp-servers" | "mcp-server" => {
+                                    crate::core::ResourceType::McpServer
+                                }
+                                _ => continue,
+                            };
+
+                            // Store each DependencySpec with its lockfile reference as key
+                            for dep_spec in deps_array {
+                                // Canonicalize the frontmatter path to match lockfile format
+                                // Frontmatter paths are relative to the resource file itself
+                                // We need to resolve them relative to project/source root
+                                let canonical_path = if dep_spec.path.starts_with("../")
+                                    || dep_spec.path.starts_with("./")
+                                {
+                                    // Relative path - resolve it relative to the resource file
+                                    let parent_dir = source_path
+                                        .parent()
+                                        .unwrap_or_else(|| std::path::Path::new(""));
+                                    let resolved = parent_dir.join(&dep_spec.path);
+
+                                    // Canonicalize to resolve .. components, then convert to project-relative
+                                    let project_root = self.project_dir();
+                                    if let Ok(canonical) = resolved.canonicalize() {
+                                        canonical
+                                            .strip_prefix(project_root)
+                                            .ok()
+                                            .and_then(|p| p.to_str())
+                                            .map(std::string::ToString::to_string)
+                                            .unwrap_or_else(|| dep_spec.path.clone())
+                                    } else {
+                                        // File doesn't exist yet, manually normalize path
+                                        crate::utils::normalize_path_for_storage(
+                                            resolved
+                                                .strip_prefix(project_root)
+                                                .ok()
+                                                .and_then(|p| p.to_str())
+                                                .unwrap_or(&dep_spec.path),
+                                        )
+                                    }
+                                } else {
+                                    // Absolute or already canonical
+                                    dep_spec.path.clone()
+                                };
+
+                                // Remove extension to match lockfile format
+                                let normalized_path = std::path::Path::new(&canonical_path)
+                                    .with_extension("")
+                                    .to_string_lossy()
+                                    .to_string();
+
+                                // Build the dependency reference string
+                                let dep_ref = if let Some(ref src) = resource.source {
+                                    LockfileDependencyRef::git(
+                                        src.clone(),
+                                        resource_type,
+                                        normalized_path,
+                                        resource.version.clone(),
+                                    )
+                                    .to_string()
+                                } else {
+                                    LockfileDependencyRef::local(
+                                        resource_type,
+                                        normalized_path,
+                                        resource.version.clone(),
+                                    )
+                                    .to_string()
+                                };
+
+                                dependency_specs.insert(dep_ref, dep_spec.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Store in cache before returning
+        if let Ok(mut cache) = self.dependency_specs_cache().lock() {
+            cache.insert(cache_key, dependency_specs.clone());
+            tracing::debug!(
+                "Stored {} dependency specs in cache for '{}'",
+                dependency_specs.len(),
+                resource.name
+            );
+        }
+
+        dependency_specs
     }
 
     /// Generate dependency name from a path (matching resolver logic).
@@ -337,6 +680,10 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     ) -> Result<BTreeMap<String, BTreeMap<String, DependencyData>>> {
         let mut deps = BTreeMap::new();
 
+        // Extract dependency specifications from current resource's frontmatter
+        // This provides tool, name, flatten, and install fields for each dependency
+        let dependency_specs = self.extract_dependency_specs(current_resource).await;
+
         // Helper function to determine the key name for a resource
         let get_key_names = |resource: &LockedResource,
                              dep_type: &ResourceType|
@@ -366,70 +713,133 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             (type_str_plural, type_str_singular, key_name, sanitized_key)
         };
 
-        // Collect ALL transitive dependencies (not just direct dependencies!)
-        // Use a set to track which dependencies we've already added to avoid duplicates
+        // Collect ONLY direct dependencies (not transitive!)
+        // Each dependency will be rendered with its own context containing its own direct deps.
         let mut resources_to_process: Vec<(&LockedResource, ResourceType, bool)> = Vec::new();
         let mut visited_dep_ids = HashSet::new();
-        let mut queue: VecDeque<LockfileDependencyRef> =
-            current_resource.parsed_dependencies().collect();
 
-        while let Some(dep_ref) = queue.pop_front() {
+        for dep_ref in current_resource.parsed_dependencies() {
             // Build dep_id for deduplication tracking
             let dep_id = dep_ref.to_string();
 
             // Skip if we've already processed this dependency
-            if !visited_dep_ids.insert(dep_id) {
+            if !visited_dep_ids.insert(dep_id.clone()) {
                 continue;
             }
 
             let resource_type = dep_ref.resource_type;
             let name = &dep_ref.path;
 
-            // Look up the dependency in the lockfile
-            if let Some(dep_resource) = self.lockfile().find_resource(name, &resource_type) {
+            // Get the dependency spec for this reference (if declared in frontmatter)
+            let dep_spec = dependency_specs.get(&dep_id);
+
+            tracing::debug!(
+                "Looking up dep_spec for dep_id='{}', found={}, available_keys={:?}",
+                dep_id,
+                dep_spec.is_some(),
+                dependency_specs.keys().collect::<Vec<_>>()
+            );
+
+            // Determine the tool for this dependency
+            // Priority: explicit tool in DependencySpec > inherited from parent
+            let dep_tool =
+                dep_spec.and_then(|spec| spec.tool.as_ref()).or(current_resource.tool.as_ref());
+
+            // Determine the source for this dependency
+            // Use dep_ref.source if present, otherwise inherit from parent
+            let dep_source = dep_ref.source.as_ref().or(current_resource.source.as_ref());
+
+            // Build complete ResourceId for precise lookup
+            // Try parent's variant_inputs_hash first (for transitive deps that inherit context)
+            let dep_resource_id_with_parent_hash = ResourceId::new(
+                name.clone(),
+                dep_source.cloned(),
+                dep_tool.cloned(),
+                resource_type,
+                current_resource.variant_inputs.hash().to_string(),
+            );
+
+            tracing::debug!(
+                "[DEBUG] Template context looking up: name='{}', type={:?}, source={:?}, tool={:?}, hash={}",
+                name,
+                resource_type,
+                dep_source,
+                dep_tool,
+                &current_resource.variant_inputs.hash().to_string()[..8]
+            );
+
+            // Look up the dependency in the lockfile by full ResourceId
+            // Try with parent's hash first, then fall back to empty hash for direct manifest deps
+            let mut dep_resource =
+                self.lockfile().find_resource_by_id(&dep_resource_id_with_parent_hash);
+
+            // If not found with parent's hash, try with empty hash (direct manifest dependencies)
+            if dep_resource.is_none() {
+                let dep_resource_id_empty_hash = ResourceId::new(
+                    name.clone(),
+                    dep_source.cloned(),
+                    dep_tool.cloned(),
+                    resource_type,
+                    crate::resolver::lockfile_builder::VariantInputs::default().hash().to_string(),
+                );
+                dep_resource = self.lockfile().find_resource_by_id(&dep_resource_id_empty_hash);
+
+                if dep_resource.is_some() {
+                    tracing::debug!(
+                        "  [DIRECT MANIFEST DEP] Found dependency '{}' with empty variant_hash (direct manifest dependency)",
+                        name
+                    );
+                }
+            }
+
+            if let Some(dep_resource) = dep_resource {
                 // Add this dependency to resources to process (true = declared dependency)
                 resources_to_process.push((dep_resource, resource_type, true));
 
                 tracing::debug!(
-                    "  [TRANSITIVE] Found dependency '{}' with {} dependencies",
+                    "  [DIRECT DEP] Found dependency '{}' (tool: {:?}) for '{}'",
                     name,
-                    dep_resource.dependencies.len()
+                    dep_tool,
+                    current_resource.name
                 );
-
-                // Add its dependencies to the queue for recursive processing
-                queue.extend(dep_resource.parsed_dependencies());
             } else {
                 tracing::warn!(
-                    "Dependency '{}' (type: {:?}) not found in lockfile for resource '{}'",
+                    "Dependency '{}' (type: {:?}, tool: {:?}) not found in lockfile for resource '{}'",
                     name,
                     resource_type,
+                    dep_tool,
                     current_resource.name
                 );
             }
         }
 
-        // Add ALL lockfile resources (not just transitive dependencies)
-        // This ensures templates can reference any resource in the lockfile
-        // These are added with is_dependency=false so they don't get rendered recursively
-
-        // Track which resources we've already added to avoid duplicates
-        let mut already_added: HashSet<(String, ResourceType)> =
-            resources_to_process.iter().map(|(r, rt, _)| (r.name.clone(), *rt)).collect();
-
-        // Add all resources from the lockfile for universal access
-        for resource_type in ResourceType::all() {
-            let resources = self.lockfile().get_resources(resource_type);
-            for resource in resources {
-                if already_added.insert((resource.name.clone(), *resource_type)) {
-                    resources_to_process.push((resource, *resource_type, false));
-                }
-            }
-        }
-
         tracing::debug!(
-            "Building dependencies data with {} total resources from lockfile",
-            resources_to_process.len()
+            "Building dependencies data with {} direct dependencies for '{}'",
+            resources_to_process.len(),
+            current_resource.name
         );
+
+        // CRITICAL: Sort resources_to_process for deterministic ordering!
+        // This ensures that even if resources were added in different orders,
+        // we process them in a consistent order, leading to deterministic context building.
+        // Sort by: (resource_type, name, is_dependency) for full determinism
+        resources_to_process.sort_by(|a, b| {
+            use std::cmp::Ordering;
+            // First by resource type
+            match a.1.cmp(&b.1) {
+                Ordering::Equal => {
+                    // Then by resource name
+                    match a.0.name.cmp(&b.0.name) {
+                        Ordering::Equal => {
+                            // Finally by is_dependency (dependencies first)
+                            b.2.cmp(&a.2) // Reverse to put true before false
+                        }
+                        other => other,
+                    }
+                }
+                other => other,
+            }
+        });
 
         // Debug: log all resources being processed
         for (resource, dep_type, is_dep) in &resources_to_process {
@@ -500,8 +910,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Compute the final content (either rendered, cached, or raw)
             let final_content: String = if should_render {
                 // Build cache key to check if we've already rendered this exact resource
-                let cache_key =
-                    RenderCacheKey::new(resource.path.clone(), *dep_type, &resource.template_vars);
+                // CRITICAL: Include tool in cache key to prevent cross-tool cache pollution!
+                // Same path renders differently for different tools (claude-code vs opencode).
+                let cache_key = RenderCacheKey::new(
+                    resource.path.clone(),
+                    *dep_type,
+                    resource.tool.clone(),
+                    resource.variant_inputs.hash().to_string(),
+                );
 
                 // Check cache first (ensure guard is dropped before any awaits)
                 let cache_result = {
@@ -546,9 +962,11 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
                     // Build a template context for this dependency so it can be rendered with its own dependencies
                     let dep_resource_id = ResourceId::from_resource(resource);
-                    let render_result = Box::pin(
-                        self.build_context_with_visited(&dep_resource_id, rendering_stack),
-                    )
+                    let render_result = Box::pin(self.build_context_with_visited(
+                        &dep_resource_id,
+                        resource.variant_inputs.json(),
+                        rendering_stack,
+                    ))
                     .await;
 
                     // Remove from stack after rendering (whether success or failure)
@@ -640,7 +1058,8 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             };
 
             // Insert into the nested structure
-            let type_deps = deps.entry(type_str_plural.clone()).or_insert_with(BTreeMap::new);
+            let type_deps: &mut BTreeMap<String, DependencyData> =
+                deps.entry(type_str_plural.clone()).or_insert_with(BTreeMap::new);
             type_deps.insert(sanitized_key.clone(), dependency_data);
 
             tracing::debug!(
@@ -651,21 +1070,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             );
         }
 
-        // Add custom alias mappings for the entire dependency tree
-        // Each resource in the tree defines custom names for its own dependencies,
-        // and we need all of them available when rendering (because embedded content
-        // from transitive dependencies may reference their own named dependencies).
+        // Add custom alias mappings for the current resource's direct dependencies only.
+        // Each dependency will be rendered with its own context containing its own custom names.
         tracing::debug!(
-            "Extracting custom dependency names from entire dependency tree for: '{}'",
+            "Extracting custom dependency names for direct deps of: '{}'",
             current_resource.name
         );
 
-        // Walk the dependency tree and collect custom names from each resource
-        let mut to_process: Vec<LockfileDependencyRef> =
-            current_resource.parsed_dependencies().collect();
-        let mut processed = HashSet::new();
-
-        // Also process the current resource itself
+        // Process only the current resource's custom names (for its direct dependencies)
         let current_custom_names = self.extract_dependency_custom_names(current_resource).await;
         tracing::debug!(
             "Extracted {} custom names from current resource '{}' (type: {:?})",
@@ -686,44 +1098,6 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         }
         for (dep_ref, custom_name) in current_custom_names {
             add_custom_alias(&mut deps, &dep_ref, &custom_name);
-        }
-
-        // Process all transitive dependencies
-        while let Some(dep_ref_parsed) = to_process.pop() {
-            // Build dep_ref string for deduplication tracking
-            let dep_ref = dep_ref_parsed.to_string();
-
-            if !processed.insert(dep_ref.clone()) {
-                continue; // Already processed
-            }
-
-            let dep_type = dep_ref_parsed.resource_type;
-            let dep_name = &dep_ref_parsed.path;
-
-            // Find the dependency resource in the lockfile
-            // Note: We search by name only since dep_ref doesn't include template_vars.
-            // The first match should be correct for extracting transitive custom names,
-            // as custom names apply to all variants of a resource.
-            let dep_resource = match self.lockfile().find_resource(dep_name, &dep_type) {
-                Some(res) => res,
-                None => {
-                    tracing::warn!(
-                        "Dependency '{}' not found in lockfile for '{}'",
-                        dep_ref,
-                        current_resource.name
-                    );
-                    continue;
-                }
-            };
-
-            // Extract custom names from this dependency (for ITS dependencies)
-            let dep_custom_names = self.extract_dependency_custom_names(dep_resource).await;
-            for (child_dep_ref, custom_name) in dep_custom_names {
-                add_custom_alias(&mut deps, &child_dep_ref, &custom_name);
-            }
-
-            // Add this dependency's own dependencies to the queue
-            to_process.extend(dep_resource.parsed_dependencies());
         }
 
         // Debug: Print what we built
@@ -760,6 +1134,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     async fn build_context_with_visited(
         &self,
         resource_id: &ResourceId,
+        variant_inputs: &serde_json::Value,
         rendering_stack: &mut HashSet<String>,
     ) -> Result<tera::Context>;
 }
