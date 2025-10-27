@@ -149,9 +149,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
         // Read and parse the file based on type
         if resource.path.ends_with(".md") {
-            // Parse markdown frontmatter
+            // Parse markdown frontmatter with template rendering
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
+                // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
+                if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
+                    &content,
+                    Some(resource.variant_inputs.json()),
+                    Some(&source_path),
+                ) {
                     // Extract dependencies from parsed metadata
                     if let Some(markdown_metadata) = &doc.metadata {
                         // Convert MarkdownMetadata to DependencyMetadata
@@ -240,10 +245,18 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 }
             }
         } else if resource.path.ends_with(".json") {
-            // Parse JSON dependencies field
+            // Parse JSON dependencies field with template rendering
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
+                // Apply templating to JSON content to handle conditional blocks
+                let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
+                let templated_content = parser
+                    .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
+                    .unwrap_or_else(|_| content.clone());
+
                 // Parse JSON and extract dependencies field
-                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Ok(json_value) =
+                    serde_json::from_str::<serde_json::Value>(&templated_content)
+                {
                     // Extract both root-level dependencies and agpm.dependencies
                     let root_deps = json_value.get("dependencies").and_then(|v| {
                         serde_json::from_value::<
@@ -422,9 +435,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
         // Read and parse the file based on type
         if resource.path.ends_with(".md") {
-            // Parse markdown frontmatter
+            // Parse markdown frontmatter with template rendering
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                if let Ok(doc) = crate::markdown::MarkdownDocument::parse(&content) {
+                // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
+                if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
+                    &content,
+                    Some(resource.variant_inputs.json()),
+                    Some(&source_path),
+                ) {
                     // Extract dependencies from parsed metadata
                     if let Some(markdown_metadata) = &doc.metadata {
                         // Convert MarkdownMetadata to DependencyMetadata
@@ -506,9 +524,17 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 }
             }
         } else if resource.path.ends_with(".json") {
-            // Parse JSON dependencies field
+            // Parse JSON dependencies field with template rendering
             if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
+                // Apply templating to JSON content to handle conditional blocks
+                let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
+                let templated_content = parser
+                    .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
+                    .unwrap_or_else(|_| content.clone());
+
+                if let Ok(json_value) =
+                    serde_json::from_str::<serde_json::Value>(&templated_content)
+                {
                     // Extract both root-level dependencies and agpm.dependencies
                     let root_deps = json_value.get("dependencies").and_then(|v| {
                         serde_json::from_value::<

@@ -545,7 +545,48 @@ pub async fn install_resource(
                         e
                     })
                     .with_context(|| {
-                        format!("Failed to render frontmatter for '{}'", entry.name)
+                        let manifest_alias_str = entry
+                            .manifest_alias
+                            .as_ref()
+                            .map(|a| format!(", manifest_alias=\"{}\"", a))
+                            .unwrap_or_default();
+                        let source_str = entry
+                            .source
+                            .as_ref()
+                            .map(|s| format!(", source=\"{}\"", s))
+                            .unwrap_or_default();
+                        let tool_str = entry
+                            .tool
+                            .as_ref()
+                            .map(|t| format!(", tool=\"{}\"", t))
+                            .unwrap_or_default();
+                        let commit_str = entry
+                            .resolved_commit
+                            .as_ref()
+                            .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
+                            .unwrap_or_default();
+
+                        // Try to find parent resources if lockfile is available
+                        let parent_str = if let Some(lf) = context.lockfile {
+                            let parents = find_parent_resources(lf, &entry.name);
+                            if !parents.is_empty() {
+                                format!(", required_by=\"{}\"", parents.join(", "))
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+
+                        format!(
+                            "Failed to render frontmatter for canonical_name=\"{}\"{}{}{}{}{}",
+                            entry.name,
+                            manifest_alias_str,
+                            source_str,
+                            tool_str,
+                            commit_str,
+                            parent_str
+                        )
                     })?;
 
                 // Step 3: Parse the rendered frontmatter to check agpm.templating flag
@@ -614,11 +655,47 @@ pub async fn install_resource(
                             e
                         })
                         .with_context(|| {
+                            let manifest_alias_str = entry
+                                .manifest_alias
+                                .as_ref()
+                                .map(|a| format!(", manifest_alias=\"{}\"", a))
+                                .unwrap_or_default();
+                            let source_str = entry
+                                .source
+                                .as_ref()
+                                .map(|s| format!(", source=\"{}\"", s))
+                                .unwrap_or_default();
+                            let tool_str = entry
+                                .tool
+                                .as_ref()
+                                .map(|t| format!(", tool=\"{}\"", t))
+                                .unwrap_or_default();
+                            let commit_str = entry
+                                .resolved_commit
+                                .as_ref()
+                                .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
+                                .unwrap_or_default();
+
+                            // Try to find parent resources if lockfile is available
+                            let parent_str = if let Some(lf) = context.lockfile {
+                                let parents = find_parent_resources(lf, &entry.name);
+                                if !parents.is_empty() {
+                                    format!(", required_by=\"{}\"", parents.join(", "))
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
                             format!(
-                                "Failed to render body for '{}' (source: {}, path: {})",
+                                "Failed to render body for canonical_name=\"{}\"{}{}{}{}{}",
                                 entry.name,
-                                entry.source.as_deref().unwrap_or("local"),
-                                entry.path
+                                manifest_alias_str,
+                                source_str,
+                                tool_str,
+                                commit_str,
+                                parent_str
                             )
                         })?
                 } else {
@@ -1249,12 +1326,22 @@ pub async fn install_resources(
             pm.complete_phase(Some(&format!("Failed to install {} resources", errors.len())));
         }
 
-        let error_msgs: Vec<String> =
-            errors.into_iter().map(|(id, error)| format!("  {}: {error}", id.name())).collect();
+        // Format each error with full context using user_friendly_error
+        use crate::core::error::user_friendly_error;
+        let error_msgs: Vec<String> = errors
+            .into_iter()
+            .map(|(id, error)| {
+                // Convert error to user-friendly format to get enhanced context
+                let error_ctx = user_friendly_error(error);
+                // Format with resource name and the full error message
+                format!("  {}:\n    {}", id.name(), error_ctx.to_string().replace('\n', "\n    "))
+            })
+            .collect();
+
         return Err(anyhow::anyhow!(
             "Failed to install {} resources:\n{}",
             error_msgs.len(),
-            error_msgs.join("\n")
+            error_msgs.join("\n\n")
         ));
     }
 
@@ -1268,4 +1355,52 @@ pub async fn install_resources(
     }
 
     Ok((final_count, checksums, context_checksums, applied_patches_list))
+}
+
+/// Find parent resources that depend on the given resource.
+///
+/// This function searches through the lockfile to find resources that list
+/// the given resource name in their `dependencies` field. This is useful for
+/// error reporting to show which resources depend on a failing resource.
+///
+/// # Arguments
+///
+/// * `lockfile` - The lockfile to search
+/// * `resource_name` - The canonical name of the resource to find parents for
+///
+/// # Returns
+///
+/// A vector of parent resource names (manifest aliases if available, otherwise
+/// canonical names) that directly depend on the given resource.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use agpm_cli::lockfile::LockFile;
+/// use agpm_cli::installer::find_parent_resources;
+///
+/// let lockfile = LockFile::default();
+/// let parents = find_parent_resources(&lockfile, "agents/helper");
+/// if !parents.is_empty() {
+///     println!("Resource is required by: {}", parents.join(", "));
+/// }
+/// ```
+fn find_parent_resources(lockfile: &LockFile, resource_name: &str) -> Vec<String> {
+    use crate::core::ResourceIterator;
+
+    let mut parents = Vec::new();
+
+    // Iterate through all resources in the lockfile
+    for (entry, _dir) in
+        ResourceIterator::collect_all_entries(lockfile, &crate::manifest::Manifest::default())
+    {
+        // Check if this resource depends on the target resource
+        if entry.dependencies.iter().any(|dep| dep == resource_name) {
+            // Use manifest_alias if available (user-facing name), otherwise canonical name
+            let parent_name = entry.manifest_alias.as_ref().unwrap_or(&entry.name).clone();
+            parents.push(parent_name);
+        }
+    }
+
+    parents
 }

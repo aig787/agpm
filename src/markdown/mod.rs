@@ -763,6 +763,78 @@ impl MarkdownDocument {
         Self::parse_with_operation_context(input, None, None)
     }
 
+    /// Parse a Markdown string with template variable support.
+    ///
+    /// This method applies Tera template rendering to the frontmatter before parsing,
+    /// allowing dependencies to use conditional blocks and template variables.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The complete Markdown document as a string
+    /// * `variant_inputs` - Optional template variables (project, config, etc.)
+    /// * `file_path` - Optional file path for error reporting
+    ///
+    /// # Returns
+    ///
+    /// Returns a parsed `MarkdownDocument` with frontmatter templates resolved.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use agpm_cli::markdown::MarkdownDocument;
+    /// use std::path::Path;
+    ///
+    /// let variant_inputs = serde_json::json!({
+    ///     "project": {
+    ///         "framework": "react"
+    ///     }
+    /// });
+    ///
+    /// let markdown = r#"---
+    /// dependencies:
+    ///   snippets:
+    ///     {% if agpm.project.framework %}
+    ///     - name: framework
+    ///       path: {{ agpm.project.framework }}.md
+    ///     {% endif %}
+    /// ---
+    /// # Content"#;
+    ///
+    /// let doc = MarkdownDocument::parse_with_templating(
+    ///     markdown,
+    ///     Some(&variant_inputs),
+    ///     Some(Path::new("test.md"))
+    /// ).unwrap();
+    ///
+    /// assert!(doc.metadata.is_some());
+    /// ```
+    pub fn parse_with_templating(
+        input: &str,
+        variant_inputs: Option<&serde_json::Value>,
+        file_path: Option<&Path>,
+    ) -> Result<Self> {
+        let mut parser = FrontmatterParser::new();
+        let path = file_path.unwrap_or_else(|| Path::new("unknown.md"));
+
+        let result = parser
+            .parse_with_templating::<MarkdownMetadata>(input, variant_inputs, path, None)
+            .or_else::<anyhow::Error, _>(|_| {
+                // If parsing fails, treat entire document as content (preserving old behavior)
+                Ok(ParsedFrontmatter {
+                    data: None,
+                    content: input.to_string(),
+                    raw_frontmatter: None,
+                    templated: false,
+                })
+            })?;
+
+        Ok(Self {
+            metadata: result.data,
+            content: result.content,
+            raw: input.to_string(),
+        })
+    }
+
     /// Format a document with YAML frontmatter
     fn format_with_frontmatter(metadata: &MarkdownMetadata, content: &str) -> String {
         let yaml = serde_yaml::to_string(metadata).unwrap_or_default();

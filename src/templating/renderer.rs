@@ -404,14 +404,10 @@ impl TemplateRenderer {
                 // Extract detailed error information from Tera error
                 let error_msg = Self::format_tera_error(&e);
 
-                // Output the detailed error to stderr for immediate visibility
-                eprintln!("Template rendering error:\n{}", error_msg);
-
-                // Include the context in the error message for user visibility
-                let context_str = Self::format_context_as_string(context);
+                // Return just the error without verbose template context
                 anyhow::Error::new(e).context(format!(
-                    "Template rendering failed at depth {}:\n{}\n\nTemplate context:\n{}",
-                    depth, error_msg, context_str
+                    "Template rendering failed at depth {}:\n{}",
+                    depth, error_msg
                 ))
             })?;
 

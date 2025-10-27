@@ -1092,6 +1092,49 @@ impl ErrorContext {
 ///
 /// context.display(); // Shows the error with generic formatting
 /// ```
+///
+/// Parse enhanced error context from a formatted error message.
+///
+/// Extracts structured context information from error messages in the format:
+/// `Failed to render X for canonical_name="...", manifest_alias="...", source="...", ...`
+///
+/// # Arguments
+///
+/// * `msg` - The error message to parse
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `canonical_name`: The canonical resource name
+/// - `manifest_alias`: Optional manifest alias (user's key from agpm.toml)
+/// - `source`: Optional source repository name
+/// - `tool`: Optional target tool (claude-code, opencode, etc.)
+/// - `resolved_commit`: Optional Git commit SHA (truncated to 8 chars)
+/// - `required_by`: Optional comma-separated list of parent resources
+fn parse_enhanced_context(
+    msg: &str,
+) -> (String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) {
+    let extract_field = |field_name: &str| -> Option<String> {
+        let pattern = format!("{}=\"", field_name);
+        if let Some(start_idx) = msg.find(&pattern) {
+            let value_start = start_idx + pattern.len();
+            if let Some(end_idx) = msg[value_start..].find('"') {
+                return Some(msg[value_start..value_start + end_idx].to_string());
+            }
+        }
+        None
+    };
+
+    let canonical_name = extract_field("canonical_name").unwrap_or_else(|| "unknown".to_string());
+    let manifest_alias = extract_field("manifest_alias");
+    let source = extract_field("source");
+    let tool = extract_field("tool");
+    let resolved_commit = extract_field("resolved_commit");
+    let required_by = extract_field("required_by");
+
+    (canonical_name, manifest_alias, source, tool, resolved_commit, required_by)
+}
+
 #[must_use]
 pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     // Check for specific error types and provide helpful suggestions
@@ -1186,40 +1229,84 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
     let is_template_error = error_msg.contains("template")
         || error_msg.contains("variable")
         || error_msg.contains("filter")
-        || error_msg.contains("tera");
+        || error_msg.contains("tera")
+        || error_msg.contains("render"); // Also check for "render" as in "Failed to render body/frontmatter"
 
     if is_template_error {
-        // Extract resource name from error chain
-        // Look for "Failed to render template for '{name}'" or "Failed to render frontmatter template in '{path}'" patterns
-        let resource_name = error
+        // Extract resource context from error chain
+        // Look for enhanced context format with canonical_name, manifest_alias, etc.
+        let (canonical_name, manifest_alias, source, tool, commit, required_by) = error
             .chain()
             .find_map(|e| {
                 let msg = e.to_string();
-                if msg.contains("Failed to render template for")
-                    || msg.contains("Failed to render frontmatter template in")
-                {
-                    // Extract name/path between single quotes
-                    msg.split("'").nth(1).map(|s| s.to_string())
+                if msg.contains("Failed to render") && msg.contains("canonical_name=") {
+                    // Parse enhanced context format
+                    Some(parse_enhanced_context(&msg))
                 } else {
                     None
                 }
             })
-            .unwrap_or_else(|| "unknown resource".to_string());
+            .unwrap_or_else(|| {
+                // Fallback: try old format for backwards compatibility
+                let name = error
+                    .chain()
+                    .find_map(|e| {
+                        let msg = e.to_string();
+                        if msg.contains("Failed to render template for")
+                            || msg.contains("Failed to render frontmatter template in")
+                        {
+                            msg.split("'").nth(1).map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| "unknown resource".to_string());
+                (name, None, None, None, None, None)
+            });
 
-        // Build full error chain for template errors
-        let mut message = error.to_string();
-        let chain: Vec<String> =
-            error.chain().skip(1).map(std::string::ToString::to_string).collect();
+        // Extract the actual Tera error message (the root cause, not the context)
+        let tera_error_msg = error
+            .chain()
+            .last()  // Get the root cause, not the outermost context
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "Unknown template error".to_string());
 
-        if !chain.is_empty() {
-            message.push_str("\n\nCaused by:");
-            for (i, cause) in chain.iter().enumerate() {
-                message.push_str(&format!("\n  {}: {}", i + 1, cause));
-            }
+        // Build user-facing error message with context
+        let mut message = String::new();
+
+        // Show the actual error first (what went wrong)
+        message.push_str(&tera_error_msg);
+
+        // Then show resource context (where it went wrong)
+        message.push_str(&format!("\n\n       Resource: {}", canonical_name));
+
+        // Add manifest alias if available
+        if let Some(alias) = manifest_alias.as_ref() {
+            message.push_str(&format!("\n       Manifest alias: {}", alias));
+        }
+
+        // Add parent chain if available
+        if let Some(parents) = required_by.as_ref() {
+            message.push_str(&format!("\n       Required by: {}", parents));
+        }
+
+        // Add source and tool context (for detailed diagnostics)
+        let mut context_parts = Vec::new();
+        if let Some(s) = source.as_ref() {
+            context_parts.push(format!("source: {}", s));
+        }
+        if let Some(t) = tool.as_ref() {
+            context_parts.push(format!("tool: {}", t));
+        }
+        if let Some(c) = commit.as_ref() {
+            context_parts.push(format!("commit: {}", c));
+        }
+        if !context_parts.is_empty() {
+            message.push_str(&format!("\n       Context: {}", context_parts.join(", ")));
         }
 
         return ErrorContext::new(AgpmError::InvalidResource {
-            name: resource_name,
+            name: canonical_name,
             reason: message,
         })
         .with_suggestion(
@@ -1734,24 +1821,33 @@ mod tests {
 
     #[test]
     fn test_user_friendly_error_template_with_resource_name() {
-        // Simulate a template error with resource name in context
+        // Simulate a template error with enhanced resource context
         let template_error = anyhow::anyhow!("Variable `foo` not found in context");
-        let error_with_context = template_error
-            .context("Failed to render template for 'my-awesome-agent' (source: community, path: agents/awesome.md)");
+        let error_with_context = template_error.context(
+            "Failed to render body for canonical_name=\"my-awesome-agent\", source=\"community\"",
+        );
 
         let ctx = user_friendly_error(error_with_context);
 
         match &ctx.error {
-            AgpmError::InvalidResource {
-                name,
-                reason,
-            } => {
-                // Verify resource name was extracted instead of using "template"
+            AgpmError::InvalidResource { name, reason } => {
+                // Verify resource name was extracted from enhanced context
                 assert_eq!(
                     name, "my-awesome-agent",
-                    "Resource name should be extracted from error context"
+                    "Resource name should be extracted from canonical_name field"
                 );
-                assert!(reason.contains("Variable"), "Reason should contain the actual error");
+                // Verify the reason contains the actual Tera error
+                assert!(
+                    reason.contains("Variable `foo` not found"),
+                    "Reason should contain the actual Tera error. Got: {}",
+                    reason
+                );
+                // Verify the reason includes the resource context
+                assert!(
+                    reason.contains("Resource: my-awesome-agent"),
+                    "Reason should include resource context. Got: {}",
+                    reason
+                );
             }
             _ => panic!("Expected InvalidResource, got {:?}", ctx.error),
         }
