@@ -201,32 +201,28 @@ language = "rust"
     // Verify lockfile contains all three variants with correct transitive deps
     let lockfile_content = project.read_lockfile().await?;
 
-    // BUG: With canonical naming, multiple manifest entries with the same path but different
-    // filenames are being deduplicated incorrectly. The test expects 3 agent entries but only
-    // 1 is created. This is a real bug introduced by canonical naming changes.
+    // FIXED: With the corrected deduplication logic that always checks variant_inputs,
+    // multiple manifest entries with the same path but different template_vars now
+    // correctly create separate lockfile entries.
     //
-    // Expected behavior: Each manifest key with a different filename should create a separate
-    // lockfile entry, even if they reference the same source path.
-    //
-    // Current behavior: Only one is kept (non-deterministic which one), others are deduplicated.
-    //
-    // TODO: Fix the deduplication logic to consider filename/manifest_alias when determining uniqueness
+    // Each manifest key with different template_vars creates a separate lockfile entry.
 
-    // For now, check that at least ONE of the variants was installed (non-deterministic which one)
-    let has_default = lockfile_content.contains("manifest_alias = \"backend-engineer-default\"");
-    let has_golang = lockfile_content.contains("manifest_alias = \"backend-engineer-golang\"");
-    let has_rust = lockfile_content.contains("manifest_alias = \"backend-engineer-rust\"");
-
+    // Verify all three variants are present
     assert!(
-        has_default || has_golang || has_rust,
-        "At least one backend-engineer variant should be in lockfile. Lockfile:\n{}",
+        lockfile_content.contains("manifest_alias = \"backend-engineer-default\""),
+        "backend-engineer-default variant should be in lockfile. Lockfile:\n{}",
         lockfile_content
     );
-
-    // These assertions are currently failing due to the bug - should have ALL three:
-    // assert!(lockfile_content.contains("manifest_alias = \"backend-engineer-default\""));
-    // assert!(lockfile_content.contains("manifest_alias = \"backend-engineer-golang\""));
-    // assert!(lockfile_content.contains("manifest_alias = \"backend-engineer-rust\""));
+    assert!(
+        lockfile_content.contains("manifest_alias = \"backend-engineer-golang\""),
+        "backend-engineer-golang variant should be in lockfile. Lockfile:\n{}",
+        lockfile_content
+    );
+    assert!(
+        lockfile_content.contains("manifest_alias = \"backend-engineer-rust\""),
+        "backend-engineer-rust variant should be in lockfile. Lockfile:\n{}",
+        lockfile_content
+    );
 
     // Verify ALL transitive dependencies are still resolved (they don't get deduplicated)
     assert!(
@@ -245,36 +241,38 @@ language = "rust"
         lockfile_content
     );
 
-    // Verify at least one installed file contains the correct content
-    // Due to the deduplication bug, only one of the three files exists
-    if has_default {
-        let default_content = tokio::fs::read_to_string(
-            project.project_path().join(".claude/agents/backend-engineer.md"),
-        )
-        .await?;
-        assert!(
-            default_content.contains("Follow PEP 8"),
-            "Default variant should contain Python best practices"
-        );
-    } else if has_golang {
-        let golang_content = tokio::fs::read_to_string(
-            project.project_path().join(".claude/agents/backend-engineer-golang.md"),
-        )
-        .await?;
-        assert!(
-            golang_content.contains("Use error wrapping"),
-            "Golang variant should contain Golang best practices"
-        );
-    } else if has_rust {
-        let rust_content = tokio::fs::read_to_string(
-            project.project_path().join(".claude/agents/backend-engineer-rust.md"),
-        )
-        .await?;
-        assert!(
-            rust_content.contains("Embrace ownership"),
-            "Rust variant should contain Rust best practices"
-        );
-    }
+    // Verify ALL THREE installed files contain the correct content
+    // With the bug fix, all three variants should exist with their own template_vars
+
+    // Check default variant (Python)
+    let default_content = tokio::fs::read_to_string(
+        project.project_path().join(".claude/agents/backend-engineer.md"),
+    )
+    .await?;
+    assert!(
+        default_content.contains("Follow PEP 8"),
+        "Default variant should contain Python best practices"
+    );
+
+    // Check Golang variant
+    let golang_content = tokio::fs::read_to_string(
+        project.project_path().join(".claude/agents/backend-engineer-golang.md"),
+    )
+    .await?;
+    assert!(
+        golang_content.contains("Use error wrapping"),
+        "Golang variant should contain Golang best practices"
+    );
+
+    // Check Rust variant
+    let rust_content = tokio::fs::read_to_string(
+        project.project_path().join(".claude/agents/backend-engineer-rust.md"),
+    )
+    .await?;
+    assert!(
+        rust_content.contains("Embrace ownership"),
+        "Rust variant should contain Rust best practices"
+    );
 
     Ok(())
 }

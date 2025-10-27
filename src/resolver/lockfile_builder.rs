@@ -72,19 +72,14 @@ pub fn is_duplicate_entry(existing: &LockedResource, new_entry: &LockedResource)
     let one_direct_one_transitive = existing_is_direct != new_is_direct;
 
     // Standard deduplication logic:
-    // - When BOTH are direct/transitive: require variant_inputs to match (different templates = different resources)
-    // - When ONE is direct and ONE is transitive: ignore variant_inputs (same resource, different declaration paths)
+    // variant_inputs are ALWAYS part of resource identity - resources with different
+    // template_vars are distinct resources that must both exist in the lockfile.
+    // This applies regardless of whether dependencies are direct, transitive, or mixed.
     let basic_match = existing.name == new_entry.name
         && existing.source == new_entry.source
         && existing.tool == new_entry.tool;
 
-    let is_duplicate = if one_direct_one_transitive {
-        // Direct vs transitive: ignore variant_inputs, use priority system to decide which wins
-        basic_match
-    } else {
-        // Both direct or both transitive: variant_inputs is part of resource identity
-        basic_match && existing.variant_inputs == new_entry.variant_inputs
-    };
+    let is_duplicate = basic_match && existing.variant_inputs == new_entry.variant_inputs;
 
     if is_duplicate {
         tracing::debug!(
@@ -100,17 +95,11 @@ pub fn is_duplicate_entry(existing: &LockedResource, new_entry: &LockedResource)
     }
 
     // Local dependency deduplication: same path and tool
-    // Apply same logic as above: ignore variant_inputs when one is direct and one is transitive
+    // Apply same logic as above: variant_inputs are ALWAYS part of resource identity
     if existing.source.is_none() && new_entry.source.is_none() {
         let path_tool_match = existing.path == new_entry.path && existing.tool == new_entry.tool;
-
-        let is_local_duplicate = if one_direct_one_transitive {
-            // Direct vs transitive: ignore variant_inputs
-            path_tool_match
-        } else {
-            // Both direct or both transitive: check variant_inputs
-            path_tool_match && existing.variant_inputs == new_entry.variant_inputs
-        };
+        let is_local_duplicate =
+            path_tool_match && existing.variant_inputs == new_entry.variant_inputs;
 
         if is_local_duplicate {
             tracing::debug!(
@@ -1496,5 +1485,64 @@ test-repo = "https://example.com/repo.git"
         let config = result.get("config").unwrap();
         assert_eq!(config.get("model").unwrap().as_str().unwrap(), "claude-3-opus");
         assert_eq!(config.get("temperature").unwrap().as_f64().unwrap(), 0.5);
+    }
+
+    #[test]
+    fn test_direct_vs_transitive_with_different_template_vars_should_not_deduplicate() {
+        use serde_json::json;
+
+        // Create direct dependency with template_vars = {lang: "rust"}
+        let direct = LockedResource {
+            name: "agents/generic".to_string(),
+            manifest_alias: Some("generic-rust".to_string()), // Direct from manifest
+            source: Some("community".to_string()),
+            url: Some("https://github.com/test/repo.git".to_string()),
+            path: "agents/generic.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123".to_string()),
+            checksum: "sha256:direct".to_string(),
+            installed_at: ".claude/agents/generic-rust.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            context_checksum: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            variant_inputs: VariantInputs::new(json!({"lang": "rust"})),
+        };
+
+        // Create transitive dependency with template_vars = {lang: "python"}
+        let transitive = LockedResource {
+            name: "agents/generic".to_string(),
+            manifest_alias: None, // Transitive dependency
+            source: Some("community".to_string()),
+            url: Some("https://github.com/test/repo.git".to_string()),
+            path: "agents/generic.md".to_string(),
+            version: Some("v1.0.0".to_string()),
+            resolved_commit: Some("abc123".to_string()),
+            checksum: "sha256:transitive".to_string(),
+            installed_at: ".claude/agents/generic.md".to_string(),
+            dependencies: vec![],
+            resource_type: ResourceType::Agent,
+            tool: Some("claude-code".to_string()),
+            context_checksum: None,
+            applied_patches: std::collections::HashMap::new(),
+            install: None,
+            variant_inputs: VariantInputs::new(json!({"lang": "python"})),
+        };
+
+        // According to the CRITICAL note in the code:
+        // "template_vars are part of the resource identity! Resources with
+        // different template_vars are DISTINCT resources that must all exist in the lockfile."
+        //
+        // Therefore, these should NOT be considered duplicates even though
+        // one is direct and one is transitive.
+        let is_dup = is_duplicate_entry(&direct, &transitive);
+
+        assert!(
+            !is_dup,
+            "Direct and transitive dependencies with different template_vars should NOT be duplicates. \
+             They represent distinct resources that both need to exist in the lockfile."
+        );
     }
 }
