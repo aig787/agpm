@@ -8,6 +8,16 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 
+/// Result from MCP server configuration.
+///
+/// Contains information about which servers were configured and what patches were applied.
+pub struct McpConfigurationResult {
+    /// Number of unique MCP servers that were actually configured
+    pub configured_server_count: usize,
+    /// Applied patches for each configured server (name -> applied_patches)
+    pub applied_patches: Vec<(String, crate::manifest::patches::AppliedPatches)>,
+}
+
 /// Trait for handling MCP server installation for different tools.
 ///
 /// Each tool (claude-code, opencode, etc.) may have different ways
@@ -34,8 +44,7 @@ pub trait McpHandler: Send + Sync {
     ///
     /// # Returns
     ///
-    /// `Ok(Vec<(name, applied_patches)>)` with applied patches for each server, or an error if the configuration failed.
-    #[allow(clippy::type_complexity)]
+    /// `Ok(McpConfigurationResult)` with the count of configured servers and applied patches, or an error if the configuration failed.
     fn configure_mcp_servers(
         &self,
         project_root: &Path,
@@ -43,13 +52,7 @@ pub trait McpHandler: Send + Sync {
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
         manifest: &crate::manifest::Manifest,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
-                + '_,
-        >,
-    >;
+    ) -> Pin<Box<dyn Future<Output = Result<McpConfigurationResult>> + Send + '_>>;
 
     /// Clean/remove all managed MCP servers for this handler.
     ///
@@ -82,13 +85,7 @@ impl McpHandler for ClaudeCodeMcpHandler {
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
         manifest: &crate::manifest::Manifest,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
-                + '_,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<McpConfigurationResult>> + Send + '_>> {
         let project_root = project_root.to_path_buf();
         let entries = lockfile_entries.to_vec();
         let cache = cache.clone();
@@ -96,7 +93,10 @@ impl McpHandler for ClaudeCodeMcpHandler {
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(Vec::new());
+                return Ok(McpConfigurationResult {
+                    configured_server_count: 0,
+                    applied_patches: Vec::new(),
+                });
             }
 
             // Read MCP server configurations directly from source files
@@ -194,10 +194,14 @@ impl McpHandler for ClaudeCodeMcpHandler {
             }
 
             // Configure MCP servers by merging into .mcp.json
+            let configured_count = mcp_servers.len();
             let mcp_config_path = project_root.join(".mcp.json");
             super::merge_mcp_servers(&mcp_config_path, mcp_servers).await?;
 
-            Ok(all_applied_patches)
+            Ok(McpConfigurationResult {
+                configured_server_count: configured_count,
+                applied_patches: all_applied_patches,
+            })
         })
     }
 
@@ -225,13 +229,7 @@ impl McpHandler for OpenCodeMcpHandler {
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
         manifest: &crate::manifest::Manifest,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
-                + '_,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<McpConfigurationResult>> + Send + '_>> {
         let project_root = project_root.to_path_buf();
         let artifact_base = artifact_base.to_path_buf();
         let entries = lockfile_entries.to_vec();
@@ -240,7 +238,10 @@ impl McpHandler for OpenCodeMcpHandler {
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(Vec::new());
+                return Ok(McpConfigurationResult {
+                    configured_server_count: 0,
+                    applied_patches: Vec::new(),
+                });
             }
 
             let mut all_applied_patches = Vec::new();
@@ -360,6 +361,7 @@ impl McpHandler for OpenCodeMcpHandler {
             let mcp_section = config_obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
 
             // Merge MCP servers into the mcp section
+            let configured_count = mcp_servers.len();
             if let Some(mcp_obj) = mcp_section.as_object_mut() {
                 for (name, server_config) in mcp_servers {
                     let server_json = serde_json::to_value(&server_config)?;
@@ -373,7 +375,10 @@ impl McpHandler for OpenCodeMcpHandler {
                     format!("Failed to write OpenCode config: {}", opencode_config_path.display())
                 })?;
 
-            Ok(all_applied_patches)
+            Ok(McpConfigurationResult {
+                configured_server_count: configured_count,
+                applied_patches: all_applied_patches,
+            })
         })
     }
 
@@ -466,13 +471,7 @@ impl McpHandler for ConcreteMcpHandler {
         lockfile_entries: &[crate::lockfile::LockedResource],
         cache: &crate::cache::Cache,
         manifest: &crate::manifest::Manifest,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
-                + '_,
-        >,
-    > {
+    ) -> Pin<Box<dyn Future<Output = Result<McpConfigurationResult>> + Send + '_>> {
         match self {
             Self::ClaudeCode(h) => h.configure_mcp_servers(
                 project_root,

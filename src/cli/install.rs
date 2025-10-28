@@ -685,7 +685,7 @@ impl InstallCommand {
                         let server_entries: Vec<_> = servers.iter().map(|s| (*s).clone()).collect();
 
                         // Reuse the existing cache instance and collect applied patches
-                        let applied_patches_list = handler
+                        let mcp_result = handler
                             .configure_mcp_servers(
                                 actual_project_dir,
                                 &artifact_base,
@@ -702,9 +702,10 @@ impl InstallCommand {
                             })?;
 
                         // Collect patches for later application
-                        all_mcp_patches.extend(applied_patches_list);
+                        all_mcp_patches.extend(mcp_result.applied_patches);
 
-                        server_count += servers.len();
+                        // Count the actual number of configured servers
+                        server_count += mcp_result.configured_server_count;
                     }
                 }
 
