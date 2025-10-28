@@ -3,7 +3,8 @@
 //! This module provides functionality for extracting dependency information,
 //! custom names, and building the dependency data structure for template rendering.
 
-use anyhow::{Context as _, Result};
+use crate::core::file_error::{FileOperation, FileResultExt};
+use anyhow::{Context as _, Result, bail};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
@@ -66,10 +67,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     /// A BTreeMap mapping dependency references (e.g., "snippet/rust-best-practices") to custom
     /// names (e.g., "best_practices") as declared in the resource's YAML frontmatter.
     /// BTreeMap ensures deterministic iteration order for consistent context checksums.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the dependency file cannot be read or parsed.
     async fn extract_dependency_custom_names(
         &self,
         resource: &LockedResource,
-    ) -> BTreeMap<String, String> {
+    ) -> Result<BTreeMap<String, String>> {
         // Build cache key from resource name and type
         let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
 
@@ -81,7 +86,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     resource.name,
                     cached_names.len()
                 );
-                return cached_names.clone();
+                return Ok(cached_names.clone());
             }
         }
 
@@ -118,7 +123,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Has source - check if local or Git
             let url = match resource.url.as_ref() {
                 Some(u) => u,
-                None => return custom_names,
+                None => bail!("Resource '{}' has source but no URL", resource.name),
             };
 
             let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
@@ -130,11 +135,13 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 // Git source
                 let sha = match resource.resolved_commit.as_deref() {
                     Some(s) => s,
-                    None => return custom_names,
+                    None => bail!("Resource '{}' has no resolved commit", resource.name),
                 };
                 match self.cache().get_worktree_path(url, sha) {
                     Ok(worktree_dir) => worktree_dir.join(&resource.path),
-                    Err(_) => return custom_names,
+                    Err(e) => {
+                        bail!("Failed to get worktree path for resource '{}': {}", resource.name, e)
+                    }
                 }
             }
         } else {
@@ -150,131 +157,27 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Read and parse the file based on type
         if resource.path.ends_with(".md") {
             // Parse markdown frontmatter with template rendering
-            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
-                if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
-                    &content,
-                    Some(resource.variant_inputs.json()),
-                    Some(&source_path),
-                ) {
-                    // Extract dependencies from parsed metadata
-                    if let Some(markdown_metadata) = &doc.metadata {
-                        // Convert MarkdownMetadata to DependencyMetadata
-                        // Merge both root-level dependencies and agpm.dependencies
-                        let dependency_metadata = crate::manifest::DependencyMetadata::new(
-                            markdown_metadata.dependencies.clone(),
-                            markdown_metadata.get_agpm_metadata(),
-                        );
+            let content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+                FileOperation::Read,
+                &source_path,
+                "reading markdown dependency file",
+                "templating_dependencies",
+            )?;
 
-                        if let Some(deps_map) = dependency_metadata.get_dependencies() {
-                            // Process each resource type (agents, snippets, commands, etc.)
-                            for (resource_type_str, deps_array) in deps_map {
-                                // Convert frontmatter type to lockfile type (singular)
-                                let lockfile_type: String = match resource_type_str.as_str() {
-                                    "agents" | "agent" => "agent".to_string(),
-                                    "snippets" | "snippet" => "snippet".to_string(),
-                                    "commands" | "command" => "command".to_string(),
-                                    "scripts" | "script" => "script".to_string(),
-                                    "hooks" | "hook" => "hook".to_string(),
-                                    "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
-                                    _ => continue, // Skip unknown types
-                                };
-
-                                // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
-                                let type_entries = match lockfile_lookup.get(&lockfile_type) {
-                                    Some(entries) => entries,
-                                    None => continue, // No lockfile deps of this type
-                                };
-
-                                // deps_array is Vec<DependencySpec>
-                                for dep_spec in deps_array {
-                                    let path = &dep_spec.path;
-                                    if let Some(custom_name) = &dep_spec.name {
-                                        // Extract basename from the path (without extension)
-                                        let basename = std::path::Path::new(path)
-                                            .file_stem()
-                                            .and_then(|s| s.to_str())
-                                            .unwrap_or(path);
-
-                                        tracing::info!(
-                                            "Found custom name '{}' for path '{}' (basename: '{}')",
-                                            custom_name,
-                                            path,
-                                            basename
-                                        );
-
-                                        // Check if basename has template variables
-                                        if basename.contains("{{") {
-                                            // Template variable in basename - try suffix matching
-                                            // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
-                                            if let Some(static_suffix_start) = basename.find("}}") {
-                                                let static_suffix =
-                                                    &basename[static_suffix_start + 2..];
-
-                                                // Search for any lockfile basename ending with this suffix
-                                                for (lockfile_basename, lockfile_dep_ref) in
-                                                    type_entries
-                                                {
-                                                    if lockfile_basename.ends_with(static_suffix) {
-                                                        custom_names.insert(
-                                                            lockfile_dep_ref.clone(),
-                                                            custom_name.to_string(),
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            // No template variables - exact basename match (O(n) but only within type)
-                                            for (lockfile_basename, lockfile_dep_ref) in
-                                                type_entries
-                                            {
-                                                if lockfile_basename == basename {
-                                                    custom_names.insert(
-                                                        lockfile_dep_ref.clone(),
-                                                        custom_name.to_string(),
-                                                    );
-                                                    break; // Found exact match, no need to continue
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else if resource.path.ends_with(".json") {
-            // Parse JSON dependencies field with template rendering
-            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                // Apply templating to JSON content to handle conditional blocks
-                let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
-                let templated_content = parser
-                    .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
-                    .unwrap_or_else(|_| content.clone());
-
-                // Parse JSON and extract dependencies field
-                if let Ok(json_value) =
-                    serde_json::from_str::<serde_json::Value>(&templated_content)
-                {
-                    // Extract both root-level dependencies and agpm.dependencies
-                    let root_deps = json_value.get("dependencies").and_then(|v| {
-                        serde_json::from_value::<
-                            BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
-                        >(v.clone())
-                        .ok()
-                    });
-
-                    let agpm_metadata = json_value.get("agpm").and_then(|v| {
-                        serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
-                            v.clone(),
-                        )
-                        .ok()
-                    });
-
-                    // Merge both dependency sources
-                    let dependency_metadata =
-                        crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
+            // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
+            if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
+                &content,
+                Some(resource.variant_inputs.json()),
+                Some(&source_path),
+            ) {
+                // Extract dependencies from parsed metadata
+                if let Some(markdown_metadata) = &doc.metadata {
+                    // Convert MarkdownMetadata to DependencyMetadata
+                    // Merge both root-level dependencies and agpm.dependencies
+                    let dependency_metadata = crate::manifest::DependencyMetadata::new(
+                        markdown_metadata.dependencies.clone(),
+                        markdown_metadata.get_agpm_metadata(),
+                    );
 
                     if let Some(deps_map) = dependency_metadata.get_dependencies() {
                         // Process each resource type (agents, snippets, commands, etc.)
@@ -307,7 +210,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                         .unwrap_or(path);
 
                                     tracing::info!(
-                                        "Found custom name '{}' for path '{}' (basename: '{}') from JSON",
+                                        "Found custom name '{}' for path '{}' (basename: '{}')",
                                         custom_name,
                                         path,
                                         basename
@@ -351,6 +254,113 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     }
                 }
             }
+        } else if resource.path.ends_with(".json") {
+            // Parse JSON dependencies field with template rendering
+            let content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+                FileOperation::Read,
+                &source_path,
+                "reading JSON dependency file",
+                "templating_dependencies",
+            )?;
+
+            // Apply templating to JSON content to handle conditional blocks
+            let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
+            let templated_content = parser
+                .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
+                .unwrap_or_else(|_| content.clone());
+
+            // Parse JSON and extract dependencies field
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&templated_content) {
+                // Extract both root-level dependencies and agpm.dependencies
+                let root_deps = json_value.get("dependencies").and_then(|v| {
+                    serde_json::from_value::<
+                        BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+                    >(v.clone())
+                    .ok()
+                });
+
+                let agpm_metadata = json_value.get("agpm").and_then(|v| {
+                    serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
+                        v.clone(),
+                    )
+                    .ok()
+                });
+
+                // Merge both dependency sources
+                let dependency_metadata =
+                    crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
+
+                if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                    // Process each resource type (agents, snippets, commands, etc.)
+                    for (resource_type_str, deps_array) in deps_map {
+                        // Convert frontmatter type to lockfile type (singular)
+                        let lockfile_type: String = match resource_type_str.as_str() {
+                            "agents" | "agent" => "agent".to_string(),
+                            "snippets" | "snippet" => "snippet".to_string(),
+                            "commands" | "command" => "command".to_string(),
+                            "scripts" | "script" => "script".to_string(),
+                            "hooks" | "hook" => "hook".to_string(),
+                            "mcp-servers" | "mcp-server" => "mcp-server".to_string(),
+                            _ => continue, // Skip unknown types
+                        };
+
+                        // Get lockfile entries for this type only (O(1) lookup instead of O(n) iteration)
+                        let type_entries = match lockfile_lookup.get(&lockfile_type) {
+                            Some(entries) => entries,
+                            None => continue, // No lockfile deps of this type
+                        };
+
+                        // deps_array is Vec<DependencySpec>
+                        for dep_spec in deps_array {
+                            let path = &dep_spec.path;
+                            if let Some(custom_name) = &dep_spec.name {
+                                // Extract basename from the path (without extension)
+                                let basename = std::path::Path::new(path)
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(path);
+
+                                tracing::info!(
+                                    "Found custom name '{}' for path '{}' (basename: '{}') from JSON",
+                                    custom_name,
+                                    path,
+                                    basename
+                                );
+
+                                // Check if basename has template variables
+                                if basename.contains("{{") {
+                                    // Template variable in basename - try suffix matching
+                                    // e.g., "{{ agpm.project.language }}-best-practices" -> "-best-practices"
+                                    if let Some(static_suffix_start) = basename.find("}}") {
+                                        let static_suffix = &basename[static_suffix_start + 2..];
+
+                                        // Search for any lockfile basename ending with this suffix
+                                        for (lockfile_basename, lockfile_dep_ref) in type_entries {
+                                            if lockfile_basename.ends_with(static_suffix) {
+                                                custom_names.insert(
+                                                    lockfile_dep_ref.clone(),
+                                                    custom_name.to_string(),
+                                                );
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // No template variables - exact basename match (O(n) but only within type)
+                                    for (lockfile_basename, lockfile_dep_ref) in type_entries {
+                                        if lockfile_basename == basename {
+                                            custom_names.insert(
+                                                lockfile_dep_ref.clone(),
+                                                custom_name.to_string(),
+                                            );
+                                            break; // Found exact match, no need to continue
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Store in cache before returning
@@ -363,7 +373,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             );
         }
 
-        custom_names
+        Ok(custom_names)
     }
 
     /// Extract full dependency specifications from a resource's frontmatter.
@@ -376,10 +386,14 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
     ///
     /// A BTreeMap mapping dependency references (e.g., "snippet:snippets/commands/commit")
     /// to their full DependencySpec objects. BTreeMap ensures deterministic iteration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the dependency file cannot be read or parsed.
     async fn extract_dependency_specs(
         &self,
         resource: &LockedResource,
-    ) -> BTreeMap<String, crate::manifest::DependencySpec> {
+    ) -> Result<BTreeMap<String, crate::manifest::DependencySpec>> {
         // Build cache key from resource name and type
         let cache_key = format!("{}@{:?}", resource.name, resource.resource_type);
 
@@ -391,7 +405,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     resource.name,
                     cached_specs.len()
                 );
-                return cached_specs.clone();
+                return Ok(cached_specs.clone());
             }
         }
 
@@ -404,7 +418,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Has source - check if local or Git
             let url = match resource.url.as_ref() {
                 Some(u) => u,
-                None => return dependency_specs,
+                None => bail!("Resource '{}' has source but no URL", resource.name),
             };
 
             let is_local_source = resource.resolved_commit.as_deref().is_none_or(str::is_empty);
@@ -416,11 +430,13 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                 // Git source
                 let sha = match resource.resolved_commit.as_deref() {
                     Some(s) => s,
-                    None => return dependency_specs,
+                    None => bail!("Resource '{}' has no resolved commit", resource.name),
                 };
                 match self.cache().get_worktree_path(url, sha) {
                     Ok(worktree_dir) => worktree_dir.join(&resource.path),
-                    Err(_) => return dependency_specs,
+                    Err(e) => {
+                        bail!("Failed to get worktree path for resource '{}': {}", resource.name, e)
+                    }
                 }
             }
         } else {
@@ -436,123 +452,26 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         // Read and parse the file based on type
         if resource.path.ends_with(".md") {
             // Parse markdown frontmatter with template rendering
-            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
-                if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
-                    &content,
-                    Some(resource.variant_inputs.json()),
-                    Some(&source_path),
-                ) {
-                    // Extract dependencies from parsed metadata
-                    if let Some(markdown_metadata) = &doc.metadata {
-                        // Convert MarkdownMetadata to DependencyMetadata
-                        let dependency_metadata = crate::manifest::DependencyMetadata::new(
-                            markdown_metadata.dependencies.clone(),
-                            markdown_metadata.get_agpm_metadata(),
-                        );
+            let content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+                FileOperation::Read,
+                &source_path,
+                "reading markdown dependency file",
+                "templating_dependencies",
+            )?;
 
-                        if let Some(deps_map) = dependency_metadata.get_dependencies() {
-                            // Process each resource type
-                            for (resource_type_str, deps_array) in deps_map {
-                                // Convert frontmatter type to ResourceType
-                                let resource_type = match resource_type_str.as_str() {
-                                    "agents" | "agent" => crate::core::ResourceType::Agent,
-                                    "snippets" | "snippet" => crate::core::ResourceType::Snippet,
-                                    "commands" | "command" => crate::core::ResourceType::Command,
-                                    "scripts" | "script" => crate::core::ResourceType::Script,
-                                    "hooks" | "hook" => crate::core::ResourceType::Hook,
-                                    "mcp-servers" | "mcp-server" => {
-                                        crate::core::ResourceType::McpServer
-                                    }
-                                    _ => continue,
-                                };
-
-                                // Store each DependencySpec with its lockfile reference as key
-                                for dep_spec in deps_array {
-                                    // Canonicalize the frontmatter path to match lockfile format
-                                    // Frontmatter paths are relative to the resource file itself
-                                    // We need to resolve them relative to source root (not filesystem paths!)
-                                    let canonical_path = if dep_spec.path.starts_with("../")
-                                        || dep_spec.path.starts_with("./")
-                                    {
-                                        // Relative path - resolve using source-relative paths, not filesystem paths
-                                        // Get the parent directory of the resource within the source
-                                        let resource_parent = std::path::Path::new(&resource.path)
-                                            .parent()
-                                            .unwrap_or_else(|| std::path::Path::new(""));
-
-                                        // Join with the relative dependency path (still may have ..)
-                                        let joined = resource_parent.join(&dep_spec.path);
-
-                                        // Normalize to remove .. and . components, then format for storage
-                                        let normalized = crate::utils::normalize_path(&joined);
-                                        crate::utils::normalize_path_for_storage(&normalized)
-                                    } else {
-                                        // Absolute or already canonical
-                                        dep_spec.path.clone()
-                                    };
-
-                                    // Remove extension to match lockfile format
-                                    let normalized_path = std::path::Path::new(&canonical_path)
-                                        .with_extension("")
-                                        .to_string_lossy()
-                                        .to_string();
-
-                                    // Build the dependency reference string
-                                    let dep_ref = if let Some(ref src) = resource.source {
-                                        LockfileDependencyRef::git(
-                                            src.clone(),
-                                            resource_type,
-                                            normalized_path,
-                                            resource.version.clone(),
-                                        )
-                                        .to_string()
-                                    } else {
-                                        LockfileDependencyRef::local(
-                                            resource_type,
-                                            normalized_path,
-                                            resource.version.clone(),
-                                        )
-                                        .to_string()
-                                    };
-
-                                    dependency_specs.insert(dep_ref, dep_spec.clone());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else if resource.path.ends_with(".json") {
-            // Parse JSON dependencies field with template rendering
-            if let Ok(content) = tokio::fs::read_to_string(&source_path).await {
-                // Apply templating to JSON content to handle conditional blocks
-                let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
-                let templated_content = parser
-                    .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
-                    .unwrap_or_else(|_| content.clone());
-
-                if let Ok(json_value) =
-                    serde_json::from_str::<serde_json::Value>(&templated_content)
-                {
-                    // Extract both root-level dependencies and agpm.dependencies
-                    let root_deps = json_value.get("dependencies").and_then(|v| {
-                        serde_json::from_value::<
-                            BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
-                        >(v.clone())
-                        .ok()
-                    });
-
-                    let agpm_metadata = json_value.get("agpm").and_then(|v| {
-                        serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
-                            v.clone(),
-                        )
-                        .ok()
-                    });
-
-                    // Merge both dependency sources
-                    let dependency_metadata =
-                        crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
+            // Use templated parsing to handle conditional blocks ({% if %}) in frontmatter
+            if let Ok(doc) = crate::markdown::MarkdownDocument::parse_with_templating(
+                &content,
+                Some(resource.variant_inputs.json()),
+                Some(&source_path),
+            ) {
+                // Extract dependencies from parsed metadata
+                if let Some(markdown_metadata) = &doc.metadata {
+                    // Convert MarkdownMetadata to DependencyMetadata
+                    let dependency_metadata = crate::manifest::DependencyMetadata::new(
+                        markdown_metadata.dependencies.clone(),
+                        markdown_metadata.get_agpm_metadata(),
+                    );
 
                     if let Some(deps_map) = dependency_metadata.get_dependencies() {
                         // Process each resource type
@@ -625,6 +544,109 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                     }
                 }
             }
+        } else if resource.path.ends_with(".json") {
+            // Parse JSON dependencies field with template rendering
+            let content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+                FileOperation::Read,
+                &source_path,
+                "reading JSON dependency file",
+                "templating_dependencies",
+            )?;
+
+            // Apply templating to JSON content to handle conditional blocks
+            let mut parser = crate::markdown::frontmatter::FrontmatterParser::new();
+            let templated_content = parser
+                .apply_templating(&content, Some(resource.variant_inputs.json()), &source_path)
+                .unwrap_or_else(|_| content.clone());
+
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&templated_content) {
+                // Extract both root-level dependencies and agpm.dependencies
+                let root_deps = json_value.get("dependencies").and_then(|v| {
+                    serde_json::from_value::<
+                        BTreeMap<String, Vec<crate::manifest::DependencySpec>>,
+                    >(v.clone())
+                    .ok()
+                });
+
+                let agpm_metadata = json_value.get("agpm").and_then(|v| {
+                    serde_json::from_value::<crate::manifest::dependency_spec::AgpmMetadata>(
+                        v.clone(),
+                    )
+                    .ok()
+                });
+
+                // Merge both dependency sources
+                let dependency_metadata =
+                    crate::manifest::DependencyMetadata::new(root_deps, agpm_metadata);
+
+                if let Some(deps_map) = dependency_metadata.get_dependencies() {
+                    // Process each resource type
+                    for (resource_type_str, deps_array) in deps_map {
+                        // Convert frontmatter type to ResourceType
+                        let resource_type = match resource_type_str.as_str() {
+                            "agents" | "agent" => crate::core::ResourceType::Agent,
+                            "snippets" | "snippet" => crate::core::ResourceType::Snippet,
+                            "commands" | "command" => crate::core::ResourceType::Command,
+                            "scripts" | "script" => crate::core::ResourceType::Script,
+                            "hooks" | "hook" => crate::core::ResourceType::Hook,
+                            "mcp-servers" | "mcp-server" => crate::core::ResourceType::McpServer,
+                            _ => continue,
+                        };
+
+                        // Store each DependencySpec with its lockfile reference as key
+                        for dep_spec in deps_array {
+                            // Canonicalize the frontmatter path to match lockfile format
+                            // Frontmatter paths are relative to the resource file itself
+                            // We need to resolve them relative to source root (not filesystem paths!)
+                            let canonical_path = if dep_spec.path.starts_with("../")
+                                || dep_spec.path.starts_with("./")
+                            {
+                                // Relative path - resolve using source-relative paths, not filesystem paths
+                                // Get the parent directory of the resource within the source
+                                let resource_parent = std::path::Path::new(&resource.path)
+                                    .parent()
+                                    .unwrap_or_else(|| std::path::Path::new(""));
+
+                                // Join with the relative dependency path (still may have ..)
+                                let joined = resource_parent.join(&dep_spec.path);
+
+                                // Normalize to remove .. and . components, then format for storage
+                                let normalized = crate::utils::normalize_path(&joined);
+                                crate::utils::normalize_path_for_storage(&normalized)
+                            } else {
+                                // Absolute or already canonical
+                                dep_spec.path.clone()
+                            };
+
+                            // Remove extension to match lockfile format
+                            let normalized_path = std::path::Path::new(&canonical_path)
+                                .with_extension("")
+                                .to_string_lossy()
+                                .to_string();
+
+                            // Build the dependency reference string
+                            let dep_ref = if let Some(ref src) = resource.source {
+                                LockfileDependencyRef::git(
+                                    src.clone(),
+                                    resource_type,
+                                    normalized_path,
+                                    resource.version.clone(),
+                                )
+                                .to_string()
+                            } else {
+                                LockfileDependencyRef::local(
+                                    resource_type,
+                                    normalized_path,
+                                    resource.version.clone(),
+                                )
+                                .to_string()
+                            };
+
+                            dependency_specs.insert(dep_ref, dep_spec.clone());
+                        }
+                    }
+                }
+            }
         }
 
         // Store in cache before returning
@@ -637,7 +659,7 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             );
         }
 
-        dependency_specs
+        Ok(dependency_specs)
     }
 
     /// Generate dependency name from a path (matching resolver logic).
@@ -672,7 +694,13 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
 
         // Extract dependency specifications from current resource's frontmatter
         // This provides tool, name, flatten, and install fields for each dependency
-        let dependency_specs = self.extract_dependency_specs(current_resource).await;
+        let dependency_specs =
+            self.extract_dependency_specs(current_resource).await.with_context(|| {
+                format!(
+                    "Failed to extract dependency specifications from resource '{}' (type: {:?})",
+                    current_resource.name, current_resource.resource_type
+                )
+            })?;
 
         // Helper function to determine the key name for a resource
         let get_key_names = |resource: &LockedResource,
@@ -1008,8 +1036,17 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
                                         )
                                     })?;
 
+                                // Create metadata for dependency rendering with basic chain info
+                                let metadata = crate::templating::renderer::RenderingMetadata {
+                                    resource_name: resource.name.clone(),
+                                    resource_type: *dep_type,
+                                    dependency_chain: vec![], // TODO: Build full dependency chain
+                                    source_path: None,
+                                    depth: rendering_stack.len(),
+                                };
+
                                 let rendered = renderer
-                                        .render_template(&content, &dep_context)
+                                        .render_template(&content, &dep_context, Some(&metadata))
                                         .with_context(|| {
                                             format!(
                                                 "Failed to render dependency '{}' (type: {:?}). \
@@ -1097,7 +1134,13 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
         );
 
         // Process only the current resource's custom names (for its direct dependencies)
-        let current_custom_names = self.extract_dependency_custom_names(current_resource).await;
+        let current_custom_names =
+            self.extract_dependency_custom_names(current_resource).await.with_context(|| {
+                format!(
+                    "Failed to extract custom dependency names from resource '{}' (type: {:?})",
+                    current_resource.name, current_resource.resource_type
+                )
+            })?;
         tracing::debug!(
             "Extracted {} custom names from current resource '{}' (type: {:?})",
             current_custom_names.len(),

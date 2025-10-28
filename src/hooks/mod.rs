@@ -5,6 +5,7 @@
 //! - Converting them to Claude Code format
 //! - Managing hook lifecycle and dependencies
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -154,7 +155,12 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
         return Ok(configs);
     }
 
-    for entry in std::fs::read_dir(hooks_dir)? {
+    for entry in std::fs::read_dir(hooks_dir).with_file_context(
+        FileOperation::Read,
+        hooks_dir,
+        "reading hooks directory",
+        "hooks_module",
+    )? {
         let entry = entry?;
         let path = entry.path();
 
@@ -165,8 +171,12 @@ pub fn load_hook_configs(hooks_dir: &Path) -> Result<HashMap<String, HookConfig>
                 .ok_or_else(|| anyhow::anyhow!("Invalid hook filename"))?
                 .to_string();
 
-            let content = std::fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read hook file: {}", path.display()))?;
+            let content = std::fs::read_to_string(&path).with_file_context(
+                FileOperation::Read,
+                &path,
+                "reading hook file",
+                "hooks_module",
+            )?;
 
             let config: HookConfig = serde_json::from_str(&content)
                 .with_context(|| format!("Failed to parse hook config: {}", path.display()))?;
@@ -345,9 +355,12 @@ pub async fn install_hooks(
         };
 
         // Read and parse the hook configuration
-        let content = tokio::fs::read_to_string(&source_path)
-            .await
-            .with_context(|| format!("Failed to read hook file: {}", source_path.display()))?;
+        let content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+            FileOperation::Read,
+            &source_path,
+            "reading hook file",
+            "hooks_module",
+        )?;
 
         let config: HookConfig = serde_json::from_str(&content)
             .with_context(|| format!("Failed to parse hook config: {}", source_path.display()))?;

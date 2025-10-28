@@ -79,9 +79,11 @@
 //!
 //! The template system will render up to 10 levels of nested references.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
+
+use crate::core::file_error::{FileOperation, FileResultExt};
 
 /// Allowed file extensions for project file access.
 ///
@@ -246,13 +248,19 @@ pub fn validate_content_path(
     }
 
     // Canonicalize to get absolute path and verify it's still within project_dir
-    let canonical_path = full_path
-        .canonicalize()
-        .with_context(|| format!("Failed to canonicalize path: {}", full_path.display()))?;
+    let canonical_path = full_path.canonicalize().with_file_context(
+        FileOperation::Canonicalize,
+        &full_path,
+        "resolving absolute path for security validation in content filter",
+        "content_filter",
+    )?;
 
-    let canonical_project = project_dir.canonicalize().with_context(|| {
-        format!("Failed to canonicalize project directory: {}", project_dir.display())
-    })?;
+    let canonical_project = project_dir.canonicalize().with_file_context(
+        FileOperation::Canonicalize,
+        project_dir,
+        "resolving project directory for security validation in content filter",
+        "content_filter",
+    )?;
 
     // Final security check: ensure canonical path is within project directory
     if !canonical_path.starts_with(&canonical_project) {
@@ -266,9 +274,12 @@ pub fn validate_content_path(
 
     // Check file size if limit is specified
     if let Some(max_bytes) = max_size {
-        let metadata = canonical_path.metadata().with_context(|| {
-            format!("Failed to read file metadata: {}", canonical_path.display())
-        })?;
+        let metadata = canonical_path.metadata().with_file_context(
+            FileOperation::Metadata,
+            &canonical_path,
+            "checking file size in content filter",
+            "content_filter",
+        )?;
 
         let file_size = metadata.len();
         if file_size > max_bytes {
@@ -322,14 +333,13 @@ pub fn validate_content_path(
 /// # }
 /// ```
 pub fn read_and_process_content(file_path: &Path) -> Result<String> {
-    // Read file content
-    let content = std::fs::read_to_string(file_path).with_context(|| {
-        format!(
-            "Failed to read project file: {}. \
-             Ensure the file is readable and contains valid UTF-8.",
-            file_path.display()
-        )
-    })?;
+    // Read file content with structured context
+    let content = std::fs::read_to_string(file_path).with_file_context(
+        FileOperation::Read,
+        file_path,
+        format!("reading content for template embedding in '{}'", file_path.display()),
+        "content_filter",
+    )?;
 
     // Process based on file extension
     let extension = file_path
@@ -675,7 +685,7 @@ mod recursive_tests {
         let context = Context::new();
 
         let template = "{{ 'docs/level1.md' | content }}";
-        let result = renderer.render_template(template, &context);
+        let result = renderer.render_template(template, &context, None);
 
         assert!(result.is_ok(), "Two-level recursion should succeed");
         let content = result.unwrap();
@@ -708,7 +718,7 @@ mod recursive_tests {
         let context = Context::new();
 
         let template = "{{ 'docs/level1.md' | content }}";
-        let result = renderer.render_template(template, &context);
+        let result = renderer.render_template(template, &context, None);
 
         assert!(result.is_ok(), "Three-level recursion should succeed");
         let content = result.unwrap();
@@ -736,7 +746,7 @@ mod recursive_tests {
         let context = Context::new();
 
         let template = "{{ 'docs/loop.md' | content }}";
-        let result = renderer.render_template(template, &context);
+        let result = renderer.render_template(template, &context, None);
 
         assert!(result.is_err(), "Circular reference should cause error");
         let err = result.unwrap_err().to_string();
@@ -772,7 +782,7 @@ mod recursive_tests {
         let context = Context::new();
 
         let template = "{{ 'docs/main.md' | content }}";
-        let result = renderer.render_template(template, &context);
+        let result = renderer.render_template(template, &context, None);
 
         assert!(result.is_ok(), "Multiple file references should succeed");
         let content = result.unwrap();

@@ -49,6 +49,7 @@
 //! - Supports extended attributes
 //! - Works with case-sensitive APFS volumes
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Context, Result};
 use futures::future::try_join_all;
 use sha2::{Digest, Sha256};
@@ -1497,7 +1498,12 @@ pub async fn read_files_parallel(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Stri
 /// # Errors
 /// Returns an error with context if the file cannot be read
 pub fn read_text_file(path: &Path) -> Result<String> {
-    fs::read_to_string(path).with_context(|| format!("Failed to read file: {}", path.display()))
+    Ok(fs::read_to_string(path).with_file_context(
+        FileOperation::Read,
+        path,
+        "reading text file",
+        "utils::fs::read_text_file",
+    )?)
 }
 
 /// Writes a text file atomically with proper error handling.

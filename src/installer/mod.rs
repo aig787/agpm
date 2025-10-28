@@ -51,6 +51,7 @@
 //! - **Reduced disk usage**: No duplicate worktrees for identical commits
 //! - **Efficient cleanup**: Minimal overhead for artifact cleanup operations
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use crate::utils::progress::{InstallationPhase, MultiPhaseProgress};
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -156,6 +157,7 @@ use crate::core::ResourceIterator;
 use crate::lockfile::{LockFile, LockedResource};
 use crate::manifest::Manifest;
 use crate::markdown::MarkdownFile;
+use crate::templating::RenderingMetadata;
 use crate::utils::fs::{atomic_write, ensure_dir};
 use crate::utils::progress::ProgressBar;
 use hex;
@@ -391,9 +393,12 @@ pub async fn install_resource(
             ));
         }
 
-        let local_content = tokio::fs::read_to_string(&source_path)
-            .await
-            .with_context(|| format!("Failed to read resource file: {}", source_path.display()))?;
+        let local_content = tokio::fs::read_to_string(&source_path).await.with_file_context(
+            FileOperation::Read,
+            &source_path,
+            "reading resource file",
+            "installer_module",
+        )?;
 
         // Validate markdown - silently accepts invalid frontmatter (warnings handled by MetadataExtractor)
         MarkdownFile::parse(&local_content)?;
@@ -545,6 +550,15 @@ pub async fn install_resource(
                 // Step 2: Render the raw frontmatter text (which may contain template syntax)
                 let frontmatter_template = format!("---\n{}\n---\n", raw_frontmatter_text);
 
+                // Create rendering metadata for better error messages
+                let rendering_metadata = RenderingMetadata {
+                    resource_name: entry.name.clone(),
+                    resource_type: entry.resource_type,
+                    dependency_chain: vec![], // Could be enhanced to include parent info
+                    source_path: Some(entry.path.clone().into()),
+                    depth: 0,
+                };
+
                 let mut renderer = TemplateRenderer::new(
                     true,
                     context.project_dir.to_path_buf(),
@@ -553,58 +567,19 @@ pub async fn install_resource(
                 .with_context(|| "Failed to create template renderer")?;
 
                 let rendered_frontmatter = renderer
-                    .render_template(&frontmatter_template, &template_context)
+                    .render_template(
+                        &frontmatter_template,
+                        &template_context,
+                        Some(&rendering_metadata),
+                    )
                     .map_err(|e| {
                         tracing::error!(
                             "Frontmatter rendering failed for resource '{}': {}",
                             entry.name,
                             e
                         );
-                        e
-                    })
-                    .with_context(|| {
-                        let manifest_alias_str = entry
-                            .manifest_alias
-                            .as_ref()
-                            .map(|a| format!(", manifest_alias=\"{}\"", a))
-                            .unwrap_or_default();
-                        let source_str = entry
-                            .source
-                            .as_ref()
-                            .map(|s| format!(", source=\"{}\"", s))
-                            .unwrap_or_default();
-                        let tool_str = entry
-                            .tool
-                            .as_ref()
-                            .map(|t| format!(", tool=\"{}\"", t))
-                            .unwrap_or_default();
-                        let commit_str = entry
-                            .resolved_commit
-                            .as_ref()
-                            .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
-                            .unwrap_or_default();
-
-                        // Try to find parent resources if lockfile is available
-                        let parent_str = if let Some(lf) = context.lockfile {
-                            let parents = find_parent_resources(lf, &entry.name);
-                            if !parents.is_empty() {
-                                format!(", required_by=\"{}\"", parents.join(", "))
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        };
-
-                        format!(
-                            "Failed to render frontmatter for canonical_name=\"{}\"{}{}{}{}{}",
-                            entry.name,
-                            manifest_alias_str,
-                            source_str,
-                            tool_str,
-                            commit_str,
-                            parent_str
-                        )
+                        // Convert TemplateError to anyhow::Error without wrapping
+                        anyhow::Error::from(e)
                     })?;
 
                 // Step 3: Parse the rendered frontmatter to check agpm.templating flag
@@ -660,61 +635,19 @@ pub async fn install_resource(
                     .with_context(|| "Failed to create template renderer")?;
 
                     renderer
-                        .render_template(&body_content, &template_context)
+                        .render_template(
+                            &body_content,
+                            &template_context,
+                            Some(&rendering_metadata),
+                        )
                         .map_err(|e| {
                             tracing::error!(
                                 "Body rendering failed for resource '{}': {}",
                                 entry.name,
                                 e
                             );
-                            for (i, cause) in e.chain().skip(1).enumerate() {
-                                tracing::error!("  Caused by [{}]: {}", i + 1, cause);
-                            }
-                            e
-                        })
-                        .with_context(|| {
-                            let manifest_alias_str = entry
-                                .manifest_alias
-                                .as_ref()
-                                .map(|a| format!(", manifest_alias=\"{}\"", a))
-                                .unwrap_or_default();
-                            let source_str = entry
-                                .source
-                                .as_ref()
-                                .map(|s| format!(", source=\"{}\"", s))
-                                .unwrap_or_default();
-                            let tool_str = entry
-                                .tool
-                                .as_ref()
-                                .map(|t| format!(", tool=\"{}\"", t))
-                                .unwrap_or_default();
-                            let commit_str = entry
-                                .resolved_commit
-                                .as_ref()
-                                .map(|c| format!(", resolved_commit=\"{}\"", &c[..8.min(c.len())]))
-                                .unwrap_or_default();
-
-                            // Try to find parent resources if lockfile is available
-                            let parent_str = if let Some(lf) = context.lockfile {
-                                let parents = find_parent_resources(lf, &entry.name);
-                                if !parents.is_empty() {
-                                    format!(", required_by=\"{}\"", parents.join(", "))
-                                } else {
-                                    String::new()
-                                }
-                            } else {
-                                String::new()
-                            };
-
-                            format!(
-                                "Failed to render body for canonical_name=\"{}\"{}{}{}{}{}",
-                                entry.name,
-                                manifest_alias_str,
-                                source_str,
-                                tool_str,
-                                commit_str,
-                                parent_str
-                            )
+                            // Convert TemplateError to anyhow::Error without wrapping
+                            anyhow::Error::from(e)
                         })?
                 } else {
                     // Use original body content without rendering
@@ -1359,23 +1292,26 @@ pub async fn install_resources(
             )));
         }
 
-        // Format each error with full context using user_friendly_error
-        use crate::core::error::user_friendly_error;
+        // Format each error simply without verbose user_friendly_error formatting
         let error_msgs: Vec<String> = errors
             .into_iter()
             .map(|(id, error)| {
-                // Convert error to user-friendly format to get enhanced context
-                let error_ctx = user_friendly_error(error);
-                // Format with resource name and the full error message
-                format!("  {}:\n    {}", id.name(), error_ctx.to_string().replace('\n', "\n    "))
+                // Just show the error directly without the extra formatting
+                format!("  {}: {}", id.name(), error)
             })
             .collect();
 
-        return Err(anyhow::anyhow!(
-            "Failed to install {} resources:\n{}",
+        // Create an error that won't trigger template error detection in user_friendly_error
+        let mut final_error = anyhow::anyhow!(
+            "Installation incomplete: {} resource(s) could not be set up\n{}",
             error_msgs.len(),
             error_msgs.join("\n\n")
-        ));
+        );
+
+        // Add a context that prevents template error detection
+        final_error = final_error.context("Installation completed with errors");
+
+        return Err(final_error);
     }
 
     let final_count = *installed_count.lock().await;

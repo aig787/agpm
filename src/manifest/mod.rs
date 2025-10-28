@@ -487,6 +487,7 @@ mod manifest_tests;
 #[cfg(test)]
 mod tool_config_tests;
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -1022,16 +1023,12 @@ impl Manifest {
     /// Expects a valid TOML file following the AGPM manifest format.
     /// See the module-level documentation for complete format specification.
     pub fn load(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path).with_context(|| {
-            format!(
-                "Cannot read manifest file: {}\n\n\
-                    Possible causes:\n\
-                    - File doesn't exist or has been moved\n\
-                    - Permission denied (check file ownership)\n\
-                    - File is locked by another process",
-                path.display()
-            )
-        })?;
+        let content = std::fs::read_to_string(path).with_file_context(
+            FileOperation::Read,
+            path,
+            "reading manifest file",
+            "manifest_module",
+        )?;
 
         let mut manifest: Self = toml::from_str(&content)
             .map_err(|e| crate::core::AgpmError::ManifestParseError {
@@ -1148,16 +1145,12 @@ impl Manifest {
     /// - The TOML syntax is invalid
     /// - The private config contains non-patch fields
     fn load_private(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path).with_context(|| {
-            format!(
-                "Cannot read private manifest file: {}\n\n\
-                    Possible causes:\n\
-                    - File doesn't exist or has been moved\n\
-                    - Permission denied (check file ownership)\n\
-                    - File is locked by another process",
-                path.display()
-            )
-        })?;
+        let content = std::fs::read_to_string(path).with_file_context(
+            FileOperation::Read,
+            path,
+            "reading private manifest file",
+            "manifest_module",
+        )?;
 
         let manifest: Self = toml::from_str(&content)
             .map_err(|e| crate::core::AgpmError::ManifestParseError {
@@ -1350,17 +1343,12 @@ impl Manifest {
 
         let content = doc.to_string();
 
-        std::fs::write(path, content).with_context(|| {
-            format!(
-                "Cannot write manifest file: {}\n\n\
-                    Possible causes:\n\
-                    - Permission denied (try running with elevated permissions)\n\
-                    - Directory doesn't exist\n\
-                    - Disk is full or read-only\n\
-                    - File is locked by another process",
-                path.display()
-            )
-        })?;
+        std::fs::write(path, content).with_file_context(
+            FileOperation::Write,
+            path,
+            "writing manifest file",
+            "manifest_module",
+        )?;
 
         Ok(())
     }

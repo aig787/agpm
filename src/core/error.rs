@@ -96,6 +96,8 @@ use colored::Colorize;
 use std::fmt;
 use thiserror::Error;
 
+use super::file_error::FileOperationError;
+
 /// The main error type for AGPM operations
 ///
 /// This enum represents all possible errors that can occur during AGPM operations.
@@ -1159,70 +1161,47 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         return create_error_context(ccmp_error.clone());
     }
 
-    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
-        // Try to extract path from the error chain context
-        let extracted_path = error
-            .chain()
-            .find_map(|e| {
-                let msg = e.to_string();
-                // Look for common patterns in our context messages:
-                // "Failed to read file: /path/to/file"
-                // "Failed to read local file: /path/to/file"
-                // "Failed to read resource file: /path/to/file"
-                // "Transitive dependency does not exist: /path (resolved from ...)"
-                if let Some(idx) = msg.find(": /") {
-                    // Extract path starting after ": "
-                    let path_part = &msg[idx + 2..]; // Skip ": " to keep the leading /
-                    // Take until end or until we hit " (" for additional context
-                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
-                    let mut path = path_part[..end_idx].to_string();
-                    // Clean up double slashes and normalize ./ segments
-                    path = path.replace("//", "/").replace("/./", "/");
-                    Some(path)
-                } else if let Some(idx) = msg.find(": ./") {
-                    // Relative path starting with "./"
-                    let path_part = &msg[idx + 2..];
-                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
-                    let mut path = path_part[..end_idx].to_string();
-                    // Clean up double slashes and normalize ./ segments
-                    path = path.replace("//", "/").replace("/./", "/");
-                    Some(path)
-                } else if let Some(idx) = msg.find(": ../") {
-                    // Relative path starting with "../"
-                    let path_part = &msg[idx + 2..];
-                    let end_idx = path_part.find(" (").unwrap_or(path_part.len());
-                    let mut path = path_part[..end_idx].to_string();
-                    // Clean up double slashes
-                    path = path.replace("//", "/");
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| "unknown".to_string());
+    if let Some(file_error) = error.downcast_ref::<FileOperationError>() {
+        return ErrorContext::new(AgpmError::FileSystemError {
+            operation: match file_error.operation {
+                crate::core::file_error::FileOperation::Read => "reading",
+                crate::core::file_error::FileOperation::Write => "writing",
+                crate::core::file_error::FileOperation::Exists => "checking if file exists",
+                crate::core::file_error::FileOperation::Metadata => "getting file metadata",
+                crate::core::file_error::FileOperation::Canonicalize => "resolving path",
+                crate::core::file_error::FileOperation::CreateDir => "creating directory",
+                crate::core::file_error::FileOperation::Validate => "validating file path",
+            }
+            .to_string(),
+            path: file_error.file_path.display().to_string(),
+        })
+        .with_suggestion(file_error.user_message())
+        .with_details(format!("Operation: {}", file_error.purpose));
+    }
 
+    if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
         match io_error.kind() {
             std::io::ErrorKind::PermissionDenied => {
                 return create_error_context(AgpmError::PermissionDenied {
                     operation: "file access".to_string(),
-                    path: extracted_path,
+                    path: "file path not specified in error context".to_string(),
                 });
             }
             std::io::ErrorKind::NotFound => {
                 return create_error_context(AgpmError::FileSystemError {
-                    operation: "file access".to_string(),
-                    path: extracted_path,
+                    operation: "file not found".to_string(),
+                    path: "file path not specified in error context".to_string(),
                 });
             }
             std::io::ErrorKind::AlreadyExists => {
                 return create_error_context(AgpmError::FileSystemError {
                     operation: "file creation".to_string(),
-                    path: extracted_path,
+                    path: "file path not specified in error context".to_string(),
                 });
             }
             std::io::ErrorKind::InvalidData => {
                 return ErrorContext::new(AgpmError::InvalidResource {
-                    name: extracted_path,
+                    name: "file path not specified in error context".to_string(),
                     reason: "invalid file format".to_string(),
                 })
                 .with_suggestion("Check the file format and ensure it's a valid resource file")
@@ -1250,42 +1229,70 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         || error_msg.contains("render"); // Also check for "render" as in "Failed to render body/frontmatter"
 
     if is_template_error {
-        // Extract resource context from error chain
-        // Look for enhanced context format with canonical_name, manifest_alias, etc.
+        // Extract resource context from TemplateError in the error chain
         let context = error
             .chain()
             .find_map(|e| {
-                let msg = e.to_string();
-                if msg.contains("Failed to render") && msg.contains("canonical_name=") {
-                    // Parse enhanced context format
-                    Some(parse_enhanced_context(&msg))
+                // Look for TemplateError in the error chain
+                if let Some(template_error) =
+                    e.downcast_ref::<crate::templating::error::TemplateError>()
+                {
+                    // Extract resource information directly from TemplateError
+                    let location = match template_error {
+                        crate::templating::error::TemplateError::VariableNotFound {
+                            location,
+                            ..
+                        }
+                        | crate::templating::error::TemplateError::SyntaxError {
+                            location,
+                            ..
+                        }
+                        | crate::templating::error::TemplateError::DependencyRenderFailed {
+                            location,
+                            ..
+                        }
+                        | crate::templating::error::TemplateError::ContentFilterError {
+                            location,
+                            ..
+                        } => location,
+                        crate::templating::error::TemplateError::CircularDependency {
+                            ..
+                        } => {
+                            // Circular dependency doesn't have a specific location, fallback to unknown
+                            return None;
+                        }
+                    };
+
+                    Some(ParsedEnhancedContext {
+                        canonical_name: location.resource_name.clone(),
+                        manifest_alias: None, // Could be derived from other context if needed
+                        source: None,         // Could be derived from other context if needed
+                        tool: Some(location.resource_type.to_string()),
+                        resolved_commit: None,
+                        required_by: None,
+                    })
                 } else {
                     None
                 }
             })
-            .unwrap_or_else(|| {
-                // Fallback: try old format for backwards compatibility
-                let name = error
-                    .chain()
-                    .find_map(|e| {
-                        let msg = e.to_string();
-                        if msg.contains("Failed to render template for")
-                            || msg.contains("Failed to render frontmatter template in")
-                        {
-                            msg.split("'").nth(1).map(|s| s.to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| "unknown resource".to_string());
-                ParsedEnhancedContext {
-                    canonical_name: name,
-                    manifest_alias: None,
-                    source: None,
-                    tool: None,
-                    resolved_commit: None,
-                    required_by: None,
-                }
+            .or_else(|| {
+                // Parse enhanced context format from error chain: "Failed to render X for canonical_name=\"...\""
+                error.chain().find_map(|e| {
+                    let msg = e.to_string();
+                    if msg.contains("Failed to render") && msg.contains("canonical_name=") {
+                        parse_enhanced_context(&msg).into()
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap_or_else(|| ParsedEnhancedContext {
+                canonical_name: "unknown resource".to_string(),
+                manifest_alias: None,
+                source: None,
+                tool: None,
+                resolved_commit: None,
+                required_by: None,
             });
 
         // Extract the actual Tera error message (the root cause, not the context)
@@ -1582,56 +1589,6 @@ mod tests {
         }
         assert!(ctx.suggestion.is_some());
         assert!(ctx.details.is_some());
-    }
-
-    #[test]
-    fn test_user_friendly_error_not_found_with_path() {
-        use std::io::{Error, ErrorKind};
-
-        let io_error = Error::new(ErrorKind::NotFound, "file not found");
-        let anyhow_error =
-            anyhow::Error::from(io_error).context("Failed to read local file: /path/to/missing.md");
-
-        let ctx = user_friendly_error(anyhow_error);
-        match &ctx.error {
-            AgpmError::FileSystemError {
-                path,
-                ..
-            } => {
-                assert_eq!(
-                    path, "/path/to/missing.md",
-                    "Path should be extracted from error context"
-                );
-            }
-            _ => panic!("Expected FileSystemError, got: {:?}", ctx.error),
-        }
-        assert!(ctx.suggestion.is_some());
-        assert!(ctx.suggestion.as_ref().unwrap().contains("/path/to/missing.md"));
-    }
-
-    #[test]
-    fn test_user_friendly_error_not_found_with_malformed_path() {
-        use std::io::{Error, ErrorKind};
-
-        // Test that we clean up double slashes and ./ segments
-        let io_error = Error::new(ErrorKind::NotFound, "file not found");
-        let anyhow_error =
-            anyhow::Error::from(io_error).context("Failed to read: //Users/test/./foo/./bar.md");
-
-        let ctx = user_friendly_error(anyhow_error);
-        match &ctx.error {
-            AgpmError::FileSystemError {
-                path,
-                ..
-            } => {
-                assert_eq!(
-                    path, "/Users/test/foo/bar.md",
-                    "Path should be normalized (double slashes and ./ removed)"
-                );
-            }
-            _ => panic!("Expected FileSystemError, got: {:?}", ctx.error),
-        }
-        assert!(ctx.suggestion.as_ref().unwrap().contains("/Users/test/foo/bar.md"));
     }
 
     #[test]

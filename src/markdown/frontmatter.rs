@@ -153,7 +153,7 @@ impl FrontmatterTemplating {
         let context = Self::build_template_context(project_config);
 
         // Always render as template - this handles the case where there's no template syntax
-        template_renderer.render_template(content, &context).map_err(|e| {
+        template_renderer.render_template(content, &context, None).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to render frontmatter template in '{}': {}",
                 file_path.display(),
@@ -291,7 +291,7 @@ impl FrontmatterParser {
             // Always apply templating to catch invalid Jinja syntax
             let templated = if let Some(inputs) = variant_inputs {
                 let ctx = FrontmatterTemplating::build_template_context_from_variant_inputs(inputs);
-                self.template_renderer.render_template(raw_fm, &ctx).map_err(|e| {
+                self.template_renderer.render_template(raw_fm, &ctx, None).map_err(|e| {
                     anyhow::anyhow!(
                         "Failed to render frontmatter template in '{}': {}",
                         file_path.display(),
@@ -301,13 +301,15 @@ impl FrontmatterParser {
             } else {
                 // Even without variant_inputs, render to catch syntax errors
                 let empty_context = TeraContext::new();
-                self.template_renderer.render_template(raw_fm, &empty_context).map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to render frontmatter template in '{}': {}",
-                        file_path.display(),
-                        e
-                    )
-                })?
+                self.template_renderer.render_template(raw_fm, &empty_context, None).map_err(
+                    |e| {
+                        anyhow::anyhow!(
+                            "Failed to render frontmatter template in '{}': {}",
+                            file_path.display(),
+                            e
+                        )
+                    },
+                )?
             };
             (Some(templated), true)
         } else {
@@ -315,8 +317,8 @@ impl FrontmatterParser {
         };
 
         // Step 3: Deserialize to target type
-        let parsed_data = if let Some(ref frontmatter) = templated_frontmatter {
-            match serde_yaml::from_str::<T>(frontmatter) {
+        let parsed_data = if let Some(frontmatter) = templated_frontmatter {
+            match serde_yaml::from_str::<T>(&frontmatter) {
                 Ok(data) => Some(data),
                 Err(e) => {
                     // Only warn once per file to avoid spam during transitive dependency resolution
@@ -373,7 +375,7 @@ https://github.com/aig787/agpm#transitive-dependencies",
 
         // Parse the data if frontmatter was present
         let parsed_data = if let Some(frontmatter) = raw_frontmatter.as_ref() {
-            match serde_yaml::from_str::<T>(frontmatter) {
+            match serde_yaml::from_str::<T>(&frontmatter) {
                 Ok(data) => Some(data),
                 Err(e) => {
                     eprintln!(
@@ -469,7 +471,7 @@ The document will be processed without metadata.",
     ) -> Result<String> {
         if let Some(inputs) = variant_inputs {
             let context = FrontmatterTemplating::build_template_context_from_variant_inputs(inputs);
-            self.template_renderer.render_template(content, &context).map_err(|e| {
+            self.template_renderer.render_template(content, &context, None).map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to render frontmatter template in '{}': {}",
                     file_path.display(),
@@ -479,7 +481,7 @@ The document will be processed without metadata.",
         } else {
             // Render with empty context to catch syntax errors
             let empty_context = TeraContext::new();
-            self.template_renderer.render_template(content, &empty_context).map_err(|e| {
+            self.template_renderer.render_template(content, &empty_context, None).map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to render frontmatter template in '{}': {}",
                     file_path.display(),

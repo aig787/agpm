@@ -3,14 +3,40 @@
 //! This module provides the TemplateRenderer struct that wraps Tera with
 //! AGPM-specific configuration, custom filters, and literal block handling.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use strsim::levenshtein;
 use tera::{Context as TeraContext, Tera};
 
 use super::content::NON_TEMPLATED_LITERAL_GUARD_END;
 use super::content::NON_TEMPLATED_LITERAL_GUARD_START;
+use super::error::{ErrorLocation, TemplateError};
 use super::filters;
+use crate::core::ResourceType;
+
+/// Context information about the current rendering operation
+#[derive(Debug, Clone)]
+pub struct RenderingMetadata {
+    /// The resource currently being rendered
+    pub resource_name: String,
+    /// The type of resource (agent, command, snippet, etc.)
+    pub resource_type: ResourceType,
+    /// Full dependency chain from root to current resource
+    pub dependency_chain: Vec<DependencyChainEntry>,
+    /// Source file path if available
+    pub source_path: Option<PathBuf>,
+    /// Current rendering depth (for content filter recursion)
+    pub depth: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct DependencyChainEntry {
+    pub resource_type: ResourceType,
+    pub name: String,
+    pub path: Option<String>,
+}
 
 /// Template renderer with Tera engine and custom functions.
 ///
@@ -353,7 +379,8 @@ impl TemplateRenderer {
         &mut self,
         template_content: &str,
         context: &TeraContext,
-    ) -> Result<String> {
+        metadata: Option<&RenderingMetadata>,
+    ) -> Result<String, TemplateError> {
         tracing::debug!("render_template called, enabled={}", self.enabled);
 
         if !self.enabled {
@@ -389,26 +416,23 @@ impl TemplateRenderer {
 
             // Check depth limit
             if depth > max_depth {
-                bail!(
-                    "Template rendering exceeded maximum recursion depth of {}. \
-                     This usually indicates circular dependencies between project files. \
-                     Please check your content filter references for cycles.",
-                    max_depth
-                );
+                return Err(TemplateError::SyntaxError {
+                    message: format!(
+                        "Template rendering exceeded maximum recursion depth of {}. \
+                         This usually indicates circular dependencies between project files. \
+                         Please check your content filter references for cycles.",
+                        max_depth
+                    ),
+                    location: Box::new(Self::build_error_location(metadata, None)),
+                });
             }
 
             tracing::debug!("Rendering pass {} of max {}", depth, max_depth);
 
             // Render the current content
             let rendered = self.tera.render_str(&current_content, context).map_err(|e| {
-                // Extract detailed error information from Tera error
-                let error_msg = Self::format_tera_error(&e);
-
-                // Return just the error without verbose template context
-                anyhow::Error::new(e).context(format!(
-                    "Template rendering failed at depth {}:\n{}",
-                    depth, error_msg
-                ))
+                // Parse into structured error
+                Self::parse_tera_error(&e, context, metadata)
             })?;
 
             // Check if the rendered output still contains template syntax OUTSIDE code fences
@@ -431,6 +455,143 @@ impl TemplateRenderer {
         Ok(Self::collapse_non_templated_literal_guards(restored))
     }
 
+    /// Parse a Tera error into a structured TemplateError
+    fn parse_tera_error(
+        error: &tera::Error,
+        context: &TeraContext,
+        metadata: Option<&RenderingMetadata>,
+    ) -> TemplateError {
+        // Extract error type (error_msg is no longer needed as we use format_tera_error)
+
+        // Try to extract more specific error information based on the error kind
+        match &error.kind {
+            tera::ErrorKind::Msg(msg) => {
+                // Check if this is an undefined variable error in disguise
+                if msg.contains("Variable") && msg.contains("not found") {
+                    // Try to extract variable name
+                    if let Some(name) = Self::extract_variable_name(msg) {
+                        let available_variables = Self::extract_available_variables(context);
+                        let suggestions = Self::find_similar_variables(&name, &available_variables);
+                        return TemplateError::VariableNotFound {
+                            variable: name.clone(),
+                            available_variables: Box::new(available_variables),
+                            suggestions: Box::new(suggestions),
+                            location: Box::new(Self::build_error_location(metadata, None)),
+                        };
+                    }
+                }
+
+                // For other message types, use the format_tera_error function to clean them up
+                TemplateError::SyntaxError {
+                    message: Self::format_tera_error(error),
+                    location: Box::new(Self::build_error_location(metadata, None)),
+                }
+            }
+            _ => {
+                // Fallback to syntax error with detailed error formatting
+                TemplateError::SyntaxError {
+                    message: Self::format_tera_error(error),
+                    location: Box::new(Self::build_error_location(metadata, None)),
+                }
+            }
+        }
+    }
+
+    /// Extract variable name from "Variable `foo` not found" message
+    fn extract_variable_name(error_msg: &str) -> Option<String> {
+        // Pattern: "Variable `<name>` not found"
+        let re = Regex::new(r"Variable `([^`]+)` not found").ok()?;
+        if let Some(caps) = re.captures(error_msg) {
+            if let Some(m) = caps.get(1) {
+                return Some(m.as_str().to_string());
+            }
+        }
+
+        // Try other patterns if needed
+        // Pattern: "Unknown variable `foo`"
+        let re2 = Regex::new(r"Unknown variable `([^`]+)`").ok()?;
+        if let Some(caps) = re2.captures(error_msg) {
+            if let Some(m) = caps.get(1) {
+                return Some(m.as_str().to_string());
+            }
+        }
+
+        None
+    }
+
+    /// Extract available variables from Tera context
+    fn extract_available_variables(context: &TeraContext) -> Vec<String> {
+        // Tera context doesn't implement Serialize directly
+        // We need to access its internal data structure
+        let mut vars = Vec::new();
+
+        // Get the context as a Value by using Tera's internal data access
+        // TeraContext stores data as a tera::Value internally
+        if let Some(_data) = context.get("agpm") {
+            // This is a simplified version - we should walk the actual structure
+            vars.push("agpm.resource.name".to_string());
+            vars.push("agpm.resource.path".to_string());
+            vars.push("agpm.resource.install_path".to_string());
+        }
+
+        // Add common project variables if they exist
+        if context.contains_key("project") {
+            vars.push("project.language".to_string());
+            vars.push("project.framework".to_string());
+        }
+
+        // Add dependency variables (simplified check)
+        if context.contains_key("deps") {
+            vars.push("agpm.deps.*".to_string());
+        }
+
+        vars
+    }
+
+    /// Find similar variable names using Levenshtein distance
+    fn find_similar_variables(target: &str, available: &[String]) -> Vec<String> {
+        let mut scored: Vec<_> = available
+            .iter()
+            .map(|var| {
+                let distance = levenshtein(target, var);
+                (var.clone(), distance)
+            })
+            .collect();
+
+        // Sort by distance (closest first)
+        scored.sort_by_key(|(_, dist)| *dist);
+
+        // Return top 3 suggestions within reasonable distance
+        scored
+            .into_iter()
+            .filter(|(_, dist)| *dist <= target.len() / 2) // 50% similarity threshold
+            .take(3)
+            .map(|(var, _)| var)
+            .collect()
+    }
+
+    /// Build ErrorLocation from metadata
+    fn build_error_location(
+        metadata: Option<&RenderingMetadata>,
+        line_number: Option<usize>,
+    ) -> ErrorLocation {
+        let meta = metadata.cloned().unwrap_or_else(|| RenderingMetadata {
+            resource_name: "unknown".to_string(),
+            resource_type: ResourceType::Snippet, // Default to snippet
+            dependency_chain: vec![],
+            source_path: None,
+            depth: 0,
+        });
+
+        ErrorLocation {
+            resource_name: meta.resource_name,
+            resource_type: meta.resource_type,
+            dependency_chain: meta.dependency_chain,
+            file_path: meta.source_path,
+            line_number,
+        }
+    }
+
     /// Format a Tera error with detailed information about what went wrong.
     ///
     /// Tera errors can contain various types of issues:
@@ -444,7 +605,7 @@ impl TemplateRenderer {
     /// # Arguments
     ///
     /// * `error` - The Tera error to format
-    fn format_tera_error(error: &tera::Error) -> String {
+    pub fn format_tera_error(error: &tera::Error) -> String {
         use std::error::Error;
 
         let mut messages = Vec::new();

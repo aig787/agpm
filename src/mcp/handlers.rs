@@ -3,6 +3,7 @@
 //! This module provides a pluggable handler system for installing MCP servers
 //! into different tools' configuration formats (Claude Code, OpenCode, etc.).
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::{Context, Result};
 use std::future::Future;
 use std::path::Path;
@@ -157,9 +158,12 @@ impl McpHandler for ClaudeCodeMcpHandler {
 
                 // Read the MCP server configuration as string first (for patch application)
                 let json_content =
-                    tokio::fs::read_to_string(&source_path).await.with_context(|| {
-                        format!("Failed to read MCP server file: {}", source_path.display())
-                    })?;
+                    tokio::fs::read_to_string(&source_path).await.with_file_context(
+                        FileOperation::Read,
+                        &source_path,
+                        "reading MCP server file",
+                        "mcp_handlers",
+                    )?;
 
                 // Apply patches if present
                 let (patched_content, applied_patches) = {
@@ -306,9 +310,12 @@ impl McpHandler for OpenCodeMcpHandler {
 
                 // Read the MCP server configuration as string first (for patch application)
                 let json_content =
-                    tokio::fs::read_to_string(&source_path).await.with_context(|| {
-                        format!("Failed to read MCP server file: {}", source_path.display())
-                    })?;
+                    tokio::fs::read_to_string(&source_path).await.with_file_context(
+                        FileOperation::Read,
+                        &source_path,
+                        "reading MCP server file",
+                        "mcp_handlers",
+                    )?;
 
                 // Apply patches if present
                 let (patched_content, applied_patches) = {
@@ -441,13 +448,21 @@ impl McpHandler for OpenCodeMcpHandler {
         // Remove MCP server files from the staging directory
         let mut removed_count = 0;
         if mcp_servers_dir.exists() {
-            for entry in std::fs::read_dir(&mcp_servers_dir)? {
+            for entry in std::fs::read_dir(&mcp_servers_dir).with_file_context(
+                FileOperation::Read,
+                &mcp_servers_dir,
+                "reading MCP servers directory",
+                "mcp_handlers",
+            )? {
                 let entry = entry?;
                 let path = entry.path();
                 if path.extension().is_some_and(|ext| ext == "json") {
-                    std::fs::remove_file(&path).with_context(|| {
-                        format!("Failed to remove MCP server file: {}", path.display())
-                    })?;
+                    std::fs::remove_file(&path).with_file_context(
+                        FileOperation::Write,
+                        &path,
+                        "removing MCP server file",
+                        "mcp_handlers",
+                    )?;
                     removed_count += 1;
                 }
             }

@@ -119,6 +119,7 @@ src/
 - **Note**: `cargo clippy --fix` requires `--allow-dirty` flag when there are uncommitted changes
 - **Docstrings**: Use `no_run` attribute for code examples by default unless they should be executed as tests; use
   `ignore` for examples that won't compile
+- **File Operations**: All file operations must use `with_file_context()` or return `FileOperationError` to ensure proper error context with file paths. Use `.with_context()` only for non-file operations.
 
 ## Dependencies
 

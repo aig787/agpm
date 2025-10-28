@@ -516,6 +516,12 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      Grep(pattern="std::fs::|std::io::", type="rust", output_mode="content", -n)
      Grep(pattern="tokio::fs::|tokio::io::", type="rust", output_mode="content", -n)
 
+     # Verify proper file operation error handling
+     Grep(pattern="\.with_file_context\(|FileOperationError|FileOps::", type="rust", output_mode="content", -n)
+
+     # Check for file operations without proper context
+     Grep(pattern="tokio::fs::|std::fs::.*\.await\?|\.with_context\(.*file|\.with_context\(.*path", type="rust", output_mode="content", -n)
+
      # Verify proper use of String vs &str
      Grep(pattern="String::new\(\)|String::from\(".*"\)", type="rust", output_mode="content", -B 1 -A 1)
      ```

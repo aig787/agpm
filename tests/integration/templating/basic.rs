@@ -792,8 +792,8 @@ This template has a syntax error.
     // Verify error message mentions template rendering failure
     let stderr = &install_output.stderr;
     assert!(
-        stderr.contains("Invalid resource content") && stderr.contains("Template errors occur"),
-        "Should report template rendering failure. Actual stderr: {}",
+        stderr.contains("Template syntax error"),
+        "Should report template syntax error. Actual stderr: {}",
         stderr
     );
 
@@ -847,9 +847,8 @@ This uses a non-existent variable: {{ agpm.nonexistent.field }}
     // Verify error message mentions template rendering failure
     let stderr = &install_output.stderr;
     assert!(
-        stderr.contains("Invalid resource content")
-            && (stderr.contains("Variable") || stderr.contains("Template errors occur")),
-        "Should report template rendering failure. Actual stderr: {}",
+        stderr.contains("Template syntax error") && stderr.contains("not found in context"),
+        "Should report template variable error. Actual stderr: {}",
         stderr
     );
 

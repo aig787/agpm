@@ -1181,7 +1181,9 @@ This is a test agent.",
         // The actual error will be about parsing the invalid TOML
         let err_str = err.to_string();
         assert!(
-            err_str.contains("Cannot read manifest")
+            err_str.contains("File operation failed")
+                || err_str.contains("Failed reading file")
+                || err_str.contains("Cannot read manifest")
                 || err_str.contains("unclosed")
                 || err_str.contains("parse")
                 || err_str.contains("expected")

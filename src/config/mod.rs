@@ -188,6 +188,7 @@ mod parser;
 pub use global::{GlobalConfig, GlobalConfigManager};
 pub use parser::parse_config;
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::Result;
 use std::path::PathBuf;
 
@@ -245,7 +246,12 @@ pub fn get_cache_dir() -> Result<PathBuf> {
     };
 
     if !cache_dir.exists() {
-        std::fs::create_dir_all(&cache_dir)?;
+        std::fs::create_dir_all(&cache_dir).with_file_context(
+            FileOperation::CreateDir,
+            &cache_dir,
+            "creating cache directory",
+            "config_module",
+        )?;
     }
 
     Ok(cache_dir)

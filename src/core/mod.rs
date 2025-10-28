@@ -219,6 +219,7 @@
 pub mod error;
 pub mod error_builders;
 pub mod error_helpers;
+pub mod file_error;
 pub mod operation_context;
 mod resource;
 pub mod resource_iterator;

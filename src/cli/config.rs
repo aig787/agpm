@@ -103,6 +103,7 @@
 //! - System editor not available (for edit command)
 //! - Source name conflicts (when adding sources)
 
+use crate::core::file_error::{FileOperation, FileResultExt};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use colored::Colorize;
@@ -400,7 +401,12 @@ impl ConfigCommand {
 
         // Create parent directories if needed
         if let Some(parent) = config_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent).await.with_file_context(
+                FileOperation::CreateDir,
+                parent,
+                "creating parent directory for config",
+                "cli_config",
+            )?;
         }
 
         config.save_to(&config_path).await?;
@@ -434,7 +440,12 @@ impl ConfigCommand {
 
         // Use save_to with our custom path
         if let Some(parent) = config_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent).await.with_file_context(
+                FileOperation::CreateDir,
+                parent,
+                "creating parent directory for config",
+                "cli_config",
+            )?;
         }
         config.save_to(&config_path).await?;
 
