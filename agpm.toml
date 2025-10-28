@@ -114,6 +114,7 @@ opencode-update-docstrings = { path = "local-deps/opencode/command/update-docstr
 # Add your hook dependencies here
 # Example: pre-commit = { source = "official", path = "hooks/pre-commit.json" }
 [hooks]
+agpm-update = { path = "local-deps/claude/hooks/agpm-update.json" }
 
 # Add your MCP server dependencies here
 # Example: filesystem = { source = "official", path = "mcp-servers/filesystem.json" }

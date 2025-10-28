@@ -735,7 +735,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/gh-pr-create"
 path = "local-deps/snippets/commands/gh-pr-create.md"
-checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
+checksum = "sha256:41b603b46fc06e299df60765b5e125988618acdf0d461606aa5de30d7776d5a1"
 installed_at = ".claude/snippets/local-deps/snippets/commands/gh-pr-create.md"
 dependencies = []
 tool = "claude-code"
@@ -747,7 +747,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/gh-pr-create"
 path = "local-deps/snippets/commands/gh-pr-create.md"
-checksum = "sha256:1499a242cee134d80edece61995d517478dbda643ecbea7c5ebde509437c14ac"
+checksum = "sha256:41b603b46fc06e299df60765b5e125988618acdf0d461606aa5de30d7776d5a1"
 installed_at = ".opencode/snippet/local-deps/snippets/commands/gh-pr-create.md"
 dependencies = []
 tool = "opencode"
@@ -1029,8 +1029,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/claude/commands/gh-pr-create"
 path = "local-deps/claude/commands/gh-pr-create.md"
-checksum = "sha256:8e0359ec98cb7d8102ec3e4db0d86e1b3276efe9fcb08032c04b11bb7b980ff0"
-context_checksum = "sha256:80c38adcf3d7180a4fe70263304e750f6ecaa19a5dde9d06a86512f41dc2fba8"
+checksum = "sha256:2d8fdb826723cf4df1da58423cfdf182452acf3728982aaa65d92189613d3656"
+context_checksum = "sha256:980da97ef7e7789fee088a08b8129061bc876085606c5e737bbba913d893f3a6"
 installed_at = ".claude/commands/gh-pr-create.md"
 dependencies = ["snippet:local-deps/snippets/commands/gh-pr-create"]
 tool = "claude-code"
@@ -1185,8 +1185,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/opencode/command/gh-pr-create"
 path = "local-deps/opencode/command/gh-pr-create.md"
-checksum = "sha256:414be5581285e3fd385273a4cb8651c323e86800aa34e3bd0a6e71ef3a756513"
-context_checksum = "sha256:d3ff5b16e781dabbd654270ec1383d3af0d0963a0d19cfb1b2ffde5ad2b7b455"
+checksum = "sha256:139ea99bc201a10717937cf257a299b2da5cbf33431e90811a32c94e2abd1a30"
+context_checksum = "sha256:de1b4da3d56e85725951e8ddfb3304b14965cbcc763da9406651eff8086721c2"
 installed_at = ".opencode/command/gh-pr-create.md"
 dependencies = ["snippet:local-deps/snippets/commands/gh-pr-create"]
 tool = "opencode"
@@ -1285,3 +1285,15 @@ manifest_alias = "opencode-update-docstrings"
 applied_patches = {}
 
 [commands.variant_inputs]
+
+[[hooks]]
+name = "local-deps/claude/hooks/agpm-update"
+path = "local-deps/claude/hooks/agpm-update.json"
+checksum = ""
+installed_at = ".claude/settings.local.json"
+dependencies = []
+tool = "claude-code"
+manifest_alias = "agpm-update"
+applied_patches = {}
+
+[hooks.variant_inputs]
