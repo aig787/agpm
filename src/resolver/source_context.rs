@@ -70,8 +70,11 @@ pub fn compute_canonical_name(path: &str, source_context: &SourceContext) -> Str
 
     match source_context {
         SourceContext::Local(manifest_dir) => {
-            // For local dependencies, compute relative path from manifest directory
-            let relative = compute_relative_path(manifest_dir, &without_ext);
+            // For local dependencies, try to strip the manifest directory prefix
+            // If it strips successfully, the path was absolute (or rooted)
+            // If it fails, the path is already relative
+            let manifest_path = Path::new(manifest_dir);
+            let relative = without_ext.strip_prefix(manifest_path).unwrap_or(&without_ext);
             normalize_path_for_storage(relative)
         }
         SourceContext::Git(repo_root) => compute_relative_to_repo(&without_ext, repo_root),
@@ -180,6 +183,29 @@ mod tests {
         let remote_ctx = SourceContext::remote("community");
         let name = compute_canonical_name("agents/helper.md", &remote_ctx);
         assert_eq!(name, "agents/helper");
+    }
+
+    #[test]
+    fn test_compute_canonical_name_with_already_relative_path() {
+        // Regression test for Windows bug where relative paths were being passed to
+        // compute_relative_path, causing it to generate incorrect paths with ../../..
+        //
+        // When trans_dep.get_path() returns an already-relative path like
+        // "local-deps/snippets/agents/helper.md", it should not be passed through
+        // compute_relative_path again, as that function expects absolute paths.
+        let local_ctx = SourceContext::local("/project");
+
+        // Test with a relative path (like what trans_dep.get_path() returns)
+        let name = compute_canonical_name("local-deps/snippets/agents/helper.md", &local_ctx);
+        assert_eq!(name, "local-deps/snippets/agents/helper");
+
+        // Verify it doesn't generate paths with ../../../
+        assert!(!name.contains(".."), "Generated name should not contain '..' sequences");
+
+        // Test with nested relative path
+        let name = compute_canonical_name("local-deps/claude/agents/rust-expert.md", &local_ctx);
+        assert_eq!(name, "local-deps/claude/agents/rust-expert");
+        assert!(!name.contains(".."));
     }
 
     // Tests for helper functions

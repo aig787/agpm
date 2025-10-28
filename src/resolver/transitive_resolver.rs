@@ -76,8 +76,8 @@ async fn process_transitive_dependency_spec(
     // Generate a name for the transitive dependency using source context
     let trans_name = if trans_dep.get_source().is_none() {
         // Local dependency - use manifest directory as source context
-        // Use trans_canonical (absolute path) instead of trans_dep.get_path() (relative path)
-        // because compute_canonical_name() expects absolute paths
+        // Use trans_dep.get_path() which is already relative to manifest directory
+        // (computed in create_path_only_transitive_dep)
         let manifest_dir = ctx
             .base
             .manifest
@@ -86,7 +86,7 @@ async fn process_transitive_dependency_spec(
             .ok_or_else(|| anyhow::anyhow!("Manifest directory not available"))?;
 
         let source_context = crate::resolver::source_context::SourceContext::local(manifest_dir);
-        generate_dependency_name(&trans_canonical.to_string_lossy(), &source_context)
+        generate_dependency_name(trans_dep.get_path(), &source_context)
     } else {
         // Git dependency - use remote source context
         let source_name = trans_dep
