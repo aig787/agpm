@@ -120,7 +120,7 @@ mod cache;
 pub mod common;
 mod config;
 mod init;
-mod install;
+pub mod install;
 mod list;
 mod migrate;
 mod outdated;
