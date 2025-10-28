@@ -18,7 +18,9 @@ use crate::utils;
 
 use super::dependency_graph::{DependencyGraph, DependencyNode};
 use super::pattern_expander::generate_dependency_name;
-use super::types::{DependencyKey, TransitiveContext, compute_dependency_variant_hash};
+use super::types::{
+    DependencyKey, TransitiveContext, apply_manifest_override, compute_dependency_variant_hash,
+};
 use super::version_resolver::{PreparedSourceVersion, VersionResolutionService};
 use super::{PatternExpansionService, ResourceFetchingService, is_file_relative_path};
 
@@ -246,38 +248,7 @@ async fn create_transitive_dependency(
 
     // Apply manifest override if found
     if let Some(override_info) = ctx.manifest_overrides.get(&override_key) {
-        tracing::debug!(
-            "Applying manifest override to transitive dependency: {} (normalized: {})",
-            dep.get_path(),
-            normalized_path
-        );
-
-        // Apply overrides to make transitive dep match manifest version
-        if let ResourceDependency::Detailed(ref mut detailed) = dep {
-            if let Some(filename) = &override_info.filename {
-                detailed.filename = Some(filename.clone());
-            }
-
-            if let Some(target) = &override_info.target {
-                detailed.target = Some(target.clone());
-            }
-
-            if let Some(install) = override_info.install {
-                detailed.install = Some(install);
-            }
-
-            // Replace template vars with manifest version for consistent rendering
-            if let Some(template_vars) = &override_info.template_vars {
-                detailed.template_vars = Some(template_vars.clone());
-            }
-
-            // Note: We don't need to update dependencies field as that's not in the override
-        } else {
-            tracing::warn!(
-                "Cannot apply manifest override to non-detailed dependency: {}",
-                dep.get_path()
-            );
-        }
+        apply_manifest_override(&mut dep, override_info, &normalized_path);
     }
 
     Ok(dep)
@@ -649,7 +620,7 @@ pub async fn resolve_with_services(
     let mut graph = DependencyGraph::new();
     let mut all_deps: HashMap<DependencyKey, ResourceDependency> = HashMap::new();
     let mut processed: HashSet<DependencyKey> = HashSet::new();
-    let mut queue: Vec<(String, ResourceDependency, Option<ResourceType>)> = Vec::new();
+    let mut queue: Vec<(String, ResourceDependency, Option<ResourceType>, String)> = Vec::new();
 
     // Add initial dependencies to queue with their threaded types
     for (name, dep, resource_type) in base_deps {
@@ -671,21 +642,15 @@ pub async fn resolve_with_services(
             tool,
             dep.is_local()
         );
-        queue.push((name.clone(), dep.clone(), Some(*resource_type)));
+        // Store pre-computed hash in queue to avoid duplicate computation
+        queue.push((name.clone(), dep.clone(), Some(*resource_type), variant_hash.clone()));
         all_deps.insert((*resource_type, name.clone(), source, tool, variant_hash), dep.clone());
     }
 
     // Process queue to discover transitive dependencies
-    while let Some((name, dep, resource_type)) = queue.pop() {
+    while let Some((name, dep, resource_type, variant_hash)) = queue.pop() {
         let source = dep.get_source().map(std::string::ToString::to_string);
         let tool = dep.get_tool().map(std::string::ToString::to_string);
-
-        // Compute variant_hash from MERGED variant_inputs (dep + global config)
-        // This ensures consistency with how LockedResource computes its hash
-        let merged_variant_inputs =
-            super::lockfile_builder::build_merged_variant_inputs(ctx.base.manifest, &dep);
-        let variant_hash = crate::utils::compute_variant_inputs_hash(&merged_variant_inputs)
-            .unwrap_or_else(|_| crate::utils::EMPTY_VARIANT_INPUTS_HASH.to_string());
 
         let resource_type =
             resource_type.expect("resource_type should always be threaded through queue");
@@ -736,14 +701,19 @@ pub async fn resolve_with_services(
                             concrete_name.clone(),
                             concrete_source,
                             concrete_tool,
-                            concrete_variant_hash,
+                            concrete_variant_hash.clone(),
                         );
 
                         if let std::collections::hash_map::Entry::Vacant(e) =
                             all_deps.entry(concrete_key)
                         {
                             e.insert(concrete_dep.clone());
-                            queue.push((concrete_name, concrete_dep, Some(resource_type)));
+                            queue.push((
+                                concrete_name,
+                                concrete_dep,
+                                Some(resource_type),
+                                concrete_variant_hash,
+                            ));
                         }
                     }
                 }
@@ -894,7 +864,12 @@ pub async fn resolve_with_services(
                             name
                         );
                         e.insert(trans_dep.clone());
-                        queue.push((trans_name, trans_dep, Some(dep_resource_type)));
+                        queue.push((
+                            trans_name,
+                            trans_dep,
+                            Some(dep_resource_type),
+                            trans_variant_hash,
+                        ));
                     } else {
                         // Dependency already exists - conflict detector will handle version requirement conflicts
                         tracing::debug!(

@@ -196,6 +196,80 @@ pub struct OverrideKey {
 pub type ManifestOverrideIndex = HashMap<OverrideKey, ManifestOverride>;
 
 // ============================================================================
+// Manifest Override Helper Functions
+
+/// Apply manifest overrides to a resource dependency.
+///
+/// This helper function centralizes the logic for applying manifest customizations
+/// to transitive dependencies, ensuring consistent behavior across the codebase.
+///
+/// # Arguments
+///
+/// * `dep` - The resource dependency to modify (will be updated in-place)
+/// * `override_info` - The override information from the manifest
+/// * `normalized_path` - The normalized path for logging
+///
+/// # Effects
+///
+/// Modifies the dependency in-place with the following overrides:
+/// - `filename` - Custom filename
+/// - `target` - Custom target path
+/// - `install` - Install flag override
+/// - `template_vars` - Template variables (replaces transitive version)
+///
+/// # Logging
+///
+/// Logs debug information about applied overrides and warnings for non-detailed dependencies.
+pub fn apply_manifest_override(
+    dep: &mut ResourceDependency,
+    override_info: &ManifestOverride,
+    normalized_path: &str,
+) {
+    tracing::debug!(
+        "Applying manifest override to transitive dependency: {} (normalized: {})",
+        dep.get_path(),
+        normalized_path
+    );
+
+    // Apply overrides to make transitive dep match manifest version
+    if let ResourceDependency::Detailed(detailed) = dep {
+        // Get the path before we start modifying the dependency
+        let path = detailed.path.clone();
+
+        if let Some(filename) = &override_info.filename {
+            detailed.filename = Some(filename.clone());
+        }
+
+        if let Some(target) = &override_info.target {
+            detailed.target = Some(target.clone());
+        }
+
+        if let Some(install) = override_info.install {
+            detailed.install = Some(install);
+        }
+
+        // Replace template vars with manifest version for consistent rendering
+        if let Some(template_vars) = &override_info.template_vars {
+            detailed.template_vars = Some(template_vars.clone());
+        }
+
+        tracing::debug!(
+            "Applied manifest overrides to '{}': filename={:?}, target={:?}, install={:?}, template_vars={}",
+            path,
+            detailed.filename,
+            detailed.target,
+            detailed.install,
+            detailed.template_vars.is_some()
+        );
+    } else {
+        tracing::warn!(
+            "Cannot apply manifest override to non-detailed dependency: {}",
+            dep.get_path()
+        );
+    }
+}
+
+// ============================================================================
 // Dependency Helper Functions
 // ============================================================================
 

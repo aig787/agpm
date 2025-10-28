@@ -816,8 +816,8 @@ local-config.json
             &cache,
             false,
             false,
-            None, // manifest
-            None, // lockfile
+            None,                // manifest
+            None,                // lockfile
             Some(&old_lockfile), // old_lockfile
             None,
             None,
@@ -870,8 +870,8 @@ local-config.json
             &cache,
             false,
             false,
-            None, // manifest
-            None, // lockfile
+            None,                // manifest
+            None,                // lockfile
             Some(&old_lockfile), // old_lockfile
             None,
             None,

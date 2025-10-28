@@ -5,21 +5,6 @@
 use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item};
 
-/// Check if tool is default ("claude-code") for conditional serialization.
-///
-/// # Arguments
-///
-/// * `tool` - Optional tool identifier
-///
-/// # Returns
-///
-/// `true` if the tool is "claude-code" (the default), `false` otherwise.
-#[allow(dead_code)]
-pub(crate) fn is_default_tool(tool: &Option<String>) -> bool {
-    // Default tool is claude-code, so always skip serializing when it's Some("claude-code")
-    matches!(tool, Some(t) if t == "claude-code")
-}
-
 /// Convert lockfile to TOML string with proper formatting for `applied_patches` and `template_vars`.
 ///
 /// Uses `toml_edit` to ensure:

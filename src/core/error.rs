@@ -1267,7 +1267,7 @@ pub fn user_friendly_error(error: anyhow::Error) -> ErrorContext {
         // Extract the actual Tera error message (the root cause, not the context)
         let tera_error_msg = error
             .chain()
-            .last()  // Get the root cause, not the outermost context
+            .last() // Get the root cause, not the outermost context
             .map(|e| e.to_string())
             .unwrap_or_else(|| "Unknown template error".to_string());
 
@@ -1830,7 +1830,10 @@ mod tests {
         let ctx = user_friendly_error(error_with_context);
 
         match &ctx.error {
-            AgpmError::InvalidResource { name, reason } => {
+            AgpmError::InvalidResource {
+                name,
+                reason,
+            } => {
                 // Verify resource name was extracted from enhanced context
                 assert_eq!(
                     name, "my-awesome-agent",

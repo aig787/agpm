@@ -9,7 +9,6 @@ use crate::git::GitRepo;
 use crate::manifest::{DetailedDependency, ResourceDependency};
 use crate::pattern::PatternResolver;
 use anyhow::{Context, Result};
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -239,7 +238,6 @@ pub fn generate_dependency_name(
 // ============================================================================
 
 use crate::core::ResourceType;
-use crate::lockfile::LockedResource;
 use std::collections::HashMap;
 
 use super::types::ResolutionCore;
@@ -293,78 +291,6 @@ impl PatternExpansionService {
             None, // manifest_dir - use current working directory
         )
         .await
-    }
-
-    /// Expand a pattern dependency to locked resources.
-    ///
-    /// This is full expansion that creates LockedResource entries
-    /// for lockfile generation.
-    ///
-    /// # Arguments
-    ///
-    /// * `core` - The resolution core
-    /// * `name` - The pattern dependency name
-    /// * `dep` - The pattern dependency
-    /// * `resource_type` - The type of resource
-    /// * `version_service` - Version service for worktree info
-    ///
-    /// # Returns
-    ///
-    /// List of locked resources for pattern
-    pub async fn expand_to_locked_resources(
-        &mut self,
-        core: &ResolutionCore,
-        name: &str,
-        dep: &ResourceDependency,
-        resource_type: ResourceType,
-        version_service: &VersionResolutionService,
-    ) -> Result<Vec<LockedResource>> {
-        // Get prepared version
-        let source = dep.get_source().context("Pattern dependency must have source")?;
-        let version = dep.get_version().unwrap_or("main");
-        let group_key = format!("{}::{}", source, version);
-
-        let prepared = version_service
-            .get_prepared_version(&group_key)
-            .context("Version not prepared for pattern dependency")?;
-
-        let _worktree_path = &prepared.worktree_path;
-        let resolved_commit = &prepared.resolved_commit;
-
-        // Expand pattern to concrete files
-        let concrete_deps = self.expand_pattern(core, dep, resource_type, version_service).await?;
-
-        let mut locked_resources = Vec::new();
-
-        for (concrete_name, concrete_dep) in concrete_deps {
-            // Record pattern alias mapping
-            self.pattern_alias_map.insert((resource_type, concrete_name.clone()), name.to_string());
-
-            // Build locked resource for each concrete dependency
-            // TODO: Add checksum calculation and proper path resolution
-            let variant_inputs = crate::resolver::lockfile_builder::VariantInputs::default();
-
-            locked_resources.push(LockedResource {
-                name: concrete_name,
-                source: Some(source.to_string()),
-                url: None, // Will be filled from source
-                path: concrete_dep.get_path().to_string(),
-                version: Some(version.to_string()),
-                resolved_commit: Some(resolved_commit.clone()),
-                checksum: "placeholder".to_string(), // Will be calculated properly
-                installed_at: "".to_string(),        // Will be calculated properly
-                manifest_alias: Some(name.to_string()),
-                dependencies: vec![],
-                resource_type,
-                tool: None,
-                applied_patches: BTreeMap::new(),
-                install: Some(true),
-                variant_inputs,
-                context_checksum: None,
-            });
-        }
-
-        Ok(locked_resources)
     }
 
     /// Get pattern alias for a concrete dependency.

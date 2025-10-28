@@ -921,23 +921,31 @@ pub(crate) trait DependencyExtractor: ContentExtractor {
             // Compute the final content (either rendered, cached, or raw)
             let final_content: String = if should_render {
                 // Build cache key to check if we've already rendered this exact resource
-                // CRITICAL: Include tool in cache key to prevent cross-tool cache pollution!
-                // Same path renders differently for different tools (claude-code vs opencode).
+                // CRITICAL: Include tool and resolved_commit in cache key to prevent cache pollution!
+                // Same path renders differently for different tools (claude-code vs opencode)
+                // and different commits must have different cache entries.
                 let cache_key = RenderCacheKey::new(
                     resource.path.clone(),
                     *dep_type,
                     resource.tool.clone(),
                     resource.variant_inputs.hash().to_string(),
+                    resource.resolved_commit.clone(),
                 );
 
                 // Check cache first (ensure guard is dropped before any awaits)
-                let cache_result = {
-                    if let Ok(mut cache) = self.render_cache().lock() {
-                        cache.get(&cache_key).cloned()
-                    } else {
-                        None
-                    }
-                }; // MutexGuard dropped here
+                let cache_result = self
+                    .render_cache()
+                    .lock()
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Render cache lock poisoned for resource '{}': {}. \
+                         This indicates a panic occurred while holding the lock.",
+                            resource.name,
+                            e
+                        )
+                    })?
+                    .get(&cache_key)
+                    .cloned(); // MutexGuard dropped here
 
                 if let Some(cached_content) = cache_result {
                     tracing::debug!("Render cache hit for '{}' ({})", resource.name, dep_type);
@@ -1185,33 +1193,41 @@ pub(crate) fn add_custom_alias(
 
     // Search for the resource in the deps map (already populated from lockfile)
     if let Some(type_deps) = deps.get_mut(&type_str_plural) {
-        // The resource should already exist in the map with its path-based key
-        // Find it by matching the DependencyData.name field (which is the lockfile name)
-        let existing_data = type_deps
-            .values()
-            .find(|data| {
-                // Match by the actual lockfile resource name
-                data.name == *dep_name
+        // Build name → key index for O(1) lookup instead of O(N²) linear search
+        let name_to_key: HashMap<String, String> = type_deps
+            .iter()
+            .flat_map(|(key, data)| {
+                // Map both the full name and various fallback names to the key
+                let mut mappings = vec![(data.name.clone(), key.clone())];
+
+                // Add basename fallbacks for direct manifest deps
+                if let Some(basename) = Path::new(&data.name).file_name().and_then(|n| n.to_str()) {
+                    mappings.push((basename.to_string(), key.clone()));
+                }
+                if let Some(stem) = Path::new(&data.path).file_stem().and_then(|n| n.to_str()) {
+                    mappings.push((stem.to_string(), key.clone()));
+                }
+                if let Some(path_basename) =
+                    Path::new(&data.path).file_name().and_then(|n| n.to_str())
+                {
+                    mappings.push((path_basename.to_string(), key.clone()));
+                }
+
+                mappings
             })
-            .cloned()
-            .or_else(|| {
+            .collect();
+
+        // Find the resource by name using O(1) lookup
+        let existing_data =
+            name_to_key.get(dep_name).and_then(|key| type_deps.get(key).cloned()).or_else(|| {
                 // Some direct manifest dependencies use the bare manifest key (no type prefix)
                 // even though transitive refs include the source-relative path (snippets/foo/bar).
                 // Fall back to matching by the last path segment to align the two representations.
-                Path::new(dep_name).file_name().and_then(|name| name.to_str()).and_then(
-                    |basename| {
-                        type_deps
-                            .values()
-                            .find(|data| {
-                                data.name == basename
-                                    || Path::new(&data.name).file_name().and_then(|n| n.to_str())
-                                        == Some(basename)
-                                    || Path::new(&data.path).file_stem().and_then(|n| n.to_str())
-                                        == Some(basename)
-                            })
-                            .cloned()
-                    },
-                )
+                Path::new(dep_name)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .and_then(|basename| name_to_key.get(basename))
+                    .and_then(|key| type_deps.get(key).cloned())
             });
 
         if let Some(data) = existing_data {

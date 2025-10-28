@@ -19,6 +19,14 @@ use super::content::ContentExtractor;
 use super::dependencies::DependencyExtractor;
 use super::utils::{deep_merge_json, to_native_path_display};
 
+/// Maximum recursion depth for template rendering to prevent stack overflow.
+///
+/// This limit prevents infinite recursion or extremely deep dependency chains
+/// that could cause stack overflow during template rendering. A depth of 50
+/// should be more than sufficient for any realistic use case while protecting
+/// against pathological cases.
+const MAX_RECURSION_DEPTH: usize = 50;
+
 /// Metadata about the current resource being rendered.
 ///
 /// This struct represents information about the resource that is currently
@@ -292,14 +300,13 @@ impl TemplateContextBuilder {
             .build_context_with_visited(resource_id, variant_inputs, &mut HashSet::new())
             .await?;
 
-        // Compute context checksum if resource uses templating
-        let context_checksum = if self.resource_uses_templating(resource_id).await? {
-            Some(compute_context_checksum(&context)?)
-        } else {
-            None
-        };
+        // Check if resource uses templating (optimized query)
+        let uses_templating = self.resource_uses_templating(resource_id).await?;
 
-        Ok((context, context_checksum))
+        // Create optimized context with cached checksum
+        let context_with_checksum = ContextWithChecksum::new(context, uses_templating);
+
+        Ok(context_with_checksum.into_tuple())
     }
 
     /// Check if a resource has templating enabled.
@@ -520,27 +527,78 @@ impl TemplateContextBuilder {
     }
 }
 
-/// Compute checksum of a Tera context for cache invalidation.
+/// A cached Tera context with pre-computed checksum for performance.
 ///
-/// Creates a deterministic hash based on the context data structure.
-/// This ensures that changes to template inputs are detected.
-fn compute_context_checksum(context: &TeraContext) -> Result<String> {
-    use crate::utils::canonicalize_json;
-    use sha2::{Digest, Sha256};
+/// This structure optimizes repeated checksum calculations by computing
+/// the checksum once when the context is first created, then caching
+/// it for subsequent accesses.
+#[derive(Debug, Clone)]
+pub struct ContextWithChecksum {
+    /// The template context
+    pub context: TeraContext,
+    /// Pre-computed checksum for cache invalidation
+    pub checksum: Option<String>,
+}
 
-    // Convert TeraContext to JSON Value using its built-in conversion
-    let context_clone = context.clone();
-    let json_value = context_clone.into_json();
+impl ContextWithChecksum {
+    /// Create a new context with optional checksum computation.
+    ///
+    /// The checksum is computed only if `compute_checksum` is true.
+    /// This avoids expensive hash calculations for non-templated resources.
+    #[must_use]
+    pub fn new(context: TeraContext, compute_checksum: bool) -> Self {
+        let checksum = if compute_checksum {
+            Self::compute_checksum(&context).ok()
+        } else {
+            None
+        };
 
-    // Serialize to deterministic JSON with preserved order
-    let json_str = canonicalize_json(&json_value)?;
+        Self {
+            context,
+            checksum,
+        }
+    }
 
-    // Compute SHA-256 hash
-    let mut hasher = Sha256::new();
-    hasher.update(json_str.as_bytes());
-    let hash = hasher.finalize();
+    /// Compute checksum of a Tera context for cache invalidation.
+    ///
+    /// Creates a deterministic hash based on the context data structure.
+    /// This ensures that changes to template inputs are detected.
+    fn compute_checksum(context: &TeraContext) -> Result<String> {
+        use crate::utils::canonicalize_json;
+        use sha2::{Digest, Sha256};
 
-    Ok(format!("sha256:{}", hex::encode(hash)))
+        // Convert TeraContext to JSON Value using its built-in conversion
+        let context_clone = context.clone();
+        let json_value = context_clone.into_json();
+
+        // Serialize to deterministic JSON with preserved order
+        let json_str = canonicalize_json(&json_value)?;
+
+        // Compute SHA-256 hash
+        let mut hasher = Sha256::new();
+        hasher.update(json_str.as_bytes());
+        let hash = hasher.finalize();
+
+        Ok(format!("sha256:{}", hex::encode(hash)))
+    }
+
+    /// Get the context
+    #[must_use]
+    pub fn context(&self) -> &TeraContext {
+        &self.context
+    }
+
+    /// Get the checksum (if computed)
+    #[must_use]
+    pub fn checksum(&self) -> Option<&str> {
+        self.checksum.as_deref()
+    }
+
+    /// Convert to tuple for backward compatibility
+    #[must_use]
+    pub fn into_tuple(self) -> (TeraContext, Option<String>) {
+        (self.context, self.checksum)
+    }
 }
 
 // Implement ContentExtractor trait for TemplateContextBuilder
@@ -580,10 +638,23 @@ impl DependencyExtractor for TemplateContextBuilder {
         variant_inputs: &serde_json::Value,
         rendering_stack: &mut HashSet<String>,
     ) -> Result<TeraContext> {
+        // Check recursion depth to prevent stack overflow
+        if rendering_stack.len() >= MAX_RECURSION_DEPTH {
+            anyhow::bail!(
+                "Maximum recursion depth ({}) exceeded while rendering '{}'. \
+                 This likely indicates a complex or cyclic dependency chain. \
+                 Current stack contains {} resources.",
+                MAX_RECURSION_DEPTH,
+                resource_id.name(),
+                rendering_stack.len()
+            );
+        }
+
         tracing::info!(
-            "Starting context build for '{}' (type: {:?})",
+            "Starting context build for '{}' (type: {:?}, depth: {})",
             resource_id.name(),
-            resource_id.resource_type()
+            resource_id.resource_type(),
+            rendering_stack.len()
         );
 
         let mut context = TeraContext::new();
@@ -706,5 +777,95 @@ impl DependencyExtractor for TemplateContextBuilder {
         }
 
         Ok(context)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_context_with_checksum_computation() {
+        let mut context = TeraContext::new();
+        context.insert("test", "value");
+        context.insert("number", &42);
+
+        // Test with checksum computation enabled
+        let ctx_with_checksum = ContextWithChecksum::new(context.clone(), true);
+
+        assert!(ctx_with_checksum.checksum().is_some(), "Checksum should be computed when enabled");
+        assert_eq!(ctx_with_checksum.context(), &context, "Context should be preserved");
+
+        // Verify checksum is deterministic
+        let ctx_with_checksum2 = ContextWithChecksum::new(context.clone(), true);
+        assert_eq!(
+            ctx_with_checksum.checksum(),
+            ctx_with_checksum2.checksum(),
+            "Checksum should be deterministic for same context"
+        );
+    }
+
+    #[test]
+    fn test_context_with_checksum_disabled() {
+        let mut context = TeraContext::new();
+        context.insert("test", "value");
+
+        // Test with checksum computation disabled
+        let ctx_with_checksum = ContextWithChecksum::new(context.clone(), false);
+
+        assert!(
+            ctx_with_checksum.checksum().is_none(),
+            "Checksum should not be computed when disabled"
+        );
+        assert_eq!(ctx_with_checksum.context(), &context, "Context should be preserved");
+    }
+
+    #[test]
+    fn test_context_with_checksum_different_contexts() {
+        let mut context1 = TeraContext::new();
+        context1.insert("test", "value1");
+
+        let mut context2 = TeraContext::new();
+        context2.insert("test", "value2");
+
+        let ctx1 = ContextWithChecksum::new(context1, true);
+        let ctx2 = ContextWithChecksum::new(context2, true);
+
+        assert_ne!(
+            ctx1.checksum(),
+            ctx2.checksum(),
+            "Different contexts should have different checksums"
+        );
+    }
+
+    #[test]
+    fn test_context_with_checksum_into_tuple() {
+        let mut context = TeraContext::new();
+        context.insert("test", "value");
+
+        let ctx_with_checksum = ContextWithChecksum::new(context.clone(), true);
+        let (returned_context, returned_checksum) = ctx_with_checksum.into_tuple();
+
+        assert_eq!(returned_context, context, "Returned context should match original");
+        assert!(returned_checksum.is_some(), "Returned checksum should be present");
+    }
+
+    #[test]
+    fn test_context_with_checksum_complex_structure() {
+        let mut context = TeraContext::new();
+
+        // Add nested structure to test comprehensive checksum calculation
+        context.insert("simple", "value");
+        context.insert("number", &42);
+        context.insert("boolean", &true);
+
+        let ctx_with_checksum = ContextWithChecksum::new(context, true);
+
+        assert!(ctx_with_checksum.checksum().is_some(), "Complex context should produce checksum");
+
+        // Verify checksum format
+        let checksum = ctx_with_checksum.checksum().unwrap();
+        assert!(checksum.starts_with("sha256:"), "Checksum should have sha256: prefix");
+        assert_eq!(checksum.len(), 7 + 64, "SHA256 hex should be 64 characters plus prefix");
     }
 }

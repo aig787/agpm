@@ -233,7 +233,6 @@ use std::collections::HashSet;
 /// # }
 /// ```
 ///
-
 /// # Error Handling
 ///
 /// Returns an error if:
@@ -1404,7 +1403,7 @@ pub async fn install_resources(
 ///     println!("Resource is required by: {}", parents.join(", "));
 /// }
 /// ```
-fn find_parent_resources(lockfile: &LockFile, resource_name: &str) -> Vec<String> {
+pub fn find_parent_resources(lockfile: &LockFile, resource_name: &str) -> Vec<String> {
     use crate::core::ResourceIterator;
 
     let mut parents = Vec::new();
