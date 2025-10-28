@@ -95,6 +95,48 @@ See [docs/examples/](docs/examples/) for more complete examples.
 
 Run `agpm --help` for complete command reference or see [Command Reference](docs/command-reference.md).
 
+## Progress Display
+
+AGPM provides real-time visibility into installation progress with a clean, professional interface:
+
+### Installation Phases
+
+```
+⠁ Syncing sources
+✓ Sources synced (0.8s)
+
+⠂ Resolving dependencies
+✓ Resolved 500 dependencies (1.2s)
+
+⠄ Installing resources (127/500 complete)
+  → agents/helper-122
+  → agents/helper-123
+  → agents/helper-124
+  → snippets/example-45
+  → commands/lint-67
+  → agents/helper-125
+  → agents/helper-126
+
+✓ Installed 500 resources (12.3s)
+  ✓ 300 agents
+  ✓ 150 snippets
+  ✓ 50 commands
+
+✓ Finalizing installation (0.2s)
+
+  500 resources installed
+  2 MCP servers configured
+```
+
+### Features
+
+- **Active Window**: Shows which resources are currently being processed (5-10 lines)
+- **Real-time Updates**: Resources appear and complete in real-time
+- **Timing Information**: Each phase shows duration for performance insights
+- **Bounded Output**: Terminal stays clean regardless of dependency count
+- **Resource Summary**: Final breakdown by resource type (agents, snippets, etc.)
+- **Professional Display**: Clean output without emoji prefixes
+
 ## Resource Types
 
 AGPM manages six types of resources:
