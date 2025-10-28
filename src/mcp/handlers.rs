@@ -34,7 +34,9 @@ pub trait McpHandler: Send + Sync {
     ///
     /// # Returns
     ///
-    /// `Ok(Vec<(name, applied_patches)>)` with applied patches for each server, or an error if the configuration failed.
+    /// `Ok((applied_patches, changed_count))` where:
+    /// - `applied_patches`: Vec<(name, AppliedPatches)> for each server
+    /// - `changed_count`: Number of servers that actually changed (ignoring timestamps)
     #[allow(clippy::type_complexity)]
     fn configure_mcp_servers(
         &self,
@@ -45,8 +47,12 @@ pub trait McpHandler: Send + Sync {
         manifest: &crate::manifest::Manifest,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
+            dyn Future<
+                    Output = Result<(
+                        Vec<(String, crate::manifest::patches::AppliedPatches)>,
+                        usize,
+                    )>,
+                > + Send
                 + '_,
         >,
     >;
@@ -84,8 +90,12 @@ impl McpHandler for ClaudeCodeMcpHandler {
         manifest: &crate::manifest::Manifest,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
+            dyn Future<
+                    Output = Result<(
+                        Vec<(String, crate::manifest::patches::AppliedPatches)>,
+                        usize,
+                    )>,
+                > + Send
                 + '_,
         >,
     > {
@@ -96,7 +106,7 @@ impl McpHandler for ClaudeCodeMcpHandler {
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), 0));
             }
 
             // Read MCP server configurations directly from source files
@@ -195,9 +205,9 @@ impl McpHandler for ClaudeCodeMcpHandler {
 
             // Configure MCP servers by merging into .mcp.json
             let mcp_config_path = project_root.join(".mcp.json");
-            super::merge_mcp_servers(&mcp_config_path, mcp_servers).await?;
+            let changed_count = super::merge_mcp_servers(&mcp_config_path, mcp_servers).await?;
 
-            Ok(all_applied_patches)
+            Ok((all_applied_patches, changed_count))
         })
     }
 
@@ -227,8 +237,12 @@ impl McpHandler for OpenCodeMcpHandler {
         manifest: &crate::manifest::Manifest,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
+            dyn Future<
+                    Output = Result<(
+                        Vec<(String, crate::manifest::patches::AppliedPatches)>,
+                        usize,
+                    )>,
+                > + Send
                 + '_,
         >,
     > {
@@ -240,7 +254,7 @@ impl McpHandler for OpenCodeMcpHandler {
 
         Box::pin(async move {
             if entries.is_empty() {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), 0));
             }
 
             let mut all_applied_patches = Vec::new();
@@ -359,6 +373,49 @@ impl McpHandler for OpenCodeMcpHandler {
                 .expect("opencode_config must be an object after is_object() check");
             let mcp_section = config_obj.entry("mcp").or_insert_with(|| serde_json::json!({}));
 
+            // Count how many servers actually changed (ignoring timestamps)
+            let mut changed_count = 0;
+            if let Some(mcp_obj) = mcp_section.as_object() {
+                for (name, new_config) in &mcp_servers {
+                    match mcp_obj.get(name) {
+                        Some(existing_value) => {
+                            // Server exists - check if it's actually different
+                            if let Ok(existing_config) =
+                                serde_json::from_value::<super::McpServerConfig>(
+                                    existing_value.clone(),
+                                )
+                            {
+                                // Create copies without the timestamp for comparison
+                                let mut existing_without_time = existing_config;
+                                let mut new_without_time = new_config.clone();
+
+                                // Remove timestamp from metadata for comparison
+                                if let Some(ref mut meta) = existing_without_time.agpm_metadata {
+                                    meta.installed_at.clear();
+                                }
+                                if let Some(ref mut meta) = new_without_time.agpm_metadata {
+                                    meta.installed_at.clear();
+                                }
+
+                                if existing_without_time != new_without_time {
+                                    changed_count += 1;
+                                }
+                            } else {
+                                // Different format - count as changed
+                                changed_count += 1;
+                            }
+                        }
+                        None => {
+                            // New server - will be added
+                            changed_count += 1;
+                        }
+                    }
+                }
+            } else {
+                // No existing MCP section - all servers are new
+                changed_count = mcp_servers.len();
+            }
+
             // Merge MCP servers into the mcp section
             if let Some(mcp_obj) = mcp_section.as_object_mut() {
                 for (name, server_config) in mcp_servers {
@@ -373,7 +430,7 @@ impl McpHandler for OpenCodeMcpHandler {
                     format!("Failed to write OpenCode config: {}", opencode_config_path.display())
                 })?;
 
-            Ok(all_applied_patches)
+            Ok((all_applied_patches, changed_count))
         })
     }
 
@@ -468,8 +525,12 @@ impl McpHandler for ConcreteMcpHandler {
         manifest: &crate::manifest::Manifest,
     ) -> Pin<
         Box<
-            dyn Future<Output = Result<Vec<(String, crate::manifest::patches::AppliedPatches)>>>
-                + Send
+            dyn Future<
+                    Output = Result<(
+                        Vec<(String, crate::manifest::patches::AppliedPatches)>,
+                        usize,
+                    )>,
+                > + Send
                 + '_,
         >,
     > {
