@@ -70,13 +70,13 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
    **Simple Detection Logic**:
    - **Historical Review** (skip automated checks):
-     - Contains `..` (commit range like `abc123..def456` or `main..HEAD`)
+     - Contains `..` but does NOT end with "DIFF" (commit range like `abc123..def456` or `main..HEAD`)
      - Single commit hash (like `abc123`)
      - Branch name (like `main` when not combined with `..`)
 
    - **Current Work Review** (run automated checks):
      - No arguments (uncommitted changes)
-     - Contains "DIFF" (staged changes)
+     - Contains "DIFF" (including ranges ending in "DIFF" like `HEAD..DIFF` or `HEAD~2..DIFF`)
 
    **Why this matters**:
    - **Historical**: Automated checks would test current code, not the commits being reviewed
@@ -161,7 +161,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    **Historical Review**: Display warning and proceed to step 6 (manual review).
 
    **Current Work Review**: Run these automated checks:
-   - `cargo fmt -- --check` (formatting)
+   - `cargo fmt` (formatting)
    - `cargo clippy -- -D warnings` (linting)
    - `cargo nextest run` (unit/integration tests)
    - `cargo test --doc` (doctests)
@@ -175,7 +175,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
      - `cargo test --doc` for doctests
 
    **Full Review (--full or default)**:
-   - First, run quick checks (cargo fmt -- --check, clippy, nextest run)
+   - First, run quick checks (cargo fmt, clippy, nextest run)
 
    **Agent Delegation Strategy** (adapts based on changeset size):
 
