@@ -1,3 +1,12 @@
+---
+agpm:
+  templating: true
+dependencies:
+  snippets:
+    - name: attribution
+      install: false
+      path: ../attribution.md
+---
 ## Git Commit Implementation
 
 Create git commits following these guidelines:
@@ -108,13 +117,13 @@ If no `--multi` flag, proceed with standard single commit process:
    ```
    /commit [flags] [paths...] [-- commit message]
    ```
-   
+
    **Parsing Logic**:
    - Parse all `--` flags first (e.g., `--multi`, `--dry-run`, `--no-attribution`, `--include-untracked`)
    - Treat remaining arguments as paths until you hit `--` or run out of arguments
    - Everything after `--` is the commit message
    - If no `--` separator and no explicit paths, the last argument may be a commit message
-   
+
    **Examples**:
    ```
    /commit .opencode                    # path only
@@ -123,7 +132,7 @@ If no `--multi` flag, proceed with standard single commit process:
    /commit --no-attribution             # flags only
    /commit feat: quick fix              # message only
    ```
-   
+
    **Arguments received**: $ARGUMENTS
 
 3. Analyze the relevant changes and determine the commit type:
@@ -144,7 +153,7 @@ If no `--multi` flag, proceed with standard single commit process:
     - If `--no-attribution` flag is provided: Skip all attribution
     - If `--co-authored` flag is provided: Force co-author attribution
     - If `--contributed` flag is provided: Force contribution note
-    - If NO attribution flags are provided: Automatically determine attribution by analyzing the diff using the logic in `.agpm/snippets/attribution.md`
+    - If NO attribution flags are provided: Automatically determine attribution by analyzing the diff using the logic in `Commit Attribution`
     - Briefly explain your attribution decision
 
 6. Stage the appropriate files:
@@ -241,3 +250,7 @@ Claude: Staging changes in src/ and tests/ directories...
 [Stages src/** and tests/** files]
 ✓ Committed: feat: improve cli error handling
 ```
+
+# Commit Attribution
+{{ agpm.deps.snippets.attribution.content }}
+# TEST MODIFICATION

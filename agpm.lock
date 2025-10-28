@@ -783,7 +783,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:2e43b95ed85626263b6290c5c1c09bc2988f05309cf2e262e5354eab6049868b"
+checksum = "sha256:ba06a41df528aaf545d2fba640418981fcef88ea07f33b22166851f783d08607"
 context_checksum = "sha256:4b1abcac25a92325de7e934f86c882f9a1f1a766dcfad66ba406dfa3a8c4250a"
 installed_at = ".claude/snippets/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
@@ -796,7 +796,7 @@ applied_patches = {}
 [[snippets]]
 name = "local-deps/snippets/commands/pr-self-review"
 path = "local-deps/snippets/commands/pr-self-review.md"
-checksum = "sha256:2e43b95ed85626263b6290c5c1c09bc2988f05309cf2e262e5354eab6049868b"
+checksum = "sha256:ba06a41df528aaf545d2fba640418981fcef88ea07f33b22166851f783d08607"
 context_checksum = "sha256:a700c724915b25c9617a9fda0114001eda724741a4f960faf017aa3320d887d6"
 installed_at = ".opencode/snippet/local-deps/snippets/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/rust-best-practices"]
@@ -1055,8 +1055,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/claude/commands/pr-self-review"
 path = "local-deps/claude/commands/pr-self-review.md"
-checksum = "sha256:a06396b30d25a368730b01118982d415e6920c7719663d476b21eefc15426f31"
-context_checksum = "sha256:5211dedfd84742d38f81115921d70ea9321773ce8c65f839344cbd42d6c75e01"
+checksum = "sha256:ef4c65684ad8ea4d12e37f98972f0d7fce023f364a8d195930e21684022266d8"
+context_checksum = "sha256:57554182109e8c87be9ecff2413b17cc5426ce505e52f20a09d823fab573ab38"
 installed_at = ".claude/commands/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
 tool = "claude-code"
@@ -1211,8 +1211,8 @@ applied_patches = {}
 [[commands]]
 name = "local-deps/opencode/command/pr-self-review"
 path = "local-deps/opencode/command/pr-self-review.md"
-checksum = "sha256:7c9604e39f649316346687b9eaf1f648bd53e9777fcc239089d55d541df5690b"
-context_checksum = "sha256:eaaf38620610e70df015d7163cf673b4e2f6c8a375107b72cfd5e6610082db3d"
+checksum = "sha256:cbe9e8377eabffcf55ad20c25f6fab2556334d7cdf18b96936853aab2634b301"
+context_checksum = "sha256:50c88629f9635da5dd247eed836413c91ba4839138aa5ef16c2328a3d89885fa"
 installed_at = ".opencode/command/pr-self-review.md"
 dependencies = ["snippet:local-deps/snippets/commands/pr-self-review"]
 tool = "opencode"

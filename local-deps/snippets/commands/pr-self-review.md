@@ -64,7 +64,33 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - `--security`: Focus on security implications
    - `--performance`: Focus on performance analysis
 
-3. **Detect changeset size and adapt review strategy**:
+3. **Detect if this is a historical review**:
+
+   **IMPORTANT**: Check if we're reviewing historical changes vs current work-in-progress.
+
+   **Simple Detection Logic**:
+   - **Historical Review** (skip automated checks):
+     - Contains `..` (commit range like `abc123..def456` or `main..HEAD`)
+     - Single commit hash (like `abc123`)
+     - Branch name (like `main` when not combined with `..`)
+
+   - **Current Work Review** (run automated checks):
+     - No arguments (uncommitted changes)
+     - Contains "DIFF" (staged changes)
+
+   **Why this matters**:
+   - **Historical**: Automated checks would test current code, not the commits being reviewed
+   - **Current**: Automated checks test what you're about to commit
+
+   **For historical reviews**:
+   - Display: "⚠️  Historical Review: automated checks skipped (would test current code, not historical state)"
+   - Suggest: "To test historical code: git checkout <commit> && cargo test"
+   - Proceed directly to manual code review (step 5)
+
+   **For current work**:
+   - Run automated checks as usual (step 4)
+
+4. **Detect changeset size and adapt review strategy**:
 
    **IMPORTANT**: Before running full reviews, analyze the changeset size to determine the appropriate approach.
 
@@ -128,7 +154,17 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - Suggest: "Consider reviewing by smaller commit ranges or individual commits instead"
    - Offer to proceed: "Proceeding with best-effort chunked review (may take significant time)"
 
-4. Run automated checks based on review type:
+5. Run automated checks (only for current work):
+
+   **IMPORTANT**: Skip automated checks for historical reviews - they would test current code, not the commits being reviewed.
+
+   **Historical Review**: Display warning and proceed to step 6 (manual review).
+
+   **Current Work Review**: Run these automated checks:
+   - `cargo fmt -- --check` (formatting)
+   - `cargo clippy -- -D warnings` (linting)
+   - `cargo nextest run` (unit/integration tests)
+   - `cargo test --doc` (doctests)
 
    **Quick Review (--quick)**:
    - Run these checks:
@@ -397,7 +433,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
        Grep(pattern="^pub fn \w+\([^)]*\) -> [^{]+\{[\s\S]{1,200}\}", type="rust", output_mode="content", -A 3)
        ```
 
-4. **Enhanced Unused Code Detection**:
+5.5. **Enhanced Unused Code Detection**:
    - Run systematic searches for unused code patterns:
      ```
      # Find unused imports (common patterns)
@@ -414,7 +450,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - Identify unused trait implementations
    - Find unused struct fields (private fields with no usage)
 
-5. Manual review based on these key areas:
+6. Manual review based on these key areas:
 
    **Code Quality**:
    - Adherence to `.agpm/snippets/rust-best-practices.md` (imports, naming, error handling, ownership)
@@ -499,7 +535,7 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
    - Examples in docs/ updated if relevant
    - Help text and man page consistency
 
-5.5. **Result Aggregation** (for chunked reviews only):
+6.5. **Result Aggregation** (for chunked reviews only):
 
    **IMPORTANT**: If you performed a chunked review (Large/Massive changeset), aggregate findings before generating the final report.
 
@@ -563,19 +599,32 @@ Perform a comprehensive pull request **review** for the AGPM project based on th
 
    **Mark aggregation todo as completed** when finished.
 
-6. Generate a summary report with:
+7. Generate a summary report with:
    - **Changes Overview**: What was modified
-   - **Test Results**: Pass/fail status of automated checks
+   - **Test Results**:
+     - For historical reviews: "Automated checks skipped (historical review)"
+     - For current changes: Pass/fail status of automated checks
    - **Issues Found**: Any problems discovered (grouped by severity)
-     - **For chunked reviews**: Use aggregated findings from step 5.5
+     - **For chunked reviews**: Use aggregated findings from step 6.5
      - Group by severity (Critical, High, Medium, Low)
      - Include cross-chunk concerns and patterns
    - **Security Analysis**: Security implications if any
    - **Performance Impact**: Performance considerations
    - **Recommendations**: Approve, request changes, or needs discussion
-   - **Review Strategy Used**: Note if chunked review was used (e.g., "Chunked review: 4 batches across 42 files")
+   - **Review Strategy Used**:
+     - Note if chunked review was used (e.g., "Chunked review: 4 batches across 42 files")
+     - Note if historical review with automated checks skipped
 
-7. Focus only on tracked files - ignore untracked files marked with ?? in git status
+8. Focus only on tracked files - ignore untracked files marked with ?? in git status
+
+**Historical Review Limitations**:
+- When reviewing past commits or commit ranges, automated checks (cargo fmt, clippy, cargo test) are skipped
+- This prevents misleading results since automated checks would run against current code, not the historical state
+- To run tests on historical code, checkout the commit manually:
+  ```bash
+  git checkout <commit-hash>
+  cargo test
+  ```
 
 Examples of usage:
 
@@ -595,18 +644,20 @@ Examples of usage:
 
 **Single commit review**:
 
-- `/pr-review abc123` - full review of specific commit abc123
-- `/pr-review HEAD~1 --quick` - quick review of the previous commit
-- `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d
+- `/pr-review abc123` - full review of specific commit abc123 (automated checks skipped)
+- `/pr-review HEAD~1 --quick` - quick review of the previous commit (automated checks skipped)
+- `/pr-review 5b3ee1d --security` - security review of commit 5b3ee1d (automated checks skipped)
 
 **Commit range review**:
 
-- `/pr-review main..HEAD` - full review of all changes from main to HEAD
-- `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456
-- `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main
-- `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range
+- `/pr-review main..HEAD` - full review of all changes from main to HEAD (automated checks skipped)
+- `/pr-review abc123..def456 --quick` - quick review of commits between abc123 and def456 (automated checks skipped)
+- `/pr-review origin/main..HEAD --security` - security review of all changes not yet in origin/main (automated checks skipped)
+- `/pr-review HEAD~3..HEAD` - review the last 3 commits as a range (automated checks skipped)
 
-**Note**: This command only reviews and reports on changes. To create an actual pull request after review, use the `gh-pr-create` command.
+**Note**:
+- This command only reviews and reports on changes. To create an actual pull request after review, use the `gh-pr-create` command.
+- For historical reviews (single commits or commit ranges), automated checks are skipped to prevent misleading results. The code analysis is performed on the historical changes, but tests run against the current codebase would not be meaningful.
 
 ## Best Practices
 
