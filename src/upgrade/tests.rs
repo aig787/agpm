@@ -359,4 +359,57 @@ mod tests {
         // With check_interval 0, updates are disabled
         assert_eq!(config_disabled.check_interval, 0);
     }
+
+    #[tokio::test]
+    async fn test_upgrade_url_matches_github_releases() {
+        use reqwest;
+
+        // Get the current platform string as the code would construct it
+        let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", "aarch64") => "aarch64-apple-darwin",
+            ("macos", "x86_64") => "x86_64-apple-darwin",
+            ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
+            ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
+            ("windows", "x86_64") => "x86_64-pc-windows-msvc",
+            ("windows", "aarch64") => "aarch64-pc-windows-msvc",
+            (os, arch) => panic!("Unsupported platform: {os}-{arch}"),
+        };
+
+        let extension = if std::env::consts::OS == "windows" {
+            "zip"
+        } else {
+            "tar.xz"
+        };
+
+        // This is what the code constructs after fix (CORRECT)
+        let expected_filename_by_code = format!("agpm-cli-{platform}.{extension}");
+
+        // Test version (using a known recent version)
+        let test_version = "0.4.9";
+
+        // Construct URL as the code would (now correct after fix)
+        let constructed_url = format!(
+            "https://github.com/aig787/agpm/releases/download/v{}/{}",
+            test_version, expected_filename_by_code
+        );
+
+        // Test that the constructed URL returns 200 (should work after fix)
+        let client = reqwest::Client::new();
+        let response = client.head(&constructed_url).send().await.unwrap();
+        assert_eq!(response.status(), 200, "Expected 200 for correct URL: {}", constructed_url);
+
+        // Also test that the old (incorrect) URL still returns 404 to verify our fix is necessary
+        let old_incorrect_filename = format!("agpm-{platform}.{extension}");
+        let old_incorrect_url = format!(
+            "https://github.com/aig787/agpm/releases/download/v{}/{}",
+            test_version, old_incorrect_filename
+        );
+        let old_response = client.head(&old_incorrect_url).send().await.unwrap();
+        assert_eq!(
+            old_response.status(),
+            404,
+            "Expected 404 for old incorrect URL: {}",
+            old_incorrect_url
+        );
+    }
 }

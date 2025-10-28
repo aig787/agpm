@@ -743,7 +743,7 @@ impl SelfUpdater {
             "tar.xz"
         };
 
-        let filename = format!("agpm-{platform}.{extension}");
+        let filename = format!("agpm-cli-{platform}.{extension}");
         Ok(self.build_github_download_url(version, &filename))
     }
 
