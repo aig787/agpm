@@ -318,7 +318,17 @@ pub async fn install_resource(
     // Check if file already exists and compute checksum
     let existing_checksum = if dest_path.exists() {
         let path = dest_path.clone();
-        tokio::task::spawn_blocking(move || LockFile::compute_checksum(&path)).await??.into()
+        let resource_type = entry.resource_type;
+        tokio::task::spawn_blocking(move || {
+            // For skills (directory-based resources), use directory checksum
+            if path.is_dir() && resource_type == crate::core::ResourceType::Skill {
+                LockFile::compute_directory_checksum(&path)
+            } else {
+                LockFile::compute_checksum(&path)
+            }
+        })
+        .await??
+        .into()
     } else {
         None
     };
@@ -355,20 +365,311 @@ pub async fn install_resource(
     let file_checksum = compute_file_checksum(&final_content);
 
     // Determine if content has changed
-    let content_changed = existing_checksum.as_ref() != Some(&file_checksum);
+    // For skills (directory-based resources), we need to compute directory checksum from source
+    let content_changed = if entry.resource_type == crate::core::ResourceType::Skill {
+        // For skills, compute directory checksum and compare with existing
+        // This is more accurate than comparing SKILL.md file content alone
+        true // TODO: Optimize by computing source directory checksum before processing
+    } else {
+        existing_checksum.as_ref() != Some(&file_checksum)
+    };
 
     // Write to disk if needed
     let should_install = entry.install.unwrap_or(true);
-    let actually_installed = write_resource_to_disk(
-        &dest_path,
-        &final_content,
-        should_install,
-        content_changed,
-        context,
-    )
-    .await?;
 
-    Ok((actually_installed, file_checksum, context_checksum, applied_patches))
+    // Handle skill directory installation separately from regular files
+    let actually_installed = if entry.resource_type == crate::core::ResourceType::Skill {
+        install_skill_directory(
+            entry,
+            &dest_path,
+            &applied_patches,
+            should_install,
+            content_changed,
+            context,
+        )
+        .await?
+    } else {
+        write_resource_to_disk(
+            &dest_path,
+            &final_content,
+            should_install,
+            content_changed,
+            context,
+        )
+        .await?
+    };
+
+    // For skills, compute directory checksum from source; for regular files, use file checksum
+    let final_checksum = if entry.resource_type == crate::core::ResourceType::Skill {
+        compute_skill_directory_checksum(entry, context).await?
+    } else {
+        file_checksum
+    };
+
+    Ok((actually_installed, final_checksum, context_checksum, applied_patches))
+}
+
+/// Install a skill directory (directory-based resource).
+///
+/// This function handles the special case of skill resources, which are directories
+/// containing a SKILL.md file and potentially other supporting files.
+///
+/// # Arguments
+///
+/// * `entry` - The locked resource entry for the skill
+/// * `dest_path` - The destination path (may need adjustment for directories)
+/// * `applied_patches` - Patches that were applied to the SKILL.md content
+/// * `should_install` - Whether to actually install (from install field)
+/// * `content_changed` - Whether the content has changed
+/// * `context` - Installation context
+///
+/// # Returns
+///
+/// Returns true if the skill was actually installed, false otherwise.
+async fn install_skill_directory(
+    entry: &LockedResource,
+    dest_path: &Path,
+    applied_patches: &crate::manifest::patches::AppliedPatches,
+    should_install: bool,
+    content_changed: bool,
+    context: &InstallContext<'_>,
+) -> Result<bool> {
+    use crate::installer::gitignore::add_path_to_gitignore;
+    use crate::utils::fs::{atomic_write, ensure_dir};
+
+    if !should_install {
+        tracing::debug!("Skipping skill directory installation (install=false)");
+        return Ok(false);
+    }
+
+    if !content_changed {
+        tracing::debug!("Skipping skill directory installation (content unchanged)");
+        return Ok(false);
+    }
+
+    // Determine the source directory for the skill
+    let source_dir = get_skill_source_directory(entry, context).await?;
+
+    // Ensure source is a directory and validate skill structure
+    if !source_dir.is_dir() {
+        return Err(anyhow::anyhow!("Skill source is not a directory: {}", source_dir.display()));
+    }
+
+    // Validate skill structure and extract metadata
+    let (skill_frontmatter, skill_files) = crate::skills::extract_skill_metadata(&source_dir)
+        .with_context(|| format!("Invalid skill directory: {}", source_dir.display()))?;
+
+    tracing::debug!(
+        "Installing skill '{}' with {} files: {}",
+        skill_frontmatter.name,
+        skill_files.len(),
+        source_dir.display()
+    );
+
+    // For skills, dest_path should be a directory, not a file
+    // Remove any .md extension that might have been added by default logic
+    let skill_dest_dir = if dest_path.extension().and_then(|s| s.to_str()) == Some("md") {
+        dest_path.with_extension("")
+    } else {
+        dest_path.to_path_buf()
+    };
+
+    // Ensure parent directory exists
+    if let Some(parent) = skill_dest_dir.parent() {
+        ensure_dir(parent)?;
+    }
+
+    // Add to .gitignore BEFORE copying directory to prevent accidental commits
+    if let Some(lock) = context.gitignore_lock {
+        let relative_path = skill_dest_dir
+            .strip_prefix(context.project_dir)
+            .unwrap_or(&skill_dest_dir)
+            .to_string_lossy()
+            .to_string();
+
+        add_path_to_gitignore(context.project_dir, &relative_path, lock)
+            .await
+            .with_context(|| format!("Failed to add {} to .gitignore", relative_path))?;
+    }
+
+    // Remove existing skill directory first to ensure clean installation
+    if skill_dest_dir.exists() {
+        tracing::debug!("Removing existing skill directory: {}", skill_dest_dir.display());
+        let skill_dest_dir_clone = skill_dest_dir.clone();
+        tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&skill_dest_dir_clone))
+            .await
+            .map_err(|e| anyhow::anyhow!("Task join error: {}", e))
+            .and_then(|r| r.map_err(Into::into))
+            .with_context(|| {
+                format!("Failed to remove existing skill directory: {}", skill_dest_dir.display())
+            })?;
+    }
+
+    // Copy entire skill directory
+    tracing::debug!(
+        "Installing skill directory from {} to {}",
+        source_dir.display(),
+        skill_dest_dir.display()
+    );
+
+    let source_dir_clone = source_dir.clone();
+    let skill_dest_dir_clone = skill_dest_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::utils::fs::copy_dir(&source_dir_clone, &skill_dest_dir_clone)
+    })
+    .await
+    .with_context(|| {
+        format!(
+            "Failed to copy skill directory from {} to {}",
+            source_dir.display(),
+            skill_dest_dir.display()
+        )
+    })??;
+
+    // Apply patches to SKILL.md if any were applied
+    if !applied_patches.is_empty() {
+        tracing::debug!(
+            "Applying {} patches to skill SKILL.md file",
+            applied_patches.total_count()
+        );
+
+        // Read the current SKILL.md content and re-apply patches
+        let installed_skill_md = skill_dest_dir.join("SKILL.md");
+        let skill_md_content = tokio::fs::read_to_string(&installed_skill_md).await?;
+
+        // Re-apply patches to the installed content
+        let empty_patches = std::collections::BTreeMap::new();
+        let resource_type = entry.resource_type.to_plural();
+        let lookup_name = entry.lookup_name();
+
+        let project_patch_data = context
+            .project_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
+
+        let private_patch_data = context
+            .private_patches
+            .and_then(|patches| patches.get(resource_type, lookup_name))
+            .unwrap_or(&empty_patches);
+
+        let file_path = format!("{}/SKILL.md", entry.installed_at);
+        let (patched_content, _) = crate::manifest::patches::apply_patches_to_content_with_origin(
+            &skill_md_content,
+            &file_path,
+            project_patch_data,
+            private_patch_data,
+        )?;
+
+        atomic_write(&installed_skill_md, patched_content.as_bytes()).with_context(|| {
+            format!("Failed to write patched SKILL.md to {}", installed_skill_md.display())
+        })?;
+    }
+
+    // Verify the skill was installed correctly
+    let installed_skill_md = skill_dest_dir.join("SKILL.md");
+    if !installed_skill_md.exists() {
+        return Err(anyhow::anyhow!(
+            "Installed skill directory missing SKILL.md: {}",
+            skill_dest_dir.display()
+        ));
+    }
+
+    tracing::debug!("Successfully installed skill directory to {}", skill_dest_dir.display());
+    Ok(true)
+}
+
+/// Get the source directory path for a skill resource.
+///
+/// This function determines where the skill directory is located, handling
+/// both Git-based and local sources.
+///
+/// # Arguments
+///
+/// * `entry` - The locked resource entry for the skill
+/// * `context` - Installation context with cache
+///
+/// # Returns
+///
+/// Returns the PathBuf pointing to the skill's source directory.
+async fn get_skill_source_directory(
+    entry: &LockedResource,
+    context: &InstallContext<'_>,
+) -> Result<PathBuf> {
+    if let Some(source_name) = &entry.source {
+        let url = entry
+            .url
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Resource {} has no URL", entry.name))?;
+
+        let is_local_source = entry.resolved_commit.as_deref().is_none_or(str::is_empty);
+
+        if is_local_source {
+            // Local directory source - use the URL as the path directly
+            Ok(PathBuf::from(url).join(&entry.path))
+        } else {
+            // Git-based resource - use SHA-based worktree
+            let sha = entry.resolved_commit.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Resource {} missing resolved commit SHA. Run 'agpm update' to regenerate lockfile.",
+                    entry.name
+                )
+            })?;
+
+            // Validate SHA format
+            if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow::anyhow!(
+                    "Invalid SHA '{}' for resource {}. Expected 40 hex characters.",
+                    sha,
+                    entry.name
+                ));
+            }
+
+            let cache_dir = context
+                .cache
+                .get_or_create_worktree_for_sha(source_name, url, sha, Some(&entry.name))
+                .await?;
+
+            Ok(cache_dir.join(&entry.path))
+        }
+    } else {
+        // Local skill - use project directory or absolute path
+        let candidate = Path::new(&entry.path);
+        Ok(if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            context.project_dir.join(candidate)
+        })
+    }
+}
+
+/// Compute directory checksum for a skill resource.
+///
+/// This function calculates the SHA-256 checksum of all files in the skill
+/// directory to detect changes.
+///
+/// # Arguments
+///
+/// * `entry` - The locked resource entry for the skill
+/// * `context` - Installation context with cache
+///
+/// # Returns
+///
+/// Returns the checksum string in "sha256:..." format.
+async fn compute_skill_directory_checksum(
+    entry: &LockedResource,
+    context: &InstallContext<'_>,
+) -> Result<String> {
+    let checksum_path = get_skill_source_directory(entry, context).await?;
+
+    let checksum = LockFile::compute_directory_checksum(&checksum_path)?;
+    tracing::debug!(
+        "Calculated directory checksum for skill {}: {} (from: {})",
+        entry.name,
+        checksum,
+        checksum_path.display()
+    );
+
+    Ok(checksum)
 }
 
 /// Install a single resource with progress bar updates for user feedback.

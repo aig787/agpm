@@ -22,6 +22,7 @@ pub mod lockfile_builder;
 pub mod path_resolver;
 pub mod pattern_expander;
 pub mod resource_service;
+pub mod skills;
 pub mod source_context;
 pub mod transitive_resolver;
 pub mod types;
@@ -838,9 +839,232 @@ impl DependencyResolver {
         }
 
         if dep.is_local() {
+<<<<<<< HEAD
             self.resolve_local_pattern(name, dep, resource_type)
         } else {
             self.resolve_git_pattern(name, dep, resource_type).await
+=======
+            // Local pattern
+            let (base_path, pattern_str) = path_resolver::parse_pattern_base_path(pattern);
+            let pattern_resolver = PatternResolver::new();
+            let matches = pattern_resolver.resolve(&pattern_str, &base_path)?;
+
+            let artifact_type_string = dep
+                .get_tool()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
+            let artifact_type = artifact_type_string.as_str();
+
+            // Compute variant inputs once for all matched files in the pattern
+            let variant_inputs = lockfile_builder::VariantInputs::new(
+                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+            );
+
+            let mut resources = Vec::new();
+            for matched_path in matches {
+                let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                let full_relative_path =
+                    path_resolver::construct_full_relative_path(&base_path, &matched_path);
+                let filename = path_resolver::extract_pattern_filename(&base_path, &matched_path);
+
+                let installed_at = install_path_resolver::resolve_install_path(
+                    self.core.manifest(),
+                    dep,
+                    artifact_type,
+                    resource_type,
+                    &filename,
+                )?;
+
+                resources.push(LockedResource {
+                    name: resource_name.clone(),
+                    source: None,
+                    url: None,
+                    path: full_relative_path,
+                    version: None,
+                    resolved_commit: None,
+                    checksum: String::new(),
+                    installed_at,
+                    files: None, // Single file resources don't have files list
+                    dependencies: vec![],
+                    resource_type,
+                    tool: Some(artifact_type_string.clone()),
+                    manifest_alias: Some(name.to_string()),
+                    applied_patches: lockfile_builder::get_patches_for_resource(
+                        self.core.manifest(),
+                        resource_type,
+                        &resource_name, // Use canonical resource name
+                        Some(name),     // Use manifest_alias for patch lookups
+                    ),
+                    install: dep.get_install(),
+                    variant_inputs: variant_inputs.clone(),
+                    context_checksum: None,
+                });
+            }
+
+            Ok(resources)
+        } else {
+            // Remote pattern
+            // Preserve the original pattern name since it might be shadowed later
+            let pattern_name = name;
+
+            let source_name = dep.get_source().ok_or_else(|| {
+                anyhow::anyhow!("Pattern dependency '{}' has no source specified", name)
+            })?;
+
+            let source_url = self
+                .core
+                .source_manager()
+                .get_source_url(source_name)
+                .ok_or_else(|| anyhow::anyhow!("Source '{}' not found", source_name))?;
+
+            let version_key =
+                dep.get_version().map_or_else(|| "HEAD".to_string(), |v| v.to_string());
+            let group_key = format!("{}::{}", source_name, version_key);
+
+            let prepared =
+                self.version_service.get_prepared_version(&group_key).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Prepared state missing for source '{}' @ '{}'",
+                        source_name,
+                        version_key
+                    )
+                })?;
+
+            let repo_path = Path::new(&prepared.worktree_path);
+            let pattern_resolver = PatternResolver::new();
+            let matches = pattern_resolver.resolve(pattern, repo_path)?;
+
+            let artifact_type_string = dep
+                .get_tool()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| self.core.manifest().get_default_tool(resource_type));
+            let artifact_type = artifact_type_string.as_str();
+
+            // Compute variant inputs once for all matched files in the pattern
+            let variant_inputs = lockfile_builder::VariantInputs::new(
+                lockfile_builder::build_merged_variant_inputs(self.core.manifest(), dep),
+            );
+
+            let mut resources = Vec::new();
+            for matched_path in matches {
+                // For skills, we need special handling to ensure we're matching directories containing SKILL.md
+                let (resource_name, _files) = if resource_type == crate::core::ResourceType::Skill {
+                    // Skills are directories - verify this directory contains SKILL.md
+                    let skill_md_path = matched_path.join("SKILL.md");
+
+                    if !skill_md_path.exists() {
+                        tracing::warn!(
+                            "Skipping skill directory '{}' - missing SKILL.md file",
+                            matched_path.display()
+                        );
+                        continue;
+                    }
+
+                    // Use directory name as resource identifier
+                    let resource_name = matched_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&matched_path.to_string_lossy())
+                        .to_string();
+
+                    // Collect all files in the skill directory
+                    let mut files = Vec::new();
+                    if let Ok(entries) = std::fs::read_dir(&matched_path) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                    files.push(file_name.to_string());
+                                }
+                            }
+                        }
+                        files.sort(); // Sort for deterministic ordering
+                    }
+
+                    (resource_name, Some(files))
+                } else {
+                    // For non-skill resources, use the standard logic
+                    let resource_name = crate::pattern::extract_resource_name(&matched_path);
+                    (resource_name, None)
+                };
+
+                // Compute installation path
+                let installed_at = match resource_type {
+                    ResourceType::Hook | ResourceType::McpServer => {
+                        install_path_resolver::resolve_merge_target_path(
+                            self.core.manifest(),
+                            artifact_type,
+                            resource_type,
+                        )
+                    }
+                    _ => {
+                        let artifact_path = self
+                            .core
+                            .manifest()
+                            .get_artifact_resource_path(artifact_type, resource_type)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Resource type '{}' is not supported by tool '{}'",
+                                    resource_type,
+                                    artifact_type
+                                )
+                            })?;
+
+                        let dep_flatten = dep.get_flatten();
+                        let tool_flatten = self
+                            .core
+                            .manifest()
+                            .get_tool_config(artifact_type)
+                            .and_then(|config| config.resources.get(resource_type.to_plural()))
+                            .and_then(|resource_config| resource_config.flatten);
+
+                        let flatten = dep_flatten.or(tool_flatten).unwrap_or(false);
+
+                        let base_target = if let Some(custom_target) = dep.get_target() {
+                            PathBuf::from(artifact_path.display().to_string())
+                                .join(custom_target.trim_start_matches('/'))
+                        } else {
+                            artifact_path.to_path_buf()
+                        };
+
+                        let filename = repo_path.join(&matched_path).to_string_lossy().to_string();
+                        let relative_path = compute_relative_install_path(
+                            &base_target,
+                            Path::new(&filename),
+                            flatten,
+                        );
+                        normalize_path_for_storage(normalize_path(&base_target.join(relative_path)))
+                    }
+                };
+
+                resources.push(LockedResource {
+                    name: resource_name.clone(),
+                    source: Some(source_name.to_string()),
+                    url: Some(source_url.clone()),
+                    path: normalize_path_for_storage(matched_path.to_string_lossy().to_string()),
+                    version: prepared.resolved_version.clone(),
+                    resolved_commit: Some(prepared.resolved_commit.clone()),
+                    checksum: String::new(),
+                    installed_at,
+                    files: None, // Single file resources don't have files list
+                    dependencies: vec![],
+                    resource_type,
+                    tool: Some(artifact_type_string.clone()),
+                    manifest_alias: Some(pattern_name.to_string()),
+                    applied_patches: lockfile_builder::get_patches_for_resource(
+                        self.core.manifest(),
+                        resource_type,
+                        &resource_name,     // Use canonical resource name
+                        Some(pattern_name), // Use manifest_alias for patch lookups
+                    ),
+                    install: dep.get_install(),
+                    variant_inputs: variant_inputs.clone(),
+                    context_checksum: None,
+                });
+            }
+
+            Ok(resources)
+>>>>>>> 74680d2 (feat: add comprehensive Claude Skills support with directory-based resources)
         }
     }
 

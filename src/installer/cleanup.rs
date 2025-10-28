@@ -227,9 +227,18 @@ pub async fn cleanup_removed_artifacts(
 
             // Only remove if the file actually exists
             if full_path.exists() {
-                tokio::fs::remove_file(&full_path).await.with_context(|| {
-                    format!("Failed to remove old artifact: {}", full_path.display())
-                })?;
+                // Skills are directories, all other resources are files
+                if old_resource.resource_type == crate::core::ResourceType::Skill {
+                    // Remove skill directory recursively
+                    tokio::fs::remove_dir_all(&full_path).await.with_context(|| {
+                        format!("Failed to remove old skill directory: {}", full_path.display())
+                    })?;
+                } else {
+                    // Remove single file for other resource types
+                    tokio::fs::remove_file(&full_path).await.with_context(|| {
+                        format!("Failed to remove old artifact: {}", full_path.display())
+                    })?;
+                }
 
                 removed.push(old_resource.installed_at.clone());
 
