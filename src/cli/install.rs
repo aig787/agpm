@@ -148,7 +148,7 @@ pub struct InstallCommand {
     /// This is useful for development scenarios where you don't want to
     /// commit lockfile changes.
     #[arg(long)]
-    no_lock: bool,
+    pub no_lock: bool,
 
     /// Verify checksums from existing lockfile
     ///
@@ -156,7 +156,7 @@ pub struct InstallCommand {
     /// This mode ensures reproducible installations and is recommended
     /// for CI/CD pipelines and production deployments.
     #[arg(long)]
-    frozen: bool,
+    pub frozen: bool,
 
     /// Don't use cache, clone fresh repositories
     ///
@@ -164,7 +164,7 @@ pub struct InstallCommand {
     /// to temporary locations. This increases installation time but ensures
     /// completely fresh downloads.
     #[arg(long)]
-    no_cache: bool,
+    pub no_cache: bool,
 
     /// Maximum number of parallel operations (default: max(10, 2 × CPU cores))
     ///
@@ -185,14 +185,14 @@ pub struct InstallCommand {
     /// - `--max-parallel 4`: Conservative parallel installation
     /// - `--max-parallel 20`: Aggressive parallel installation (powerful systems)
     #[arg(long, value_name = "NUM")]
-    max_parallel: Option<usize>,
+    pub max_parallel: Option<usize>,
 
     /// Suppress non-essential output
     ///
     /// When enabled, only errors and essential information will be printed.
     /// Progress bars and status messages will be hidden.
     #[arg(short, long)]
-    quiet: bool,
+    pub quiet: bool,
 
     /// Disable progress bars (for programmatic use, not exposed as CLI arg)
     #[arg(skip)]
@@ -212,7 +212,7 @@ pub struct InstallCommand {
     /// when you know transitive dependencies are already satisfied or for debugging
     /// dependency issues.
     #[arg(long)]
-    no_transitive: bool,
+    pub no_transitive: bool,
 
     /// Preview installation without making changes
     ///
@@ -232,7 +232,13 @@ pub struct InstallCommand {
     /// - 0: No changes would be made
     /// - 1: Changes would be made (useful for CI checks)
     #[arg(long)]
-    dry_run: bool,
+    pub dry_run: bool,
+}
+
+impl Default for InstallCommand {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InstallCommand {
@@ -622,10 +628,6 @@ impl InstallCommand {
                         lockfile.update_resource_applied_patches(id.name(), &applied_patches);
                     }
 
-                    // Complete installation phase
-                    if count > 0 && !self.quiet && !self.no_progress {
-                        multi_phase.complete_phase(Some(&format!("Installed {count} resources")));
-                    }
                     count
                 }
                 Err(e) => {
@@ -642,8 +644,22 @@ impl InstallCommand {
             if !lockfile.hooks.is_empty() {
                 // Configure hooks directly from source files (no copying)
                 // Reuse the existing cache instance
-                crate::hooks::install_hooks(&lockfile, actual_project_dir, &cache).await?;
+                let hooks_changed =
+                    crate::hooks::install_hooks(&lockfile, actual_project_dir, &cache).await?;
                 hook_count = lockfile.hooks.len();
+
+                // Always show hooks configuration feedback with changed count
+                if !self.quiet {
+                    if hook_count == 1 {
+                        if hooks_changed == 1 {
+                            println!("✓ Configured 1 hook (1 changed)");
+                        } else {
+                            println!("✓ Configured 1 hook ({hooks_changed} changed)");
+                        }
+                    } else {
+                        println!("✓ Configured {hook_count} hooks ({hooks_changed} changed)");
+                    }
+                }
             }
 
             // Handle MCP servers if present - group by artifact type
@@ -651,41 +667,42 @@ impl InstallCommand {
                 use std::collections::HashMap;
 
                 // Group MCP servers by artifact type
-                let mut servers_by_type: HashMap<String, Vec<&crate::lockfile::LockedResource>> =
+                let mut servers_by_type: HashMap<String, Vec<crate::lockfile::LockedResource>> =
                     HashMap::new();
-                for server in &lockfile.mcp_servers {
-                    let tool = server.tool.clone().unwrap_or_else(|| "claude-code".to_string());
-                    servers_by_type.entry(tool).or_default().push(server);
+                {
+                    // Scope to limit the immutable borrow of lockfile
+                    for server in &lockfile.mcp_servers {
+                        let tool = server.tool.clone().unwrap_or_else(|| "claude-code".to_string());
+                        servers_by_type.entry(tool).or_default().push(server.clone());
+                    }
                 }
 
                 // Collect all applied patches to update lockfile after iteration
                 let mut all_mcp_patches: Vec<(String, crate::manifest::patches::AppliedPatches)> =
                     Vec::new();
+                // Track total changed MCP servers
+                let mut total_mcp_changed = 0;
 
                 // Configure MCP servers for each artifact type using appropriate handler
                 for (artifact_type, servers) in servers_by_type {
                     if let Some(handler) = crate::mcp::handlers::get_mcp_handler(&artifact_type) {
-                        // Get artifact base directory
-                        let artifact_base = if let Some(artifact_path) =
-                            manifest.get_tool_config(&artifact_type).map(|c| &c.path)
-                        {
-                            actual_project_dir.join(artifact_path)
-                        } else {
-                            // Fallback to legacy target config for backward compatibility
-                            #[allow(deprecated)]
-                            actual_project_dir.join(match artifact_type.as_str() {
-                                "claude-code" => ".claude",
-                                "opencode" => ".opencode",
-                                _ => continue, // Skip unknown types
-                            })
-                        };
+                        // Get artifact base directory - must be properly configured
+                        let artifact_base = manifest
+                            .get_tool_config(&artifact_type)
+                            .map(|c| &c.path)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Tool '{}' is not configured. Please define it in [default-tools] section.",
+                                    artifact_type
+                                )
+                            })?;
+                        let artifact_base = actual_project_dir.join(artifact_base);
 
                         // Configure MCP servers by reading directly from source (no file copying)
-                        // Convert Vec<&LockedResource> to Vec<LockedResource> for the handler
-                        let server_entries: Vec<_> = servers.iter().map(|s| (*s).clone()).collect();
+                        let server_entries = servers.clone();
 
-                        // Reuse the existing cache instance and collect applied patches
-                        let applied_patches_list = handler
+                        // Reuse the existing cache instance and collect applied patches and changed count
+                        let (applied_patches_list, changed_count) = handler
                             .configure_mcp_servers(
                                 actual_project_dir,
                                 &artifact_base,
@@ -703,6 +720,7 @@ impl InstallCommand {
 
                         // Collect patches for later application
                         all_mcp_patches.extend(applied_patches_list);
+                        total_mcp_changed += changed_count;
 
                         server_count += servers.len();
                     }
@@ -713,11 +731,20 @@ impl InstallCommand {
                     lockfile.update_resource_applied_patches(&name, &applied_patches);
                 }
 
+                // Use the actual changed count from MCP handlers
+                let mcp_servers_changed = total_mcp_changed;
+
                 if server_count > 0 && !self.quiet {
                     if server_count == 1 {
-                        println!("✓ Configured 1 MCP server");
+                        if mcp_servers_changed == 1 {
+                            println!("✓ Configured 1 MCP server (1 changed)");
+                        } else {
+                            println!("✓ Configured 1 MCP server ({mcp_servers_changed} changed)");
+                        }
                     } else {
-                        println!("✓ Configured {server_count} MCP servers");
+                        println!(
+                            "✓ Configured {server_count} MCP servers ({mcp_servers_changed} changed)"
+                        );
                     }
                 }
             }
@@ -733,14 +760,6 @@ impl InstallCommand {
                 && !self.quiet
             {
                 println!("🗑️  Cleaned up {} moved or removed artifact(s)", removed.len());
-            }
-
-            // Start finalizing phase
-            if !self.quiet
-                && !self.no_progress
-                && (installed_count > 0 || hook_count > 0 || server_count > 0)
-            {
-                multi_phase.start_phase(InstallationPhase::Finalizing, None);
             }
 
             if !self.no_lock {
@@ -778,14 +797,6 @@ impl InstallCommand {
             // Update .gitignore only if installation succeeded
             // Always update gitignore (was controlled by manifest.target.gitignore before v0.4.0)
             update_gitignore(&lockfile, actual_project_dir, true)?;
-
-            // Complete finalizing phase
-            if !self.quiet
-                && !self.no_progress
-                && (installed_count > 0 || hook_count > 0 || server_count > 0)
-            {
-                multi_phase.complete_phase(Some("Installation complete!"));
-            }
         }
 
         // Return the installation error if there was one
@@ -793,12 +804,7 @@ impl InstallCommand {
             return Err(error);
         }
 
-        // Clear the multi-phase display
-        if !self.quiet && !self.no_progress {
-            multi_phase.clear();
-        }
-
-        // Only show message if no progress was shown and there's nothing installed
+        // Only show "no dependencies" message if nothing was installed AND no progress shown
         if self.no_progress
             && !self.quiet
             && installed_count == 0
@@ -836,14 +842,11 @@ impl InstallCommand {
         &self,
         new_lockfile: &Arc<LockFile>,
         lockfile_path: &Path,
-        multi_phase: &std::sync::Arc<crate::utils::progress::MultiPhaseProgress>,
+        _multi_phase: &std::sync::Arc<crate::utils::progress::MultiPhaseProgress>,
     ) -> Result<()> {
         use colored::Colorize;
 
-        // Clear progress display
-        if !self.quiet && !self.no_progress {
-            multi_phase.clear();
-        }
+        // In dry-run mode, we don't need to clear since we're not showing active window progress
 
         // Track changes
         let mut new_resources = Vec::new();

@@ -1197,9 +1197,21 @@ pub async fn install_resources(
 
     let total = all_entries.len();
 
-    // Start installation phase with progress if provided
+    // Calculate optimal window size
+    let concurrency = max_concurrency.unwrap_or_else(|| {
+        let cores = std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4);
+        std::cmp::max(10, cores * 2)
+    });
+    let window_size =
+        crate::utils::progress::MultiPhaseProgress::calculate_window_size(concurrency);
+
+    // Start installation phase with active window tracking
     if let Some(ref pm) = progress {
-        pm.start_phase_with_progress(InstallationPhase::InstallingResources, total);
+        pm.start_phase_with_active_tracking(
+            InstallationPhase::InstallingResources,
+            total,
+            window_size,
+        );
     }
 
     // Pre-warm the cache by creating all needed worktrees upfront
@@ -1242,29 +1254,27 @@ pub async fn install_resources(
 
     // Create thread-safe progress tracking
     let installed_count = Arc::new(Mutex::new(0));
+    let type_counts =
+        Arc::new(Mutex::new(std::collections::HashMap::<crate::core::ResourceType, usize>::new()));
     let concurrency = max_concurrency.unwrap_or(usize::MAX).max(1);
 
     // Create gitignore lock for thread-safe gitignore updates
     let gitignore_lock = Arc::new(Mutex::new(()));
 
-    // Update initial progress message
-    if let Some(ref pm) = progress {
-        pm.update_current_message(&format!("Installing 0/{total} resources"));
-    }
-
-    // Process installations in parallel
+    // Process installations in parallel with active tracking
     let results: Vec<InstallResult> = stream::iter(all_entries)
         .map(|(entry, resource_dir)| {
             let project_dir = project_dir.to_path_buf();
             let installed_count = Arc::clone(&installed_count);
+            let type_counts = Arc::clone(&type_counts);
             let cache = cache.clone();
             let progress = progress.clone();
             let gitignore_lock = Arc::clone(&gitignore_lock);
-
+            let entry_type = entry.resource_type;
             async move {
-                // Update progress message for current resource
+                // Signal that this resource is starting
                 if let Some(ref pm) = progress {
-                    pm.update_current_message(&format!("Installing {}", entry.name));
+                    pm.mark_resource_active(&entry);
                 }
 
                 let install_context = InstallContext::new(
@@ -1284,35 +1294,37 @@ pub async fn install_resources(
                 let res =
                     install_resource_for_parallel(&entry, &resource_dir, &install_context).await;
 
-                // Update progress on success - but only count if actually installed
-                if let Ok((
-                    actually_installed,
-                    _file_checksum,
-                    _context_checksum,
-                    _applied_patches,
-                )) = &res
-                {
-                    if *actually_installed {
+                // Handle result and track completion
+                match res {
+                    Ok((actually_installed, file_checksum, context_checksum, applied_patches)) => {
+                        // Always increment the counter (regardless of whether file was written)
                         let mut count = installed_count.lock().await;
                         *count += 1;
-                    }
 
-                    if let Some(ref pm) = progress {
-                        let count = *installed_count.lock().await;
-                        pm.update_current_message(&format!("Installing {count}/{total} resources"));
-                        pm.increment_progress(1);
-                    }
-                }
+                        // Track by type for summary (only count those actually written to disk)
+                        if actually_installed {
+                            *type_counts.lock().await.entry(entry_type).or_insert(0) += 1;
+                        }
 
-                match res {
-                    Ok((installed, file_checksum, context_checksum, applied_patches)) => Ok((
-                        entry.id(),
-                        installed,
-                        file_checksum,
-                        context_checksum,
-                        applied_patches,
-                    )),
-                    Err(err) => Err((entry.id(), err)),
+                        // Signal completion and update counter
+                        if let Some(ref pm) = progress {
+                            pm.mark_resource_complete(&entry, *count, total);
+                        }
+
+                        Ok((
+                            entry.id(),
+                            actually_installed,
+                            file_checksum,
+                            context_checksum,
+                            applied_patches,
+                        ))
+                    }
+                    Err(err) => {
+                        // On error, still increment counter but skip slot clearing to avoid deadlocks
+                        let mut count = installed_count.lock().await;
+                        *count += 1;
+                        Err((entry.id(), err))
+                    }
                 }
             }
         })
@@ -1339,9 +1351,12 @@ pub async fn install_resources(
     }
 
     if !errors.is_empty() {
-        // Complete phase with error message
+        // Complete phase with error
         if let Some(ref pm) = progress {
-            pm.complete_phase(Some(&format!("Failed to install {} resources", errors.len())));
+            pm.complete_phase_with_window(Some(&format!(
+                "Failed to install {} resources",
+                errors.len()
+            )));
         }
 
         // Format each error with full context using user_friendly_error
@@ -1364,12 +1379,30 @@ pub async fn install_resources(
     }
 
     let final_count = *installed_count.lock().await;
+    let installed_count_sum: usize = type_counts.lock().await.values().sum();
 
-    // Complete installation phase successfully
+    // Complete phase with summary grouped by type
     if let Some(ref pm) = progress
         && final_count > 0
     {
-        pm.complete_phase(Some(&format!("Installed {final_count} resources")));
+        // Show message with both processed and actually installed counts if they differ
+        let message = if final_count != installed_count_sum {
+            format!("Processed {final_count} resources ({installed_count_sum} changed)")
+        } else {
+            format!("Installed {final_count} resources")
+        };
+
+        pm.complete_phase_with_window(Some(&message));
+
+        // Print summary by resource type (only actually installed)
+        let counts = type_counts.lock().await;
+        if !counts.is_empty() {
+            pm.suspend(|| {
+                for (resource_type, count) in counts.iter() {
+                    println!("  ✓ {} {}", count, resource_type.to_plural());
+                }
+            });
+        }
     }
 
     Ok((final_count, checksums, context_checksums, applied_patches_list))
