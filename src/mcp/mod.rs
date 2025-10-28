@@ -56,7 +56,7 @@ pub struct McpConfig {
 ///
 /// This structure represents a single MCP server entry in the `.mcp.json` file.
 /// It supports both command-based and HTTP transport configurations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpServerConfig {
     /// The command to execute to start the server (command-based servers)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ pub struct McpServerConfig {
 ///
 /// This metadata is added to server configurations that are managed by AGPM,
 /// allowing us to distinguish between AGPM-managed and user-managed servers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgpmMetadata {
     /// Indicates this server is managed by AGPM
     pub managed: bool,
@@ -340,12 +340,14 @@ impl McpConfig {
 ///
 /// This is a helper function used by MCP handlers to merge server configurations
 /// that have already been read from source files.
+///
+/// Returns the number of servers that actually changed (ignoring timestamps).
 pub async fn merge_mcp_servers(
     mcp_config_path: &Path,
     agpm_servers: HashMap<String, McpServerConfig>,
-) -> Result<()> {
+) -> Result<usize> {
     if agpm_servers.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
     // Load existing MCP configuration
@@ -361,13 +363,42 @@ pub async fn merge_mcp_servers(
         ));
     }
 
+    // Count how many servers actually changed (ignoring timestamps)
+    let mut changed_count = 0;
+    for (name, new_config) in &agpm_servers {
+        match mcp_config.mcp_servers.get(name) {
+            Some(existing_config) => {
+                // Server exists - check if it's actually different
+                // Create copies without the timestamp for comparison
+                let mut existing_without_time = existing_config.clone();
+                let mut new_without_time = new_config.clone();
+
+                // Remove timestamp from metadata for comparison
+                if let Some(ref mut meta) = existing_without_time.agpm_metadata {
+                    meta.installed_at = String::new();
+                }
+                if let Some(ref mut meta) = new_without_time.agpm_metadata {
+                    meta.installed_at = String::new();
+                }
+
+                if existing_without_time != new_without_time {
+                    changed_count += 1;
+                }
+            }
+            None => {
+                // New server - will be added
+                changed_count += 1;
+            }
+        }
+    }
+
     // Update MCP configuration with AGPM-managed servers
     mcp_config.update_managed_servers(agpm_servers)?;
 
     // Save the updated MCP configuration
     mcp_config.save(mcp_config_path)?;
 
-    Ok(())
+    Ok(changed_count)
 }
 
 pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) -> Result<()> {
@@ -407,7 +438,8 @@ pub async fn configure_mcp_servers(project_root: &Path, mcp_servers_dir: &Path) 
     }
 
     // Use the helper function to merge servers
-    merge_mcp_servers(&mcp_config_path, agpm_servers).await
+    merge_mcp_servers(&mcp_config_path, agpm_servers).await?;
+    Ok(())
 }
 
 /// Remove all AGPM-managed MCP servers from the configuration.
@@ -1823,5 +1855,290 @@ mod tests {
         let config = McpConfig::load_or_default(&config_path).unwrap();
         assert!(config.mcp_servers.contains_key("test"));
         assert_eq!(config.mcp_servers.len(), 1);
+    }
+
+    // Change detection tests for merge_mcp_servers function
+
+    #[tokio::test]
+    async fn test_merge_mcp_servers_unchanged_detection() {
+        let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+        let config_path = temp.path().join(".mcp.json");
+
+        // Create initial config with a server
+        let initial_config = json!({
+            "mcpServers": {
+                "test-server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "_agpm": {
+                        "managed": true,
+                        "source": "test-source",
+                        "version": "v1.0.0",
+                        "installed_at": "2024-01-01T00:00:00Z"
+                    }
+                }
+            }
+        });
+
+        tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
+            .await
+            .unwrap();
+
+        // Create "same" server configuration (only timestamp differs)
+        let mut agpm_servers = HashMap::new();
+        agpm_servers.insert(
+            "test-server".to_string(),
+            McpServerConfig {
+                command: Some("node".to_string()),
+                args: vec!["server.js".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-02T00:00:00Z".to_string(), // Different timestamp
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // Merge should detect no changes (ignoring timestamps)
+        let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+        assert_eq!(changed_count, 0, "Should detect no changes when only timestamp differs");
+    }
+
+    #[tokio::test]
+    async fn test_merge_mcp_servers_actual_change() {
+        let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+        let config_path = temp.path().join(".mcp.json");
+
+        // Create initial config with a server
+        let initial_config = json!({
+            "mcpServers": {
+                "test-server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "_agpm": {
+                        "managed": true,
+                        "source": "test-source",
+                        "version": "v1.0.0",
+                        "installed_at": "2024-01-01T00:00:00Z"
+                    }
+                }
+            }
+        });
+
+        tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
+            .await
+            .unwrap();
+
+        // Create modified server configuration
+        let mut agpm_servers = HashMap::new();
+        agpm_servers.insert(
+            "test-server".to_string(),
+            McpServerConfig {
+                command: Some("python".to_string()), // Changed command
+                args: vec!["server.py".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // Merge should detect changes
+        let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+        assert_eq!(changed_count, 1, "Should detect changes when server configuration differs");
+    }
+
+    #[tokio::test]
+    async fn test_merge_mcp_servers_new_server() {
+        let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+        let config_path = temp.path().join(".mcp.json");
+
+        // Create empty initial config
+        let initial_config = json!({
+            "mcpServers": {}
+        });
+
+        tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
+            .await
+            .unwrap();
+
+        // Add a new server
+        let mut agpm_servers = HashMap::new();
+        agpm_servers.insert(
+            "new-server".to_string(),
+            McpServerConfig {
+                command: Some("node".to_string()),
+                args: vec!["server.js".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // Merge should detect new server as changed
+        let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+        assert_eq!(changed_count, 1, "Should detect new server as changed");
+    }
+
+    #[tokio::test]
+    async fn test_merge_mcp_servers_mixed_changes() {
+        let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+        let config_path = temp.path().join(".mcp.json");
+
+        // Create initial config with two servers
+        let initial_config = json!({
+            "mcpServers": {
+                "unchanged-server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "_agpm": {
+                        "managed": true,
+                        "source": "test-source",
+                        "version": "v1.0.0",
+                        "installed_at": "2024-01-01T00:00:00Z"
+                    }
+                },
+                "changed-server": {
+                    "command": "python",
+                    "args": ["server.py"],
+                    "_agpm": {
+                        "managed": true,
+                        "source": "test-source",
+                        "version": "v1.0.0",
+                        "installed_at": "2024-01-01T00:00:00Z"
+                    }
+                }
+            }
+        });
+
+        tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
+            .await
+            .unwrap();
+
+        // Create server configurations (one unchanged, one changed, one new)
+        let mut agpm_servers = HashMap::new();
+
+        // Unchanged server (same config, different timestamp)
+        agpm_servers.insert(
+            "unchanged-server".to_string(),
+            McpServerConfig {
+                command: Some("node".to_string()),
+                args: vec!["server.js".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-02T00:00:00Z".to_string(), // Different timestamp only
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // Changed server (different command)
+        agpm_servers.insert(
+            "changed-server".to_string(),
+            McpServerConfig {
+                command: Some("ruby".to_string()), // Changed command
+                args: vec!["server.rb".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // New server
+        agpm_servers.insert(
+            "new-server".to_string(),
+            McpServerConfig {
+                command: Some("go".to_string()),
+                args: vec!["server".to_string()],
+                env: None,
+                r#type: None,
+                url: None,
+                headers: None,
+                agpm_metadata: Some(AgpmMetadata {
+                    managed: true,
+                    source: Some("test-source".to_string()),
+                    version: Some("v1.0.0".to_string()),
+                    installed_at: "2024-01-01T00:00:00Z".to_string(),
+                    dependency_name: None,
+                }),
+            },
+        );
+
+        // Merge should detect 2 changes (changed server + new server)
+        let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+        assert_eq!(changed_count, 2, "Should detect 2 changes: 1 modified server + 1 new server");
+    }
+
+    #[tokio::test]
+    async fn test_merge_mcp_servers_empty_updates() {
+        let temp = tempdir().unwrap();
+        setup_project_root(temp.path());
+        let config_path = temp.path().join(".mcp.json");
+
+        // Create initial config with servers
+        let initial_config = json!({
+            "mcpServers": {
+                "existing-server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "_agpm": {
+                        "managed": true,
+                        "source": "test-source",
+                        "version": "v1.0.0",
+                        "installed_at": "2024-01-01T00:00:00Z"
+                    }
+                }
+            }
+        });
+
+        tokio::fs::write(&config_path, serde_json::to_string_pretty(&initial_config).unwrap())
+            .await
+            .unwrap();
+
+        // Empty updates should remove all managed servers
+        let agpm_servers = HashMap::new();
+
+        // Merge should detect removal as changes (0 changes to add, but servers are removed)
+        let changed_count = merge_mcp_servers(&config_path, agpm_servers).await.unwrap();
+        assert_eq!(changed_count, 0, "Should detect 0 changes when only removing servers");
     }
 }

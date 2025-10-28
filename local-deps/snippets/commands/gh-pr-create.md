@@ -44,9 +44,6 @@ Create a GitHub pull request following these guidelines:
 
    ## Changes
    [Bulleted list of key changes organized by component/area]
-
-   ## Test plan
-   [Bulleted markdown checklist of steps to test the PR]
    ```
 
 8. Create the PR:
@@ -57,6 +54,9 @@ Create a GitHub pull request following these guidelines:
      ```bash
      gh pr create --title "feat(scope): description" --body "$(cat <<'EOF'
      ## Summary
+     ...
+
+     ## Changes
      ...
      EOF
      )"
@@ -80,4 +80,3 @@ Create a GitHub pull request following these guidelines:
 - Always analyze the FULL diff from base branch, not just the latest commit
 - The PR title should summarize the entire PR, considering all commits
 - Ensure the description provides clear context for reviewers
-- Test plan should be actionable and specific to the changes

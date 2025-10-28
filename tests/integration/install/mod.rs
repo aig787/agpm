@@ -7,6 +7,7 @@
 //! - Multi-artifact installation
 //! - Multi-resource management
 //! - Artifact cleanup and removal
+//! - Progress display functionality
 
 mod basic;
 mod cleanup;
@@ -14,3 +15,4 @@ mod incremental_add;
 mod install_field;
 mod multi_artifact;
 mod multi_resource;
+mod progress_display;

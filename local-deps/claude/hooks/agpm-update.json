@@ -1,0 +1,6 @@
+{
+  "events": ["SessionStart"],
+  "type": "command",
+  "command": "agpm update",
+  "description": "Update AGPM packages"
+}
