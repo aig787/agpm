@@ -289,13 +289,15 @@ fn event_to_string(event: &HookEvent) -> String {
 /// 2. Converts them to Claude Code format
 /// 3. Updates .claude/settings.local.json with proper event-based structure
 /// 4. Can be called from both `add` and `install` commands
+///
+/// Returns the count of hooks that were actually changed
 pub async fn install_hooks(
     lockfile: &crate::lockfile::LockFile,
     project_root: &Path,
     cache: &crate::cache::Cache,
-) -> Result<()> {
+) -> Result<usize> {
     if lockfile.hooks.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
     let claude_dir = project_root.join(".claude");
@@ -366,7 +368,7 @@ pub async fn install_hooks(
     };
 
     if hooks_changed {
-        // Count actual configured hooks (after deduplication)
+        // Count actual configured hooks (after deduplication) before moving
         let configured_count = claude_hooks.as_object().map_or(0, |events| {
             events
                 .values()
@@ -387,16 +389,10 @@ pub async fn install_hooks(
         // Save updated settings
         settings.save(&settings_path)?;
 
-        if configured_count > 0 {
-            if configured_count == 1 {
-                println!("✓ Configured 1 hook");
-            } else {
-                println!("✓ Configured {configured_count} hooks");
-            }
-        }
+        Ok(configured_count)
+    } else {
+        Ok(0)
     }
-
-    Ok(())
 }
 
 /// Validate a hook configuration for correctness and safety.
